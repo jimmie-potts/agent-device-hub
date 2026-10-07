@@ -1,8 +1,8 @@
 // Copies the installed library into the Pixoo module's own store (Hub #931): its catalog and playlists into the module's
-// SQLite file, and every original and rendition file into its private folder, each checked by SHA-256 as it is copied.
-// The rows go in through SQLite at the installed schema, which the library's own migrations create; then the library's
-// own forward migration takes the destination to its current schema, and its own check reads every catalog entry back
-// against its files, as the module's start will.
+// SQLite file, and every original and rendition file into its private folder. The rows go in through SQLite at the
+// installed schema, which the library's own migrations create; then the library's own forward migration takes the
+// destination to its current schema, and its own check reads every copy back against the SHA-256 its catalog gives:
+// each original against its content hash, each frame against its manifest, and each manifest against its row.
 import {constants} from 'node:fs';
 import {mkdir, open} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -23,8 +23,8 @@ const COPIES = 8;
 
 /**
  * Migrates `source` into `destination`, which must be the module's fresh database and an empty private folder: the
- * caller checks both and holds the runtime's lease. Throws `MigrationError` `source-corrupt` when a file's bytes do not
- * match the hash the catalog gives it, or when the library's own check refuses the migrated catalog. The caller then
+ * caller checks both and holds the runtime's lease. Throws `MigrationError` `source-corrupt` when the library's own check
+ * refuses the migrated catalog, as when a file's bytes do not match the hash the catalog gives it. The caller then
  * discards the destination.
  */
 export async function migrateLibrary(source: InstalledLibrary, destination: Destination): Promise<MigrationReport> {
@@ -81,13 +81,12 @@ async function copyAll(source: InstalledLibrary, media: string): Promise<{path: 
 }
 
 /**
- * Copies one file: reads it whole from the source, checks its SHA-256 against the catalog's, writes it to a new file
- * private to its owner, which must not exist and is never reached through a link, and syncs it.
+ * Copies one file: reads it whole from the source, writes it to a new file private to its owner, which must not exist
+ * and is never reached through a link, and syncs it. The library's own check then reads every copy back against the
+ * hashes its catalog gives.
  */
 async function copyOne(source: InstalledLibrary, media: string, file: MediaFile): Promise<{path: string; sha256: string}> {
   const bytes = await source.read(file);
-  const digest = sha256(bytes);
-  if (file.sha256 !== undefined && digest !== file.sha256) throw new MigrationError('source-corrupt');
   const handle = await open(join(media, file.path), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
   try {
     await handle.writeFile(bytes);
@@ -95,7 +94,7 @@ async function copyOne(source: InstalledLibrary, media: string, file: MediaFile)
   } finally {
     await handle.close();
   }
-  return {path: `media/${file.path}`, sha256: digest};
+  return {path: `media/${file.path}`, sha256: sha256(bytes)};
 }
 
 /** Syncs a directory, so the names of the files created in it survive a crash. */

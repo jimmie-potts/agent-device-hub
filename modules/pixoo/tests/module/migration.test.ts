@@ -243,6 +243,16 @@ void describe('the Pixoo library migration', () => {
       assert.equal(await refused(copy), 'source-not-clean');
     });
 
+    void test('a library whose application or version marks are not the installed release\'s', async () => {
+      for (const pragma of ['PRAGMA application_id = 0', 'PRAGMA user_version = 2']) {
+        const copy = await copyOfLibrary();
+        const db = new DatabaseSync(join(copy, 'catalog.sqlite'));
+        db.exec(pragma);
+        db.close();
+        assert.equal(await refused(copy), 'source-schema', pragma);
+      }
+    });
+
     void test('a library at the module\'s schema version 4, or with a changed table', async () => {
       const current = await copyOfLibrary();
       const db = new DatabaseSync(join(current, 'catalog.sqlite'));
@@ -266,6 +276,16 @@ void describe('the Pixoo library migration', () => {
       await rm(join(linked, 'media', 'originals', original));
       await symlink(join(library, 'media', 'originals', original), join(linked, 'media', 'originals', original));
       assert.equal(await refused(linked), 'source-corrupt');
+    });
+
+    void test('a manifest that no longer matches its catalog row stops the migration', async () => {
+      const copy = await copyOfLibrary();
+      const [rendition] = await readdir(join(copy, 'media', 'renditions'));
+      const manifest = join(copy, 'media', 'renditions', rendition ?? '', 'manifest.json');
+      const value = JSON.parse(await readFile(manifest, 'utf8')) as {effectiveDurationMs: number | null};
+      value.effectiveDurationMs = (value.effectiveDurationMs ?? 0) + 1;
+      await writeFile(manifest, JSON.stringify(value));
+      await assert.rejects(migrated(copy), {name: 'MigrationError', code: 'source-corrupt'});
     });
 
     void test('a file whose bytes no longer match its catalog stops the copy', async () => {
