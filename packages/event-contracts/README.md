@@ -154,6 +154,7 @@ carries a device-specific payload: modules define those.
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
 | command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
 | command | `notice-acknowledge`, `playback-control` | `org.bunny.notice.acknowledge.requested`, `org.bunny.playback.control.requested` |
+| command | `approval-recover` | `org.bunny.approval.recover.requested` |
 
 The rules:
 - A state event carries the full record of one entity, and its `subject` is the
@@ -168,6 +169,13 @@ The rules:
   availability changes.
 - Commands name no device: the envelope `subject` names the target. Their
   replies and outcomes use the profile's reply and outcome payloads.
+- `approval-recover` (Hub #835) is the old Hub's operator recovery, carried as
+  a command to the core: `{requestId, turnId, expectedRevision}`, with the
+  session's `id` as its `subject` and the session record's `revision` that the
+  operator read as `expectedRevision`. The core retires the one approval marker
+  without an attention ID that the session holds on `turnId`, only while the
+  session's evidence is uncertain, and publishes `attention-cleared` with cause
+  `recovered`. It approves or denies nothing at the agent.
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the

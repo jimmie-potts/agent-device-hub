@@ -854,14 +854,21 @@ the system temporary directory, which must be outside every Git checkout. Some
 start the runtime in child processes, as the service manager would; one kills it
 between the fixture lamp's commit and publish. The fixture lamp and chime run the
 module test kit. Some start the runtime with `--edge` and `--simulate`: a remote
-part with a run-generated grant reaches its SDK edge, and grants files that are
-missing, not private or that act as the core or a module are refused. The
+part with a run-generated credential reaches its gateway (#835), and
+configurations without an edge section, and credentials files that are missing,
+not private, malformed or that act as the core or a module, are refused. The
+gateway tests cover each caller's grant, browser sign-in and its Origin checks,
+credential reloads, MCP through `packages/mcp`, module pages and settings, the
+route map against the old Hub's sources and the cutover's credential
+conversion, and scan every record, answer, health document and span for the
+synthetic token prefix `tok_SYNTHETIC835`. The
 runtime's records must pass the diagnostic contract's validator (#903), as
 maintenance intake reads them, and `runtime.stopped` must count no lost record or
 span. The decision-record and tracing tests read the runtime's records and the
 spans its host adapter hands a test sink (#949). They need no device or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
-zero-module memory for #123; the README's Memory section says how.
+zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
+stalled reader; the README's Memory section says how.
 
 ### Runtime test layers
 
@@ -897,9 +904,9 @@ describes the catalog and how a story adds to it.
 Hub #920 adds the runtime adapter for the
 [app verification contract](app-verification.md),
 `npm run -s verify:runtime -- <operation>`. A run serves the runtime from the
-checkout with `--simulate`, `--edge` and `--environment test`, either with the
-shipped module list or with the fixture modules, over simulated devices, on
-loopback. The
+checkout with `--simulate`, `--edge`, `--config` and `--environment test`,
+either with the shipped module list or with the fixture modules, over simulated
+devices, on loopback. The
 [adapter README](../apps/runtime/verify/README.md) lists its run scenarios,
 capture steps and boundary checks. After `npm run build`, with Node 24 from the
 worktree root:
@@ -2405,7 +2412,8 @@ by the final change.
 Fixtures cover safe canonical records, exact OTLP mappings, strict version
 projections, privacy, context isolation and bounded sink failures. Profile 1.2
 fixtures cover the runtime's records and their negative controls, profile 1.3
-fixtures its decision, outbox and device records and theirs (#949), and
+fixtures its decision, outbox and device records and theirs (#949), profile 1.4
+fixtures the gateway's route, method and credentials reload and theirs (#835), and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
 earlier profile rejects each profile's additions, and the runtime scopes'
 rules. `tests/host.test.mjs` checks that a host records only its profile's span

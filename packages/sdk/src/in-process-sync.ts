@@ -96,6 +96,11 @@ export class SyncOwners {
     return [...this.#owners].filter(owner => owner.scope.source === source).flatMap(owner => [...owner.families]);
   }
 
+  /** The sources that serve `family` now, so a host can tell a family nobody serves from an owner's refusal. */
+  owners(family: string): string[] {
+    return [...this.#owners].filter(owner => owner.families.has(family)).map(owner => owner.scope.source);
+  }
+
   /**
    * Sends one sync request to `owner`, or to the only owner of `families`. Resolves with its answer or a refusal; never
    * rejects. When `signal` aborts, the request is withdrawn: taken out of the owner's queue if it still waits there, and

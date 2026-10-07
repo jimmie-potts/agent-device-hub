@@ -1,5 +1,6 @@
 // Profile 1.2 (Hub #903) registers the B.U.N.N.Y. runtime: its service, its two scopes, its events and attributes.
 // Profile 1.3 (Hub #949) adds the runtime's decision records, the outbox's and a device's records, and two span names.
+// Profile 1.4 (Hub #835) adds the gateway's route and method to the edge's refusal records, and the credentials reload.
 // Each profile's additions are closed to the earlier profiles, and producers still default to profile 1.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -73,14 +74,16 @@ const examples = {
   'bunny.routing.key': 'bunny.cmd.lamp.lamp-1',
   'bunny.outbox.waiting_count': 3,
   'bunny.attempt_count': 12,
+  'http.route': '/api/v2/families/{family}',
+  'http.request.method': 'GET',
 };
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.3.0 adds profile 1.3, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.3.0');
-  assert.equal(catalog.artifact_version, '1.3.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3']);
+test('artifact 1.4.0 adds profile 1.4, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.4.0');
+  assert.equal(catalog.artifact_version, '1.4.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -178,7 +181,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.4').ok, false);
+  assert.equal(projectRecord(hub, '1.5').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -204,6 +207,23 @@ test('profile 1.3 keeps the request ID\'s profile 1.0 pattern and bounds its own
   assert.equal(check({'bunny.outbox.waiting_count': -1}), false);
   assert.equal(check({'bunny.attempt_count': 1.5}), false);
   assert.ok(catalog.span_names.includes('bunny.outcome.publish') && catalog.span_names.includes('bunny.device.call'));
+});
+
+test('profile 1.4 names a gateway route by its template and method, never a path\'s values or a URL', () => {
+  const refused = {...runtime, schema_version: '1.4', event_name: 'runtime.edge.refused', body: catalog.events['runtime.edge.refused'],
+    attributes: {'bunny.provenance': 'source', 'bunny.route': 'other', 'http.route': '/api/monitor/v1/sessions', 'http.request.method': 'GET', 'bunny.code': 'not-found'}};
+  const check = attributes => valid({...refused, attributes: {...refused.attributes, ...attributes}});
+  assert.equal(valid(refused), true);
+  assert.equal(check({'http.route': '/api/controllers/v1/{device}/integration/catalog/*'}), true);
+  assert.equal(check({'http.route': '/api/v2/families/session?token=tok_SYNTHETIC123'}), false, 'no query');
+  assert.equal(check({'http.route': 'http://127.0.0.1:8788/mcp'}), false, 'no URL');
+  assert.equal(check({'http.route': `/${'a'.repeat(300)}`}), false, 'at most 256 characters');
+  assert.equal(check({'http.request.method': 'TRACE'}), false);
+  assert.equal(projectRecord(refused, '1.3').ok, false, 'the route is profile 1.4 vocabulary');
+  const reloaded = {...refused, event_name: 'runtime.edge.reloaded', body: catalog.events['runtime.edge.reloaded'],
+    attributes: {'bunny.provenance': 'source', 'bunny.outcome': 'succeeded', 'bunny.grant_count': 2}};
+  assert.equal(valid(reloaded), true);
+  assert.equal(valid(at(reloaded, '1.3')), false);
 });
 
 test('construction keeps only the attributes the record\'s own profile registers', () => {

@@ -1118,6 +1118,25 @@
     }
    }
   },
+  "approval-recover": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-approval-recover",
+   "source": "bunny/parts/operator",
+   "type": "org.bunny.approval.recover.requested",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/approval-recover/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-recover-1",
+    "turnId": "turn-1",
+    "expectedRevision": 12
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
   "playback-control": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -2235,6 +2254,33 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /subject not a session id"
+  },
+  {
+   "name": "an approval recovery for a subject that is not a session",
+   "base": "approval-recover",
+   "set": {
+    "/subject": "hub"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a session id"
+  },
+  {
+   "name": "an approval recovery without the revision the operator read",
+   "base": "approval-recover",
+   "set": {
+    "/data/expectedRevision": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required expectedRevision"
+  },
+  {
+   "name": "an approval recovery that decides the approval",
+   "base": "approval-recover",
+   "set": {
+    "/data/decision": "approve"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties decision"
   },
   {
    "name": "a moment request to a subject that is not a device ID",

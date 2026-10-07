@@ -116,7 +116,8 @@ A command is checked, then stored, then accepted. These refusals prove no effect
 
 | Code | When |
 | --- | --- |
-| `invalid-message`, `invalid-request` | The command fails its family's schema, uses another family than its key, or names another bulb in its subject. |
+| `invalid-message` | The command names another bulb in its subject than its key does: the SDK's bus refuses it before the module has it (the profile's routing-ID rule, Hub #835). |
+| `invalid-message`, `invalid-request` | The command fails its family's schema, or uses another family than its key. |
 | `revision-conflict` | `expectedConfigurationRevision` or `expectedGeneration` is stale; the generation's epoch changes at every start. |
 | `unsupported-capability` | The bulb does not offer the operation (`commandSupported`), as for every command to an unqualified bulb. |
 | `unavailable` | The module does not hold the bulb's writer lease: another holder has it ("another writer holds the bulb"), its folder or file is not private ("the bulb's lease is not private"), or it could not be opened ("the module could not open the bulb's lease"). Or the module is stopping: a command that arrives then is refused by the bus or the module. |

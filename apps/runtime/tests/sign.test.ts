@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {moduleConformance} from '@jimmie-potts/sdk/testing';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSpec, type Sign} from './fixtures/sign.js';
-import {writeConfiguration} from './scenarios/parts.js';
+import {partTokens, writeConfiguration} from './scenarios/parts.js';
 import {entry, fixture, it, run, stateDir, waitFor} from './support.js';
 
 moduleConformance(signSpec());
@@ -18,7 +18,7 @@ it('under the runtime, the sign starts while its sign is offline, reports it una
     await sdk.subscribe<Sign>('bunny.state.sign.*', message => { seen.push(message); });
   });
   const dir = await stateDir(context);
-  const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {sign: SIGN_SECTION});
+  const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {modules: {sign: SIGN_SECTION}, tokens: partTokens()});
   const {runtime, logs} = await run(context, {modules: [reader, createSignModule({transport: signs})], stateDir: dir, configFile});
   // The start returned before any sign answered: policy A.
   assert.equal(entry(runtime.health(), 'sign').state, 'running');
@@ -44,7 +44,7 @@ it('a render that fails, even past its deadline, is reported against the sign an
   });
   // This worker ends without a reply, so every render the sign asks for is uncertain.
   const renderWorker = new URL('./fixtures/call-worker.js', import.meta.url);
-  const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {sign: SIGN_SECTION});
+  const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {modules: {sign: SIGN_SECTION}, tokens: partTokens()});
   const {runtime, logs} = await run(context, {modules: [reader, createSignModule({transport: signs, renderWorker})], configFile});
   const failed = (): typeof logs => logs.filter(record => record.attributes['bunny.module'] === 'sign' && record.event_name === 'operation.failed');
   await waitFor(() => failed().length > 0, 5000, 'the failed render reported');

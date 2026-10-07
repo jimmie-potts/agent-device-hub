@@ -126,8 +126,9 @@ lease.
 ([#967](https://github.com/jimmie-potts/agent-device-hub/issues/967)).
 
 Every general command (#918) on `bunny.cmd.<family>.<id>` is refused with
-`unsupported-capability`, and one whose subject is another device with
-`invalid-request`. Nothing is accepted, so the module has no outcome to report.
+`unsupported-capability`. One whose subject is another device never reaches the
+module: the SDK's bus refuses it with `invalid-message` (the profile's routing-ID
+rule, Hub #835). Nothing is accepted, so the module has no outcome to report.
 
 ## The tiles
 

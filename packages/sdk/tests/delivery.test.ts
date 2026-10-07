@@ -114,7 +114,7 @@ it('without an error handler, a handler error becomes a process warning naming i
   assert.equal(warning.cause, failure, 'the error stays in memory');
   const refused = new Promise<Error>(resolve => { process.once('warning', resolve); });
   await core.subscribe('bunny.state.mode.*', () => { throw new SdkError(errorBody('invalid-state', {detail: 'tok_SYNTHETIC123'})); });
-  await core.publish('bunny.state.mode.wall', session('s1', 1));
+  await core.publish('bunny.state.mode.wall', session('wall', 1));
   assert.equal((await refused).message, 'bunny/core on bunny.state.mode.*: SdkError invalid-state', 'an SdkError names its code, not its detail');
 });
 

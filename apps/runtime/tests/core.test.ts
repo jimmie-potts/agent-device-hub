@@ -11,7 +11,7 @@ import {InProcessBus, Outbox, type BunnyModule, type CommandDraft, type Sdk, typ
 import {ModuleHarness, moduleConformance, standInAckSchemas} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreOptions, type CorePart, type LogRecord, type Runtime, type RuntimeOptions} from '../src/index.js';
 import {
-  IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted, turnEnded, turnStarted,
+  IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from './fixtures/agents.js';
 import {historySchemas, standInParts} from './fixtures/core.js';
 import {fillDisk} from './fixtures/disk.js';
@@ -157,6 +157,68 @@ it('a consumer acknowledges a notice for itself only, and each consumer\'s ackno
   assert.equal(core.seen.some(message => message.kind === 'outcome' && message.source === 'bunny/core'), false, 'the reply is the whole answer');
   const rejected = core.logs.filter(record => record.event_name === 'command.rejected').map(record => [record.attributes['bunny.code'], record.severity_text]);
   assert.deepEqual(rejected, [['forbidden', 'WARN'], ['invalid-request', 'INFO'], ['not-found', 'INFO'], ['not-found', 'INFO']]);
+});
+
+const RECOVER_SCHEMA = 'https://bunny.invalid/events/approval-recover/2.0';
+const recover = (session: string, turnId: string, expectedRevision: number): {key: string; draft: CommandDraft<{turnId: string; expectedRevision: number}>} => ({
+  key: `bunny.cmd.approval-recover.${session}`,
+  draft: {type: 'org.bunny.approval.recover.requested', subject: session, dataschema: RECOVER_SCHEMA, data: {turnId, expectedRevision}},
+});
+
+it('an operator recovers the one uncertain approval without an ID once the session\'s evidence is uncertain, and only then', async context => {
+  const clock = manualClock();
+  const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
+  const ask = async (...args: Parameters<typeof recover>): Promise<{answer: string; reply?: Message}> => {
+    const {key, draft} = recover(...args);
+    const result = await core.pixoo.request(key, draft, {timeoutMs: 5000});
+    return result.status === 'accepted' ? {answer: 'accepted', reply: result.reply} : {answer: result.error.error.code};
+  };
+  await publish(core.hook, turnStarted, START);
+  await publish(core.hook, unknownApproval, START);
+  await waitFor(() => core.record()?.attention.length === 1, 5000, 'the waiting session');
+  const waiting = core.record()?.revision ?? -1;
+  assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'invalid-state', 'evidence is current, so the marker may still be real');
+  assert.equal((await ask(OTHER_ID, 'turn-1', waiting)).answer, 'not-found', 'no such session');
+  // Five minutes without evidence: the record turns uncertain at a new revision.
+  clock.advance(300_000);
+  await waitFor(() => core.record()?.freshness === 'uncertain', 5000, 'the uncertain record');
+  const uncertain = core.record()?.revision ?? -1;
+  assert.ok(uncertain > waiting);
+  assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'revision-conflict', 'the operator read an older record');
+  assert.equal((await ask(SESSION_ID, 'turn-2', uncertain)).answer, 'invalid-state', 'no marker on that turn');
+  assert.equal(core.record()?.attention.length, 1, 'no refusal changed the record');
+
+  const recovered = await ask(SESSION_ID, 'turn-1', uncertain);
+  assert.equal(recovered.answer, 'accepted');
+  await waitFor(() => core.record()?.attention.length === 0, 5000, 'the cleared marker in the copy');
+  const cleared = core.seen.find(message => message.type === 'org.bunny.attention.cleared');
+  assert.equal((cleared?.data as {cause?: string} | undefined)?.cause, 'recovered');
+  assert.equal(traceOf(cleared), traceOf(recovered.reply), 'the recovery joins the command\'s trace');
+  assert.equal((await ask(SESSION_ID, 'turn-1', core.record()?.revision ?? -1)).answer, 'invalid-state', 'a second recovery finds nothing to retire');
+  assert.equal(core.seen.some(message => message.kind === 'outcome' && message.source === 'bunny/core'), false, 'the reply is the whole answer');
+  const rejected = core.logs.filter(record => record.event_name === 'command.rejected').map(record => [record.attributes['bunny.code'], record.severity_text]);
+  assert.deepEqual(rejected, [['invalid-state', 'INFO'], ['not-found', 'INFO'], ['revision-conflict', 'INFO'], ['invalid-state', 'INFO'], ['invalid-state', 'INFO']]);
+  const completed = core.logs.filter(record => record.event_name === 'command.completed' && record.attributes['bunny.participant'] === 'bunny/modules/pixoo');
+  assert.equal(completed.length, 1);
+});
+
+it('the core\'s sessions tool reads the sessions it holds, filtered by provider and text, and changes nothing', async context => {
+  const module = createCoreModule();
+  const tool = module.manifest.tools?.find(entry => entry.name === 'sessions');
+  assert.ok(tool);
+  assert.deepEqual(await tool.read({}), {error: {code: 'unavailable', retryable: true, detail: 'the core is not serving its sessions now'}}, 'not before it starts');
+  const watcher = fixture('watcher');
+  await run(context, {modules: [module, watcher]});
+  const sdk = contextOf(watcher).sdk;
+  await publish(sdk, sessionStarted, Date.now(), {title: {value: 'Port Nanoleaf', source: 'provider'}});
+  await publish(sdk, sessionStarted, Date.now(), {identity: OTHER});
+  const all = async (): Promise<SessionRecord[]> => ((await tool.read({})) as {sessions: SessionRecord[]}).sessions;
+  await waitFor(async () => (await all()).length === 2, 5000, 'both sessions');
+  const titled = (await tool.read({q: 'NANOLEAF'})) as {revision: number; sessions: SessionRecord[]};
+  assert.deepEqual(titled.sessions.map(record => record.identity.sessionId), [IDENTITY.sessionId]);
+  assert.ok(titled.revision > 0);
+  assert.deepEqual(((await tool.read({provider: 'codex'})) as {sessions: unknown[]}).sessions, []);
+  assert.equal(((await tool.read({q: OTHER.sessionId})) as {sessions: unknown[]}).sessions.length, 1);
 });
 
 it('an observation that breaks profile 2.0, or reuses (source, id) with other content, changes nothing', async context => {

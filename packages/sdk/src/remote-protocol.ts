@@ -5,6 +5,8 @@ import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 
 export const REMOTE_SCHEMA = 'sdk-remote/1.0';
 export const REMOTE_PATH = '/api/sdk/v1';
+/** The header in which a remote part declares the source it acts as; the edge refuses a token used under another (Hub #835). */
+export const SOURCE_HEADER = 'bunny-source';
 /** A call carries at most one message of the profile's 256 KiB, plus the call around it. */
 export const MAX_CALL_BYTES = (256 + 64) * 1024;
 /** An owner's snapshot answer carries many state drafts, each within the message cap once enveloped. */

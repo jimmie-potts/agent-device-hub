@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {runCaptureStep, type CaptureStepResult} from '@jimmie-potts/app-verify';
 import {SYNTHETIC_TOKEN} from '../../tests/fixtures/sign.js';
-import {SCENARIOS} from '../../tests/scenarios/catalog.js';
+import {SCENARIOS, TOKEN_PREFIX} from '../../tests/scenarios/catalog.js';
 import {readGrants} from '../adapter.js';
 import plugin from '../plugin.js';
 import {base, startRun} from './support.js';
@@ -26,6 +26,7 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
     for (const token of (await readGrants(run.dataDir)).values()) assert.equal(log.includes(token), false, `${step}: the capture log never holds a grant`);
     const proof = await Promise.all([result.log, ...result.attachments].map(file => readFile(file, 'utf8')));
     assert.equal([...proof, run.stderr()].some(text => text.includes(SYNTHETIC_TOKEN)), false, `${step}: no proof and no runtime record holds the synthetic token`);
+    assert.equal([...proof, run.stderr()].some(text => text.includes(TOKEN_PREFIX)), false, `${step}: no proof and no runtime record holds a part's token (Hub #835)`);
     return result;
   } finally {
     assert.equal((await run.stop()).code, 0, `${step}: the run stopped cleanly`);

@@ -11,9 +11,9 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 
 | Part | Kind | What it is |
 | --- | --- | --- |
-| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory, and `--config` for a configured scenario: the shipped module list, or the fixture modules |
-| SDK edge | actual | The runtime's edge on its listener; each part has a run-generated grant in the state directory's `edge-grants.json` |
-| Configuration | synthetic | For a scenario whose seed configures modules (#919), `<data>/config/runtime-config.json` and one token file per module under `<data>/config/secrets/`, all owner-only, holding the synthetic token `tok_SYNTHETIC919` |
+| Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
+| Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
+| Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
 | Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, and a harness module that reports what the bus publishes |
 | Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx` and the Tidbyt module's `SimulatedCloud`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
@@ -43,14 +43,16 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 
 | Step | What it does |
 | --- | --- |
-| `edge-grants` | A remote part with the run's reader grant syncs the core's sessions; one with a made-up token is `unauthenticated` |
+| `edge-grants` | A remote part with the run's reader credential syncs the core's sessions; one with a made-up token is `unauthenticated` |
 | `scenario-<catalog id>` | Runs that catalog scenario through the run adapter on a freshly seeded run, attaches `scenario-result.json`, and expects every step to pass, every message to follow profile 2.0 and the boundaries to hold. The configured scenarios also expect the synthetic token in no log record, message, health entry or reader copy |
 | `follow-one-request` | Follows one request through the run's diagnostics in four cases, then a killed runtime, an absent request and a capped query, and attaches each answer; see [below](#follow-one-request). Seeded fresh with the fixture modules |
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
 | `control-follow-fails` | A negative control: it expects the follow query to find a request that was never sent, so it must fail |
 
 The run adapter implements the catalog's `Harness` in real time. Its parts are remote, so the per-transport
-expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its
+expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its `gateway`
+call reaches the runtime's gateway over HTTP, as a part with its token, a browser signed in by a trusted loopback page,
+a stranger or a caller with neither. Its
 `disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
 as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
@@ -127,7 +129,7 @@ and in `doctor`:
 | --- | --- | --- | --- |
 | `simulated-transports` | The runtime's `runtime.started` record says it built its modules with `--simulate` | `control-real-transports` | The shipped runtime runs without `--simulate` |
 | `no-outbound-connections` | The guard refused no outbound TCP connection or UDP datagram; the runtime only listens | `control-installed-port` | A probe module reaches for the installed Hub's port 8788 with `fetch` and with `node:http`; the guard refuses both before they connect |
-| `private-state` | What the run observes: the runtime's home, read from its environment, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the grants file is owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
+| `private-state` | What the run observes: the runtime's home, read from its environment, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the edge's credentials file and the parts' token file are owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
 
 The guard loads through `NODE_OPTIONS`, so it runs first in the runtime, in each worker thread that inherits its
 environment (a file worker, as the runtime starts) and in every Node process it starts. It refuses every outbound TCP
@@ -238,8 +240,38 @@ The trusted host route runs the same operations as a transient user unit:
 `npm run -s verify:host -- --host --app runtime --checkout <absolute checkout> -- <operation>`.
 
 A reviewer can also use the run by hand. Its preview URL, which the card links, is the runtime's health page. The
-same origin serves the SDK edge, which takes a remote part with a grant from
-`<runtime dir>/data/state/edge-grants.json`. `start` never prints that grant.
+same origin serves the gateway (#835), which takes each part's token from `<runtime dir>/data/config/part-tokens.json`
+(by role: `hook`, `operator`, `panel` and `reader`, with the catalog's grants) and signs a browser in from a trusted
+loopback page. `start` never prints a token.
+
+To check the gateway as an operator would (#835), start the fixtures run, read its tokens into the shell without
+printing them, and call it:
+
+```bash
+npm run -s verify:runtime -- start                                   # the fixture modules
+origin=<the run's origin>; tokens=<runtime dir>/data/config/part-tokens.json
+reader=$(node -p "require('$tokens').reader"); hook=$(node -p "require('$tokens').hook")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/session"          # sessions on /api/v2
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/Bad_Family"       # invalid-request, the shared error body
+curl -s -H "authorization: Bearer $hook" "$origin/api/v2/families/session"            # forbidden: a hook's grant only publishes
+curl -s "$origin/api/monitor/v1/sessions"                                              # not-found: a route of the old Hub
+npm run -s verify:runtime -- capture <run-id> scenario-gateway-reads                   # MCP's core_sessions, refusals and the route log
+npm run -s verify:runtime -- capture <run-id> scenario-grants-and-duplicates
+npm run -s verify:runtime -- capture <run-id> scenario-approval-recovery
+npm run -s verify:runtime -- stop <run-id>
+npm run -s verify:runtime -- start --scenario module-contributions   # the sign's page, preview, settings and tool
+origin=<this run's origin>; tokens=<this run's runtime dir>/data/config/part-tokens.json
+hook=$(node -p "require('$tokens').hook"); reader=$(node -p "require('$tokens').reader")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/modules/sign/settings"     # the sign's settings: every reader's
+curl -s -H "authorization: Bearer $hook" "$origin/api/v2/modules/sign/settings"       # forbidden: a hook's grant may not read
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/sign"             # the sign's records
+npm run -s verify:runtime -- capture <run-id> scenario-module-contributions
+npm run -s verify:runtime -- stop <run-id>
+```
+
+A browser opens a module's page after it signs in from the run's own origin: a page there that posts `{}` to
+`/api/v2/browser/session` with `bunny-request: 1` gets the session cookie, and `/modules/sign/preview` then shows the
+sign's page and its preview. Without the cookie the page answers 401.
 
 ## Checks
 

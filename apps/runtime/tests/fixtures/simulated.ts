@@ -25,17 +25,23 @@ export async function simulatedSection(dir: string, name: string, {config, secre
   return {...config, secrets: files};
 }
 
-/**
- * Writes, in `dir`, a private configuration file with the simulated section of every factory that gives one, and returns
- * its path for `--config`.
- */
-export async function writeSimulatedConfiguration(dir: string, factories: readonly ModuleFactory[]): Promise<string> {
+/** The simulated section of every factory that gives one, by module name, with their secret files written in `dir`. */
+export async function simulatedSections(dir: string, factories: readonly ModuleFactory[]): Promise<Record<string, object>> {
   await mkdir(dir, {recursive: true, mode: 0o700});
   await chmod(dir, 0o700);
   const modules: Record<string, object> = {};
   for (const {name, simulatedSection: section} of factories) {
     if (section !== undefined) modules[name] = await simulatedSection(dir, name, section);
   }
+  return modules;
+}
+
+/**
+ * Writes, in `dir`, a private configuration file with the simulated section of every factory that gives one, and returns
+ * its path for `--config`.
+ */
+export async function writeSimulatedConfiguration(dir: string, factories: readonly ModuleFactory[]): Promise<string> {
+  const modules = await simulatedSections(dir, factories);
   const file = join(dir, 'runtime-config.json');
   await writeFile(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules}, null, 2)}\n`, {mode: 0o600});
   await chmod(file, 0o600);

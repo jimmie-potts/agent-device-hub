@@ -12,10 +12,12 @@ import type {SpanRecorder} from './spans.js';
  * major version or a newer minor one. A module states the version it was written for as a literal, not this constant,
  * so that a later major version refuses it until it is updated.
  */
-export const MODULE_API_VERSION = '1.1';
+export const MODULE_API_VERSION = '1.2';
 
 const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+/** The module API version that brought pages, content, tools and settings (Hub #835). */
+const CONTRIBUTIONS_VERSION = '1.2';
 /** A routing ID (ADR 0012): the last token of an entity's routing keys, so a device's command key is `bunny.cmd.<family>.<id>`. */
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_ROUTING_ID = 128;
@@ -44,8 +46,74 @@ export function checkApiVersion(declared: string, supported: string = MODULE_API
 }
 
 /** Why the runtime would refuse this manifest on its own, or undefined when it may start. */
-export function checkManifest({name, apiVersion}: ModuleManifest): ManifestProblem | undefined {
-  return checkModuleName(name) ?? checkApiVersion(apiVersion);
+export function checkManifest(manifest: ModuleManifest): ManifestProblem | undefined {
+  return checkModuleName(manifest.name) ?? checkApiVersion(manifest.apiVersion) ?? checkContributions(manifest);
+}
+
+/** A page's or a content reference's ID: lowercase letters and digits with single hyphens, at most 64 characters. */
+const PAGE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** A tool's name: a lowercase letter, then lowercase letters, digits and underscores, at most 48 characters. */
+const TOOL_NAME = /^[a-z][a-z0-9_]{0,47}$/;
+/** How many pages and tools one module may contribute. */
+export const MAX_PAGES = 16;
+export const MAX_TOOLS = 16;
+/** The page ID the gateway keeps for a module's content, `/modules/<name>/content/<ref>`. */
+export const CONTENT_PATH = 'content';
+const contributionProblem = (detail: string): ManifestProblem => ({code: 'invalid-request', detail});
+const isText = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
+/** An object schema whose arguments or results the gateway checks: a JSON object with `type: "object"`. */
+const isObjectSchema = (value: unknown): value is JsonObjectSchema =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) && (value as {type?: unknown}).type === 'object';
+
+/**
+ * Why the runtime would refuse a manifest's pages, content, tools or settings (module API 1.2, Hub #835), or undefined.
+ * A module that declares any of them must be written for module API 1.2 or later. Pages have distinct IDs, none of them
+ * `content`, a title and a `render`; tools have distinct names, a description, object schemas whose arguments allow no
+ * other member, and a `read`; settings need `configure`, an object schema and a `show`.
+ */
+export function checkContributions(manifest: ModuleManifest): ManifestProblem | undefined {
+  const {pages, content, tools, settings} = manifest;
+  if (pages === undefined && content === undefined && tools === undefined && settings === undefined) return undefined;
+  // The module must be written for 1.2 or a later minor version of the same major.
+  if (checkApiVersion(CONTRIBUTIONS_VERSION, manifest.apiVersion) !== undefined) {
+    return contributionProblem(`pages, content, tools and settings need module API ${CONTRIBUTIONS_VERSION}`);
+  }
+  if (pages !== undefined) {
+    const given: unknown = pages;
+    if (!Array.isArray(given) || pages.length > MAX_PAGES) return contributionProblem(`pages must be a list of at most ${MAX_PAGES}`);
+    const ids = new Set<string>();
+    for (const page of pages) {
+      const {id, title, render} = page as Partial<ModulePage>;
+      if (typeof id !== 'string' || !PAGE_ID.test(id) || id.length > 64 || id === CONTENT_PATH || ids.has(id)) {
+        return contributionProblem('each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content');
+      }
+      if (!isText(title, 80) || typeof render !== 'function') return contributionProblem('each page needs a title of at most 80 characters and a render');
+      ids.add(id);
+    }
+  }
+  if (content !== undefined && typeof content !== 'function') return contributionProblem('content must be a function');
+  if (tools !== undefined) {
+    const given: unknown = tools;
+    if (!Array.isArray(given) || tools.length > MAX_TOOLS) return contributionProblem(`tools must be a list of at most ${MAX_TOOLS}`);
+    const names = new Set<string>();
+    for (const tool of tools) {
+      const {name, description, input, output, read} = tool as Partial<ModuleTool>;
+      if (typeof name !== 'string' || !TOOL_NAME.test(name) || names.has(name)) {
+        return contributionProblem('each tool needs a distinct name: a lowercase letter, then lowercase letters, digits and underscores, at most 48');
+      }
+      if (!isText(description, 1024) || typeof read !== 'function') return contributionProblem('each tool needs a description of at most 1024 characters and a read');
+      if (!isObjectSchema(input) || input.additionalProperties !== false || !isObjectSchema(output)) {
+        return contributionProblem('a tool\'s input and output are object schemas, and its input allows no other member');
+      }
+      names.add(name);
+    }
+  }
+  if (settings !== undefined) {
+    if (manifest.configure === undefined) return contributionProblem('settings show what configure accepted, so they need configure');
+    const {schema, show} = settings as Partial<ModuleSettings<unknown>>;
+    if (!isObjectSchema(schema) || typeof show !== 'function') return contributionProblem('settings need an object schema and a show');
+  }
+  return undefined;
 }
 
 /** What a module's `configure` accepts: its configuration, and the devices it controls. */
@@ -70,6 +138,65 @@ export type Configured<Config> = {
  */
 export type Configure<Config> = (section: unknown) => Configured<Config> | ErrorBody;
 
+/** A JSON Schema for an object, as a tool's arguments and results and a module's settings use. */
+export type JsonObjectSchema = {readonly type: 'object'; readonly [keyword: string]: unknown};
+
+/**
+ * A page the module contributes to the runtime's gateway (module API 1.2, Hub #835), served at
+ * `/modules/<name>/<id>` to a browser session or a credential with the `read` scope. Its HTML may refer to the module's
+ * content by reference, as `content/<ref>`, such as a preview frame. The gateway serves it with a policy that allows no
+ * script, frame or form, and only images and styles from the runtime itself.
+ */
+export type ModulePage = {
+  /** Lowercase letters and digits with single hyphens, at most 64 characters, and not `content`. */
+  readonly id: string;
+  /** A short title for a list of pages, at most 80 characters. */
+  readonly title: string;
+  /**
+   * The page's HTML. It reads the module's own state and changes nothing. An exception that escapes it fails the
+   * module, as one from a handler does.
+   */
+  readonly render: () => string | Promise<string>;
+};
+
+/** Content the module serves by reference, such as a preview frame: its media type and bytes. */
+export type ModuleContent = {readonly type: string; readonly bytes: Uint8Array};
+
+/**
+ * A read tool the module contributes to MCP (module API 1.2, Hub #835). The gateway publishes it as
+ * `<module>_<name>` to a credential with the `read` scope, checks its arguments against `input`, and returns what
+ * `read` returns as `{result}`, or a refusal as the shared error body. It changes nothing; action tools come with Hub
+ * #782's dispatcher.
+ */
+export type ModuleTool = {
+  /** A lowercase letter, then lowercase letters, digits and underscores, at most 48 characters. */
+  readonly name: string;
+  /** What the tool reads, at most 1024 characters. */
+  readonly description: string;
+  /** The arguments' schema: an object that allows no other member (`additionalProperties: false`). */
+  readonly input: JsonObjectSchema;
+  /** The result's schema: an object. */
+  readonly output: JsonObjectSchema;
+  /**
+   * Answers one call with the result, or refuses it with an error body from `errorBody`. An exception that escapes it
+   * fails the module.
+   */
+  readonly read: (args: Readonly<Record<string, unknown>>) => object | ErrorBody | Promise<object | ErrorBody>;
+};
+
+/**
+ * What the gateway shows of the module's settings (module API 1.2, Hub #835). A module has one configuration path:
+ * its settings are the configuration `configure` accepted from its section of the runtime's configuration file, so a
+ * module that declares settings declares `configure`. The gateway only shows them, at
+ * `/api/v2/modules/<name>/settings`; a change is made in the configuration file and takes effect when the runtime
+ * restarts. `show` picks what to show and never returns a secret; `schema` describes what it returns.
+ */
+export type ModuleSettings<Config> = {
+  readonly schema: JsonObjectSchema;
+  // A method, so that a module typed for its own configuration is still a `BunnyModule`.
+  show(config: Config): Readonly<Record<string, unknown>>;
+};
+
 export type ModuleManifest<Config = unknown> = {
   /**
    * Lowercase letters and digits with single hyphens, at most 64 characters. It names the module's source
@@ -77,10 +204,21 @@ export type ModuleManifest<Config = unknown> = {
    * its log records.
    */
   readonly name: string;
-  /** The module API version the module was written for, such as `1.1`. */
+  /** The module API version the module was written for, such as `1.2`. */
   readonly apiVersion: string;
   /** See `Configure`. Without it, the module takes no configuration and its `config` is undefined. */
   readonly configure?: Configure<Config>;
+  /** Its pages, at most `MAX_PAGES` (module API 1.2). */
+  readonly pages?: readonly ModulePage[];
+  /**
+   * Its content by reference (module API 1.2): what `ref`, an ID of 1 to 128 letters, digits, underscores, dots or
+   * hyphens, names, or undefined when there is no such content. It reads and changes nothing else.
+   */
+  readonly content?: (ref: string) => ModuleContent | undefined | Promise<ModuleContent | undefined>;
+  /** Its read tools, at most `MAX_TOOLS` (module API 1.2). */
+  readonly tools?: readonly ModuleTool[];
+  /** What the gateway shows of its configuration (module API 1.2). */
+  readonly settings?: ModuleSettings<Config>;
 };
 
 /** The outcome of `checkConfiguration`: what the module's context gets, or why the module is refused. */

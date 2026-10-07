@@ -5,11 +5,12 @@
 // escapes a module, thrown, rejected or a start that outlasts its deadline, stops that module, through its
 // participant's close, and health shows it unhealthy; the others keep working.
 import {AsyncLocalStorage} from 'node:async_hooks';
+import {Ajv2020} from 'ajv/dist/2020.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
+  InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkContributions, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
   type Clock, type CommandDraft, type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder,
   type Scheduler, type Sdk, type SendOptions, type SpanRecorder, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
   type WorkerCallOptions,
@@ -65,6 +66,30 @@ type Failure = Reason & {phase: Phase};
 type Flow = {fail: (failure: Failure, error: unknown) => void};
 /** What the module's section gave it once admitted: its configuration and its secret files by name. */
 type Setup = {config: unknown; secrets: ReadonlyMap<string, string>};
+/**
+ * A hosted module as the gateway sees it (Hub #835): its manifest, its state and, once admitted, the configuration its
+ * section gave it.
+ */
+export type HostedModule = {
+  readonly name: string;
+  readonly manifest: BunnyModule['manifest'];
+  readonly state: ModuleState;
+  readonly admitted: boolean;
+  readonly config: unknown;
+  /**
+   * The families the module has served through sync while it ran, kept after it stops or fails, so the gateway can tell
+   * a family whose module is down (`unavailable`) from one no module serves (`not-found`) (Hub #835).
+   */
+  readonly served: readonly string[];
+};
+/** A contribution's call that failed because the module was not running: `unavailable`, with nothing called. */
+export class ModuleUnavailable extends Error {
+  override readonly name = 'ModuleUnavailable';
+}
+/** A contribution's call that threw or rejected: the module has failed, as from a handler, and its error stays in memory. */
+export class ContributionFailed extends Error {
+  override readonly name = 'ContributionFailed';
+}
 type Slot = {
   readonly module: BunnyModule;
   readonly name: string;
@@ -85,6 +110,8 @@ type Slot = {
   database: DatabaseSync | undefined;
   /** Set when the module's stop begins; from then on its context refuses use. */
   stopping: Promise<void> | undefined;
+  /** The families the module has served through sync, kept after it stops or fails, so a reader learns who is down. */
+  readonly served: Set<string>;
 };
 type Outcome = {status: 'done'} | {status: 'failed'; error: unknown} | {status: 'timed-out'};
 /** Drops on one subscription since its window opened, and the window's cancel. */
@@ -166,11 +193,35 @@ const redactedSpans = (recorder: SpanRecorder, redactions: Redactions): SpanReco
 });
 
 /** Why a manifest is refused, or undefined when the module may start. `taken` holds the names already in use. */
-function refusal({name, apiVersion}: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
-  const named = checkModuleName(name);
+function refusal(manifest: BunnyModule['manifest'], taken: ReadonlySet<string>): Reason | undefined {
+  const named = checkModuleName(manifest.name);
   if (named !== undefined) return named;
-  if (taken.has(name)) return {code: 'invalid-request', detail: 'another module already has this name'};
-  return checkApiVersion(apiVersion);
+  if (taken.has(manifest.name)) return {code: 'invalid-request', detail: 'another module already has this name'};
+  return checkApiVersion(manifest.apiVersion) ?? checkContributions(manifest) ?? checkToolSchemas(manifest);
+}
+
+/** Argument names the MCP gateway keeps for itself, so that no tool can take a target or a credential from its caller. */
+const RESERVED_ARGUMENTS = ['deviceId', 'controllerId', 'url', 'ip', 'path', 'credential', 'authorization'];
+
+/**
+ * Why the gateway could not publish a module's tools (Hub #835): each schema must compile as strict JSON Schema 2020-12,
+ * as MCP publishes it, and no argument may take a name the gateway keeps. Undefined when every tool can be published.
+ */
+function checkToolSchemas({tools = []}: BunnyModule['manifest']): Reason | undefined {
+  const ajv = new Ajv2020({strict: true, allErrors: false});
+  for (const tool of tools) {
+    const names = Object.keys((tool.input as {properties?: object}).properties ?? {});
+    if (names.some(name => RESERVED_ARGUMENTS.includes(name))) {
+      return {code: 'invalid-request', detail: `a tool's arguments may not be named ${RESERVED_ARGUMENTS.join(', ')}`};
+    }
+    try {
+      ajv.compile(tool.input);
+      ajv.compile(tool.output);
+    } catch {
+      return {code: 'invalid-request', detail: 'a tool\'s input or output schema is not strict JSON Schema 2020-12'};
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -225,7 +276,7 @@ export class ModuleHost {
           workers.add(worker);
           worker.once('exit', () => { workers.delete(worker); });
         }}),
-        setup: undefined, state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
+        setup: undefined, state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined, served: new Set(),
       };
       const reason = refusal(module.manifest, names);
       if (checkModuleName(name) === undefined) names.add(name);
@@ -260,6 +311,31 @@ export class ModuleHost {
       this.#logDrops(drops);
     }
     this.#drops.clear();
+  }
+
+  /** Every hosted module, in list order, as the gateway serves its pages, tools and settings (Hub #835). */
+  modules(): HostedModule[] {
+    return this.#slots.map(slot => ({
+      name: slot.name, manifest: slot.module.manifest, state: slot.state, admitted: slot.setup !== undefined, config: slot.setup?.config,
+      served: [...slot.served],
+    }));
+  }
+
+  /**
+   * Runs one of a running module's contributions, a page's render, its content, a tool's read or its settings' show, in
+   * the module's own flow (Hub #835). A module that is not running is not called: `ModuleUnavailable`. An exception
+   * that escapes the call fails the module, as one from a handler does, and the call rejects with
+   * `ContributionFailed`; the exception stays in memory.
+   */
+  async invoke<T>(name: string, call: () => T | Promise<T>): Promise<T> {
+    const slot = this.#slots.find(candidate => candidate.name === name);
+    if (slot?.state !== 'running') throw new ModuleUnavailable(`${name} is not running`);
+    try {
+      return await running.run(slot.flow, () => attempt(call)) as T;
+    } catch (error) {
+      this.#fail(slot, {code: 'internal', detail: 'a contribution failed', phase: 'handler'}, error);
+      throw new ContributionFailed('the module\'s contribution failed', {cause: error});
+    }
   }
 
   health(): ModuleHealth[] {
@@ -367,7 +443,11 @@ export class ModuleHost {
         participant.respond<T>(pattern, command => inFlow(() => responder(command))),
       sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) =>
         participant.sync<T>(families, change => inFlow(() => handler(change)), options),
-      serveSync: (families: readonly string[], provider: SyncProvider) => participant.serveSync(families, request => inFlow(() => provider(request))),
+      serveSync: async (families: readonly string[], provider: SyncProvider) => {
+        const served = await participant.serveSync(families, request => inFlow(() => provider(request)));
+        for (const family of families) slot.served.add(family);
+        return served;
+      },
     };
     return {
       sdk,

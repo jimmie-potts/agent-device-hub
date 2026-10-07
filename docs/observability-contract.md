@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.3.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.4.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2 and 1.3 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3 and 1.4 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -17,9 +17,12 @@ runtime ([#903](https://github.com/jimmie-potts/agent-device-hub/issues/903));
 see [The runtime's records](#the-runtimes-records-profile-12). Profile 1.3
 registers its decision records and span names
 ([#949](https://github.com/jimmie-potts/agent-device-hub/issues/949)); see
-[Decision records and spans](#decision-records-and-spans-profile-13). The default
+[Decision records and spans](#decision-records-and-spans-profile-13). Profile 1.4
+registers the runtime gateway's route and method on the edge's refusals and its
+credentials reload ([#835](https://github.com/jimmie-potts/agent-device-hub/issues/835));
+see [The gateway's records](#the-gateways-records-profile-14). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects
-1.2 or 1.3 explicitly.
+1.2, 1.3 or 1.4 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -38,7 +41,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2` or `1.3` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3` or `1.4` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -164,7 +167,7 @@ A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
 checks. Building a record keeps only the attributes its own profile registers,
 so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
-validate and convert profile 1.2 and 1.3 records from the schema and catalog; they
+validate and convert profile 1.2, 1.3 and 1.4 records from the schema and catalog; they
 produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
 producers stay on 1.1.
 
@@ -204,6 +207,27 @@ earlier profile rejects each addition. The additions:
 `requestId`: a producer leaves out a request ID that the pattern refuses, rather
 than lose the record, and keeps the record's trace and message ID. Every ID the
 SDK generates matches.
+
+## The gateway's records (profile 1.4)
+
+Profile 1.4 is profile 1.3 plus what the runtime's gateway records
+([#835](https://github.com/jimmie-potts/agent-device-hub/issues/835)). Every
+earlier profile rejects each addition. The additions:
+
+- **Attributes:** `http.route`, the template of the gateway route a refused
+  request asked for, such as `/api/v2/families/{family}` or an old Hub route
+  such as `/api/controllers/v1/{device}/snapshot`, at most 256 characters of a
+  path's own characters and never a query, a URL or a path's values; and
+  `http.request.method`, its HTTP method, one of `GET`, `HEAD`, `POST`, `PUT`,
+  `DELETE`, `PATCH`, `OPTIONS` or `_OTHER`. Both keep their OpenTelemetry
+  names. `runtime.edge.refused` carries them, with `bunny.route` `other`, for a
+  gateway route; a request to an old Hub route is how the retirement story
+  finds a caller left on a 1.x route ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
+- **The credentials reload,** `runtime.edge.reloaded`, under `bunny.runtime`:
+  INFO with `bunny.outcome` `succeeded` and `bunny.grant_count`, or ERROR with
+  `failed`, `error.type` and the refusal's `error.code`, once per reload.
+
+The runtime writes all its records and spans at profile 1.4.
 
 ## Traces and context
 
@@ -319,7 +343,8 @@ the run's state directory, and the run's query reads that file and the journal's
 records for one request ID or trace, validates each against this contract before
 it shows any, and reports a missing record as missing, never as proof that nothing
 happened (#950). Its answer, its limits and every gap it names are in
-[Follow one request](../apps/runtime/verify/README.md#follow-one-request). The runtime and its journal intake are
+[Follow one request](../apps/runtime/verify/README.md#follow-one-request). Profile 1.4 adds its gateway's route and
+credentials reload (#835). The runtime and its journal intake are
 installed at the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
 export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).

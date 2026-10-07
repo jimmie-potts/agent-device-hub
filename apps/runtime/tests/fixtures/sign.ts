@@ -121,10 +121,48 @@ export function configureSign(section: unknown): Configured<SignConfig> | ErrorB
   return {config: {greeting, signs: listed}, devices: listed.map(sign => sign.id)};
 }
 
-/** `renderWorker` replaces the render worker's file, so a test can make every render fail. */
+/**
+ * The preview the sign's page shows by reference (Hub #835): a 1-pixel PNG, the fixture's stand-in for a rendered frame.
+ * The page names it `content/preview.png`, and the gateway serves it from the sign's `content`.
+ */
+export const PREVIEW_PNG = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==', 'base64',
+));
+const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
+
+/**
+ * `renderWorker` replaces the render worker's file, so a test can make every render fail. Module API 1.2 (Hub #835): the
+ * sign contributes a page that shows its preview by reference, that content, a read tool with each sign's availability,
+ * and its settings, which show what `configureSign` accepted and never its token.
+ */
 export function createSignModule({transport, renderWorker = RENDER_WORKER}: {transport: SignTransport; renderWorker?: URL}): BunnyModule<SignConfig> {
+  /** What the contributions read: the signs while the module runs, and the greeting it shows. */
+  let held: {greeting: string; signs: readonly Sign[]} | undefined;
   return {
-    manifest: {name: 'sign', apiVersion: '1.1', configure: configureSign},
+    manifest: {
+      name: 'sign', apiVersion: '1.2', configure: configureSign,
+      pages: [{id: 'preview', title: 'Sign preview', render: () => {
+        const greeting = held?.greeting ?? '';
+        const rows = (held?.signs ?? []).map(sign => `<li>${escapeHtml(sign.id)}: ${sign.availability}</li>`).join('');
+        return `<h1>${escapeHtml(greeting)}</h1><img src="content/preview.png" alt="the sign's preview" width="64" height="64"><ul>${rows}</ul>`;
+      }}],
+      content: ref => ref === 'preview.png' ? {type: 'image/png', bytes: PREVIEW_PNG} : undefined,
+      tools: [{
+        name: 'status', description: 'Read each sign\'s availability: whether it answered the last time the module reached it.',
+        input: {type: 'object', additionalProperties: false, properties: {}},
+        output: {
+          type: 'object', additionalProperties: false, required: ['signs'],
+          properties: {signs: {type: 'array', items: {type: 'object', additionalProperties: false, required: ['id', 'availability'],
+            properties: {id: {type: 'string'}, availability: {enum: ['unknown', 'available', 'unavailable']}}}}},
+        },
+        read: () => held === undefined ? errorBody('unavailable', {detail: 'the sign has not started'})
+          : {signs: held.signs.map(({id, availability}) => ({id, availability}))},
+      }],
+      settings: {
+        schema: {type: 'object', properties: {greeting: {type: 'string'}, signs: {type: 'array', items: {type: 'object', properties: {id: {type: 'string'}, address: {type: 'string'}}}}}},
+        show: config => ({greeting: config.greeting, signs: config.signs.map(({id, address}) => ({id, address}))}),
+      },
+    },
     async start({sdk, config, secrets, files, scheduler, workers, signal, log}) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (config === undefined) throw new Error('the sign started without its configuration');
@@ -132,6 +170,7 @@ export function createSignModule({transport, renderWorker = RENDER_WORKER}: {tra
       const token = await secrets.read('token');
       await writeFile(join(files(), 'layout.json'), JSON.stringify({greeting: config.greeting, signs: config.signs.map(sign => sign.id)}), {mode: 0o600});
       const signs: {address: string; sign: Sign}[] = config.signs.map(({id, address}) => ({address, sign: {id, revision: 0, availability: 'unknown'}}));
+      held = {greeting: config.greeting, signs: signs.map(({sign}) => sign)};
       const state = (sign: Sign): StateDraft<Sign> => ({type: 'org.bunny.sign.updated', subject: sign.id, dataschema: SIGN_SCHEMA, data: {...sign}});
       const device = (sign: Sign): StateDraft => deviceState(deviceRecord(sign.id, sign.revision, 'sign', sign.availability));
       await sdk.serveSync(['sign', DEVICE_FAMILY], ({data: {families}}) => ({
@@ -195,7 +234,7 @@ export function createSignModule({transport, renderWorker = RENDER_WORKER}: {tra
       };
       for (const {address, sign} of signs) scheduler.after(0, () => reach(address, sign, 0));
     },
-    stop: () => {},
+    stop: () => { held = undefined; },
   };
 }
 

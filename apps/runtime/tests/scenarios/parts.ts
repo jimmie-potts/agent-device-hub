@@ -1,5 +1,6 @@
 // What every execution adapter of the scenario catalog shares (Hub #846, #920): the parts' sources, the reader's
 // copies, the validator every message a harness sees must pass, and how a request's result reads as an answer.
+import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -9,46 +10,67 @@ import {registerLifxFamilies} from '@jimmie-potts/lifx';
 import type {SimulatedSpeakers} from '@jimmie-potts/playback';
 import type {Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {standInAckSchemas} from '@jimmie-potts/sdk/testing';
-import {CONFIG_SCHEMA} from '../../src/index.js';
+import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, tokenDigest} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
-import type {Follow, ReaderView, Role, Seed, Simulation} from './catalog.js';
+import {GRANTS, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type ReaderView, type Role, type Seed, type Simulation} from './catalog.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
+
+/** Every fixture family's payload schema that the catalog's messages use, by `dataschema`. */
+export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas};
 
 /** Profile 2.0 with the core and device families, and every module and fixture family the catalog's messages use. */
 export function scenarioValidator(): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);
-  for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas})) validator.register(dataschema, schema);
+  for (const [dataschema, schema] of Object.entries(SCENARIO_SCHEMAS)) validator.register(dataschema, schema);
   registerLifxFamilies(validator);
   return validator;
+}
+
+/** A run-generated token for each part, with the synthetic prefix that every token scan looks for (Hub #835). */
+export const partTokens = (): Record<Role, string> =>
+  Object.fromEntries(ROLES.map(role => [role, `${TOKEN_PREFIX}_${randomBytes(24).toString('base64url')}`])) as Record<Role, string>;
+
+async function writePrivate(file: string, text: string): Promise<void> {
+  await writeFile(file, text, {mode: 0o600});
+  await chmod(file, 0o600);
 }
 
 /**
  * Writes a seed's configuration as the cutover's installer would (Hub #919, #935): in `dir`, a private configuration
  * file with each configured module's section, and one private token file per module holding the synthetic token,
- * which the module's section names as `secrets.token`. Returns the configuration file's path for `--config`.
+ * which the module's section names as `secrets.token`. Its `edge` section (Hub #835) names a private credentials file
+ * with each part's grant (`GRANTS`) under its token's digest, and lets a trusted loopback page sign a browser in, with
+ * the launcher off.
+ * Returns the configuration file's path for `--config`.
  */
-export async function writeConfiguration(dir: string, config: NonNullable<Seed['config']>): Promise<string> {
+export async function writeConfiguration(dir: string, {modules: config = {}, sections = {}, tokens}: {
+  modules?: Seed['config']; sections?: Readonly<Record<string, object>>; tokens: Readonly<Record<Role, string>>;
+}): Promise<string> {
   const secrets = join(dir, 'secrets');
   for (const folder of [dir, secrets]) {
     await mkdir(folder, {recursive: true, mode: 0o700});
     await chmod(folder, 0o700);
   }
-  const modules: Record<string, object> = {};
+  // `sections` are complete already, such as the shipped modules' simulated sections (Hub #929).
+  const modules: Record<string, object> = {...sections};
   for (const [name, section] of Object.entries(config)) {
     const token = join(secrets, `${name}-token`);
-    await writeFile(token, `${SYNTHETIC_TOKEN}\n`, {mode: 0o600});
-    await chmod(token, 0o600);
+    await writePrivate(token, `${SYNTHETIC_TOKEN}\n`);
     modules[name] = {...section, secrets: {token}};
   }
+  const credentials = join(dir, 'edge-credentials.json');
+  const listed = ROLES.map(role => ({id: role, source: sourceOf(role), digest: tokenDigest(tokens[role]), scopes: [...GRANTS[role].scopes]}));
+  await writePrivate(credentials, `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}, null, 2)}\n`);
   const file = join(dir, 'runtime-config.json');
-  await writeFile(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules}, null, 2)}\n`, {mode: 0o600});
-  await chmod(file, 0o600);
+  // A run's state directory lies too deep for the launcher's socket; the scenarios sign a browser in from a trusted page,
+  // and call MCP, which is on.
+  await writePrivate(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules, edge: {credentials, browserAccess: 'trusted-loopback', launcher: false, mcp: true}}, null, 2)}\n`);
   return file;
 }
 
@@ -82,6 +104,68 @@ export function simulatePlayback(speakers: SimulatedSpeakers, {speaker, action, 
     case 'hang-next':
       speakers.nextCommand(speaker, 'hang');
       return;
+  }
+}
+
+/**
+ * The gateway as the scenarios call it (Hub #835), shared by every harness: a part with its token, a browser with the
+ * session a trusted loopback page opened, which this client opens on its first browser call, a stranger with a
+ * made-up token, or a caller with neither. A call from another site carries that site's Origin and fetch metadata.
+ */
+export class GatewayClient {
+  readonly #origin: () => string;
+  readonly #tokens: Readonly<Record<Role, string>>;
+  #cookie: string | undefined;
+
+  constructor(origin: () => string, tokens: Readonly<Record<Role, string>>) {
+    this.#origin = origin;
+    this.#tokens = tokens;
+  }
+
+  async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
+    const own = this.#origin();
+    const sent: Record<string, string> = {...headers};
+    if (body !== undefined) sent['content-type'] = 'application/json';
+    if (as === 'browser') {
+      sent.cookie = `${SESSION_COOKIE}=${await this.#session()}`;
+      sent['sec-fetch-site'] = 'same-origin';
+      if (method !== 'GET') {
+        sent.origin = own;
+        sent[REQUEST_HEADER] = '1';
+      }
+    } else if (as === 'stranger') {
+      sent.authorization = `Bearer ${TOKEN_PREFIX}_stranger_${randomBytes(12).toString('hex')}`;
+    } else if (as !== 'anonymous') {
+      sent.authorization = `Bearer ${this.#tokens[as]}`;
+    }
+    if (origin === 'other') {
+      sent.origin = 'http://pages.invalid';
+      sent['sec-fetch-site'] = 'cross-site';
+    }
+    const response = await fetch(new URL(path, own), {method, headers: sent, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
+    const answered: Record<string, string> = {};
+    response.headers.forEach((value, name) => { answered[name.toLowerCase()] = value; });
+    return {status: response.status, headers: answered, text: await response.text()};
+  }
+
+  /** The browser's session, which a same-origin page opens once by trusted loopback sign-in. */
+  async #session(): Promise<string> {
+    if (this.#cookie !== undefined) return this.#cookie;
+    const own = this.#origin();
+    const response = await fetch(new URL('/api/v2/browser/session', own), {
+      method: 'POST', body: '{}',
+      headers: {'content-type': 'application/json', origin: own, 'sec-fetch-site': 'same-origin', [REQUEST_HEADER]: '1'},
+    });
+    const cookie = /^bunny-session=([^;]+)/.exec(response.headers.get('set-cookie') ?? '')?.[1];
+    await response.body?.cancel();
+    if (response.status !== 200 || cookie === undefined) throw new Error(`the browser could not sign in: ${response.status}`);
+    this.#cookie = cookie;
+    return cookie;
+  }
+
+  /** Forgets the browser's session, as the runtime's restart ends it. */
+  forget(): void {
+    this.#cookie = undefined;
   }
 }
 

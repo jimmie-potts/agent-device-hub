@@ -1,7 +1,7 @@
 export {InProcessBus, type BusOptions, type ErrorScope} from './in-process.js';
 export {DeviceAvailability, SUMMARY_MS, type AvailabilityOptions} from './availability.js';
 export {
-  errorType, type Diagnostic, type DiagnosticEvent, type DiagnosticLevel, type DiagnosticOutcome, type EdgeRoute, type OnDiagnostic,
+  errorType, levelOf, type Diagnostic, type DiagnosticEvent, type DiagnosticLevel, type DiagnosticOutcome, type EdgeRoute, type OnDiagnostic,
 } from './diagnostics.js';
 export {
   noSpans, startSpan, type Span, type SpanAttributes, type SpanKind, type SpanName, type SpanOptions, type SpanRecorder, type SpanStatus,
@@ -17,12 +17,15 @@ export {
   type SyncOptions, type SyncProvider, type SyncRequest, type SyncResult,
 } from './sync.js';
 export {
-  MAX_SECRETS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkManifest, checkModuleName, type BunnyModule,
-  type ConfigurationCheck, type Configure, type Configured, type ManifestProblem, type LogFields, type Logger, type ModuleContext, type ModuleManifest,
-  type ModuleScheduler, type Secrets, type Tracing, type WorkerCallOptions, type Workers,
+  CONTENT_PATH, MAX_PAGES, MAX_SECRETS, MAX_TOOLS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkContributions,
+  checkManifest, checkModuleName, type BunnyModule, type ConfigurationCheck, type Configure, type Configured, type JsonObjectSchema,
+  type ManifestProblem, type LogFields, type Logger, type ModuleContent, type ModuleContext, type ModuleManifest, type ModulePage,
+  type ModuleScheduler, type ModuleSettings, type ModuleTool, type Secrets, type Tracing, type WorkerCallOptions, type Workers,
 } from './module.js';
 export {WorkerCalls, type WorkerCallsOptions} from './workers.js';
 export {childOf, traceFields} from './trace.js';
-export {REFUSAL_WINDOW_MS, RemoteEdge, type EdgeOptions, type RemoteGrant} from './remote-edge.js';
-export {connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
-export {REMOTE_PATH, REMOTE_SCHEMA} from './remote-protocol.js';
+export {
+  HEARTBEAT_MS, MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, REFUSAL_WINDOW_MS, REMEMBER_MS, RemoteEdge, STALL_MS, type EdgeOptions, type EdgePermissions, type EdgePrincipal, type RemoteGrant,
+} from './remote-edge.js';
+export {IDLE_MS, connectRemote, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
+export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';

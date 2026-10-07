@@ -11,7 +11,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
 import {shippedModules, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter, errorFields} from '../src/log.js';
-import {RUNTIME_PACKAGE_VERSION, UUID, contextOf, fixture, health, it, setMode, stateDir, waitFor} from './support.js';
+import {RUNTIME_PACKAGE_VERSION, UUID, contextOf, fixture, health, it, modeFor, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));
@@ -59,7 +59,7 @@ it('every stderr line of a runtime process is a contract record carrying the run
     const refused = shippedModules.slice(1).map(() => 'runtime.module.refused');
     assert.deepEqual(records.map(record => record.event_name), ['runtime.started', ...refused, 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
     for (const record of records) {
-      assert.equal(record.schema_version, '1.3');
+      assert.equal(record.schema_version, '1.4');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
       assert.equal(record.resource['service.name'], 'runtime');
       assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);
@@ -122,7 +122,7 @@ it('a sink that throws never changes what the runtime or its modules do', async 
     log: () => { calls += 1; throw new Error('the journal is gone'); },
   });
   context.after(() => runtime.stop());
-  const result = await contextOf(caller).sdk.request('bunny.cmd.mode.chatty', setMode, {timeoutMs: 1000});
+  const result = await contextOf(caller).sdk.request('bunny.cmd.mode.chatty', modeFor('chatty'), {timeoutMs: 1000});
   assert.equal(result.status, 'accepted');
   assert.equal(runtime.health().status, 'ok');
   assert.ok(runtime.health().modules.every(module => module.state === 'running'));

@@ -712,7 +712,7 @@ it('after a reconnect, a sync copy asks for no sync until every family is regist
   });
 });
 
-it('a command forwarded again while its first forward still waits never reaches the responder, and is unavailable with no reply', () => withEdge({}, async edge => {
+it('a command sent again while its first forward still waits never reaches the responder: the edge refuses it as duplicate-conflict', () => withEdge({}, async edge => {
   const responder = checked(await edge.connect('bunny/wall'));
   const holding = deferred<Reply>();
   const got: string[] = [];
@@ -730,14 +730,11 @@ it('a command forwarded again while its first forward still waits never reaches 
     edge.edge.disconnect('bunny/wall');
     await until(() => reconnects(edge, 'bunny/wall') === 2, 'the reconnect');
     await until(() => edge.received('respond') === 2, 'the responder registered again');
-    // The same command message again: its forward is still live, so the edge does not send it.
+    // The same command message again: the edge remembers it until its expiry, so it refuses the repeat before it
+    // reaches the bus (Hub #835). Before #835 the bus took it, and only the live forward kept it from the responder.
     const again = await send();
-    assert.equal(again.status, 200);
-    const result = (again.body as {result: {status: string; error: ErrorBody; reply?: unknown}}).result;
-    assert.equal(result.status, 'rejected');
-    assert.equal(result.error.error.code, 'unavailable');
-    assert.equal(result.error.error.retryable, true);
-    assert.equal(result.reply, undefined, 'no reply message the responder never sent');
+    assert.equal(again.status, 409);
+    assert.equal((again.body as ErrorBody).error.code, 'duplicate-conflict');
     assert.deepEqual(got, ['work'], 'the responder saw the command once');
   } finally {
     holding.resolve({status: 'accepted'});

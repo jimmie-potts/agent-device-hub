@@ -1,4 +1,4 @@
-"""Profiles 1.2 (Hub #903) and 1.3 (Hub #949): Python construction keeps only the attributes the record's own profile registers."""
+"""Profiles 1.2 (Hub #903), 1.3 (Hub #949) and 1.4 (Hub #835): Python construction keeps only the attributes the record's own profile registers."""
 import json
 import sys
 import unittest
@@ -21,7 +21,8 @@ class Profiles(unittest.TestCase):
         for version in ('1.0', '1.1', '1.2'):
             self.assertEqual([name for name in _profile_span_names(catalog, version) if name in later], [], version)
         self.assertEqual(_profile_span_names(catalog, '1.3'), catalog['span_names'])
-        self.assertEqual(_profile_span_names(catalog, '1.4'), [])
+        self.assertEqual(_profile_span_names(catalog, '1.4'), catalog['span_names'], 'profile 1.4 adds no span name')
+        self.assertEqual(_profile_span_names(catalog, '1.5'), [])
 
     def test_default_profile_leaves_out_later_attributes(self):
         record = hub_record()
@@ -40,8 +41,16 @@ class Profiles(unittest.TestCase):
         newest = create_record({**record, 'schema_version': '1.2'})
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
+    def test_profile_1_4_attributes_stay_in_profile_1_4(self):
+        self.assertEqual(ARTIFACT_VERSION, '1.4.0')
+        record = hub_record()
+        record['attributes'].update({'http.route': '/api/v2/families/{family}', 'http.request.method': 'GET', 'error.type': 'TypeError'})
+        earlier = create_record({**record, 'schema_version': '1.3'})
+        self.assertEqual(earlier['value']['attributes'], {'bunny.provenance': 'source', 'error.type': 'TypeError'})
+        latest = create_record({**record, 'schema_version': '1.4'})
+        self.assertEqual(latest['value']['attributes'], record['attributes'])
+
     def test_profile_1_3_attributes_stay_in_profile_1_3(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.3.0')
         record = hub_record()
         record['attributes'].update({'bunny.attempt_count': 3, 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.2'})

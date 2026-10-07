@@ -66,6 +66,16 @@ export class Redactions {
     return [...this.#secrets].some(secret => text.includes(secret));
   }
 
+  /**
+   * Whether `bytes` hold one of the secrets, as its UTF-8 bytes anywhere in them, such as in an image's metadata, which
+   * no text check of a decoding would find.
+   */
+  holdsBytes(bytes: Uint8Array): boolean {
+    if (this.#secrets.size === 0) return false;
+    const view = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return [...this.#secrets].some(secret => view.includes(Buffer.from(secret, 'utf8')));
+  }
+
   /** Whether any of `attributes` holds a secret. */
   carried(attributes: LogFields): boolean {
     return Object.values(attributes).some(value => this.holds(value));

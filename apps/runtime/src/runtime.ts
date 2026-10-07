@@ -1,18 +1,20 @@
 // The runtime (ADR 0012, "Runtime and transport"): one process, one in-process bus and a fixed list of modules, with a
-// loopback health endpoint. It runs with zero modules. With an edge (#920), remote parts make the SDK calls over SSE and
-// HTTP on the same listener, each with a grant from the state directory.
+// loopback health endpoint. It runs with zero modules. With an edge (#920), its gateway (#835) serves the SDK edge, the
+// `/api/v2` routes, MCP, the modules' pages and browser sign-in on the same listener, for the client credentials and
+// browser sessions its configuration file's `edge` section grants.
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, SdkError, type BunnyModule, type Clock, type Scheduler} from '@jimmie-potts/sdk';
-import {diagnosticWriter} from './diagnostics.js';
+import {MODULE_API_VERSION, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
+import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {openSpanFile} from './span-file.js';
-import {RuntimeError, prepareStateDirectory, readEdgeGrants, readRuntimeConfig, type EdgeGrant, type RuntimeConfig} from './state.js';
+import {RuntimeError, prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from './state.js';
 import {startTracing, type SpanSink} from './tracing.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
@@ -86,12 +88,16 @@ export type RuntimeOptions = {
   /** The modules were built with their simulated transports (`--simulate`); the `runtime.started` record says so. */
   simulate?: boolean;
   /**
-   * Serves the SDK edge on the health listener once every module has started, with the grants in the state
-   * directory's `edge-grants.json` (`readEdgeGrants`). `schemas` are the modules' own payload schemas; the edge checks
-   * remote parts' messages against them and the core families. `onServing` is called with the edge once it serves, so
-   * that a verification run can drop a part's stream as a lost connection would (#920).
+   * Serves the gateway (#835) on the health listener once every module has started: the SDK edge, the `/api/v2` routes,
+   * MCP, the modules' pages and browser sign-in, for the client credentials in the file that the configuration file's
+   * `edge` section names. `schemas` are the modules' own payload schemas; the edge checks remote parts' messages against
+   * them and the core families. `onServing` is called with the edge once it serves, so that a verification run can drop
+   * a part's stream as a lost connection would (#920). `liveness` sets the edge's heartbeat and stall limits, for tests.
    */
-  edge?: {schemas: Readonly<Record<string, object>>; onServing?: (edge: RemoteEdge) => void};
+  edge?: {
+    schemas: Readonly<Record<string, object>>; onServing?: (edge: RemoteEdge) => void;
+    liveness?: {heartbeatMs?: number; stallMs?: number; scheduler?: Scheduler};
+  };
 };
 
 export interface Runtime {
@@ -102,6 +108,14 @@ export interface Runtime {
   spans(): RecentSpans;
   /** Stops every module within its stop deadline, then the health server. Calling it again returns the same promise. */
   stop(): Promise<void>;
+  /**
+   * Reads the edge's credentials file again (#835), as SIGHUP asks the service process to: a credential granted since
+   * is taken, and one revoked or changed has its streams ended and its next call refused. A file the runtime refuses
+   * keeps the credentials it had, and rejects with its `RuntimeError`. Without an edge, it does nothing.
+   */
+  reload(): Promise<void>;
+  /** The gateway, while it serves: its edge and its callers, for verification runs and tests. */
+  gateway(): Gateway | undefined;
 }
 
 const timers: Scheduler = {after: (delayMs, callback) => {
@@ -119,44 +133,44 @@ export const RECENT_SPANS = 1024;
 export type RecentSpans = {recent: readonly string[]; evicted: number};
 
 /**
- * Where the listener sends the SDK edge's routes: nowhere without an edge, the edge while it serves, and a refusal while
- * the modules start or the runtime stops.
+ * Where the listener sends every route but health: nowhere without an edge, the gateway while it serves, and a refusal
+ * while the modules start or the runtime stops.
  */
-type EdgeRoute = {state: 'off'} | {state: 'starting'} | {state: 'serving'; edge: RemoteEdge} | {state: 'stopping'};
+type GatewayRoute = {state: 'off'} | {state: 'starting'} | {state: 'serving'; gateway: Gateway} | {state: 'stopping'};
 const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
-  starting: 'the edge serves once every module has started',
+  starting: 'the gateway serves once every module has started',
   stopping: 'the runtime is stopping',
 };
 
 /**
- * Serves health, and the SDK edge when there is one, on loopback. A request must name this listener as its host and
- * carry no browser origin or cross-site fetch metadata, as the Hub and local controllers require, so that a page on a
- * rebinding name cannot read it or reach the edge.
+ * Serves health, and the gateway when there is one, on loopback. Every request must name this listener as its host,
+ * so that a page on a rebinding name reaches nothing. Health also takes no browser origin or cross-site fetch
+ * metadata, as the Hub and local controllers require; the gateway checks each caller's own (#835).
  */
-function serve(port: number, health: () => RuntimeHealth, edge: () => EdgeRoute): Promise<Server> {
+function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute): Promise<Server> {
   let hosts: readonly string[] = [];
   const answer = (response: ServerResponse, status: number, body: object): void => {
-    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store'}).end(JSON.stringify(body));
+    response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}).end(JSON.stringify(body));
   };
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const site = request.headers['sec-fetch-site'];
     // A host name is not case-sensitive; the port must match exactly.
     const host = (request.headers.host ?? '').toLowerCase();
-    const local = hosts.includes(host) && request.headers.origin === undefined && (site === undefined || site === 'none');
-    const route = edge();
-    const remote = route.state !== 'off' && (request.url ?? '').startsWith(`${REMOTE_PATH}/`);
-    if (!local) {
-      answer(response, 403, errorBody('forbidden', {detail: `${remote ? 'the edge' : 'health'} answers only local requests that name this listener`}));
+    const route = gateway();
+    const isHealth = (request.url ?? '').split('?')[0] === HEALTH_PATH;
+    if (!hosts.includes(host)) {
+      answer(response, 403, errorBody('forbidden', {detail: isHealth || route.state === 'off' ? 'health answers only local requests that name this listener' : 'the gateway answers only requests that name this listener'}));
       return;
     }
-    if (remote) {
-      if (route.state === 'serving') route.edge.handle(request, response);
-      else answer(response, 503, errorBody('unavailable', {detail: UNAVAILABLE[route.state]}));
+    if (isHealth || route.state === 'off') {
+      const local = request.headers.origin === undefined && (site === undefined || site === 'none');
+      if (!local) answer(response, 403, errorBody('forbidden', {detail: 'health answers only local requests that name this listener'}));
+      else if (request.method === 'GET' && request.url === HEALTH_PATH) answer(response, 200, health());
+      else answer(response, 404, errorBody('not-found', {detail: 'no such route'}));
       return;
     }
-    const found = request.method === 'GET' && request.url === HEALTH_PATH;
-    if (found) answer(response, 200, health());
-    else answer(response, 404, errorBody('not-found', {detail: 'no such route'}));
+    if (route.state === 'serving') route.gateway.handle(request, response);
+    else answer(response, 503, errorBody('unavailable', {detail: UNAVAILABLE[route.state]}));
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -204,7 +218,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
   const config: RuntimeConfig | undefined = options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile);
-  const grants: EdgeGrant[] | undefined = options.edge === undefined ? undefined : await readEdgeGrants(stateDir);
+  const edgeConfig = config?.edge;
+  if (options.edge !== undefined && edgeConfig === undefined) {
+    throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
+  }
+  const credentials: EdgeCredential[] | undefined = options.edge === undefined || edgeConfig === undefined ? undefined : await readEdgeCredentials(edgeConfig.credentials);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
   const recent: string[] = [];
@@ -244,7 +262,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       modules: modulesHealth,
     };
   };
-  let edge: EdgeRoute = {state: grants === undefined ? 'off' : 'starting'};
+  let edge: GatewayRoute = {state: credentials === undefined ? 'off' : 'starting'};
   let server: Server;
   try {
     server = await serve(port, health, () => edge);
@@ -269,34 +287,55 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   }
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   // A record carries the listener's port, never its URL.
-  log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': grants !== undefined});
+  log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   await host.start();
-  if (grants !== undefined && validator !== undefined) {
-    let mounted: RemoteEdge;
+  if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
+    const gateway = new Gateway({
+      bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
+      clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}),
+    });
     try {
-      mounted = new RemoteEdge({bus: host.bus, validator, grants, onDiagnostic: diagnosticWriter(log), now: () => clock.now(), scheduler});
+      await gateway.start(url, [`${HOST}:${bound}`, `localhost:${bound}`]);
     } catch (error) {
-      // The grants were checked when read; the edge refuses only what they could not show, such as a malformed one.
+      await gateway.close();
       await host.stop();
       await close(server);
       await endTracing();
-      throw error instanceof SdkError ? new RuntimeError('edge-grants-invalid', 'the edge refused the grants') : error;
+      throw error;
     }
-    edge = {state: 'serving', edge: mounted};
-    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': grants.length});
-    options.edge?.onServing?.(mounted);
+    edge = {state: 'serving', gateway};
+    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': credentials.length});
+    options.edge.onServing?.(gateway.edge);
   }
   let stopping: Promise<void> | undefined;
+  let reloading: Promise<void> = Promise.resolve();
   return {
     url,
     health,
     spans: () => ({recent: [...recent], evicted}),
+    gateway: () => edge.state === 'serving' ? edge.gateway : undefined,
+    reload: () => {
+      // One reload at a time, each reading the file as it is then.
+      reloading = reloading.catch(() => {}).then(async () => {
+        if (edge.state !== 'serving' || edgeConfig === undefined) return;
+        const {gateway} = edge;
+        try {
+          const next = await readEdgeCredentials(edgeConfig.credentials);
+          gateway.reload(next);
+          log.info('runtime.edge.reloaded', {'bunny.outcome': 'succeeded', 'bunny.grant_count': next.length});
+        } catch (error) {
+          log.error('runtime.edge.reloaded', {'bunny.outcome': 'failed', ...errorFields(error)});
+          throw error;
+        }
+      });
+      return reloading;
+    },
     stop: () => stopping ??= (async () => {
-      // Remote parts go first, so none acts on a module that is stopping. Until the listener closes, the edge's routes
-      // answer that the runtime is stopping.
+      // Remote parts go first, so none acts on a module that is stopping. Until the listener closes, the gateway's
+      // routes answer that the runtime is stopping.
       const serving = edge;
       if (serving.state !== 'off') edge = {state: 'stopping'};
-      if (serving.state === 'serving') await serving.edge.close();
+      if (serving.state === 'serving') await serving.gateway.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
       // The modules' work has ended, so its spans have too: flush them within the contract's bound.

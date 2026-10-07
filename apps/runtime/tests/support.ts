@@ -2,13 +2,16 @@
 // after their test. These helpers serve only this package's tests.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {chmod, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import type {BunnyModule, CommandDraft, Draft, ModuleContext, Scheduler} from '@jimmie-potts/sdk';
-import {HEALTH_PATH, startRuntime, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth, type RuntimeOptions} from '../src/index.js';
+import {
+  CONFIG_SCHEMA, CREDENTIALS_SCHEMA, HEALTH_PATH, startRuntime, tokenDigest, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth,
+  type RuntimeOptions, type Scope,
+} from '../src/index.js';
 
 /**
  * Checks a test registers to run once everything else has stopped and closed. node:test skips the after hooks that
@@ -41,6 +44,43 @@ export async function stateDir(context: TestContext): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-runtime-')));
   context.after(() => rm(dir, {recursive: true, force: true}));
   return dir;
+}
+
+/** A test part's grant at the edge (Hub #835): its source, its token and the Hub's scopes, all by default. */
+export type EdgePart = {source: string; token: string; id?: string; scopes?: readonly Scope[]};
+export const ALL_SCOPES: readonly Scope[] = ['read', 'control', 'ingest', 'admin'];
+
+/** Writes a private file, owner-only whatever the umask. */
+async function writePrivate(file: string, text: string, mode = 0o600): Promise<void> {
+  await writeFile(file, text, {mode});
+  await chmod(file, mode);
+}
+
+/**
+ * A private configuration file with an `edge` section and the credentials file it names, as the installer writes them,
+ * in a new private directory outside every checkout, removed after the test. Each part's credential keeps its token's
+ * digest only. `credentials` replaces the credentials file's text, and `mode` its permissions, for tests that refuse it.
+ * `mcp` turns MCP on, which is off unless the section says so.
+ */
+export async function edgeConfig(context: TestContext, parts: readonly EdgePart[], options: {
+  modules?: Record<string, unknown>; browserAccess?: 'trusted-loopback'; editorLinks?: Record<string, string>; placeLinks?: Record<string, string>;
+  credentials?: string; mode?: number; mcp?: boolean;
+} = {}): Promise<{config: string; credentials: string; dir: string}> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-config-')));
+  await chmod(dir, 0o700);
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const credentials = join(dir, 'edge-credentials.json');
+  const listed = parts.map((part, index) => ({
+    id: part.id ?? `part-${index + 1}`, source: part.source, digest: tokenDigest(part.token), scopes: [...(part.scopes ?? ALL_SCOPES)],
+  }));
+  await writePrivate(credentials, options.credentials ?? JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}), options.mode);
+  const config = join(dir, 'runtime-config.json');
+  const edge = {
+    credentials, ...(options.browserAccess === undefined ? {} : {browserAccess: options.browserAccess}), ...(options.mcp === undefined ? {} : {mcp: options.mcp}),
+    ...(options.editorLinks === undefined ? {} : {editorLinks: options.editorLinks}), ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
+  };
+  await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: options.modules ?? {}, edge}));
+  return {config, credentials, dir};
 }
 
 /** An in-test module. Its start keeps the context for the test, then runs `body`; it counts its stops. */
@@ -169,5 +209,7 @@ export const session = (revision: number): Draft<{id: string; revision: number}>
   ({kind: 'state', type: 'org.bunny.session.updated', subject: 's1', dataschema: `${BASE}test-session/2.0`, data: {id: 's1', revision}});
 export const turnEnded: Draft<{sessionId: string}> =
   {kind: 'occurrence', type: 'org.bunny.turn.ended', subject: 's1', dataschema: `${BASE}test-turn/2.0`, data: {sessionId: 's1'}};
-export const setMode: CommandDraft<{mode: string}> =
-  {type: 'org.bunny.mode.set.requested', subject: 'wall', dataschema: `${BASE}test-mode/2.0`, data: {mode: 'quiet'}};
+/** A mode command for `target`: its subject is its key's last token, `bunny.cmd.mode.<target>` (ADR 0012). */
+export const modeFor = (target: string): CommandDraft<{mode: string}> =>
+  ({type: 'org.bunny.mode.set.requested', subject: target, dataschema: `${BASE}test-mode/2.0`, data: {mode: 'quiet'}});
+export const setMode: CommandDraft<{mode: string}> = modeFor('wall');

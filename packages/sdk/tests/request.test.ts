@@ -127,9 +127,10 @@ it('a request nobody responds to is refused as unavailable at once', async () =>
   assert.equal(result.error.error.code, 'unavailable');
   assert.equal(result.error.error.retryable, true, 'nothing reached an owner, so sending again is safe');
   assert.equal(result.error.error.requestId, result.requestId);
-  const long = await core.request(`bunny.cmd.mode.${'x'.repeat(2000)}`, setMode('work'), {timeoutMs: 60_000});
+  const target = 'x'.repeat(2000);
+  const long = await core.request(`bunny.cmd.mode.${target}`, setMode('work', target), {timeoutMs: 60_000});
   assert.equal(long.status, 'rejected');
-  assert.equal(long.error.error.detail?.length, 1024, 'a detail quoting a long key is cut to the error block\'s limit');
+  assert.equal(long.error.error.detail?.includes(target), false, 'a detail never quotes the key');
 });
 
 it('closing a responder refuses the requests still waiting for it as unavailable', async () => {

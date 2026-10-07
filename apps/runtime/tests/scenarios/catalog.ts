@@ -14,7 +14,8 @@ import {
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {
-  OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, runtimeEnded, sessionStarted, turnEnded, turnStarted, type ObservationOptions,
+  OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, runtimeEnded, sessionStarted, turnEnded, turnStarted, unknownApproval,
+  type ObservationOptions,
 } from '../fixtures/agents.js';
 import type {ChimeDeviceState} from '../fixtures/chime.js';
 import type {HistoryEntry} from '../fixtures/core.js';
@@ -73,6 +74,36 @@ export interface ReaderView {
    */
   gaps(): number;
 }
+
+/**
+ * Who calls the runtime's gateway (Hub #835): a part, with its client credential; `browser`, with a session that a trusted
+ * loopback page opened; `stranger`, with a made-up token; or `anonymous`, with neither.
+ */
+export type Caller = Role | 'browser' | 'stranger' | 'anonymous';
+/** One HTTP call to the gateway. `origin: 'other'` sends it as a page on another site would. */
+export type GatewayCall = {
+  as: Caller; method: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; headers?: Readonly<Record<string, string>>; origin?: 'other';
+};
+/** What the gateway answered: its status, its headers in lowercase and its body as text. */
+export type GatewayAnswer = {status: number; headers: Readonly<Record<string, string>>; text: string};
+
+/**
+ * Each part's grant at the edge, as a run seeds it and the in-memory harness configures it (Hub #835): the old Hub's
+ * scopes, with no device grant, since no grant limits a part to some devices (owner decision, 2026-10-07). The hook may
+ * only publish lifecycle observations; the reader may only read; the operator and the panel read every record and
+ * command every device and the core's operator commands.
+ */
+export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]}>> = {
+  hook: {scopes: ['ingest']},
+  operator: {scopes: ['read', 'control']},
+  panel: {scopes: ['read', 'control']},
+  reader: {scopes: ['read']},
+};
+/**
+ * The synthetic prefix of every part's token in a harness: no record, message, health entry, answer or proof may carry
+ * it (Hub #835).
+ */
+export const TOKEN_PREFIX = 'tok_SYNTHETIC835';
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
 export type DeviceStates = {lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState; lifx: LifxDeviceState; tidbyt: CloudState};
@@ -143,6 +174,8 @@ export interface Harness {
   loseAcknowledgment(): void;
   /** Stops the runtime cleanly and starts it again on the same state directory. */
   restart(): Promise<void>;
+  /** Calls the runtime's gateway over HTTP, on both transports (Hub #835). */
+  gateway(call: GatewayCall): Promise<GatewayAnswer>;
 }
 
 // Steps
@@ -774,6 +807,11 @@ const speakerPlayback: Scenario = {
   steps: [
     expect('the core and the playback module are running', h => running(h, ['core', 'playback'])),
     expect('the reader\'s copy shows the speakers available with nothing playing over AirPlay', h => playbackShows(h, 'available inactive "" []'), 5000),
+    expect('the operator\'s playback command for another speaker on its key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', {key: playbackCommand('pause').key,
+        draft: {...playbackCommand('pause').draft, subject: 'kitchen'}}, 'req-pb-misrouted', 'msg-pb-misrouted')))), 400, 'invalid-message')),
+    expect('the reader, whose grant may only read, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/reader', playbackCommand('pause'), 'req-pb-reader', 'msg-pb-reader')))), 403, 'forbidden')),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
     act('the operator pauses it as req-pb-pause', h => sendOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
@@ -869,6 +907,19 @@ const lifxBulbs: Scenario = {
       return (ready && beam !== undefined && Object.values(beam.capabilities).every(capability => !capability.supported)) ||
         `pendant-1 ${String(pendant?.availability)}, beam ${show(beam?.capabilities)}`;
     }),
+    // A part whose grant may only read may not command a bulb, and a command whose subject names another bulb than its
+    // key's is refused before the module has it (Hub #835). No grant limits a part to some bulbs: every reader reads them.
+    expect('the reader, whose grant may only read, may not command pendant-1', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/reader', lifxMode('work'), 'req-lifx-reader', 'msg-lifx-reader')))), 403, 'forbidden')),
+    expect('the reader and the panel read both bulbs\' device records', async h => {
+      const panel = keep(h, await h.gateway({as: 'panel', method: 'GET', path: '/api/v2/families/device'}));
+      const reader = keep(h, await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/families/device'}));
+      const ids = (answer: GatewayAnswer): string => show(bodyOf<{records?: {id: string}[]}>(answer)?.records?.map(record => record.id).sort());
+      return (ids(panel) === show(['beam', 'pendant-1']) && ids(reader) === show(['beam', 'pendant-1'])) || `panel ${ids(panel)}, reader ${ids(reader)}`;
+    }),
+    expect('the operator\'s command for the Beam on pendant-1\'s key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', {key: lifxMode('work').key, draft: {...lifxMode('work').draft, subject: 'beam'}}, 'req-lifx-misrouted',
+        'msg-lifx-misrouted')))), 400, 'invalid-message')),
     act('the operator sets pendant-1 to work as req-work', h => sendOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
     expect('history holds req-work succeeded, and the reader shows pendant-1 in work', h =>
       recorded(h, 'req-work', 'succeeded', 'transmitted') === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :
@@ -1100,10 +1151,259 @@ const tidbytTiles: Scenario = {
   ],
 };
 
+// The gateway (Hub #835)
+
+type ErrorAnswer = {error?: {code?: unknown; retryable?: unknown}};
+/** The answer's JSON body, or undefined when it is not JSON. */
+const bodyOf = <T>(answer: GatewayAnswer): T | undefined => {
+  try {
+    return JSON.parse(answer.text) as T;
+  } catch {
+    return undefined;
+  }
+};
+/** The answer is the shared error body with `code`, its registry flag and `status`. */
+function refusedWith(answer: GatewayAnswer, status: number, code: string, retryable = false): Outcome {
+  const error = bodyOf<ErrorAnswer>(answer)?.error;
+  return (answer.status === status && error?.code === code && error.retryable === retryable) || `${answer.status} ${answer.text.slice(0, 200)}`;
+}
+/** The gateway's refusal records of a route, as `<route> <code> <severity>`. */
+const refusals = (h: Harness, route: string): string[] => h.logs().map(({record}) => record)
+  .filter(record => record.event_name === 'runtime.edge.refused' && record.attributes['http.route'] === route)
+  .map(record => `${String(record.attributes['http.route'])} ${String(record.attributes['bunny.code'])} ${record.severity_text}`);
+/**
+ * No log record, published message, health entry or message the reader holds carries a part's token, whose prefix is
+ * the synthetic marker, and neither does any answer `answers` collected.
+ */
+async function noPartToken(h: Harness, answers: readonly GatewayAnswer[] = []): Promise<Outcome> {
+  const places: [string, unknown][] = [
+    ['a log record', h.logs()], ['a published message', h.published()], ['health', await h.health()], ['a message the reader heard', h.reader.heard()],
+    ['an answer', answers],
+  ];
+  const carrying = places.filter(([, value]) => JSON.stringify(value).includes(TOKEN_PREFIX)).map(([place]) => place);
+  return carrying.length === 0 || `a token appears in ${carrying.join(', ')}`;
+}
+
+/** The answers a scenario collected, to scan them for a token at the end. */
+const collected = new WeakMap<Harness, GatewayAnswer[]>();
+const keep = (h: Harness, answer: GatewayAnswer): GatewayAnswer => {
+  collected.set(h, [...collected.get(h) ?? [], answer]);
+  return answer;
+};
+/** Calls the gateway, keeping the answer for the token scan, and checks it. */
+const answers = (call: GatewayCall, check: (answer: GatewayAnswer) => Outcome) => async (h: Harness): Promise<Outcome> =>
+  check(keep(h, await h.gateway(call)));
+
+/** A command message as a raw HTTP client builds it, from `source`, with its own ID, time and expiry. */
+function rawCommand(h: Harness, source: string, {draft}: {key: string; draft: CommandDraft<object>}, requestId: string, id: string): object {
+  const time = h.now();
+  return {
+    specversion: '1.0', bunnyprofile: '2.0', id, source, type: draft.type, subject: draft.subject, time: new Date(time).toISOString(), kind: 'command',
+    datacontenttype: 'application/json', dataschema: draft.dataschema, traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+    expiresat: new Date(time + 10_000).toISOString(), data: {...draft.data, requestId},
+  };
+}
+/** A raw HTTP client's `request` call to the SDK edge, as `as`, carrying `command`. */
+const rawRequest = (as: Role, key: string, command: object): GatewayCall =>
+  ({as, method: 'POST', path: '/api/sdk/v1/request', body: {schema: 'sdk-remote/1.0', key, command}});
+/** A raw HTTP client's `publish` call, as `as` from its own source, of a moment's end: an occurrence no hook may send. */
+const rawMomentEnded = (h: Harness, as: Role, key: string): GatewayCall => ({as, method: 'POST', path: '/api/sdk/v1/publish', body: {schema: 'sdk-remote/1.0', key, message: {
+  specversion: '1.0', bunnyprofile: '2.0', id: 'msg-forged-moment', source: `bunny/parts/${as}`, type: 'org.bunny.moment.ended', subject: 'wall',
+  time: new Date(h.now()).toISOString(), kind: 'occurrence', datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/moment-ended/2.0',
+  traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', data: {requestId: 'req-moment-1', momentId: 'moment-1', ending: 'preempted', endedAtMs: h.now()},
+}}});
+
+/** One MCP tool call as a client credential makes it: initialize, say initialized, call, and end the session. */
+async function mcpCall(h: Harness, as: Role, tool: string, args: object): Promise<{status: number; result?: {structuredContent?: unknown; isError?: boolean}}> {
+  const version = '2025-11-25';
+  const headers = {accept: 'application/json, text/event-stream'};
+  const init = await h.gateway({as, method: 'POST', path: '/mcp', headers, body: {
+    jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: version, capabilities: {}, clientInfo: {name: 'scenario', version: '1.0.0'}},
+  }});
+  const sessionId = init.headers['mcp-session-id'];
+  if (init.status !== 200 || sessionId === undefined) return {status: init.status};
+  const inSession = {...headers, 'mcp-session-id': sessionId, 'mcp-protocol-version': version};
+  await h.gateway({as, method: 'POST', path: '/mcp', headers: inSession, body: {jsonrpc: '2.0', method: 'notifications/initialized'}});
+  const called = await h.gateway({as, method: 'POST', path: '/mcp', headers: inSession, body: {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: tool, arguments: args}}});
+  await h.gateway({as, method: 'DELETE', path: '/mcp', headers: inSession});
+  keep(h, called);
+  return {status: called.status, ...(called.status === 200 ? {result: bodyOf<{result?: {structuredContent?: unknown; isError?: boolean}}>(called)?.result ?? {}} : {})};
+}
+
+/**
+ * The gateway's reads and refusals (Hub #835): a part reads sessions on `/api/v2` and through MCP, and every refusal is
+ * the shared error body with a registry code: an invalid request, a made-up token, a page on another site, a caller
+ * without the scope, and a route of the old Hub, which is logged with the route it asked for.
+ */
+const gatewayReads: Scenario = {
+  id: 'gateway-reads',
+  title: 'a part reads sessions on /api/v2 and through MCP, and every refusal is a registry code',
+  seed: {modules: ['core'], follows: [CORE_FAMILIES]},
+  steps: [
+    act('the hook observes a session start', h => publish(h, sessionStarted)),
+    expect('the reader holds the session', h => session(h) !== undefined || 'the reader holds no session'),
+    expect('the operator reads the session on /api/v2/families/session', answers({as: 'operator', method: 'GET', path: '/api/v2/families/session'}, answer => {
+      const records = bodyOf<{schema?: string; records?: {id: string}[]}>(answer);
+      return (answer.status === 200 && records?.schema === 'family-read/2.0' && records.records?.some(record => record.id === SESSION_ID) === true) ||
+        `${answer.status} ${answer.text.slice(0, 200)}`;
+    })),
+    expect('the snapshot read API answers the core\'s sessions at its revision', answers({as: 'reader', method: 'GET', path: '/api/v2/snapshot?families=session'}, answer => {
+      const snapshot = bodyOf<{revision?: number; records?: {session?: {id: string}[]}}>(answer);
+      return (answer.status === 200 && (snapshot?.revision ?? 0) > 0 && snapshot?.records?.session?.some(record => record.id === SESSION_ID) === true) ||
+        `${answer.status} ${answer.text.slice(0, 200)}`;
+    })),
+    expect('the operator reads the session through the core_sessions MCP tool', async h => {
+      const {status, result} = await mcpCall(h, 'operator', 'core_sessions', {});
+      const sessions = (result?.structuredContent as {kind?: string; data?: {result?: {sessions?: {id: string}[]}}} | undefined)?.data?.result?.sessions;
+      return (status === 200 && result?.isError === false && sessions?.some(record => record.id === SESSION_ID) === true) || `${status} ${show(result).slice(0, 300)}`;
+    }),
+    expect('a malformed family name is invalid-request', answers({as: 'operator', method: 'GET', path: '/api/v2/families/Not_A_Family'}, answer => refusedWith(answer, 400, 'invalid-request'))),
+    expect('an unknown family is not-found', answers({as: 'operator', method: 'GET', path: '/api/v2/families/no-such-family'}, answer => refusedWith(answer, 404, 'not-found'))),
+    expect('a made-up token is unauthenticated', answers({as: 'stranger', method: 'GET', path: '/api/v2/families/session'}, answer => refusedWith(answer, 401, 'unauthenticated'))),
+    expect('no credential at all is unauthenticated', answers({as: 'anonymous', method: 'GET', path: '/api/v2/families/session'}, answer => refusedWith(answer, 401, 'unauthenticated'))),
+    expect('a credential used from a page on another site is forbidden', answers({as: 'operator', method: 'GET', path: '/api/v2/families/session', origin: 'other'},
+      answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('a browser session used from a page on another site is forbidden', answers({as: 'browser', method: 'GET', path: '/api/v2/families/session', origin: 'other'},
+      answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('the hook, which may only send observations, may not read', answers({as: 'hook', method: 'GET', path: '/api/v2/families/session'}, answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('a route of the old Hub is not-found', answers({as: 'operator', method: 'GET', path: '/api/monitor/v1/sessions'}, answer => refusedWith(answer, 404, 'not-found'))),
+    expect('and is logged with the route it asked for, never its path\'s values', h => {
+      const logged = refusals(h, '/api/monitor/v1/sessions');
+      return show(logged) === show(['/api/monitor/v1/sessions not-found INFO']) || `logged ${show(logged)}`;
+    }),
+    holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
+  ],
+};
+
+/**
+ * Each part may use only what its grant allows (Hub #835): a hook's credential may not request a command or read, and
+ * publishes lifecycle observations only; the reader's may not command, and the operator's commands a device with a
+ * command whose subject is its key's last token. A command that a raw HTTP client sends again is refused as a
+ * duplicate, and the lamp runs it once.
+ */
+const grantsAndDuplicates: Scenario = {
+  id: 'grants-and-duplicates',
+  title: 'a token outside its grant is refused, and a command sent again runs once',
+  seed: {modules: ['core', 'lamp'], follows: FOLLOW_ALL},
+  steps: [
+    expect('the hook\'s credential may not request a lamp command', answers(rawRequest('hook', 'bunny.cmd.lamp.lamp-1',
+      {}), answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('nor may the reader\'s', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader', 'bunny.cmd.lamp.lamp-1',
+      rawCommand(h, 'bunny/parts/reader', switchLamp('lamp-1', 'on'), 'req-reader', 'msg-reader')))), 403, 'forbidden')),
+    expect('nor may the operator send, on lamp-1\'s key, a command whose subject names another lamp: it is invalid-message', async h =>
+      refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
+        rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-9', 'on'), 'req-misrouted', 'msg-misrouted')))), 400, 'invalid-message')),
+    holds('no lamp switched', h => switches(h) === 0 || `${switches(h)} switches`, 200),
+    expect('the hook may publish lifecycle observations only: another family on a lifecycle key is forbidden', async h =>
+      refusedWith(keep(h, await h.gateway(rawMomentEnded(h, 'hook', 'bunny.event.lifecycle.wall'))), 403, 'forbidden')),
+    holds('and nobody heard it', h => !h.reader.heard().some(message => message.type === 'org.bunny.moment.ended') || 'the reader heard the forged moment', 200),
+    act('the operator sends a raw command to switch lamp-1 on', async h => {
+      const answer = keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1', rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-raw', 'msg-raw-1'))));
+      const result = bodyOf<{result?: {status?: string}}>(answer)?.result;
+      if (answer.status !== 200 || result?.status !== 'accepted') throw new Error(`${answer.status} ${answer.text.slice(0, 200)}`);
+    }),
+    expect('the lamp is on', h => lampPower(h, 'on')),
+    expect('the same message sent again is refused as duplicate-conflict', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
+      rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-1', 'on'), 'req-raw', 'msg-raw-1')))), 409, 'duplicate-conflict')),
+    holds('the lamp ran it once', h => (received(h, 'req-raw') === 1 && switches(h) === 1) || `received ${received(h, 'req-raw')}, ${switches(h)} switches`, 300),
+    holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
+  ],
+};
+
+/** The approval-recover command's draft for the session in the reader's copy. */
+const recovery = (record: SessionRecord): object => ({session: record.id, turnId: 'turn-1', expectedRevision: record.revision});
+
+/**
+ * The operator's approval recovery (Hub #835, carried from the old Hub's `recover-approval`): an approval without an
+ * ID stays waiting across a restart, which leaves the session's evidence uncertain, and the operator retires it with the
+ * 2.0 command through the gateway. The hook may not.
+ */
+const approvalRecovery: Scenario = {
+  id: 'approval-recovery',
+  title: 'an operator recovers an approval left uncertain by a restart',
+  seed: {modules: ['core'], follows: [CORE_FAMILIES]},
+  steps: [
+    act('the hook observes a turn start and an approval without an ID', async h => {
+      await publish(h, turnStarted);
+      await publish(h, unknownApproval);
+    }),
+    expect('the reader holds the session waiting for the approval', h => session(h)?.attention.length === 1 || `attention ${show(session(h)?.attention)}`),
+    act('the runtime restarts', h => h.restart()),
+    expect('the session is uncertain since the restart', h => session(h)?.restartUncertain === true || `record ${show(session(h)).slice(0, 200)}`),
+    expect('the hook may not recover it', async h => {
+      const record = session(h);
+      if (record === undefined) return 'no session';
+      return refusedWith(keep(h, await h.gateway({as: 'hook', method: 'POST', path: '/api/v2/commands/approval-recover', body: recovery(record)})), 403, 'forbidden');
+    }),
+    expect('a stale revision is revision-conflict', async h => {
+      const record = session(h);
+      if (record === undefined) return 'no session';
+      const stale = {...recovery(record), expectedRevision: record.revision - 1};
+      return refusedWith(keep(h, await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/approval-recover', body: stale})), 409, 'revision-conflict');
+    }),
+    act('the operator recovers it with the revision it read', async h => {
+      const record = session(h);
+      if (record === undefined) throw new Error('no session');
+      const answer = keep(h, await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/approval-recover', body: {...recovery(record), requestId: 'req-recover'}}));
+      if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new Error(`${answer.status} ${answer.text.slice(0, 200)}`);
+    }),
+    expect('the reader\'s session waits for nothing', h => session(h)?.attention.length === 0 || `attention ${show(session(h)?.attention)}`),
+    expect('the reader heard the approval cleared as recovered', h => h.reader.heard().some(message =>
+      message.type === 'org.bunny.attention.cleared' && (message.data as {cause?: string}).cause === 'recovered') || 'no recovered clearing'),
+    holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
+  ],
+};
+
+/**
+ * A module's contributions (Hub #835, module API 1.2): the sign's page, the preview it loads by reference, its settings
+ * and its MCP tool are served from its manifest. A browser session opens the page; a caller without one is refused.
+ */
+const moduleContributions: Scenario = {
+  id: 'module-contributions',
+  title: 'a module\'s page, content, settings and MCP tool are served from its manifest',
+  seed: {modules: ['core', 'sign'], follows: [CORE_FAMILIES, ['sign']], config: {sign: SIGN_SECTION}},
+  steps: [
+    expect('the core and the sign are running', h => running(h, ['core', 'sign'])),
+    expect('the module list shows the operator the sign\'s page, tool and settings', answers({as: 'operator', method: 'GET', path: '/api/v2/modules'}, answer => {
+      const sign = bodyOf<{modules?: {name: string; pages: {path: string}[]; tools: string[]; settings: boolean}[]}>(answer)?.modules?.find(module => module.name === 'sign');
+      return (sign?.pages[0]?.path === '/modules/sign/preview' && sign.tools.includes('sign_status') && sign.settings) || `${answer.status} ${answer.text.slice(0, 300)}`;
+    })),
+    expect('the hook, whose grant may not read, is refused the sign\'s settings, which name its address', answers({as: 'hook', method: 'GET', path: '/api/v2/modules/sign/settings'},
+      answer => (refusedWith(answer, 403, 'forbidden') === true && !answer.text.includes('192.0.2.10')) || `${answer.status} ${answer.text.slice(0, 200)}`)),
+    expect('a browser session opens the sign\'s page, which refers to its preview by reference', answers({as: 'browser', method: 'GET', path: '/modules/sign/preview'}, answer =>
+      (answer.status === 200 && (answer.headers['content-type'] ?? '').startsWith('text/html') && answer.text.includes('src="content/preview.png"') &&
+        (answer.headers['content-security-policy'] ?? '').includes('script-src') === false) || `${answer.status} ${answer.text.slice(0, 200)}`)),
+    expect('and loads the preview from the sign\'s content', answers({as: 'browser', method: 'GET', path: '/modules/sign/content/preview.png'}, answer =>
+      (answer.status === 200 && answer.headers['content-type'] === 'image/png') || `${answer.status} ${answer.headers['content-type'] ?? ''}`)),
+    expect('without a session the page is refused', answers({as: 'anonymous', method: 'GET', path: '/modules/sign/preview'}, answer => refusedWith(answer, 401, 'unauthenticated'))),
+    expect('the operator reads the sign\'s settings: what its configuration accepted, without its token', answers({as: 'operator', method: 'GET', path: '/api/v2/modules/sign/settings'},
+      answer => {
+        const shown = bodyOf<{settings?: {greeting?: string; signs?: {id: string}[]}}>(answer)?.settings;
+        return (answer.status === 200 && shown?.greeting === 'hello' && shown.signs?.[0]?.id === 'sign-1' && !answer.text.includes(SYNTHETIC_TOKEN)) ||
+          `${answer.status} ${answer.text.slice(0, 200)}`;
+      })),
+    expect('the operator calls the sign_status MCP tool', async h => {
+      const {status, result} = await mcpCall(h, 'operator', 'sign_status', {});
+      const signs = (result?.structuredContent as {data?: {result?: {signs?: {id: string}[]}}} | undefined)?.data?.result?.signs;
+      return (status === 200 && result?.isError === false && signs?.[0]?.id === 'sign-1') || `${status} ${show(result).slice(0, 300)}`;
+    }),
+    expect('a tool call with an argument the tool does not take is refused before it runs', async h => {
+      const {status, result} = await mcpCall(h, 'operator', 'sign_status', {address: '192.0.2.10'});
+      const code = (result?.structuredContent as {code?: string} | undefined)?.code;
+      return (status === 200 && result?.isError === true && code === 'invalid-request') || `${status} ${show(result).slice(0, 300)}`;
+    }),
+    holds('no log record, message, health entry or answer carries a token', async h => {
+      const outcome = await noToken(h);
+      return outcome === true ? noPartToken(h, collected.get(h)) : outcome;
+    }, 100),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
-  configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs, deviceOwners, tidbytTiles,
+  configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs, deviceOwners, tidbytTiles, gatewayReads, grantsAndDuplicates,
+  approvalRecovery, moduleContributions,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

@@ -6,16 +6,17 @@
 // end the part's stream, and the same remote part reconnects on its own, as in the in-memory harness; its timers wait
 // until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
 import {readFile} from 'node:fs/promises';
-import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
-import {EDGE_GRANTS_FILE, HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
-import {ROLES, type DeviceStates, type Generational, type Harness, type Role, type Seed, type Simulation} from '../tests/scenarios/catalog.js';
-import {Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
+import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
+import {
+  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type Role, type Seed, type Simulation,
+} from '../tests/scenarios/catalog.js';
+import {GatewayClient, Reader, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
-import {stateDirOf} from './seed.js';
+import {partTokensOf} from './seed.js';
 
 /** Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. */
 export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed};
@@ -61,10 +62,15 @@ class HeldScheduler implements Scheduler {
   }
 }
 
-/** The run's grants, by source, from the state directory. They are never printed. */
+/** The parts' run-generated tokens, by role, from the run's private token file. They are never printed. */
+export async function readPartTokens(dataDir: string): Promise<Record<Role, string>> {
+  return JSON.parse(await readFile(partTokensOf(dataDir), 'utf8')) as Record<Role, string>;
+}
+
+/** The parts' tokens by source. They are never printed. */
 export async function readGrants(dataDir: string): Promise<Map<string, string>> {
-  const document = JSON.parse(await readFile(join(stateDirOf(dataDir), EDGE_GRANTS_FILE), 'utf8')) as {grants: {source: string; token: string}[]};
-  return new Map(document.grants.map(({source, token}) => [source, token]));
+  const tokens = await readPartTokens(dataDir);
+  return new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
 }
 
 type Part = {role: Role; participant: Participant | undefined; closed: boolean; scheduler: HeldScheduler};
@@ -95,10 +101,13 @@ class Run implements RunHarness {
   /** Refreshes run one after another, so two never append the same records. */
   #refreshing: Promise<void> = Promise.resolve();
 
-  constructor(target: RunTarget, grants: Map<string, string>) {
+  readonly #client: GatewayClient;
+
+  constructor(target: RunTarget, tokens: Readonly<Record<Role, string>>) {
     this.#target = target;
-    this.#grants = grants;
+    this.#grants = new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
     this.#origin = new URL(target.url).origin;
+    this.#client = new GatewayClient(() => this.#origin, tokens);
     this.reader = new Reader(target.seed.follows);
     this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler()}]));
   }
@@ -197,7 +206,17 @@ class Run implements RunHarness {
 
   async restart(): Promise<void> {
     await this.#act(() => this.#post('restart'));
+    // The restart ended the browser's session with the runtime that opened it.
+    this.#client.forget();
     await this.#refresh();
+  }
+
+  async gateway(call: GatewayCall): Promise<GatewayAnswer> {
+    await this.#actions;
+    const answer = await this.#client.call(call);
+    // What the call made the runtime log or publish is in the copy before the scenario reads it.
+    await this.#refresh();
+    return answer;
   }
 
   problems(): readonly string[] {
@@ -284,7 +303,7 @@ class Run implements RunHarness {
 
 /** Connects the scenario's parts to a run, each with its grant, and syncs the reader's copies. */
 export async function connectRun(target: RunTarget): Promise<RunHarness> {
-  const run = new Run(target, await readGrants(target.dataDir));
+  const run = new Run(target, await readPartTokens(target.dataDir));
   try {
     await run.open();
   } catch (error) {

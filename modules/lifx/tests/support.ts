@@ -235,6 +235,8 @@ export class World {
   /** Sends a command as the operator and returns its result, letting virtual time pass while it runs. */
   async send(sent: CommandDraftFor, options: {requestId?: string; timeoutMs?: number} = {}): Promise<RequestResult> {
     const result = this.operator.request(sent.key, sent.draft, {timeoutMs: options.timeoutMs ?? 5000, ...(options.requestId === undefined ? {} : {requestId: options.requestId})});
+    // A call the bus refuses rejects at once; the caller gets that rejection, so it must not count as unhandled meanwhile.
+    result.catch(() => {});
     await flush();
     return result;
   }
