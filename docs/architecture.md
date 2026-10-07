@@ -94,7 +94,8 @@ Hub-mode table (`@jimmie-potts/event-contracts/v2/devices`), the shared
 agent-status helper (`@jimmie-potts/event-contracts/v2/status`), the SDK
 (`@jimmie-potts/sdk`): its in-process bus with sync, its SSE/HTTP remote
 transport and the module API, and the runtime skeleton with its module host
-(`apps/runtime`), which runs with zero modules. The 1.x field mapping is in
+(`apps/runtime`), which runs with zero modules, and its agent-session core
+(#831). The 1.x field mapping is in
 [MAPPING.md](../packages/event-contracts/MAPPING.md).
 
 - **Runtime.** One TypeScript runtime, `apps/runtime`, will host the core and
@@ -158,8 +159,12 @@ identity remains separate; hooks send only the cwd basename for display. Explici
 owner labels precede agent labels and provider titles. Neutral IDs remain the
 fallback. No local reader or personal configuration changes merely because the
 policy permits a field. Lifecycle 1.2 adds an optional Claude Desktop host
-session ID read from the hook environment. The owner keeps it in memory only,
-exposes it through opt-in snapshot 1.3, and never treats it as identity.
+session ID read from the hook environment. The old Hub's owner keeps it in memory
+only, exposes it through opt-in snapshot 1.3, and never treats it as identity.
+The new runtime's core ([#831](https://github.com/jimmie-potts/agent-device-hub/issues/831))
+keeps it with the session record in its private store, which
+[ADR 0011](decisions/0011-private-personal-data-retention.md) allows, so it
+survives a restart; it is still never an identity, ordering or merge key.
 
 Hooks remain bounded, observational and fail-open. Device/collector failure must
 not deny an agent action, change permissions or hold work waiting. MCP is the

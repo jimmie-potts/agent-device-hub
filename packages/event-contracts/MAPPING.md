@@ -52,7 +52,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
-| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). For #831: an owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. |
+| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). An owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. The core (#831) publishes the record again on a timer when it turns uncertain, and brings freshness up to date before it serves a sync. |
 | `restartUncertain` | `session /restartUncertain` | Unchanged. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
 | `generation` | `session /generation` | Required, and never after the record's `revision` (validator). Snapshot 1.0 records read as 0. |
@@ -60,7 +60,7 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 | `title`, `title.value`, `title.source` | `session /title` | Unchanged, with the credential check. |
 | `project` | `session /project` | The display name, separate from `projectId`. |
 | `projectId` | `session /projectId` | The explicit project identity. Names never merge sessions. |
-| `hostSessionId` | `session /hostSessionId` | Routing metadata, never an identity. A record with a known parent never carries it (schema). |
+| `hostSessionId` | `session /hostSessionId` | Routing metadata, never an identity. A record with a known parent never carries it (schema). 1.x kept it in owner memory only; the core (#831) keeps it with the record in its private store, so it survives a restart. |
 | `retiredTurns`, `seen`, `seen[].key`, `seen[].content`, `watermarks`, `watermarks[].dimension`, `watermarks[].epoch`, `watermarks[].sequence`, `metadataObservedAtMs` | owner's store | These durable guards and watermarks stay in the core's store. No consumer reads them. |
 
 ## Agent-state snapshot
@@ -134,6 +134,23 @@ occurrence and no turn handling. Acknowledgments are recorded per consumer, and
 each consumer's policy decides which acknowledgments clear what it shows, as today:
 LIFX and Tidbyt clear a finished turn on any consumer's acknowledgment.
 
+The core's reply (#831):
+
+| Case | Reply |
+| --- | --- |
+| Recorded, or recorded before | `accepted` |
+| The session or the notice is unknown | `not-found` |
+| The consumer is not one the core records acknowledgments for | `invalid-request` |
+| The sender's source does not end in the consumer ID, such as `bunny/modules/nanoleaf` for `pixoo` | `forbidden` |
+| The core store is full | `capacity` |
+| The core store failed for another reason, with nothing committed | `internal` |
+| The core is stopping, or cannot take changes now | `unavailable` |
+
+A consumer acknowledges for itself only, so one consumer cannot clear what
+another shows. The acknowledgment commits before the reply, so `accepted` reports
+a committed change. The session's state at its new revision is the evidence; no
+outcome follows, and it is not a tracked kind.
+
 In the rules below, an activity observation is a `session-started`,
 `turn-started`, `activity-observed`, `turn-ended` or `turn-interrupted`.
 
@@ -165,11 +182,19 @@ The owner also changes records without an observation:
 - Expiry after 24 hours without evidence publishes a removal with reason `expired`.
 - Displacing a finished child subtree publishes removals with reason `retired`.
 - Explicit approval recovery publishes `attention-cleared` with cause `recovered`.
-  #831 decides what an owner-started clearing carries as its observation's `turn`,
-  `observedAtMs` and `ordering`, because no observation started it.
 - Startup settlement of approvals on already retired turns publishes
   `attention-cleared` with cause `turn-retired`.
 - Freshness turning `uncertain` publishes the record at a new revision.
+
+No observation starts the recovery or the startup settlement, so the core (#831)
+decided what those clearings carry in the observation's place:
+- `turn`: the session's current turn when the owner cleared the item;
+- `observedAtMs`: the owner's instant of the change;
+- `ordering`: unknown, because the owner is no provider and has no sequence to
+  claim.
+
+`occurredAtMs` is absent, and `attention.turn` is still the turn the item was
+raised on.
 
 ## Controller receipt
 

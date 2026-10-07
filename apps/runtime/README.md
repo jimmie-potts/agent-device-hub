@@ -3,16 +3,83 @@
 Private workspace package `@jimmie-potts/runtime`. It is the one runtime process
 that [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) describes. It
 hosts a fixed list of modules on the SDK's in-process bus and serves health,
-and with `--edge` the SDK edge for remote parts, on a loopback port. It runs
-with zero modules; the shipped list in
-`src/modules.ts` is empty until module stories add to it. Nothing installs it
-yet; the cutover (#840) does.
+and with `--edge` the SDK edge for remote parts, on a loopback port. The
+shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
+and no device module yet; module stories add theirs after it, and the runtime
+also runs with no module at all. Nothing installs it yet; the cutover (#840)
+does.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
 subscription: adding or removing a module is a code change in `src/modules.ts`.
 Each entry there is the module's factory, which creates it with its real device
 transport, or with its simulated one under `--simulate`.
+
+## Agent-session core
+
+`src/core` is the one owner of agent sessions
+([Hub #831](https://github.com/jimmie-potts/agent-device-hub/issues/831)). It is
+the module named `core`, and the runtime hosts it with the source `bunny/core`;
+every other module is `bunny/modules/<name>`. It comes first in the shipped list.
+It reaches no device, so its real and simulated builds are the same.
+
+Its start registers its sync owner, its lifecycle subscription and its
+responder before its first await. A device module that syncs from it or
+republishes to it in its own start therefore finds it listening. If the core
+fails, the runtime ends: the process writes `runtime.failed` with `core-failed`
+and exits 1, and the service manager restarts it whole.
+
+- **Owner and store.** It runs `@jimmie-potts/agent-state`'s owner on the core
+  store in its own SQLite file, `modules/core.sqlite`. The store adapter
+  (`src/core/store.ts`) is copied from the old Hub's `apps/hub/src/storage.ts`
+  and keeps its format: the durable 2.1 state as one JSON row in `state`. Its
+  lease is an exclusive transaction on the lock database `core.sqlite-owner`
+  beside it; a second runtime on the same state directory waits for it until
+  agent-state's three-second deadline, and its core then fails.
+- **Intake.** It subscribes to `bunny.event.lifecycle.*`, checks each message
+  against profile 2.0, drops a duplicate by `(source, id)` and refuses the same
+  `(source, id)` with other content as `duplicate-conflict`, then reduces the
+  observation as the lifecycle 1.2 envelope that
+  [MAPPING.md](../../packages/event-contracts/MAPPING.md) describes. It keeps
+  each observation's `(source, id)` for 24 hours, the time agent-state still
+  admits it, in the same store, so a duplicate after a restart is still
+  dropped.
+- **Publication.** Each change derives its `session` state, removal and
+  occurrence messages. One SQLite transaction commits the change with those
+  messages (through the SDK's outbox), the published records, a history row for
+  each occurrence and removal, and the intake's `(source, id)`. The messages go
+  out after the commit, in order: a session's end, then its removals, then
+  states, then the other occurrences. A record carries the core's revision of
+  its last change; the core keeps one revision counter for every family it
+  serves.
+- **Failures.** A full disk refuses the change before anything reports it
+  accepted: nothing commits, nothing is published, and the intake is logged
+  `rejected` with `capacity`. The core then opens agent-state's faulted owner
+  again on what committed, so the next observation is taken once there is room.
+  A publication refused after a commit is logged `operation.failed` with the
+  outcome `queued`: the change stands, and its messages go out at the next
+  commit or start, with their stored `id`, `time` and trace context. A crash
+  between a commit and its publication sends them at the next start, once.
+- **Freshness.** Each record's `freshness` holds at the `time` of the message
+  that carries it. A timer publishes a record again, at a new revision, when it
+  turns uncertain five minutes after its last evidence, and a sync brings
+  freshness up to date first. After a restart every stored session is
+  `restartUncertain` until fresh lifecycle evidence.
+- **Sync and acknowledgment.** It serves `session` through sync, and answers
+  `notice-acknowledge` through agent-state's `acknowledge` with `accepted`,
+  `not-found` for an unknown session or notice, `invalid-request` for an unknown
+  consumer, and `forbidden` when the sender's source does not end in that
+  consumer ID: a consumer acknowledges for itself only. The acknowledgment
+  commits before the reply, and the session's state at its new revision is its
+  evidence; no outcome follows. The consumers are `DEFAULT_CONSUMERS`
+  (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
+  store and refuses a store whose list differs, so changing it needs a
+  migration.
+- **Extension point.** A `CorePart` (Hub #782's tracker and history, #923's
+  inbox) creates its own tables in the core store, serves its families through
+  the core's sync at the core's revision, derives rows from each committed core
+  change in that change's transaction, and runs its own intake through the
+  core's transactions and outbox.
 
 ## Run
 
@@ -167,6 +234,7 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `module-db-not-private` | A module's SQLite file is not a private file with one link. |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
 | `edge-grants-missing`, `edge-grants-not-private`, `edge-grants-invalid`, `edge-grant-source` | The edge's grants file; see [SDK edge](#sdk-edge). |
+| `core-failed` | The [agent-session core](#agent-session-core) failed, such as on a store it cannot read or a lease another runtime holds. |
 
 A Node error keeps its own code, such as `EADDRINUSE` for a health port in use.
 
@@ -189,8 +257,8 @@ main thread is still caught once the watchdog has been awake for the limit. A
 watchdog thread that ends without being asked logs `runtime.watchdog.stopped`,
 and health shows `lagCheck.status` `stopped` and `degraded`.
 
-The worker costs about 14 MiB of resident memory: the zero-module runtime's
-VmRSS with and without it, from `scripts/measure-memory.mjs`.
+The worker costs about 14 MiB of resident memory: the runtime's VmRSS with and
+without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 ## Logs
 
@@ -285,8 +353,8 @@ and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
 
 ## Memory
 
-`node apps/runtime/scripts/measure-memory.mjs` measures the zero-module runtime
-for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
+`node apps/runtime/scripts/measure-memory.mjs` measures the shipped runtime, the
+core with no device module, for [#123](https://github.com/jimmie-potts/agent-device-hub/issues/123): three
 runs, sampled at 5, 15, 30 and 60 s after the ready line. Add
 `--variant no-lag-check` to measure it without the watchdog thread. It needs a
 build and a TMPDIR outside every Git checkout.
@@ -327,21 +395,22 @@ sessions and rings once for each approval prompt. It records what it rang in
 its own SQLite file, so a restart with the prompt still waiting does not ring
 again. It passes the kit as a module that only copies.
 
-`tests/fixtures/core.ts` stands in for the core, as `createCoreModule()`.
-Each of its parts goes when its owner lands:
-- as the session owner, until Hub #831, it commits each hook's `lifecycle`
-  observation to the session record;
+`tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
+stand-in parts through its extension point. Each part goes when its owner
+lands:
 - as history, until Hub #782, it records each outcome as a `stand-in-history`
   entry, then acknowledges the outcome with the kit's stand-in acknowledgment,
   which the lamp follows;
 - as the inbox, until Hub #923 turns failed and uncertain results into inbox
   items, it records each failed or uncertain outcome as an `inbox-item`
   operation;
-- it owns the mode.
+- it owns the mode, until #695.
 
-It takes every occurrence and outcome once by `(source, id)`, keeping what it
-took in its own SQLite file across restarts. Its changes go out through its
-outbox after they commit, and it serves all four families through sync.
+The parts take every occurrence and outcome other than a hook's lifecycle
+observation once by `(source, id)`, keeping what they took in the core store
+across restarts. Their changes go out through the core's outbox after they
+commit, and the core serves their families through its sync with `session`. The
+fixture core's consumers add the catalog's panel to the shipped ones.
 
 A process test kills the runtime between the lamp's commit and its publish,
 then restarts it twice. At the first restart the lamp sends its state,
@@ -379,6 +448,10 @@ The catalog holds:
 - a module failing while the others continue;
 - a part reconnecting and syncing, with nothing replayed;
 - the runtime starting with zero modules;
+- the agent-session core alone: sessions from hook observations, an approval
+  prompt raised and cleared, a finished turn kept on its session record with no
+  inbox item, a notice acknowledged by a consumer for itself only, a runtime
+  end, and a restart that leaves the sessions uncertain until fresh evidence;
 - the early end-to-end path: a hook observation, the committed session, the
   simulated device's update, a command, its outcome, history and inbox rows,
   then sync and read. It adds a duplicate command, a failed command whose inbox

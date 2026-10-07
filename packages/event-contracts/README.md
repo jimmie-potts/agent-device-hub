@@ -176,7 +176,10 @@ The rules:
   LIFX and Tidbyt clear a finished turn on any consumer's acknowledgment (ADR
   0012, "Inbox and history"). It replaces the 1.x `notice.acknowledged`
   observation, so the `lifecycle` family refuses that event. An acknowledgment
-  proves neither readership nor a cleared attention item.
+  proves neither readership nor a cleared attention item. A consumer
+  acknowledges for itself only: the core refuses one whose source does not end
+  in its consumer ID with `forbidden`. It commits the acknowledgment before it
+  replies `accepted`, and no outcome follows ([MAPPING.md](MAPPING.md)).
 - `playback-control` asks the owner of the `playback` record (#929) for play,
   pause, next or previous. The owner sends it once, to the source presented at
   admission, and never redirects or retries it. The record's `id`, and so the
