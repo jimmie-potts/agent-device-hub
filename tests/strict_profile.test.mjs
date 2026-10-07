@@ -282,6 +282,8 @@ tester.run('no-console', bunny.rules['no-console'], {
     'process.exitCode = 1; process.on("SIGTERM", () => {});',
     "import {argv} from 'node:process'; export {argv};",
     "import process from 'node:process'; export const args = process.argv;",
+    'const {argv, env} = process; export {argv, env};',
+    'globalThis.process.exitCode = 1;',
   ]),
   invalid: [
     ...withGlobals([
@@ -297,6 +299,13 @@ tester.run('no-console', bunny.rules['no-console'], {
       {code: "import proc from 'node:process'; proc.stdout.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
       {code: "import * as proc from 'process'; proc.stderr.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
       {code: "import {Console} from 'node:console'; export {Console};", errors: [{messageId: 'console'}]},
+      // Destructured from process or its default import, and through globalThis (Hub #954).
+      {code: "const {stdout} = process; stdout.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "const {argv, stderr: err} = process; err.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
+      {code: "import proc from 'node:process'; const {stdout} = proc; stdout.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "let out; ({stdout: out} = process); out.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "globalThis.process.stdout.write('x');", errors: [{messageId: 'stream', data: {stream: 'stdout'}}]},
+      {code: "const {stderr} = globalThis.process; stderr.write('x');", errors: [{messageId: 'stream', data: {stream: 'stderr'}}]},
     ]),
     // Without configured globals, an undeclared console is still the global one.
     {code: "console.info('x');", errors: [{messageId: 'console'}]},
@@ -340,6 +349,10 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     'function fail(r, s) { if (r.reason instanceof Error) write(s.reason.message); }',
     'function fail(r) { if (r.reason instanceof Error) write(r.other.message); }',
     "import {UsageError} from './usage.js'; function fail(r) { if (r.reason instanceof UsageError) write(r.reason.message); }",
+    // A tag other than String.raw decides what it does with each value, and an array's concat keeps the value whole.
+    'try { run(); } catch (error) { report(failure`the read failed: ${error}`); }',
+    'try { run(); } catch (error) { report([label, error.code].join(" ")); }',
+    'try { run(); } catch (error) { failures = failures.concat(error); }',
   ]),
   invalid: withGlobals([
     {code: 'try { run(); } catch (error) { report(error.message); }', errors: rawText('message')},
@@ -389,6 +402,13 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     {code: 'class Job { #failure = null; report() { if (this.#failure instanceof Error) write(this.#failure.message); } }', errors: rawText('message')},
     // `this` in an arrow function is its enclosing method's, so the method's test reaches it.
     {code: 'class Job { #failure = null; report() { if (this.#failure instanceof Error) setTimeout(() => write(this.#failure.message)); } }', errors: rawText('message')},
+    // A tagged template that String.raw turns into text, an array literal joined into text, and text concatenated onto a
+    // string literal (Hub #954).
+    {code: 'try { run(); } catch (error) { report(String.raw`failed: ${error}`); }', errors: asText},
+    {code: 'try { run(); } catch (error) { report([label, error].join(" ")); }', errors: asText},
+    {code: 'try { run(); } catch (error) { report(["failed", error].join()); }', errors: asText},
+    {code: "try { run(); } catch (error) { report('failed: '.concat(error)); }", errors: asText},
+    {code: 'try { run(); } catch (error) { report(`failed `.concat(error)); }', errors: asText},
     // A test on another chain proves nothing about this one, even with the same root.
     {code: "import {UsageError} from './u.js'; export function f(r) { if (r.reason instanceof Error) { if (r.other instanceof UsageError) write(r.reason.message); } }",
       errors: rawText('message')},

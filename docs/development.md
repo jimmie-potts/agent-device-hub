@@ -440,14 +440,12 @@ and the runtime's tests cover the rest.
   connects to its sink.
   - Reading `process.stdout.isTTY` also counts, so a command-line check belongs
     in a listed entry point.
-  - It misses:
-    - `process.emitWarning`, which the SDK's default `onError` uses with fixed
-      text;
-    - writes to file descriptors 1 and 2;
-    - an alias of `process`, `globalThis.process.stdout`, and `stdout` or
-      `stderr` destructured from `process` or from the default `node:process`
-      import (`const {stdout} = process`);
-    - `await import('node:console')`.
+  - It also catches `stdout` or `stderr` destructured from `process` or from
+    the default `node:process` import (`const {stdout} = process`), and
+    `globalThis.process.stdout` (#954).
+  - It misses `process.emitWarning`, writes to file descriptors 1 and 2, an
+    alias of `process` and `await import('node:console')`; see
+    [the misses](#lint-misses-and-their-reasons).
 - **`bunny/no-raw-error-text`:** no reading an exception's `message`, `stack`
   or `cause`, directly or by destructuring, and no turning it into text with a
   template literal, `String()`, `+`, `+=`, `JSON.stringify`, `toString()` or
@@ -474,16 +472,15 @@ and the runtime's tests cover the rest.
     passes. It cannot tell an own class whose message carries input: Nanoleaf's
     `ValueError` quotes the text it could not parse in `compat.ts` and the
     address it refused in `transport.ts`.
-  - It misses:
-    - an alias (`const failure = error`), a helper the exception is passed to, a
-      custom type guard, an untyped callback parameter outside these shapes, and
-      a value typed `any`;
-    - a computed member or a call inside an `instanceof` test, such as
-      `r[key] instanceof Error`;
-    - a tagged template, such as ``String.raw`${error}` ``;
-    - `[label, error].join()` and `'failed: '.concat(error)`;
-    - a narrowed catch binding that is later reassigned: the earlier
-      `instanceof` test still counts.
+  - It also catches ``String.raw`${error}` ``, an exception in an array
+    literal that is joined (`[label, error].join(' ')`), and one concatenated
+    onto a string literal (`'failed: '.concat(error)`) (#954).
+  - It misses an alias (`const failure = error`), a helper the exception is
+    passed to, a custom type guard, an untyped callback parameter outside these
+    shapes, a value typed `any`, a computed member or a call inside an
+    `instanceof` test (`r[key] instanceof Error`), any other tag, a variable's
+    `join` or `concat`, and a narrowed catch binding that is later reassigned;
+    see [the misses](#lint-misses-and-their-reasons).
 - **`bunny/error-body-from-registry`:** no object literal with an `error`
   property whose value is an object literal with its own `code`, as in
   `{error: {code, ...}}`. This includes the error block inside a reply or an
@@ -505,13 +502,64 @@ name or this listing, and on a file exception that no longer hides a finding.
 | `bunny/safe-errors/scripts` | `apps/runtime/scripts/` | `no-console` | Scripts write their results to the terminal. | Permanent |
 | `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), the Pixoo library migration's entry point (`migrate-pixoo.ts`, #931), the Nanoleaf migration's entry point (`migrate-nanoleaf.ts`, #933), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
 | `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
-| `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), at its pickup |
-| `bunny/safe-errors/verification-harness` | `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, at its pickup |
+| `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message, which repeats only the operator's own argument, in the usage output before the runtime starts. ADR 0012's surfaces do not include usage output. | Permanent ([#954](https://github.com/jimmie-potts/agent-device-hub/issues/954)) |
 
-The table understates what the verification harness quotes.
-`apps/runtime/verify/adapter.ts` also turns exceptions into text, through
-`describe` in `apps/runtime/tests/scenarios/parts.ts`, which is exempt as test
-code.
+The verification run's harness and run adapter follow the rules since #954:
+the supervisor's refusals come from `errorBody`, an unexpected failure is
+`internal` with fixed text, and the adapter names a failure in a capture's
+proof by its own text, a refusal's registry code or the exception's type.
+
+### ADR 0012 rules and their checks
+
+Each rule in ADR 0012's
+[Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
+and [Observability](decisions/0012-bunny-event-platform.md#observability)
+maps to the check that fails when code breaks it, or to why no mechanical
+check can (#954). Reviewers check the last column under
+[docs/sdlc.md](sdlc.md#review-and-merge) step 3. A module story adopts the
+module test kit and these lint rules; it does not copy this table. Paths are
+test files under each package's `tests/`.
+
+| Rule | Checks that fail | Not checked mechanically |
+| --- | --- | --- |
+| One registry: codes and their `retryable` flags | Event contracts `v2.test.mjs` (registry parity, unregistered codes refused); SDK `registry.test.ts` (an unregistered code fails to compile), `remote.test.ts` and `request.test.ts` (refusals rebuilt from the registry); lint `bunny/error-body-from-registry` | |
+| Typed refusals; an exception mapped once where the effect is known | Kit check `refuses a command with the shared error body`; SDK `request.test.ts` and `configuration.test.ts` | That an error is mapped once and then passed on unchanged: the Specification review |
+| A rejection proves no effect | SDK `conformance.test.ts` on both transports (a responder that fails after it started is `uncertain-result` and nothing sends it again), `workers.test.ts`; catalog scenario `end-to-end` | |
+| `accepted` after durable state; a full disk refuses; a restart reports and never reruns | Kit check `keeps the outcome in its outbox and sends it again after a restart`; runtime `core.test.ts` and `core-store.test.ts` (full disk); the LIFX, Pixoo, playback and Nanoleaf restart tests | A full disk in each module: the kit cannot fill a disk, so each module story tests its own store (LIFX does) |
+| Retries: nothing resends a command; one owner and capped backoff per loop | SDK `expiry.test.ts`, `remote.test.ts` and `grants.test.ts` (`duplicate-conflict`, the responder runs once); runtime `core.test.ts` (capped backoff, one record and a summary) | That `retryable` never permits a resend and each loop has one owner: the Specification review. A module's write budget: its own tests |
+| Deadlines: queued is `expired`, held is `uncertain` | SDK `expiry.test.ts`; LIFX `queue.test.ts` | Partial effects kept in an outcome: each module's tests |
+| Committed is not published | SDK `outbox.test.ts`; runtime `core-store.test.ts`; the kit's outbox check | |
+| Acknowledging outcomes | SDK `outbox.test.ts` (an acknowledged outcome is forgotten); runtime `lamp.test.ts` (the stand-in refuses a reused `(source, id)`) | The core's acknowledgment, after its commit and only from the authenticated core: [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) |
+| Late and conflicting outcomes | None yet | [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) and [#923](https://github.com/jimmie-potts/agent-device-hub/issues/923) build the tracker and inbox rules with their tests |
+| Safe errors | The [safe-error rules](#safe-error-rules); the kit's secret and record checks (`checkModuleRecord`); runtime `safe-errors.test.ts`, `log.test.ts` and the gateway tests' token scan; verify `supervisor.test.ts` and `adapter.test.ts` | [The lint misses](#lint-misses-and-their-reasons): the Standards review |
+| Correlation: `traceparent` on every message and call, trace IDs on every record | The profile 2.0 validator in `v2.test.mjs`, the SDK tests and every kit check; the kit's `accepts` check (each record carries the command's trace); runtime `diagnostics.test.ts`, `context.test.ts` and `tracing.test.ts` | `traceparent` on HTTP calls other than the edge's: the Standards review |
+| Recorded spans through the host adapter, with registered names | Runtime `tracing.test.ts` and `span-file.test.ts`; observability `host.test.mjs`; every kit check (no span loses its parent) | |
+| Context stays inside B.U.N.N.Y. | SDK `trace.test.ts`; runtime `tracing.test.ts` (only authenticated context continues); the kit's outbox check (a replay is linked, never reparented); LIFX `module.test.ts` (no trace context to the bulb) | No trace context to other devices: each module story. No span open across downtime: the Standards review |
+| Records at decision points, once | The kit's `accepts` and `refuses` checks (the bus's records); SDK `diagnostics.test.ts`; runtime `isolation.test.ts` and `lamp.test.ts` | Tracker steps: #782. A catch that only passes an error on logs nothing: the Standards review |
+| Levels | SDK `diagnostics.test.ts` (each registry code's level); runtime `process.test.ts` and `core.test.ts` | A module record's level: the kit checks its event and attributes only, so the Standards review |
+| Repetition: transitions, then bounded summaries | Runtime `isolation.test.ts` (a dropped delivery at once, then a count a minute); SDK `availability.test.ts`; each module's outage and polling tests | One degradation and one recovery per outage: each module polls its own way, so each module story tests it, as every shipped device module does |
+| Logs are not history | `checkModuleRecord` (registered attributes only); the kit's outbox check (one publication record) | A payload in a registered attribute: the Standards review |
+| Bounds | SDK `diagnostics.test.ts` (a throwing callback changes no result); runtime `log.test.ts`; the observability package's tests | Request and trace IDs as metric labels: there are no metrics before #813 |
+| Telemetry is never acknowledged; loss is visible | Runtime `log.test.ts` and `tracing.test.ts` (`runtime.stopped` counts what was lost) | |
+| Following one request | Verify `follow.test.ts` and `supervisor.test.ts`; capture steps `follow-one-request` and `control-follow-fails` | |
+
+#### Lint misses and their reasons
+
+The safe-error rules read syntax only, so they cannot follow a value through
+code. #954 added checks for the misses a syntax rule can catch reliably, each
+with an invalid case in `tests/strict_profile.test.mjs` that fails without it.
+The rest stay unchecked for these reasons:
+
+| Miss | Status | Reason |
+| --- | --- | --- |
+| `stdout` or `stderr` destructured from `process`, and `globalThis.process` | Checked (`no-console`) | |
+| ``String.raw`${error}` `` | Checked (`no-raw-error-text`) | |
+| `[label, error].join()` and `'failed: '.concat(error)` | Checked on array literals and string literals | A variable's `join` or `concat` may be an array's, which keeps the value whole; a syntax rule cannot tell |
+| Any other tag | Not checked | The tag decides what it does with each value |
+| An own error class whose message carries input | Not checked | The rule cannot see what a caller passes to the constructor. Nanoleaf's `ValueError` quotes input in `compat.ts` and `transport.ts`; its message never goes into a record or body (#844) |
+| `process.emitWarning` | Not checked | Its only use is the SDK's default `onError`, with fixed text and the error as `cause`. The runtime passes its own `onError`, and every module's outbox gets its `log`, so the default never runs in the runtime. A check would need an exception for exactly those two files |
+| Writes to file descriptors 1 and 2, an alias of `process`, `await import('node:console')` | Not checked | No covered code does this, and a syntax rule cannot follow an alias or a computed descriptor |
+| An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
 
 <a id="depot-diagnostic-access"></a>
 
@@ -1011,7 +1059,9 @@ the run loads. It also judges the follow query of Hub #950, which reads one requ
 records and spans in a run (see [Follow one request](../apps/runtime/verify/README.md#follow-one-request)),
 and the runtime tests (`test:runtime:built`) cover the bounded, private span file that the
 run's runtime writes. It starts the `nanoleaf-migrated` run (#933), whose seed migrates a synthetic Nanoleaf bridge
-state into the run, and reads the migrated preferences through the run's gateway. The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
+state into the run, and reads the migrated preferences through the run's gateway. It also checks that `start` and
+`doctor` judge the runtime's own health as the in-memory harness does, and that the harness's refusals come from the
+registry (#954). The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
 real transient units and skip with a printed reason without a user manager; the
 App verification CI job runs the rest. It needs Playwright Chromium and an
 outside-checkout `TMPDIR`, as the app verification tests do.
