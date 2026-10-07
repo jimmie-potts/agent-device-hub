@@ -1126,6 +1126,25 @@
    },
    "expect": "expired",
    "detail": "2026-10-06T12:00:00.000Z"
+  },
+  {
+   "name": "a device ID that cannot be a routing-key token",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/id": "Office_Wall",
+    "/subject": "Office_Wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
+   "name": "a command to a subject that is not a device ID",
+   "base": "power-set",
+   "set": {
+    "/subject": "Office_Wall"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a device id"
   }
  ]
 }
