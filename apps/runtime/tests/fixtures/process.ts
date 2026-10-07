@@ -1,7 +1,7 @@
 // A runtime process with in-test fixture modules, run as `node process.js <scenario> <runtime arguments>`. It goes
 // through the same entry point as the shipped runtime, with these modules instead of the shipped list.
 import type {BunnyModule} from '@jimmie-potts/sdk';
-import {runMain} from '../../src/index.js';
+import {runMain, type ModuleFactory} from '../../src/index.js';
 import {createCoreModule} from './core.js';
 import {SimulatedLamps, createLampModule, switchLamp} from './lamp.js';
 
@@ -79,7 +79,8 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
 const [scenario = '', ...args] = process.argv.slice(2);
 const modules = scenarios[scenario];
 if (modules === undefined) throw new Error(`unknown scenario ${scenario}`);
-await runMain(args, modules);
+// Each fixture module is already built with the transport its scenario needs, whether or not the runtime simulates.
+await runMain(args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})));
 if (scenario === 'runtime-error') {
   setTimeout(() => { throw Object.assign(new RangeError('a bug outside every module, quoting http://device.invalid/?token=secret'), {code: 'EFIXTURE'}); }, 50);
 }

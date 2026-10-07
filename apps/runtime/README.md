@@ -2,14 +2,17 @@
 
 Private workspace package `@jimmie-potts/runtime`. It is the one runtime process
 that [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) describes. It
-hosts a fixed list of modules on the SDK's in-process bus and serves health on
-a loopback port. It runs with zero modules; the shipped list in
+hosts a fixed list of modules on the SDK's in-process bus and serves health,
+and with `--edge` the SDK edge for remote parts, on a loopback port. It runs
+with zero modules; the shipped list in
 `src/modules.ts` is empty until module stories add to it. Nothing installs it
 yet; the cutover (#840) does.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
 subscription: adding or removing a module is a code change in `src/modules.ts`.
+Each entry there is the module's factory, which creates it with its real device
+transport, or with its simulated one under `--simulate`.
 
 ## Run
 
@@ -25,6 +28,8 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
 | `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
+| `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
+| `--edge` | Serve the [SDK edge](#sdk-edge) on the health listener, with the grants in the state directory. |
 
 Malformed arguments exit with status 2 and a usage line. Once the modules have
 started, the process writes one line to stdout, `{"event":"runtime.ready","url":...}`.
@@ -52,7 +57,46 @@ A request must name the listener as its host (`127.0.0.1:<port>` or
 `localhost:<port>`, in any letter case, with the exact port) and carry no
 `Origin` and no `Sec-Fetch-Site` other than `none`, as the Hub and local controllers require, so a page on a rebinding name
 cannot read module state. Any other request answers 403 with the shared error
-body and `forbidden`. Every other route answers 404 with `not-found`.
+body and `forbidden`. Every other route answers 404 with `not-found`, except the
+[SDK edge](#sdk-edge)'s routes when the edge is configured.
+
+## SDK edge
+
+With `--edge`, remote parts make the SDK calls over SSE and HTTP under
+`/api/sdk/v1/` on the health listener, through #883's `RemoteEdge` on the
+modules' bus. The listener's local-request rules apply to these routes too. The
+edge serves once every module has started; until then its routes answer 503
+with `unavailable`, so a remote part that reconnects never syncs from a module
+still starting. `runtime.started` says whether the edge is configured
+(`bunny.edge`); `runtime.edge.serving` follows once it serves. From the start
+of a stop until the listener closes, the routes answer 503 with `unavailable`
+again, not 404.
+
+Each remote part has a grant: a source and a bearer token, in
+`edge-grants.json` in the state directory:
+
+```json
+{"schema": "edge-grants/1.0", "grants": [{"source": "bunny/parts/reader", "token": "<at least 32 characters>"}]}
+```
+
+The file must be private: mode 600, one link, owned by the runtime's user and
+never reached through a link. A grant may not act as the core (`bunny/core`) or
+a module (`bunny/modules/<name>`), so a remote part can never publish as either.
+The runtime refuses to start otherwise, with `edge-grants-missing`,
+`edge-grants-not-private`, `edge-grants-invalid` or `edge-grant-source` in
+`runtime.failed`. No refusal or log record quotes a token. The edge checks every
+remote message against profile 2.0, the core families and the modules' own
+schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
+`runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
+`bunny.route` (one of the edge's routes, or `other`), `bunny.source` when the
+caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
+that code's fixed meaning. It never holds the edge's detail, which may quote
+what the caller sent or an exception's message. Token rotation and grant
+permissions belong to #835.
+
+`runMain`'s `onEdge` option hands the caller the edge once it serves. A
+verification run's child uses it to end a part's stream, as a lost connection
+would; the shipped entry point does not pass it.
 
 ## State
 
@@ -103,6 +147,7 @@ a failed start. A refusal the runtime makes itself names its reason in
 | `posix-host-required` | The host has no POSIX user IDs. |
 | `module-db-not-private` | A module's SQLite file is not a private file with one link. |
 | `port-invalid` | The port is not an integer from 0 to 65535. |
+| `edge-grants-missing`, `edge-grants-not-private`, `edge-grants-invalid`, `edge-grant-source` | The edge's grants file; see [SDK edge](#sdk-edge). |
 
 A Node error keeps its own code, such as `EADDRINUSE` for a health port in use.
 
@@ -221,8 +266,9 @@ acts through the harness, expects an observation within a time bound, or
 expects one to hold. A failed step names what it observed and stops the
 scenario. Each run type has one execution adapter that runs the same
 definitions unchanged: `tests/scenarios/memory.ts`, the in-memory harness
-(tier 1, in CI), and the disposable runs of #920 (tier 2). Every runtime story
-adds its scenarios to the catalog.
+(tier 1, in CI), and the [disposable runs](verify/README.md) of #920 (tier 2),
+whose run adapter is `verify/adapter.ts`. Every runtime story adds its scenarios
+to the catalog.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built by its factory with its simulated transport, on a manual clock and

@@ -10,13 +10,15 @@ import {pathToFileURL, fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {inspectTemporary} from './verify-host-command.mjs';
 
-const APPS = {hub: 'agent-device-hub', compose: 'agent-device-hub', nanoleaf: 'codex-nanoleaf', pixoo: 'divoom-app-upgrade'};
+const APPS = {hub: 'agent-device-hub', runtime: 'agent-device-hub', compose: 'agent-device-hub', nanoleaf: 'codex-nanoleaf', pixoo: 'divoom-app-upgrade'};
+// Each adapter's own wrapper; the others use scripts/verify.mjs.
+const WRAPPERS = {compose: 'apps/hub/verify/compose.mjs', runtime: 'scripts/verify-runtime.mjs'};
 const SINGLE = ['help', 'prerequisites', 'start', 'doctor', 'scenario', 'capture', 'handoff', 'extend', 'stop', 'restart'];
 const COMPOSE = ['help', 'start', 'doctor', 'capture', 'inject', 'reset', 'handoff', 'extend', 'stop'];
 const SYSTEMCTL = '/usr/bin/systemctl', SYSTEMD_RUN = '/usr/bin/systemd-run';
 const USABLE = ['running', 'degraded', 'starting', 'initializing'];
 const MAX_OUTPUT = 2 * 1024 * 1024;
-export const HELP = 'npm run -s verify:host -- --host --app <hub|nanoleaf|pixoo|compose> --checkout <absolute> [--python <absolute>] [--fnm <absolute>] [--timeout-seconds <30..1800>] -- <operation> [arguments]';
+export const HELP = 'npm run -s verify:host -- --host --app <hub|runtime|nanoleaf|pixoo|compose> --checkout <absolute> [--python <absolute>] [--fnm <absolute>] [--timeout-seconds <30..1800>] -- <operation> [arguments]';
 
 export async function prepare(argv) {
   const separator = argv.indexOf('--');
@@ -44,7 +46,7 @@ export async function prepare(argv) {
   try { identity = JSON.parse(await readFile(join(checkout, 'package.json'), 'utf8')).name; }
   catch { throw new Error('checkout package identity is unreadable'); }
   if (identity !== APPS[app]) throw new Error('checkout does not match the selected application');
-  const entrypoint = join(checkout, app === 'compose' ? 'apps/hub/verify/compose.mjs' : 'scripts/verify.mjs');
+  const entrypoint = join(checkout, WRAPPERS[app] ?? 'scripts/verify.mjs');
   await access(entrypoint, constants.R_OK);
   if (process.platform !== 'linux' || !process.getuid) throw new Error('host routing requires Linux with a user manager');
   const [major, minor] = process.versions.node.split('.').map(Number);

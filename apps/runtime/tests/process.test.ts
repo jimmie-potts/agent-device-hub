@@ -4,13 +4,15 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
-import {access, mkdir, readFile, symlink, writeFile} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {access, chmod, mkdir, readFile, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import type {LogRecord} from '../src/index.js';
+import {connectRemote} from '@jimmie-potts/sdk';
+import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
 import {entry, health, it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
@@ -232,4 +234,40 @@ it('an outcome committed before a kill between commit and publish is taken exact
   assert.equal(named(again, 'lamp.outbox.republished')[0]?.attributes.count, 0);
   assert.equal(named(again, 'core.message.taken').length + named(again, 'core.message.duplicate').length, 0, 'exactly once across all three runs');
   assert.equal(named(again, 'lamp.command.received').length, 0);
+});
+
+/** Writes the edge's grants, owner-only, into a state directory. */
+async function grants(dir: string, sources: readonly string[]): Promise<{source: string; token: string}[]> {
+  const list = sources.map(source => ({source, token: randomBytes(32).toString('base64url')}));
+  await writeFile(join(dir, EDGE_GRANTS_FILE), JSON.stringify({schema: 'edge-grants/1.0', grants: list}), {mode: 0o600});
+  await chmod(join(dir, EDGE_GRANTS_FILE), 0o600);
+  return list;
+}
+
+it('the shipped entry point runs with --simulate and --edge, and a remote part with a run grant reaches the edge', async context => {
+  const dir = await stateDir(context);
+  const [reader] = await grants(dir, ['bunny/parts/reader']);
+  assert.ok(reader);
+  const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', dir, '--simulate', '--edge']);
+  const remote = await connectRemote({url: runtime.url, source: reader.source, token: reader.token});
+  await remote.close();
+  const started = runtime.records().find(record => record.event_name === 'runtime.started');
+  assert.deepEqual([started?.attributes['bunny.simulate'], started?.attributes['bunny.edge']], [true, true]);
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+  assert.equal(runtime.records().some(record => JSON.stringify(record).includes(reader.token)), false, 'no token reaches a log record');
+});
+
+it('--edge refuses a missing grants file and a grant that acts as the core or a module, naming the reason in runtime.failed', async context => {
+  const cases: readonly (readonly [readonly string[], string])[] = [
+    [[], 'edge-grants-missing'], [['bunny/parts/reader', 'bunny/core'], 'edge-grant-source'], [['bunny/modules/lamp'], 'edge-grant-source'],
+  ];
+  for (const [sources, code] of cases) {
+    const dir = await stateDir(context);
+    if (sources.length > 0) await grants(dir, sources);
+    const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir, '--edge']);
+    assert.deepEqual(await runtime.exited, {code: 1, signal: null}, sources.join(' '));
+    assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], code, sources.join(' '));
+    assert.equal(runtime.stdout(), '', 'no ready line');
+  }
 });

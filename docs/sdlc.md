@@ -420,10 +420,11 @@ Verification has three tiers.
       checkouts at their `compose.json` pins in the same place. Never write
       to the coordinator's worktree.
    2. From that worktree, start a disposable verification run with synthetic
-      data and simulated devices. Use the new runtime's adapter once #920
-      lands. Until then, use
-      `fnm exec --using=.nvmrc -- npm run -s verify -- <operation>` or the
-      `verify:compose` form in [app verification](app-verification.md), or
+      data and simulated devices. For the new runtime and its modules, use
+      `fnm exec --using=.nvmrc -- npm run -s verify:runtime -- <operation>`
+      ([runtime adapter](../apps/runtime/verify/README.md)). For the old Hub,
+      use `fnm exec --using=.nvmrc -- npm run -s verify -- <operation>` or the
+      `verify:compose` form in [app verification](app-verification.md), and
       `fnm exec --using=.nvmrc -- npm run -s verify:chompi -- <operation>` for the
       [CHOMPI bridge](../apps/chompi-bridge/verify/README.md). The
       run must report a clean candidate, never `dirty`. A reviewer whose

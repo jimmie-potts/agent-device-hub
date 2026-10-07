@@ -8,9 +8,11 @@ expires. Hub is the first caller
 ([#494](https://github.com/jimmie-potts/agent-device-hub/issues/494)); the
 Nanoleaf wall ([codex-nanoleaf#193](https://github.com/jimmie-potts/codex-nanoleaf/issues/193))
 and Pixoo ([divoom-app-upgrade#118](https://github.com/jimmie-potts/divoom-app-upgrade/issues/118))
-adapters implement the same operations for their applications, as does the CHOMPI bridge
+adapters implement the same operations for their applications, as do the CHOMPI bridge
 ([#853](https://github.com/jimmie-potts/agent-device-hub/issues/853),
-[`apps/chompi-bridge/verify`](../apps/chompi-bridge/verify/README.md), `npm run -s verify:chompi --`).
+[`apps/chompi-bridge/verify`](../apps/chompi-bridge/verify/README.md), `npm run -s verify:chompi --`)
+and the new runtime ([#920](https://github.com/jimmie-potts/agent-device-hub/issues/920),
+[`apps/runtime/verify`](../apps/runtime/verify/README.md), `npm run -s verify:runtime --`).
 [ADR 0009](decisions/0009-app-verification-runs.md) records the lasting
 decisions and their alternatives. The initiative and its accepted scope are in
 [#488](https://github.com/jimmie-potts/agent-device-hub/issues/488).
@@ -419,6 +421,7 @@ owns the page it would appear on.
 | Nanoleaf wall | Wall server, map page, private SQLite state, allocation and Prism rendering | Worker stand-in (`scripts/demo.py` `prepare`), synthetic projects and tasks, fixture layouts | The demo's `request=no_device` trap raises on any light request; the adapter proves an attempted request fails |
 | Pixoo | Fastify server, web UI, library, playlists, player | Simulator transport, synthetic media in a private `PIXOO_DATA_DIR` | `/api/health` reports simulator mode and no device connectivity; ambient `PIXOO_MODE=device` does not leak into the run |
 | CHOMPI bridge | Bridge CLI (`run --simulate --desktop sim`) with its routing core, slot store, lights, profile watcher and feed client; the run's control page | `ChompiSimulator` (HID protocol v1), `SimulatedDesktop` behind OS adapter interface version 6, `SyntheticHub` feed (snapshot 1.3 and change stream) with a run-generated token; synthetic tasks and text | `no-hid-device`, `no-desktop-calls` and `own-feed-only`: simulator transport only with node-hid refused, simulated desktop only with koffi refused, and only the run's own origin and lock; tests start a run across each boundary and show its check fails |
+| Runtime | The runtime through its own entry (`runMain`) with `--simulate`, `--edge` and the run's state directory, its SDK edge, and the supervisor's harness API; the preview links the runtime's health page | The fixture modules (the stand-in core, lamp and chime), `SimulatedLamps` and `SimulatedChime` reached over the runtime child's IPC channel, and the scenario's remote parts with run-generated grants | `simulated-transports`, `no-outbound-connections` and `private-state`: the runtime says it ran with `--simulate`; a guard loaded through `NODE_OPTIONS` into the runtime, the worker threads and Node processes that inherit its environment refuses each outbound TCP connection (`net`, `tls`, `http`, `https`, `fetch`) and UDP datagram (`dgram`) before anything leaves; and the run observes the runtime's home inside the run, nothing under its default state directory and every database it has open in the run's state directory. The guard does not cover a native addon, a non-Node binary, a process or worker thread started with `NODE_OPTIONS` cleared or replaced (a worker given its own `env`, or an `eval` worker), or a `node:dns` lookup. Tests start a run across each boundary and show its check fails |
 
 ## Caller walkthrough
 
@@ -966,6 +969,7 @@ For example, replacing the placeholder paths with prepared assigned checkouts:
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- prerequisites
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- start --scenario lifecycle-basic
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- doctor
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app runtime --checkout /absolute/hub-worktree -- start --scenario end-to-end
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app nanoleaf --checkout /absolute/wall-worktree --python /absolute/venv/bin/python -- start
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app pixoo --checkout /absolute/pixoo-worktree -- start
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app compose --checkout /absolute/hub-worktree --python /absolute/venv/bin/python --fnm /absolute/bin/fnm -- start --checkout nanoleaf=/absolute/wall-worktree --checkout pixoo=/absolute/pixoo-worktree
