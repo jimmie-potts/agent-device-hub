@@ -128,10 +128,15 @@ export async function claimStart(pid: number): Promise<{claimed: string} | 'held
   return {failed: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]};
 }
 
-/** Stop the claim, unless it is no longer the one `invocation` took: its holder outlived `RuntimeMaxSec` and another start has it now. */
+/**
+ * Stop the claim only while it is still the one `invocation` took: its holder may have outlived `RuntimeMaxSec`, and
+ * another start may have it now. When either invocation cannot be read, nothing is stopped, and the claim ends with its
+ * holder's process, about a second after the start exits (Hub #954).
+ */
 export async function releaseClaim(invocation: string): Promise<void> {
+  if (invocation === '') return;
   const now = await show(START_CLAIM, ['InvocationID']);
-  if (invocation !== '' && now?.InvocationID && now.InvocationID !== invocation) return;
+  if (now?.InvocationID !== invocation) return;
   await stopUnit(START_CLAIM);
 }
 

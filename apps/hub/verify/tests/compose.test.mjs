@@ -229,7 +229,11 @@ test('a composition counts as one run: it is refused beside a live run, and its 
 test('a composition start that opted in says the core is not built, with exit 3, instead of an internal error', async () => {
   const dir = await mkdtemp(join(shortTmp(), 'hn-'));
   try {
-    // A copy of the orchestrator outside every checkout: @jimmie-potts/app-verify does not resolve from there.
+    // A copy of the orchestrator outside every checkout: @jimmie-potts/app-verify does not resolve from there. A TMPDIR
+    // inside a checkout would resolve it from that checkout's node_modules, so the test says so rather than misjudge
+    // the orchestrator (Hub #954).
+    const resolves = spawnSync(process.execPath, ['--input-type=module', '-e', "await import('@jimmie-potts/app-verify')"], {cwd: dir, encoding: 'utf8'});
+    assert.notEqual(resolves.status, 0, `${dir} must be outside every checkout: point TMPDIR outside the repository`);
     for (const entry of await readdir(join(root, 'apps/hub/verify'), {withFileTypes: true})) {
       if (entry.isFile() && entry.name.endsWith('.mjs')) await copyFile(join(root, 'apps/hub/verify', entry.name), join(dir, entry.name));
     }

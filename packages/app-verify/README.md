@@ -315,7 +315,10 @@ in the same way once it vendors a core that has this.
   host route's `app-verify-command-<id>.service` do not count, so a stale or
   failed unit never blocks a start. A live unit whose receipt is stale does
   count, because it still holds memory: `doctor` shows it, `stop <run-id>`
-  ends it, and its lease ends it otherwise.
+  ends it, and its lease ends it otherwise. Test runs count too: the core's
+  `avt-<hex>` runs, the Hub, runtime and CHOMPI verify suites' runs under their
+  apps' own names, and a composition test's `<tag>-nl` and `<tag>-px` stand-ins.
+  They end by themselves within minutes, so a refused start waits and retries.
 - **Starts begun together.** A run has no unit until its build, seed and lease
   steps are done, so a guarded start first takes a claim: a transient unit,
   `app-verify-start-claim.service`, that lives while the starting process does
@@ -326,7 +329,9 @@ in the same way once it vendors a core that has this.
   returns and given back whether it started a run or not. A start killed without
   giving it back leaves it for about a second. A release stops the claim only
   while it is still the one that start took, by its `InvocationID`, so a start
-  that outlived the 30 minutes never stops another start's claim. If
+  that outlived the 30 minutes never stops another start's claim. When either
+  `InvocationID` cannot be read, the release stops nothing, and the claim ends
+  with the starting process about a second later (Hub #954). If
   `systemd-run` cannot create the claim or `systemctl` cannot list units, the
   start goes ahead and says so on stderr.
 - **Other operations.** `restart` replaces a run and is never refused.

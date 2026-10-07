@@ -28,10 +28,14 @@ const shimDir = (box, mode) => join(box.base, `shim-${mode}`);
 
 /**
  * The environment of a guarded command: the guard on, and a PATH whose systemctl and systemd-run are scoped to this
- * sandbox. `mode` injects a fault: `blind` (no unit listing) or `noclaim` (no claim unit).
+ * sandbox. `mode` injects a fault: `blind` (no unit listing), `noclaim` (no claim unit) or `noinvocation` (no unit's
+ * `InvocationID` can be read).
  */
 async function guarded(box, mode = 'scoped') {
-  return {APP_VERIFY_SINGLE_RUN: '1', PATH: await scopeShim(shimDir(box, mode), box.app, {blind: mode === 'blind', noclaim: mode === 'noclaim'})};
+  return {
+    APP_VERIFY_SINGLE_RUN: '1',
+    PATH: await scopeShim(shimDir(box, mode), box.app, {blind: mode === 'blind', noclaim: mode === 'noclaim', noinvocation: mode === 'noinvocation'}),
+  };
 }
 
 // No skip: the wording, and the README's example of it, need no user manager.
@@ -203,6 +207,30 @@ test('a release gives the claim back only while it is still the one that start t
     assert.equal(unloaded(claimOf(box)), false);
     await withShim(() => mine.release());
     assert.equal(unloaded(claimOf(box)), true, 'a release stops the claim that is still its own');
+  } finally {
+    process.env.PATH = saved;
+    systemctl('stop', claimOf(box));
+    await box.close();
+  }
+});
+
+// Hub #954: a release that cannot read which claim it took once fell back to stopping the claim by name, which could stop
+// another start's claim. It now leaves the claim to end with its holder's process.
+test('a release that cannot tell its own claim from another start\'s stops nothing', {skip, timeout: 120000}, async () => {
+  const box = await sandbox();
+  const saved = process.env.PATH;
+  try {
+    const env = await guarded(box, 'noinvocation');
+    process.env.PATH = env.PATH;
+    let slot;
+    try {
+      slot = await holdSingleRun();
+      await slot.release();
+    } finally {
+      process.env.PATH = saved;
+    }
+    assert.equal(unloaded(claimOf(box)), false, 'the claim is still there, to end with its holder');
+    assert.ok((await callsOf(shimDir(box, 'noinvocation'))).every(call => !/^systemctl .*\bstop\b/.test(call)), 'no stop was sent');
   } finally {
     process.env.PATH = saved;
     systemctl('stop', claimOf(box));

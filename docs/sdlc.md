@@ -496,9 +496,11 @@ Verification has three tiers.
    ([one run at a time](app-verification.md#one-run-at-a-time)). The pinned
    Nanoleaf and Pixoo cores ignore the variable, so `--app nanoleaf` and
    `--app pixoo` are not guarded. Stop your own run first. If the refusal names
-   a run you did not start, wait for it or ask its owner; do not stop it. A
-   short-lived `avt-*` run from another session's app-verify tests counts too
-   and ends by itself, so wait and retry.
+   a run you did not start, wait for it or ask its owner; do not stop it.
+   Another session's short-lived test runs count too and end by themselves, so
+   wait and retry: the app-verify tests' `avt-*` runs, the Hub, runtime and
+   CHOMPI verify suites' runs under their apps' own names, and a composition
+   test's `<tag>-nl` and `<tag>-px` stand-ins.
 
    A PR with no observable behavior skips this axis. It states "no observable
    behavior" and why, and the Standards reviewer checks the claim against the
