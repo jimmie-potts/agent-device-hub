@@ -102,7 +102,14 @@ type Bulb = {
   /** The shown key, kept across restarts so a restart paints nothing while the status stands. */
   shown: PaintKey | undefined;
   desired: {power: Tagged<boolean>; brightness: Tagged<number>};
+  /** The bulb's latest reading, which spaces on-demand reads. */
   observed: Observation | undefined;
+  /**
+   * The reading each record carries: the one it was last published with. A read that changes nothing a record shows
+   * leaves it, so polling publishes nothing that changed nothing (ADR 0012, "Repetition").
+   */
+  deviceSeen: Observation | undefined;
+  lightSeen: Observation | undefined;
   /** Accepted commands without an outcome, by `<source> <requestId>`. */
   readonly pending: Map<string, CommandFamily>;
   lastOutcome: CompletedOutcome | undefined;
@@ -129,6 +136,16 @@ const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const requestField = (requestId: string): LogFields => REQUEST_ID.test(requestId) ? {'bunny.request.id': requestId} : {};
 const storageCode = (error: unknown): ErrorCode =>
   typeof error === 'object' && error !== null && 'errcode' in error && error.errcode === SQLITE_FULL ? 'capacity' : 'internal';
+
+/** What the device record shows of a reading: power and brightness in percent. */
+const deviceReading = (observed: Observation | undefined): string =>
+  observed === undefined ? '' : JSON.stringify([observed.state.power, percentOf(observed.state.color.brightness)]);
+/** What the color record shows of a reading: hue in degrees, saturation and brightness in percent, and kelvin. */
+const lightReading = (observed: Observation | undefined): string => {
+  if (observed === undefined) return '';
+  const {hue, saturation, brightness, kelvin} = observed.state.color;
+  return JSON.stringify([Math.round((hue * 360) / 65535), percentOf(saturation), percentOf(brightness), kelvin]);
+};
 
 /** The outcome of a command's device work, by ADR 0012 and MAPPING.md's receipt rule. */
 function outcomeOf(requestId: string, attempt: Attempt): CompletedOutcome {
@@ -286,7 +303,7 @@ class LifxRun {
     return {
       config, qualified: isQualified, caps: config.status, queue, lease, leaseRefusal, availability: lease === undefined ? 'unavailable' : 'unknown',
       configurationRevision: row?.configurationRevision ?? 0, mode: isQualified ? row?.mode ?? config.initialMode ?? 'free' : undefined,
-      shown: row?.shown, desired: {power: UNKNOWN, brightness: UNKNOWN}, observed: undefined, pending: new Map(), lastOutcome: undefined,
+      shown: row?.shown, desired: {power: UNKNOWN, brightness: UNKNOWN}, observed: undefined, deviceSeen: undefined, lightSeen: undefined, pending: new Map(), lastOutcome: undefined,
       lastTransmission: UNKNOWN, deviceRevision: this.#revision, lightRevision: this.#revision, readAtMs: undefined, probe: undefined,
       probeDelayMs: PROBE_FIRST_MS,
     };
@@ -295,7 +312,7 @@ class LifxRun {
   // Records
 
   #device(bulb: Bulb): StateDraft<DeviceRecord> {
-    const {observed} = bulb;
+    const observed = bulb.deviceSeen;
     const kinds = [...new Set(bulb.pending.values())];
     const record: DeviceRecord = {
       id: bulb.config.id, revision: bulb.deviceRevision, kind: 'lifx', availability: bulb.availability,
@@ -313,12 +330,13 @@ class LifxRun {
   }
 
   #light(bulb: Bulb): StateDraft<LifxLight> {
-    const color = bulb.observed?.state.color;
+    const seen = bulb.lightSeen;
+    const color = seen?.state.color;
     const light: LifxLight = {
       id: bulb.config.id, revision: bulb.lightRevision,
       capabilities: {color: {supported: bulb.qualified}, temperature: bulb.qualified ? {supported: true, minimum: 1500, maximum: 9000} : UNSUPPORTED},
-      observed: color === undefined || bulb.observed === undefined ? UNKNOWN : {
-        status: 'known', observedAtMs: bulb.observed.atMs, hue: Math.round((color.hue * 360) / 65535), saturation: percentOf(color.saturation),
+      observed: color === undefined || seen === undefined ? UNKNOWN : {
+        status: 'known', observedAtMs: seen.atMs, hue: Math.round((color.hue * 360) / 65535), saturation: percentOf(color.saturation),
         brightness: percentOf(color.brightness), kelvin: color.kelvin,
       },
     };
@@ -341,15 +359,22 @@ class LifxRun {
     };
   }
 
-  /** Adds the bulb's records at a new revision to a transaction. */
-  #records(add: AddMessage, bulb: Bulb, light: boolean, parent: TraceContext | undefined): void {
+  /**
+   * Adds the bulb's records at a new revision to a transaction: its device record, and its color record when `light` is
+   * set; `device` false leaves the device record out. Each record takes the bulb's latest reading.
+   */
+  #records(add: AddMessage, bulb: Bulb, light: boolean, parent: TraceContext | undefined, device = true): void {
     this.#revision += 1;
     this.#store?.setRevision(this.#revision);
-    bulb.deviceRevision = this.#revision;
     const options = parent === undefined ? undefined : {parent};
-    add(`bunny.state.device.${bulb.config.id}`, {kind: 'state', ...this.#device(bulb)}, options);
+    if (device) {
+      bulb.deviceRevision = this.#revision;
+      bulb.deviceSeen = bulb.observed;
+      add(`bunny.state.device.${bulb.config.id}`, {kind: 'state', ...this.#device(bulb)}, options);
+    }
     if (light) {
       bulb.lightRevision = this.#revision;
+      bulb.lightSeen = bulb.observed;
       add(`bunny.state.lifx-light.${bulb.config.id}`, {kind: 'state', ...this.#light(bulb)}, options);
     }
   }
@@ -383,8 +408,8 @@ class LifxRun {
     this.#context.log[level]('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code});
   }
 
-  async #publish(bulb: Bulb, light: boolean, parent: TraceContext | undefined): Promise<void> {
-    await this.#transaction(add => { this.#records(add, bulb, light, parent); });
+  async #publish(bulb: Bulb, light: boolean, parent: TraceContext | undefined, device = true): Promise<void> {
+    await this.#transaction(add => { this.#records(add, bulb, light, parent, device); });
   }
 
   // Commands
@@ -619,8 +644,11 @@ class LifxRun {
     if (attempt.failure === 'cancelled') return false;
     const before = bulb.availability;
     this.#observe(bulb, attempt, undefined, undefined, call.context);
-    // An unanswered read of a bulb already known to be unavailable changes nothing, so it publishes nothing.
-    if (attempt.failure === undefined || before !== bulb.availability) await this.#publish(bulb, attempt.observed !== undefined, call.context);
+    // Only what a record shows counts as a change: a reading with the same values publishes nothing (ADR 0012,
+    // "Repetition"), and nor does an unanswered read of a bulb already known to be unavailable.
+    const device = before !== bulb.availability || deviceReading(bulb.observed) !== deviceReading(bulb.deviceSeen);
+    const light = lightReading(bulb.observed) !== lightReading(bulb.lightSeen);
+    if (device || light) await this.#publish(bulb, light, call.context, device);
     return attempt.failure === undefined;
   }
 

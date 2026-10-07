@@ -150,7 +150,7 @@ The module SHALL sync the core's `session` family and paint each qualified bulb 
 
 ### Requirement: Reaching bulbs under policy A
 
-The module's start SHALL open only local resources and SHALL NOT wait on a bulb. It SHALL then read each qualified bulb once with a LightGet, which never changes the bulb, and SHALL never write to a bulb at start. A bulb that does not answer SHALL be `unavailable`, never a module failure, and the module SHALL read it again after 30 s, doubling to 5 minutes, until it answers. Each sync of the module's records SHALL start one LightGet for a qualified bulb whose reading is missing or at least 30 s old, an unavailable bulb included, at most one per bulb every 30 s counting the probe's reads, so a bulb that came back shows `available` within 30 s of a reader's sync. Apart from the start's read and the probe of an unavailable bulb, nothing SHALL read a bulb while nothing reads its records. An outage SHALL log one `device.unavailable` warning and one `device.available` recovery, with later failures summarized at DEBUG at most once a minute, and repeated reads of an offline bulb SHALL publish no record that changed nothing.
+The module's start SHALL open only local resources and SHALL NOT wait on a bulb. It SHALL then read each qualified bulb once with a LightGet, which never changes the bulb, and SHALL never write to a bulb at start. A bulb that does not answer SHALL be `unavailable`, never a module failure, and the module SHALL read it again after 30 s, doubling to 5 minutes, until it answers. Each sync of the module's records SHALL start one LightGet for a qualified bulb whose reading is missing or at least 30 s old, an unavailable bulb included, at most one per bulb every 30 s counting the probe's reads, so a bulb that came back shows `available` within 30 s of a reader's sync. Apart from the start's read and the probe of an unavailable bulb, nothing SHALL read a bulb while nothing reads its records. An outage SHALL log one `device.unavailable` warning and one `device.available` recovery, with later failures summarized at DEBUG at most once a minute. A read SHALL publish only the records it changes: the device record when the bulb's availability, power or brightness changed, the color record when its hue, saturation, brightness or kelvin changed; a read that finds the bulb as it was, or an unanswered read of a bulb already `unavailable`, SHALL publish nothing, and a sync SHALL serve each record as it was last published.
 
 #### Scenario: A bulb unreachable at start
 - **WHEN** the module starts while the pendant never answers, and the pendant comes back after half an hour
@@ -159,6 +159,10 @@ The module's start SHALL open only local resources and SHALL NOT wait on a bulb.
 #### Scenario: Reading on demand
 - **WHEN** a part syncs the records while the reading is fresh, twice once it is stale, and again after five idle minutes
 - **THEN** a fresh reading starts no read, a stale one starts one read however often it is read, nothing reads the pendant while nothing reads its records, and the Beam is never read
+
+#### Scenario: Reads that change nothing
+- **WHEN** three on-demand reads find the pendant as it was, then the LIFX app changes its hue, then it drops off the network and is read on demand and by its probe for ten minutes
+- **THEN** the three reads publish nothing and a sync serves the last published record, the hue change republishes only the color record, and after the one record that says the pendant is unavailable no read publishes anything
 
 #### Scenario: A bulb that comes back
 - **WHEN** the pendant comes back ten minutes into an outage, and a reader syncs the records every 10 s

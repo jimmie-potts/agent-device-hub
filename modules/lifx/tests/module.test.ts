@@ -484,6 +484,37 @@ it('a bulb that comes back is available within 30 s of a reader syncing its reco
   assert.ok(world.clock.now() - since <= READ_INTERVAL_MS + 10_000);
 });
 
+it('a read that finds nothing changed publishes nothing; a changed reading republishes only the record it changes', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  const counts = (): number[] => [world.records('device', PENDANT.id).length, world.records('lifx-light', PENDANT.id).length];
+  const readAgain = async (): Promise<void> => {
+    await world.clock.advance(READ_INTERVAL_MS);
+    await synced(world, PENDANT.id);
+    await world.clock.advance(1);
+  };
+  const before = counts();
+  const reads = world.packets(PENDANT.address, PACKET.lightGet);
+  for (let index = 0; index < 3; index += 1) await readAgain();
+  assert.equal(world.packets(PENDANT.address, PACKET.lightGet), reads + 3, 'each sync of stale records read the bulb');
+  assert.deepEqual(counts(), before, 'three reads that found the bulb as it was published nothing');
+  const latest = world.device(PENDANT.id);
+  assert.deepEqual(await synced(world, PENDANT.id), latest, 'a sync serves the record as it was last published');
+  // The LIFX app changes the hue only: the color record changes, the device record does not.
+  world.network.change(PENDANT.address, {color: {hue: 21845, saturation: 65535, brightness: 32768, kelvin: 3500}});
+  await readAgain();
+  assert.deepEqual(counts(), [before[0] ?? 0, (before[1] ?? 0) + 1], 'only the color record');
+  // The bulb drops off: one record says so, and the reads that follow, on demand or by the probe, publish nothing.
+  world.network.offline(PENDANT.address);
+  await readAgain();
+  await world.clock.advance(5000);
+  assert.equal(world.device(PENDANT.id)?.availability, 'unavailable');
+  const offline = counts();
+  for (let index = 0; index < 4; index += 1) await readAgain();
+  await world.clock.advance(10 * 60_000);
+  assert.deepEqual(counts(), offline, 'unanswered reads of an unavailable bulb published nothing');
+});
+
 it('a stop waits for the bulb\'s call in flight to end, and keeps the bulb\'s lease until then', async () => {
   // A transport whose call ends only when the test lets it, after the stop asked it to end, as a socket that closes late.
   const network = new SimulatedLifx();

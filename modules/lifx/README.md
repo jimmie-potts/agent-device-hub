@@ -188,6 +188,12 @@ writes nothing.
 
 - A bulb that does not answer is `unavailable`, never a module failure. The module
   reads it again after 30 s, doubling to 5 minutes, until it answers.
+- A read publishes only what changed: the device record when the bulb's
+  availability, power or brightness changed, and the color record when its hue,
+  saturation, brightness or kelvin changed. A read that finds the bulb as it was
+  publishes nothing (ADR 0012, "Repetition"), so each record's `observedAtMs` is the
+  time of the reading it was last published with, and a sync serves the records as
+  they were last published.
 - Each sync of the records starts one LightGet for a qualified bulb whose reading is
   missing or at least 30 s old, an unavailable one included, at most one per bulb
   every 30 s counting the probe's reads, as the old host's on-demand read did
