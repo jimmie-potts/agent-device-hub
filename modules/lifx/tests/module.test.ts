@@ -135,6 +135,23 @@ it('a write the bulb never acknowledges is uncertain, reported once and never se
   assert.equal(outcome(world, 'req-short')?.result, 'uncertain');
 });
 
+it('a command whose deadline passes while it waits for its bulb ends failed with expired, and never reaches the bulb', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  world.network.offline(PENDANT.address);
+  accepted(await world.send(command.power(PENDANT.id, false), {requestId: 'req-ahead'}));
+  accepted(await world.send(command.power(PENDANT.id, true), {requestId: 'req-late', timeoutMs: 300}));
+  accepted(await world.send(command.mode(PENDANT.id, 'work'), {requestId: 'req-mode-late', timeoutMs: 300}));
+  await world.clock.advance(5000);
+  assert.equal(world.packets(PENDANT.address, PACKET.setPower), 2, 'the first command and its retry, nothing for the late one');
+  for (const requestId of ['req-late', 'req-mode-late']) {
+    assert.deepEqual(outcome(world, requestId), {
+      requestId, result: 'failed', evidence: 'none', error: {code: 'expired', retryable: false, detail: 'the command\'s deadline passed before it reached the bulb'},
+    }, requestId);
+  }
+  assert.deepEqual(world.device(PENDANT.id)?.desired.mode, {status: 'known', value: 'free'}, 'the expired mode change changed nothing');
+});
+
 it('a command to a bulb that does not answer its read fails with no evidence, and the bulb shows unavailable', async () => {
   const world = await open();
   await world.clock.advance(1);

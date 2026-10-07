@@ -127,10 +127,10 @@ function outcomeOf(requestId: string, attempt: Attempt): CompletedOutcome {
   if (attempt.effect === 'possible') {
     return {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the write went out and the bulb did not acknowledge it'}).error};
   }
-  if (attempt.failure === 'cancelled') {
-    return {requestId, result: 'failed', evidence: 'none', error: errorBody('cancelled', {detail: 'the module stopped before the command reached the bulb'}).error};
-  }
-  return {requestId, result: 'failed', evidence: 'none', error: errorBody('unavailable', {detail: 'the bulb did not answer'}).error};
+  const failed = (code: ErrorCode, detail: string): CompletedOutcome => ({requestId, result: 'failed', evidence: 'none', error: errorBody(code, {detail}).error});
+  if (attempt.failure === 'cancelled') return failed('cancelled', 'the module stopped before the command reached the bulb');
+  if (attempt.failure === 'expired') return failed('expired', 'the command\'s deadline passed before it reached the bulb');
+  return failed('unavailable', 'the bulb did not answer');
 }
 
 /** What the device work of a command is. A mode change sends nothing: it waits for its turn, then commits. */
@@ -467,9 +467,11 @@ class LifxRun {
       'bunny.device.id': bulb.config.id, ...requestField(requestId), 'bunny.routing.key': `bunny.cmd.${family}.${bulb.config.id}`,
       ...(spec.operation === undefined ? {} : {'bunny.operation': spec.operation}),
     };
+    const deadline = Date.parse(command.expiresat ?? '');
+    const within = Number.isNaN(deadline) ? {} : {deadlineMs: deadline};
     let attempt: Attempt;
     if (family === 'device-mode-set') {
-      attempt = await reservation.run({kind: 'turn'});
+      attempt = await reservation.run({kind: 'turn'}, within);
     } else {
       // Mark the work begun before anything is sent, so a crash after this point is reported uncertain, never failed.
       try {
@@ -483,8 +485,7 @@ class LifxRun {
       }
       log.info('command.executing', fields, command);
       const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
-      const deadline = Date.parse(command.expiresat ?? '');
-      attempt = await reservation.run(operationOf(family, command.data), Number.isNaN(deadline) ? {} : {deadlineMs: deadline});
+      attempt = await reservation.run(operationOf(family, command.data), within);
       call.end(attempt.failure === undefined ? 'unset' : 'error');
       this.#observe(bulb, attempt, spec.sent, requestId, call.context);
     }

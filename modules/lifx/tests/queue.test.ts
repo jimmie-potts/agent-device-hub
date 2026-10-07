@@ -197,6 +197,38 @@ it('no retry starts after the command\'s own deadline', async () => {
   assert.equal(calls, 2);
 });
 
+it('a job that waited in the queue past its command\'s deadline sends nothing and ends expired', async () => {
+  const types: number[] = [];
+  const {queue, clock} = setup((type, _payload, _expected, signal) => {
+    types.push(type);
+    return silence(signal);
+  });
+  const first = run(queue, {kind: 'power', on: true});
+  const late = run(queue, {kind: 'power', on: false}, {deadlineMs: clock.now() + 5});
+  const turn = run(queue, {kind: 'turn'}, {deadlineMs: clock.now() + 5});
+  await clock.advance(1000);
+  assert.deepEqual([(await first).effect, (await first).exchanges], ['possible', 2]);
+  for (const attempt of [await late, await turn]) assert.deepEqual([attempt.effect, attempt.failure, attempt.exchanges], ['none', 'expired', 0]);
+  assert.deepEqual(types, [21, 21], 'only the first job reached the bulb');
+});
+
+it('a write whose read outlasted the command\'s deadline is never sent', async () => {
+  const types: number[] = [];
+  let answer: () => void = () => {};
+  const {queue, clock} = setup(type => {
+    types.push(type);
+    // The read waits for the test; a write, if one were sent, would be acknowledged at once.
+    return type === 101 ? new Promise<Buffer>(resolve => { answer = () => { resolve(state()); }; }) : Promise.resolve(Buffer.alloc(0));
+  }, {timeoutMs: 500});
+  const done = run(queue, {kind: 'color', hue: 120, saturation: 100}, {deadlineMs: clock.now() + 50});
+  await clock.advance(100);
+  answer();
+  const attempt = await done;
+  assert.deepEqual([attempt.effect, attempt.failure, attempt.exchanges], ['none', 'expired', 1]);
+  assert.ok(attempt.observed, 'the reading still counts');
+  assert.deepEqual(types, [101], 'the LightGet only, never the LightSetColor');
+});
+
 it('the store remembers the newest completed commands and forgets older ones', () => {
   const store = new LifxStore(new DatabaseSync(':memory:'));
   for (let index = 0; index <= REMEMBERED; index += 1) {

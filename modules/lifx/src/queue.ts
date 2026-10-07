@@ -35,8 +35,11 @@ export type Attempt = {
    * `possible`: a write went out and no acknowledgment came, so it may have taken effect.
    */
   effect: 'sent' | 'none' | 'possible';
-  /** Why the job did not complete: the bulb did not answer, or the queue retired the job. */
-  failure?: 'unreachable' | 'cancelled';
+  /**
+   * Why the job did not complete: the bulb did not answer, the queue retired the job, the command's own deadline passed
+   * before the job sent its first packet or its write, or the module could not record the work before the write.
+   */
+  failure?: 'unreachable' | 'cancelled' | 'expired' | 'unrecorded';
   /** The reading the job took, if it read the bulb. */
   observed?: Observation;
   /** When the write's acknowledgment arrived. */
@@ -45,10 +48,24 @@ export type Attempt = {
   exchanges: number;
 };
 
+export type RunOptions = {
+  /**
+   * The command's own deadline on the runtime's clock. No packet goes out once it has passed: a job whose turn comes
+   * after it, or whose write would start after it, ends `expired` with no effect, and a write is not tried again after
+   * it.
+   */
+  deadlineMs?: number;
+  /**
+   * Runs once, just before the job's first write goes out, so the module can record that its work began. When it
+   * answers false, nothing is written and the job ends `unrecorded` with no effect.
+   */
+  beforeWrite?: () => boolean;
+};
+
 /** A place in the queue, held before the job is known to run, such as while the module stores a command it accepts. */
 export interface Reservation {
   /** Runs `operation` in its turn. Once the queue has closed, it resolves cancelled without sending anything. */
-  run(operation: Operation, options?: {deadlineMs?: number}): Promise<Attempt>;
+  run(operation: Operation, options?: RunOptions): Promise<Attempt>;
   /** Gives the place back without running anything. */
   release(): void;
 }
@@ -68,6 +85,10 @@ export type QueueOptions = {
 type Counter = {exchanges: number};
 
 const cancelled = (): Error => new Error('cancelled');
+/** The command's deadline passed before a packet went out. */
+class Expired extends Error {}
+/** The module could not record the work before its write. */
+class Unrecorded extends Error {}
 
 /** One bulb's queue: the only path from the module to that bulb. */
 export class BulbQueue {
@@ -115,10 +136,10 @@ export class BulbQueue {
       return true;
     };
     return {
-      run: (operation, {deadlineMs} = {}) => {
+      run: (operation, options = {}) => {
         if (!give()) return Promise.reject(new Error('reservation-used'));
         return new Promise<Attempt>(resolve => {
-          this.#enqueue(async () => { resolve(await this.#execute(operation, deadlineMs)); });
+          this.#enqueue(async () => { resolve(await this.#execute(operation, options)); });
         });
       },
       release: () => { give(); },
@@ -126,7 +147,7 @@ export class BulbQueue {
   }
 
   /** Runs `operation` in its turn, or answers undefined when the queue is closed or full. */
-  run(operation: Operation, options?: {deadlineMs?: number}): Promise<Attempt> | undefined {
+  run(operation: Operation, options?: RunOptions): Promise<Attempt> | undefined {
     return this.reserve()?.run(operation, options);
   }
 
@@ -157,12 +178,13 @@ export class BulbQueue {
     this.#draining = undefined;
   }
 
-  async #execute(operation: Operation, deadlineMs: number | undefined): Promise<Attempt> {
+  async #execute(operation: Operation, {deadlineMs, beforeWrite}: RunOptions): Promise<Attempt> {
     const counter: Counter = {exchanges: 0};
     let written = false;
     let observed: Observation | undefined;
     try {
       this.#live();
+      this.#within(deadlineMs);
       if (operation.kind === 'turn') return {effect: 'none', exchanges: 0};
       if (operation.kind === 'read') {
         observed = await this.#read(counter, deadlineMs);
@@ -188,16 +210,30 @@ export class BulbQueue {
         type = PACKET.setColor;
         payload = encodeColor(color);
       }
+      // The last checks before anything can change on the bulb: the queue is open, the deadline has not passed and the
+      // module has recorded that the work began.
       this.#live();
+      this.#within(deadlineMs);
+      if (beforeWrite !== undefined && !beforeWrite()) throw new Unrecorded();
       written = true;
       await this.#exchange(type, payload, PACKET.acknowledgment, counter, deadlineMs);
       return {effect: 'sent', ...(observed === undefined ? {} : {observed}), transmittedAtMs: this.#now(), exchanges: counter.exchanges};
-    } catch {
-      return {
-        effect: written ? 'possible' : 'none', failure: this.#closed ? 'cancelled' : 'unreachable',
-        ...(observed === undefined ? {} : {observed}), exchanges: counter.exchanges,
-      };
+    } catch (error) {
+      return {effect: written ? 'possible' : 'none', failure: this.#failure(error, written), ...(observed === undefined ? {} : {observed}), exchanges: counter.exchanges};
     }
+  }
+
+  /** Why a job ended early. Once a write went out, only the queue's close or the bulb's silence explains it. */
+  #failure(error: unknown, written: boolean): NonNullable<Attempt['failure']> {
+    if (this.#closed) return 'cancelled';
+    if (!written && error instanceof Expired) return 'expired';
+    if (!written && error instanceof Unrecorded) return 'unrecorded';
+    return 'unreachable';
+  }
+
+  /** Throws `Expired` once the command's own deadline has passed. */
+  #within(deadlineMs: number | undefined): void {
+    if (deadlineMs !== undefined && this.#now() >= deadlineMs) throw new Expired();
   }
 
   async #read(counter: Counter, deadlineMs: number | undefined): Promise<Observation> {
@@ -214,12 +250,12 @@ export class BulbQueue {
 
   /**
    * Sends one packet and waits for its answer, with at most `retries` more attempts of the same absolute payload, each
-   * with its own deadline. No attempt after the first starts once `deadlineMs`, the command's own deadline, has passed.
+   * with its own deadline. No attempt starts once `deadlineMs`, the command's own deadline, has passed.
    */
   async #exchange(type: number, payload: Buffer, expected: number, counter: Counter, deadlineMs: number | undefined): Promise<Buffer> {
     for (let attempt = 0; ; attempt += 1) {
       this.#live();
-      if (attempt > 0 && deadlineMs !== undefined && this.#now() >= deadlineMs) throw new Error('deadline');
+      this.#within(deadlineMs);
       const abort = new AbortController();
       this.#active = abort;
       counter.exchanges += 1;
