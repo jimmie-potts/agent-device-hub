@@ -3,7 +3,7 @@
 // command. A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
 // keep the MCP specification. The refusals `packages/mcp` makes itself, before a tool runs, keep its released 1.x
 // `gateway-error` result with no detail, since the package is reused unchanged. Only a client credential reaches MCP:
-// `read` lists and calls the read tools of the modules whose every device its grant names, and `control` the action.
+// `read` lists and calls every module's read tools, and `control` the action.
 import {
   bindServiceTools, createDeviceRegistry, createMcpHandler, type DeviceRegistration, type JsonSchema, type MachinePrincipal,
   type McpHandler, type ServiceExtension,
@@ -12,7 +12,7 @@ import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contract
 import type {ModuleTool} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
-import {principalOf, type Access} from './access.js';
+import type {Access} from './access.js';
 
 /** How long a module's read tool may take before the call is answered `unavailable`. */
 export const TOOL_TIMEOUT_MS = 5000;
@@ -150,18 +150,16 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
   }
   const registry = createDeviceRegistry(registrations);
   const tools = bindings.flatMap(binding => [...bindServiceTools(registry, binding)]);
-  // MCP's registrations are the modules, so a credential's MCP devices are the modules whose every device its grant
-  // names: the package then lists and calls only their tools, as the old Hub did per device.
-  const devicesOf = new Map(host.modules().map(module => [module.name, module.devices]));
+  // MCP's registrations are the modules, and a credential's MCP devices are every one of them: no credential is limited
+  // to some devices (owner decision, 2026-10-07). The package checks its scopes per tool.
+  const devices = registrations.map(registration => registration.deviceId);
   return createMcpHandler({
     enabled: true, registry, tools, allowedHosts: [...hosts], allowedOrigins: [],
     authenticate: token => {
       const credential = host.access.credential(token);
       if (credential === undefined) return Promise.resolve(null);
-      const granted = principalOf(credential).devices;
-      const devices = registrations.map(registration => registration.deviceId).filter(name => (devicesOf.get(name) ?? []).every(device => granted.has(device)));
       const scopes = credential.scopes.filter((scope): scope is 'read' | 'control' => scope === 'read' || scope === 'control');
-      const principal: MachinePrincipal = {id: credential.id, credential: {kind: 'machine', status: 'active', declared: true, devices, scopes}};
+      const principal: MachinePrincipal = {id: credential.id, credential: {kind: 'machine', status: 'active', declared: true, devices: [...devices], scopes}};
       return Promise.resolve(principal);
     },
   });

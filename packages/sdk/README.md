@@ -88,16 +88,13 @@ The `Sdk` calls:
 | --- | --- |
 | `publish(key, draft, {parent?})` | Queues a state, removal, occurrence or outcome message for every matching subscriber and resolves with the message. It never waits for a handler. |
 | `publishMessage(key, message)` | Publishes a message built earlier, unchanged: its `id`, `time` and trace stay. An outbox resends a stored message this way. A message from another source is refused with `forbidden`, and one that is not published with `invalid-request`. |
-| `subscribe(pattern, handler)` | Delivers matching messages to `handler(message, key)`, one at a time and in publish order, with the routing key each was published on. |
+| `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
 | `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
 | `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. Only a shared family, `device`, may have other owners too. See [Owners](#owners). |
 
-`subscribe` also takes `{onOverflow}`; see [Delivery](#delivery). Its
-`{accept(key)}` keeps only the messages whose key it accepts: one it declines is
-never queued, so it is neither delivered nor counted as dropped. A remote edge
-uses it to narrow what a part receives to its grant (Hub #835).
+`subscribe` also takes `{onOverflow}`; see [Delivery](#delivery).
 
 `subscribe`, `respond` and `serveSync` resolve with a subscription. Its
 `close()` stops delivery, drops queued messages and resolves when a running
@@ -131,9 +128,11 @@ ADR 0012's key shape ends each key in an entity's routing ID, and the profile ma
 (`bunny-message-profile`, "A message's subject is its key's routing ID").
 A command's `subject` is the entity it is for, so it must be its key's last
 token: on every transport the bus refuses any other command with
-`invalid-message` before a responder has it (Hub #835). A responder that acts on
-the subject therefore acts on the key's entity, and a grant of the key covers
-it. A remote edge checks the same of every message a remote part publishes.
+`invalid-message` before a responder has it (Hub #835). The bus refuses a state
+or removal whose subject is not its key's last token the same way, wherever it
+is published, so a record never reaches a reader of another entity's key. A
+responder that acts on the subject therefore acts on the key's entity, and a
+grant of the key covers it. A remote edge checks the same of every message a remote part publishes.
 
 Replies go straight back to their requester. Sync messages use no routing key:
 a sync request goes to the owner it names, or to the one owner of its families,
@@ -915,7 +914,7 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?, publishes?, excluded?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
   principal opened, as when the host revokes it.
@@ -929,13 +928,7 @@ HTTP status that fits its code.
   the edge refuses at start a grant whose calls or patterns it cannot read.
   `publishes` names the payload families, by the family of a message's
   `dataschema`, it may publish, so a hook's grant can carry lifecycle
-  observations only. `excluded` names key patterns it may never use or receive,
-  though `keys` covers them, such as `bunny.*.*.<device>` for a device its grant
-  does not name: a key it publishes or requests, or a pattern it responds to,
-  that meets one is `forbidden`, and the edge leaves out of what it receives
-  every message whose key one matches, through a subscription's `accept`, and
-  every record of a sync answer, with its membership. A record's key is
-  `bunny.state.<family>.<subject>`, which the routing-ID rule makes its own.
+  observations only.
 - **Declared source.** The client names the source it acts as in every call's
   `bunny-source` header (`SOURCE_HEADER`), and the edge refuses a token used
   under another source with `forbidden` at once, before the stream opens.
@@ -949,10 +942,12 @@ HTTP status that fits its code.
   had it, is forgotten, since sending it again is safe. A command counts against
   its principal's quota: the credential or session the host's `authenticate`
   names by `id`, or else its source. One principal may have
-  `MAX_REMEMBERED_PER_PRINCIPAL` (1,024) remembered at once and all of them
-  `MAX_REMEMBERED_COMMANDS` (65,536); past either, that principal's next command
-  is refused with the retryable `capacity`, while another's still goes through,
-  even of the same source. A repeat is a duplicate whichever principal of the
+  `MAX_REMEMBERED_PER_PRINCIPAL` (1,024) remembered at once, one source's
+  principals together `MAX_REMEMBERED_PER_SOURCE` (4,096), and all of them
+  `MAX_REMEMBERED_COMMANDS` (135,168, which 33 sources at their bound fit);
+  past any, that principal's next command is refused with the retryable
+  `capacity`, while another principal's still goes through, of the same source
+  until that source's bound and of another source always. A repeat is a duplicate whichever principal of the
   source sends it. A new edge, as after a restart, remembers none.
 - **Liveness.** The edge writes a heartbeat comment line on each stream every
   `heartbeatMs` (`HEARTBEAT_MS`, 15 s). A stream whose socket stays full for

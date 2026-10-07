@@ -56,7 +56,7 @@ it('a module\'s accepted request makes one admission and one reply record, contr
 });
 
 it('a remote part\'s refused request, and one with no responder, make their records at their levels', async context => {
-  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url'), devices: ['wall', 'none']};
+  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url')};
   const {config} = await edgeConfig(context, [operator]);
   const {runtime, logs} = await run(context, {
     modules: [wall(() => errorBody('invalid-state', {detail: 'quiet mode keeps the lamps off'}))], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},

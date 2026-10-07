@@ -1,13 +1,26 @@
 // The cutover's conversion of the old Hub's edge settings (Hub #835), which the installer (#935) runs offline at the
 // cutover (#840): the Hub's configuration file's `credentials`, `browserAccess`, `mcp`, `editorLinks` and `placeLinks`
 // become the runtime's credentials file and its configuration's `edge` section. Each credential keeps its ID, its
-// token's digest, every scope and every device grant, so the token the client already holds authenticates unchanged; it
-// gains the source it acts as, `bunny/parts/<id>` in routing form. Nothing here reads a token: the Hub kept only digests.
+// token's digest and every scope, so the token the client already holds authenticates unchanged; it gains the source it
+// acts as, `bunny/parts/<id>` in routing form. Its device grant is dropped, since no runtime grant limits a client to
+// some devices (owner decision, 2026-10-07), and the conversion lists, by ID, each credential that dropping it widened.
+// Nothing here reads a token: the Hub kept only digests.
 import {DASHBOARD_SOURCE, parseCredentials, type EdgeCredential} from './credentials.js';
 import {RuntimeError, checkEdgeSection, type EdgeConfig} from './state.js';
 
-/** What the conversion gives the installer: the credentials to write, and the `edge` section without their file's path. */
-export type ConvertedEdge = {credentials: EdgeCredential[]; edge: Omit<EdgeConfig, 'credentials'>};
+/**
+ * What the conversion gives the installer: the credentials to write, the `edge` section without their file's path, and
+ * `widened`, the IDs alone of the credentials that reach more devices than the Hub let them, for the owner to review at
+ * the cutover.
+ */
+export type ConvertedEdge = {credentials: EdgeCredential[]; edge: Omit<EdgeConfig, 'credentials'>; widened: string[]};
+
+/**
+ * The scopes the Hub limited to the devices a credential named: a `read` saw, and a `control` commanded, only those.
+ * The runtime limits neither, so a credential with either is wider than it was, whatever devices it named, as a device
+ * added later is its too. `ingest` and `admin` named no device.
+ */
+const DEVICE_SCOPES: readonly string[] = ['read', 'control'];
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -40,10 +53,10 @@ function linksOf(value: unknown, what: string, key: (name: string) => boolean): 
 /**
  * Converts the old Hub's configuration, as its `hub.json` holds it, into the runtime's credentials and `edge` section.
  * It refuses, with `convert-invalid`, a Hub configuration whose credentials are malformed, whose IDs give two
- * credentials one source, or whose device grants or editor links name a device that is not a routing ID, which the
- * runtime's modules would not answer to; the owner renames those before the cutover. The runtime's own reader checks
- * the result again: `parseCredentials` here, and the configuration reader when the runtime starts. No refusal quotes a
- * digest.
+ * credentials one source, or whose editor links name a device that is not a routing ID, which the runtime's modules
+ * would not answer to; the owner renames those before the cutover. Each credential's device grant is dropped unread.
+ * The runtime's own reader checks the result again: `parseCredentials` here, and the configuration reader when the
+ * runtime starts. No refusal quotes a digest.
  */
 export function convertHubEdge(hub: unknown): ConvertedEdge {
   if (!isRecord(hub)) throw refuse('is not an object');
@@ -52,21 +65,14 @@ export function convertHubEdge(hub: unknown): ConvertedEdge {
   const sources = new Map<string, string>();
   const credentials = listed.map((entry: unknown): EdgeCredential => {
     if (!isRecord(entry)) throw refuse('has a credential that is not an object');
-    const {id, digest, scopes, devices} = entry;
+    const {id, digest, scopes} = entry;
     if (typeof id !== 'string') throw refuse('has a credential without an ID');
     const source = sourceForHubId(id);
     if (source === undefined) throw refuse(`has a credential, ${id}, whose ID gives no source`);
     const taken = sources.get(source);
     if (taken !== undefined) throw refuse(`gives ${taken} and ${id} one source, ${source}; rename one before the cutover`);
     sources.set(source, id);
-    if (Array.isArray(devices)) {
-      const foreign = (devices as unknown[]).find(device => typeof device !== 'string' || !ROUTING_ID.test(device));
-      if (foreign !== undefined) {
-        const named = typeof foreign === 'string' ? `a device, ${foreign},` : 'a device';
-        throw refuse(`grants ${id} ${named} that is not a routing ID; rename it before the cutover`);
-      }
-    }
-    return {id, source, digest: digest as string, scopes: scopes as EdgeCredential['scopes'], devices: devices as string[]};
+    return {id, source, digest: digest as string, scopes: scopes as EdgeCredential['scopes']};
   });
   let checked: EdgeCredential[];
   try {
@@ -92,5 +98,6 @@ export function convertHubEdge(hub: unknown): ConvertedEdge {
     if (error instanceof RuntimeError) throw refuse('has links the runtime does not take: each a loopback http link without credentials, query or fragment, at most 16 editor links and 8 place links with a port');
     throw error;
   }
-  return {credentials: checked, edge};
+  const widened = checked.filter(credential => credential.scopes.some(scope => DEVICE_SCOPES.includes(scope))).map(credential => credential.id);
+  return {credentials: checked, edge, widened};
 }

@@ -1,7 +1,8 @@
 // The edge's client credentials (Hub #835): a private secret file that the runtime's configuration file names in its
-// `edge` section, carried over from the old Hub's credentials. Each credential keeps the Hub's scopes and device grants,
-// acts as one source, and is checked by its token's SHA-256 digest: the file never holds a token, and no record, health
-// document or error body names one. The runtime reads the file at its start and again when asked to reload it, so a
+// `edge` section, carried over from the old Hub's credentials. Each credential keeps the Hub's scopes, acts as one
+// source, and is checked by its token's SHA-256 digest: the file never holds a token, and no record, health document or
+// error body names one. No credential is limited to some devices (owner decision, 2026-10-07): the Hub's device grants
+// are dropped. The runtime reads the file at its start and again when asked to reload it, so a
 // credential is granted, revoked or rotated by changing the file.
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import {chmod, link, open, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
@@ -13,13 +14,11 @@ export const CREDENTIALS_SCHEMA = 'edge-credentials/1.0';
 export const MAX_CREDENTIALS_BYTES = 65_536;
 /** How many credentials one file may hold, as the old Hub allowed. */
 export const MAX_CREDENTIALS = 32;
-/** How many devices one credential may name. */
-export const MAX_GRANTED_DEVICES = 64;
 /** The old Hub's scopes, kept as they were: reading, controlling devices, sending lifecycle observations and administration. */
 export const SCOPES = ['read', 'control', 'ingest', 'admin'] as const;
 export type Scope = typeof SCOPES[number];
 
-/** One client credential: who it is, the source it acts as, its token's digest, and its scopes and device grants. */
+/** One client credential: who it is, the source it acts as, its token's digest and its scopes. */
 export type EdgeCredential = {
   /** 1 to 128 letters, digits, underscores, dots or hyphens, as the old Hub's credential IDs. */
   readonly id: string;
@@ -28,14 +27,11 @@ export type EdgeCredential = {
   /** The lowercase hexadecimal SHA-256 of its bearer token. */
   readonly digest: string;
   readonly scopes: readonly Scope[];
-  /** The devices it may command, by routing ID. */
-  readonly devices: readonly string[];
 };
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 const DIGEST = /^[0-9a-f]{64}$/;
-const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const invalid = (detail: string): RuntimeError => new RuntimeError('edge-credentials-invalid', `the edge's credentials file ${detail}`);
 
@@ -62,9 +58,9 @@ export const reservedSource = (source: string): boolean =>
 /**
  * Checks a credentials document, `{"schema": "edge-credentials/1.0", "credentials": [...]}`, and returns its
  * credentials. At most 32; each with a distinct ID, digest and source, a well-formed source that is not the core's, a
- * module's, the runtime's own or the browser sessions', distinct scopes from the four and distinct routing IDs for
- * devices. Throws a `RuntimeError`: `edge-credential-source` for a reserved source, `edge-credentials-invalid`
- * otherwise. No refusal quotes a digest.
+ * module's, the runtime's own or the browser sessions', and distinct scopes from the four. A credential has no other
+ * member, so one that names devices is refused rather than read wider than it was written. Throws a `RuntimeError`:
+ * `edge-credential-source` for a reserved source, `edge-credentials-invalid` otherwise. No refusal quotes a digest.
  */
 export function parseCredentials(document: unknown): EdgeCredential[] {
   if (!isRecord(document) || document.schema !== CREDENTIALS_SCHEMA) throw invalid(`is not ${CREDENTIALS_SCHEMA}`);
@@ -72,21 +68,17 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
   const listed = document.credentials;
   if (!Array.isArray(listed) || listed.length > MAX_CREDENTIALS) throw invalid(`must list at most ${MAX_CREDENTIALS} credentials`);
   const credentials = listed.map((entry: unknown): EdgeCredential => {
-    if (!isRecord(entry) || Object.keys(entry).some(key => !['id', 'source', 'digest', 'scopes', 'devices'].includes(key))) {
-      throw invalid('has a credential that is not {id, source, digest, scopes, devices}');
+    if (!isRecord(entry) || Object.keys(entry).some(key => !['id', 'source', 'digest', 'scopes'].includes(key))) {
+      throw invalid('has a credential that is not {id, source, digest, scopes}');
     }
-    const {id, source, digest, scopes, devices} = entry;
+    const {id, source, digest, scopes} = entry;
     if (typeof id !== 'string' || !ID.test(id)) throw invalid('has a credential whose ID is not 1 to 128 letters, digits, underscores, dots or hyphens');
     if (typeof source !== 'string' || !SOURCE.test(source) || source.length > 256) throw invalid(`gives ${id} a malformed source`);
     if (reservedSource(source)) throw new RuntimeError('edge-credential-source', `${id} may not act as ${source}: the core's, the modules' and the runtime's sources are its own`);
     if (typeof digest !== 'string' || !DIGEST.test(digest)) throw invalid(`gives ${id} a digest that is not a lowercase hexadecimal SHA-256`);
     const known = (scope: unknown): scope is Scope => typeof scope === 'string' && (SCOPES as readonly string[]).includes(scope);
     if (!Array.isArray(scopes) || !scopes.every(known) || new Set(scopes).size !== scopes.length) throw invalid(`gives ${id} scopes other than distinct read, control, ingest and admin`);
-    const routing = (device: unknown): device is string => typeof device === 'string' && device.length <= 128 && ROUTING_ID.test(device);
-    if (!Array.isArray(devices) || devices.length > MAX_GRANTED_DEVICES || !devices.every(routing) || new Set(devices).size !== devices.length) {
-      throw invalid(`gives ${id} devices that are not at most ${MAX_GRANTED_DEVICES} distinct routing IDs`);
-    }
-    return {id, source, digest, scopes: [...scopes], devices: [...devices]};
+    return {id, source, digest, scopes: [...scopes]};
   });
   if (new Set(credentials.map(credential => credential.id)).size !== credentials.length) throw invalid('gives two credentials one ID');
   if (new Set(credentials.map(credential => credential.digest)).size !== credentials.length) throw invalid('gives two credentials one token');
@@ -127,7 +119,7 @@ export async function readEdgeCredentials(file: string): Promise<EdgeCredential[
 
 /** The credentials as the file holds them, one per line. */
 export const credentialsDocument = (credentials: readonly EdgeCredential[]): string =>
-  `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes, devices}) => ({id, source, digest, scopes, devices}))}, null, 2)}\n`;
+  `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes}) => ({id, source, digest, scopes}))}, null, 2)}\n`;
 
 /** How old an empty lock file must be before a writer takes it for one a crashed writer left. */
 const EMPTY_LOCK_MS = 60_000;
@@ -197,7 +189,7 @@ async function takeOver(lock: string, judged: string, nonce: string): Promise<vo
  * crashed writer's, and is taken over in one step that never takes another writer's fresh lock. A writer removes only a
  * lock that it created. Temporary files a crashed writer left beside the file are removed first.
  */
-async function locked<T>(file: string, change: () => Promise<T>): Promise<T> {
+async function locked<T>(file: string, change: () => Promise<T>, {beforeTakeOver}: CredentialWriteOptions = {}): Promise<T> {
   const previous = queues.get(file) ?? Promise.resolve();
   const turn = previous.catch(() => {}).then(async () => {
     const lock = `${file}.lock`;
@@ -210,6 +202,7 @@ async function locked<T>(file: string, change: () => Promise<T>): Promise<T> {
       const age = Date.now() - ((await stat(lock).catch(() => undefined))?.mtimeMs ?? Date.now());
       const crashed = Number.isSafeInteger(owner) && owner > 0 ? !running(owner) : age > EMPTY_LOCK_MS;
       if (!crashed) throw busy();
+      await beforeTakeOver?.();
       await takeOver(lock, judged, nonce);
     }
     try {
@@ -270,24 +263,27 @@ export async function writeEdgeCredentials(file: string, credentials: readonly E
   await locked(file, () => replace(file, credentials));
 }
 
-/** What a test may run just before a writer checks the file and renames its new one over it. */
-export type CredentialWriteOptions = {beforeReplace?: () => Promise<void>};
+/**
+ * What a test may run just before a writer checks the file and renames its new one over it, and just before it takes
+ * over a lock it judged a crashed writer's.
+ */
+export type CredentialWriteOptions = {beforeReplace?: () => Promise<void>; beforeTakeOver?: () => Promise<void>};
 
 /** Reads the file under its lock, applies `change`, and writes the result unless the file changed since it was read. */
 async function update<T>(
-  file: string, change: (current: EdgeCredential[]) => {credentials?: EdgeCredential[]; result: T}, {beforeReplace}: CredentialWriteOptions,
+  file: string, change: (current: EdgeCredential[]) => {credentials?: EdgeCredential[]; result: T}, {beforeReplace, beforeTakeOver}: CredentialWriteOptions,
 ): Promise<T> {
   return locked(file, async () => {
     const before = await bytesOf(file);
     const {credentials, result} = change(await readEdgeCredentials(file));
     if (credentials !== undefined) await replace(file, credentials, before ?? Buffer.alloc(0), beforeReplace);
     return result;
-  });
+  }, beforeTakeOver === undefined ? {} : {beforeTakeOver});
 }
 
 /**
  * Grants a credential, as a producer's setup does (Hub #926): adds it to the file, and changes nothing when the file
- * already holds it as it is. A credential with its ID but another digest, source, scopes or devices belongs to another
+ * already holds it as it is. A credential with its ID but another digest, source or scopes belongs to another
  * owner, and one with another ID but its source would share it: either is refused with `edge-credential-conflict`, as
  * the old setup authority refused a credential it did not own. To rotate a token, revoke the credential and grant it
  * again. The running runtime takes it once it reloads its credentials.

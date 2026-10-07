@@ -64,11 +64,11 @@ type Phase = 'manifest' | 'start' | 'handler' | 'timer' | 'worker' | 'async' | '
 /** A failure: the reason health shows, and where it arose, which only the log record carries. */
 type Failure = Reason & {phase: Phase};
 type Flow = {fail: (failure: Failure, error: unknown) => void};
-/** What the module's section gave it once admitted: its configuration, its devices and its secret files by name. */
-type Setup = {config: unknown; devices: readonly string[]; secrets: ReadonlyMap<string, string>};
+/** What the module's section gave it once admitted: its configuration and its secret files by name. */
+type Setup = {config: unknown; secrets: ReadonlyMap<string, string>};
 /**
- * A hosted module as the gateway sees it (Hub #835): its manifest, its state and, once admitted, the configuration and
- * devices its section gave it.
+ * A hosted module as the gateway sees it (Hub #835): its manifest, its state and, once admitted, the configuration its
+ * section gave it.
  */
 export type HostedModule = {
   readonly name: string;
@@ -76,7 +76,11 @@ export type HostedModule = {
   readonly state: ModuleState;
   readonly admitted: boolean;
   readonly config: unknown;
-  readonly devices: readonly string[];
+  /**
+   * The families the module has served through sync while it ran, kept after it stops or fails, so the gateway can tell
+   * a family whose module is down (`unavailable`) from one no module serves (`not-found`) (Hub #835).
+   */
+  readonly served: readonly string[];
 };
 /** A contribution's call that failed because the module was not running: `unavailable`, with nothing called. */
 export class ModuleUnavailable extends Error {
@@ -106,6 +110,8 @@ type Slot = {
   database: DatabaseSync | undefined;
   /** Set when the module's stop begins; from then on its context refuses use. */
   stopping: Promise<void> | undefined;
+  /** The families the module has served through sync, kept after it stops or fails, so a reader learns who is down. */
+  readonly served: Set<string>;
 };
 type Outcome = {status: 'done'} | {status: 'failed'; error: unknown} | {status: 'timed-out'};
 /** Drops on one subscription since its window opened, and the window's cancel. */
@@ -270,7 +276,7 @@ export class ModuleHost {
           workers.add(worker);
           worker.once('exit', () => { workers.delete(worker); });
         }}),
-        setup: undefined, state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined,
+        setup: undefined, state: 'starting', reason: undefined, syncRestarts: 0, participant: undefined, database: undefined, stopping: undefined, served: new Set(),
       };
       const reason = refusal(module.manifest, names);
       if (checkModuleName(name) === undefined) names.add(name);
@@ -311,7 +317,7 @@ export class ModuleHost {
   modules(): HostedModule[] {
     return this.#slots.map(slot => ({
       name: slot.name, manifest: slot.module.manifest, state: slot.state, admitted: slot.setup !== undefined, config: slot.setup?.config,
-      devices: slot.setup?.devices ?? [],
+      served: [...slot.served],
     }));
   }
 
@@ -363,7 +369,7 @@ export class ModuleHost {
       }
     }
     for (const id of checked.devices) devices.add(id);
-    slot.setup = {config: checked.config, devices: checked.devices, secrets: checked.secrets};
+    slot.setup = {config: checked.config, secrets: checked.secrets};
   }
 
   /** Refuses the module: it never starts, and health and its record name the reason. */
@@ -429,7 +435,7 @@ export class ModuleHost {
       publish: <T extends object>(key: string, draft: Draft<T>, options?: SendOptions) => participant.publish(key, draft, options),
       publishMessage: <T extends object>(key: string, message: Message<T>) => participant.publishMessage(key, message),
       subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) =>
-        participant.subscribe<T>(pattern, (message, key) => inFlow(() => handler(message, key)), options === undefined ? undefined : {
+        participant.subscribe<T>(pattern, message => inFlow(() => handler(message)), options === undefined ? undefined : {
           ...(options.onOverflow === undefined ? {} : {onOverflow: overflow => inFlow(() => options.onOverflow?.(overflow))}),
         }),
       request: <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => participant.request(key, draft, options),
@@ -437,7 +443,11 @@ export class ModuleHost {
         participant.respond<T>(pattern, command => inFlow(() => responder(command))),
       sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) =>
         participant.sync<T>(families, change => inFlow(() => handler(change)), options),
-      serveSync: (families: readonly string[], provider: SyncProvider) => participant.serveSync(families, request => inFlow(() => provider(request))),
+      serveSync: async (families: readonly string[], provider: SyncProvider) => {
+        const served = await participant.serveSync(families, request => inFlow(() => provider(request)));
+        for (const family of families) slot.served.add(family);
+        return served;
+      },
     };
     return {
       sdk,

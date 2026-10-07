@@ -73,9 +73,9 @@ const calls = (participant: Participant, saw: (context: TraceContext) => void, s
   source: participant.source,
   publish: (key, draft, options) => participant.publish(key, draft, options),
   publishMessage: (key, message) => participant.publishMessage(key, message),
-  subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => participant.subscribe<T>(pattern, (message, key) => {
+  subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => participant.subscribe<T>(pattern, message => {
     saw(message);
-    return handler(message, key);
+    return handler(message);
   }, options),
   request: (key, draft, options) => {
     sent.push({call: 'request', key, draft});

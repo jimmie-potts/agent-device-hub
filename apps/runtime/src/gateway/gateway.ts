@@ -1,7 +1,7 @@
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes and the core's operator action, MCP, the modules' pages and content, and browser sign-in,
 // each with one error body from the 2.0 registry. Every caller is a client credential or a browser session (access.ts),
-// each with the old Hub's scopes and device grants. A route of the old Hub answers `not-found` and is logged with the
+// each with the old Hub's scopes; no caller is limited to some devices (owner decision, 2026-10-07). A route of the old Hub answers `not-found` and is logged with the
 // route it asked for (retired.ts), for the retirement story's check (#839).
 import {randomUUID} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
@@ -15,11 +15,11 @@ import {
 } from '@jimmie-potts/sdk';
 import type {EdgeCredential, Scope} from '../credentials.js';
 import {REGISTRY_REASONS, diagnosticWriter} from '../diagnostics.js';
-import {ContributionFailed, ModuleUnavailable, type HostedModule, type ModuleHost} from '../host.js';
+import {ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
 import {
-  Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, hiddenDevices, mayUseModule, sessionCookie, type Principal,
+  Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
 } from './access.js';
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
@@ -119,7 +119,7 @@ export class Gateway {
     this.#options = options;
     this.#log = options.log;
     this.access = new Access(options.credentials, {
-      devices: () => this.#devices(), clock: options.clock, scheduler: options.scheduler,
+      clock: options.clock, scheduler: options.scheduler,
       // A browser session that ends without its logout, evicted or expired, takes its streams with it.
       ended: id => { this.edge.disconnectPrincipal(id); },
     });
@@ -131,7 +131,7 @@ export class Gateway {
       })(diagnosticWriter(options.log)),
       authenticate: request => {
         const principal = this.#admitted.get(request);
-        return principal === undefined ? undefined : edgePermissions(principal, this.#devices());
+        return principal === undefined ? undefined : edgePermissions(principal);
       },
       ...(options.liveness?.heartbeatMs === undefined ? {} : {heartbeatMs: options.liveness.heartbeatMs}),
       ...(options.liveness?.stallMs === undefined ? {} : {stallMs: options.liveness.stallMs}),
@@ -155,11 +155,6 @@ export class Gateway {
       }, hosts);
     }
     if (this.#options.edge.launcher) this.#closeLauncher = await startLauncher(this.#options.stateDir, () => ({url: `${this.#origin}/`, code: this.access.issueLaunch()}));
-  }
-
-  /** Every device an admitted module names. */
-  #devices(): string[] {
-    return this.#options.host.modules().filter(module => module.admitted).flatMap(module => module.devices);
   }
 
   /**
@@ -294,84 +289,96 @@ export class Gateway {
     needs('read');
     if (path === '/api/v2/modules') {
       noQuery();
-      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module, principal))});
+      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module))});
     }
     if (path === '/api/v2/links') {
       noQuery();
       const {editorLinks, placeLinks} = this.#options.edge;
-      const editors = Object.fromEntries(Object.entries(editorLinks).filter(([device]) => principal.devices.has(device)));
-      return json(200, {schema: 'links/2.0', editors, places: placeLinks});
+      return json(200, {schema: 'links/2.0', editors: editorLinks, places: placeLinks});
     }
-    if (path === '/api/v2/snapshot') return this.#snapshot(url, principal);
+    if (path === '/api/v2/snapshot') return this.#snapshot(url);
     const family = /^\/api\/v2\/families\/([^/]+)$/.exec(path)?.[1];
     if (family !== undefined) {
       noQuery();
-      return this.#family(family, principal);
+      return this.#family(family);
     }
     const settings = /^\/api\/v2\/modules\/([^/]+)\/settings$/.exec(path)?.[1];
     if (settings !== undefined) {
       noQuery();
-      return this.#settings(settings, principal);
+      return this.#settings(settings);
     }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
       noQuery();
-      return this.#content(content[1] ?? '', content[2] ?? '', principal);
+      return this.#content(content[1] ?? '', content[2] ?? '');
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
       noQuery();
-      return this.#page(page[1] ?? '', page[2] ?? '', principal);
+      return this.#page(page[1] ?? '', page[2] ?? '');
     }
     throw refuse('not-found', 'no such route');
   }
 
-  /**
-   * A module as `/api/v2/modules` lists it: its state and what it contributes, which is nothing for a caller whose grant
-   * does not name every device the module names.
-   */
-  #describe(module: HostedModule, principal: Principal): object {
-    const {name, manifest, state} = module;
-    const usable = module.admitted && mayUseModule(principal, module.devices);
+  /** A module as `/api/v2/modules` lists it: its state and what it contributes, which is nothing until it is admitted. */
+  #describe(module: HostedModule): object {
+    const {name, manifest, state, admitted} = module;
     return {
       name, apiVersion: manifest.apiVersion, state,
-      pages: usable ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
-      tools: usable ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval'] : [])] : [],
-      settings: usable && manifest.settings !== undefined,
+      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
+      tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval'] : [])] : [],
+      settings: admitted && manifest.settings !== undefined,
     };
   }
 
   /**
-   * Whether a caller may see a record of a family: not when its subject, which the routing-ID rule makes the last token
-   * of its key, is a device its grant does not name, as the edge leaves those out of what the caller syncs (Hub #835).
+   * A family's owners: those that serve it now, as the bus knows them, and the hosted modules that served it and do not
+   * serve it now, which are down. A kept copy of a module that is down is closed.
    */
-  #visible(principal: Principal): (state: {subject: string}) => boolean {
-    const hidden = new Set(hiddenDevices(principal, this.#devices()));
-    return state => !hidden.has(state.subject);
+  #ownersOf(family: string): {serving: string[]; down: string[]} {
+    const serving = this.#options.bus.syncOwners(family);
+    const down = this.#options.host.modules().filter(module => module.served.includes(family)).map(module => sourceOf(module.name))
+      .filter(owner => !serving.includes(owner));
+    for (const owner of down) this.#forget(family, owner);
+    return {serving, down};
   }
 
   /**
-   * The owners that serve each named family now, as the bus knows them. A family no owner serves is refused before any
-   * sync, since a retry will not change it (`not-found`, fixed text).
-   */
-  #owners(families: readonly string[]): string[][] {
-    const owners = families.map(family => this.#options.bus.syncOwners(family));
-    if (owners.some(found => found.length === 0)) throw refuse('not-found', 'no module in this runtime serves a named family');
-    return owners;
-  }
-
-  /**
-   * The records of one family that the caller may see. Several owners may serve a family, as every device module serves
+   * The records of one family. Several owners may serve a family, as every device module serves
    * `device` for its own devices (Hub #967): the read combines each owner's kept copy, in the order the owners started,
-   * so a reader such as the dashboard gets every device in one answer.
+   * so a reader such as the dashboard gets every device in one answer. An owner that is down, or whose copy cannot be
+   * read, never fails the others (ADR 0012, policy A): the answer names it, by its source alone, in `unavailable`, so a
+   * reader never takes its records for absent. A family whose every owner is down or unreadable is `unavailable`, and
+   * one no module serves or served is `not-found`.
    */
-  async #family(family: string, principal: Principal): Promise<Answer> {
+  async #family(family: string): Promise<Answer> {
     if (!FAMILY.test(family) || family.length > 64) throw refuse('invalid-request', 'a family name is lowercase letters and digits with single hyphens');
     if (!this.#options.families.has(family)) throw refuse('not-found', 'no such family');
-    const [owners = []] = this.#owners([family]);
-    const copies = await Promise.all(owners.map(owner => this.#copy(family, owner)));
-    const visible = this.#visible(principal);
-    return json(200, {schema: 'family-read/2.0', family, records: copies.flatMap(copy => copy.states().filter(visible).map(state => state.data))});
+    const {serving, down} = this.#ownersOf(family);
+    if (serving.length === 0 && down.length === 0) throw refuse('not-found', 'no module in this runtime serves this family');
+    const settled = await Promise.allSettled(serving.map(owner => this.#copy(family, owner)));
+    const records: Record<string, unknown>[] = [];
+    const unavailable: string[] = [];
+    settled.forEach((result, index) => {
+      if (result.status === 'fulfilled') records.push(...result.value.states().map(state => state.data));
+      else unavailable.push(serving[index] ?? '');
+    });
+    if (settled.every(result => result.status === 'rejected')) {
+      // An only owner's own refusal keeps its code; otherwise the family has no owner to read from now.
+      const [only] = settled;
+      if (only?.status === 'rejected' && serving.length === 1 && down.length === 0) throw only.reason;
+      throw refuse('unavailable', serving.length === 0 ? 'the module that serves this family is not running' : 'no owner of this family could be read');
+    }
+    return json(200, {schema: 'family-read/2.0', family, records, unavailable: [...unavailable, ...down]});
+  }
+
+  /** Closes and forgets a kept copy, as of an owner that is down. */
+  #forget(family: string, owner: string): void {
+    const key = `${family}\n${owner}`;
+    const kept = this.#copies.get(key);
+    if (kept === undefined) return;
+    this.#copies.delete(key);
+    void kept.then(copy => copy.close(), () => {});
   }
 
   /**
@@ -402,11 +409,11 @@ export class Gateway {
 
   /**
    * The snapshot read API (ADR 0012, "Portability"): one owner's current state of the named families, at its revision,
-   * as one sync answers it, with no copy kept. `owner=<source>` names the owner, as for `device`, which several serve. It is the gateway's one-off sync: the second implementation of the
-   * snapshot read API that the ADR asks for, here for a caller of this one process, which leaves out the records of
-   * devices its grant does not name.
+   * as one sync answers it, with no copy kept. `owner=<source>` names the owner, as for `device`, which several serve.
+   * It is the gateway's one-off sync: the second implementation of the snapshot read API that the ADR asks for, here
+   * for a caller of this one process.
    */
-  async #snapshot(url: URL, principal: Principal): Promise<Answer> {
+  async #snapshot(url: URL): Promise<Answer> {
     const keys = [...url.searchParams.keys()];
     const listed = url.searchParams.get('families');
     const named = url.searchParams.get('owner');
@@ -419,26 +426,31 @@ export class Gateway {
       throw refuse('invalid-request', 'the families are distinct family names, at most 32');
     }
     if (families.some(family => !this.#options.families.has(family))) throw refuse('not-found', 'a named family does not exist');
-    const owners = this.#owners(families);
+    const owners = families.map(family => this.#ownersOf(family));
+    if (owners.some(({serving, down}) => serving.length === 0 && down.length === 0)) throw refuse('not-found', 'no module in this runtime serves a named family');
     // One snapshot is one owner's state at its revision: the named owner, or the one owner of every named family.
-    if (named !== null && owners.some(found => !found.includes(named))) throw refuse('not-found', 'the named owner does not serve every named family');
-    if (named === null && new Set(owners.flat()).size > 1) {
-      throw refuse('invalid-request', 'one snapshot reads one owner\'s families: name families that one module serves, or name it as owner=<source>');
+    if (named !== null) {
+      if (owners.some(({serving, down}) => !serving.includes(named) && !down.includes(named))) throw refuse('not-found', 'the named owner does not serve every named family');
+      if (owners.some(({down}) => down.includes(named))) throw refuse('unavailable', 'the named owner is not running');
+    } else {
+      if (new Set(owners.flatMap(({serving, down}) => [...serving, ...down])).size > 1) {
+        throw refuse('invalid-request', 'one snapshot reads one owner\'s families: name families that one module serves, or name it as owner=<source>');
+      }
+      if (owners.some(({serving}) => serving.length === 0)) throw refuse('unavailable', 'the module that serves these families is not running');
     }
     const own = this.#own;
     if (own === undefined) throw refuse('unavailable', 'the gateway has not started');
     const result = await own.sync<Record<string, unknown>>(families, () => {}, {timeoutMs: SYNC_TIMEOUT_MS, ...(named === null ? {} : {owner: named})});
     if (result.status === 'rejected') throw syncRefusal(result.error.error.code);
-    const visible = this.#visible(principal);
     // A record belongs to the family its schema names, at whatever version.
-    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).filter(visible).map(state => state.data)]));
+    const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).map(state => state.data)]));
     await result.copy.close();
     return json(200, {schema: 'snapshot-read/2.0', families, revision: result.message.data.revision, records});
   }
 
   /** What a module shows of its settings: `show` over the configuration `configure` accepted, never a secret. */
-  async #settings(name: string, principal: Principal): Promise<Answer> {
-    const module = this.#module(name, principal);
+  async #settings(name: string): Promise<Answer> {
+    const module = this.#module(name);
     const {settings} = module.manifest;
     if (settings === undefined) throw refuse('not-found', 'the module declares no settings');
     const shown = await this.#call(name, () => settings.show(module.config));
@@ -451,8 +463,8 @@ export class Gateway {
   }
 
   /** A module's page, its HTML in a document with the gateway's policy. */
-  async #page(name: string, id: string, principal: Principal): Promise<Answer> {
-    const module = this.#module(name, principal);
+  async #page(name: string, id: string): Promise<Answer> {
+    const module = this.#module(name);
     const page = (module.manifest.pages ?? []).find(candidate => candidate.id === id);
     if (page === undefined || id === CONTENT_PATH) throw refuse('not-found', 'no such page');
     const html = await this.#call(name, () => page.render());
@@ -464,8 +476,8 @@ export class Gateway {
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
-  async #content(name: string, ref: string, principal: Principal): Promise<Answer> {
-    const module = this.#module(name, principal);
+  async #content(name: string, ref: string): Promise<Answer> {
+    const module = this.#module(name);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (content === undefined) throw refuse('not-found', 'the module serves no content');
@@ -481,14 +493,10 @@ export class Gateway {
     return {status: 200, body: found.bytes, headers: {'content-type': found.type, ...PAGE_HEADERS}};
   }
 
-  /**
-   * The module named in a path, when it is hosted and admitted, and the caller's grant names every device it names, as
-   * the old Hub narrowed a device's dashboard parts by device grant (Hub #835).
-   */
-  #module(name: string, principal: Principal): HostedModule {
+  /** The module named in a path, when it is hosted and admitted. */
+  #module(name: string): HostedModule {
     const module = this.#options.host.modules().find(candidate => candidate.name === name && candidate.admitted);
     if (module === undefined) throw refuse('not-found', 'no such module');
-    if (!mayUseModule(principal, module.devices)) throw refuse('forbidden', 'the caller\'s grant does not name every device this module controls');
     return module;
   }
 
@@ -513,7 +521,7 @@ export class Gateway {
   async #recoverFor(id: string, input: RecoveryInput): Promise<{status: 'accepted'; requestId: string} | ErrorBody> {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
-    return this.#recover({id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes), devices: new Set(credential.devices)}, input);
+    return this.#recover(principalOf(credential), input);
   }
 
   /**

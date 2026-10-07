@@ -9,7 +9,7 @@ import {
   InProcessBus, REMOTE_PATH, REMOTE_SCHEMA, RemoteEdge, SOURCE_HEADER, SdkError, connectRemote, type Command,
 } from '../src/index.js';
 import {
-  MODE_SCHEMA, SESSION_FAMILY, blob, checked, flush, it, manualClock, modeSet, session, setMode, turnEnded, until, validator, type Mode, type Session,
+  MODE_SCHEMA, SESSION_FAMILY, blob, bus, checked, flush, it, manualClock, modeSet, removed, session, setMode, turnEnded, until, validator, type Mode, type Session,
 } from './support.js';
 import {startEdge, type Edge, type EdgeSetup, type Source} from './transports.js';
 
@@ -102,7 +102,6 @@ it('an edge refuses grants whose calls or key patterns it cannot read, without n
   assert.throws(grant({calls: ['publish', 'stream']}), (error: unknown) => codeOf(error) === 'invalid-request' && !String((error as Error).message).includes('tok_'));
   assert.throws(grant({keys: ['bunny.event.lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request');
   assert.throws(grant({keys: 'bunny.event.*.*'}), (error: unknown) => codeOf(error) === 'invalid-request');
-  assert.throws(grant({excluded: ['bunny.*.lamp-1']}), (error: unknown) => codeOf(error) === 'invalid-request', 'a malformed exclusion');
   assert.throws(grant({publishes: ['Lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request', 'a malformed family');
   assert.doesNotThrow(grant({calls: [], keys: []}), 'a grant may allow nothing');
 });
@@ -191,34 +190,39 @@ it('a part publishes only messages whose subject is its key\'s last token, of th
     assert.deepEqual(heard, ['org.bunny.turn.ended']);
   }));
 
-it('a grant\'s exclusions leave a device\'s messages and records out of what the part receives, and refuse its keys', () => withEdge(
-  {permissions: {'bunny/second': {calls: ['subscribe', 'sync', 'request'], keys: ['bunny.state.*.*', 'bunny.event.*.*', 'bunny.cmd.mode.*'], excluded: ['bunny.*.*.s2']}}},
-  async edge => {
-    const owner = checked(edge.bus.connect('bunny/core'));
-    let revision = 1;
-    await owner.serveSync([SESSION_FAMILY], () => ({revision, states: [session('s1', revision), session('s2', revision)]}));
-    await checked(edge.bus.connect('bunny/wall')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
-    const reader = await edge.connect('bunny/second');
-    const copy = await reader.sync<Session>([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
-    assert.equal(copy.status, 'synced');
-    if (copy.status !== 'synced') return;
-    assert.deepEqual(copy.copy.states().map(state => state.data.id), ['s1'], 'the sync answer leaves s2 out');
-    assert.deepEqual(copy.message.data.members.map(member => member.id), ['s1'], 'and its membership');
-    const heard: string[] = [];
-    await reader.subscribe(`bunny.state.${SESSION_FAMILY}.*`, (message, key) => { heard.push(`${String(key)} ${message.subject}`); });
-    revision = 2;
-    await owner.publish(`bunny.state.${SESSION_FAMILY}.s2`, session('s2', 2));
-    await owner.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 2));
-    await until(() => heard.length === 1 && copy.copy.states()[0]?.data.revision === 2, 's1\'s change');
-    await flush();
-    assert.deepEqual(heard, [`bunny.state.${SESSION_FAMILY}.s1 s1`], 'the subscription hears s1 alone, with its key');
-    assert.deepEqual(copy.copy.states().map(state => `${state.data.id}@${state.data.revision}`), ['s1@2'], 'and so does the copy');
-    assert.equal(edge.errors.some(({scope}) => scope.source === 'bunny/second'), false, 'what it may not see was never queued, so nothing dropped');
-    const refused = await reader.request('bunny.cmd.mode.s2', setMode('work', 's2'), {timeoutMs: 1000});
-    assert.equal(refused.status === 'rejected' && refused.error.error.code, 'forbidden', 'an excluded key may not be requested');
-    assert.equal((await reader.request('bunny.cmd.mode.s1', setMode('work', 's1'), {timeoutMs: 1000})).status, 'accepted');
-    await copy.copy.close();
-  }));
+it('cycling principals of one source fills that source\'s bound only, and another source still gets through', async () => {
+  let principal = 0;
+  await withEdge({
+    commandMemory: {perPrincipal: 2, perSource: 4, total: 8},
+    authenticate: request => request.headers['x-test-principal'] === 'credential' ? {source: 'bunny/wall'} : {source: 'bunny/core', id: String(request.headers['x-test-principal'])},
+  }, async edge => {
+    await checked(edge.bus.connect('bunny/second')).respond('bunny.cmd.mode.*', () => ({status: 'accepted'}));
+    const send = (who: string, source: string, requestId: string): Promise<{status: number; body: unknown}> =>
+      call(edge, 'request', {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode.wall', command: command(source, requestId)}, 'unused', {'x-test-principal': who});
+    // Session after session, each at its own quota, as a browser that signs in again and again.
+    const statuses: number[] = [];
+    for (let session = 0; session < 6; session += 1) {
+      principal += 1;
+      for (let sent = 0; sent < 2; sent += 1) statuses.push((await send(`session-${principal}`, 'bunny/core', `req-${principal}-${sent}`)).status);
+    }
+    assert.deepEqual(statuses, [200, 200, 200, 200, 429, 429, 429, 429, 429, 429, 429, 429], 'the source stops at its bound');
+    assert.equal((await send('credential', 'bunny/wall', 'req-credential')).status, 200, 'another source is never locked out');
+  });
+});
+
+it('a module\'s state and removal name their key\'s entity: the bus refuses another subject on every publish, so no reader gets one', async () => {
+  const {bus: shared, core} = bus();
+  const heard: string[] = [];
+  await shared.connect('bunny/second').subscribe(`bunny.state.${SESSION_FAMILY}.s1`, message => { heard.push(message.subject); });
+  const misrouted = (error: unknown): boolean => codeOf(error) === 'invalid-message';
+  await assert.rejects(core.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s2', 1)), misrouted, 'a state for s2 on s1\'s key');
+  await assert.rejects(core.publish(`bunny.state.${SESSION_FAMILY}.s2`, session('s1', 1)), misrouted, 'and for s1 on s2\'s');
+  await assert.rejects(core.publish(`bunny.state.${SESSION_FAMILY}.s1`, {...removed('s1', 2), subject: 's2'}), misrouted, 'a removal');
+  const sent = await core.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 1));
+  await assert.rejects(core.publishMessage(`bunny.state.${SESSION_FAMILY}.s1`, {...sent, id: 'msg-again', subject: 's2'}), misrouted, 'a prepared message too');
+  await flush();
+  assert.deepEqual(heard, ['s1'], 's1\'s reader got s1\'s state alone');
+});
 
 it('one source at its quota of remembered commands is refused with capacity, and another source still gets through', () => withEdge(
   {commandMemory: {perPrincipal: 2}}, async edge => {

@@ -39,9 +39,9 @@
 
 ## 7. Review fix round
 
-- [x] 7.1 Enforce the routing-ID rule for commands in the bus and for remote publishes at the edge; give grants `publishes` families and `excluded` keys, narrow subscriptions (`accept`, handlers told the key) and sync answers.
+- [x] 7.1 Enforce the routing-ID rule for commands in the bus and for remote publishes at the edge; give grants `publishes` families and `excluded` keys, narrow subscriptions (`accept`, handlers told the key) and sync answers (the narrowing removed in 9.5).
 - [x] 7.2 Bound the command memory per source, by `REMEMBER_MS`, and forget commands the bus refused before a responder had them.
-- [x] 7.3 Narrow `/api/v2` reads, module contributions and MCP tools by device grant; serve MCP only with the edge section's `mcp`; accept the request's own loopback origin; end evicted and expired sessions' streams; check the credential route first on `/mcp`.
+- [x] 7.3 Narrow `/api/v2` reads, module contributions and MCP tools by device grant (removed in 9.5); serve MCP only with the edge section's `mcp`; accept the request's own loopback origin; end evicted and expired sessions' streams; check the credential route first on `/mcp`.
 - [x] 7.4 Check refusal and content text for secrets, serve owners' refusals without detail, match snapshot records by family, quote nothing a caller sent, and add `nosniff`.
 - [x] 7.5 Lock credential writes, refuse changed files and other owners' grants, refuse duplicate and dashboard sources, queue SIGHUP during start, carry `mcp` and check links at conversion, and name #922 for the label command.
 - [x] 7.6 Show negative controls fail named tests for each protection, and rerun the gate on the rebased head.
@@ -50,5 +50,13 @@
 
 - [x] 8.1 Keep a source's command memory reachable when a sweep empties it, with every count right; count each principal's commands against its own quota.
 - [x] 8.2 State the routing-ID rule in `bunny-message-profile`, and bring the LIFX and playback modules' specifications and READMEs in line with the bus's `invalid-message`.
-- [x] 8.3 Answer a family no module serves with `not-found`, and a snapshot of two owners' families with `invalid-request`, each with text that says why; key narrowing on the subject in the edge and the gateway; check content bytes for secrets; take a crashed writer's lock over atomically and remove only a writer's own lock.
+- [x] 8.3 Answer a family no module serves with `not-found`, and a snapshot of two owners' families with `invalid-request`, each with text that says why; key narrowing on the subject in the edge and the gateway (removed in 9.5); check content bytes for secrets; take a crashed writer's lock over atomically and remove only a writer's own lock.
+
+## 9. Review fix round 3
+
+- [x] 9.1 Answer a family whose module has failed `unavailable`, and combine owners in a family read with the unreadable ones named in `unavailable`.
+- [x] 9.2 Bound each source's remembered commands so the sources together never fill the total.
+- [x] 9.3 Apply the routing-ID rule to in-process states and removals.
+- [x] 9.4 Test the lock takeover that finds a fresh lock.
+- [x] 9.5 Drop device-limited grants (owner decision, 2026-10-07): remove the edge's `excluded` and `limited` permissions, its sync narrowing and the `accept` filter, the gateway's record filtering and its device checks on contributions, links and MCP tools, and the credentials' `devices`; make the conversion drop each device grant and list, by ID, each credential it widened.
 

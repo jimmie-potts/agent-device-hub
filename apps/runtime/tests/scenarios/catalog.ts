@@ -89,19 +89,15 @@ export type GatewayAnswer = {status: number; headers: Readonly<Record<string, st
 
 /**
  * Each part's grant at the edge, as a run seeds it and the in-memory harness configures it (Hub #835): the old Hub's
- * scopes and device grants. The hook may only publish lifecycle observations; the reader may only read, and reads the
- * sign, the playback record and the LIFX bulbs its grant names; the operator and the panel read and command their
- * devices and the core's operator commands. A device a grant does not name, such as the sign, the speakers or the bulbs
- * for the panel, is left out of what that part reads, and its commands are forbidden, as the old Hub's were. The
- * operator's grant also names `lamp-9`, which no module has, as a grant may: the edge lets its switch through and the
- * lamp refuses it.
+ * scopes, with no device grant, since no grant limits a part to some devices (owner decision, 2026-10-07). The hook may
+ * only publish lifecycle observations; the reader may only read; the operator and the panel read every record and
+ * command every device and the core's operator commands.
  */
-const BULBS = LIFX_SIMULATED_SECTION.bulbs.map(bulb => bulb.id);
-export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]; devices: readonly string[]}>> = {
-  hook: {scopes: ['ingest'], devices: []},
-  operator: {scopes: ['read', 'control'], devices: ['lamp-1', 'lamp-9', 'sign-1', SIMULATED_SECTION.id, ...BULBS]},
-  panel: {scopes: ['read', 'control'], devices: ['lamp-1']},
-  reader: {scopes: ['read'], devices: ['sign-1', SIMULATED_SECTION.id, ...BULBS]},
+export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control' | 'ingest')[]}>> = {
+  hook: {scopes: ['ingest']},
+  operator: {scopes: ['read', 'control']},
+  panel: {scopes: ['read', 'control']},
+  reader: {scopes: ['read']},
 };
 /**
  * The synthetic prefix of every part's token in a harness: no record, message, health entry, answer or proof may carry
@@ -811,17 +807,11 @@ const speakerPlayback: Scenario = {
   steps: [
     expect('the core and the playback module are running', h => running(h, ['core', 'playback'])),
     expect('the reader\'s copy shows the speakers available with nothing playing over AirPlay', h => playbackShows(h, 'available inactive "" []'), 5000),
-    // As the old Hub did, a part whose grant does not name the speakers may neither command nor read them (Hub #835).
     expect('the operator\'s playback command for another speaker on its key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
       `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', {key: playbackCommand('pause').key,
         draft: {...playbackCommand('pause').draft, subject: 'kitchen'}}, 'req-pb-misrouted', 'msg-pb-misrouted')))), 400, 'invalid-message')),
-    expect('the panel, whose grant does not name the speakers, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel',
-      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/panel', playbackCommand('pause'), 'req-pb-panel', 'msg-pb-panel')))), 403, 'forbidden')),
-    expect('nor read their record', async h => {
-      const answer = keep(h, await h.gateway({as: 'panel', method: 'GET', path: '/api/v2/families/playback'}));
-      const records = bodyOf<{records?: unknown[]}>(answer)?.records;
-      return (answer.status === 200 && records?.length === 0) || `${answer.status} ${answer.text.slice(0, 200)}`;
-    }),
+    expect('the reader, whose grant may only read, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
+      `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/reader', playbackCommand('pause'), 'req-pb-reader', 'msg-pb-reader')))), 403, 'forbidden')),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
     act('the operator pauses it as req-pb-pause', h => sendOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
@@ -917,15 +907,15 @@ const lifxBulbs: Scenario = {
       return (ready && beam !== undefined && Object.values(beam.capabilities).every(capability => !capability.supported)) ||
         `pendant-1 ${String(pendant?.availability)}, beam ${show(beam?.capabilities)}`;
     }),
-    // As the old Hub did, a part whose grant does not name the bulbs may neither command nor read them, and a command
-    // whose subject names another bulb than its key's is refused before the module has it (Hub #835).
-    expect('the panel, whose grant does not name the bulbs, may not command pendant-1', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel',
-      lifxMode('work').key, rawCommand(h, 'bunny/parts/panel', lifxMode('work'), 'req-lifx-panel', 'msg-lifx-panel')))), 403, 'forbidden')),
-    expect('nor read the bulbs\' device records, which the reader reads', async h => {
+    // A part whose grant may only read may not command a bulb, and a command whose subject names another bulb than its
+    // key's is refused before the module has it (Hub #835). No grant limits a part to some bulbs: every reader reads them.
+    expect('the reader, whose grant may only read, may not command pendant-1', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
+      lifxMode('work').key, rawCommand(h, 'bunny/parts/reader', lifxMode('work'), 'req-lifx-reader', 'msg-lifx-reader')))), 403, 'forbidden')),
+    expect('the reader and the panel read both bulbs\' device records', async h => {
       const panel = keep(h, await h.gateway({as: 'panel', method: 'GET', path: '/api/v2/families/device'}));
       const reader = keep(h, await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/families/device'}));
       const ids = (answer: GatewayAnswer): string => show(bodyOf<{records?: {id: string}[]}>(answer)?.records?.map(record => record.id).sort());
-      return (panel.status === 200 && ids(panel) === show([]) && ids(reader) === show(['beam', 'pendant-1'])) || `panel ${ids(panel)}, reader ${ids(reader)}`;
+      return (ids(panel) === show(['beam', 'pendant-1']) && ids(reader) === show(['beam', 'pendant-1'])) || `panel ${ids(panel)}, reader ${ids(reader)}`;
     }),
     expect('the operator\'s command for the Beam on pendant-1\'s key is invalid-message', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
       lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', {key: lifxMode('work').key, draft: {...lifxMode('work').draft, subject: 'beam'}}, 'req-lifx-misrouted',
@@ -1287,8 +1277,8 @@ const gatewayReads: Scenario = {
 
 /**
  * Each part may use only what its grant allows (Hub #835): a hook's credential may not request a command or read, and
- * publishes lifecycle observations only; the reader's may not command, and the operator's commands its own device,
- * with a command whose subject is its key's last token. A command that a raw HTTP client sends again is refused as a
+ * publishes lifecycle observations only; the reader's may not command, and the operator's commands a device with a
+ * command whose subject is its key's last token. A command that a raw HTTP client sends again is refused as a
  * duplicate, and the lamp runs it once.
  */
 const grantsAndDuplicates: Scenario = {
@@ -1300,9 +1290,7 @@ const grantsAndDuplicates: Scenario = {
       {}), answer => refusedWith(answer, 403, 'forbidden'))),
     expect('nor may the reader\'s', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader', 'bunny.cmd.lamp.lamp-1',
       rawCommand(h, 'bunny/parts/reader', switchLamp('lamp-1', 'on'), 'req-reader', 'msg-reader')))), 403, 'forbidden')),
-    expect('nor may the operator command a device outside its grant', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-7',
-      rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-7', 'on'), 'req-other', 'msg-other')))), 403, 'forbidden')),
-    expect('nor through a key it may use for a command whose subject names another lamp: it is invalid-message', async h =>
+    expect('nor may the operator send, on lamp-1\'s key, a command whose subject names another lamp: it is invalid-message', async h =>
       refusedWith(keep(h, await h.gateway(rawRequest('operator', 'bunny.cmd.lamp.lamp-1',
         rawCommand(h, 'bunny/parts/operator', switchLamp('lamp-9', 'on'), 'req-misrouted', 'msg-misrouted')))), 400, 'invalid-message')),
     holds('no lamp switched', h => switches(h) === 0 || `${switches(h)} switches`, 200),
@@ -1376,20 +1364,12 @@ const moduleContributions: Scenario = {
   seed: {modules: ['core', 'sign'], follows: [CORE_FAMILIES, ['sign']], config: {sign: SIGN_SECTION}},
   steps: [
     expect('the core and the sign are running', h => running(h, ['core', 'sign'])),
-    expect('the module list shows the operator, whose grant names the sign, its page, tool and settings', answers({as: 'operator', method: 'GET', path: '/api/v2/modules'}, answer => {
+    expect('the module list shows the operator the sign\'s page, tool and settings', answers({as: 'operator', method: 'GET', path: '/api/v2/modules'}, answer => {
       const sign = bodyOf<{modules?: {name: string; pages: {path: string}[]; tools: string[]; settings: boolean}[]}>(answer)?.modules?.find(module => module.name === 'sign');
       return (sign?.pages[0]?.path === '/modules/sign/preview' && sign.tools.includes('sign_status') && sign.settings) || `${answer.status} ${answer.text.slice(0, 300)}`;
     })),
-    expect('and the panel, whose grant does not name the sign, none of them', answers({as: 'panel', method: 'GET', path: '/api/v2/modules'}, answer => {
-      const sign = bodyOf<{modules?: {name: string; pages: unknown[]; tools: unknown[]; settings: boolean}[]}>(answer)?.modules?.find(module => module.name === 'sign');
-      return (sign !== undefined && sign.pages.length === 0 && sign.tools.length === 0 && !sign.settings) || `${answer.status} ${answer.text.slice(0, 300)}`;
-    })),
-    expect('the panel is refused the sign\'s settings, which name its address', answers({as: 'panel', method: 'GET', path: '/api/v2/modules/sign/settings'},
+    expect('the hook, whose grant may not read, is refused the sign\'s settings, which name its address', answers({as: 'hook', method: 'GET', path: '/api/v2/modules/sign/settings'},
       answer => (refusedWith(answer, 403, 'forbidden') === true && !answer.text.includes('192.0.2.10')) || `${answer.status} ${answer.text.slice(0, 200)}`)),
-    expect('and reads none of the sign\'s records', answers({as: 'panel', method: 'GET', path: '/api/v2/families/sign'}, answer => {
-      const records = bodyOf<{records?: unknown[]}>(answer)?.records;
-      return (answer.status === 200 && records?.length === 0) || `${answer.status} ${answer.text.slice(0, 200)}`;
-    })),
     expect('a browser session opens the sign\'s page, which refers to its preview by reference', answers({as: 'browser', method: 'GET', path: '/modules/sign/preview'}, answer =>
       (answer.status === 200 && (answer.headers['content-type'] ?? '').startsWith('text/html') && answer.text.includes('src="content/preview.png"') &&
         (answer.headers['content-security-policy'] ?? '').includes('script-src') === false) || `${answer.status} ${answer.text.slice(0, 200)}`)),

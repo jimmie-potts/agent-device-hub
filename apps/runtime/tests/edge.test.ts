@@ -148,14 +148,15 @@ it('an edge without its configuration section, or with a credentials file that i
   await link(hard.credentials, join(hard.dir, 'second-name'));
   await refusesToStart(await stateDir(context), hard.config, refused('edge-credentials-not-private'), 'a second hard link');
 
-  const credential = {id: 'reader', source: good.source, digest: tokenDigest(good.token), scopes: ['read'], devices: []};
+  const credential = {id: 'reader', source: good.source, digest: tokenDigest(good.token), scopes: ['read']};
   for (const [what, text] of [
     ['not JSON', 'credentials'],
     ['another schema', JSON.stringify({schema: 'edge-credentials/2.0', credentials: [credential]})],
     ['a digest that is not one', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, digest: good.token}]})],
     ['a malformed source', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, source: 'parts/reader'}]})],
     ['an unknown scope', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, scopes: ['read', 'owner']}]})],
-    ['a device that is not a routing ID', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, devices: ['Lamp 1']}]})],
+    // No grant limits a credential to some devices: one that names devices is refused, never read wider than it was written.
+    ['a credential that names devices', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...credential, devices: ['lamp-1']}]})],
     ['a shared token', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [credential, {...credential, id: 'hook', source: 'bunny/parts/hook'}]})],
     ['a repeated ID', JSON.stringify({schema: 'edge-credentials/1.0', credentials: [credential, {...credential, digest: tokenDigest(token())}]})],
   ] as const) {

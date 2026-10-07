@@ -105,7 +105,7 @@ async function measure() {
   const {tokenDigest, CONFIG_SCHEMA, CREDENTIALS_SCHEMA} = await import(INDEX);
   const credentials = join(dir, 'edge-credentials.json'), config = join(dir, 'runtime-config.json');
   await writeFile(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [
-    {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(token), scopes: ['read'], devices: []},
+    {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(token), scopes: ['read']},
   ]}), {mode: 0o600});
   await writeFile(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, edge: {credentials, launcher: false}}), {mode: 0o600});
   await mkdir(join(dir, 'state'), {mode: 0o700});

@@ -98,6 +98,16 @@ const foreign = (): SdkError => new SdkError(body('forbidden', 'a participant se
  * before it reaches a responder.
  */
 const misrouted = (): SdkError => new SdkError(body('invalid-message', 'a command\'s subject is the last token of its routing key'));
+/**
+ * The same rule for a state or a removal, wherever it is published: its subject is the entity whose record it carries,
+ * so the key a reader follows always names the record's own entity, and a record never reaches a reader of another
+ * entity's key (Hub #835).
+ */
+function checkEntity(kind: MessageKind, subject: string, route: RoutingKey): void {
+  if ((kind === 'state' || kind === 'removal') && subject !== route.id) {
+    throw new SdkError(body('invalid-message', 'a state\'s or removal\'s subject is the last token of its routing key'));
+  }
+}
 
 /** Runs a call so that a thrown refusal becomes a rejected promise, as a remote transport would report it. */
 function attempt<T>(call: () => T | Promise<T>): Promise<T> {
@@ -109,7 +119,7 @@ function attempt<T>(call: () => T | Promise<T>): Promise<T> {
 }
 
 /** `dropped` counts the messages its full queue dropped since the subscriber was last told. */
-type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<{message: Message<unknown>; key: string}>; dropped: number; accept?: (key: string) => boolean};
+type Subscriber = {pattern: Pattern; scope: ErrorScope; queue: DeliveryQueue<Message<unknown>>; dropped: number};
 /** A command on its way to a handler: its routing key, its request span, and its queue span while it waits. */
 type Delivery = {
   command: Command<object>; key: string; expiresAtMs: number; settle: (result: RequestResult) => void; request: Span; queue: Span | undefined;
@@ -286,6 +296,7 @@ export class InProcessBus {
 
   #publish<T extends object>(source: string, key: string, draft: Draft<T>, options: SendOptions): Message<T> {
     const route = this.#route(key, draft.kind);
+    checkEntity(draft.kind, draft.subject, route);
     const message = this.#envelope(source, draft.kind, draft, childOf(options.parent));
     this.#deliver(key, route, message);
     return message;
@@ -295,22 +306,22 @@ export class InProcessBus {
   #publishMessage<T extends object>(source: string, key: string, message: Message<T>): Message<T> {
     if (message.source !== source) throw foreign();
     if (!isPublished(message.kind)) throw invalid(`a ${message.kind} message is not published`);
-    this.#deliver(key, this.#route(key, message.kind), message);
+    const route = this.#route(key, message.kind);
+    checkEntity(message.kind, message.subject, route);
+    this.#deliver(key, route, message);
     return message;
   }
 
   #deliver(key: string, route: RoutingKey, message: Message<unknown>): void {
     for (const subscriber of this.#subscribers) {
-      // A subscription that declines the key never queues the message, so it is neither delivered nor a drop.
-      if (!overlaps(subscriber.pattern, route) || subscriber.accept?.(key) === false) continue;
-      if (!subscriber.queue.push({message, key})) {
+      if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
         subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
     }
   }
 
-  #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow, accept}: SubscribeOptions = {}): Subscription {
+  #subscribe<T extends object>(member: Member, pattern: string, handler: Handler<T>, {onOverflow}: SubscribeOptions = {}): Subscription {
     const parsed = parsePattern(pattern);
     if (parsed === undefined) throw invalid('a pattern is malformed');
     if (parsed.category === 'cmd') throw invalid('commands go to their one responder; use respond');
@@ -322,12 +333,12 @@ export class InProcessBus {
         this.#report(error, scope);
       }
     };
-    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, ...(accept === undefined ? {} : {accept}), queue: new DeliveryQueue(this.#maxQueued, async ({message, key}) => {
+    const subscriber: Subscriber = {pattern: parsed, scope, dropped: 0, queue: new DeliveryQueue(this.#maxQueued, async message => {
       // A drop leaves a message waiting, so the subscriber hears of the gap before that message, in its own order.
       const {dropped} = subscriber;
       subscriber.dropped = 0;
       if (dropped > 0 && onOverflow !== undefined) await run(() => onOverflow({dropped}));
-      await run(() => handler(message as Message<T>, key));
+      await run(() => handler(message as Message<T>));
     })};
     this.#subscribers.add(subscriber);
     const subscription: Subscription = {close: () => {

@@ -261,10 +261,10 @@ npm run -s verify:runtime -- capture <run-id> scenario-approval-recovery
 npm run -s verify:runtime -- stop <run-id>
 npm run -s verify:runtime -- start --scenario module-contributions   # the sign's page, preview, settings and tool
 origin=<this run's origin>; tokens=<this run's runtime dir>/data/config/part-tokens.json
-panel=$(node -p "require('$tokens').panel"); reader=$(node -p "require('$tokens').reader")
-curl -s -H "authorization: Bearer $reader" "$origin/api/v2/modules/sign/settings"     # the sign's settings: the reader's grant names it
-curl -s -H "authorization: Bearer $panel" "$origin/api/v2/modules/sign/settings"      # forbidden: the panel's grant does not name the sign
-curl -s -H "authorization: Bearer $panel" "$origin/api/v2/families/sign"              # no records, for the same reason
+hook=$(node -p "require('$tokens').hook"); reader=$(node -p "require('$tokens').reader")
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/modules/sign/settings"     # the sign's settings: every reader's
+curl -s -H "authorization: Bearer $hook" "$origin/api/v2/modules/sign/settings"       # forbidden: a hook's grant may not read
+curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/sign"             # the sign's records
 npm run -s verify:runtime -- capture <run-id> scenario-module-contributions
 npm run -s verify:runtime -- stop <run-id>
 ```

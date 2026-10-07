@@ -90,13 +90,9 @@ function bodyOf(error: unknown): ErrorBody {
 /** The request or sync answer when the edge refused the call itself, naming the request and its trace. */
 const named = (refused: ErrorBody, ids: {requestId: string; traceId: string}): ErrorBody => ({error: {...refused.error, ...ids}});
 
-type Item = {message: Message; key?: string} | {gap: Overflow};
+type Item = {message: Message} | {gap: Overflow};
 /** `ready` holds a gap notice back until the subscription is registered again after a reconnect. */
-type Local = {
-  pattern: string; queue: DeliveryQueue<Item>; dropped: number; unknownGap: boolean; ready: Promise<void>;
-  /** The subscription's own filter, on the routing key the edge says it delivered on. */
-  accept?: (key: string) => boolean;
-};
+type Local = {pattern: string; queue: DeliveryQueue<Item>; dropped: number; unknownGap: boolean; ready: Promise<void>};
 type Answering<T> = {queue: DeliveryQueue<Message<T>>; register: (connection: string) => Promise<unknown>};
 
 class RemoteClient {
@@ -229,9 +225,7 @@ class RemoteClient {
       case 'message': {
         const local = this.#subscriptions.get(String(frame.subscription));
         const message = frame.message as Message;
-        // A subscription that declines the key never queues the message, as in process.
-        if (local?.accept !== undefined && (typeof frame.key !== 'string' || !local.accept(frame.key))) return;
-        if (local !== undefined && !local.queue.push({message, ...(typeof frame.key === 'string' ? {key: frame.key} : {})})) {
+        if (local !== undefined && !local.queue.push({message})) {
           local.dropped += 1;
           this.#report(new SdkError(body('capacity', `dropped ${String(message.id)} on ${local.pattern}: the delivery queue is full`)), local.pattern);
         }
@@ -322,7 +316,7 @@ class RemoteClient {
     return message;
   }
 
-  async #subscribe(pattern: string, handler: Handler<Record<string, unknown>>, {onOverflow, accept}: SubscribeOptions): Promise<Subscription> {
+  async #subscribe(pattern: string, handler: Handler<Record<string, unknown>>, {onOverflow}: SubscribeOptions): Promise<Subscription> {
     this.#live();
     const connection = await this.#connected;
     const id = randomUUID();
@@ -333,7 +327,7 @@ class RemoteClient {
         this.#report(error, pattern);
       }
     };
-    const local: Local = {pattern, dropped: 0, unknownGap: false, ready: Promise.resolve(), ...(accept === undefined ? {} : {accept}), queue: new DeliveryQueue<Item>(this.#maxQueued, async item => {
+    const local: Local = {pattern, dropped: 0, unknownGap: false, ready: Promise.resolve(), queue: new DeliveryQueue<Item>(this.#maxQueued, async item => {
       const notice: Overflow | undefined = local.unknownGap ? {} : local.dropped > 0 ? {dropped: local.dropped} : undefined;
       local.dropped = 0;
       local.unknownGap = false;
@@ -342,7 +336,7 @@ class RemoteClient {
         await run(() => onOverflow(notice));
       }
       if ('message' in item) {
-        await run(() => handler(item.message, item.key));
+        await run(() => handler(item.message));
       } else if (onOverflow !== undefined) {
         await local.ready;
         await run(() => onOverflow(item.gap));

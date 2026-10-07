@@ -115,7 +115,7 @@ export type EdgeSetup = {
   liveness?: Scheduler;
   /** The edge's clock and its command memory's bounds. */
   now?: () => number;
-  commandMemory?: {perPrincipal?: number; total?: number; rememberMs?: number};
+  commandMemory?: {perPrincipal?: number; perSource?: number; total?: number; rememberMs?: number};
   /** The host's own authentication, in place of the sources' grants. */
   authenticate?: EdgeOptions['authenticate'];
 };

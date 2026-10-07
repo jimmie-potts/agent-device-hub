@@ -13,7 +13,7 @@ import {
 import {edgeConfig, it} from './support.js';
 
 const credential = (id: string, source = `bunny/parts/${id}`): EdgeCredential =>
-  ({id, source, digest: tokenDigest(`tok_SYNTHETIC835_${id}`), scopes: ['ingest'], devices: []});
+  ({id, source, digest: tokenDigest(`tok_SYNTHETIC835_${id}`), scopes: ['ingest']});
 const codeOf = (error: unknown): string => error instanceof RuntimeError ? error.code : `threw ${String(error)}`;
 const ids = async (file: string): Promise<string[]> => (await readEdgeCredentials(file)).map(entry => entry.id).sort();
 
@@ -94,3 +94,18 @@ it('a writer removes only the lock it created, never one another writer holds wh
   assert.equal(await readFile(`${file}.lock`, 'utf8'), other, 'the other writer\'s lock stands');
   assert.deepEqual(await ids(file), ['a', 'b']);
 });
+
+it('a writer that judged a lock a crashed writer\'s, and finds a fresh lock there when it takes over, puts it back and gives up', async context => {
+  const {credentials: file} = await edgeConfig(context, []);
+  await writeEdgeCredentials(file, [credential('a')]);
+  const gone = spawn(process.execPath, ['-e', ''], {stdio: 'ignore'});
+  await once(gone, 'exit');
+  await writeFile(`${file}.lock`, `${String(gone.pid)}\n`, {mode: 0o600});
+  // Between its judgement and its takeover, another writer took the crashed lock over and holds a fresh one.
+  const fresh = `${String(process.pid)} another-writer\n`;
+  await assert.rejects(grantCredential(file, credential('b'), {beforeTakeOver: () => writeFile(`${file}.lock`, fresh, {mode: 0o600})}),
+    (error: unknown) => codeOf(error) === 'edge-credentials-busy');
+  assert.equal(await readFile(`${file}.lock`, 'utf8'), fresh, 'the other writer\'s lock is back where it was');
+  assert.deepEqual(await ids(file), ['a'], 'and nothing was written');
+});
+

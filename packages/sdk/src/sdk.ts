@@ -57,8 +57,7 @@ export type RequestResult =
   | {status: 'rejected'; requestId: string; error: ErrorBody; reply?: Message<RejectedReply>}
   | {status: 'uncertain'; requestId: string; error: ErrorBody};
 
-/** Hears one message, with the routing key it was published on, which every transport passes (Hub #835). */
-export type Handler<T> = (message: Message<T>, key?: string) => void | Promise<void>;
+export type Handler<T> = (message: Message<T>) => void | Promise<void>;
 /** How many messages a gap lost, when that is known. After a remote reconnect it is not, and `dropped` is absent. */
 export type Overflow = {dropped?: number};
 export type SubscribeOptions = {
@@ -69,11 +68,6 @@ export type SubscribeOptions = {
    * again instead of continuing with a gap.
    */
   onOverflow?: (overflow: Overflow) => void | Promise<void>;
-  /**
-   * Keeps only the messages whose routing key it accepts. A message it declines is never queued, so it is neither
-   * delivered nor counted as dropped. A remote edge uses it to narrow what a part receives to its grant (Hub #835).
-   */
-  accept?: (key: string) => boolean;
 };
 export type Responder<T extends object> = (command: Command<T>) => Reply | Promise<Reply>;
 

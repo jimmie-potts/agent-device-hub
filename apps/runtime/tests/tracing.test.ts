@@ -151,7 +151,7 @@ it('concurrent requests from two traces have their own spans, and a failure ends
 });
 
 it('a remote part\'s command gets a server span that continues its authenticated, validated context', async context => {
-  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url'), devices: ['wall']};
+  const operator = {source: 'bunny/parts/operator', token: randomBytes(32).toString('base64url')};
   const {config} = await edgeConfig(context, [operator]);
   const lines: string[] = [];
   const commands: Command<{mode: string}>[] = [];

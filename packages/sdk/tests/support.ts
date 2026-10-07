@@ -73,9 +73,9 @@ export function checked(sdk: Participant): Participant {
       check(message, `republished on ${key}`);
       return message;
     },
-    subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, (message, key) => {
+    subscribe: <T extends object>(pattern: string, handler: Handler<T>, options?: SubscribeOptions) => sdk.subscribe<T>(pattern, message => {
       check(message, `delivered on ${pattern}`);
-      return handler(message, key);
+      return handler(message);
     }, options),
     request: async <T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions) => {
       const result = await sdk.request(key, draft, options);

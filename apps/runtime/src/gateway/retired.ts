@@ -58,7 +58,7 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   },
   {
     method: 'POST', path: '/api/playback/v1/commands', status: 'replaced',
-    replacement: `${SDK}: request bunny.cmd.playback-control.<id>, which the playback module (runtime-playback) answers for a caller its grant names`, owner: '#929',
+    replacement: `${SDK}: request bunny.cmd.playback-control.<id>, which the playback module (runtime-playback) answers for a caller with control`, owner: '#929',
   },
   {method: 'GET', path: '/api/controllers/v1/{device}/snapshot', status: 'replaced', replacement: `${SDK}: sync the device's family`},
   {method: 'POST', path: '/api/controllers/v1/{device}/commands', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
@@ -76,7 +76,7 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   },
   {
     method: 'POST', path: '/api/controllers/v1/{device}/lighting/commands', status: 'replaced',
-    replacement: `${SDK}: request bunny.cmd.<power-set, brightness-set, device-mode-set, lifx-color-set or lifx-temperature-set>.<bulb>, which the LIFX module (lifx-module) answers for a caller its grant names; HTTP action routes come with #782's dispatcher`,
+    replacement: `${SDK}: request bunny.cmd.<power-set, brightness-set, device-mode-set, lifx-color-set or lifx-temperature-set>.<bulb>, which the LIFX module (lifx-module) answers for a caller with control; HTTP action routes come with #782's dispatcher`,
     owner: '#928',
   },
   {method: 'ANY', path: '/__app-verify/proof/*', status: 'dropped', replacement: 'disposable runs serve their own proof (npm run -s verify:runtime)'},

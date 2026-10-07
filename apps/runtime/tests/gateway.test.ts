@@ -1,4 +1,4 @@
-// The runtime's gateway (Hub #835): client credentials with the old Hub's scopes and device grants, browser sessions
+// The runtime's gateway (Hub #835): client credentials with the old Hub's scopes, browser sessions
 // from the launcher and trusted loopback sign-in with their Origin checks, reloading credentials, MCP, the modules'
 // pages, content and settings, and the route map of the old Hub. Every refusal is the shared error body with a registry
 // code, and no token reaches a record, an answer, health or a span. The scenario catalog plays the same gateway end to
@@ -10,12 +10,16 @@ import {request as httpRequest, type IncomingMessage} from 'node:http';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, connectRemote, type BunnyModule} from '@jimmie-potts/sdk';
 import {
-  CONFIG_SCHEMA, RETIRED_ROUTES, RuntimeError, convertHubEdge, credentialsDocument, grantCredential, requestBrowserLaunch, retiredRoute, revokeCredential,
+  MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, type BunnyModule,
+} from '@jimmie-potts/sdk';
+import {
+  CONFIG_SCHEMA, MAX_CREDENTIALS, RETIRED_ROUTES, RuntimeError, convertHubEdge, credentialsDocument, grantCredential, requestBrowserLaunch, retiredRoute,
+  revokeCredential,
   tokenDigest, type LogRecord, type Runtime,
 } from '../src/index.js';
 import {createCoreModule} from './fixtures/core.js';
+import {DEVICE_FAMILY, deviceRecord, deviceState} from './fixtures/device.js';
 import {SimulatedLamps, createLampModule} from './fixtures/lamp.js';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from './fixtures/sign.js';
 import {contextOf, edgeConfig, entry, fixture, it, manualClock, run, stateDir, waitFor, type EdgePart} from './support.js';
@@ -85,9 +89,9 @@ function assertNoToken(g: Gateway): void {
   }
 }
 
-/** A reader, granted `devices`: none by default, so the sign, whose device is `sign-1`, is not its to see. */
-const READER = (devices: readonly string[] = []): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read'], devices});
-const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control'], devices: ['sign-1']});
+/** A reader: it may only read. */
+const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read']});
+const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
 
 it('every refusal is the shared error body with a registry code: a malformed request, a made-up token, a scope or key outside the grant', async context => {
@@ -247,7 +251,7 @@ it('reloading the credentials file takes a granted credential, refuses a revoked
   assert.equal(copy.status, 'synced');
   // A new producer is granted, as a hook's setup would, and the old reader revoked.
   const producer = {id: 'hub-fedcba9876543210fedcba9876543210', source: 'bunny/parts/hook-codex', token: token()};
-  await grantCredential(g.files.credentials, {id: producer.id, source: producer.source, digest: tokenDigest(producer.token), scopes: ['ingest'], devices: []});
+  await grantCredential(g.files.credentials, {id: producer.id, source: producer.source, digest: tokenDigest(producer.token), scopes: ['ingest']});
   assert.equal(await revokeCredential(g.files.credentials, reader.id ?? ''), true);
   assert.equal(await revokeCredential(g.files.credentials, 'nobody'), false);
   assert.equal((await ask(url, '/api/v2/authority?scope=ingest', {token: producer.token})).status, 401, 'not before the reload');
@@ -274,8 +278,7 @@ it('reloading the credentials file takes a granted credential, refuses a revoked
 
 it('MCP lists and calls only what a credential may use, maps results and refusals to the shared error body, and recovers no approval for a reader', async context => {
   const reader = READER(), operator = OPERATOR(), hook = HOOK();
-  const signReader: EdgePart = {id: 'sign-reader', source: 'bunny/parts/sign-reader', token: token(), scopes: ['read'], devices: ['sign-1']};
-  const g = await gateway(context, [reader, operator, hook, signReader]);
+  const g = await gateway(context, [reader, operator, hook]);
   const {ask, url} = g;
   const accept = {accept: 'application/json, text/event-stream'};
   const session = async (part: EdgePart): Promise<Record<string, string>> => {
@@ -292,12 +295,12 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
   assert.deepEqual(await tools(operator), ['core_recover_approval', 'core_sessions', 'sign_status']);
-  assert.deepEqual(await tools(signReader), ['core_sessions', 'sign_status'], 'a reader sees no action');
-  assert.deepEqual(await tools(reader), ['core_sessions'], 'nor the tools of a module whose device its grant does not name');
+  assert.deepEqual(await tools(reader), ['core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
-  // A call of a tool outside the grant is refused, as an unknown one is, by the MCP package.
-  const outside = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 9, method: 'tools/call', params: {name: 'sign_status', arguments: {}}}});
-  assert.equal(outside.text.includes('sign-1'), false, 'no sign reaches a reader without its grant');
+  // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
+  const action = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 9, method: 'tools/call',
+    params: {name: 'core_recover_approval', arguments: {session: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', turnId: 'turn-1', expectedRevision: 0}}}});
+  assert.notEqual((action.body as {result?: {structuredContent?: {kind?: string}}}).result?.structuredContent?.kind, 'extension', 'the core never answered it');
   const headers = await session(operator);
   const tool = async (name: string, args: object): Promise<{isError: boolean; structuredContent: Record<string, unknown>}> => {
     const answer = await ask(url, '/mcp', {method: 'POST', token: operator.token, headers, body: {jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name, arguments: args}}});
@@ -395,7 +398,7 @@ it('a module\'s page and content come with the gateway\'s policy, its settings n
 });
 
 it('the sign\'s page refers to its preview by reference and is served with a policy that allows no script, frame or form', async context => {
-  const reader = READER(['sign-1']);
+  const reader = READER();
   const g = await gateway(context, [reader]);
   const page = await g.ask(g.url, '/modules/sign/preview', {token: reader.token});
   assert.equal(page.status, 200);
@@ -411,7 +414,7 @@ it('the sign\'s page refers to its preview by reference and is served with a pol
   assert.deepEqual((settings.body as {settings: unknown}).settings, {greeting: 'hello', signs: [{id: 'sign-1', address: '192.0.2.10'}]});
   const links = await g.ask(g.url, '/api/v2/links', {token: reader.token});
   assert.deepEqual(links.body, {schema: 'links/2.0', editors: {'sign-1': 'http://127.0.0.1:9100/editor'}, places: {kitchen: 'http://127.0.0.1:9200/'}},
-    'an editor link for a device the caller\'s grant names');
+    'every editor link and place link');
   await g.runtime.stop();
   assertNoToken(g);
 });
@@ -460,32 +463,37 @@ it('the route map covers every route of the old Hub\'s server and its route modu
   assert.equal(JSON.stringify(g.logs).includes('pixoo-desk'), false, 'a record names the route, never the device in its path');
 });
 
-it('the conversion carries a Hub\'s credentials with every scope and device grant, its sign-in and links, and a converted token authenticates', async context => {
-  const tokens = {dashboard: token(), producer: token(), admin: token(), named: token()};
+it('the conversion carries a Hub\'s credentials with every scope, drops their device grants and lists the widened ones, and a converted token authenticates', async context => {
+  const tokens = {dashboard: token(), producer: token(), admin: token(), named: token(), observer: token()};
   const hub = {
     directory: '/home/owner/.local/state/agent-device-hub/hub', ownerId: 'owner', port: 8788, browserAccess: 'trusted-loopback', mcp: true,
     credentials: [
+      // A synthetic device-limited credential: the Hub let it read and command these two devices alone.
       {id: 'Pixoo_Monitor', digest: tokenDigest(tokens.dashboard), scopes: ['read', 'control'], devices: ['sign-1', 'pixoo-desk']},
       {id: 'hub-0123456789abcdef0123456789abcdef', digest: tokenDigest(tokens.producer), scopes: ['ingest'], devices: []},
       {id: 'owner-admin', digest: tokenDigest(tokens.admin), scopes: ['read', 'control', 'ingest', 'admin'], devices: ['sign-1']},
-      // The browser sessions' source is theirs alone, so a credential of this name acts as another.
+      // The browser sessions' source is theirs alone, so a credential of this name acts as another. It read no device.
       {id: 'dashboard', digest: tokenDigest(tokens.named), scopes: ['read'], devices: []},
+      // A device grant on a credential that may only send observations limited nothing, so dropping it widens nothing.
+      {id: 'observer', digest: tokenDigest(tokens.observer), scopes: ['ingest'], devices: ['sign-1']},
     ],
     editorLinks: {'sign-1': 'http://127.0.0.1:9100/editor'}, placeLinks: {kitchen: 'http://127.0.0.1:9200/'},
   };
   const converted = convertHubEdge(hub);
-  assert.deepEqual(converted.credentials.map(({id, source, scopes, devices}) => ({id, source, scopes, devices})), [
-    {id: 'Pixoo_Monitor', source: 'bunny/parts/pixoo-monitor', scopes: ['read', 'control'], devices: ['sign-1', 'pixoo-desk']},
-    {id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hub-0123456789abcdef0123456789abcdef', scopes: ['ingest'], devices: []},
-    {id: 'owner-admin', source: 'bunny/parts/owner-admin', scopes: ['read', 'control', 'ingest', 'admin'], devices: ['sign-1']},
-    {id: 'dashboard', source: 'bunny/parts/dashboard-credential', scopes: ['read'], devices: []},
-  ]);
-  assert.deepEqual(converted.credentials.map(credential => credential.digest), hub.credentials.map(credential => credential.digest), 'the digests, never a token');
+  assert.deepEqual(converted.credentials, [
+    {id: 'Pixoo_Monitor', source: 'bunny/parts/pixoo-monitor', digest: tokenDigest(tokens.dashboard), scopes: ['read', 'control']},
+    {id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hub-0123456789abcdef0123456789abcdef', digest: tokenDigest(tokens.producer), scopes: ['ingest']},
+    {id: 'owner-admin', source: 'bunny/parts/owner-admin', digest: tokenDigest(tokens.admin), scopes: ['read', 'control', 'ingest', 'admin']},
+    {id: 'dashboard', source: 'bunny/parts/dashboard-credential', digest: tokenDigest(tokens.named), scopes: ['read']},
+    {id: 'observer', source: 'bunny/parts/observer', digest: tokenDigest(tokens.observer), scopes: ['ingest']},
+  ], 'every scope and the digest, never a token, and no device grant');
+  // The Hub limited `read` and `control` to the devices a credential named, and the runtime limits neither: each
+  // credential that holds either is widened, and the owner reviews it at the cutover, by its ID alone.
+  assert.deepEqual(converted.widened, ['Pixoo_Monitor', 'owner-admin', 'dashboard']);
   assert.deepEqual(converted.edge, {browserAccess: 'trusted-loopback', launcher: true, mcp: true, editorLinks: hub.editorLinks, placeLinks: hub.placeLinks});
   assert.equal(convertHubEdge({...hub, mcp: undefined}).edge.mcp, false, 'a Hub without mcp served none, and nor does the runtime');
   for (const [what, broken] of [
     ['two IDs, one source', {...hub, credentials: [...hub.credentials, {...hub.credentials[0], id: 'pixoo-monitor', digest: tokenDigest(token())}]}],
-    ['a device that is not a routing ID', {...hub, credentials: [{...hub.credentials[0], devices: ['Pixoo Desk']}]}],
     ['an unknown scope', {...hub, credentials: [{...hub.credentials[0], scopes: ['owner']}]}],
     ['another browser access', {...hub, browserAccess: 'open'}],
     ['an mcp that is not a switch', {...hub, mcp: 'yes'}],
@@ -502,6 +510,7 @@ it('the conversion carries a Hub\'s credentials with every scope and device gran
   const {runtime} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}});
   const authority = async (value: string, scope: string): Promise<number> => (await call(runtime.url, `/api/v2/authority?scope=${scope}`, {token: value})).status;
   assert.deepEqual([await authority(tokens.dashboard, 'control'), await authority(tokens.dashboard, 'ingest')], [200, 403]);
+  assert.equal((await readFile(files.credentials, 'utf8')).includes('devices'), false, 'the credentials file names no device');
   assert.deepEqual([await authority(tokens.producer, 'ingest'), await authority(tokens.producer, 'read')], [200, 403]);
   assert.equal(await authority(tokens.admin, 'admin'), 200);
   const signed = await call(runtime.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: runtime.url, 'bunny-request': '1'}});
@@ -539,16 +548,12 @@ it('a stalled reader\'s stream is ended at the runtime\'s stall limit, and the e
   await runtime.stop();
 });
 
-/** A state family keyed by device, at version 2.1, and a module that controls two of its devices. */
+/** A state family keyed by device, at version 2.1, and a module that names two of its devices in its configuration. */
 const GADGET_SCHEMA = 'https://bunny.invalid/events/gadget/2.1';
 const gadgetSchemas = {[GADGET_SCHEMA]: {type: 'object', additionalProperties: false, required: ['id', 'revision'], properties: {id: {type: 'string'}, revision: {type: 'integer'}}}};
-function gadgetModule(): BunnyModule & {publish: (id: string, revision: number) => Promise<void>} {
-  let sdk: Parameters<BunnyModule['start']>[0]['sdk'] | undefined;
-  const revisions = new Map([['gadget-1', 1], ['gadget-2', 1]]);
+function gadgetModule(): BunnyModule {
   const state = (id: string): {type: string; subject: string; dataschema: string; data: {id: string; revision: number}} =>
-    ({type: 'org.bunny.gadget.updated', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision: revisions.get(id) ?? 0}});
-  // A record about gadget-2 whose own ID is no device: the routing-ID rule keys it by its subject, gadget-2.
-  const note = {type: 'org.bunny.gadget.updated', subject: 'gadget-2', dataschema: GADGET_SCHEMA, data: {id: 'gadget-2-note', revision: 1}};
+    ({type: 'org.bunny.gadget.updated', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision: 1}});
   return {
     manifest: {
       name: 'gadget', apiVersion: '1.2', configure: () => ({config: undefined, devices: ['gadget-1', 'gadget-2']}),
@@ -557,61 +562,39 @@ function gadgetModule(): BunnyModule & {publish: (id: string, revision: number) 
       settings: {schema: {type: 'object'}, show: () => ({gadgets: ['gadget-1', 'gadget-2']})},
       tools: [{name: 'list', description: 'Lists the gadgets.', input: {type: 'object', additionalProperties: false}, output: {type: 'object'}, read: () => ({gadgets: 2})}],
     },
-    async start(context) {
-      sdk = context.sdk;
-      await sdk.serveSync(['gadget'], () => ({revision: Math.max(...revisions.values()), states: [...[...revisions.keys()].map(state), note]}));
+    async start({sdk}) {
+      await sdk.serveSync(['gadget'], () => ({revision: 1, states: [state('gadget-1'), state('gadget-2')]}));
     },
     stop: () => {},
-    publish: async (id, revision) => {
-      revisions.set(id, revision);
-      await sdk?.publish(`bunny.state.gadget.${id}`, {kind: 'state', ...state(id)});
-      await sdk?.publish(`bunny.event.gadget.${id}`, {kind: 'occurrence', type: 'org.bunny.gadget.switched', subject: id, dataschema: GADGET_SCHEMA, data: {id, revision}});
-    },
   };
 }
 
-it('a reader sees only the devices its grant names: records in families and snapshots, a module\'s contributions and what the edge syncs and sends', async context => {
-  const narrow = READER(['gadget-1']);
-  const wide: EdgePart = {id: 'wide', source: 'bunny/parts/wide', token: token(), scopes: ['read'], devices: ['gadget-1', 'gadget-2']};
-  const files = await edgeConfig(context, [narrow, wide], {modules: {gadget: {}}, editorLinks: {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'}});
-  const gadget = gadgetModule();
-  const {runtime, logs} = await run(context, {modules: [createCoreModule(), gadget], configFile: files.config, edge: {schemas: gadgetSchemas}});
+it('no grant limits a reader to some devices: it reads every device\'s records at any schema version, the module\'s contributions and every link', async context => {
+  const reader = READER();
+  const files = await edgeConfig(context, [reader], {modules: {gadget: {}}, editorLinks: {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'}});
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), gadgetModule()], configFile: files.config, edge: {schemas: gadgetSchemas}});
   const url = runtime.url;
   const ids = (answer: Answer, path: (body: never) => {id: string}[]): string[] => path(answer.body as never).map(record => record.id);
-  const family = (part: EdgePart): Promise<Answer> => call(url, '/api/v2/families/gadget', {token: part.token});
-  assert.deepEqual(ids(await family(narrow), (body: {records: {id: string}[]}) => body.records), ['gadget-1']);
-  assert.deepEqual(ids(await family(wide), (body: {records: {id: string}[]}) => body.records), ['gadget-1', 'gadget-2', 'gadget-2-note']);
-  // The snapshot reads the family's records at any version of its schema, and leaves out the same device.
-  const snapshot = await call(url, '/api/v2/snapshot?families=gadget', {token: narrow.token});
-  assert.deepEqual(ids(snapshot, (body: {records: {gadget: {id: string}[]}}) => body.records.gadget), ['gadget-1']);
-  assert.equal((await call(url, '/api/v2/families/session', {token: narrow.token})).status, 200, 'a family no device keys stays readable');
-  const links = await call(url, '/api/v2/links', {token: narrow.token});
-  assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/'});
-  // The module controls a device the narrow grant does not name, so its contributions are not the narrow reader's.
-  const listed = async (part: EdgePart): Promise<unknown> =>
-    ((await call(url, '/api/v2/modules', {token: part.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
-  assert.deepEqual(await listed(narrow), {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [], tools: [], settings: false});
-  assert.deepEqual(await listed(wide), {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  assert.deepEqual(ids(await call(url, '/api/v2/families/gadget', {token: reader.token}), (body: {records: {id: string}[]}) => body.records), ['gadget-1', 'gadget-2']);
+  // The snapshot reads the family's records at any version of its schema.
+  const snapshot = await call(url, '/api/v2/snapshot?families=gadget', {token: reader.token});
+  assert.deepEqual(ids(snapshot, (body: {records: {gadget: {id: string}[]}}) => body.records.gadget), ['gadget-1', 'gadget-2']);
+  const links = await call(url, '/api/v2/links', {token: reader.token});
+  assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'});
+  const listed = ((await call(url, '/api/v2/modules', {token: reader.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
+  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
   for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
-    const refused = await call(url, path, {token: narrow.token});
-    assert.deepEqual([refused.status, codeOf(refused), refused.text.includes('gadget-2')], [403, 'forbidden', false], path);
-    assert.equal((await call(url, path, {token: wide.token})).status, 200, path);
+    assert.equal((await call(url, path, {token: reader.token})).status, 200, path);
   }
-  // Over the SDK edge, the narrow reader's sync and subscriptions leave gadget-2 out, so its copy never holds it.
-  const remote = await connectRemote({url, source: narrow.source, token: narrow.token});
+  // The SDK edge syncs the same records.
+  const remote = await connectRemote({url, source: reader.source, token: reader.token});
   context.after(() => remote.close());
   const copy = await remote.sync<{id: string; revision: number}>(['gadget'], () => {}, {timeoutMs: 5000});
   assert.equal(copy.status, 'synced');
-  if (copy.status !== 'synced') return;
-  assert.deepEqual(copy.copy.states().map(state => state.data.id), ['gadget-1'], 'the edge leaves out what the gateway does, gadget-2\'s note included');
-  const heard: string[] = [];
-  await remote.subscribe('bunny.event.gadget.*', (message, key) => { heard.push(`${String(key)} ${message.subject}`); });
-  await gadget.publish('gadget-2', 2);
-  await gadget.publish('gadget-1', 2);
-  await waitFor(() => heard.length === 1 && copy.copy.states()[0]?.data.revision === 2, 5000, 'gadget-1\'s change');
-  await new Promise(resolve => { setTimeout(resolve, 50); });
-  assert.deepEqual(heard, ['bunny.event.gadget.gadget-1 gadget-1']);
-  assert.deepEqual(copy.copy.states().map(state => `${state.data.id}@${state.data.revision}`), ['gadget-1@2']);
+  if (copy.status === 'synced') {
+    assert.deepEqual([copy.copy.states().map(state => state.data.id), copy.message.data.members.map(member => member.id)], [['gadget-1', 'gadget-2'], ['gadget-1', 'gadget-2']]);
+    await copy.copy.close();
+  }
   await remote.close();
   await runtime.stop();
   assert.equal(JSON.stringify(logs).includes(MARKER), false);
@@ -691,7 +674,7 @@ it('MCP is off unless the edge section turns it on, and a browser session on /mc
 });
 
 it('a family no module serves is not-found, and a snapshot across two owners is invalid-request, each with text that says why', async context => {
-  const reader = READER(['sign-1']);
+  const reader = READER();
   const g = await gateway(context, [reader]);
   // Nothing in this runtime serves playback: no playback module runs.
   for (const path of ['/api/v2/families/playback', '/api/v2/snapshot?families=playback']) {
@@ -705,36 +688,99 @@ it('a family no module serves is not-found, and a snapshot across two owners is 
   assert.equal((await g.ask(g.url, '/api/v2/snapshot?families=sign', {token: reader.token})).status, 200);
 });
 
-it('a family that two modules serve reads as one answer of each owner\'s records, narrowed by grant, and a snapshot of it names its owner', async context => {
-  const both: EdgePart = {id: 'both', source: 'bunny/parts/both', token: token(), scopes: ['read'], devices: ['lamp-1', 'sign-1']};
-  const lampOnly = READER(['lamp-1']);
+it('a family that two modules serve reads as one answer of each owner\'s records, and a snapshot of it names its owner', async context => {
+  const reader = READER();
   const modules = [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), createSignModule({transport: new SimulatedSigns({online: true})})];
-  const g = await gateway(context, [both, lampOnly], {modules});
+  const g = await gateway(context, [reader], {modules});
   const ids = (answer: Answer, path: (body: never) => {id: string}[] | undefined): string[] => (path(answer.body as never) ?? []).map(record => record.id).sort();
-  const devices = (body: {records?: {id: string}[]}) => body.records;
   // The lamp and the sign both serve device, each for its own device; one read combines them.
-  assert.deepEqual(ids(await g.ask(g.url, '/api/v2/families/device', {token: both.token}), devices), ['lamp-1', 'sign-1']);
-  assert.deepEqual(ids(await g.ask(g.url, '/api/v2/families/device', {token: lampOnly.token}), devices), ['lamp-1'], 'the sign is not this reader\'s');
+  const both = await g.ask(g.url, '/api/v2/families/device', {token: reader.token});
+  assert.deepEqual(ids(both, (body: {records?: {id: string}[]}) => body.records), ['lamp-1', 'sign-1']);
+  assert.deepEqual((both.body as {unavailable: unknown}).unavailable, [], 'every owner answered');
   // A snapshot is one owner's state at its revision: device needs its owner named.
-  const unnamed = await g.ask(g.url, '/api/v2/snapshot?families=device', {token: both.token});
+  const unnamed = await g.ask(g.url, '/api/v2/snapshot?families=device', {token: reader.token});
   assert.deepEqual([unnamed.status, codeOf(unnamed)], [400, 'invalid-request']);
   assert.match((unnamed.body as {error: {detail: string}}).error.detail, /owner=<source>/);
-  const snapshot = (part: EdgePart, query: string): Promise<Answer> => g.ask(g.url, `/api/v2/snapshot?${query}`, {token: part.token});
+  const snapshot = (query: string): Promise<Answer> => g.ask(g.url, `/api/v2/snapshot?${query}`, {token: reader.token});
   const of = (family: string) => (body: {records?: Record<string, {id: string}[]>}) => body.records?.[family];
-  assert.deepEqual(ids(await snapshot(both, 'families=device&owner=bunny/modules/lamp'), of('device')), ['lamp-1']);
-  assert.deepEqual(ids(await snapshot(lampOnly, 'families=device&owner=bunny/modules/sign'), of('device')), [], 'narrowed as the family read is');
-  const signs = await snapshot(both, 'families=device,sign&owner=bunny/modules/sign');
+  assert.deepEqual(ids(await snapshot('families=device&owner=bunny/modules/lamp'), of('device')), ['lamp-1']);
+  const signs = await snapshot('families=device,sign&owner=bunny/modules/sign');
   assert.deepEqual([ids(signs, of('device')), ids(signs, of('sign'))], [['sign-1'], ['sign-1']]);
   for (const [query, status, code] of [
     ['families=device&owner=bunny/modules/chime', 404, 'not-found'], ['families=session&owner=bunny/modules/lamp', 404, 'not-found'],
     ['families=device&owner=Bunny/Lamp', 400, 'invalid-request'], ['families=device&owner=bunny/modules/lamp&owner=bunny/modules/sign', 400, 'invalid-request'],
   ] as const) {
-    const refused = await snapshot(both, query);
+    const refused = await snapshot(query);
     assert.deepEqual([refused.status, codeOf(refused)], [status, code], query);
     assert.equal(refused.text.includes('chime') || refused.text.includes('Bunny/Lamp'), false, 'no refusal quotes the owner it was given');
   }
   await g.runtime.stop();
   assertNoToken(g);
+});
+
+/** A device module of fixtures: it serves its own devices' records, refuses its sync if `refusing`, and has a page that fails it. */
+function deviceOwner(name: string, devices: readonly string[], {refusing = false} = {}): BunnyModule {
+  return {
+    manifest: {name, apiVersion: '1.2', pages: [{id: 'broken', title: 'Broken', render: () => { throw new Error('the page failed'); }}]},
+    async start({sdk}) {
+      await sdk.serveSync([DEVICE_FAMILY], () => refusing ? errorBody('unavailable', {detail: 'the bridge is rebooting'})
+        : {revision: 1, states: devices.map(id => deviceState(deviceRecord(id, 1, name, 'available')))});
+    },
+    stop: () => {},
+  };
+}
+
+it('a combined family read answers with the owners that answered, names the others, and is unavailable once none can answer', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), deviceOwner('bulbs', ['bulb-1']), deviceOwner('panels', ['panel-1']),
+    deviceOwner('bridge', ['beam-1'], {refusing: true})]});
+  const read = async (): Promise<{status: number; ids: string[]; unavailable: unknown; code: unknown}> => {
+    const answer = await g.ask(g.url, '/api/v2/families/device', {token: reader.token});
+    const body = answer.body as {records?: {id: string}[]; unavailable?: unknown};
+    return {status: answer.status, ids: (body.records ?? []).map(record => record.id), unavailable: body.unavailable, code: codeOf(answer)};
+  };
+  // The bridge refuses its sync: the others still answer, and the answer names it.
+  assert.deepEqual(await read(), {status: 200, ids: ['bulb-1', 'panel-1'], unavailable: ['bunny/modules/bridge'], code: undefined});
+  // The panels fail: their devices are not taken for absent, the module is named instead.
+  assert.equal((await g.ask(g.url, '/modules/panels/broken', {token: reader.token})).status, 500);
+  assert.deepEqual(await read(), {status: 200, ids: ['bulb-1'], unavailable: ['bunny/modules/bridge', 'bunny/modules/panels'], code: undefined});
+  // Its own snapshot is unavailable now, not a family nobody serves.
+  const down = await g.ask(g.url, '/api/v2/snapshot?families=device&owner=bunny/modules/panels', {token: reader.token});
+  assert.deepEqual([down.status, codeOf(down)], [503, 'unavailable']);
+  // Once the bulbs fail too, no owner can be read.
+  assert.equal((await g.ask(g.url, '/modules/bulbs/broken', {token: reader.token})).status, 500);
+  const none = await read();
+  assert.deepEqual([none.status, none.code], [503, 'unavailable']);
+  assert.equal(JSON.stringify(g.answers).includes('rebooting'), false, 'an owner\'s detail is never served');
+});
+
+it('a family whose only module has failed is unavailable, while one no module serves is not-found', async context => {
+  const reader = READER();
+  const gizmoSchema = {type: 'object', additionalProperties: false, required: ['id', 'revision'], properties: {id: {type: 'string'}, revision: {type: 'integer'}}};
+  const gizmo: BunnyModule = {
+    manifest: {name: 'gizmo', apiVersion: '1.2', pages: [{id: 'broken', title: 'Broken', render: () => { throw new Error('the page failed'); }}]},
+    async start({sdk}) {
+      await sdk.serveSync(['gizmo'], () => ({revision: 1, states: [{type: 'org.bunny.gizmo.updated', subject: 'g1', dataschema: 'https://bunny.invalid/events/gizmo/2.0', data: {id: 'g1', revision: 1}}]}));
+    },
+    stop: () => {},
+  };
+  const files = await edgeConfig(context, [reader]);
+  const {runtime} = await run(context, {modules: [createCoreModule(), gizmo], configFile: files.config, edge: {schemas: {'https://bunny.invalid/events/gizmo/2.0': gizmoSchema}}});
+  const ask = (path: string): Promise<Answer> => call(runtime.url, path, {token: reader.token});
+  assert.equal((await ask('/api/v2/families/gizmo')).status, 200);
+  assert.equal((await ask('/modules/gizmo/broken')).status, 500, 'the page fails its module');
+  for (const path of ['/api/v2/families/gizmo', '/api/v2/snapshot?families=gizmo']) {
+    const failed = await ask(path);
+    assert.deepEqual([failed.status, codeOf(failed), (failed.body as {error: {retryable: boolean}}).error.retryable], [503, 'unavailable', true], path);
+    assert.match((failed.body as {error: {detail: string}}).error.detail, /not running/, path);
+  }
+  const nobody = await ask('/api/v2/families/playback');
+  assert.deepEqual([nobody.status, codeOf(nobody)], [404, 'not-found'], 'no module in this runtime serves playback');
+});
+
+it('every source the runtime can admit fits the edge\'s command memory at its bound, so none can fill it for another', () => {
+  assert.ok((MAX_CREDENTIALS + 1) * MAX_REMEMBERED_PER_SOURCE <= MAX_REMEMBERED_COMMANDS, 'the credentials and the browser sessions\' one source');
+  assert.ok(MAX_REMEMBERED_PER_PRINCIPAL < MAX_REMEMBERED_PER_SOURCE, 'a source holds several sessions\' quotas');
 });
 
 it('the gateway\'s refusals never quote what the caller sent, and its JSON answers forbid sniffing', async context => {

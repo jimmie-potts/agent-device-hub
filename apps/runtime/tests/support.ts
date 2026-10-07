@@ -46,8 +46,8 @@ export async function stateDir(context: TestContext): Promise<string> {
   return dir;
 }
 
-/** A test part's grant at the edge (Hub #835): its source, its token and the Hub's scopes and devices, all by default. */
-export type EdgePart = {source: string; token: string; id?: string; scopes?: readonly Scope[]; devices?: readonly string[]};
+/** A test part's grant at the edge (Hub #835): its source, its token and the Hub's scopes, all by default. */
+export type EdgePart = {source: string; token: string; id?: string; scopes?: readonly Scope[]};
 export const ALL_SCOPES: readonly Scope[] = ['read', 'control', 'ingest', 'admin'];
 
 /** Writes a private file, owner-only whatever the umask. */
@@ -71,7 +71,7 @@ export async function edgeConfig(context: TestContext, parts: readonly EdgePart[
   context.after(() => rm(dir, {recursive: true, force: true}));
   const credentials = join(dir, 'edge-credentials.json');
   const listed = parts.map((part, index) => ({
-    id: part.id ?? `part-${index + 1}`, source: part.source, digest: tokenDigest(part.token), scopes: [...(part.scopes ?? ALL_SCOPES)], devices: [...(part.devices ?? [])],
+    id: part.id ?? `part-${index + 1}`, source: part.source, digest: tokenDigest(part.token), scopes: [...(part.scopes ?? ALL_SCOPES)],
   }));
   await writePrivate(credentials, options.credentials ?? JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}), options.mode);
   const config = join(dir, 'runtime-config.json');

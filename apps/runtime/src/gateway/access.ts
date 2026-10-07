@@ -1,8 +1,9 @@
 // Who may use the runtime's gateway, and what each caller may do (Hub #835). Two kinds of caller reach it: a client
 // credential, from the edge's credentials file, which presents its bearer token from outside any browser page; and a
 // browser session, which the launcher or a trusted loopback page opens and a cookie carries. Each acts as one source
-// with the old Hub's scopes and device grants, from which this file derives the calls and routing-key patterns the SDK
-// edge allows it. The Origin and fetch-metadata checks keep a page on another site, or on a rebinding name, out.
+// with the old Hub's scopes, from which this file derives the calls and routing-key patterns the SDK edge allows it. No
+// caller is limited to some devices (owner decision, 2026-10-07). The Origin and fetch-metadata checks keep a page on
+// another site, or on a rebinding name, out.
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import type {IncomingMessage} from 'node:http';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -32,7 +33,6 @@ export type Principal = {
   readonly kind: 'credential' | 'browser';
   readonly source: string;
   readonly scopes: ReadonlySet<Scope>;
-  readonly devices: ReadonlySet<string>;
 };
 
 /** A refusal before anything else happens, with the registry code and a fixed sentence. */
@@ -40,28 +40,19 @@ export type Refusal = {readonly code: ErrorCode; readonly detail: string};
 export type Admission = {readonly principal: Principal} | {readonly refusal: Refusal};
 
 /**
- * The core's operator commands that the `control` scope may request, besides each granted device's commands: an
- * approval recovery and a consumer's notice acknowledgment, which the core still checks against the sender's source.
+ * The commands the `control` scope may request: every command key, the core's operator commands (an approval recovery
+ * and a consumer's notice acknowledgment, which the core still checks against the sender's source) and every device's
+ * commands. #782's dispatcher narrows what a remote grant may request directly.
  */
-const CONTROL_KEYS = ['bunny.cmd.approval-recover.*', 'bunny.cmd.notice-acknowledge.*'];
+const CONTROL_KEYS = ['bunny.cmd.*.*'];
 
 /**
- * The devices a caller may not see: every device an admitted module names that its grant does not (Hub #835). A device's
- * records and messages carry its routing ID as their key's last token, so they are what these leave out.
+ * The SDK edge's permissions for a caller's scopes (Hub #835): `read` subscribes to and syncs every state and event
+ * key; `ingest` publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control`
+ * requests every command; `admin` adds nothing at the edge. A part may serve or respond to nothing yet: a remote
+ * owner's grant comes with its own story.
  */
-export function hiddenDevices(principal: Principal, known: readonly string[]): string[] {
-  return [...new Set(known)].filter(device => !principal.devices.has(device));
-}
-
-/**
- * The SDK edge's permissions for a caller's scopes and devices (Hub #835): `read` subscribes to and syncs every state and
- * event key but those of the devices its grant does not name, as the old Hub narrowed reads by device; `ingest`
- * publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control` requests the
- * core's operator commands and the commands of its granted devices; `admin` adds nothing at the edge. A part may serve
- * or respond to nothing yet: a remote owner's grant comes with its own story. `known` are the devices the admitted
- * modules name.
- */
-export function edgePermissions(principal: Principal, known: readonly string[]): EdgePrincipal {
+export function edgePermissions(principal: Principal): EdgePrincipal {
   const calls = new Set<Call>();
   const keys = new Set<string>();
   const publishes: string[] = [];
@@ -77,14 +68,9 @@ export function edgePermissions(principal: Principal, known: readonly string[]):
   if (principal.scopes.has('control')) {
     calls.add('request');
     for (const key of CONTROL_KEYS) keys.add(key);
-    for (const device of principal.devices) keys.add(`bunny.cmd.*.${device}`);
   }
-  const excluded = hiddenDevices(principal, known).map(device => `bunny.*.*.${device}`);
-  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys], publishes, excluded};
+  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys], publishes};
 }
-
-/** Whether a caller may use a module's pages, content, settings and tools: its grant names every device the module names. */
-export const mayUseModule = (principal: Principal, devices: readonly string[]): boolean => devices.every(device => principal.devices.has(device));
 
 /**
  * Where a request comes from, as its `Origin` and `Sec-Fetch-Site` say: `none` for a client outside any page (no
@@ -122,10 +108,8 @@ export const carriesSession = (request: IncomingMessage): boolean => sessionToke
 type Session = {principal: Principal; digest: string; expiresAtMs: number; cancel: Cancel};
 const digestOf = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
-/** What the gateway's callers need of the runtime: the devices the modules name, its clock and scheduler. */
+/** What the gateway's callers need of the runtime: its clock and scheduler. */
 export type AccessOptions = {
-  /** The devices a browser session may command: every device an admitted module names. */
-  devices: () => readonly string[];
   clock: Clock;
   scheduler: Scheduler;
   /** Told the ID of each browser session that ended without a logout, evicted or expired, so its streams end too. */
@@ -220,9 +204,7 @@ export class Access {
       this.#end(oldest, true);
     }
     const token = randomBytes(32).toString('base64url');
-    const principal: Principal = {
-      id: `browser-${randomUUID()}`, kind: 'browser', source: BROWSER_SOURCE, scopes: new Set<Scope>(['read', 'control']), devices: new Set(this.#options.devices()),
-    };
+    const principal: Principal = {id: `browser-${randomUUID()}`, kind: 'browser', source: BROWSER_SOURCE, scopes: new Set<Scope>(['read', 'control'])};
     const digest = digestOf(token);
     const session: Session = {principal, digest, expiresAtMs: this.#options.clock.now() + SESSION_MS, cancel: () => {}};
     session.cancel = this.#options.scheduler.after(SESSION_MS, () => { if (this.#sessions.get(digest) === session) this.#end(session, true); });
@@ -294,12 +276,12 @@ export class Access {
 
 /** A configured credential as a principal. */
 export function principalOf(credential: EdgeCredential): Principal {
-  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes), devices: new Set(credential.devices)};
+  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes)};
 }
 
 function sameGrant(a: Principal, b: Principal): boolean {
   const same = (x: ReadonlySet<string>, y: ReadonlySet<string>): boolean => x.size === y.size && [...x].every(item => y.has(item));
-  return a.id === b.id && a.source === b.source && same(a.scopes, b.scopes) && same(a.devices, b.devices);
+  return a.id === b.id && a.source === b.source && same(a.scopes, b.scopes);
 }
 
 /** The `Set-Cookie` value that carries a new session, and the one that ends it. */
