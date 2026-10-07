@@ -342,6 +342,14 @@ consumer, adds them to the contracts package, and shows a family read's
 `unavailable` owners, such as a device module that is down, as such rather than
 as devices that do not exist.
 
+A module counts as a family's owner only once it has served the family. This is
+a known limit: a module that never served, refused at admission or failed in its
+start before it first served, is not counted. A combined read such as
+`/api/v2/families/device` then answers the other owners with `unavailable: []`,
+and a family only that module would serve reads `not-found`. A reader such as the
+dashboard therefore cross-checks module health: `/api/v2/modules` lists each
+module's state, `refused` or `failed` included.
+
 ### MCP
 
 `/mcp` serves MCP through `packages/mcp`, unchanged, only when the edge section

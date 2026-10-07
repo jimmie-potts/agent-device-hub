@@ -58,6 +58,7 @@ The edge remembers each command it dispatches, by source and message ID, and ref
 
 - Every credential with `read` or `control` reads or commands every device, a device added later included; the conversion lists the credentials this widened for the owner's review at the cutover.
 - The `/api/v2` documents have no published schemas yet; #922, their first consumer, adds them and shows a family read's `unavailable` owners.
+- A module counts as a family's owner only once it has served it, so one refused at admission or failed in its start before it first served is not named in `unavailable`, and a family only it would serve reads `not-found`; a reader such as the dashboard cross-checks each module's state in `/api/v2/modules`.
 - `holdsBytes` matches a secret's UTF-8 bytes only; a UTF-16 or base64 copy inside an image is served, the limit of a substring check, as for pages and logs.
 - The command memory forgets at a restart; a raw client that repeats a command across a restart reaches the module, whose own duplicate handling applies.
 - Browser sessions live in memory; a restart signs browsers out, as the Hub's did.
