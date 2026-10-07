@@ -447,6 +447,11 @@ const tagged = (value, map = same => same) => value.status === 'known' ? {status
 const AVAILABILITY = {unknown: 'unknown', ready: 'available', degraded: 'degraded', unavailable: 'unavailable'};
 const COMMANDS = {'power.set': 'power-set', 'brightness.set': 'brightness-set', 'scene.activate': 'scene-activate', 'zone.power.set': 'zone-power-set',
   'media.start': 'media-start', 'media.control': 'media-control', 'mode.set': 'device-mode-set'};
+// The family of each pending 1.x command, API 1.1's moment included.
+const FAMILY = {...COMMANDS, moment: 'moment-play'};
+const ticket = id => `${id.epoch}.${id.sequence}`;
+// A controller-monotonic instant on the snapshot's clock, as an instant on the runtime's clock at the message time.
+const onRuntimeClock = (snapshot, clock) => AT - Math.max(0, snapshot.sampleClock.sampledAtMs - clock.sampledAtMs);
 function capabilities(v1) {
   const {modes, moments, ...rest} = v1;
   return {...rest, modes: modes?.supported === true ? {supported: true, values: modes.values.map(lower)} : {supported: false}, moments: moments ?? {supported: false}};
@@ -454,7 +459,7 @@ function capabilities(v1) {
 function deviceRecord(snapshot, revision = 1) {
   const {state} = snapshot;
   const last = state.lastOutcome.status === 'known' ? receiptMessage(state.lastOutcome.receipt) : undefined;
-  const external = state.externalControl;
+  const external = state.externalControl, sent = state.lastSuccessfulSend;
   return {
     id: snapshot.identity.deviceId, revision, kind: 'light', ...(snapshot.identity.label === undefined ? {} : {label: snapshot.identity.label}),
     availability: AVAILABILITY[snapshot.serviceHealth], configurationRevision: snapshot.configurationRevision, generation: snapshot.generation,
@@ -464,10 +469,14 @@ function deviceRecord(snapshot, revision = 1) {
       {status: 'known', observedAtMs: AT - Math.round(state.observation.evidenceAgeMs), power: state.observation.power, brightness: state.observation.brightness} :
       {status: 'unknown'},
     pending: state.pending.length,
+    pendingKinds: [...new Set(state.pending.map(each => FAMILY[each.command.kind]))],
     // A receipt the receipt rule turns into a reply refused its request; it is not a completed outcome.
     lastOutcome: last?.kind === 'outcome' ? {status: 'known', outcome: last.data} : {status: 'unknown'},
+    lastTransmission: sent.status === 'known' ?
+      {status: 'known', requestId: ticket(sent.requestId), transmittedAtMs: onRuntimeClock(snapshot, sent.clock), operationIds: sent.operationIds} :
+      {status: 'unknown'},
     externalControl: external.status === 'known' ? {status: 'known', owner: external.owner === 'controller' ? 'module' : 'external',
-      observedAtMs: AT - Math.max(0, snapshot.sampleClock.sampledAtMs - external.clock.sampledAtMs)} : {status: 'unknown'},
+      observedAtMs: onRuntimeClock(snapshot, external.clock)} : {status: 'unknown'},
   };
 }
 const deviceState = record => ({...message('device', 'state', 'org.bunny.device.updated', record.id, record), source: 'bunny/modules/light'});
@@ -499,11 +508,18 @@ function controllerSnapshots() {
 test('every controller snapshot in the 1.x corpus converts to a valid device record that keeps desired and observed apart', () => {
   const snapshots = controllerSnapshots();
   assert.ok(snapshots.length > 50, `${snapshots.length} snapshots`);
-  let differ = 0, unobserved = 0;
+  let differ = 0, unobserved = 0, transmitted = 0;
   for (const snapshot of snapshots) {
     const record = deviceRecord(snapshot);
     valid(deviceState(record));
-    const {desired, observation} = snapshot.state;
+    const {desired, observation, lastSuccessfulSend, pending} = snapshot.state;
+    // The last send and the pending kinds have their own homes: a send is never an observation (Hub #918 review).
+    assert.equal(record.lastTransmission.status, lastSuccessfulSend.status);
+    if (lastSuccessfulSend.status === 'known') {
+      transmitted++;
+      assert.deepEqual(record.lastTransmission.operationIds, lastSuccessfulSend.operationIds);
+    }
+    assert.deepEqual(new Set(record.pendingKinds), new Set(pending.map(each => FAMILY[each.command.kind])));
     // Desired comes only from desired, and observed only from the observation: missing evidence stays unknown.
     assert.deepEqual(record.desired, {power: desired.power, brightness: desired.brightness, mode: tagged(desired.mode, lower)});
     assert.equal(record.observed.status, observation.status);
@@ -515,7 +531,8 @@ test('every controller snapshot in the 1.x corpus converts to a valid device rec
       if (snapshot.serviceHealth === 'ready') assert.equal(record.availability, 'available', 'a healthy service is no observation');
     }
   }
-  assert.ok(differ > 0 && unobserved > 0, `${differ} snapshots whose desired and observed values differ, ${unobserved} unobserved`);
+  assert.ok(differ > 0 && unobserved > 0 && transmitted > 0,
+    `${differ} snapshots whose desired and observed values differ, ${unobserved} unobserved, ${transmitted} with a last send`);
 });
 
 test('every service health, external control owner and capability shape the 1.x schema accepts has a 2.0 home', () => {

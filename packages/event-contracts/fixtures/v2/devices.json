@@ -88,6 +88,9 @@
      }
     },
     "pending": 1,
+    "pendingKinds": [
+     "brightness-set"
+    ],
     "lastOutcome": {
      "status": "known",
      "outcome": {
@@ -95,6 +98,14 @@
       "result": "succeeded",
       "evidence": "transmitted"
      }
+    },
+    "lastTransmission": {
+     "status": "known",
+     "requestId": "req-wall-6",
+     "transmittedAtMs": 1791287997500,
+     "operationIds": [
+      "brightness"
+     ]
     },
     "externalControl": {
      "status": "known",
@@ -204,7 +215,11 @@
      "status": "unknown"
     },
     "pending": 0,
+    "pendingKinds": [],
     "lastOutcome": {
+     "status": "unknown"
+    },
+    "lastTransmission": {
      "status": "unknown"
     },
     "externalControl": {
@@ -289,6 +304,7 @@
      }
     },
     "pending": 0,
+    "pendingKinds": [],
     "lastOutcome": {
      "status": "known",
      "outcome": {
@@ -300,6 +316,14 @@
        "retryable": false
       }
      }
+    },
+    "lastTransmission": {
+     "status": "known",
+     "transmittedAtMs": 1791287700000,
+     "operationIds": [
+      "zone-1",
+      "zone-2"
+     ]
     },
     "externalControl": {
      "status": "known",
@@ -1145,6 +1169,198 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /subject not a device id"
+  },
+  {
+   "name": "a device ID with a dot",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/id": "office.wall",
+    "/subject": "office.wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
+   "name": "a device ID with an uppercase letter",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/id": "Wall",
+    "/subject": "Wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
+   "name": "a device ID with an underscore",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/id": "office_wall",
+    "/subject": "office_wall"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
+   "name": "a device ID of 129 characters",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "/subject": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id maxLength"
+  },
+  {
+   "name": "a command without its request ID",
+   "base": "power-set",
+   "set": {
+    "/data/requestId": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required requestId"
+  },
+  {
+   "name": "a label over 80 characters",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /label maxLength"
+  },
+  {
+   "name": "a pending count over the bound",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/pending": 1025,
+    "/data/pendingKinds": [
+     "brightness-set"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pending maximum"
+  },
+  {
+   "name": "a brightness capability that does not start at 0",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/capabilities/brightness/minimum": 1
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities/brightness oneOf"
+  },
+  {
+   "name": "a brightness capability that does not reach 100",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/capabilities/brightness/maximum": 99
+   },
+   "expect": "invalid-message",
+   "detail": "payload /capabilities/brightness oneOf"
+  },
+  {
+   "name": "pending commands without their kinds",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/pendingKinds": []
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pendingKinds missing for pending commands"
+  },
+  {
+   "name": "more pending kinds than pending commands",
+   "base": "device-pixoo",
+   "set": {
+    "/data/pendingKinds": [
+     "media-start"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pendingKinds more kinds than pending commands"
+  },
+  {
+   "name": "a repeated pending kind",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/pending": 2,
+    "/data/pendingKinds": [
+     "brightness-set",
+     "brightness-set"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pendingKinds uniqueItems"
+  },
+  {
+   "name": "a pending kind in 1.x spelling",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/pendingKinds": [
+     "mode.set"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /pendingKinds/0 pattern"
+  },
+  {
+   "name": "a missing list of pending kinds",
+   "base": "device-pixoo",
+   "set": {
+    "/data/pendingKinds": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required pendingKinds"
+  },
+  {
+   "name": "a transmission without its time",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/lastTransmission/transmittedAtMs": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /lastTransmission oneOf"
+  },
+  {
+   "name": "a transmission after the message time",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/lastTransmission/transmittedAtMs": 1791288000001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /lastTransmission/transmittedAtMs after time"
+  },
+  {
+   "name": "a transmission with a repeated operation ID",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/lastTransmission/operationIds": [
+     "brightness",
+     "brightness"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /lastTransmission oneOf"
+  },
+  {
+   "name": "a transmission reported as an observed value",
+   "base": "device-nanoleaf",
+   "set": {
+    "/data/lastTransmission/power": {
+     "status": "known",
+     "value": true
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /lastTransmission oneOf"
+  },
+  {
+   "name": "a missing last transmission",
+   "base": "device-pixoo",
+   "set": {
+    "/data/lastTransmission": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required lastTransmission"
   }
  ]
 }

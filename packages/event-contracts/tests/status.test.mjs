@@ -130,3 +130,17 @@ test('every device keeps the same colors and ranking as the 1.x helper', () => {
     }
   }
 });
+
+// Owner decision, 2026-10-06 (#918 review): acknowledgment scope stays as today. Acknowledgments are recorded per
+// consumer, and each consumer's policy decides which ones clear what it shows. LIFX and Tidbyt name no consumers, so
+// any consumer's acknowledgment, such as Pixoo's dismissal, retires done for them.
+test('by default any consumer\'s acknowledgment retires done; a caller that names consumers counts only theirs', () => {
+  const pixooAcknowledged = session({notices: [notice(['pixoo'])]});
+  assert.equal(sessionState(pixooAcknowledged), undefined, 'Pixoo\'s acknowledgment retires done for a caller that names no consumers');
+  assert.equal(highestStatus(copy([pixooAcknowledged])), 'idle');
+  assert.equal(highestStatus(copy([pixooAcknowledged]), {}), 'idle', 'an empty options object keeps the default');
+  assert.equal(sessionState(pixooAcknowledged, ['nanoleaf']), 'done', 'a caller that names Nanoleaf still shows done');
+  assert.equal(highestStatus(copy([pixooAcknowledged]), {acknowledgingConsumers: ['nanoleaf']}), 'done');
+  assert.equal(highestStatus(copy([pixooAcknowledged]), {acknowledgingConsumers: ['pixoo']}), 'idle');
+  assert.equal(sessionState(session({notices: [notice()]})), 'done', 'no acknowledgment at all is still done');
+});

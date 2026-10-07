@@ -171,3 +171,56 @@ test('a device mode is never stored as the Hub mode', () => {
   // The device record keeps its own desired mode; the Hub's selection lives only in mode/2.0.
   assert.equal(Object.hasOwn(device('pixoo-desk'), 'hubMode'), false);
 });
+
+test('every one of the eight capabilities is required, so none can go missing', () => {
+  const v = validator();
+  const {schema} = deviceFamilies.find(({family}) => family === 'device');
+  const required = schema.$defs.capabilities.required;
+  assert.deepEqual([...required].sort(), ['brightness', 'media', 'moments', 'modes', 'power', 'preview', 'scenes', 'zones']);
+  for (const capability of required) {
+    const message = patched('device-nanoleaf', {[`/data/capabilities/${capability}`]: null});
+    assert.deepEqual(v.validate(message).error, {code: 'invalid-message', retryable: false, detail: `payload /capabilities required ${capability}`}, capability);
+  }
+});
+
+// A device or playback ID is also the last token of its SDK routing keys: lowercase letters and digits, single hyphens.
+const UNROUTABLE = {'a dot': 'office.wall', 'an uppercase letter': 'Wall', 'an underscore': 'office_wall', '129 characters': 'a'.repeat(129)};
+
+test('every command family refuses a subject that is not a routing-key token', () => {
+  const v = validator();
+  const bases = [
+    ...deviceFamilies.filter(({kind}) => kind === 'command').map(({family}) => [family, fixtures.valid[family], 'device']),
+    ['moment-play', core.valid['moment-play'], 'device'],
+    ['playback-control', core.valid['playback-control'], 'routing'],
+  ];
+  assert.equal(bases.length, 9);
+  for (const [family, base, what] of bases) {
+    assert.equal(v.validate(base).ok, true, family);
+    for (const [why, subject] of Object.entries(UNROUTABLE)) {
+      const result = v.validate({...structuredClone(base), subject});
+      assert.deepEqual(result.error, {code: 'invalid-message', retryable: false, detail: `envelope /subject not a ${what} id`}, `${family}: ${why}`);
+    }
+  }
+});
+
+test('a device ID with any other character, or over 128 characters, is refused', () => {
+  const v = validator();
+  for (const [why, id] of Object.entries(UNROUTABLE)) {
+    const result = v.validate(patched('device-nanoleaf', {'/data/id': id, '/subject': id}));
+    assert.equal(result.error?.detail, id.length > 128 ? 'payload /id maxLength' : 'payload /id pattern', why);
+  }
+  assert.equal(v.validate(patched('device-nanoleaf', {'/data/id': 'a'.repeat(128), '/subject': 'a'.repeat(128)})).ok, true, '128 characters');
+});
+
+test('the last transmission and the pending kinds stay apart from observations and outcomes', () => {
+  const wall = device('wall'), beam = device('beam-1'), pixoo = device('pixoo-desk');
+  // A command's send carries its request ID; a module-internal paint, which the tracker never sees, carries none.
+  assert.equal(wall.lastTransmission.requestId, wall.lastOutcome.outcome.requestId);
+  assert.equal(Object.hasOwn(beam.lastTransmission, 'requestId'), false);
+  assert.ok(beam.lastTransmission.transmittedAtMs > beam.observed.observedAtMs, 'a send after the last reading is no observation');
+  assert.equal(pixoo.lastTransmission.status, 'unknown');
+  for (const record of devices()) {
+    assert.equal(record.pendingKinds.length > 0, record.pending > 0, record.id);
+    assert.ok(record.pendingKinds.length <= record.pending, record.id);
+  }
+});

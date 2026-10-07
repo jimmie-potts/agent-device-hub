@@ -2231,6 +2231,43 @@
    },
    "expect": "unsupported-version",
    "detail": "https://bunny.invalid/events/playback-control/3.0"
+  },
+  {
+   "name": "a playback ID that cannot be a routing-key token",
+   "base": "playback",
+   "set": {
+    "/data/id": "Living_Room",
+    "/subject": "Living_Room"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
+   "name": "an acknowledgment for 63 hex characters",
+   "base": "notice-acknowledge",
+   "set": {
+    "/subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a session id"
+  },
+  {
+   "name": "a moment request to a subject that is not a device ID",
+   "base": "moment-play",
+   "set": {
+    "/subject": "Office_Wall"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a device id"
+  },
+  {
+   "name": "a playback request to a subject that is not a routing ID",
+   "base": "playback-control",
+   "set": {
+    "/subject": "Living_Room"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a routing id"
   }
  ],
  "scenarios": [
