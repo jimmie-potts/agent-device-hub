@@ -41,7 +41,7 @@ test('the strict rules cover new code and skip old and staged code', async () =>
 test('the safe-error rules cover production code under the profile, not its tests', async () => {
   const eslint = new ESLint({cwd: root});
   const production = ['apps/runtime/src/a.ts', 'apps/runtime/verify/a.ts', 'packages/sdk/src/a.ts', 'packages/sdk/src/testing/a.ts',
-    'modules/example/src/a.ts', 'modules/example/src/a.mjs'];
+    'modules/example/src/a.ts', 'modules/example/src/a.mjs', 'modules/example/src/scripts/a.ts'];
   for (const file of production) {
     const config = await eslint.calculateConfigForFile(join(root, file));
     for (const rule of safeErrorRules) assert.ok(on(config, rule), `${file}: ${rule}`);
@@ -63,19 +63,57 @@ test('the safe-error rules cover production code under the profile, not its test
   }
 });
 
-// An exception is a config block named bunny/safe-errors/<reason>, after the profile blocks. Scripts and the stream
-// owners lift only `bunny/no-console`, and the contracts package only `bunny/error-body-from-registry`; every other
-// exception names existing files, so a renamed file cannot leave a stale entry behind.
+// An exception is a config block named bunny/safe-errors/<reason>, after the profile blocks, and listed in
+// docs/development.md's exception table. Scripts and the stream owners lift only `bunny/no-console`, and the contracts
+// package only `bunny/error-body-from-registry`; every other exception names existing files, so a renamed file cannot
+// leave a stale entry behind.
+const exceptions = config.filter(block => block.name?.startsWith('bunny/safe-errors/'));
+const scopes = {'bunny/safe-errors/scripts': {'bunny/no-console': 'off'}, 'bunny/safe-errors/contracts': {'bunny/error-body-from-registry': 'off'}};
+const fileExceptions = exceptions.filter(block => !Object.hasOwn(scopes, block.name));
+const isOff = value => [0, 'off'].includes(Array.isArray(value) ? value[0] : value);
+
 test('each exception to the safe-error rules names files that exist and lifts only those rules', () => {
-  const exceptions = config.filter(block => block.name?.startsWith('bunny/safe-errors/'));
-  const scopes = {'bunny/safe-errors/scripts': {'bunny/no-console': 'off'}, 'bunny/safe-errors/contracts': {'bunny/error-body-from-registry': 'off'}};
   for (const [name, rules] of Object.entries(scopes)) assert.deepEqual(exceptions.find(block => block.name === name)?.rules, rules, name);
   assert.deepEqual(exceptions.find(block => block.name === 'bunny/safe-errors/stream-owners')?.rules, {'bunny/no-console': 'off'});
-  for (const block of exceptions.filter(block => !Object.hasOwn(scopes, block.name))) {
+  for (const block of fileExceptions) {
     for (const file of block.files) assert.ok(!file.includes('*') && existsSync(join(root, file)), `${block.name}: ${file} must name an existing file`);
     for (const [rule, value] of Object.entries(block.rules)) {
       assert.ok(safeErrorRules.includes(rule), `${block.name} lifts ${rule}`);
       assert.equal(value, 'off', `${block.name}: ${rule}`);
+    }
+  }
+});
+
+test('only a named exception in the docs table lifts or reconfigures a safe-error rule', () => {
+  const docs = readFileSync(join(root, 'docs/development.md'), 'utf8');
+  const section = docs.slice(docs.indexOf('### Safe-error rules'));
+  const end = section.slice(1).search(/\n(?:#{1,3} |<a id=)/);
+  const rows = section.slice(0, end === -1 ? undefined : end + 1).split('\n').filter(line => line.startsWith('|'));
+  const documented = new Set(rows.flatMap(row => [...row.matchAll(/`(bunny\/safe-errors\/[\w-]+)`/g)].map(match => match[1])));
+  for (const block of config.filter(block => block.name !== 'bunny/safe-errors')) {
+    for (const rule of safeErrorRules.filter(rule => block.rules?.[rule] !== undefined)) {
+      const where = block.name ?? `an unnamed block for ${JSON.stringify(block.files)}`;
+      assert.match(block.name ?? '', /^bunny\/safe-errors\/[\w-]+$/, `${where} sets ${rule}; name it bunny/safe-errors/<reason>`);
+      assert.ok(isOff(block.rules[rule]), `${where} reconfigures ${rule}; only bunny/safe-errors sets its options`);
+      assert.ok(documented.has(block.name), `${where} lifts ${rule} but is not in docs/development.md's exception table`);
+    }
+  }
+  assert.deepEqual([...documented].sort(), exceptions.map(block => block.name).sort(), 'the table lists exactly the exception blocks');
+});
+
+// A file exception whose file no longer breaks a rule it lifts would hide the next real finding, so it fails here.
+// Syntax only: the safe-error rules need no type information.
+test('each file exception still hides a finding of every rule it lifts', async () => {
+  for (const block of fileExceptions) {
+    const eslint = new ESLint({cwd: root, overrideConfigFile: true, overrideConfig: [
+      {files: ['**/*.{ts,tsx}'], languageOptions: {parser: tseslint.parser}},
+      ...config.filter(other => other.name === 'bunny/safe-errors' || (other.name?.startsWith('bunny/safe-errors/') && other !== block)),
+    ]});
+    for (const result of await eslint.lintFiles(block.files)) {
+      for (const rule of Object.keys(block.rules)) {
+        assert.ok(result.messages.some(message => message.ruleId === rule),
+          `${block.name}: ${relative(root, result.filePath)} no longer breaks ${rule}; remove it from the exception`);
+      }
     }
   }
 });
@@ -288,6 +326,11 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     "stream.on('data', chunk => write(chunk.message));",
     // The inner function's parameter shadows the catch binding.
     'try { run(); } catch (error) { const show = error => error.message; show(1); }',
+    // A member chain narrowed to a class that is not an error, or a different chain than the one tested.
+    'function show(r) { if (r.value instanceof URL) return String(r.value); return `${r.value}`; }',
+    'function fail(r, s) { if (r.reason instanceof Error) write(s.reason.message); }',
+    'function fail(r) { if (r.reason instanceof Error) write(r.other.message); }',
+    "import {UsageError} from './usage.js'; function fail(r) { if (r.reason instanceof UsageError) write(r.reason.message); }",
   ]),
   invalid: withGlobals([
     {code: 'try { run(); } catch (error) { report(error.message); }', errors: rawText('message')},
@@ -327,6 +370,14 @@ tester.run('no-raw-error-text', bunny.rules['no-raw-error-text'], {
     {code: "const failed = error => write(`start failed: ${error instanceof Error ? error.message : 'unknown'}`);", errors: rawText('message')},
     {code: 'function fail(reason) { if (!(reason instanceof Error)) return; write(reason.message); }', errors: rawText('message')},
     {code: 'function fail(reason) { if (reason instanceof TypeError && reason.stack) write(reason.stack); }', errors: [...rawText('stack'), ...rawText('stack')]},
+    // So does a simple member chain: a settled result's reason, an event's error, a private field.
+    {code: 'function fail(r) { if (r.reason instanceof Error) write(r.reason.message); }', errors: rawText('message')},
+    {code: "export function fail(results) { for (const r of results) if (r.status === 'rejected' && r.reason instanceof Error) log(r.reason.stack); }",
+      errors: rawText('stack')},
+    {code: "emitter.on('failed', event => { if (event.error instanceof Error) report(`failed: ${event.error}`); });", errors: asText},
+    {code: 'function fail(r) { return r?.reason instanceof Error ? r.reason.message : "failed"; }', errors: rawText('message')},
+    {code: 'function fail(task) { if (!(task.state.error instanceof Error)) return; write(task.state.error.cause); }', errors: rawText('cause')},
+    {code: 'class Job { #failure = null; report() { if (this.#failure instanceof Error) write(this.#failure.message); } }', errors: rawText('message')},
   ]),
 });
 
@@ -342,6 +393,7 @@ typescript.run('no-raw-error-text types', bunny.rules['no-raw-error-text'], {
     {code: 'try { run(); } catch (error) { report(error!.stack); }', errors: rawText('stack')},
     {code: 'try { run(); } catch (error: unknown) { report(`${error as Error}`); }', errors: asText},
     {code: "socket.on('close', (error: Error) => log(error.message));", errors: rawText('message')},
+    {code: 'export function fail(r: PromiseRejectedResult): string { return r.reason instanceof Error ? (r.reason as Error).message : ""; }', errors: rawText('message')},
     {code: 'export function done(error: NodeJS.ErrnoException | null): void { if (error !== null) log(error.message); }', errors: rawText('message')},
     {code: "import {SdkError} from '@jimmie-potts/sdk'; export function code(error: SdkError): string { return error.stack ?? ''; }", errors: rawText('stack')},
   ],

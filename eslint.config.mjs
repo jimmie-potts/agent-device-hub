@@ -164,12 +164,13 @@ export default defineConfig(
       'bunny/error-body-from-registry': 'error',
     },
   },
-  // Where the safe-error rules do not apply. Each block lifts only the rules it names; docs/development.md "Static
-  // analysis" lists them, and tests/strict_profile.test.mjs checks that each names files that exist.
+  // Where the safe-error rules do not apply. Each block is named bunny/safe-errors/<reason>, lifts only the rules it
+  // names and is listed in docs/development.md "Safe-error rules"; tests/strict_profile.test.mjs checks all three, and
+  // that each file exception still hides a finding.
   {
     // Scripts write their results to the terminal.
     name: 'bunny/safe-errors/scripts',
-    files: ['**/scripts/**'],
+    files: ['apps/runtime/scripts/**'],
     rules: {'bunny/no-console': 'off'},
   },
   {
@@ -185,15 +186,14 @@ export default defineConfig(
   },
   // Code that breaks a safe-error rule until its owner converts it.
   {
-    // A malformed command line's usage error quotes parseArgs's message. Open PR #960 changes the file; #954 converts it
-    // after that merges.
+    // A malformed command line's usage error quotes parseArgs's message. #954 converts it at its pickup.
     name: 'bunny/safe-errors/runtime-usage',
     files: ['apps/runtime/src/process.ts'],
     rules: {'bunny/no-raw-error-text': 'off'},
   },
   {
     // The verification run's harness quotes a failure's message in its own refusal body, its lamp failures and its
-    // start-failure lines. Open PR #960 changes the file; #954 converts it after that merges.
+    // start-failure lines. #954 converts it at its pickup.
     name: 'bunny/safe-errors/verification-harness',
     files: ['apps/runtime/verify/supervisor.ts'],
     rules: {'bunny/no-raw-error-text': 'off', 'bunny/error-body-from-registry': 'off'},

@@ -357,8 +357,10 @@ The local rules live in `scripts/eslint/bunny-rules.mjs`.
 - which paths the profile covers, the exact rule options and that inline
   comments fail lint there;
 - the module boundary rule, including type imports;
-- each safe-error rule's valid and invalid shapes, where the rules apply, and
-  that each exception names files that exist and lifts only those rules;
+- each safe-error rule's valid and invalid shapes and where the rules apply;
+  that only a named exception listed in the table below lifts one, and only
+  the profile block sets its options; and that each file exception names files
+  that exist and still hides a finding of every rule it lifts;
 - that every TypeScript project compiling covered code keeps the five compiler
   settings, as `tsc --showConfig` reports them;
 - that covered paths have no lint baseline entries;
@@ -389,8 +391,14 @@ and the runtime's tests cover the rest.
   connects to its sink.
   - Reading `process.stdout.isTTY` also counts, so a command-line check belongs
     in a listed entry point.
-  - It misses `process.emitWarning`, which the SDK's default `onError` uses with
-    fixed text, writes to file descriptors 1 and 2, and an alias of `process`.
+  - It misses:
+    - `process.emitWarning`, which the SDK's default `onError` uses with fixed
+      text;
+    - writes to file descriptors 1 and 2;
+    - an alias of `process`, `globalThis.process.stdout`, and `stdout` or
+      `stderr` destructured from `process` or from the default `node:process`
+      import (`const {stdout} = process`);
+    - `await import('node:console')`.
 - **`bunny/no-raw-error-text`:** no reading an exception's `message`, `stack`
   or `cause`, directly or by destructuring, and no turning it into text with a
   template literal, `String()`, `+`, `+=`, `JSON.stringify`, `toString()` or
@@ -399,7 +407,8 @@ and the runtime's tests cover the rest.
   - An exception is a catch binding; the first parameter of an inline `.catch`
     handler, a `.then` rejection handler, or an `error`, `uncaughtException` or
     `unhandledRejection` listener; a parameter whose type names an error class
-    (a name ending in `Error` or `Exception`); or any value inside an
+    (a name ending in `Error` or `Exception`); or a variable or a simple member
+    chain, such as `r.reason`, `event.error` or `this.#failure`, inside an
     `instanceof` test against an error class.
   - A value narrowed by `instanceof Error` counts wherever it came from, so
     `error instanceof Error ? error.message : 'unknown'` fails in a helper or a
@@ -413,10 +422,19 @@ and the runtime's tests cover the rest.
     is one. Its `stack` and `cause` may not, nor may `inspect` or `format`,
     which print the stack. The rule checks where foreign text is wrapped in an
     own class instead, so an own class built from text the rule does not track
-    passes.
-  - It does not follow an alias (`const failure = error`), a helper the
-    exception is passed to, a custom type guard, an untyped callback parameter
-    outside these shapes, or a value typed `any`.
+    passes. It cannot tell an own class whose message carries input: Nanoleaf's
+    `ValueError` quotes the text it could not parse in `compat.ts` and the
+    address it refused in `transport.ts`.
+  - It misses:
+    - an alias (`const failure = error`), a helper the exception is passed to, a
+      custom type guard, an untyped callback parameter outside these shapes, and
+      a value typed `any`;
+    - a computed member or a call inside an `instanceof` test, such as
+      `r[key] instanceof Error`;
+    - a tagged template, such as ``String.raw`${error}` ``;
+    - `[label, error].join()` and `'failed: '.concat(error)`;
+    - a narrowed catch binding that is later reassigned: the earlier
+      `instanceof` test still counts.
 - **`bunny/error-body-from-registry`:** no object literal with an `error`
   property whose value is an object literal with its own `code`, as in
   `{error: {code, ...}}`. This includes the error block inside a reply or an
@@ -428,18 +446,25 @@ and the runtime's tests cover the rest.
   as JSON text.
 
 Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
-profile blocks, never inline comments:
+profile blocks, never inline comments, and each is listed here.
+`tests/strict_profile.test.mjs` fails on a block that lifts a rule without that
+name or this listing, and on a file exception that no longer hides a finding.
 
-| Where | Rules lifted | Why | Owner and conversion |
-| --- | --- | --- | --- |
-| Tests: `**/tests/**` and `*.test.*` | All three | Tests read errors to report failures and spell out the bodies they expect. | Permanent |
-| Scripts: `**/scripts/**` | `no-console` | Scripts write their results to the terminal. | Permanent |
-| `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
-| `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
-| `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), once [#919](https://github.com/jimmie-potts/agent-device-hub/issues/919), which changes the file, has merged |
-| `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, once #919, which changes the file, has merged |
-| `modules/nanoleaf/src/journal.ts` | `error-body-from-registry` | The staged port's outcome drafts carry a bare `{code}` error block without the registry's `retryable` flag, because the module does not depend on the contracts package yet. | [#844](https://github.com/jimmie-potts/agent-device-hub/issues/844), when it publishes them through the SDK's outbox |
-| Staged `modules/pixoo/` | All three | The snapshot keeps its source, as for the strict rules. | #843 |
+| Block | Where | Rules lifted | Why | Owner and conversion |
+| --- | --- | --- | --- | --- |
+| `ignores` in `bunny/safe-errors` | Tests: `**/tests/**` and `*.test.*` | All three | Tests read errors to report failures and spell out the bodies they expect. | Permanent |
+| `bunny/safe-errors/scripts` | `apps/runtime/scripts/` | `no-console` | Scripts write their results to the terminal. | Permanent |
+| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
+| `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
+| `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), at its pickup |
+| `bunny/safe-errors/verification-harness` | `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, at its pickup |
+| `bunny/safe-errors/nanoleaf-outcomes` | `modules/nanoleaf/src/journal.ts` | `error-body-from-registry` | The staged port's outcome drafts carry a bare `{code}` error block without the registry's `retryable` flag, because the module does not depend on the contracts package yet. | [#844](https://github.com/jimmie-potts/agent-device-hub/issues/844), when it publishes them through the SDK's outbox |
+| `ignores` in `bunny/safe-errors` | Staged `modules/pixoo/` | All three | The snapshot keeps its source, as for the strict rules. | #843 |
+
+The table understates what the verification harness quotes.
+`apps/runtime/verify/adapter.ts` also turns exceptions into text, through
+`describe` in `apps/runtime/tests/scenarios/parts.ts`, which is exempt as test
+code.
 
 <a id="depot-diagnostic-access"></a>
 

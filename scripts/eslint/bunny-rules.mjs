@@ -180,7 +180,8 @@ const className = node => (node.type === 'TSQualifiedName' ? node.right.name : n
 /**
  * An exception's message, stack and cause never reach an outward value, so code does not read them or turn the
  * exception into text. An exception is a catch binding, the first parameter of an inline rejection handler or `error`
- * listener, a parameter typed as an error class, or any value inside an `instanceof` test against an error class.
+ * listener, a parameter typed as an error class, or a variable or simple member chain, such as `r.reason` or
+ * `this.#failure`, inside an `instanceof` test against an error class.
  * An error class this repository declares holds fixed text from the code that raised it, so its message may be read
  * where an `instanceof` test or the parameter's type proves the value is one; its stack and cause may not.
  */
@@ -204,11 +205,50 @@ const noRawErrorText = {
   create(context) {
     const {sourceCode} = context;
     const scopes = context.options[0]?.workspaceScopes ?? ['@jimmie-potts/'];
-    /** Each tracked variable: whether it is known to hold an exception, and the classes its type annotation names. */
+    /** The function, class field, static block or program whose `this` a `this` expression is. */
+    const thisOwner = node => {
+      let owner = node.parent;
+      while (!['FunctionDeclaration', 'FunctionExpression', 'PropertyDefinition', 'StaticBlock', 'Program'].includes(owner.type)) owner = owner.parent;
+      return owner;
+    };
+    const inner = node => {
+      let current = unwrap(node);
+      while (current?.type === 'ChainExpression') current = unwrap(current.expression);
+      return current;
+    };
+    /**
+     * What a value is, so its uses and tests can be matched: a variable, or a simple member chain on a variable or on
+     * `this`, such as `r.reason` or `this.#failure`, as its root and dotted path. Computed members and calls are not.
+     */
+    const keyOf = node => {
+      const path = [];
+      let current = inner(node);
+      while (current?.type === 'MemberExpression' && !current.computed) {
+        path.unshift(current.property.type === 'PrivateIdentifier' ? `#${current.property.name}` : current.property.name);
+        current = inner(current.object);
+      }
+      if (current?.type === 'Identifier') {
+        const variable = findVariable(sourceCode.getScope(current), current.name);
+        return variable === null ? null : {root: variable, path: path.join('.')};
+      }
+      return current?.type === 'ThisExpression' && path.length > 0 ? {root: thisOwner(current), path: path.join('.')} : null;
+    };
+    const same = (node, key) => {
+      const other = keyOf(node);
+      return other !== null && other.root === key.root && other.path === key.path;
+    };
+    /**
+     * Each tracked value by root and path: whether it is known to hold an exception, and the classes its type annotation
+     * names. Member chains are matched against every member expression whose last name ends a tracked path.
+     */
     const tracked = new Map();
-    const variableOf = node => {
-      const identifier = unwrap(node);
-      return identifier?.type === 'Identifier' ? findVariable(sourceCode.getScope(identifier), identifier.name) : null;
+    const tails = new Set();
+    const members = [];
+    const entryOf = key => tracked.get(key.root)?.get(key.path);
+    const track = (key, entry) => {
+      if (!tracked.has(key.root)) tracked.set(key.root, new Map());
+      tracked.get(key.root).set(key.path, entry);
+      if (key.path !== '') tails.add(key.path.split('.').at(-1));
     };
     const definitionOf = identifier => findVariable(sourceCode.getScope(identifier), identifier.name)?.defs[0];
     const isGlobal = identifier => {
@@ -261,43 +301,43 @@ const noRawErrorText = {
       if (target?.type !== 'Identifier') return;
       const variable = sourceCode.getDeclaredVariables(owner).find(candidate => candidate.name === target.name);
       if (variable === undefined) return;
-      const types = declared.length > 0 ? declared : (tracked.get(variable)?.declared ?? null);
-      tracked.set(variable, {exception: true, declared: types});
+      const key = {root: variable, path: ''};
+      track(key, {exception: true, declared: declared.length > 0 ? declared : (entryOf(key)?.declared ?? null)});
     };
     const typesOf = parameter => errorTypes((parameter?.type === 'AssignmentPattern' ? parameter.left : parameter)?.typeAnnotation?.typeAnnotation);
 
-    // The classes a test proves the variable an instance of when it is true, or when it is false; null when it proves none.
-    const whenTrue = (test, variable) => {
+    // The classes a test proves the tracked value an instance of when it is true, or when it is false; null when it proves none.
+    const whenTrue = (test, key) => {
       const node = unwrap(test);
-      if (node.type === 'BinaryExpression') return node.operator === 'instanceof' && variableOf(node.left) === variable ? [node.right] : null;
-      if (node.type === 'UnaryExpression') return node.operator === '!' ? whenFalse(node.argument, variable) : null;
+      if (node.type === 'BinaryExpression') return node.operator === 'instanceof' && same(node.left, key) ? [node.right] : null;
+      if (node.type === 'UnaryExpression') return node.operator === '!' ? whenFalse(node.argument, key) : null;
       if (node.type !== 'LogicalExpression') return null;
-      if (node.operator === '&&') return whenTrue(node.left, variable) ?? whenTrue(node.right, variable);
-      const [left, right] = [whenTrue(node.left, variable), whenTrue(node.right, variable)];
+      if (node.operator === '&&') return whenTrue(node.left, key) ?? whenTrue(node.right, key);
+      const [left, right] = [whenTrue(node.left, key), whenTrue(node.right, key)];
       return node.operator === '||' && left !== null && right !== null ? [...left, ...right] : null;
     };
-    const whenFalse = (test, variable) => {
+    const whenFalse = (test, key) => {
       const node = unwrap(test);
-      if (node.type === 'UnaryExpression') return node.operator === '!' ? whenTrue(node.argument, variable) : null;
+      if (node.type === 'UnaryExpression') return node.operator === '!' ? whenTrue(node.argument, key) : null;
       if (node.type !== 'LogicalExpression') return null;
-      if (node.operator === '||') return whenFalse(node.left, variable) ?? whenFalse(node.right, variable);
-      const [left, right] = [whenFalse(node.left, variable), whenFalse(node.right, variable)];
+      if (node.operator === '||') return whenFalse(node.left, key) ?? whenFalse(node.right, key);
+      const [left, right] = [whenFalse(node.left, key), whenFalse(node.right, key)];
       return node.operator === '&&' && left !== null && right !== null ? [...left, ...right] : null;
     };
     /** The classes the nearest enclosing test proves at `node`: a branch, a `&&` or `||`, or an earlier early exit. */
-    const narrowed = (node, variable) => {
+    const narrowed = (node, key) => {
       for (let child = node, parent = node.parent; parent !== null && parent !== undefined; child = parent, parent = parent.parent) {
         let classes = null;
         if (parent.type === 'IfStatement' || parent.type === 'ConditionalExpression') {
-          if (child === parent.consequent) classes = whenTrue(parent.test, variable);
-          else if (child === parent.alternate) classes = whenFalse(parent.test, variable);
+          if (child === parent.consequent) classes = whenTrue(parent.test, key);
+          else if (child === parent.alternate) classes = whenFalse(parent.test, key);
         } else if (parent.type === 'LogicalExpression' && child === parent.right) {
-          classes = parent.operator === '&&' ? whenTrue(parent.left, variable) : parent.operator === '||' ? whenFalse(parent.left, variable) : null;
+          classes = parent.operator === '&&' ? whenTrue(parent.left, key) : parent.operator === '||' ? whenFalse(parent.left, key) : null;
         } else if (['BlockStatement', 'StaticBlock', 'Program', 'SwitchCase'].includes(parent.type)) {
           const statements = parent.type === 'SwitchCase' ? parent.consequent : parent.body;
           for (let index = statements.indexOf(child) - 1; index >= 0 && classes === null; index -= 1) {
             const statement = statements[index];
-            if (statement.type === 'IfStatement' && statement.alternate === null && exits(statement.consequent)) classes = whenFalse(statement.test, variable);
+            if (statement.type === 'IfStatement' && statement.alternate === null && exits(statement.consequent)) classes = whenFalse(statement.test, key);
           }
         }
         if (classes !== null) return classes;
@@ -305,8 +345,8 @@ const noRawErrorText = {
       return null;
     };
     /** What a use of the value reveals: a part it reads, or its text. Only a message or text can be an own class's. */
-    const findings = identifier => {
-      const use = outermost(identifier);
+    const findings = value => {
+      const use = outermost(value);
       const parent = use.parent;
       switch (parent.type) {
         case 'MemberExpression': {
@@ -366,23 +406,35 @@ const noRawErrorText = {
         if (handler?.type === 'ArrowFunctionExpression' || handler?.type === 'FunctionExpression') bind(handler, handler.params[0], typesOf(handler.params[0]));
       },
       BinaryExpression(node) {
-        const variable = node.operator === 'instanceof' ? variableOf(node.left) : null;
-        if (variable !== null && !tracked.has(variable)) tracked.set(variable, {exception: false, declared: null});
+        const key = node.operator === 'instanceof' ? keyOf(node.left) : null;
+        if (key !== null && entryOf(key) === undefined) track(key, {exception: false, declared: null});
+      },
+      MemberExpression(node) {
+        if (!node.computed) members.push(node);
       },
       'Program:exit'() {
-        for (const [variable, {exception, declared}] of tracked) {
-          for (const reference of variable.references) {
-            if (reference.isValueReference === false || !reference.isRead()) continue;
-            const found = findings(reference.identifier);
-            if (found.length === 0) continue;
-            const classes = narrowed(reference.identifier, variable) ?? declared;
-            if (!exception && !(classes?.some(node => ERROR_CLASS.test(className(unwrap(node)))) ?? false)) continue;
-            const fixedText = classes !== null && classes.every(own);
-            for (const finding of found) {
-              const safe = fixedText && finding.stack !== true && (finding.property === undefined || finding.property === 'message');
-              if (!safe) report(finding.node, finding.stack === true ? {} : finding);
-            }
+        const check = (value, key, {exception, declared}) => {
+          const found = findings(value);
+          if (found.length === 0) return;
+          const classes = narrowed(value, key) ?? declared;
+          if (!exception && !(classes?.some(node => ERROR_CLASS.test(className(unwrap(node)))) ?? false)) return;
+          const fixedText = classes !== null && classes.every(own);
+          for (const finding of found) {
+            const safe = fixedText && finding.stack !== true && (finding.property === undefined || finding.property === 'message');
+            if (!safe) report(finding.node, finding.stack === true ? {} : finding);
           }
+        };
+        for (const [root, paths] of tracked) {
+          const entry = paths.get('');
+          if (entry === undefined) continue;
+          for (const reference of root.references) {
+            if (reference.isValueReference !== false && reference.isRead()) check(reference.identifier, {root, path: ''}, entry);
+          }
+        }
+        for (const member of members.filter(node => tails.has(node.property.type === 'PrivateIdentifier' ? `#${node.property.name}` : node.property.name))) {
+          const key = keyOf(member);
+          const entry = key === null || key.path === '' ? undefined : entryOf(key);
+          if (entry !== undefined) check(member, key, entry);
         }
       },
     };
