@@ -30,3 +30,12 @@
 - [x] 6.1 Update the contract, the observability, runtime, SDK, maintenance and Pixoo READMEs, and `docs/development.md`.
 - [x] 6.2 Negative controls, each reverted: writing what the contract refused fails 2 runtime tests; registering `error.message` fails 2 Node, 1 Python and 1 runtime test; a resource without its fields fails 8 runtime tests; module records under `bunny.runtime` fail 4 runtime tests, and dropping the schema's `bunny.runtime` rule fails 2 Node tests and 1 Python test; removing the kit check fails 2 kit tests; a sink failure that reaches the caller fails 3 tests; the meaning sentence in `bunny.reason` fails 1 edge test; ignoring `--environment` fails 2 process tests.
 - [x] 6.3 Run the gate from a fresh build, validate this change with `--strict`, then sync and archive it.
+
+## 7. Review round (PR #951)
+
+- [x] 7.1 Fail a test runtime's after-hook, and the in-memory harness's problems, when the writer dropped or its sink lost a record; add tests that write `runtime.module.error-after-stop` and `runtime.handler.failed`. Renaming those two and `runtime.edge.disconnected` to unregistered events now fails tests.
+- [x] 7.2 Test that the watchdog kills a stuck process whose stderr is closed.
+- [x] 7.3 Pin profile 1.0's vocabulary in the profile test and check the catalog against it plus each profile's additions.
+- [x] 7.4 Keep only the attributes the record's own profile registers when building a record, in TypeScript and Python, with tests in both.
+- [x] 7.5 Match `bunny.message.id` to the 2.0 id block; rename `bunny.source`, `bunny.lag.ms`, `bunny.dropped.count`, `bunny.message.count`, `bunny.modules` and `bunny.grants` to `bunny.participant`, `bunny.lag.duration_ms`, `bunny.delivery.dropped_count`, `bunny.outbox.republished_count`, `bunny.module_count` and `bunny.grant_count`.
+- [x] 7.6 Give `uncertain-result` no registered reason, log the stand-in core's conflict as `duplicate`, and correct the queue-depth, stop-problem and watchdog memory wording.

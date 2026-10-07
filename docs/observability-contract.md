@@ -97,7 +97,7 @@ Approved attributes keep these identities separate:
 - `bunny.operation.id`, task/effect/clock epochs, generation, state/source revision
   retain their owning semantics. Integers are nonnegative safe integers.
 - Duration and queue wait fields are nonnegative milliseconds, bounded to one
-  day. Queue depth is 0–1,024 in profile 1.1 only.
+  day. Queue depth is 0-1,024, from profile 1.1.
 - `bunny.operation`, `bunny.outcome`, `bunny.reason` use registered enums.
   `bunny.write.possible` preserves uncertain side effects.
 - `bunny.provenance=source` describes an emitter's own event. A receiver's
@@ -140,15 +140,15 @@ so a 1.2 record that uses it never projects to 1.1 or 1.0. The additions:
   operation events, and three new ones: `message.received` (a consumer took a
   message once by `(source, id)`, as a duplicate, or refused a conflict),
   `outbox.republished` and `outbox.acknowledged`.
-- **Attributes:** `bunny.module` (a module name), `bunny.source` (an SDK
+- **Attributes:** `bunny.module` (a module name), `bunny.participant` (an SDK
   participant source such as `bunny/modules/lamp`), `bunny.pattern` (a routing
   pattern or `sync <families>`), `bunny.code` (a code from the 2.0 error
   registry), `bunny.phase` (where a module's refusal, failure or stop problem
-  arose), counts (`bunny.modules`, `bunny.dropped.count`,
-  `bunny.message.count`), durations (`bunny.timeout_ms`, `bunny.lag.ms`,
+  arose), counts (`bunny.module_count`, `bunny.delivery.dropped_count`,
+  `bunny.outbox.republished_count`), durations (`bunny.timeout_ms`, `bunny.lag.duration_ms`,
   `bunny.lag.limit_ms`), `bunny.exit_code`, `bunny.message.id`,
   `bunny.message.kind`, `bunny.simulate` and `bunny.edge` (whether modules are
-  simulated and the edge configured), `bunny.grants` (a count), `bunny.route`
+  simulated and the edge configured), `bunny.grant_count` (a count), `bunny.route`
   (one of the edge's routes, or `other`), the OpenTelemetry `server.port`, and
   the OpenTelemetry `error.type` with its plain `error.code`. `error.type` and
   `error.code` are identifiers of at most 64 characters, never a message. A

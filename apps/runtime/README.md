@@ -89,10 +89,11 @@ The runtime refuses to start otherwise, with `edge-grants-missing`,
 remote message against profile 2.0, the core families and the modules' own
 schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
 `runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
-`bunny.route` (one of the edge's routes, or `other`), `bunny.source` when the
-caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
-the diagnostic contract's registered reason for that code (none for
-`internal`). It never holds the edge's detail, which may quote
+`bunny.route` (one of the edge's routes, or `other`), `bunny.participant` when
+the caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
+the diagnostic contract's registered reason for that code. `internal` and
+`uncertain-result`, whose effect may have happened, have none. It never holds
+the edge's detail, which may quote
 what the caller sent or an exception's message. Token rotation and grant
 permissions belong to #835.
 
@@ -172,7 +173,7 @@ main thread is still caught once the watchdog has been awake for the limit. A
 watchdog thread that ends without being asked logs `runtime.watchdog.stopped`,
 and health shows `lagCheck.status` `stopped` and `degraded`.
 
-The worker costs about 13 MiB of resident memory: the zero-module runtime's
+The worker costs about 14 MiB of resident memory: the zero-module runtime's
 VmRSS with and without it, from `scripts/measure-memory.mjs`.
 
 ## Logs
@@ -208,9 +209,11 @@ A failure record names the error's type (`error.type`) and, when it is an
 identifier, its code (`error.code`). As the contract requires, it never holds
 the raw message or stack, which may quote a URL with a token in it. A module's
 refusal or failure carries its 2.0 registry code in `bunny.code` and where it
-arose in `bunny.phase`: `manifest`, `start`, `handler`, `timer`, `worker`,
-`async` (its own async flow), `handlers` (its participant's close) or `stop`.
-A refusal of a malformed name leaves the name out.
+arose in `bunny.phase`: `manifest`, `start`, `handler`, `timer`, `worker` or
+`async` (its own async flow). A problem in its stop carries `bunny.phase` and no
+code: `handlers` (its participant's close) or `stop`, or, for an error after it
+stopped, where that error arose. A refusal of a malformed name leaves the name
+out.
 
 A sink that fails never changes what the runtime does: a sink that throws loses
 the record, and a closed stderr, which reports EPIPE, is ignored. The watchdog
