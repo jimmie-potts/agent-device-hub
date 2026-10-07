@@ -51,9 +51,13 @@ async function launch(context: TestContext, script: string, args: readonly strin
 
 const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
 
-/** Each shipped device module, which the shipped runtime refuses while no configuration gives it a section (Hub #919). */
-const UNCONFIGURED = shippedModules.slice(1).map(({name}) => ({
-  name, apiVersion: '1.1', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
+/**
+ * Each shipped device module, which the shipped runtime refuses while no configuration gives it a section (Hub #919), at
+ * the module API version its manifest declares.
+ */
+const UNCONFIGURED = shippedModules.slice(1).map(factory => ({
+  name: factory.name, apiVersion: factory.simulate().manifest.apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
+  reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
 }));
 
 it('the shipped runtime starts the core, refuses each device module that has no configuration, serves health and stops cleanly on SIGTERM', async context => {

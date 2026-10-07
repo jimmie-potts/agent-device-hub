@@ -1,6 +1,7 @@
 // The fixed, shipped module list (ADR 0012). Each entry is a module's factory: it creates the module with its real
 // device transport, or, when the runtime runs with `--simulate`, with its simulated one, so a disposable verification
 // run (#920) touches no device. Adding or removing a module is a code change here; nothing loads modules at run time.
+import {codexDesktopFactory} from '@jimmie-potts/codex-desktop';
 import {lifxModuleFactory} from '@jimmie-potts/lifx';
 import {nanoleafFactory} from '@jimmie-potts/nanoleaf';
 import {playbackFactory} from '@jimmie-potts/playback';
@@ -42,6 +43,8 @@ export const shippedModules: readonly ModuleFactory[] = [
   tidbytFactory,
   pixooFactory,
   nanoleafFactory,
+  // Codex Desktop's read marker as read evidence for the core's sessions (Hub #926).
+  codexDesktopFactory,
 ];
 
 /** Each factory's module, with its simulated transport when `simulate` is set and its real one otherwise. */
