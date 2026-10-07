@@ -10,8 +10,11 @@ const cap = (value, maximum) => {
   return value;
 };
 
-/** Host-owned association: no SDK attributes, resources, events or links are exported directly. */
-export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES, observe }) {
+/**
+ * Host-owned association: no SDK attributes, resources, events or links are exported directly. `schemaVersion` names the
+ * profile a span's metadata is checked against; it defaults to the contract's producer default.
+ */
+export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_QUEUE_RECORDS, maxActiveBytes = MAX_QUEUE_BYTES, observe, schemaVersion }) {
   cap(maxActiveRecords, MAX_QUEUE_RECORDS); cap(maxActiveBytes, MAX_QUEUE_BYTES);
   const evidence=createDeliveryEvidence('traces',observe);
   const queue = createBoundedSink(sink, queueOptions,(id,phase)=>evidence.settle(id,phase)), active = new Map();
@@ -73,8 +76,11 @@ export function createSpanPipeline({ sink, queueOptions, maxActiveRecords = MAX_
           delete attributes['bunny.schema.version'];
           const selectedResource = typeof resource === 'function' ? resource(name, options) : resource;
           const selectedScope = typeof scope === 'function' ? scope(name, options) : scope;
-          const candidate = createRecord({ timestamp: new Date().toISOString(), event_name: 'operation.completed', severity_text: 'INFO',
-            resource: selectedResource, scope: { name: selectedScope, version: '1.0.0' }, attributes });
+          // The metadata is checked as a record of an event its scope allows; only its resource, scope and attributes are exported.
+          const rule = catalog.scope_rules[selectedScope];
+          const event = rule === undefined || rule.events.includes('operation.completed') ? 'operation.completed' : rule.events[0];
+          const candidate = createRecord({ ...(schemaVersion === undefined ? {} : { schema_version: schemaVersion }), timestamp: new Date().toISOString(),
+            event_name: event, severity_text: 'INFO', resource: selectedResource, scope: { name: selectedScope, version: '1.0.0' }, attributes });
           const canonical = candidate.ok ? validateRecord({ ...candidate.value, attributes }) : candidate;
           if (!canonical.ok) { count('invalid'); return span; }
           const incomingLinks = options.links ?? [];

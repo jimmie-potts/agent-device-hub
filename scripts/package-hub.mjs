@@ -56,7 +56,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.6.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.2.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.2.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz'],['bunny-observability','jimmie-potts-bunny-observability-1.2.0.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.6.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.2.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.2.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz'],['bunny-observability','jimmie-potts-bunny-observability-1.3.0.tgz']]){
     const pin=released[name],source=join(root,pin?'vendor':'artifacts',archive);
     if(pin){assert.equal(metadata.dependencies[`@jimmie-potts/${name}`],pin.version);assert.equal(sha(await readFile(source)),pin.sha256,`published archive: ${name}`);}
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});

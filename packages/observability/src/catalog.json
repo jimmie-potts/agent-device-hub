@@ -1,9 +1,10 @@
 {
-  "artifact_version": "1.2.0",
+  "artifact_version": "1.3.0",
   "schema_versions": [
     "1.0",
     "1.1",
-    "1.2"
+    "1.2",
+    "1.3"
   ],
   "default_schema_version": "1.1",
   "semantic_conventions": "1.44.0",
@@ -70,6 +71,32 @@
         "error.type",
         "error.code"
       ]
+    },
+    "1.3": {
+      "events": [
+        "runtime.command.admitted",
+        "runtime.command.refused",
+        "runtime.command.cancelled",
+        "runtime.command.replied",
+        "runtime.command.uncertain",
+        "runtime.sync.served",
+        "runtime.sync.refused",
+        "runtime.sync.restarted",
+        "runtime.edge.failed",
+        "outcome.published",
+        "outbox.deferred",
+        "device.unavailable",
+        "device.available"
+      ],
+      "attributes": [
+        "bunny.routing.key",
+        "bunny.outbox.waiting_count",
+        "bunny.attempt_count"
+      ],
+      "span_names": [
+        "bunny.outcome.publish",
+        "bunny.device.call"
+      ]
     }
   },
   "events": {
@@ -110,7 +137,20 @@
     "runtime.edge.refused": "Edge call refused",
     "message.received": "Message received",
     "outbox.republished": "Outbox republished",
-    "outbox.acknowledged": "Outbox outcome acknowledged"
+    "outbox.acknowledged": "Outbox outcome acknowledged",
+    "runtime.command.admitted": "Command admitted for owner",
+    "runtime.command.refused": "Command refused by bus",
+    "runtime.command.cancelled": "Command cancelled before start",
+    "runtime.command.replied": "Command owner replied",
+    "runtime.command.uncertain": "Command result uncertain",
+    "runtime.sync.served": "Sync served",
+    "runtime.sync.refused": "Sync refused",
+    "runtime.sync.restarted": "Sync restarted",
+    "runtime.edge.failed": "Edge call failed",
+    "outcome.published": "Outcome published",
+    "outbox.deferred": "Outbox publication deferred",
+    "device.unavailable": "Device unavailable",
+    "device.available": "Device available"
   },
   "services": [
     "hub",
@@ -181,7 +221,9 @@
     "bunny.lifecycle.observe",
     "bunny.feed.read",
     "bunny.process.start",
-    "bunny.helper.run"
+    "bunny.helper.run",
+    "bunny.outcome.publish",
+    "bunny.device.call"
   ],
   "attributes": {
     "bunny.controller.id": {
@@ -499,6 +541,21 @@
     "error.code": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_.$-]{1,64}(?![\\s\\S])"
+    },
+    "bunny.routing.key": {
+      "type": "string",
+      "pattern": "^bunny\\.(?:state|event|cmd)(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*){2}(?![\\s\\S])",
+      "maxLength": 512
+    },
+    "bunny.outbox.waiting_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.attempt_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     }
   },
   "scope_rules": {
@@ -527,7 +584,16 @@
         "runtime.edge.serving",
         "runtime.edge.connected",
         "runtime.edge.disconnected",
-        "runtime.edge.refused"
+        "runtime.edge.refused",
+        "runtime.command.admitted",
+        "runtime.command.refused",
+        "runtime.command.cancelled",
+        "runtime.command.replied",
+        "runtime.command.uncertain",
+        "runtime.sync.served",
+        "runtime.sync.refused",
+        "runtime.sync.restarted",
+        "runtime.edge.failed"
       ]
     },
     "bunny.module": {
@@ -547,7 +613,11 @@
         "operation.failed",
         "message.received",
         "outbox.republished",
-        "outbox.acknowledged"
+        "outbox.acknowledged",
+        "outcome.published",
+        "outbox.deferred",
+        "device.unavailable",
+        "device.available"
       ],
       "required_attributes": [
         "bunny.module"

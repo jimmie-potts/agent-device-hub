@@ -1,4 +1,5 @@
 // Profile 1.2 (Hub #903) registers the B.U.N.N.Y. runtime: its service, its two scopes, its events and attributes.
+// Profile 1.3 (Hub #949) adds the runtime's decision records, the outbox's and a device's records, and two span names.
 // Each profile's additions are closed to the earlier profiles, and producers still default to profile 1.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,8 +32,10 @@ const PROFILE_1_0 = {
     'bunny.generation', 'bunny.telemetry.dropped_count', 'bunny.telemetry.failure_count', 'bunny.duration_ms', 'bunny.queue.wait_ms',
     'bunny.execution.duration_ms', 'bunny.operation', 'bunny.outcome', 'bunny.reason', 'bunny.provenance', 'bunny.observed.service',
     'bunny.write.possible', 'bunny.build.revision'],
+  span_names: ['bunny.command.request', 'bunny.command.queue', 'bunny.command.execute', 'bunny.lifecycle.observe', 'bunny.feed.read',
+    'bunny.process.start', 'bunny.helper.run'],
 };
-const KINDS = ['services', 'scopes', 'events', 'attributes'];
+const KINDS = ['services', 'scopes', 'events', 'attributes', 'span_names'];
 /** Each profile's vocabulary: profile 1.0's, then each later profile's additions on top of the one before. */
 function profiles() {
   const result = {'1.0': PROFILE_1_0};
@@ -67,14 +70,17 @@ const examples = {
   'server.port': 41000,
   'error.type': 'RuntimeError',
   'error.code': 'state-dir-relative',
+  'bunny.routing.key': 'bunny.cmd.lamp.lamp-1',
+  'bunny.outbox.waiting_count': 3,
+  'bunny.attempt_count': 12,
 };
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.2.0 adds profile 1.2, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.2.0');
-  assert.equal(catalog.artifact_version, '1.2.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2']);
+test('artifact 1.3.0 adds profile 1.3, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.3.0');
+  assert.equal(catalog.artifact_version, '1.3.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -97,7 +103,8 @@ test('the schema and the catalog register the same vocabulary', () => {
 
 test('the catalog registers exactly profile 1.0\'s vocabulary plus each later profile\'s additions', () => {
   const latest = profiles()[versions.at(-1)];
-  const registered = {services: catalog.services, scopes: catalog.scopes, events: Object.keys(catalog.events), attributes: Object.keys(catalog.attributes)};
+  const registered = {services: catalog.services, scopes: catalog.scopes, events: Object.keys(catalog.events), attributes: Object.keys(catalog.attributes),
+    span_names: catalog.span_names};
   for (const kind of KINDS) {
     assert.deepEqual([...registered[kind]].sort(), [...latest[kind]].sort(), `${kind}: every name after profile 1.0 is some profile's addition`);
     assert.equal(new Set(latest[kind]).size, latest[kind].length, `${kind}: no name is added twice`);
@@ -145,14 +152,15 @@ test('the runtime\'s scopes allow only their own service and events, and a modul
   assert.deepEqual(catalog.scope_rules['bunny.module'].required_attributes, ['bunny.module']);
   assert.ok(runtimeEvents.every(name => name.startsWith('runtime.')));
   assert.ok(moduleEvents.every(name => !name.startsWith('runtime.')));
+  const latest = versions.at(-1);
   for (const name of runtimeEvents) {
-    const record = {...runtime, event_name: name, body: catalog.events[name]};
+    const record = {...at(runtime, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: module.scope, attributes: module.attributes}), false, `${name} under bunny.module`);
     assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
   }
   for (const name of moduleEvents) {
-    const record = {...module, event_name: name, body: catalog.events[name]};
+    const record = {...at(module, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: runtime.scope}), false, `${name} under bunny.runtime`);
   }
@@ -170,7 +178,32 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.3').ok, false);
+  assert.equal(projectRecord(hub, '1.4').ok, false);
+});
+
+test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
+  const decided = {...runtime, schema_version: '1.3', event_name: 'runtime.command.refused', body: catalog.events['runtime.command.refused'],
+    severity_text: 'WARN', severity_number: 13,
+    attributes: {'bunny.provenance': 'source', 'bunny.routing.key': 'bunny.cmd.lamp.lamp-1', 'bunny.code': 'unavailable', 'bunny.reason': 'unavailable'}};
+  assert.equal(valid(decided), true);
+  assert.equal(projectRecord(decided, '1.2').ok, false);
+  assert.equal(valid(at(decided, '1.2')), false, 'a 1.3 record labeled 1.2');
+  const raised = projectRecord(runtime, '1.3');
+  assert.equal(raised.ok, true);
+  assert.equal(raised.value.schema_version, '1.3');
+  assert.equal(projectRecord(at(runtime, '1.3'), '1.2').value.schema_version, '1.2');
+});
+
+test('profile 1.3 keeps the request ID\'s profile 1.0 pattern and bounds its own attributes', () => {
+  const check = (attributes, version = '1.3') => valid({...module, schema_version: version, attributes: {...module.attributes, ...attributes}});
+  assert.equal(check({'bunny.request.id': 'req-1'}), true);
+  assert.equal(check({'bunny.request.id': '_leading'}), false, 'a 2.0 requestId with a leading underscore is not a 1.x request ID');
+  assert.equal(check({'bunny.routing.key': 'bunny.cmd.lamp.*'}), false, 'a routing key is never a pattern');
+  assert.equal(check({'bunny.routing.key': 'http://192.0.2.7/?token=tok_SYNTHETIC123'}), false);
+  assert.equal(check({'bunny.routing.key': `bunny.cmd.lamp.${'a'.repeat(600)}`}), false, 'at most 512 characters');
+  assert.equal(check({'bunny.outbox.waiting_count': -1}), false);
+  assert.equal(check({'bunny.attempt_count': 1.5}), false);
+  assert.ok(catalog.span_names.includes('bunny.outcome.publish') && catalog.span_names.includes('bunny.device.call'));
 });
 
 test('construction keeps only the attributes the record\'s own profile registers', () => {
