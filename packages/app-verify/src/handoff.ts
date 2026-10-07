@@ -4,7 +4,7 @@ import {chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile} from 'node
 import {join} from 'node:path';
 import {card} from './card.js';
 import {proofLinks} from './proof.js';
-import {EXIT, Failure, has, load, reseed, reseedInputs, sums, type Io} from './lifecycle.js';
+import {EXIT, Failure, has, load, noScenario, reseed, reseedInputs, sums, type Io} from './lifecycle.js';
 import {validateReceipt} from './receipt.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, Receipt} from './types.js';
@@ -159,7 +159,7 @@ async function readOnly(path: string): Promise<void> {
 
 export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefined, reset: string | undefined) {
   const run = await load(plugin, io, runId);
-  if (reset !== undefined && !has(plugin.scenarios, reset)) throw new Failure('unknown-scenario', `the fixtures define no scenario ${reset}`);
+  if (reset !== undefined && !has(plugin.scenarios, reset)) throw new Failure('unknown-scenario', noScenario(reset));
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   let receipt = await run.store.read();
   const unit = await systemd.unitState(run.unit);

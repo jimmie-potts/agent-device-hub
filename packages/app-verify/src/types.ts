@@ -409,7 +409,8 @@ export interface RunOptions {
    * Environment read by the core. Default `process.env`. Recognized:
    * `APP_VERIFY_STATE_ROOT` (default `~/.local/state/app-verify`),
    * `APP_VERIFY_PROOF_ROOT` (default `<canonical checkout>/.local/evidence/verify`),
-   * `APP_VERIFY_WINDOWS_CHECK=off` (skip the Windows reachability read).
+   * `APP_VERIFY_WINDOWS_CHECK=off` (skip the Windows reachability read),
+   * `APP_VERIFY_SINGLE_RUN=1` (`start` refuses with `run-active` while another run's unit is live on this host).
    */
   env?: Readonly<Record<string, string | undefined>>;
   /** Receives the one JSON result line. Default: process.stdout. */

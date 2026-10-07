@@ -1,7 +1,7 @@
 // The only place the core talks to systemd. Everything is addressed by unit name;
 // nothing is found or killed by port, process name or remembered PID.
 import {readFile} from 'node:fs/promises';
-import {exec, pause, which} from './util.js';
+import {ANY_RUN_ID, exec, pause, which} from './util.js';
 
 /** Manager states that accept transient units; the same list the docs give. */
 export const USABLE_MANAGER_STATES = ['running', 'degraded', 'starting', 'initializing'];
@@ -79,6 +79,60 @@ export async function listUnits(prefix: string): Promise<string[] | undefined> {
   const result = await exec('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', '--no-pager', `${prefix}*`], {timeoutMs: 10000});
   if (result.code !== 0) return undefined;
   return result.stdout.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(prefix));
+}
+
+/** A run's own service, `app-verify-<run id>.service`. A lease timer or its service, a thaw timer and the host route's command unit never match. */
+const RUN_SERVICE = /^app-verify-(.+)\.service$/;
+
+/**
+ * The run ids whose service unit is live on this host, whichever app started them: a process is running, or is
+ * starting (Hub #944). A unit that failed, exited or was collected is not live, and neither is one that is stopping.
+ * `undefined` when systemctl cannot list units.
+ */
+export async function liveRuns(): Promise<string[] | undefined> {
+  const result = await exec('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', '--no-pager', 'app-verify-*.service'], {timeoutMs: 10000});
+  if (result.code !== 0) return undefined;
+  const runs: string[] = [];
+  for (const line of result.stdout.split('\n')) {
+    // UNIT LOAD ACTIVE SUB DESCRIPTION
+    const [unit = '', load, active, sub] = line.trim().split(/\s+/);
+    const runId = RUN_SERVICE.exec(unit)?.[1];
+    if (runId === undefined || !ANY_RUN_ID.test(runId) || load !== 'loaded') continue;
+    if ((active === 'active' && sub === 'running') || active === 'activating') runs.push(runId);
+  }
+  return runs.sort();
+}
+
+/** The host-wide claim a guarded start holds while it creates a run (Hub #944). */
+export const START_CLAIM = 'app-verify-start-claim.service';
+
+/**
+ * Take the claim: a transient unit that lives while process `pid` does. systemd-run refuses a unit name that already
+ * exists, so only one start holds it. A start killed without releasing it leaves the unit for about a second, when its
+ * loop sees `pid` gone; `RuntimeMaxSec` ends it in any case, so a stale claim never blocks for long.
+ * `claimed` names the unit's invocation, which a release compares so it never stops a claim that another start took
+ * after this one's expired; `held` when another start has it; `failed` with a reason when the unit could not be created
+ * for another reason.
+ */
+export async function claimStart(pid: number): Promise<{claimed: string} | 'held' | {failed: string}> {
+  const shell = which('sh', '/usr/bin:/bin', '/');
+  if (!shell) return {failed: 'sh was not found in /usr/bin or /bin'};
+  const result = await exec('systemd-run', [
+    '--user', `--unit=${START_CLAIM.replace(/\.service$/, '')}`, '--collect', '--quiet',
+    '--property=RuntimeMaxSec=1800s', '--property=TimeoutStopSec=5s', '--property=Description=app-verify start claim',
+    '--', shell, '-c', 'while kill -0 "$1" 2>/dev/null; do sleep 1; done', 'sh', String(pid),
+  ], {timeoutMs: 30000});
+  if (result.code === 0) return {claimed: (await show(START_CLAIM, ['InvocationID']))?.InvocationID ?? ''};
+  const claim = await show(START_CLAIM, ['LoadState', 'ActiveState']);
+  if (claim?.LoadState === 'loaded' && (claim.ActiveState === 'active' || claim.ActiveState === 'activating')) return 'held';
+  return {failed: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]};
+}
+
+/** Stop the claim, unless it is no longer the one `invocation` took: its holder outlived `RuntimeMaxSec` and another start has it now. */
+export async function releaseClaim(invocation: string): Promise<void> {
+  const now = await show(START_CLAIM, ['InvocationID']);
+  if (invocation !== '' && now?.InvocationID && now.InvocationID !== invocation) return;
+  await stopUnit(START_CLAIM);
 }
 
 export interface ServiceSpec {

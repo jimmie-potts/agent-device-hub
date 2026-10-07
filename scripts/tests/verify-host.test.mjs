@@ -1,6 +1,6 @@
 import test, {before, after} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, writeFile, rm, copyFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, writeFile, rm, copyFile, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {runHost} from '../verify-host.mjs';
@@ -194,6 +194,22 @@ test('host commands keep browser temporary files on owned disk storage', async t
   await runHost(plan, fixture);
   const launch = fixture.calls.find(c => c.program.endsWith('/systemd-run'));
   assert.ok(launch.argv.some(a => a.startsWith('--property=ExecStopPost=')));
+});
+
+test('host commands opt a start in to the one-run guard (Hub #944)', async t => {
+  const plan = await prepare(args(await checkout(t)));
+  assert.equal(plan.hostEnv.APP_VERIFY_SINGLE_RUN, '1');
+  const fixture = supervisor();
+  await runHost(plan, fixture);
+  const launch = fixture.calls.find(c => c.program.endsWith('/systemd-run'));
+  assert.ok(launch.argv.includes('APP_VERIFY_SINGLE_RUN=1'), 'the adapter runs with the guard on');
+});
+
+test('every verification wrapper script opts a start in, and no test script does (Hub #944)', async () => {
+  const {scripts} = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+  for (const name of ['verify', 'verify:compose', 'verify:chompi', 'verify:runtime']) assert.match(scripts[name], /^APP_VERIFY_SINGLE_RUN=1 node /, name);
+  // The suites start runs side by side on purpose, and some spawn a wrapper directly.
+  for (const [name, command] of Object.entries(scripts)) if (name.startsWith('test:')) assert.doesNotMatch(command, /APP_VERIFY_SINGLE_RUN/, name);
 });
 
 test('temporary storage cleanup preserves other commands and refuses mismatched ownership', async t => {

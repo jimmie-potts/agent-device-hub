@@ -44,8 +44,9 @@ Version 1.1 only adds to 1.0: a 1.0 plug-in runs unchanged, and receipts stay
 `app-verification/1`. See [What 1.1 adds](#what-11-adds).
 
 The workspace source is now 1.3.0, with a read-only `prerequisites` diagnostic,
-optional frozen-proof HTTP delivery and the shared `errorBody` on refusal lines
-(see [Refusal error body](#refusal-error-body)).
+optional frozen-proof HTTP delivery, the shared `errorBody` on refusal lines
+(see [Refusal error body](#refusal-error-body)) and an opt-in refusal of a
+second live run on the host (see [One run at a time](#one-run-at-a-time)).
 The release example above remains the published 1.1 adoption path; this source
 change does not publish a 1.3 release or update another repository's pin.
 
@@ -281,9 +282,64 @@ holds the body that `errorBody` holds now.
 | `runtime-root-unusable` | `invalid-state` | no |
 | `capture-in-progress` | `capacity` | yes |
 | `receipt-locked` | `capacity` | yes |
+| `run-active` | `capacity` | yes |
 | `lease-failed` | `unavailable` | yes |
 | `internal` | `internal` | no |
 | Any other | `internal` | no |
+
+## One run at a time
+
+A host runs one Acceptance run at a time, because memory is the limit. A
+wrapper can enforce that: with `APP_VERIFY_SINGLE_RUN=1` in the environment of
+the process that runs `start`, the core refuses the start while any run's
+service unit is live on this host
+([Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944)). Only
+the exact value `1` opts in. A wrapper sets it from its package script, for
+example `"verify": "APP_VERIFY_SINGLE_RUN=1 node scripts/verify.mjs"`. Test
+suites that start runs side by side do not set it, and a vendored adapter opts
+in the same way once it vendors a core that has this.
+
+```json
+{"operation":"start","error":"run-active","detail":"run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again","errorBody":{"error":{"code":"capacity","retryable":true,"detail":"run-active: run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again"}}}
+```
+
+- **The refusal** keeps the 1.x `error` and `detail`, names each live run (the
+  first three, then a count), carries `errorBody` with the registry's
+  `capacity`, and exits 1 like the other refusals. It comes before anything is
+  created: no receipt, proof directory, runtime directory, unit or timer, and
+  the live run is untouched. Stop that run, or wait for its lease, and start
+  again.
+- **What counts** is each `app-verify-<run id>.service` of any app that is
+  `active (running)` or `activating`. A failed, inactive or stopping unit, a
+  unit systemd already collected, a lease or thaw timer or its service, and the
+  host route's `app-verify-command-<id>.service` do not count, so a stale or
+  failed unit never blocks a start. A live unit whose receipt is stale does
+  count, because it still holds memory: `doctor` shows it, `stop <run-id>`
+  ends it, and its lease ends it otherwise.
+- **Starts begun together.** A run has no unit until its build, seed and lease
+  steps are done, so a guarded start first takes a claim: a transient unit,
+  `app-verify-start-claim.service`, that lives while the starting process does
+  and that systemd stops after 30 minutes in any case. `systemd-run` refuses a
+  unit name that exists, so of two starts begun together one holds the claim and
+  the other is refused. It says `another start is still creating a run`, or
+  names the run once that run's unit exists. The claim is held until `start`
+  returns and given back whether it started a run or not. A start killed without
+  giving it back leaves it for about a second. A release stops the claim only
+  while it is still the one that start took, by its `InvocationID`, so a start
+  that outlived the 30 minutes never stops another start's claim. If
+  `systemd-run` cannot create the claim or `systemctl` cannot list units, the
+  start goes ahead and says so on stderr.
+- **Other operations.** `restart` replaces a run and is never refused.
+  `scenario`, `capture`, `handoff`, `extend`, `doctor` and `stop` never read the
+  variable.
+- **A composition** that starts several runs through wrappers counts as one
+  run. Its orchestrator takes the slot itself with the package's
+  `holdSingleRun(progress)`, which throws `SingleRunRefused` (its `detail` is
+  the refusal's) while a run is live or another start holds the claim, and
+  returns `{release()}` to call when the runs have started. It removes the
+  variable from the environment of the runs it starts. The package also exports
+  `liveRuns()` (the live run ids, or `undefined` when units cannot be listed)
+  and `runActiveDetail(runIds)`.
 
 ## Capture without a supervisor
 
@@ -308,8 +364,9 @@ missing input or a non-empty output directory.
 | `APP_VERIFY_STATE_ROOT` | `~/.local/state/app-verify` | Runtime root. Must be outside every Git checkout |
 | `APP_VERIFY_PROOF_ROOT` | `<canonical checkout>/.local/evidence/verify` | Proof root. The canonical checkout is the repository's main worktree, never a linked worktree's path. A proof root inside a checkout must be ignored by Git |
 | `APP_VERIFY_WINDOWS_CHECK` | on when WSL interop and `curl.exe` exist | `off` skips the Windows reachability read |
+| `APP_VERIFY_SINGLE_RUN` | off | `1` makes `start` refuse with `run-active` while another run is live on this host. A wrapper's package script sets it; see [One run at a time](#one-run-at-a-time) |
 
-The overrides exist for tests; normal runs use the defaults.
+The first three overrides exist for tests; normal runs use the defaults.
 
 ## Tests
 
@@ -334,12 +391,23 @@ inside a checkout.
   - a served artifact that changed before or during a step;
   - the shared error body on each refusal reachable without a run: usage,
     an unknown run, an invalid receipt, a stopped run, an unusable root, a
-    `stop` under a live lock and an internal error.
+    `stop` under a live lock and an internal error;
+  - the refusal messages that name what differs: an unknown scenario, and a
+    run that is stopped or whose unit is not active;
+  - a guarded `start` without a user manager, which still exits 3.
 - Every other test drives real transient units named `app-verify-avt-<6 hex>-*`
   with a fixture counter application. While the suite runs, those units exist.
   Each test stops the units of its own app name when it ends and fails if any
   remain. Test leases are at most ten minutes, so even a killed run leaves
-  nothing past that.
+  nothing past that. `tests/single-run.test.mjs` also starts stand-in units
+  (a failed one, a stray lease timer, a lease service, a host-route command
+  unit and a held claim) to show that only a live run or a held claim blocks,
+  and stops each when it ends. The suite's sandbox never sets
+  `APP_VERIFY_SINGLE_RUN`; each guarded command passes it, with a `systemctl`
+  and `systemd-run` on its PATH (`tests/scope-shim.mjs`) that scope the guard's
+  listing and claim to the test's own apps, so a run or a start that another
+  session has in flight cannot decide the result. The shim logs each call, so
+  a test asserts that the claim is taken before the units are read.
   These tests skip, each with the reason, when no user manager exists, and
   fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. CI hides the runner's user
   manager until the lease works under systemd 255 (#873), so they run on a

@@ -353,7 +353,10 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   const current = await run.store.read();
   const unit = await systemd.unitState(run.unit);
-  if (current.state !== 'running' || !unit?.loaded || unit.active !== 'active' || unit.mainPid !== current.owned.mainPid) throw new Failure('run-not-running', `${run.runId} is not running as its receipt says`);
+  // The same three reasons `requireRunning` gives, each naming what differs.
+  if (current.state !== 'running') throw new Failure('run-not-running', `${run.runId} is ${current.state}`);
+  if (!unit?.loaded || unit.active !== 'active') throw new Failure('run-not-running', `${run.unit} is not active`);
+  if (unit.mainPid !== current.owned.mainPid) throw new Failure('run-not-running', `${run.unit} does not match the receipt's process identity`);
   if (step.scenario && !step.fresh && current.scenario.name !== step.scenario) throw new Failure('scenario-mismatch', `${stepName} expects scenario ${step.scenario}; the run is seeded with ${current.scenario.name}`);
 
   // A fresh step starts from newly seeded state: stop, reseed and relaunch on the same port first, with the recorded inputs.

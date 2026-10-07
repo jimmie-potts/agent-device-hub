@@ -9,11 +9,12 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {copyFile, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {scopeShim} from '../../../../packages/app-verify/tests/scope-shim.mjs';
 
 // The stand-in adapters report the workspace app-verify core, so the expected versions follow its package.
 const CORE_VERSION = JSON.parse(await readFile(new URL('../../../../packages/app-verify/package.json', import.meta.url), 'utf8')).version;
@@ -177,6 +178,66 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
     assert.equal(w.units(), '', 'no unit was started');
   } finally {
     await w.close();
+  }
+});
+
+test('a composition counts as one run: it is refused beside a live run, and its own three runs start under the one-run guard', {skip, timeout: 480000}, async () => {
+  const w = await world();
+  try {
+    // Another session may have a run live or a start in flight, so the guard is scoped to this world's stand-in apps by
+    // a systemctl and a systemd-run on PATH; every other call reaches the real program. A wrapper's package script sets
+    // the variable.
+    Object.assign(w.env, {APP_VERIFY_SINGLE_RUN: '1', PATH: await scopeShim(join(w.base, 'shims'), w.tag)});
+    const claim = `app-verify-start-claim-${w.tag}.service`;
+    const claimLoaded = () => /LoadState=loaded/.test(spawnSync('systemctl', ['--user', 'show', claim, '-p', 'LoadState'], {encoding: 'utf8'}).stdout);
+    const alone = (...args) => spawnSync(process.execPath, ['scripts/verify.mjs', ...args], {cwd: w.nanoleaf.checkout, env: w.env, encoding: 'utf8'});
+    const lone = alone('start', '--lease', '5');
+    assert.equal(lone.status, 0, lone.stderr);
+    const liveRun = JSON.parse(lone.stdout.trim()).runId;
+    const refused = await w.start();
+    assert.equal(refused.code, 1, JSON.stringify(refused.result));
+    assert.deepEqual(Object.keys(refused.result).sort(), ['detail', 'error', 'operation'], 'the composition keeps its own 1.x refusal line');
+    assert.equal(refused.result.operation, 'start');
+    assert.equal(refused.result.error, 'run-active');
+    assert.match(refused.result.detail, new RegExp(`${liveRun}\\b`), 'the refusal names the live run');
+    assert.deepEqual((await readdir(join(w.base, 'p'))).filter(name => name.startsWith('compose-')), [], 'no composition was recorded');
+    assert.ok(w.units().split('\n').every(line => line.startsWith(`app-verify-${liveRun}`)), 'no unit but the live run\'s exists');
+    assert.equal(claimLoaded(), false, 'a refused composition gives its claim back');
+    assert.equal(alone('stop', liveRun).status, 0);
+
+    // With nothing live, the composition starts its three runs. They do not inherit the variable: the second would be
+    // refused for the first, and the Hub's real wrapper reads it too.
+    const started = await w.start();
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const members = (await w.composition(id)).services.map(s => s.runId);
+    assert.equal(members.length, 3);
+    const beside = await w.start();
+    assert.equal(beside.code, 1, JSON.stringify(beside.result));
+    assert.equal(beside.result.error, 'run-active');
+    for (const runId of members.slice(0, 2)) assert.match(beside.result.detail, new RegExp(`${runId}\\b`), 'a second composition is refused, naming the first one\'s runs');
+    assert.equal(claimLoaded(), false, 'and so does one that started its runs');
+    assert.equal((await w.run('doctor', id)).code, 0, 'the first composition is untouched');
+    assert.equal((await w.run('stop', id)).code, 0);
+  } finally {
+    spawnSync('systemctl', ['--user', 'stop', `app-verify-start-claim-${w.tag}.service`]);
+    await w.close();
+  }
+});
+
+// No skip: nothing here needs a user manager.
+test('a composition start that opted in says the core is not built, with exit 3, instead of an internal error', async () => {
+  const dir = await mkdtemp(join(shortTmp(), 'hn-'));
+  try {
+    // A copy of the orchestrator outside every checkout: @jimmie-potts/app-verify does not resolve from there.
+    for (const entry of await readdir(join(root, 'apps/hub/verify'), {withFileTypes: true})) {
+      if (entry.isFile() && entry.name.endsWith('.mjs')) await copyFile(join(root, 'apps/hub/verify', entry.name), join(dir, entry.name));
+    }
+    const child = spawnSync(process.execPath, [join(dir, 'compose.mjs'), 'start'], {cwd: dir, env: {...process.env, APP_VERIFY_SINGLE_RUN: '1'}, encoding: 'utf8'});
+    assert.equal(child.status, 3, child.stdout + child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout.trim()), {operation: 'start', error: 'core-build-missing', detail: 'The verification core is not built; run npm run build from the repository root.'});
+  } finally {
+    await rm(dir, {recursive: true, force: true});
   }
 });
 

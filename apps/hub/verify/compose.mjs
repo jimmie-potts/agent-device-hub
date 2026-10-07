@@ -22,7 +22,7 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn, execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {access, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -69,7 +69,7 @@ export class ComposeFailure extends Error {
 /**
  * @typedef {Readonly<Record<string, string | undefined>>} Env
  * @typedef {(line: string) => void} Progress
- * @typedef {{env: Env, progress: Progress, hubRoot?: string}} Io
+ * @typedef {{env: Env, progress: Progress, hubRoot?: string, singleRun?: boolean}} Io
  * @typedef {{id: string, outcome: 'passed' | 'failed', detail?: string}} Check
  * @typedef {{code: number, value: Record<string, unknown>}} Outcome
  */
@@ -948,8 +948,35 @@ async function extendUnlocked(id, leaseMinutes, io) {
 // Public operations take the same lock even when called without the CLI.
 /** @param {Parameters<typeof startUnlocked>[0]} options @param {Io} io */
 export async function start(options, io) {
-  return options.restarts ? operation(options.restarts, {...io, hubRoot: options.hubRoot ?? io.hubRoot}, () => startUnlocked(options, io)) : startUnlocked(options, io);
+  // Hub #944: a composition is one run, so a start that opted in holds the host's one-run slot for the whole composition
+  // and is refused beside any live run before anything is created. Its own runs start without the variable (see
+  // runCompose), or the second of them would be refused for the first.
+  const slot = io.singleRun ? await holdSingleRun(io.progress) : undefined;
+  try {
+    return options.restarts ? await operation(options.restarts, {...io, hubRoot: options.hubRoot ?? io.hubRoot}, () => startUnlocked(options, io)) : await startUnlocked(options, io);
+  } finally {
+    await slot?.release();
+  }
 }
+
+/** @param {Progress} progress */
+async function holdSingleRun(progress) {
+  // As scripts/verify.mjs does: a core that is not built is `core-build-missing` with exit 3, not an internal error.
+  try {
+    await access(new URL(import.meta.resolve('@jimmie-potts/app-verify')));
+  } catch (error) {
+    if (!['ENOENT', 'ERR_MODULE_NOT_FOUND'].includes(/** @type {NodeJS.ErrnoException} */ (error).code ?? '')) throw error;
+    throw new ComposeFailure('core-build-missing', 'The verification core is not built; run npm run build from the repository root.', null, EXIT.unavailable);
+  }
+  const {holdSingleRun: hold, SingleRunRefused} = await import('@jimmie-potts/app-verify');
+  try {
+    return await hold(progress);
+  } catch (error) {
+    if (error instanceof SingleRunRefused) throw new ComposeFailure('run-active', error.detail);
+    throw error;
+  }
+}
+
 /** @param {string | undefined} id @param {Io} io */
 export const stop = (id, io) => operation(id, io, () => stopUnlocked(id, io));
 /** @param {string | undefined} id @param {Io} io */
@@ -1347,9 +1374,14 @@ export async function runCompose(argv, options = {}) {
     const root = await proofRoot(env, options.hubRoot).catch(() => undefined);
     if (root) env = {...env, APP_VERIFY_PROOF_ROOT: root};
   }
+  // Hub #944: APP_VERIFY_SINGLE_RUN=1 opts this composition in. It is consumed here and never passed on: each run the
+  // composition starts goes through its own wrapper, and the composition counts as one run.
+  const {APP_VERIFY_SINGLE_RUN: single, ...passed} = env;
+  env = passed;
+  const singleRun = single === '1';
   const stdout = options.stdout ?? (/** @param {string} line */ line => void process.stdout.write(line + '\n'));
   const progress = options.stderr ?? (/** @param {string} line */ line => void process.stderr.write(line + '\n'));
-  const io = {env, progress, hubRoot: options.hubRoot};
+  const io = {env, progress, hubRoot: options.hubRoot, singleRun};
   let operation = argv[0] ?? 'help';
   try {
     const parsed = parse(argv);
