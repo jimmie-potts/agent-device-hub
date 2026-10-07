@@ -125,13 +125,14 @@ such test says so in a comment. [Dropped assertions](#dropped-assertions) and
 | `test_modes.py` | 15 | 15: 1 in 2a (`renderer.test.ts`), `test_quiet_frames_are_steady_paired_colors`; the other 14 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
 | `test_effects.py` | 18 | 18: 1 in 2a, `EncoderTest.test_display_encodes_zone_frames`, with the display encoder; 17 in 2b. All in `effects.test.ts`. Partly: `test_presets_resolve_to_identical_bounded_explicit_frames` | |
 | `test_animation_favorites.py` | 7 | 4 in 2b (`favorites.test.ts`), each partly: `test_save_freezes_recipe_survives_reopen_and_replays`, `test_collision_atomic_rename_delete_bound_and_name_identity`, `test_preset_defaults_are_frozen_without_snapshot_or_display_mutation`, `test_malformed_names_recipes_mixed_selectors_and_bounds_are_rejected` | Not ported: `test_stale_authority_replay_cancel_expiry_and_hold`, `test_worker_applies_save_without_light_write_and_rejects_changed_revision`, `test_revocation_and_wrong_target_never_save_or_play` (integration admission, processing and credentials) |
-| `test_device_worker.py` | 40 | 36: 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order`, whose mode command 3b restored; 33 in 3e (`device-worker.test.ts`), all the rest but four. Partly: `test_launch_starts_one_instance_per_registered_device`, `test_unreadable_registry_launches_the_original_device`, `test_cli_mode_and_status_accept_a_device_target`, `test_unknown_target_is_rejected_without_state_change`, `test_panels_preview_is_scoped_to_panels`, `test_panels_never_runs_controller_integration_or_scene_discovery`, `test_lines_outage_keeps_panels_comets_in_shared_input`, and the 3e cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported: `test_uninstall_frees_every_device_and_rejects_a_target` (installer), `test_refresh_clears_only_its_target_display_cache` and `test_reset_says_it_resets_every_device` (the setup command line), `test_panels_instance_never_polls_the_shared_feed` (the feed poller: the runtime delivers sessions to the module, and no worker polls) |
+| `test_device_worker.py` | 40 | 36: 3 in 2a (`configuration.test.ts`): `AddressChangeTest.test_unreadable_configuration_keeps_the_current_transport`, `MirroredTest.test_layout_save_keeps_the_other_devices_entry` and, partly, `UntargetedOrderTest.test_untargeted_calls_address_lines_whatever_the_registry_order`, whose mode command 3b restored; 33 in 3e (`device-worker.test.ts`), all the rest but four. Partly: `test_launch_starts_one_instance_per_registered_device`, `test_unreadable_registry_launches_the_original_device`, `test_cli_mode_and_status_accept_a_device_target`, `test_unknown_target_is_rejected_without_state_change`, `test_panels_preview_is_scoped_to_panels`, `test_panels_never_runs_controller_integration_or_scene_discovery`, `test_lines_outage_keeps_panels_comets_in_shared_input`, `test_panels_outage_leaves_lines_update_and_outcome`, and the 3e cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | Not ported: `test_uninstall_frees_every_device_and_rejects_a_target` (installer), `test_refresh_clears_only_its_target_display_cache` and `test_reset_says_it_resets_every_device` (the setup command line), `test_panels_instance_never_polls_the_shared_feed` (the feed poller: the runtime delivers sessions to the module, and no worker polls) |
 | `test_edit_parity.py` | 4 | 3 in 3b (`edits.test.ts`), each partly: `test_equivalent_edits_save_equivalent_state`, `test_active_comet_defers_browser_edit_and_holds_machine_edit`, `test_browser_only_edits_keep_their_ledger_scope` | Not ported: `test_browser_edit_after_admission_is_a_machine_revision_conflict` (integration admission) |
 | `test_scene_restore.py` | 13 | 13 in 3c (`scenes.test.ts`). Partly: the cases marked in [Partly translated for shared input only](#partly-translated-for-shared-input-only) | |
 | `test_controller_state.py`, `test_controller_api.py`, `test_controller_cli.py`, `test_controller_contracts.py`, `test_integration_geometry.py`, `test_codex_links.py`, `test_prism_assets.py` | | | Not ported: the controller ledger, HTTP controller, integration API and wall server. Wall view and link behavior moves with #844 |
 | `test_hook_management.py` | | | Not ported: hook registration is retired |
 | `test_linux_runtime.py`, `test_runtime_install.py`, `test_runtime_adapter.py`, `test_cli_compatibility.py`, `test_observability.py`, `test_measure_shared.py`, `test_verify_vendor.py`, `test_module_dependencies.py` | | | Not ported: install, packaging, CLI, diagnostics, tooling and vendored copies. The module boundary lint replaces the import-direction checks |
 | `test_demo_fixture.py`, `test_demo_runs.py`, `verify_*.mjs` | | | Not ported: #844 replaces the demo and verification adapter with simulated transport and scenarios |
+| `mcp/tests/*.test.mjs` | | | Not ported: the Node MCP host's tests, 11 files (the MCP host is not ported; Nanoleaf MCP animation tools are codex-nanoleaf#159) |
 | `*_checks.cjs`, `wall_options.cjs` | | | Wall page browser checks move with the pages (#844); `workflow_checks.cjs` is the old repository's |
 
 The port adds tests of its own:
@@ -173,8 +174,11 @@ The port adds tests of its own:
 - `supervisor checks the port adds`, in `device-worker.test.ts`: recorded from Python, the worker
   command ends when shared input is paused, and a stop during the retry wait ends the worker command;
   the port's own, a removed device's supervisor ends instead of polling it, a supervisor whose device
-  another instance holds ends at once, a failure as the supervisor stops is not recorded, and a
-  supervisor that cannot record a failure ends;
+  another instance holds ends at once, a failure as the supervisor stops is not recorded, a failed
+  pass reaches the failure hook and a failing hook stops nothing, a database error after a pass is
+  retried as a failed pass, an unreadable configuration is retried rather than taken as an
+  unregistered device, both when a pass fails and after a pass, and a supervisor that cannot record a
+  failure ends;
 - `edits recorded from Python` and `mode command checks the port adds` (an explicit mode command ends
   overrides on every device; an unknown mode changes nothing), in `edits.test.ts`;
 - the recorded values in `compat.test.ts` and the replay in `trace.test.ts`;
@@ -254,6 +258,11 @@ replay (#844's device state and the runtime's requests). They also drop:
   polled at each attempt.
 - `test_commands_admitted_mid_pass_stay_with_their_own_device`: shared input reads no unread file, so
   both commands are admitted while the Panels' worker waits instead of during its pass's unread read.
+- `test_panels_outage_leaves_lines_update_and_outcome`: that every attempt got the same feed state (no
+  feed state is carried), and the Lines ledger's `lastOutcome` (#844's device state). The worker
+  command runs on to the stop signal instead of returning.
+- `LedgerTest.test_local_mode_change_cancels_only_that_devices_controls`: the Lines ledger's
+  generation, which is not ported; the Lines' command stays queued with no outcome.
 
 Not ported (the layer that held them is replaced):
 
@@ -495,8 +504,8 @@ From slice 3e the two-device cases also run on shared input (`devices.json`). Th
   the Panels' own pass, and the read task stays idle where the legacy reader ended it.
 - `test_panels_plays_its_own_comet_from_its_own_triangle`: the read evidence also drops the Lines'
   queued comet, and the comet the completion started is sent again by the next pass while it runs.
-- `test_panels_scene_returns_after_a_recoverable_failure`: the completed task keeps the Panels until
-  the run ends, so the scene's return is checked by the Panels' saved scene.
+- `test_panels_scene_returns_after_a_recoverable_failure`: the read task stays on its triangle as
+  idle, so the scene returns when the owner ends the session.
 
 ## Recorded comparisons
 
@@ -780,6 +789,9 @@ on a read-only export of that commit, since the Python tests import from their o
       observes, before any execution is active;
     - `playAnimation`'s `phase='queued'` condition: a retired or expired row is deleted, and only
       `playAnimation` moves a row to attempting.
+
+    The supervisor's wait no longer re-checks the stop signal when its timer fires: the stop cancels
+    the timer, so that check could not fail.
   - `transaction()` and the worker's `Transact` refuse asynchronous work by type, as the SDK's
     `Outbox.transaction` does, so a TypeScript caller cannot pass one. A body that returns a promise
     anyway is refused with a `TypeError`, but the rollback covers only the work done before its first
@@ -788,8 +800,9 @@ on a read-only export of that commit, since the Python tests import from their o
     reports a changed list (`{type: 'scenes'}`) for #844 to publish the device's state;
     `sceneList` shows names up to 80 characters, as the extension snapshot did.
   - The worker ends when a hold stops its writes without shared input selected, or when a hold
-    arrives during a pass, as Python's did. #844 starts it again when a command is accepted, as
-    Python's admission launched it.
+    arrives during a pass, as Python's did. Its supervisor runs it again a second later while shared
+    input is selected. After an accepted command, #844 starts the device's supervisor if none is
+    running, as Python's admission launched the `worker` command (`launch_worker`).
 - Multiple devices and the worker command (3e):
   - `superviseWorker` is `main`'s `worker` command loop. It records a failed pass for its device, waits
     2 s and runs the worker again; after a worker ends, it waits 1 s and runs it again while shared
@@ -797,7 +810,12 @@ on a read-only export of that commit, since the Python tests import from their o
     rejects for a failed pass, since a failure that escapes a module stops the whole module (module
     failure policy A), and it resolves with why it ended: `stopped`, `locked` (another instance holds
     the device), `paused` (shared input is no longer selected), `unregistered` or `unrecorded` (the
-    failure could not be written).
+    failure could not be written). `onFailure` is told of each failed pass, and a hook that throws
+    stops nothing.
+  - Its reads after a pass, the registry and the shared input selection, are part of the pass, as
+    Python's loop read them inside its `try`: a failed read is recorded and retried. Only a
+    configuration that reads and omits the device ends the supervisor as `unregistered`; Python's
+    loop read an unreadable configuration as the Lines alone, which ended another device's command.
   - No feed state is carried between attempts. Python handed every attempt the same feed state, so a
     failed Lines pass could not force a resync; the core's sync replaces the feed.
   - A removed device's supervisor ends after its worker ends. Python's command ran the removed
@@ -832,17 +850,19 @@ on a read-only export of that commit, since the Python tests import from their o
 - The worker's per-device lock is Python's lock file in the state directory, which also excludes a
   second process. #844 may replace it with an in-process guard.
 - Nothing starts `superviseWorker` yet. #844's module host starts one for each registered device and
-  for a newly enrolled one, and maps a recorded `control_error` to the device's `unavailable`
-  availability in its `device/2.0` state (#918); a successful pass clears it. A supervisor ends
+  for a newly enrolled one, wires `onFailure` to the runtime's observability (Python emitted
+  `process.failed`), and maps a recorded `control_error` to the device's `unavailable` availability
+  in its `device/2.0` state (#918); a successful pass clears it. A supervisor ends
   `paused` when a new configuration pauses shared input, so the configuration wiring that selects
   shared input again also starts the supervisors again. `locked` means another instance holds the
   device, so one process starts one supervisor per device.
 - A queued command fails `expired` only when the worker next checks after its `expiresat`: at its
-  start, in a pass, or while it waits on a hold. While the device's worker is stopped, because it
-  ended on a hold or has not started, nothing expires that device's queued commands. #844's host must
-  expire journaled commands while the worker is stopped, on a timer or at start. Whether a later
+  start, in a pass, or while it waits on a hold. While no supervisor runs the device's worker, because
+  it has not started or ended on a hold with shared input not selected, nothing expires that device's
+  queued commands. #844's host must expire journaled commands while no supervisor runs, on a timer or
+  at start. Whether a later
   definitive `expired` replaces the tracker's earlier uncertain result is open with #782.
 - Nothing publishes the control journal's messages yet. #844 runs `admitCommand` and the mode
   commands inside its outbox's transaction, gives the worker a `transact` backed by the same outbox,
-  publishes the device's state when a scene list change is reported, and starts the device's worker
-  after an accepted command. The tests use a plain transaction that collects the messages.
+  publishes the device's state when a scene list change is reported, and after an accepted command
+  starts the device's supervisor if none is running. The tests use a plain transaction that collects the messages.
