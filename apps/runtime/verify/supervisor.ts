@@ -428,18 +428,22 @@ async function body(request: IncomingMessage): Promise<unknown> {
   return text === '' ? {} : JSON.parse(text);
 }
 
-const ACTIONS: Readonly<Record<SimulateRequest['device'], readonly string[]>> = {
+/** The actions the harness accepts for each device: every action a `SimulateRequest` names, as `Unlisted` checks. */
+const ACTIONS = {
   lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline'],
-  playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
-  pixoo: ['online', 'offline', 'silent'],
-};
+  playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
+  tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'],
+} as const satisfies {readonly [D in SimulateRequest['device']]: readonly Extract<SimulateRequest, {device: D}>['action'][]};
+/** An action a `SimulateRequest` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
+type Unlisted = {[D in SimulateRequest['device']]: Exclude<Extract<SimulateRequest, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[SimulateRequest['device']];
+export const EVERY_ACTION_LISTED: [Unlisted] extends [never] ? true : never = true;
 const SPEAKERS: readonly string[] = ['sony', 'sonos'];
 /** The simulation a request names, or undefined when its device, action or other field is unknown, so a typo changes nothing. */
 function simulationOf(value: unknown): SimulateRequest | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const {device, action, speaker, title, address, ...rest} = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || typeof device !== 'string' || !Object.hasOwn(ACTIONS, device) || typeof action !== 'string') return undefined;
-  if (!(ACTIONS[device as SimulateRequest['device']]).includes(action)) return undefined;
+  if (!(ACTIONS[device as SimulateRequest['device']] as readonly string[]).includes(action)) return undefined;
   if (device === 'playback') {
     if (typeof speaker !== 'string' || !SPEAKERS.includes(speaker) || address !== undefined) return undefined;
     if (title !== undefined && (typeof title !== 'string' || title.length > 200)) return undefined;
