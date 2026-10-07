@@ -47,9 +47,9 @@ kit; and the LIFX and Tidbyt modules as patterns. The issue stays aligned; the a
   unreferenced, given the home over IPC and never in its arguments, and killed at the module's stop. It costs about
   5 MiB above an idle Node process (49 MiB resident against 44 MiB). Alternative rejected: worker calls per poll, which
   leak a thread per stalled poll and keep the runtime from exiting.
-- **Policy A for the folder.** A read past 5 s makes the marker unavailable (`DeviceAvailability`: one warning and
-  summaries), drops the last read's unread set so no evidence comes from an old marker, and the next read waits for
-  the one under way. A failed reader backs off 4 to 60 s. Start never waits.
+- **Policy A for the folder.** Evidence comes only from a read that answered. A read past 5 s makes the marker
+  unavailable (`DeviceAvailability`: one warning and summaries), and the next read waits for the one under way. A
+  failed reader backs off 4 to 60 s. Start never waits.
 - **Evidence once per record revision.** The Hub ingested again every 2 s while the reducer left the state unchanged;
   in the runtime each publication is a message the core logs, so the module remembers what it sent for each record's
   revision and sends again only after the record changes.

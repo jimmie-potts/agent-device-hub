@@ -3,9 +3,9 @@
 // sessions, reads the marker every 2 s through its transport, read-only, and publishes a `read-observed` lifecycle
 // observation to the core for each configured top-level Desktop session whose read state the marker changes.
 //
-// Under policy A (ADR 0012) the marker's folder is the module's device. Start never waits on it. A read that does not
-// answer within 5 s makes the marker unavailable, logged once with a summary while it lasts, and the module publishes
-// nothing from an older read; the next read waits for that one, so a stalled mount holds one reader, never more. A
+// Under policy A (ADR 0012) the marker's folder is the module's device. Start never waits on it. Evidence comes only
+// from a read that answered. A read that does not answer within 5 s makes the marker unavailable, logged once with a
+// summary while it lasts, and the next read waits for that one, so a stalled mount holds one reader, never more. A
 // reader that fails is tried again with capped backoff. The module never fails for the folder, and its stop never waits
 // on a read.
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
@@ -221,13 +221,13 @@ class DesktopRun {
     });
   }
 
-  /** The read under way outlasted its deadline: the marker is unavailable, and an older read's evidence no longer counts. */
+  /**
+   * The read under way outlasted its deadline: the marker is unavailable. Evidence comes only from a read that answered,
+   * so nothing is published until this one does.
+   */
   #overdueRead(): void {
     if (this.#closing || !this.#reading) return;
     this.#overdue = true;
-    // Once the folder answers again, the next read reads the marker whole, whatever the late answer says.
-    this.#unread = null;
-    this.#stamp = '';
     this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
     this.#schedule(POLL_MS);
   }

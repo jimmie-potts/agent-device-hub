@@ -30,7 +30,7 @@ only `@jimmie-potts/sdk` and `@jimmie-potts/event-contracts`.
 | --- | --- | --- |
 | `codexDesktopOptions` | `src/configuration.ts` | The same three members and checks, as `configure`; a refusal is the shared error body with fixed text. `convertHubCodexDesktop` is new, for the installer. |
 | `unreadSessions` | `src/marker.ts` | Unchanged. |
-| `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now synchronous in the reader's own process. A special file is never opened for reading, so it cannot block the reader. |
+| `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now synchronous in the reader's own process. The reader never reads a special file, and its open cannot block on one. |
 | `readEvents` | `src/evidence.ts` | The same rules on the core's `session/2.0` records; each piece of evidence is a `read-observed` lifecycle observation. |
 | `startDesktopRead` | `src/module.ts` | The same 2 s poll, one read at a time, now with a read deadline, the marker's availability and evidence once per record revision. |
 | `tests/codex-desktop.test.mjs`: the parser and configuration cases | `tests/marker.test.ts`, `tests/configuration.test.ts` | The same cases. |
@@ -99,33 +99,34 @@ Each observation starts its own trace, which the core's intake record carries.
 The marker's folder is the module's device. Start never waits on it: the first
 read comes once start has returned.
 
-The Codex home lies on a Windows mount, whose file system calls can stall for as
-long as the mount does, and such a call cannot be interrupted. On Node 24, a
-worker thread's `terminate()` and even `process.exit()` wait for a thread blocked
-in one, measured with a FIFO's `open` on 2026-10-07, and the libuv pool's
-threads serve the whole process. So `folderReader()` reads in a child process of
-its own, `src/reader.ts`, started on the first read and again after it ended, with
-no arguments, so no path shows in the process list. It reads synchronously and
-answers over its IPC channel; it never keeps the runtime alive and ends with it.
+The Codex home lies on a Windows mount. A file system call there can stall for as
+long as the mount does, and nothing interrupts it. On Node 24, a thread blocked
+in such a call keeps a worker's `terminate()` and even `process.exit()` waiting
+(measured with a FIFO's `open` on 2026-10-07), and an asynchronous call would
+block one of the libuv pool's threads, which the whole process shares. So
+`folderReader()` reads in a child process of its own, `src/reader.ts`. The reader
+starts on the first read, and again after it ended. It takes no arguments, so no
+path shows in the process list: each read names the home over its IPC channel.
+It reads synchronously, never keeps the runtime alive, and ends with it.
 
+- Evidence comes only from a read that answered, so a stalled folder yields
+  none.
 - A read that does not answer within 5 s makes the marker unavailable: one
-  `device.unavailable` warning, then a summary at most once a minute. The module
-  drops what it read before, so a stalled folder never yields evidence from an
-  old marker, and the next read waits for the one under way, so a stall holds
-  one reader, never more. When the read answers, one `device.available` record
-  follows and the next read takes the marker whole.
+  `device.unavailable` warning, then a summary at most once a minute. The next
+  read waits for the one under way, so a stall holds one reader, never more.
+  When the read answers, one `device.available` record follows.
 - A reader that fails, as when its process ended, makes the marker unavailable
-  too, and is tried again after 4, 8, 16 and 32 s, then every minute, until a
+  too. It is tried again after 4, 8, 16 and 32 s, then every minute, until a
   read succeeds.
-- The module's stop never waits on a read: it kills the reader, which a stalled
-  call ends only once the call returns, so the runtime still stops and exits.
+- The module's stop never waits on a read. It kills the reader; one stuck in a
+  stalled call ends once the call returns. The runtime still stops and exits.
 - The module never fails for its folder, and the core and the other modules are
   never affected.
 
 The reader process costs a Node process's memory: 49 MiB resident after 50
 reads of a small marker, against 44 MiB for an idle Node process (measured on
-the WSL host on 2026-10-07); a read holds a buffer the size of the marker. When the runtime
-leaves the PC ([#751](https://github.com/jimmie-potts/agent-device-hub/issues/751)),
+the WSL host on 2026-10-07). A read holds a buffer the size of the marker. When
+the runtime leaves the PC ([#751](https://github.com/jimmie-potts/agent-device-hub/issues/751)),
 Desktop's read state has to reach it from the PC instead
 ([#567](https://github.com/jimmie-potts/agent-device-hub/issues/567)).
 

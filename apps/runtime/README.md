@@ -214,17 +214,22 @@ and exits 1, and the service manager restarts it whole.
 
 `bin/monitor-hook.mjs` is the 2.0 agent hook (#926): the hook command of Claude
 Code and Codex, `node bin/monitor-hook.mjs <producer.json>`, with the hook's
-JSON on stdin. It reads the client's existing lifecycle 1.x producer file
-unchanged, normalizes the hook with agent-state's normalizers (`normalizeHook`,
-or `enrichHook` for a producer that selected lifecycle 1.1 or 1.2), turns the
-1.x envelope into the 2.0 `lifecycle` observation that
-[MAPPING.md](../../packages/event-contracts/MAPPING.md#lifecycle-observation)
-describes, and publishes it as `org.bunny.lifecycle.observed` on
-`bunny.event.lifecycle.<session ID>` in one call to the gateway's SDK edge,
-through the SDK's [`publishOnce`](../../packages/sdk/README.md#one-publication-without-a-stream),
-with no stream. The core takes it as it takes any hook observation. Its code is
-`src/hook/`, which the package exports as `@jimmie-potts/runtime/hook` and which
-loads none of the rest of the runtime.
+JSON on stdin. For each hook it:
+
+1. reads the client's existing lifecycle 1.x producer file, unchanged;
+2. normalizes the hook with agent-state's normalizers: `normalizeHook`, or
+   `enrichHook` for a producer that selected lifecycle 1.1 or 1.2;
+3. turns the 1.x envelope into the 2.0 `lifecycle` observation that
+   [MAPPING.md](../../packages/event-contracts/MAPPING.md#lifecycle-observation)
+   describes;
+4. publishes it as `org.bunny.lifecycle.observed` on
+   `bunny.event.lifecycle.<session ID>` in one call to the gateway's SDK edge,
+   with no stream, through the SDK's
+   [`publishOnce`](../../packages/sdk/README.md#one-publication-without-a-stream).
+
+The core takes it as it takes any hook observation. The hook's code is
+`src/hook/`, which the package exports as `@jimmie-potts/runtime/hook`; it loads
+none of the rest of the runtime.
 
 - **The producer file.** The old hook's checks hold
   (`apps/hub/bin/monitor-hook.mjs`): an owner-only regular file with one link,

@@ -225,7 +225,8 @@ it('a producer file the hook may not use, or a receipt that does not let it emit
   const directory = join(dir, 'directory.json');
   await mkdir(directory, {mode: 0o700});
   const shaped = (shape: Shape): Promise<string> => producerFile(context, world.producer, world.port, shape);
-  const member = (name: string, value: unknown): Shape => ({edit: producer => ({...producer, [name]: value})});
+  // Without a receipt, so each case meets only the check it names, never the receipt's.
+  const member = (name: string, value: unknown): Shape => ({receipt: 'none', edit: producer => ({...producer, [name]: value})});
   const hardLinked = await shaped({receipt: 'none'});
   await link(hardLinked, join(dir, 'second-name.json'));
   const groupReadable = await shaped({});
@@ -240,7 +241,7 @@ it('a producer file the hook may not use, or a receipt that does not let it emit
     ['a producer file with a second link', [hardLinked]],
     ['a producer file others can read', [groupReadable]],
     ['a directory', [directory]],
-    ['a producer file over 8 KiB', [await shaped({edit: producer => ({...producer, source: {...SOURCE, pad: 'x'.repeat(9000)}})})]],
+    ['a producer file over 8 KiB', [await shaped({receipt: 'none', edit: producer => ({...producer, source: {...SOURCE, pad: 'x'.repeat(9000)}})})]],
     ['a producer file that is not JSON', [notJson]],
     ['an unknown member', [await shaped(member('devices', []))]],
     ['a disabled producer', [await shaped(member('enabled', false))]],
