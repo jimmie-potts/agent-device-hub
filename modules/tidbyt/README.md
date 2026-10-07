@@ -36,7 +36,7 @@ the [strict profile](../../docs/development.md#strict-profile-for-new-code):
 | `src/nowplaying.ts` | `src/nowplaying.ts` | Reads the `playback/2.0` record. `parsePlaybackSnapshot` is not copied. Freshness is the record's `availability`, never the age of `observedAtMs`; see [Now playing](#now-playing). |
 | `src/connection.ts` | `src/cloud.ts` | The transport is the module's `fetch`; a deadline is the caller's signal; an uncertain result says whether the cloud answered; the 1.x capability block went with the 1.x snapshot. |
 | `src/controller.ts` (queue and holds) | `src/writer.ts` (`CloudQueue`) | The controller v1 envelope, tickets, replays and conflicts are gone: only the module's tiles write. Order, one call in flight, the authentication hold and the rate-limit hold stay. The installation listing now goes through the queue too, where the controller read it beside the queue. A listing the cloud answers with an error makes the Tidbyt `degraded`, where the controller made it `unavailable`; only a listing with no answer makes it `unavailable`. |
-| `src/publishing.ts` (`InstallationWriter`) | `src/writer.ts` (`TileWriter`) | The gate runs from the moment a request goes out. A tile can hold. What a tile sent survives a restart, and a write is stored as uncertain until its answer. The gate and the refresh run on the wall clock, where the runner used a monotonic one, with a time in the future taken as now. |
+| `src/publishing.ts` (`InstallationWriter`) | `src/writer.ts` (`TileWriter`) | The gate runs from the end of the tile's last call, its answer or its deadline, so the cloud sees the pushes at least 15 s apart. A tile can hold. What a tile sent survives a restart, and a write is stored as uncertain until its answer. The gate and the refresh run on the wall clock, where the runner used a monotonic one, with a time in the future taken as now. |
 | `src/publisher.ts`, `src/nowplaying-publisher.ts` | `src/module.ts` | The tiles follow synced copies instead of reading the Hub. |
 | `src/runner.ts` (`acquireWriterLease`) | `src/lease.ts` | By way of the LIFX module's copy (#928); the lease file lives in the module's private folder. |
 | `src/credentials.ts` | `src/configuration.ts` (`parseRunnerCredentials`) | Used only by the conversion. |
@@ -182,9 +182,13 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   nothing and shows the Tidbyt `unavailable`. The old runner's lease root is
   separate, so the cutover stops the old host first.
 - **The gate.** Each tile pushes only when its frame changes, at most once every
-  15 s. The 15 s run from the moment each request goes out, after its render and
-  any wait in the queue. Changes in between coalesce into one push of the latest
-  state. An unchanged frame is pushed again after 10 minutes. The start's
+  15 s. The 15 s run from the end of the tile's last call: its answer, a failure
+  such as a refused connection, or its 10 s deadline when nothing came back. A
+  request reaches the cloud before its call ends, however long it takes on the
+  way, so the cloud sees a tile's pushes at least 15 s apart; a render and any
+  wait in the queue come before the request and never shorten the gap either.
+  Changes in between coalesce into one push of the latest state. An unchanged
+  frame is pushed again 10 minutes after its push ended. The start's
   installation listing counts against the gate, as the runner's did.
 - **Removal.** A tile with nothing to show is removed. When its presence is
   unknown, the tile reads the installation list first and deletes only an
@@ -198,11 +202,13 @@ most 30 s after the module starts (`START_WINDOW_MS`):
   holds later calls for its `Retry-After`.
 - **Restarts.** What each tile last sent, when, and whether its installation is
   present are kept in the module's database. A restart pushes nothing while the
-  tile stands, and the gate holds across it. Before a push or a removal goes out,
-  the tile stores it as uncertain, so a stop or a crash before its answer leaves
-  the installation's presence unknown, and the next start reads the list before
-  it trusts it. Start and restart write nothing until the shown state is known;
-  see [The start window](#the-start-window).
+  tile stands, and the gate holds across it. Before a push or a removal goes
+  out, the tile stores it as uncertain, so a stop or a crash before its answer
+  leaves the installation's presence unknown, and the next start reads the list
+  before it trusts it. Such a write keeps the time its request went out, because
+  nothing is stored once the module stops, and the next start's gate runs from
+  that time. Start and restart write nothing until the shown state is known; see
+  [The start window](#the-start-window).
 - **The clock.** The gate and the refresh run on the runtime's wall clock, so
   they hold across a restart. A time in the future, after the clock was set
   back, counts as now, so a clock set back delays a tile's next write by at most
@@ -280,12 +286,13 @@ tests need no cloud and no Python.
 - `configuration.test.ts`: the section, the conversion and the copied credentials
   cases.
 - `simulated.test.ts`: the simulated cloud and its picture.
-- `module.test.ts`: both tiles from synced records, the gate under bursts, the
-  refresh, removal, a lost or slow copy, failed, uncertain and held writes, a
-  cloud that does not answer at start, rendering and its end at stop, a restart,
-  the start window, a stop during a push, a wall clock set back, the device
-  record, the lease, a database that refuses commits, fault records and secrecy,
-  on the simulated cloud and a manual clock.
+- `module.test.ts`: both tiles from synced records, the gate under bursts and
+  for a push that reaches the cloud late or never answers, the refresh, removal,
+  a lost or slow copy, failed, uncertain and held writes, a cloud that does not
+  answer at start, rendering and its end at stop, a restart, the start window, a
+  stop during a push, a wall clock set back, the device record, the lease, a
+  database that refuses commits, fault records and secrecy, on the simulated
+  cloud and a manual clock.
 - `kit.test.ts`: the module test kit, with policy A's offline check.
 
 The 1.x tests of the Hub feed, the SSE subscription, the runner's private files
