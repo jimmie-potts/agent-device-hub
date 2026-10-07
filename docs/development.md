@@ -911,6 +911,9 @@ spans its host adapter hands a test sink (#949). They need no device or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
 stalled reader; the README's Memory section says how.
+`node apps/runtime/scripts/measure-commits.mjs` measures the SQLite commits,
+blocked time and event-loop delay of the core's intake, a LIFX command and the
+outbox (#972, #123); the README's Commits section says how.
 
 ### Runtime test layers
 
