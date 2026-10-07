@@ -25,7 +25,7 @@ None.
 
 ## Impact
 
-- **Code:** `packages/event-contracts` (`src/v2/errors.ts`, `src/v2/index.ts`, `schemas/v2/envelope.schema.json`), `packages/sdk` (`sdk.ts`, `trace.ts`, `in-process.ts`, `remote-client.ts`, `remote-edge.ts`, `outbox.ts`, `testing/kit.ts`), the `apps/runtime/src/host.ts` header comment.
+- **Code:** `packages/event-contracts` (`src/v2/errors.ts`, `src/v2/index.ts`, `schemas/v2/envelope.schema.json`), `packages/sdk` (`sdk.ts`, `trace.ts`, `in-process.ts`, `remote-client.ts`, `remote-edge.ts`, `outbox.ts`, `testing/kit.ts`), the `apps/runtime/src/host.ts` header comment and the edge-log comment in `apps/runtime/src/runtime.ts`.
 - **Tests:** the SDK's request, conformance, remote, outbox, trace and registry tests; the profile's fixtures and parity test; the runtime's isolation test, a new safe-errors test and the scenario harness's crash comment.
 - **Docs:** the SDK, event contracts and runtime READMEs.
 - **Unchanged:** #921's dependency-free code copies in app-verify and maintenance and their equality tests, the registry itself, the edge's authentication and validation order, and released 1.x contracts.

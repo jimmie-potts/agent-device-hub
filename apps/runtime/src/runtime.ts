@@ -158,8 +158,8 @@ export const REGISTRY_REASONS: Readonly<Record<string, string | undefined>> = {
 /**
  * The edge's records in the runtime's log. As the diagnostic contract requires, a record holds no raw message: a refusal
  * carries its registry code and that code's fixed meaning as a registered reason, never the edge's detail, which may
- * quote what the caller sent or an exception's message. A route that is not one of the edge's is `other`. The source is
- * a granted one, and no record carries a credential.
+ * quote what the caller sent; the edge answers an exception with fixed text, never its message. A route that is not one
+ * of the edge's is `other`. The source is a granted one, and no record carries a credential.
  */
 function edgeLog(log: RuntimeLogger): (record: EdgeLogRecord) => void {
   return ({event, route, code, source}) => {
