@@ -1,7 +1,8 @@
 // Sync (ADR 0012, "Consumers and recovery"): a consumer's copy of one owner's families. The copy takes the owner's
-// current state at a revision, then follows live messages. Several owners may serve one family, such as `device`, each
-// for its own entities; a copy that names its owner follows only that owner. This file is transport-neutral; a
-// transport supplies the live subscriptions and the sync request through `SyncTransport`.
+// current state at a revision, then follows live messages from that owner alone. Several owners may serve a shared
+// family, such as `device`, each for its own entities; a copy names its owner, or follows the owner that served it.
+// This file is transport-neutral; a transport supplies the live subscriptions and the sync request through
+// `SyncTransport`.
 import {randomUUID} from 'node:crypto';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DeliveryQueue} from './queue.js';
@@ -88,6 +89,12 @@ export type SyncTransport = {
 };
 
 const FAMILY = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+/**
+ * The families that several owners may serve, each for its own entities (Hub #967): `device/2.0`, the one record each
+ * device module publishes for each of its devices (Hub #918). Every other family keeps one owner, so a participant that
+ * serves one beside its owner is refused, and every consumer that syncs it without naming an owner still reaches it.
+ */
+export const SHARED_FAMILIES: ReadonlySet<string> = new Set(['device']);
 /** A participant's CloudEvents source, such as `bunny/core` or `bunny/modules/lifx`, of at most 256 characters. */
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 const MAX_SOURCE = 256;
@@ -184,8 +191,14 @@ class Copy<T extends object> implements SyncedCopy<T> {
   readonly #handler: SyncHandler<T>;
   readonly #timeoutMs: number;
   readonly #maxBuffered: number;
-  /** The owner the copy names, whose live messages alone it follows; undefined for the families' only owner. */
+  /** The owner the copy names; undefined for the families' only owner. */
   readonly #owner: string | undefined;
+  /**
+   * The owner whose live messages alone the copy follows: the one it names or, without one, the source of the
+   * `sync.completed` that last served it. Until a copy without an owner first syncs, it holds every message it buffers
+   * and applies only its owner's once it knows that owner.
+   */
+  #following: string | undefined;
   readonly #held = new Map<string, Held<T>>();
   /** The revision of each entity removed since the last sync, so a late state cannot bring it back. */
   readonly #removed = new Map<string, number>();
@@ -229,6 +242,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#timeoutMs = timeoutMs;
     this.#maxBuffered = maxBuffered;
     this.#owner = owner;
+    this.#following = owner;
   }
 
   async start(parent: TraceContext | undefined): Promise<SyncResult<T>> {
@@ -290,7 +304,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     if (this.#phase === 'closed') return;
     // Another owner's message on a shared family describes that owner's entities, never this copy's: it is not this
     // copy's to apply, buffer or report.
-    if (this.#owner !== undefined && message.source !== this.#owner) return;
+    if (this.#foreign(message)) return;
     // The buffer would lose a message, so sync again rather than combine partial state.
     if (this.#pending.length >= this.#maxBuffered) {
       this.#overflow();
@@ -388,9 +402,27 @@ class Copy<T extends object> implements SyncedCopy<T> {
     }
   }
 
-  async #complete({answer, generation}: Answered): Promise<void> {
+  /** Whether a live message comes from another owner than the one the copy follows. */
+  #foreign(message: Message): boolean {
+    return this.#following !== undefined && message.source !== this.#following;
+  }
+
+  /**
+   * A served answer from another owner than the named one, as a transport that ignored the owner could let happen, is
+   * no answer from that owner: refused as `unavailable`, which ends a first sync or the copy.
+   */
+  #fromOwner(answer: SyncAnswer): SyncAnswer {
+    const owner = this.#owner;
+    if (answer.status !== 'served' || owner === undefined || answer.completed.source === owner) return answer;
+    const {requestId} = answer;
+    const detail = `the answer came from ${answer.completed.source}, not the named owner ${owner}`.slice(0, MAX_DETAIL);
+    return {status: 'rejected', requestId, error: errorBody('unavailable', {requestId, traceId: traceIdOf(answer.completed.traceparent), detail})};
+  }
+
+  async #complete({answer: given, generation}: Answered): Promise<void> {
     // An overflow since this request was sent left a gap that its state may not cover; the next request replaces it.
-    if (answer.status === 'served' && generation !== this.#generation) return;
+    if (given.status === 'served' && generation !== this.#generation) return;
+    const answer = this.#fromOwner(given);
     const settle = this.#settle;
     if (answer.status === 'rejected') {
       // No sync.completed follows a refusal. A first sync returns it to the caller; a later one ends the copy.
@@ -400,6 +432,9 @@ class Copy<T extends object> implements SyncedCopy<T> {
       else await this.#notify({type: 'failed', error: answer.error});
       return;
     }
+    // The copy follows the owner that served it from now on, so buffered and live messages from another owner of a
+    // shared family never mix into it.
+    this.#following = answer.completed.source;
     // The copy takes the snapshot, its membership and the buffered messages in one step; the handler hears of each
     // change afterwards, in that order.
     const changes: SyncChange<T>[] = [];
@@ -431,6 +466,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
    * revision or a removal of an entity the copy does not hold. Snapshot states skip the sync floor.
    */
   #apply(message: Message, snapshot: boolean): SyncChange<T> | undefined {
+    // A buffered message from another owner than the one that served the copy is not the copy's.
+    if (!snapshot && this.#foreign(message)) return undefined;
     const entry = entryOf(message);
     if (entry === undefined || !this.#families.has(entry.entity.family)) {
       this.#transport.report(new TypeError(`sync ignored ${message.kind} ${message.id}: it names no entity and revision of ${[...this.#families].join(',')}`));

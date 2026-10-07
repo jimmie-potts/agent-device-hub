@@ -214,6 +214,14 @@ export class InProcessBus {
   }
 
   /**
+   * The families `source` serves through sync now, in the order it registered them: what a consumer of a shared family,
+   * such as `device`, names that owner for. A closed registration is no longer listed.
+   */
+  served(source: string): readonly string[] {
+    return this.#sync.served(source);
+  }
+
+  /**
    * Sends a command that a remote part prepared, unchanged, from `source`, and waits `waitMs` for its result. For a
    * remote edge, which has validated the command, and which aborts `signal` when the remote part stops waiting: a
    * command still queued is then taken out, so it never runs.

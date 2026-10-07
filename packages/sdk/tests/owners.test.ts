@@ -7,7 +7,7 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {buildMessage} from '../src/envelope.js';
 import {REMOTE_PATH, REMOTE_SCHEMA, SdkError, type ErrorScope, type Snapshot, type SyncChange, type SyncedCopy} from '../src/index.js';
-import {startSync, type OutgoingSync, type SyncAnswer, type SyncTransport} from '../src/sync.js';
+import {SHARED_FAMILIES, startSync, type OutgoingSync, type SyncAnswer, type SyncTransport} from '../src/sync.js';
 import {DEVICE_FAMILY, SESSION_FAMILY, bus, checked, deferred, device, deviceRemoved, flush, it, session, until} from './support.js';
 import {inProcess, remote, startEdge, using, type Transport, type World} from './transports.js';
 
@@ -15,6 +15,10 @@ const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 const empty = (): Snapshot => ({revision: 0, states: []});
+
+it('device is the one family that several owners may serve', () => {
+  assert.deepEqual([...SHARED_FAMILIES], [DEVICE_FAMILY]);
+});
 
 function show(change: SyncChange<DeviceRecord>): string {
   switch (change.type) {
@@ -138,7 +142,7 @@ function suite(transport: Transport): void {
     assert.equal(served, 0, 'no owner received a request it was not named for');
   }));
 
-  it(name('an owner serves each family once, and another owner may serve the same family'), () => using(transport, {}, async world => {
+  it(name('an owner serves each family once, and another owner may serve a shared family'), () => using(transport, {}, async world => {
     const first = await world.connect('bunny/core');
     await first.serveSync([DEVICE_FAMILY, SESSION_FAMILY], empty);
     await assert.rejects(first.serveSync([DEVICE_FAMILY], empty), (error: unknown) =>
@@ -146,7 +150,7 @@ function suite(transport: Transport): void {
     await assert.rejects(world.local('bunny/core').serveSync(['mode', SESSION_FAMILY], empty), refused('invalid-state'), 'the same source, on another participant');
     const second = await world.connect('bunny/second');
     await second.serveSync([DEVICE_FAMILY], empty);
-    await world.local('bunny/rogue').serveSync([DEVICE_FAMILY, SESSION_FAMILY], empty);
+    await world.local('bunny/rogue').serveSync([DEVICE_FAMILY], empty);
     const consumer = await world.connect('bunny/wall');
     for (const owner of ['bunny/core', 'bunny/second', 'bunny/rogue']) {
       const result = await consumer.sync([DEVICE_FAMILY], () => {}, {timeoutMs: 5000, owner});
@@ -157,6 +161,50 @@ function suite(transport: Transport): void {
     await first.serveSync(['mode'], empty);
     const split = await consumer.sync([DEVICE_FAMILY, 'mode'], () => {}, {timeoutMs: 5000, owner: 'bunny/core'});
     assert.deepEqual(split.status === 'rejected' && [split.error.error.code, split.error.error.detail], ['invalid-request', 'one sync covers one owner\'s families']);
+  }));
+
+  it(name('a family that is not shared keeps one owner: another source that serves it is refused with invalid-state, as before'), () => using(transport, {}, async world => {
+    const core = await world.connect('bunny/core');
+    await core.serveSync([SESSION_FAMILY, DEVICE_FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+    // A faulty or misconfigured participant that serves the core's family beside it is refused itself, so every consumer
+    // that syncs the family without naming an owner still reaches the core.
+    const faulty = await world.connect('bunny/second');
+    for (const families of [[SESSION_FAMILY], ['mode', SESSION_FAMILY]]) {
+      await assert.rejects(faulty.serveSync(families, empty), (error: unknown) =>
+        refused('invalid-state')(error) && (error as SdkError).body.error.detail === 'bunny/core already serves test-session', JSON.stringify(families));
+    }
+    await faulty.serveSync(['mode', DEVICE_FAMILY], empty);
+    const consumer = await world.connect('bunny/wall');
+    const sessions = await consumer.sync([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(sessions.status, 'synced', 'a sync of the core\'s family that names no owner still reaches the core');
+    if (sessions.status === 'synced') {
+      assert.equal(sessions.message.source, 'bunny/core');
+      await sessions.copy.close();
+    }
+  }));
+
+  it(name('a copy that names no owner follows only the owner that served it, after a second owner starts serving the family'), () => using(transport, {}, async world => {
+    const first = await world.connect('bunny/core');
+    const second = world.local('bunny/second');
+    const consumer = await world.connect('bunny/wall');
+    await first.serveSync([DEVICE_FAMILY], () => ({revision: 5, states: [device('lamp-1', 5)]}));
+    const changes: string[] = [];
+    const result = await consumer.sync<DeviceRecord>([DEVICE_FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    if (result.status !== 'synced') return;
+    // A second owner starts serving device and publishes its own devices, one below the first owner's sync revision and
+    // one above it, and a removal of the first owner's lamp-1. None of it is the first owner's.
+    await second.serveSync([DEVICE_FAMILY], () => ({revision: 7, states: [device('sign-2', 7)]}));
+    await second.publish('bunny.state.device.sign-2', device('sign-2', 3));
+    await second.publish('bunny.state.device.sign-2', device('sign-2', 7));
+    await second.publish('bunny.state.device.lamp-1', deviceRemoved('lamp-1', 9));
+    await first.publish('bunny.state.device.lamp-1', device('lamp-1', 6, 'available'));
+    await until(() => changes.includes('updated lamp-1@6'), 'the first owner\'s update');
+    await flush();
+    assert.deepEqual(changes, ['updated lamp-1@5', 'synced @5', 'updated lamp-1@6']);
+    assert.deepEqual(held(result.copy), ['lamp-1@6']);
+    assert.deepEqual(world.errors, [], 'another owner\'s messages are no error');
+    await result.copy.close();
   }));
 
   it(name('a malformed owner is refused with invalid-request before any request is sent'), () => using(transport, {}, async world => {
@@ -180,8 +228,9 @@ suite(remote);
 it('a copy that names its owner asks that owner on every request, and a copy that names none sends no owner', async () => {
   const outgoing: OutgoingSync[] = [];
   const overflows: (() => void)[] = [];
+  // The fake answers as the owner the request names, or as the core.
   const answer = (request: OutgoingSync, revision: number): SyncAnswer => {
-    const completed = buildMessage('bunny/core', 'sync-completed', {
+    const completed = buildMessage(request.owner ?? 'bunny/core', 'sync-completed', {
       type: 'org.bunny.sync.completed', subject: DEVICE_FAMILY, dataschema: 'https://bunny.invalid/events/sync-completed/2.0',
       data: {requestId: request.requestId, revision, members: []},
     }, PARENT, Date.now());
@@ -211,6 +260,82 @@ it('a copy that names its owner asks that owner on every request, and a copy tha
   assert.equal(unnamed.status, 'synced');
   assert.equal(Object.hasOwn(outgoing[2] ?? {}, 'owner'), false, 'a request for the only owner carries no owner, as before');
   if (unnamed.status === 'synced') await unnamed.copy.close();
+});
+
+it('the bus names the families each source serves, for as long as it serves them', async () => {
+  const {bus: created, core, wall} = bus();
+  assert.deepEqual(created.served('bunny/core'), []);
+  const sessions = await core.serveSync([SESSION_FAMILY], empty);
+  await core.serveSync([DEVICE_FAMILY, 'mode'], empty);
+  await wall.serveSync([DEVICE_FAMILY], empty);
+  assert.deepEqual([created.served('bunny/core'), created.served('bunny/wall'), created.served('bunny/rogue')], [[SESSION_FAMILY, DEVICE_FAMILY, 'mode'], [DEVICE_FAMILY], []]);
+  await sessions.close();
+  assert.deepEqual(created.served('bunny/core'), [DEVICE_FAMILY, 'mode']);
+  await core.close();
+  assert.deepEqual(created.served('bunny/core'), []);
+});
+
+it('a copy that names no owner drops another owner\'s messages that waited in its buffer during its first sync', async () => {
+  const {bus: created, core, wall} = bus();
+  const second = checked(created.connect('bunny/second'));
+  const gate = deferred<Snapshot>();
+  await core.serveSync([DEVICE_FAMILY], () => gate.promise);
+  const changes: string[] = [];
+  const pending = wall.sync<DeviceRecord>([DEVICE_FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000});
+  await flush();
+  // The request has reached its only owner; a second owner starts serving and publishing while the answer is on its way.
+  await second.serveSync([DEVICE_FAMILY], () => ({revision: 9, states: [device('sign-1', 9)]}));
+  await second.publish('bunny.state.device.sign-1', device('sign-1', 9));
+  await core.publish('bunny.state.device.lamp-1', device('lamp-1', 8));
+  gate.resolve({revision: 7, states: [device('lamp-1', 7)]});
+  const result = await pending;
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') return;
+  assert.deepEqual(changes, ['updated lamp-1@7', 'synced @7', 'updated lamp-1@8']);
+  assert.deepEqual(held(result.copy), ['lamp-1@8']);
+  await result.copy.close();
+});
+
+it('a named copy takes no answer from another owner: a first sync is refused as unavailable, and a later one fails the copy', async () => {
+  const outgoing: OutgoingSync[] = [];
+  const overflows: (() => void)[] = [];
+  // The owner that answers each request, as a transport that ignored the owner would let another owner answer.
+  const answering: string[] = [];
+  const answer = (request: OutgoingSync, source: string, revision: number): SyncAnswer => {
+    const completed = buildMessage(source, 'sync-completed', {
+      type: 'org.bunny.sync.completed', subject: DEVICE_FAMILY, dataschema: 'https://bunny.invalid/events/sync-completed/2.0',
+      data: {requestId: request.requestId, revision, members: []},
+    }, request.trace, Date.now());
+    return {status: 'served', requestId: request.requestId, states: [], completed};
+  };
+  const transport: SyncTransport = {
+    now: () => Date.now(),
+    subscribe: (_pattern, _handler, {onOverflow}) => {
+      overflows.push(() => { void onOverflow?.({dropped: 1}); });
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      outgoing.push(request);
+      return Promise.resolve(answer(request, answering.shift() ?? 'bunny/modules/lifx', outgoing.length));
+    },
+    report: () => {},
+  };
+  const changes: string[] = [];
+  answering.push('bunny/modules/nanoleaf');
+  const skewed = await startSync<DeviceRecord>(transport, [DEVICE_FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, owner: 'bunny/modules/lifx', parent: PARENT});
+  assert.equal(skewed.status, 'rejected');
+  if (skewed.status !== 'rejected') return;
+  assert.deepEqual(skewed.error, errorBody('unavailable', {
+    requestId: skewed.requestId, traceId: PARENT_TRACE, detail: 'the answer came from bunny/modules/nanoleaf, not the named owner bunny/modules/lifx',
+  }));
+  assert.equal(changes.length, 0, 'the handler heard nothing');
+
+  const later = await startSync<DeviceRecord>(transport, [DEVICE_FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, owner: 'bunny/modules/lifx'});
+  assert.equal(later.status, 'synced');
+  answering.push('bunny/modules/nanoleaf');
+  overflows.at(-1)?.();
+  await until(() => changes.includes('failed unavailable'), 'the failed copy');
+  assert.deepEqual(changes, ['synced @2', 'failed unavailable']);
 });
 
 it('another owner\'s messages on a shared family never enter a named copy\'s buffer, so they cannot overflow it', async () => {

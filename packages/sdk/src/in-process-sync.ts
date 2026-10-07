@@ -1,5 +1,6 @@
-// The owner side of sync on the in-process bus. Ownership is keyed by source and family: several owners may serve one
-// family, such as `device`, each for its own entities, and no source serves a family twice. A sync request goes straight
+// The owner side of sync on the in-process bus. Ownership is keyed by source and family: several owners may serve a
+// shared family, such as `device`, each for its own entities; every other family has one owner, and no source serves a
+// family twice. A sync request goes straight
 // to the owner it names, or to its families' only owner, and its answer goes straight back to the requester, never to
 // subscribers. Nothing merges owners' records or spreads one request across owners.
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
@@ -8,7 +9,7 @@ import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {SdkError, type Cancel, type Scheduler, type Subscription, type TraceContext} from './sdk.js';
 import {
-  checkFamilies, entryOf, schemaFamily, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest,
+  SHARED_FAMILIES, checkFamilies, entryOf, schemaFamily, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest,
 } from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
@@ -69,10 +70,12 @@ export class SyncOwners {
 
   serve(source: string, families: readonly string[], provider: SyncProvider): Subscription {
     const served = checkFamilies(families);
-    // Another source may serve the same family for its own entities; one source serves each family once.
+    // Another source may serve a shared family for its own entities. Any other family keeps its one owner, and one
+    // source serves each family once.
     for (const other of this.#owners) {
-      const taken = other.scope.source === source ? served.find(family => other.families.has(family)) : undefined;
-      if (taken !== undefined) throw new SdkError(errorBody('invalid-state', {detail: `${source} already serves ${taken}`}));
+      const sameSource = other.scope.source === source;
+      const taken = served.find(family => other.families.has(family) && (sameSource || !SHARED_FAMILIES.has(family)));
+      if (taken !== undefined) throw new SdkError(errorBody('invalid-state', {detail: `${other.scope.source} already serves ${taken}`}));
     }
     const scope = {source, pattern: `sync ${served.join(',')}`};
     const owner: Owner = {families: new Set(served), scope, queue: new DeliveryQueue(this.#dependencies.maxQueued, async ({request, expiresAtMs, settle}) => {
@@ -86,6 +89,11 @@ export class SyncOwners {
       // Requests still waiting never reached the owner, so their requesters learn that at once.
       return owner.queue.close(({request, settle}) => { settle(refusal(request, 'unavailable', 'the owner closed')); });
     }};
+  }
+
+  /** The families `source` serves now, in the order it registered them. */
+  served(source: string): string[] {
+    return [...this.#owners].filter(owner => owner.scope.source === source).flatMap(owner => [...owner.families]);
   }
 
   /**

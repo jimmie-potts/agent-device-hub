@@ -426,14 +426,15 @@ it('duplicates and stale revisions are dropped, and a late state does not bring 
   assert.deepEqual(held(copy), []);
 });
 
-it('an owner serves each family once, and malformed sync calls are refused with invalid-request', async () => {
+it('one owner serves each family, and malformed sync calls are refused with invalid-request', async () => {
   const {core, wall} = bus();
   const empty = (): Snapshot => ({revision: 0, states: []});
   await core.serveSync(['session', 'inbox-item'], empty);
-  // Ownership is keyed by source and family (Hub #967): another source may serve the family too, as two device modules
-  // serve `device`; owners.test.ts covers that.
+  await assert.rejects(wall.serveSync(['session'], empty), refused('invalid-state'));
+  await assert.rejects(wall.serveSync(['mode', 'inbox-item'], empty), refused('invalid-state'));
+  // Ownership is keyed by source and family (Hub #967): only a shared family, `device`, may have several owners, and
+  // no source serves a family twice. owners.test.ts covers both.
   await assert.rejects(core.serveSync(['session'], empty), refused('invalid-state'));
-  await assert.rejects(core.serveSync(['mode', 'inbox-item'], empty), refused('invalid-state'));
   const malformed = [[], ['Session'], ['session', 'session'], ['bunny.session'], ['a'.repeat(65)]];
   for (const families of malformed) {
     await assert.rejects(wall.sync(families, () => {}, {timeoutMs: 5000}), refused('invalid-request'), JSON.stringify(families));
@@ -688,14 +689,17 @@ it('a copy closed while its handler runs hears no more changes', async () => {
 
 it('a message without an entity is reported and ignored, and the copy goes on', async () => {
   const {bus: created, core, wall, errors} = bus();
-  // Not checked: this participant sends a message the profile refuses.
+  // Not checked: these participants send a message the profile refuses, one as the owner and one as another source.
+  const unchecked = created.connect('bunny/core');
   const rogue = created.connect('bunny/rogue');
   const owner = sessionOwner(core);
   await core.serveSync([FAMILY], () => owner.snapshot());
   const changes: string[] = [];
   await synced(wall, changes);
   const broken = {...session('s1', 1), dataschema: undefined} as unknown as Draft<Session>;
+  // The copy follows the owner that served it (Hub #967), so another source's message is not the copy's to report.
   await rogue.publish(`bunny.state.${FAMILY}.s1`, broken);
+  await unchecked.publish(`bunny.state.${FAMILY}.s1`, broken);
   await owner.update('s1', 2);
   await flush();
   assert.deepEqual(changes, ['synced @0', 'updated s1@2']);
