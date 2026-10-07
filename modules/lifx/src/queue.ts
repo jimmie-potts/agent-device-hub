@@ -221,7 +221,7 @@ export class BulbQueue {
       this.#within(deadlineMs);
       if (beforeWrite !== undefined && !beforeWrite()) throw new Unrecorded();
       written = true;
-      await this.#exchange(type, payload, PACKET.acknowledgment, counter, deadlineMs, true);
+      await this.#exchange(type, payload, PACKET.acknowledgment, counter, deadlineMs);
       return {effect: 'sent', ...(observed === undefined ? {} : {observed}), transmittedAtMs: this.#now(), exchanges: counter.exchanges};
     } catch (error) {
       return {effect: written ? 'possible' : 'none', failure: this.#failure(error, written), ...(observed === undefined ? {} : {observed}), exchanges: counter.exchanges};
@@ -255,13 +255,14 @@ export class BulbQueue {
 
   /**
    * Sends one packet and waits for its answer, with at most `retries` more attempts of the same absolute payload, each
-   * with its own deadline. No attempt starts once `deadlineMs`, the command's own deadline, has passed; `checked` says
-   * the caller checked it for the first attempt just before.
+   * with its own deadline. No retry starts once `deadlineMs`, the command's own deadline, has passed. The caller checks
+   * the deadline for the first attempt, in the same step that sends it: the job's turn for its first packet, and the
+   * check just before a write for the write.
    */
-  async #exchange(type: number, payload: Buffer, expected: number, counter: Counter, deadlineMs: number | undefined, checked = false): Promise<Buffer> {
+  async #exchange(type: number, payload: Buffer, expected: number, counter: Counter, deadlineMs: number | undefined): Promise<Buffer> {
     for (let attempt = 0; ; attempt += 1) {
       this.#live();
-      if (attempt > 0 || !checked) this.#within(deadlineMs);
+      if (attempt > 0) this.#within(deadlineMs);
       const abort = new AbortController();
       this.#active = abort;
       counter.exchanges += 1;
