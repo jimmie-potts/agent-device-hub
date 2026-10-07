@@ -756,7 +756,9 @@ module test kit. Some start the runtime with `--edge` and `--simulate`: a remote
 part with a run-generated grant reaches its SDK edge, and grants files that are
 missing, not private or that act as the core or a module are refused. The
 runtime's records must pass the diagnostic contract's validator (#903), as
-maintenance intake reads them. They need no device or network.
+maintenance intake reads them, and `runtime.stopped` must count no lost record or
+span. The decision-record and tracing tests read the runtime's records and the
+spans its host adapter hands a test sink (#949). They need no device or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123; the README's Memory section says how.
 
@@ -2218,9 +2220,12 @@ by the final change.
 
 Fixtures cover safe canonical records, exact OTLP mappings, strict version
 projections, privacy, context isolation and bounded sink failures. Profile 1.2
-fixtures cover the runtime's records and their negative controls, and
+fixtures cover the runtime's records and their negative controls, profile 1.3
+fixtures its decision, outbox and device records and theirs (#949), and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
-earlier profile rejects each profile's additions, and the runtime scopes' rules.
+earlier profile rejects each profile's additions, span names included, and the
+runtime scopes' rules. `tests/host.test.mjs` also records spans through the host
+adapter's bounded local span sink with no collector.
 The package check verifies immutable archive contents and independent TypeScript/Python
 consumers. These checks use synthetic records, no collector, device or live
 state. Real ingestion and Grafana queries belong to the separately bounded functional

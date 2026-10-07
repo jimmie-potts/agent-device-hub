@@ -88,14 +88,19 @@ The runtime refuses to start otherwise, with `edge-grants-missing`,
 `runtime.failed`. No refusal or log record quotes a token. The edge checks every
 remote message against profile 2.0, the core families and the modules' own
 schemas (each factory's `schemas`), and logs `runtime.edge.connected`,
-`runtime.edge.disconnected` and `runtime.edge.refused`. A refusal's record holds
-`bunny.route` (one of the edge's routes, or `other`), `bunny.participant` when
-the caller had a grant, `bunny.code` from the error registry and `bunny.reason`,
-the diagnostic contract's registered reason for that code. `internal` and
-`uncertain-result`, whose effect may have happened, have none. It never holds
-the edge's detail, which may quote what the caller sent; the edge answers an
-exception with fixed text, never its message. Token rotation and grant
-permissions belong to #835.
+`runtime.edge.disconnected`, `runtime.edge.refused` and `runtime.edge.failed`.
+A refusal's record holds `bunny.route` (one of the edge's routes, or `other`),
+`bunny.participant` when the caller had a grant, `bunny.code` from the error
+registry and `bunny.reason`, the diagnostic contract's registered reason for
+that code. `internal` and `uncertain-result`, whose effect may have happened,
+have none. A refusal that may mean a misused grant or lost capacity
+(`unauthenticated`, `forbidden`, `capacity`, `unavailable`) is a warning, and a
+validation refusal is INFO. A refusal never holds the edge's detail, which may
+quote what the caller sent. The edge answers an exception it did not expect
+with fixed text, never its message: `internal`, or `uncertain-result` once it
+has handed a command to the bus. It logs one `runtime.edge.failed` record at
+ERROR with only its route, its granted source, that code and `error.type`.
+Token rotation and grant permissions belong to #835.
 
 `runMain`'s `onEdge` option hands the caller the edge once it serves. A
 verification run's child uses it to end a part's stream, as a lost connection
@@ -184,7 +189,7 @@ VmRSS with and without it, from `scripts/measure-memory.mjs`.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.2, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.3, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -197,7 +202,7 @@ stdout ready line, which keeps its own contract, the process writes a
 `runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
 listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
-(`bunny.telemetry.failure_count`).
+(`bunny.telemetry.failure_count`), with the spans lost.
 
 The runtime's own records have scope `bunny.runtime`. A module's records have
 the one scope `bunny.module` and the attribute `bunny.module`, which names the
@@ -229,6 +234,45 @@ A subscription whose full queue drops deliveries gets one
 warning a minute carries their count, so a storm cannot flood the journal. A
 minute without drops ends that, and the next drop is logged at once again.
 
+## Decision records and spans
+
+The bus records each decision once, where it is made (ADR 0012's
+"Observability", #949). The runtime connects the SDK's `onDiagnostic` on its
+bus and its edge to its log, as records under `bunny.runtime` at the level the
+SDK set:
+
+| Record | Level | When |
+| --- | --- | --- |
+| `runtime.command.admitted` | INFO | The bus put a command in its owner's queue. |
+| `runtime.command.refused` | WARN | No responder, a full queue, an expiry in the queue or a closed responder. |
+| `runtime.command.cancelled` | INFO | Its requester closed or stopped waiting before a handler started it. |
+| `runtime.command.replied` | INFO | The owner replied, `accepted` or with its typed refusal. |
+| `runtime.command.uncertain` | WARN | A handler had it and the request ended `uncertain-result`. |
+| `runtime.sync.served`, `runtime.sync.refused` | INFO; WARN for a refusal other than the owner's or a cancellation | A sync request's answer. |
+| `runtime.sync.restarted` | DEBUG | An overflow restarted a copy's sync. |
+
+A command's records carry its requester (`bunny.participant`), its routing key
+(`bunny.routing.key`), its request and message IDs, the outcome, any registry
+code with its reason, and the command's own trace, from a module or a remote
+part alike. A request ID that `bunny.request.id`'s 1.x pattern refuses is left
+out of a record or span, which keeps the rest. A module's records come from its
+own code and SDK helpers under `bunny.module`: its outbox's `outcome.published`
+and `outbox.deferred`, and `device.unavailable` and `device.available` from
+`DeviceAvailability`, which logs one degradation and one recovery for a polled
+device that stays offline.
+
+The runtime records spans through the observability package's
+`createHostDiagnostics`, with tracing on, 100% head sampling that honors a
+parent's sampled flag, no exporter and the adapter's bounded local span sink;
+it installs no process context manager. The bus records each command's
+`bunny.command.request`, `.queue` and `.execute` spans under `bunny.runtime`, and
+`trace.start` records a module's own spans under `bunny.module` with its name.
+Each finished span goes to `RuntimeOptions.spans` as one projected OTLP JSON
+document; without that option the runtime keeps the latest 1,024 for
+`runtime.spans()`. Nothing exports them yet (#813). `runtime.stopped` counts spans
+lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
+records. If the adapter cannot start, the runtime runs without recorded spans.
+
 ## Memory
 
 `node apps/runtime/scripts/measure-memory.mjs` measures the zero-module runtime
@@ -258,10 +302,13 @@ next one fail. The lamp passes the
   `not-found`;
 - it accepts a command whose `requestId` it already handled from the same
   source, a duplicate, and changes nothing;
-- it reports each switch through its [outbox](../../packages/sdk/README.md#outbox):
-  the lamp's new state, the `org.bunny.lamp.switched` occurrence and the
-  outcome. When the lamp cannot be reached, the outcome is `failed`, with
-  evidence `none` and the `unavailable` error.
+- it switches the device in a `bunny.device.call` span, the command's child,
+  and gives the device no trace context;
+- it reports each switch through its [outbox](../../packages/sdk/README.md#outbox),
+  which records the outcome's publication: the lamp's new state, the
+  `org.bunny.lamp.switched` occurrence and the outcome. When the lamp cannot be
+  reached, the outcome is `failed`, with evidence `none` and the `unavailable`
+  error.
 
 `lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
 `tests/fixtures/chime.ts` holds a consume-only module,
@@ -347,6 +394,14 @@ command's fate is unknown, by the command's deadline plus `REQUESTER_GRACE_MS`
 at the latest. Its in-process cell only describes what happens: the requester dies
 with the runtime, and the harness labels its request `lost`. That label is the
 harness's own, not an answer the SDK gives.
+
+The scenarios assert the runtime's records on both transports: each deadline
+answer's admission and ending at its level, the refusal of a command with no
+responder, and each outcome's publication recorded once across the crash, the
+lost acknowledgment and the restarts. The in-memory harness also records the
+bus's and the modules' spans, and its tests check that the end-to-end path has
+no lost parent and that work published after a restart links to its stored
+context.
 
 The harness never listens on an installed service's port (8765, 8787, 8788,
 8791 or 41231). It keeps its state in a private directory under the system

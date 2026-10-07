@@ -7,16 +7,19 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.2.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.3.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1 and 1.2 are independent of the pinned OpenTelemetry semantic conventions
-1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
+1.0, 1.1, 1.2 and 1.3 are independent of the pinned OpenTelemetry semantic
+conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
 runtime ([#903](https://github.com/jimmie-potts/agent-device-hub/issues/903));
-see [The runtime's records](#the-runtimes-records-profile-12). The default
+see [The runtime's records](#the-runtimes-records-profile-12). Profile 1.3
+registers its decision records and span names
+([#949](https://github.com/jimmie-potts/agent-device-hub/issues/949)); see
+[Decision records and spans](#decision-records-and-spans-profile-13). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects
-1.2 explicitly.
+1.2 or 1.3 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -35,7 +38,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1` or `1.2` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2` or `1.3` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -161,19 +164,53 @@ A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
 checks. Building a record keeps only the attributes its own profile registers,
 so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
-validate and convert profile 1.2 records from the schema and catalog; they
+validate and convert profile 1.2 and 1.3 records from the schema and catalog; they
 produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
 producers stay on 1.1.
+
+## Decision records and spans (profile 1.3)
+
+Profile 1.3 is profile 1.2 plus the records and span names that ADR 0012's
+"Observability" section needs to record each decision once, where it is made
+([#949](https://github.com/jimmie-potts/agent-device-hub/issues/949)). Every
+earlier profile rejects each addition. The additions:
+
+- **The bus's decisions,** under `bunny.runtime`: a command admitted to its
+  owner's queue (`runtime.command.admitted`), refused by the bus for no
+  responder, a full queue, its expiry or a closed responder
+  (`runtime.command.refused`), cancelled before a handler started it
+  (`runtime.command.cancelled`), replied to by its owner, accepted or with its
+  typed refusal (`runtime.command.replied`), or left `uncertain-result`
+  (`runtime.command.uncertain`); and a sync served, refused or restarted after
+  an overflow (`runtime.sync.served`, `.refused`, `.restarted`).
+- **The edge's unexpected exception,** `runtime.edge.failed`, at ERROR with
+  only its route, its granted source if any and `error.type`.
+- **Module events:** an outcome's first publication from a module's outbox
+  (`outcome.published`), a publish refused after the commit
+  (`outbox.deferred`), and a device that stops or starts answering
+  (`device.unavailable`, `device.available`).
+- **Attributes:** `bunny.routing.key` (an SDK routing key, never a pattern, of
+  at most 512 characters), `bunny.outbox.waiting_count` (the messages a refused
+  send left behind) and `bunny.attempt_count` (failed attempts, summarized).
+- **Span names:** `bunny.outcome.publish` and `bunny.device.call`. The catalog's
+  `additions` list them too, since a span name is vocabulary.
+
+`bunny.request.id` keeps profile 1.0's pattern, which is stricter than the 2.0
+`requestId`: a producer leaves out a request ID that the pattern refuses, rather
+than lose the record, and keeps the record's trace and message ID. Every ID the
+SDK generates matches.
 
 ## Traces and context
 
 Use registered short spans: `bunny.command.request`, `bunny.command.queue`,
 `bunny.command.execute`, `bunny.lifecycle.observe`, `bunny.feed.read`,
-`bunny.process.start`, `bunny.helper.run`. Names never contain IDs or content.
-Use the same approved resource/scope/attribute dictionary for spans. The host
-owns the OTel SDK, ID generation, sampling and exporter; the shared library starts
-none. Host adapters must filter SDK-generated attributes/events too: default
-HTTP instrumentation and exception recording can otherwise bypass this policy.
+`bunny.process.start`, `bunny.helper.run`, and from profile 1.3
+`bunny.outcome.publish` and `bunny.device.call`. Names never contain IDs or
+content. Use the same approved resource/scope/attribute dictionary for spans. The
+host owns the OTel SDK, ID generation, sampling and exporter, or its bounded
+local span sink; the shared library starts none. Host adapters must filter
+SDK-generated attributes/events too: default HTTP instrumentation and exception
+recording can otherwise bypass this policy.
 
 A request span ends when the response/admission decision is complete. Queue and
 execution spans describe their own bounded work. Carry context explicitly only
@@ -196,8 +233,10 @@ versioned if necessary. Receiver observations remain distinct from source logs.
 ## Ingestion and queries
 
 One host-owned path per signal: canonical Pino/Python records are converted to
-OTLP logs; host OTel SDK spans go to OTLP traces. Both reach the configured local
-collector. Canonical stderr may also serve local diagnostics, but do not scrape
+OTLP logs; host OTel SDK spans go to OTLP traces, to the host's bounded local span
+sink, or to both. Both signals reach the configured local collector when there is
+one. A local span sink receives the same projected OTLP span through the same
+bounded queue, so tracing needs no collector. Canonical stderr may also serve local diagnostics, but do not scrape
 it into the same backend when OTLP logs are enabled: that duplicates records.
 Browser producers send approved bounded records to their authenticated same-origin
 backend, which validates them before export. Browsers hold no exporter credentials.
@@ -268,7 +307,9 @@ contract delivery. Ownership means source responsibility, not installation.
 | Nanoleaf | Copied runtime/bridge vendor layouts and helper tools: immutable artifact receipt in each packaging boundary; preserve helper output. |
 
 Profile 1.2 adopts the B.U.N.N.Y. runtime in source: its own records and its
-modules' are contract records on stderr. The runtime and its journal intake are
+modules' are contract records on stderr. Profile 1.3 adds its decision records,
+and the runtime records its spans to a bounded local span sink, with no exporter
+(#949). The runtime and its journal intake are
 installed at the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
 export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).

@@ -6,9 +6,9 @@ import {randomBytes} from 'node:crypto';
 import {chmod, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, traceFields, type Command, type Reply} from '@jimmie-potts/sdk';
+import {DeviceAvailability, connectRemote, traceFields, type Command, type Reply} from '@jimmie-potts/sdk';
 import {EDGE_GRANTS_FILE, type LogRecord} from '../src/index.js';
-import {contextOf, deferred, fixture, it, run, setMode, stateDir} from './support.js';
+import {contextOf, deferred, fixture, it, manualClock, run, setMode, stateDir} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
@@ -126,4 +126,25 @@ it('a secret in a handler\'s exception reaches no record: the bus records the un
   const failed = logs.find(record => record.event_name === 'runtime.module.failed');
   assert.equal(failed?.attributes['error.type'], 'Error');
   assert.equal(JSON.stringify([logs, runtime.spans()]).includes(SECRET), false, 'the exception\'s message stays in memory');
+});
+
+it('a polled device that stays offline writes one degradation and one recovery at INFO and above, as module records', async context => {
+  const clock = manualClock();
+  const poller = fixture('poller');
+  const {runtime, logs} = await run(context, {modules: [poller], clock: {now: clock.now}, scheduler: clock.scheduler, logLevel: 'debug'});
+  const {log, clock: moduleClock} = contextOf(poller);
+  const devices = new DeviceAvailability({log, clock: moduleClock});
+  for (let poll = 0; poll < 200; poll += 1) {
+    devices.unreachable('lamp-1', 'unavailable');
+    clock.advance(3000);
+  }
+  devices.reached('lamp-1');
+  await runtime.stop();
+  const records = logs.filter(record => record.event_name.startsWith('device.'));
+  assert.deepEqual(records.filter(record => record.severity_text !== 'DEBUG').map(record => [record.event_name, record.severity_text, record.attributes]), [
+    ['device.unavailable', 'WARN', {'bunny.provenance': 'source', 'bunny.module': 'poller', 'bunny.device.id': 'lamp-1', 'bunny.code': 'unavailable', 'bunny.attempt_count': 1}],
+    ['device.available', 'INFO', {'bunny.provenance': 'source', 'bunny.module': 'poller', 'bunny.device.id': 'lamp-1', 'bunny.attempt_count': 200, 'bunny.duration_ms': 600_000}],
+  ], 'one degradation and one recovery, not a warning per poll');
+  const summaries = records.filter(record => record.severity_text === 'DEBUG');
+  assert.ok(summaries.length > 0 && summaries.length <= 10, `the repeats are summarized at most once a minute: ${summaries.length}`);
 });
