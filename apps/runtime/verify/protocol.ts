@@ -5,6 +5,7 @@
 // that worker threads and the child's own child processes report too. A run adapter reads and drives the run through
 // the supervisor's loopback harness API, whose documents are below.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import type {SimulatedAction} from '@jimmie-potts/nanoleaf';
 import type {SimulatedMode, SimulatedPixooState} from '@jimmie-potts/pixoo';
 import type {SonosReply, SonyReply} from '@jimmie-potts/playback';
 import type {LogRecord} from '../src/index.js';
@@ -44,6 +45,8 @@ export type ChildMessage =
   | {type: 'cloud.call'; id: number; method: 'GET' | 'POST' | 'DELETE'; url: string; authorization: string; body?: string}
   /** The Tidbyt module's deadline for that request passed, or it stopped, so the simulated cloud stops waiting. */
   | {type: 'cloud.abandon'; id: number}
+  /** The Nanoleaf module's request to a simulated controller, with the token it read from its secret file (Hub #844). */
+  | {type: 'nanoleaf.request'; id: number; address: string; token: string; method: string; endpoint: string; payload: unknown}
   | {type: 'published'; message: Message}
   /** What the child's simulated Pixoo shows now. */
   | {type: 'pixoo.state'; state: SimulatedPixooState}
@@ -62,6 +65,9 @@ export type SupervisorMessage =
   | {type: 'cloud.answered'; id: number; status: number; headers: Record<string, string>; body: string}
   /** The simulated cloud refused the connection before anything was sent, or never answered. */
   | {type: 'cloud.failed'; id: number; refused: boolean}
+  | {type: 'nanoleaf.replied'; id: number; reply: unknown}
+  /** The simulated controller did not answer, or answered with the HTTP error `status`. */
+  | {type: 'nanoleaf.failed'; id: number; status?: number}
   | {type: 'control'; id: number; control: Control}
   | {type: 'simulate'; id: number; simulation: ChildSimulation}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
@@ -114,4 +120,5 @@ export type SimulateRequest =
   | Extract<Simulation, {device: 'playback'}>
   | {device: 'lifx'; action: 'online' | 'offline'; address: string}
   | Extract<Simulation, {device: 'tidbyt'}>
+  | {device: 'nanoleaf'; action: SimulatedAction}
   | ChildSimulation;

@@ -20,7 +20,7 @@ it('the catalog names each scenario once, and each one observes something', () =
     'approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions',
     'end-to-end', 'configured-module', 'misconfigured-module', 'speaker-playback', 'lifx-bulbs', 'device-owners', 'tidbyt-tiles', 'gateway-reads',
     'grants-and-duplicates', 'approval-recovery', 'module-contributions',
-    'pixoo-monitor', 'pixoo-media', 'pixoo-now-playing', 'pixoo-offline',
+    'pixoo-monitor', 'pixoo-media', 'pixoo-now-playing', 'pixoo-offline', 'nanoleaf-wall',
   ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);

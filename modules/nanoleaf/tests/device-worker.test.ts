@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {BASELINE, COLORS, COMET_SECONDS} from '../src/renderer.js';
 import type {LightRequest} from '../src/transport.js';
 import {superviseWorker} from '../src/worker.js';
@@ -47,7 +48,7 @@ const levels = (calls: readonly Call[], withPower = false): number[] => puts(cal
 });
 
 function outcome(id: string, device: string, result: ControlOutcome['result'], evidence: ControlOutcome['evidence'], code?: string): ControlOutcome {
-  return {type: 'outcome', device, requestId: id, result, evidence, ...(code === undefined ? {} : {error: {code}})} as ControlOutcome;
+  return {type: 'outcome', device, requestId: id, result, evidence, ...(code === undefined ? {} : {error: errorBody(code as ErrorCode).error})};
 }
 
 suite('LaunchAndTargetTest', () => {
@@ -554,7 +555,7 @@ suite('supervisor checks the port adds', () => {
       return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     }});
     for (const step of [['mode', 'free'], ['run', 1002], ['command', 'b', {kind: 'brightness.set', percent: 42}],
-      ['hook', {complete: true, step: ['expireAll']}], ['hook', {complete: true, step: ['command', 'p', {kind: 'power.set', on: false}]}]] as Step[]) {
+      ['hook', {complete: true, step: ['hold']}], ['hook', {complete: true, step: ['command', 'p', {kind: 'power.set', on: false}]}]] as Step[]) {
       await run.apply(step);
     }
     // Set last, so it runs after the hold is set: the next read of the selection is the supervisor's.

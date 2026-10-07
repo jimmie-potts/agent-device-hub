@@ -1,5 +1,6 @@
 // Positional SQLite access in the shape the Python bridge used: rows are tuples and callers own the transaction.
-import type {DatabaseSync} from 'node:sqlite';
+import {chmodSync, closeSync, constants, openSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
 
 export type Db = DatabaseSync;
 /** The values the Nanoleaf schema stores. */
@@ -94,4 +95,19 @@ export function transaction<T>(db: Db, body: () => Synchronous<T>, begin = 'BEGI
 export function sameRow(left: Row | undefined, right: Row | undefined): boolean {
   if (left === undefined || right === undefined) return left === right;
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * Opens a SQLite file that only the owner can read or write: the file is created with mode 600 before SQLite opens it,
+ * and an older file is narrowed to 600, so its journals, which SQLite creates with the file's own mode, are private too.
+ * The device locks and the layout lock use it.
+ */
+export function privateDatabase(path: string, options: {timeout: number}): DatabaseSync {
+  const descriptor = openSync(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+  try {
+    chmodSync(path, 0o600);
+  } finally {
+    closeSync(descriptor);
+  }
+  return new DatabaseSync(path, options);
 }

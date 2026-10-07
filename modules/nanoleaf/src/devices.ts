@@ -1,11 +1,10 @@
 // Device registry, per-device layout shape and device-scoped state migration (devices.py).
 import {existsSync, unlinkSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {DatabaseSync} from 'node:sqlite';
 import {isObject, own, type Json, type JsonObject} from './compat.js';
 import {ValueError} from './errors.js';
 import {readJson, writeJson, type WriteJson} from './jsonfile.js';
-import {execute, rows, type Db} from './sqlite.js';
+import {execute, privateDatabase, rows, type Db} from './sqlite.js';
 
 /** The original Lines device. */
 export const DEFAULT = 'wall';
@@ -259,7 +258,7 @@ export function saveLayout(path: string, devices: ReadonlyMap<string, unknown> |
  * An entry of null removes that device's entry.
  */
 export function saveDeviceLayout(path: string, device: string, value: LayoutEntry | null, write: WriteJson = writeJson): void {
-  const lock = new DatabaseSync(join(dirname(path), 'layout-lock.sqlite'), {timeout: 5000});
+  const lock = privateDatabase(join(dirname(path), 'layout-lock.sqlite'), {timeout: 5000});
   try {
     lock.exec('BEGIN EXCLUSIVE');
     const current = existsSync(path) ? layoutDevices(readJson(path)) : new Map<string, LayoutEntry>();

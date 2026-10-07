@@ -17,10 +17,10 @@ import {dashboard} from '../src/line-projection.js';
 import {changeMode, modeStatus} from '../src/modes.js';
 import {readLayout} from '../src/panels.js';
 import {applyPending, locateState, owners, pending, renderingSnapshot, requestPatch, settings, type Patch} from '../src/project-map.js';
-import {identityKey, NOT_SELECTED, state} from '../src/shared-input.js';
+import {identityKey, NOT_SELECTED, state, type StoredEnvelope} from '../src/shared-input.js';
 import {execute, rows, type Db, type SqlValue} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
-import {completion, envelope, evictTask, Feed, firstSession, fixtureJson, query, refuse, selectionSetup, selectShared, setMode, suite,
+import {completion, copyOf, envelope, evictTask, Feed, firstSession, fixtureJson, query, refuse, selectionSetup, selectShared, setMode, suite,
   taskRow, temporary, test, unreported, wallView, write, type FeedChange} from './support.js';
 
 interface Outcome {
@@ -269,7 +269,7 @@ suite('WallDeviceTest', () => {
     const payload = {id: task.id, evictionToken: task.evictionToken};
     evictTask(path, 'panels', payload);
     assert.deepEqual(query(path, 'SELECT session,device FROM shared_evictions'), [[key, 'panels']]);
-    write(path, db => edits.evict(db, {}, payload));
+    write(path, db => edits.evict(db, copyOf(path), {}, payload));
     assert.deepEqual(query(path, 'SELECT session,device FROM shared_evictions ORDER BY device'), [[key, 'panels'], [key, 'wall']]);
   });
 });
@@ -420,8 +420,10 @@ suite('IntegrationTest', () => {
     const key = identityKey(session.identity);
     const project = 'shared-project-' + (session.projectId ?? 'chosen-project');
     session.projectId = session.projectId ?? 'chosen-project';
+    // The module keeps its copy of the core's sessions in memory (Hub #844); Python saved it as the envelope.
+    copyOf(directory).envelope = JSON.parse(JSON.stringify(value)) as StoredEnvelope;
     write(directory, db => {
-      execute(db, "UPDATE shared_input SET source='shared',envelope=?,generation=2", JSON.stringify(value));
+      execute(db, "UPDATE shared_input SET source='shared',generation=2");
       execute(db, 'INSERT INTO projects VALUES (?,?,?,?)', project, session.projectId ?? null, '#aabbcc', '[]');
       execute(db, 'INSERT INTO task_info VALUES (?,?,?,?,?,?,?)', key, 'PRIVATE_SHARED_TITLE', 'PRIVATE_SHARED_ROOT', project, null, 'turn', 42);
     });
@@ -429,7 +431,7 @@ suite('IntegrationTest', () => {
     withState(directory, db => {
       const current = state(db);
       assert.equal(current.source, 'shared');
-      assert.deepEqual(current.envelope, JSON.parse(JSON.stringify(value)));
+      assert.deepEqual(copyOf(directory).envelope, JSON.parse(JSON.stringify(value)));
       assert.deepEqual(rows(db, 'SELECT manual_project FROM task_info WHERE session=?', key), [[project]]);
     });
   });

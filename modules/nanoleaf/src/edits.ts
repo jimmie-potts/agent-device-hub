@@ -7,7 +7,7 @@ import {isObject, type JsonObject} from './compat.js';
 import {deviceOf, elements, type DeviceConfig} from './devices.js';
 import {ValueError} from './errors.js';
 import {HEX, requestPatch, savePalette, validatePalette, type SettingName} from './project-map.js';
-import {evict as evictShared} from './shared-input.js';
+import {evict as evictShared, type SharedCopy} from './shared-input.js';
 import {execute, first, rows, type Db} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
 
@@ -83,8 +83,8 @@ export function locate(db: Db, config: DeviceConfig, line: unknown): void {
   markDirty(db);
 }
 
-/** Remove a shared task from the named device, as its eviction token permits. */
-export function evict(db: Db, config: DeviceConfig, request: unknown): void {
-  evictShared(db, deviceOf(config), request);
+/** Remove a shared task from the named device, as its eviction token permits, against the module's copy of the sessions. */
+export function evict(db: Db, copy: SharedCopy, config: DeviceConfig, request: unknown): void {
+  evictShared(db, copy, deviceOf(config), request);
   markDirty(db);
 }

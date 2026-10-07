@@ -5,13 +5,14 @@ import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Json} from '../src/compat.js';
 import {admitCommand, discovered, Execution, Refused, sceneList} from '../src/controls.js';
 import {DEFAULT} from '../src/devices.js';
-import {ANIMATION, expireQueued, journal, type ErrorCode, type Outcome as ControlOutcome} from '../src/journal.js';
+import {ANIMATION, expireQueued, hold, journal, type ErrorCode, type Outcome as ControlOutcome} from '../src/journal.js';
 import {setMode} from '../src/modes.js';
 import {execute, transaction} from '../src/sqlite.js';
-import {overrides} from '../src/store.js';
+import {controlState, overrides} from '../src/store.js';
 import {fixtureJson} from './support.js';
 import {outcomeOf, WorkerCase, type Call, type Outcome, type RequestSpec, type Step} from './worker-support.js';
 
@@ -87,20 +88,20 @@ export function outcomeFor(id: string, summary: Summary, admission: Summary, dev
   if (summary.outcome === 'queued') return null;
   if (admission.code === 200) return {...base, result: 'succeeded', evidence: 'observed'};
   // Rule 2: possible effects are uncertain, with no evidence.
-  if (summary.priorEffects === 'possible') return {...base, result: 'uncertain', evidence: 'none', error: {code: 'uncertain-result'}};
+  if (summary.priorEffects === 'possible') return {...base, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result').error};
   const evidence = summary.priorEffects === 'confirmed-transmission' ? 'transmitted' : 'none';
   switch (summary.outcome ?? '') {
     case 'sent': return {...base, result: 'succeeded', evidence: 'transmitted'};
     case 'partially-applied':
-    case 'uncertain': return {...base, result: 'uncertain', evidence, error: {code: 'uncertain-result'}};
-    case 'cancelled': return {...base, result: 'failed', evidence, error: {code: 'cancelled'}};
+    case 'uncertain': return {...base, result: 'uncertain', evidence, error: errorBody('uncertain-result').error};
+    case 'cancelled': return {...base, result: 'failed', evidence, error: errorBody('cancelled').error};
     case 'failed': {
       const failure = summary.failure ?? 'internal';
       if (evidence === 'transmitted' && (failure === 'uncertain-result' || failure === 'transport-failure')) {
-        return {...base, result: 'uncertain', evidence, error: {code: 'uncertain-result'}};
+        return {...base, result: 'uncertain', evidence, error: errorBody('uncertain-result').error};
       }
       const code = failure === 'transport-failure' ? 'expired' : (RENAMED[failure] ?? failure);
-      return {...base, result: 'failed', evidence, error: {code: code as ErrorCode}};
+      return {...base, result: 'failed', evidence, error: errorBody(code as ErrorCode).error};
     }
     default: throw new Error(`Unexpected receipt ${JSON.stringify(summary)}.`);
   }
@@ -226,11 +227,23 @@ export class ControlCase extends WorkerCase {
     return null;
   }
 
+  /**
+   * The hold an uncertain write leaves, set at the device's current mode revision. Python's tests set it through an
+   * unsent command's expiry, which holds nothing in the port (ADR 0012; Hub #844 review), so the port's own tests of the
+   * hold's effect on a pass set it directly.
+   */
+  holdNow(): null {
+    const db = this.database();
+    transaction(db, () => { hold(db, DEFAULT, controlState(db).revision); });
+    return null;
+  }
+
   /** A hook's step runs inside a device request or an execution's completion, so it is synchronous. */
   hookStep(step: Step): Outcome {
     try {
       if (step[0] === 'command') return {result: this.admit(textOf(step[1]), step[2], step.length > 3 ? textOf(step[3]) : undefined)};
       if (step[0] === 'expireAll') return {result: this.expireAll()};
+      if (step[0] === 'hold') return {result: this.holdNow()};
       if (step[0] === 'mode') {
         const db = this.database();
         transaction(db, () => setMode(db, textOf(step[1]), this.clock.seconds(), this.report));

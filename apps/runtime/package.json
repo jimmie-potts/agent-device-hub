@@ -19,6 +19,7 @@
     "@jimmie-potts/device-mcp": "1.0.1",
     "@jimmie-potts/event-contracts": "1.0.0",
     "@jimmie-potts/lifx": "0.1.0",
+    "@jimmie-potts/nanoleaf": "0.0.0",
     "@jimmie-potts/pixoo": "0.1.0",
     "@jimmie-potts/playback": "0.1.0",
     "@jimmie-potts/sdk": "0.1.0",

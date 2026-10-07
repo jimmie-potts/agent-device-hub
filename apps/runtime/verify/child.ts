@@ -9,6 +9,7 @@
 // runtime with the mode and the panel the last one had, as a real Pixoo keeps its picture across a runtime restart.
 import http from 'node:http';
 import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
+import {HttpError, createNanoleafModule, nanoleafSchemas, type LightRequest} from '@jimmie-potts/nanoleaf';
 import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
@@ -35,6 +36,9 @@ const shows = new Map<number, {resolve: () => void; reject: (error: Error) => vo
 const speakerCalls = new Map<number, {resolve: (reply: SonyReply | SonosReply) => void; reject: (error: Error) => void}>();
 const exchanges = new Map<number, {resolve: (payload: Buffer) => void; reject: (error: Error) => void}>();
 const cloudCalls = new Map<number, {resolve: (response: Response) => void; reject: (error: Error) => void}>();
+const lightRequests = new Map<number, {resolve: (reply: unknown) => void; reject: (error: Error) => void}>();
+/** How long the child keeps a Nanoleaf request the simulated controller never answers; the module's own deadline is shorter. */
+const ABANDON_MS = 10_000;
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -84,6 +88,16 @@ process.on('message', (value: unknown) => {
         new TypeError('fetch failed', {cause: Object.assign(new Error('connect ECONNREFUSED'), {code: 'ECONNREFUSED'})}) :
         new DOMException('the cloud did not answer', 'AbortError'));
       cloudCalls.delete(message.id);
+      return;
+    case 'nanoleaf.replied':
+      lightRequests.get(message.id)?.resolve(message.reply);
+      lightRequests.delete(message.id);
+      return;
+    case 'nanoleaf.failed':
+      // A controller that answered with an HTTP error status is reached, as the Nanoleaf HTTP client reports it.
+      lightRequests.get(message.id)?.reject(message.status === undefined ? new Error('the simulated controller did not answer')
+        : new HttpError(message.status));
+      lightRequests.delete(message.id);
       return;
     case 'control':
       flags[message.control] = true;
@@ -209,6 +223,17 @@ const speakers: SpeakerTransport = {
   sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
   sonos: async (_endpoint, action, args, signal) => await speakerCall(signal, id => ({type: 'speaker.sonos', id, action, args})) as SonosReply,
 };
+/**
+ * The Nanoleaf controllers, reached over the IPC channel; the supervisor's simulated controllers answer, and keep their
+ * state across a runtime restart. One that never answers is dropped here after `ABANDON_MS`.
+ */
+const nanoleaf: LightRequest = (address, method, endpoint = '', payload = null) => new Promise<unknown>((resolve, reject) => {
+  next += 1;
+  const id = next;
+  lightRequests.set(id, {resolve, reject});
+  setTimeout(() => { if (lightRequests.delete(id)) reject(new Error('the simulated controller did not answer')); }, ABANDON_MS).unref();
+  send({type: 'nanoleaf.request', id, address: address.ip, token: address.token, method, endpoint, payload});
+});
 
 /** The chime, reached over the IPC channel. A fault the supervisor set throws here, inside the chime's handler. */
 const chime: ChimeTransport = {
@@ -266,6 +291,7 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   tidbyt: fixture('tidbyt', () => createTidbytModule({transport: cloud})),
   // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
   pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo, acknowledgments: followStandInAcks}), pixooOwnSchemas),
+  nanoleaf: fixture('nanoleaf', () => createNanoleafModule({transport: nanoleaf}), nanoleafSchemas),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({
@@ -290,4 +316,6 @@ const factories = names.map(name => {
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge still knows the
 // fixture families the scenario's parts use, as the in-memory harness's does.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: {...lampSchemas, ...signSchemas, ...pixooOwnSchemas}, onEdge: served => { edge = served; }});
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {
+  schemas: {...lampSchemas, ...signSchemas, ...pixooOwnSchemas, ...nanoleafSchemas}, onEdge: served => { edge = served; },
+});

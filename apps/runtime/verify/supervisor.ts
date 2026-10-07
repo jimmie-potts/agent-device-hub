@@ -19,6 +19,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx} from '@jimmie-potts/lifx';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {SimulatedPixoo, type SimulatedPixooState} from '@jimmie-potts/pixoo';
+import {HttpError, SimulatedNanoleaf} from '@jimmie-potts/nanoleaf';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
@@ -68,6 +69,7 @@ const cloudCalls = new Map<string, AbortController>();
 const exchanges = new Map<string, AbortController>();
 /** What the child's simulated Pixoo shows, as it last reported, and the mode each new runtime's Pixoo starts in (Hub #843). */
 let pixoo: SimulatedPixooState = new SimulatedPixoo().state();
+const nanoleaf = new SimulatedNanoleaf();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 /** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
@@ -153,6 +155,12 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       );
       return;
     }
+    case 'nanoleaf.request':
+      nanoleaf.request({ip: message.address, token: message.token}, message.method, message.endpoint, message.payload).then(
+        reply => { tell(child, {type: 'nanoleaf.replied', id: message.id, reply}); },
+        (error: unknown) => { tell(child, {type: 'nanoleaf.failed', id: message.id, ...(error instanceof HttpError ? {status: error.status} : {})}); },
+      );
+      return;
     case 'sign.abandon': {
       const key = `${number} ${message.id}`;
       const controller = shows.get(key);
@@ -432,7 +440,7 @@ async function body(request: IncomingMessage): Promise<unknown> {
 const ACTIONS = {
   lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline'],
   playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
-  tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'],
+  tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'], nanoleaf: ['online', 'offline', 'power-on', 'power-off', 'lose-next-answer'],
 } as const satisfies {readonly [D in SimulateRequest['device']]: readonly Extract<SimulateRequest, {device: D}>['action'][]};
 /** An action a `SimulateRequest` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
 type Unlisted = {[D in SimulateRequest['device']]: Exclude<Extract<SimulateRequest, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[SimulateRequest['device']];
@@ -476,6 +484,9 @@ async function simulate(request: SimulateRequest): Promise<boolean> {
       if (request.action === 'online') cloud.online();
       else cloud.offline();
       return true;
+    case 'nanoleaf':
+      nanoleaf.act(request.action);
+      return true;
     case 'lamp':
       break;
   }
@@ -509,6 +520,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       const state: HarnessState = {
         generation, devices: {
           lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state(), pixoo,
+          nanoleaf: nanoleaf.state(),
         },
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };

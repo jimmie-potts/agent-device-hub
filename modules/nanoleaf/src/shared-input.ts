@@ -1,6 +1,7 @@
 // Nanoleaf presentation of validated shared state; no provider interpretation (shared_input.py).
 // The feed transport, its credential files and the snapshot schema check are not ported: the runtime delivers
-// validated session state (PORTING.md). Everything here runs inside the caller's transaction.
+// validated session state (PORTING.md). Everything here runs inside the caller's transaction. The module keeps its copy
+// of the core's sessions in memory (`SharedCopy`), rebuilt by sync after a restart and never saved (ADR 0012).
 import {compareText, dumps, floatText, isObject, parseFloatText, parseJson, sameValue, sha256Hex, type Json} from './compat.js';
 // shared_input.ID is the same pattern as devices.ID.
 import {DEFAULT, ID} from './devices.js';
@@ -105,13 +106,17 @@ export interface StoredEnvelope extends Envelope<StoredSession> {
   skipped?: Skipped;
 }
 
-/** The saved shared-input configuration (version 1), as validateConfig returns it. */
+/**
+ * The saved shared-input configuration (version 1), as validateConfig returns it. The runtime module follows the core
+ * through the SDK's sync, so the 1.x feed's `endpoint`, `tokenFile` and `controlTokenFile` are optional: a saved 1.x
+ * configuration that names them is still checked, and nothing reads them (Hub #844).
+ */
 export interface SharedConfig {
   version: 1;
   ownerId: string;
   consumerId: string;
-  endpoint: string;
-  tokenFile: string;
+  endpoint?: string;
+  tokenFile?: string;
   controlTokenFile?: string;
   clearOnNewTurn: true;
   qualifiedSources: Source[];
@@ -121,10 +126,18 @@ export interface SharedState {
   source: SqlValue;
   generation: number;
   config: SharedConfig | null;
-  envelope: StoredEnvelope | null;
   received: SqlValue;
   connection: SqlValue;
   error: SqlValue;
+}
+
+/**
+ * The module's copy of the core's sessions as last projected: the declared sessions with a count of the skipped ones. It
+ * lives in memory only, so a restart starts from an empty copy and the next sync projects a fresh start; no row saves the
+ * core's state (ADR 0012, "Ownership and publication"). Python saved it in `shared_input.envelope`, which stays NULL.
+ */
+export class SharedCopy {
+  envelope: StoredEnvelope | null = null;
 }
 
 /** shared_input.decode: saved JSON; anything unreadable is invalid-json. */
@@ -154,18 +167,20 @@ const ALLOWED_CONFIG = new Set(['version', 'ownerId', 'consumerId', 'endpoint', 
 
 function configurationProblem(value: unknown): boolean {
   if (!isObject(value) || Object.keys(value).some(key => !ALLOWED_CONFIG.has(key))) return true;
-  for (const key of ['version', 'clearOnNewTurn', 'ownerId', 'consumerId', 'endpoint', 'qualifiedSources']) {
+  for (const key of ['version', 'clearOnNewTurn', 'ownerId', 'consumerId', 'qualifiedSources']) {
     if (!Object.hasOwn(value, key)) return true;
   }
   if (value.version !== 1 || value.clearOnNewTurn !== true) return true;
   if (['ownerId', 'consumerId'].some(key => typeof value[key] !== 'string' || !ID.test(value[key]))) return true;
-  const endpoint = value.endpoint;
-  const port = typeof endpoint === 'string' ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/api\/monitor\/v1$/.exec(endpoint) : null;
-  if (port === null || Number(port[1]) > 65535) return true;
+  // The 1.x feed's endpoint and token files: optional since the SDK's sync replaced the feed, checked when present.
+  if (Object.hasOwn(value, 'endpoint')) {
+    const endpoint = value.endpoint;
+    const port = typeof endpoint === 'string' ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/api\/monitor\/v1$/.exec(endpoint) : null;
+    if (port === null || Number(port[1]) > 65535) return true;
+  }
   for (const key of ['tokenFile', 'controlTokenFile']) {
     if (Object.hasOwn(value, key) && (typeof value[key] !== 'string' || !value[key].startsWith('/'))) return true;
   }
-  if (!Object.hasOwn(value, 'tokenFile')) return true;
   const sources = value.qualifiedSources;
   return !Array.isArray(sources) || sources.length < 1 || sources.length > 128
     || sources.some(source => !validIdentity(source, SOURCE)) || new Set(sources.map(dumps)).size !== sources.length;
@@ -234,11 +249,10 @@ export function initSharedInput(db: Db): void {
 const decoded = (value: SqlValue | undefined): unknown => (value === undefined || value === null ? null : decode(String(value)));
 
 export function state(db: Db): SharedState {
-  const row = first(db, 'SELECT source,generation,config,envelope,received,connection,error FROM shared_input WHERE id=1');
+  const row = first(db, 'SELECT source,generation,config,received,connection,error FROM shared_input WHERE id=1');
   if (row === undefined) throw new TypeError('The shared input row is missing.');
-  const [source = null, generation = null, config, envelope, received = null, connection = null, error = null] = row;
-  return {source, generation: Number(generation), config: decoded(config) as SharedConfig | null,
-    envelope: decoded(envelope) as StoredEnvelope | null, received, connection, error};
+  const [source = null, generation = null, config, received = null, connection = null, error = null] = row;
+  return {source, generation: Number(generation), config: decoded(config) as SharedConfig | null, received, connection, error};
 }
 
 export function selected(db: Db): boolean {
@@ -264,13 +278,13 @@ export function evictionToken(current: SharedState, session: StoredSession): str
 }
 
 /** Remove a shared task from one device, as its eviction token permits; the owner's state is not changed. */
-export function evict(db: Db, device: string, payload: unknown): void {
+export function evict(db: Db, copy: SharedCopy, device: string, payload: unknown): void {
   if (!isObject(payload) || Object.keys(payload).length !== 2 || typeof payload.id !== 'string'
       || typeof payload.evictionToken !== 'string' || !selected(db)) {
     throw new ValueError('Invalid eviction.');
   }
   const current = state(db);
-  const tasks = current.envelope === null ? new Map<string, PresentedTask<StoredSession>>() : presented(current.envelope.snapshot);
+  const tasks = copy.envelope === null ? new Map<string, PresentedTask<StoredSession>>() : presented(copy.envelope.snapshot);
   const key = payload.id;
   const task = tasks.get(key);
   if (task === undefined || payload.evictionToken !== evictionToken(current, task[0])
@@ -377,12 +391,16 @@ export interface ProjectionOptions {
   metadata?: Metadata | null;
 }
 
-/** Project a checked envelope into local task state inside the caller's transaction. */
-export function projectEnvelope(db: Db, input: Envelope, config: SharedConfig, instant: number, options: ProjectionOptions = {}): void {
+/**
+ * Project a checked envelope into local task state inside the caller's transaction, against the copy's previous envelope,
+ * and keep the new one in the copy. The copy changes as the projection ends; a caller whose transaction then fails
+ * empties the copy, so the next envelope projects a fresh start.
+ */
+export function projectEnvelope(db: Db, copy: SharedCopy, input: Envelope, config: SharedConfig, instant: number, options: ProjectionOptions = {}): void {
   const targets = options.targets ?? [DEFAULT_DEVICE];
   const metadata = options.metadata ?? null;
   const current = state(db);
-  const previous = current.envelope;
+  const previous = copy.envelope;
   // The stored envelope holds only declared sessions, plus a local count of the skipped ones.
   const [snapshot, skipped] = declared(input.snapshot, config);
   const envelope: StoredEnvelope = {...input, snapshot, skipped};
@@ -506,7 +524,9 @@ export function projectEnvelope(db: Db, input: Envelope, config: SharedConfig, i
   for (const [key = null] of rows(db, 'SELECT id FROM sessions')) {
     if (typeof key !== 'string' || !live.has(key)) forgetTask(db, key);
   }
-  execute(db, "UPDATE shared_input SET envelope=?,received=?,connection='current',error=NULL WHERE id=1", dumps(envelope), instant);
+  // The copy holds what the saved row once held: the envelope as its JSON text reads back.
+  execute(db, "UPDATE shared_input SET envelope=NULL,received=?,connection='current',error=NULL WHERE id=1", instant);
+  copy.envelope = decode(dumps(envelope)) as StoredEnvelope;
   if (!sameValue(previous, envelope) || presentationChanged) markDirty(db);
 }
 

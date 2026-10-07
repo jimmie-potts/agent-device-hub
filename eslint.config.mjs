@@ -200,14 +200,6 @@ export default defineConfig(
     rules: {'bunny/no-raw-error-text': 'off', 'bunny/error-body-from-registry': 'off'},
   },
   {
-    // The staged Nanoleaf port's outcome drafts carry a bare {code} error block, without the registry's retryable flag,
-    // because the module does not depend on the contracts package yet. #844 converts it when it publishes them through
-    // the SDK's outbox.
-    name: 'bunny/safe-errors/nanoleaf-outcomes',
-    files: ['modules/nanoleaf/src/journal.ts'],
-    rules: {'bunny/error-body-from-registry': 'off'},
-  },
-  {
     name: 'bunny/react-hooks',
     files: ['apps/dashboard/**/*.{ts,tsx}'],
     plugins: {'react-hooks': reactHooks},

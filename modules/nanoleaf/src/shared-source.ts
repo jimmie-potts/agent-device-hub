@@ -1,11 +1,12 @@
 // Configuring and following the shared session state (shared_source.py). The port reads shared input only (owner
 // decision, Hub #26, 2026-10-06), so legacy input and its task backup are not ported. Each function runs inside the
 // caller's immediate transaction. Fetching, polling, acknowledging notices to the owner and the command line are not
-// ported either; the runtime replaces them (PORTING.md).
+// ported either; the runtime module replaces them with the SDK's session sync and the core's `notice-acknowledge`
+// command (PORTING.md). The previous envelope lives in the module's in-memory `SharedCopy`, never in a saved row.
 import {dumps} from './compat.js';
 import {FeedError} from './errors.js';
 import type {Metadata} from './project-map.js';
-import {checkEnvelope, NOT_SELECTED, projectEnvelope, selected, state, validateConfig, type Envelope, type SharedConfig,
+import {checkEnvelope, NOT_SELECTED, projectEnvelope, selected, state, validateConfig, type Envelope, type SharedConfig, type SharedCopy,
   type SharedState} from './shared-input.js';
 import {execute, first, type Db} from './sqlite.js';
 import {markDirty} from './store.js';
@@ -32,9 +33,9 @@ function pause(db: Db): void {
 /**
  * Save a validated configuration; it takes effect at the next selection of shared input. While shared input is
  * selected, it is paused first, as Python's only route to a new configuration (legacy input, then configure) did, and
- * the caller selects it again to resume.
+ * the caller selects it again to resume. The copy of the core's sessions empties, as Python's saved envelope did.
  */
-export function configureSource(db: Db, value: unknown): SharedConfig {
+export function configureSource(db: Db, copy: SharedCopy, value: unknown): SharedConfig {
   const config = validateConfig(value);
   if (first(db, 'SELECT 1 FROM shared_ack WHERE result IS NULL') !== undefined) throw new FeedError('acknowledgment-pending-use-explicit-retry');
   if (selected(db)) pause(db);
@@ -42,6 +43,7 @@ export function configureSource(db: Db, value: unknown): SharedConfig {
     dumps(config));
   execute(db, 'DELETE FROM shared_ack');
   execute(db, 'DELETE FROM shared_evictions');
+  copy.envelope = null;
   return config;
 }
 
@@ -58,6 +60,8 @@ interface Observed {
 }
 
 export interface Selection extends Observed {
+  /** The module's in-memory copy of the core's sessions. */
+  copy: SharedCopy;
   /** A validated snapshot envelope from the owner. */
   envelope: Envelope;
   instant: number;
@@ -73,17 +77,19 @@ export interface Selection extends Observed {
 export function selectShared(db: Db, selection: Selection): void {
   const before = sourceConfig(db);
   if (before.source === 'shared') return;
-  checkEnvelope(selection.envelope, before.envelope?.snapshot.revision ?? 0);
+  const {copy} = selection;
+  checkEnvelope(selection.envelope, copy.envelope?.snapshot.revision ?? 0);
   if (selection.envelope.snapshot.collector !== 'running') throw new FeedError('collector-unavailable');
   selection.metadata?.refresh();
   if (selection.generation !== undefined && before.generation !== selection.generation) throw new FeedError('selection-changed');
   if (activeComet(db)) throw new FeedError('active-comet');
   execute(db, "UPDATE shared_input SET source='shared',generation=generation+1,envelope=NULL,connection='unavailable' WHERE id=1");
+  copy.envelope = null;
   // The stale delete and `resync: true` follow Python's statements, whose order the trace replay compares, but cannot
-  // change the outcome: with no stored envelope and an unavailable connection the projection resyncs anyway, and it
+  // change the outcome: with no previous envelope and an unavailable connection the projection resyncs anyway, and it
   // clears or forgets every stale task.
   execute(db, 'DELETE FROM shared_stale');
-  projectEnvelope(db, selection.envelope, before.config, selection.instant,
+  projectEnvelope(db, copy, selection.envelope, before.config, selection.instant,
     {resync: true, targets: selection.targets, metadata: selection.metadata ?? null});
   execute(db, 'DELETE FROM shared_suppressed_waves');
   execute(db, 'DELETE FROM shared_evictions');
@@ -93,6 +99,8 @@ export function selectShared(db: Db, selection: Selection): void {
 }
 
 export interface Acceptance extends Observed {
+  /** The module's in-memory copy of the core's sessions. */
+  copy: SharedCopy;
   instant: number;
   /** Treat the envelope as a fresh start: retained epochs survive, no wave or comet replays. */
   resync?: boolean;
@@ -107,17 +115,20 @@ export function acceptEnvelope(db: Db, envelope: Envelope, acceptance: Acceptanc
   const current = state(db);
   if (current.source !== 'shared' || (acceptance.generation !== undefined && current.generation !== acceptance.generation)) return false;
   if (current.config === null) throw new FeedError('not-configured');
-  checkEnvelope(envelope, current.envelope?.snapshot.revision ?? 0);
-  projectEnvelope(db, envelope, current.config, acceptance.instant,
+  checkEnvelope(envelope, acceptance.copy.envelope?.snapshot.revision ?? 0);
+  projectEnvelope(db, acceptance.copy, envelope, current.config, acceptance.instant,
     {resync: acceptance.resync ?? false, targets: acceptance.targets, metadata: acceptance.metadata ?? null});
   return true;
 }
 
-/** Record that the shared state is unavailable: every task freezes steadily and queued comets are dropped. */
-export function markFailed(db: Db, generation: number, code = 'feed-unavailable'): void {
+/**
+ * Record that the shared state is unavailable: every task freezes steadily and queued comets are dropped. A report
+ * carrying the generation from before a new configuration or selection changes nothing.
+ */
+export function markFailed(db: Db, copy: SharedCopy, generation: number, code = 'feed-unavailable'): void {
   const current = state(db);
   if (current.source !== 'shared' || current.generation !== generation) return;
-  execute(db, 'UPDATE shared_input SET connection=?,error=? WHERE id=1', current.envelope === null ? 'unavailable' : 'stale', code);
+  execute(db, 'UPDATE shared_input SET connection=?,error=? WHERE id=1', copy.envelope === null ? 'unavailable' : 'stale', code);
   execute(db, 'INSERT OR IGNORE INTO shared_stale SELECT id FROM sessions');
   execute(db, 'DELETE FROM comets');
   markDirty(db);

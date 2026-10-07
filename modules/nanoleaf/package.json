@@ -2,12 +2,16 @@
   "name": "@jimmie-potts/nanoleaf",
   "version": "0.0.0",
   "private": true,
-  "description": "Nanoleaf domain logic ported from codex-nanoleaf (staging for the Nanoleaf runtime module)",
+  "description": "The Nanoleaf runtime module: the Nanoleaf domain ported from codex-nanoleaf and its B.U.N.N.Y. module wrapper (ADR 0012)",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
     }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
   }
 }

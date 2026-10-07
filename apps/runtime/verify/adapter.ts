@@ -94,6 +94,7 @@ class Run implements RunHarness {
     generation: 0, devices: {
       lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
       playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(), pixoo: new SimulatedPixoo().state(),
+      nanoleaf: {online: false, held: 0, devices: {}},
     },
     logs: [], published: [],
   };
