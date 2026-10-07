@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {afterEach} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {LifxLight} from '../src/index.js';
 import {createLifxModule, PACKET, PROBE_FIRST_MS, READ_INTERVAL_MS, SimulatedLifx, type LifxNetwork} from '../src/index.js';
@@ -448,8 +448,10 @@ it('a stale configuration revision or generation is refused before any change', 
   assert.equal(world.packets(PENDANT.address, PACKET.setPower), 1);
   const malformed = await world.send({...command.power(PENDANT.id, true), draft: {...command.power(PENDANT.id, true).draft, data: {on: 'yes'}}});
   assert.equal(malformed.status === 'rejected' && malformed.error.error.code, 'invalid-message');
-  const elsewhere = await world.send({...command.power(PENDANT.id, true), draft: {...command.power(PENDANT.id, true).draft, subject: BEAM.id}});
-  assert.equal(elsewhere.status === 'rejected' && elsewhere.error.error.code, 'invalid-request', 'a subject that is not the key\'s bulb');
+  // A subject that is not the key's bulb never reaches the module: the bus refuses it on every transport (Hub #835).
+  await assert.rejects(world.send({...command.power(PENDANT.id, true), draft: {...command.power(PENDANT.id, true).draft, subject: BEAM.id}}),
+    (error: unknown) => error instanceof SdkError && error.body.error.code === 'invalid-message', 'a subject that is not the key\'s bulb');
+  assert.equal(world.packets(PENDANT.address, PACKET.setPower), 1, 'and nothing reached the pendant');
 });
 
 it('a full queue refuses a command with capacity, and nothing it refused runs', async () => {
