@@ -234,7 +234,7 @@ npm run -s verify:runtime -- stop <run-id>
 npm run -s verify:runtime -- start --scenario pixoo-media          # a media command accepted, then completed
 npm run -s verify:runtime -- capture <run-id> scenario-pixoo-media
 npm run -s verify:runtime -- stop <run-id>
-npm run -s verify:runtime -- start --scenario pixoo-now-playing    # a Now Playing card over Monitor
+npm run -s verify:runtime -- start --scenario pixoo-now-playing    # a song's card over Monitor, then a whole takeover of Media past 30 s
 npm run -s verify:runtime -- capture <run-id> scenario-pixoo-now-playing
 npm run -s verify:runtime -- stop <run-id>
 ```

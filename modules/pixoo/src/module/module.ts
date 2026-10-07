@@ -148,7 +148,6 @@ class PixooRuntime {
   #catalogRecords = new Map<string, string>();
   /** The Now Playing view last given to the presentation, so an unchanged one is not given again. */
   #nowPlaying = '';
-  #ticks = 0;
   #catalogTail: Promise<unknown> = Promise.resolve();
   #lastTransmission: DeviceRecord['lastTransmission'] = UNKNOWN;
   #publishing = false;
@@ -287,10 +286,8 @@ class PixooRuntime {
     this.#timers.add(cancel);
   }
 
-  /** Ticks the presentation, brings the Now Playing card's age up to date each second, and comes back. */
+  /** Ticks the presentation and comes back. */
   #tick(): void {
-    this.#ticks += 1;
-    if (this.#ticks % 10 === 0) this.#playbackChanged();
     this.#monitor?.tick();
     this.#after(TICK_MS, () => { this.#tick(); });
   }
@@ -434,8 +431,8 @@ class PixooRuntime {
     const records = [...this.#playback.records.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     const chosen = this.#config.playback === undefined ? records[0] : this.#playback.records.get(this.#config.playback);
     const current = this.#playback.state === 'current';
-    const status = {source: this.#playback.state, view: nowPlayingView(chosen, {current, nowMs: this.#context.clock.now()})};
-    // A record that changed nothing the card shows, as at most ticks, is not given to the presentation again.
+    const status = {source: this.#playback.state, view: nowPlayingView(chosen, {current})};
+    // A record that changed nothing the card shows is not given to the presentation again.
     const shown = JSON.stringify(status);
     if (shown === this.#nowPlaying) return;
     this.#nowPlaying = shown;

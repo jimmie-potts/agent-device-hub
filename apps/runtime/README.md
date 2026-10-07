@@ -988,8 +988,8 @@ The catalog holds:
   - a media command accepted, then completed once the media reached the device
     (`pixoo-media`);
   - a Now Playing card from the playback module's presented speaker, popping up
-    over Monitor and staying current while the song plays on unchanged
-    (`pixoo-now-playing`);
+    over Monitor without dimming, then holding a whole takeover of Media for
+    more than 30 s while the song plays on unchanged (`pixoo-now-playing`);
   - a start while the device is offline, with one degradation and one recovery
     (`pixoo-offline`).
 

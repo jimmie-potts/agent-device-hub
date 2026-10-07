@@ -214,6 +214,8 @@ export class MonitorPresentation {
   this.dashboard.tick();
   if(this.popupUntil!==0&&(this.clock()>=this.popupUntil||!this.playback.view.card))this.popupUntil=0;
   this.settleTakeover();
+  // A song already playing when Media starts takes the display over too; the owner publishes nothing new to start it.
+  if(this.nowPlaying.media==='whole'&&this.playback.view.card)this.beginTakeover('whole');
   const frame=this.frame();
   this.onChange();
   if(!frame||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;

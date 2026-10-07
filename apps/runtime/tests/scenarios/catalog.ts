@@ -1461,6 +1461,30 @@ const pixooMonitor: Scenario = {
   ],
 };
 
+/** The operator imports a picture, creates a playlist and puts the picture in it, as a person would in the Pixoo pages. */
+const pixooPlaylist = (): Step[] => [
+  act('the operator imports a picture', h => sendOnce(h, 'operator', 'pixoo-import',
+    pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {change: {operation: 'import', name: 'Red', content: {inline: RED_PIXEL}}}), 'pixoo-import-1')),
+  expect('the import completes, decoded in the module\'s media process', h => completedAs(h, 'pixoo-import-1', 'succeeded', 'observed'), 20_000),
+  expect('the reader\'s copy of the catalog holds the rendition', h => h.reader.states<RenditionRecord>(PIXOO.rendition).length === 1 || 'no rendition'),
+  act('the operator creates a playlist', h => sendOnce(h, 'operator', 'pixoo-playlist',
+    pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {change: {operation: 'create', name: 'Desk'}}), 'pixoo-playlist-1')),
+  expect('the reader\'s copy holds the playlist', h => h.reader.states<PlaylistRecord>(PIXOO.playlist).length === 1 || 'no playlist'),
+  act('the operator puts the picture in the playlist', h => {
+    const [rendition] = h.reader.states<RenditionRecord>(PIXOO.rendition), [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
+    if (rendition === undefined || list === undefined) throw new Error('the catalog is missing');
+    return sendOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+      change: {operation: 'items', playlistId: list.data.id, revision: list.data.playlistRevision, items: [{renditionId: rendition.data.id}]},
+    }), 'pixoo-items-1');
+  }),
+];
+/** The operator starts the playlist the reader holds, as `requestId`. */
+const startPlaylist = (h: Harness, label: string, requestId: string): Promise<string> => {
+  const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
+  if (list === undefined) throw new Error('no playlist');
+  return h.send('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), {timeoutMs: 5000, requestId});
+};
+
 /** A media command: imported media in a playlist, started, accepted at once and completed once the media reached the Pixoo. */
 const pixooMedia: Scenario = {
   id: 'pixoo-media',
@@ -1468,29 +1492,12 @@ const pixooMedia: Scenario = {
   seed: PIXOO_SEED,
   steps: [
     expect('the core and the Pixoo are running', h => running(h, ['core', 'pixoo'])),
-    act('the operator imports a picture', h => sendOnce(h, 'operator', 'pixoo-import',
-      pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {change: {operation: 'import', name: 'Red', content: {inline: RED_PIXEL}}}), 'pixoo-import-1')),
-    expect('the import completes, decoded in the module\'s media process', h => completedAs(h, 'pixoo-import-1', 'succeeded', 'observed'), 20_000),
-    expect('the reader\'s copy of the catalog holds the rendition', h => h.reader.states<RenditionRecord>(PIXOO.rendition).length === 1 || 'no rendition'),
-    act('the operator creates a playlist', h => sendOnce(h, 'operator', 'pixoo-playlist',
-      pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {change: {operation: 'create', name: 'Desk'}}), 'pixoo-playlist-1')),
-    expect('the reader\'s copy holds the playlist', h => h.reader.states<PlaylistRecord>(PIXOO.playlist).length === 1 || 'no playlist'),
-    act('the operator puts the picture in the playlist', h => {
-      const [rendition] = h.reader.states<RenditionRecord>(PIXOO.rendition), [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
-      if (rendition === undefined || list === undefined) throw new Error('the catalog is missing');
-      return sendOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
-        change: {operation: 'items', playlistId: list.data.id, revision: list.data.playlistRevision, items: [{renditionId: rendition.data.id}]},
-      }), 'pixoo-items-1');
-    }),
+    ...pixooPlaylist(),
     expect('the playlist is among the Pixoo\'s capabilities', h => {
       const media = pixooDevice(h)?.capabilities.media;
       return (media?.supported === true && media.playlistIds.length === 1) || `media ${show(media)}`;
     }),
-    act('the operator starts the playlist', h => {
-      const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
-      if (list === undefined) throw new Error('no playlist');
-      return h.send('operator', 'pixoo-start', pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), {timeoutMs: 5000, requestId: 'pixoo-start-1'});
-    }),
+    act('the operator starts the playlist', h => startPlaylist(h, 'pixoo-start', 'pixoo-start-1')),
     expect('the start is accepted at once', h => answered(h, 'pixoo-start', 'accepted')),
     expect('then completes, transmitted, once the media reached the Pixoo', h => completedAs(h, 'pixoo-start-1', 'succeeded', 'transmitted'), 8000),
     expect('the Pixoo shows the picture', h => shownFrames(h, 1)),
@@ -1504,14 +1511,21 @@ const pixooMedia: Scenario = {
 /** The song the presented speaker plays, and the card the Pixoo shows for it while it plays and is current. */
 const PIXOO_SONG = 'Harvest Moon';
 const playingCard = (): string => frameDigest(renderNowPlaying({card: true, status: 'playing', title: 'HARVEST MOON', artist: '', stale: false}));
+const showsCard = (h: Harness): Outcome => h.devices().pixoo.shown?.digests[0] === playingCard() || `the Pixoo shows ${show(h.devices().pixoo.shown)}`;
+/** The reader's copy offers the song's card, current and not dimmed. */
+const currentCard = (h: Harness): Outcome => {
+  const playing = pixooDisplay(h)?.nowPlaying;
+  return (playing?.card === true && !playing.stale) || `now playing ${show(playing)}`;
+};
 /**
- * Now Playing: the playback module's presented speaker plays a song, whose card pops up over Monitor for ten seconds;
- * Monitor then returns, and the card stays current for as long as the song plays on unchanged, though the playback
- * module publishes nothing more.
+ * Now Playing follows the playback module's presented speaker. The playback module publishes only when the speaker
+ * changes, so a song that plays on unchanged keeps its card current: it pops up over Monitor for ten seconds without
+ * dimming, and in Media a whole takeover holds the card for as long as the song plays, more than thirty seconds here,
+ * then gives the playlist back once the speaker stops.
  */
 const pixooNowPlaying: Scenario = {
   id: 'pixoo-now-playing',
-  title: 'the Pixoo pops up the presented speaker\'s Now Playing card over Monitor',
+  title: 'the Pixoo shows the presented speaker\'s song over Monitor and Media for as long as it plays',
   seed: {
     modules: ['core', 'playback', 'pixoo'], follows: [CORE_FAMILIES, PIXOO_FAMILIES],
     config: {playback: PLAYBACK_SECTION, pixoo: {...PIXOO_SECTION, playback: PLAYBACK_SECTION.id}},
@@ -1522,12 +1536,31 @@ const pixooNowPlaying: Scenario = {
     act('the hook observes a session start', h => publish(h, sessionStarted)),
     expect('the Pixoo shows the session\'s dashboard', h => (h.devices().pixoo.shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
     act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: PIXOO_SONG}); }),
-    expect('the Pixoo shows the song\'s card', h => h.devices().pixoo.shown?.digests[0] === playingCard() || `the Pixoo shows ${show(h.devices().pixoo.shown)}`, 6000),
+    expect('the Pixoo shows the song\'s card', h => showsCard(h), 6000),
     expect('the reader\'s copy shows the card as a pop-up over Monitor', h => {
       const display = pixooDisplay(h);
       return (display?.showing === 'card' && display.nowPlaying.card && display.nowPlaying.takeover === null) || `display ${show(display)}`;
     }),
-    expect('after ten seconds Monitor shows the dashboard again', h => pixooDisplay(h)?.showing === 'dashboard' || `display ${show(pixooDisplay(h))}`, 15_000),
+    holds('the card stays bright through the pop-up while the song plays on unchanged', h => showsCard(h), 7000),
+    expect('after ten seconds Monitor shows the dashboard again', h => pixooDisplay(h)?.showing === 'dashboard' || `display ${show(pixooDisplay(h))}`, 5000),
+    act('the operator asks for a whole takeover in Media', h => sendOnce(h, 'operator', 'pixoo-whole',
+      pixooCommand(PIXOO.nowPlaying, 'pixoo-now-playing.set', {media: 'whole'}), 'pixoo-whole-1')),
+    expect('the setting completes', h => completedAs(h, 'pixoo-whole-1', 'succeeded', 'observed')),
+    ...pixooPlaylist(),
+    act('the operator starts the playlist while the song plays on', h => startPlaylist(h, 'pixoo-start', 'pixoo-start-2')),
+    expect('Media hands the Pixoo to the song\'s card', h => {
+      const display = pixooDisplay(h);
+      return (display?.mode === 'media' && display.nowPlaying.takeover === 'whole' && showsCard(h) === true) || `display ${show(display)}, ${show(showsCard(h))}`;
+    }, 8000),
+    holds('the whole takeover keeps the current card for more than thirty seconds while the song plays on unchanged', async h => {
+      const card = currentCard(h), shown = showsCard(h);
+      return (card === true && shown === true && pixooDisplay(h)?.nowPlaying.takeover === 'whole') || `${show(card)}, ${show(shown)}, takeover ${show(pixooDisplay(h)?.nowPlaying.takeover)}`;
+    }, 31_000),
+    act('the phone stops the song', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'stop'}); }),
+    expect('the takeover ends and Media shows the picture again', h => {
+      const display = pixooDisplay(h);
+      return (display?.nowPlaying.takeover === null && display.nowPlaying.card === false && h.devices().pixoo.shown?.digests[0] !== playingCard()) || `display ${show(display)}`;
+    }, 8000),
   ],
 };
 

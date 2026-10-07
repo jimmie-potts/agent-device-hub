@@ -10,7 +10,7 @@ const record=(playback:Partial<Record<keyof Known,unknown>>={},extra:Partial<Pla
  for(const [name,value] of Object.entries(known))if(value===undefined)delete (known as Record<string,unknown>)[name];
  return {id:'presented',revision:1,availability:'available',observedAtMs:NOW-800,playback:known as Known,...extra};
 };
-const fresh={current:true,nowMs:NOW};
+const fresh={current:true};
 const pixel=(rgb:Uint8Array,x:number,y:number)=>Array.from(rgb.subarray((y*64+x)*3,(y*64+x)*3+3));
 const dim=(color:readonly number[])=>color.map(value=>Math.floor(value/3));
 
@@ -18,12 +18,15 @@ it('shows a card for playing or paused playback with its title and artist',()=>{
  expect(nowPlayingView(record(),fresh)).toEqual({card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false});
  expect(nowPlayingView(record({player:'paused',controls:['next','previous']}),fresh)).toMatchObject({card:true,status:'paused',stale:false});
 });
-it('marks a stale record, a copy that stopped following or an old observation stale until 30 seconds, then shows nothing',()=>{
+it('marks the card stale only when the owner says the record is stale or the copy stopped following it',()=>{
  expect(nowPlayingView(record({},{availability:'stale'}),fresh)).toMatchObject({card:true,stale:true});
- expect(nowPlayingView(record(),{current:false,nowMs:NOW+400})).toMatchObject({card:true,stale:true});
- expect(nowPlayingView(record(),{current:true,nowMs:NOW+4200})).toMatchObject({card:true,stale:true});
- expect(nowPlayingView(record(),{current:true,nowMs:NOW+4199})).toMatchObject({card:true,stale:false});
- expect(nowPlayingView(record(),{current:false,nowMs:NOW+29_200})).toEqual({card:false});
+ expect(nowPlayingView(record(),{current:false})).toMatchObject({card:true,stale:true});
+ expect(nowPlayingView(record({},{availability:'stale'}),{current:false})).toMatchObject({card:true,stale:true});
+});
+it('keeps an unchanged record\'s card current however long ago it was observed, since the owner publishes only changes',()=>{
+ for(const ageMs of [0,5000,30_000,3_600_000])expect(nowPlayingView(record({},{observedAtMs:NOW-ageMs}),fresh)).toEqual({card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false});
+ const {observedAtMs:_observedAtMs,...unobserved}=record();
+ expect(nowPlayingView(unobserved,fresh)).toMatchObject({card:true,stale:false});
 });
 it('shows nothing for unavailable, unknown, stopped or inactive playback, and never invents paused',()=>{
  expect(nowPlayingView(undefined,fresh)).toEqual({card:false});

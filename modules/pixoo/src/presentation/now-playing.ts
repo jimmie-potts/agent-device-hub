@@ -1,28 +1,26 @@
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {NowPlayingView} from '../core/index.js';
 import {drawGlyph,drawText,glyphs,type Color} from './pixel-font.js';
-// Now-playing card for the playback owner's `playback/2.0` record (Hub #929). The view and staleness rules match the old
-// Hub playback snapshot's and the Tidbyt tile's; see openspec now-playing-cards.
+// Now-playing card for the playback owner's `playback/2.0` record (Hub #929). The owner publishes a record only when the
+// speaker changes and says itself when the record turns stale or unavailable (ADR 0012, "Consumers and recovery"), so
+// the card follows the record's `availability` and whether the module's copy still follows its owner, never the age of
+// `observedAtMs`: a song that plays on unchanged keeps a current card. See openspec bunny-pixoo-module.
 export type {NowPlayingView};
-/** How old an observation may be before its card shows stale, and before it shows no card. */
-export const PLAYBACK_STALE_MS=5000;
-export const PLAYBACK_UNAVAILABLE_MS=30000;
 const fallback=glyphs['?']??'';
 /** Uppercase, fold accents to base letters, collapse whitespace, and map characters outside the pixel alphabet to '-'. */
 function cardText(value:string|undefined):string {
  return Array.from((value??'').normalize('NFD').replace(/\p{M}/gu,'').replace(/\s+/g,' ').trim().toUpperCase()).map(char=>Object.hasOwn(glyphs,char)?char:'-').join('');
 }
 /**
- * The card for the playback owner's record, at `nowMs` on the runtime's clock. `current` says whether the module's copy
- * follows its owner. No record, an unavailable one, one without known playback, a player neither playing nor paused, or
- * an observation 30 seconds old or more shows no card. A stale record, a copy that stopped following, or an observation
- * 5 seconds old or more shows a stale card.
+ * The card for the playback owner's record. `current` says whether the module's copy follows its owner. No record, an
+ * unavailable one, one without known playback, or a player neither playing nor paused shows no card. A record its owner
+ * marks stale, or a copy that stopped following its owner, shows a stale card.
  */
-export function nowPlayingView(record:PlaybackState|undefined,{current,nowMs}:{current:boolean;nowMs:number}):NowPlayingView {
- if(record===undefined||record.availability==='unavailable'||record.observedAtMs===undefined)return {card:false};
- const {playback}=record,ageMs=nowMs-record.observedAtMs;
- if(playback.status!=='known'||ageMs>=PLAYBACK_UNAVAILABLE_MS||(playback.player!=='playing'&&playback.player!=='paused'))return {card:false};
- return {card:true,status:playback.player,title:cardText(playback.title),artist:cardText(playback.artist),stale:!current||record.availability==='stale'||ageMs>=PLAYBACK_STALE_MS};
+export function nowPlayingView(record:PlaybackState|undefined,{current}:{current:boolean}):NowPlayingView {
+ if(record===undefined||record.availability==='unavailable')return {card:false};
+ const {playback}=record;
+ if(playback.status!=='known'||(playback.player!=='playing'&&playback.player!=='paused'))return {card:false};
+ return {card:true,status:playback.player,title:cardText(playback.title),artist:cardText(playback.artist),stale:!current||record.availability==='stale'};
 }
 /** A track's identity: its title and artist, independent of status and staleness. */
 export function trackKey(view:NowPlayingView):string|null {return view.card?JSON.stringify([view.title,view.artist]):null;}

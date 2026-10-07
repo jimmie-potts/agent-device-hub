@@ -259,7 +259,7 @@ void describe('Now Playing', () => {
       await mode(world, 'monitor');
       await waitFor(() => world.device.state().shown === null ? undefined : true, 'the dashboard');
       const record = await world.publishPlayback();
-      const card = frameDigest(renderNowPlaying(nowPlayingView(record, {current: true, nowMs: Date.now()})));
+      const card = frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
       await waitFor(() => world.device.state().shown?.digests[0] === card ? true : undefined, 'the card on the device');
       const display = await waitFor(() => world.display()?.showing === 'card' ? world.display() : undefined, 'the card in the display record');
       assert.deepEqual(display.nowPlaying, {media: 'off', card: true, stale: false, takeover: null});
