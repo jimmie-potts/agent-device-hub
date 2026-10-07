@@ -3,9 +3,10 @@ import { systemClock, type Clock } from '../clock.js';
 import { MAX_VOLUME_PRESSES, type CardButtons, type ClaudeDesktopSession, type Client, type ForegroundWindow, type Observation, type OsAdapter, type VolumeKey } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { FeedStatus, FeedView } from './feed.js';
-import { renderFrame, slotState, type SlotLight, type SlotState } from './lights.js';
-import { PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
+import { renderFrame, slotState, type SettingKnob, type SlotLight, type SlotState } from './lights.js';
+import { EFFORT_CLICK, EFFORT_TURN, MODEL_CLICK, MODEL_TURN, PAGE_CLICK, PAGE_TURN, VOLUME_CLICK, VOLUME_TURN, type RoutingProfile } from './profile.js';
 import { Detent } from './detent.js';
+import { SettingKnobs } from './knobs.js';
 import { SLOT_COUNT, candidatesFromSessions, sessionsForSlot, slotKey, type SlotReleaseReason, type SlotRecord, type SlotStore } from './slots.js';
 
 /** Package families the qualification report recorded for each Desktop client. Fixed in code, never configurable. */
@@ -51,6 +52,9 @@ export interface RouterStatus {
 }
 
 type Call<T> = { ok: true; value: T } | { ok: false; reason: 'timeout' | 'rejected' };
+type InputEvent = Extract<BridgeEvent, { type: 'input' }>;
+/** Controller input waiting for an open knob flow to close, or a close the router asked for (#906). */
+type Queued = { event: InputEvent } | { close: string };
 type Check = { ok: true } | { ok: false; reason: string; observedVersion?: string | null };
 /** Which Claude evidence verified the selection; logged on `focused` as a reason code. Codex verification has none. */
 type ClaudeEvidence = 'advanced' | 'already-newest';
@@ -74,6 +78,8 @@ const CARD_REUSE_MS = 500;
 const TURN_TO_CLICK = 12;
 /** Bound on volume presses waiting while a volume key is being sent. */
 const MAX_PENDING_VOLUME = 50;
+/** Bound on controller input waiting for a knob flow to close (#906). */
+const MAX_QUEUED_INPUT = 64;
 
 /** The reason code of an adapter call that failed, timed out or answered unknown. */
 function reasonOf<T>(call: Call<Observation<T>>): string {
@@ -98,8 +104,9 @@ function strictlyNewest(desktop: readonly ClaudeDesktopSession[], localId: strin
 /**
  * Turns bridge events and Hub feed views into slot lights, fail-closed task focus, dictation, Send and big-wheel card
  * answers. A slot press opens and verifies its task; it arms nothing. Send and card answers are evaluated against the
- * window in front when they are pressed, and Record holds the dictation chord like a keyboard shortcut (#821). Any
- * doubt refuses and types nothing. It has no Hub write path.
+ * window in front when they are pressed, and Record holds the dictation chord like a keyboard shortcut (#821). Knob 1
+ * sets the model and knob 2 the effort of the client in front (#906, `SettingKnobs`). Any doubt refuses and types
+ * nothing. It has no Hub write path.
  */
 export class TaskRouter {
   readonly #adapter: OsAdapter;
@@ -163,6 +170,11 @@ export class TaskRouter {
   #volumeBusy = false;
   #volumeErrorUntil = Number.NEGATIVE_INFINITY;
   readonly #errors = new Map<number, number>();
+  /** Knob 1 (model) and knob 2 (effort), #906. */
+  readonly #knobs: SettingKnobs;
+  /** Input that waits while a knob flow closes; it then runs in order. */
+  readonly #queue: Queued[] = [];
+  #draining = false;
   #overflow = 0;
   #startedAt = 0;
   #lastFrame = '';
@@ -180,6 +192,23 @@ export class TaskRouter {
     this.#clock = options.clock ?? systemClock;
     this.#log = options.log ?? (() => undefined);
     this.#slots.setPages(this.#profile.pages.count);
+    this.#knobs = new SettingKnobs({
+      adapter: this.#adapter,
+      clock: this.#clock,
+      profile: () => this.#profile,
+      log: event => this.#log(event),
+      call: operation => this.#call(operation),
+      tap: operation => this.#tap(operation),
+      sleep: ms => this.#sleep(ms),
+      frontClient: () => this.#frontClient(),
+      versionGate: client => this.#versionGate(client),
+      card: async client => (await this.#observeCard(client)).kind,
+      claudeFront: () => this.#claudeFront(),
+      blocked: () => this.#recordHeld || this.#chordDown ? 'dictating' : this.#sending ? 'send-in-progress' : this.#focusing !== null ? 'focus-in-progress' : null,
+      closed: () => this.#closed,
+      render: () => this.#render(),
+      requestClose: reason => this.#requestClose(reason),
+    });
   }
 
   start(): void {
@@ -197,6 +226,8 @@ export class TaskRouter {
     this.#closed = true;
     this.#generation++;
     this.#chordDown = false;
+    this.#queue.length = 0;
+    this.#knobs.dispose();
     for (const timer of [this.#renderTimer, this.#archiveTimer]) if (timer !== undefined) this.#clock.clearInterval(timer);
     for (const [timer, settle] of this.#callTimers) { this.#clock.clearTimeout(timer); settle(); }
     this.#callTimers.clear();
@@ -221,7 +252,10 @@ export class TaskRouter {
     };
   }
 
-  /** Applies a validated profile whole: cancels pending actions, releases keys and replays nothing. */
+  /**
+   * Applies a validated profile whole: cancels pending actions, releases keys and replays nothing. An open model menu,
+   * effort slider or picker closes with Escape before any later input acts.
+   */
   setProfile(profile: RoutingProfile): void {
     const archiveChanged = profile.timing.archiveCheckMs !== this.#profile.timing.archiveCheckMs;
     this.#profile = profile;
@@ -232,6 +266,7 @@ export class TaskRouter {
     if (this.#feed.status !== 'unavailable') this.#reconcile();
     this.#reportBeyondPages();
     this.invalidate('profile-reload');
+    this.#requestClose('profile-reload');
     this.#lights.setBrightness(profile.brightnessPercent);
     if (archiveChanged && !this.#closed) this.#startArchiveTimer();
     this.#log({ type: 'profile-applied', profileVersion: profile.profileVersion });
@@ -247,6 +282,7 @@ export class TaskRouter {
     this.#scrollPending = 0;
     this.#stepsPending = 0;
     this.#clearVolume();
+    this.#knobs.reset();
     this.#card = null;
     this.#chosen = null;
     this.#chordDown = false;
@@ -274,22 +310,85 @@ export class TaskRouter {
       case 'stale':
       case 'session-restart':
       case 'disconnected':
+        // Input waiting for a knob flow to close is dropped with the rest: nothing pressed before a loss is replayed.
+        this.#queue.length = 0;
         this.#held.clear();
         this.#heldSlots.clear();
         this.invalidate(event.type);
+        this.#requestClose(event.type);
         return;
       case 'recovered':
         return;
       case 'input':
         break;
     }
+    this.#input(event);
+  }
+
+  // Knob flows and other input (#906)
+
+  /** Knob 1's or knob 2's turn or click, when the profile has that knob. */
+  #knobOf(event: InputEvent): SettingKnob | null {
+    if (event.kind === 'release') return null;
+    const { model, effort } = this.#profile;
+    if (event.kind === 'turn') return model && event.control === MODEL_TURN ? 'model' : effort && event.control === EFFORT_TURN ? 'effort' : null;
+    return model && event.control === MODEL_CLICK ? 'model' : effort && event.control === EFFORT_CLICK ? 'effort' : null;
+  }
+
+  /**
+   * Any control other than the open flow's own knob closes the flow first: its menu, slider or picker gets Escape, and
+   * only then does the control act. Input that arrives meanwhile waits in order, so two flows never send at once.
+   * Releases never close a flow.
+   */
+  #input(event: InputEvent): void {
+    const passes = event.kind === 'release' || !this.#knobs.busy || this.#knobs.owns(this.#knobOf(event));
+    if (passes && this.#queue.length === 0 && !this.#draining) return this.#dispatch(event);
+    if (this.#queue.length >= MAX_QUEUED_INPUT) return this.#log({ type: 'input-dropped', reason: 'queue-full' });
+    this.#queue.push({ event });
+    this.#track(this.#drainQueue());
+  }
+
+  /** Closes the open knob flow, in turn with waiting input; with no flow there is nothing to wait for. */
+  #requestClose(reason: string): void {
+    if (this.#closed || !this.#knobs.busy) return;
+    this.#queue.push({ close: reason });
+    this.#track(this.#drainQueue());
+  }
+
+  async #drainQueue(): Promise<void> {
+    if (this.#draining) return;
+    this.#draining = true;
+    try {
+      while (this.#queue.length > 0 && !this.#closed) {
+        const next = this.#queue[0];
+        if ('close' in next) {
+          this.#queue.shift();
+          await this.#knobs.close(next.close);
+          continue;
+        }
+        const { event } = next;
+        if (event.kind !== 'release' && this.#knobs.busy && !this.#knobs.owns(this.#knobOf(event))) {
+          await this.#knobs.close('other-control');
+          continue;
+        }
+        this.#queue.shift();
+        this.#dispatch(event);
+      }
+    } finally {
+      this.#draining = false;
+    }
+  }
+
+  #dispatch(event: InputEvent): void {
+    if (this.#closed) return;
     const { controls } = this.#profile;
     if (event.kind === 'turn') {
       // Knob 4 pages tasks (#822); the big wheel scrolls or answers a card; the volume knob steps the system volume
-      // (#865); other turns are inert (knobs 1-3: #744).
+      // (#865); knob 1 steps the model and knob 2 the effort (#906); knob 3's turn is inert.
       if (event.control === PAGE_TURN) this.#pageTurn(event.delta);
       else if (event.control === controls.scroll) this.#wheelTurn(event.delta);
       else if (this.#profile.volume && event.control === VOLUME_TURN) this.#volumeTurn(event.delta);
+      else if (this.#knobOf(event)) this.#knobs.turn(this.#knobOf(event)!, event.delta);
       return;
     }
     if (event.kind === 'release') {
@@ -314,11 +413,12 @@ export class TaskRouter {
     else if (controls.send.includes(event.control)) this.#track(this.#send(event.control));
     else if (event.control === controls.back) this.#back();
     else if (this.#profile.volume && event.control === VOLUME_CLICK) this.#volumeMute();
+    else if (this.#knobOf(event)) this.#knobs.click(this.#knobOf(event)!, this.#held.get(event.control)!);
     else if (event.control === PAGE_CLICK) {
       // Knob 4's click is the Attention click (#865) unless the profile turns it off.
       if (this.#profile.pages.attentionClick) this.#attentionPress(event.control);
     } else {
-      // Black keys act as the profile maps them (#865); other controls, such as the small knobs, are inert (#744).
+      // Black keys act as the profile maps them (#865); other controls, such as knob 3's click, are inert.
       const action = this.#profile.keys[String(event.control)];
       if (action === 'attention') this.#attentionPress(event.control);
       else if (action === 'back') this.#back();
@@ -534,6 +634,26 @@ export class TaskRouter {
     if (!(await this.#foreground('claude')).ok) return false;
     const desktop = await this.#claudeRecords([taskId, ...this.#otherClaudeIds(taskId)]);
     return !!desktop && strictlyNewest(desktop, taskId);
+  }
+
+  /** The Codex or Claude window in front, for the knobs (#906). */
+  async #frontClient(): Promise<{ ok: true; client: Client } | { ok: false; reason: string }> {
+    const window = await this.#call(() => this.#adapter.foregroundWindow());
+    if (!window.ok || window.value.status !== 'known') return { ok: false, reason: 'foreground-unknown' };
+    const client = clientOf(window.value.value);
+    return client ? { ok: true, client } : { ok: false, reason: 'not-agent-client' };
+  }
+
+  /**
+   * The Claude Desktop session in front, for the knobs' record readback (#906): among the sessions the router knows
+   * (slot records and Hub `hostSessionId`s), the one whose `lastFocusedAt` is strictly the newest. Null when none is, or
+   * any read fails.
+   */
+  async #claudeFront(): Promise<string | null> {
+    const ids = this.#otherClaudeIds('');
+    if (ids.length === 0) return null;
+    const records = await this.#claudeRecords(ids);
+    return records?.find(record => strictlyNewest(records, record.localId))?.localId ?? null;
   }
 
   async #foreground(client: Client): Promise<Check> {
@@ -1046,6 +1166,7 @@ export class TaskRouter {
       profile: this.#profile, slots: this.#slotLights(now), recording: this.#chordDown, wheelError: now < this.#wheelErrorUntil,
       page: { number: this.#page, hiddenAttention: this.#hiddenAttention(), error: now < this.#pageErrorUntil },
       attentionWaiting: this.#waiting().length > 0, keyErrors: this.#flashingKeys(now), volumeError: now < this.#volumeErrorUntil,
+      knobs: this.#knobs.lights(now),
       pulseOn: Math.floor((now - this.#startedAt) / half) % 2 === 0,
     });
     const signature = JSON.stringify(frame);
@@ -1084,7 +1205,7 @@ export class TaskRouter {
   }
 
   /** Runs one keystroke call that a Record press waits for, so the dictation chord never joins it. */
-  async #tap(operation: () => Promise<void>): Promise<Call<void>> {
+  async #tap<T>(operation: () => Promise<T>): Promise<Call<T>> {
     const call = this.#call(operation);
     this.#taps.add(call);
     try {

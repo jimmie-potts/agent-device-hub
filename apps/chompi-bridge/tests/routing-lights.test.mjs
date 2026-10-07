@@ -134,3 +134,14 @@ test('the volume knob LED lights only to flash a refused or failed volume key (#
   assert.deepEqual(flashed[VOLUME_LED], profile.colors.error);
   assert.deepEqual(renderFrame({ profile, slots: blank(), recording: false, pulseOn: true })[VOLUME_LED], [0, 0, 0]);
 });
+
+test('knob 1 and knob 2 show their open control, a confirmed or unconfirmed change and a refusal; otherwise they are off (#906)', async () => {
+  const { KNOB_LEDS } = await import('../dist/routing/lights.js');
+  const frame = knobs => renderFrame({ profile, slots: blank(), recording: false, knobs, pulseOn: true });
+  assert.deepEqual([frame({})[KNOB_LEDS.model], frame({})[KNOB_LEDS.effort]], [[0, 0, 0], [0, 0, 0]]);
+  const lit = frame({ model: 'open', effort: 'applied' });
+  assert.deepEqual([lit[26], lit[27]], [profile.colors.active, profile.colors.applied]);
+  const flashed = frame({ model: 'unverified', effort: 'error' });
+  assert.deepEqual([flashed[26], flashed[27]], [profile.colors.unknown, profile.colors.error]);
+  assert.deepEqual(flashed[28], [0, 0, 0], 'knob 3 stays dark');
+});

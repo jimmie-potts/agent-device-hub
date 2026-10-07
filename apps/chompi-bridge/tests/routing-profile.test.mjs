@@ -3,7 +3,10 @@ import test from 'node:test';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_CARD_STEP_COUNTS, DEFAULT_KEY_ACTIONS, DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS, KEY_NAMES, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile } from '../dist/routing/profile.js';
+import {
+  DEFAULT_APPLIED_COLOR, DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_CARD_STEP_COUNTS, DEFAULT_EFFORT_SETTINGS, DEFAULT_KEY_ACTIONS, DEFAULT_MENU_TIMEOUT_MS, DEFAULT_MODEL_SETTINGS,
+  DEFAULT_PROFILE_PATH, DEFAULT_VOLUME_SETTINGS, EFFORT_CLICK, EFFORT_TURN, KEY_NAMES, MODEL_CLICK, MODEL_TURN, ProfileError, ProfileWatcher, loadProfile, parseProfile, validateProfile,
+} from '../dist/routing/profile.js';
 import { ManualClock } from '../dist/clock.js';
 import { advance, onCleanup, settle, tempDir } from './routing-helpers.mjs';
 
@@ -74,8 +77,8 @@ test('shortcuts use only the key names the Windows adapter can type, and nothing
   assert.ok(!KEY_NAMES.includes('Win+R') && !KEY_NAMES.includes('PageUp'));
   const withShortcuts = shortcuts => () => validateProfile({ ...shipped(), shortcuts: { ...shipped().shortcuts, ...shortcuts } });
   assert.match(issues(withShortcuts({ codexComposer: ['powershell -c calc'] }))[0], /not an allowed key name/);
-  for (const key of ['F13', 'RightControl', 'PageDown', 'Space']) {
-    assert.match(issues(withShortcuts({ codexComposer: ['LeftAlt', key] }))[0], /^profile\.shortcuts\.codexComposer\[1\]: ".+" is not an allowed key name \(Enter, LeftShift, LeftControl, LeftAlt, LeftWindows, A-Z or 0-9\)$/);
+  for (const key of ['F13', 'RightControl', 'PageDown', 'Space', 'Down', 'Escape']) {
+    assert.match(issues(withShortcuts({ codexComposer: ['LeftAlt', key] }))[0], /^profile\.shortcuts\.codexComposer\[1\]: ".+" is not an allowed key name \(Enter, LeftShift, LeftControl, LeftAlt, LeftWindows, A-Z, 0-9, Equal or Minus\)$/);
   }
   assert.match(issues(withShortcuts({ send: ['LeftControl', 'Enter'] }))[0], /exactly \["Enter"\]/);
   assert.match(issues(withShortcuts({ dictation: ['LeftControl', 'Enter'] }))[0], /modifier/);
@@ -252,4 +255,67 @@ test('reload swaps in a valid edit, keeps the last good profile on an invalid on
   for (let i = 0; i < 100 && watcher.current.brightnessPercent !== 20; i++) { await new Promise(resolve => setTimeout(resolve, 5)); await settle(); }
   assert.equal(watcher.current.brightnessPercent, 20, 'the watcher polls on the profile interval');
   assert.equal(reloaded.length, 2);
+});
+
+// Knob 1 (model) and knob 2 (effort), #906
+
+test('the model and effort knobs are on by default with conservative step counts, without changing the shipped or an older profile', () => {
+  assert.equal('model' in shipped() || 'effort' in shipped(), false, 'the shipped profile gives no knob sections');
+  const profile = validateProfile(shipped());
+  assert.equal(profile.schemaVersion, 1);
+  assert.deepEqual(profile.model, DEFAULT_MODEL_SETTINGS);
+  assert.deepEqual(profile.effort, DEFAULT_EFFORT_SETTINGS);
+  assert.deepEqual(DEFAULT_MODEL_SETTINGS, { stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false, clickStillMs: 250 });
+  assert.deepEqual(DEFAULT_EFFORT_SETTINGS, { stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false });
+  assert.deepEqual([MODEL_TURN, MODEL_CLICK, EFFORT_TURN, EFFORT_CLICK], [44, 32, 41, 29], 'knob 1 is ENC_4 and knob 2 is ENC_1');
+  assert.equal(profile.timing.menuTimeoutMs, DEFAULT_MENU_TIMEOUT_MS);
+  assert.deepEqual(profile.colors.applied, [...DEFAULT_APPLIED_COLOR]);
+  assert.deepEqual([profile.shortcuts.codexEffortIncrease, profile.shortcuts.codexEffortDecrease], [null, null], 'no chords: Codex effort uses its picker only');
+  const tuned = validateProfile({
+    ...shipped(), model: { stepCounts: 3, invert: true, clickStillMs: 400 }, effort: { stepCounts: 2 },
+    timing: { ...shipped().timing, menuTimeoutMs: 8000 }, colors: { ...shipped().colors, applied: [1, 2, 3] },
+  });
+  assert.deepEqual(tuned.model, { stepCounts: 3, invert: true, clickStillMs: 400 });
+  assert.deepEqual(tuned.effort, { stepCounts: 2, invert: false });
+  assert.equal(tuned.timing.menuTimeoutMs, 8000);
+  assert.deepEqual(tuned.colors.applied, [1, 2, 3]);
+});
+
+test('an older profile that maps a knob\'s turn or click elsewhere keeps the mapping and that knob is off; with a knob section it is an error', () => {
+  const controls = shipped().controls;
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, scroll: 44 } }).model, null);
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, scroll: 41 } }).effort, null);
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, back: 32 } }).model, null);
+  assert.equal(validateProfile({ ...shipped(), controls: { ...controls, record: 29 } }).effort, null);
+  assert.notEqual(validateProfile({ ...shipped(), controls: { ...controls, scroll: 44 } }).effort, null, 'the other knob stays on');
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, scroll: 44 }, model: {} })), ['profile.controls.scroll: 44 is knob 1\'s turn']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, back: 29 }, effort: {} })), ['profile.controls.back: 29 is knob 2\'s click']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), controls: { ...controls, send: [32] } })), ['profile.controls.send[0]: 32 is a small-knob click and can never send']);
+});
+
+test('knob sections and the menu timeout reject bad values with a path', () => {
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), model: { stepCounts: 0, invert: 'no', clickStillMs: 3000, extra: 1 } })), ['profile.model.extra: unknown field']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), model: { stepCounts: 0, invert: 'no', clickStillMs: 3000 } })), [
+    'profile.model.stepCounts: must be an integer 1-96', 'profile.model.invert: must be true or false', 'profile.model.clickStillMs: must be an integer 0-2000 ms',
+  ]);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), effort: { clickStillMs: 100 } })), ['profile.effort.clickStillMs: unknown field']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), effort: [] })), ['profile.effort: must be an object']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), timing: { ...shipped().timing, menuTimeoutMs: 999 } })), ['profile.timing.menuTimeoutMs: must be an integer 1000-30000 ms']);
+  assert.deepEqual(issues(() => validateProfile({ ...shipped(), colors: { ...shipped().colors, applied: [0, 0] } })), ['profile.colors.applied: must be [r, g, b] with integers 0-255']);
+});
+
+test('the Codex effort chords are the owner\'s own: both or neither, a Control, Alt or Windows chord with one other key, never Enter', () => {
+  const chords = { codexEffortIncrease: ['LeftControl', 'LeftAlt', 'Equal'], codexEffortDecrease: ['LeftControl', 'LeftAlt', 'Minus'] };
+  assert.ok(KEY_NAMES.includes('Equal') && KEY_NAMES.includes('Minus'));
+  for (const name of ['Up', 'Down', 'Left', 'Right', 'Escape']) assert.equal(KEY_NAMES.includes(name), false, `${name} is typed only by the knobs, never named in a profile`);
+  const profile = validateProfile({ ...shipped(), shortcuts: { ...shipped().shortcuts, ...chords } });
+  assert.deepEqual([profile.shortcuts.codexEffortIncrease, profile.shortcuts.codexEffortDecrease], [chords.codexEffortIncrease, chords.codexEffortDecrease]);
+  const bad = extra => issues(() => validateProfile({ ...shipped(), shortcuts: { ...shipped().shortcuts, ...extra } }));
+  assert.deepEqual(bad({ codexEffortIncrease: chords.codexEffortIncrease }), ['profile.shortcuts: codexEffortIncrease and codexEffortDecrease go together; give both or neither']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['LeftShift', 'Minus'] }), ['profile.shortcuts.codexEffortDecrease: must hold LeftControl, LeftAlt or LeftWindows with exactly one other key']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['Minus'] }), ['profile.shortcuts.codexEffortDecrease: must hold LeftControl, LeftAlt or LeftWindows with exactly one other key']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['LeftControl', 'A', 'B'] }), ['profile.shortcuts.codexEffortDecrease: must hold LeftControl, LeftAlt or LeftWindows with exactly one other key']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['LeftControl', 'Enter'] }), ['profile.shortcuts.codexEffortDecrease[1]: must not include Enter; only Send types Enter']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['LeftAlt', 'LeftControl', 'Equal'] }), ['profile.shortcuts.codexEffortDecrease: must differ from codexEffortIncrease']);
+  assert.deepEqual(bad({ ...chords, codexEffortDecrease: ['LeftControl', 'Down'] }), ['profile.shortcuts.codexEffortDecrease[1]: "Down" is not an allowed key name (Enter, LeftShift, LeftControl, LeftAlt, LeftWindows, A-Z, 0-9, Equal or Minus)']);
 });

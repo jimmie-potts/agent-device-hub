@@ -152,28 +152,35 @@ test('requests after close are refused without spawning', async () => {
 /** The body of a top-level helper function, or undefined. */
 const functionBody = (script, name) => new RegExp(`^function ${name}(?:\\(\\$request\\)|\\([^)]*\\))? \\{\\n([\\s\\S]*?)\\n\\}$`, 'm').exec(script)?.[1]
   ?? new RegExp(`^function ${name}\\([^)]*\\) \\{ (.*) \\}$`, 'm').exec(script)?.[1];
+const PICKER_FUNCTIONS = ['PickerLabel', 'MenuAbove', 'WindowFocus', 'MenuEntries', 'SettingButtons', 'ButtonExpanded', 'PrefixedButton', 'CodexPickerButton', 'CodexPickerName', 'SettingButton', 'QualifiedMenu', 'EntryIndex', 'EffortSlider', 'SliderRange', 'PickerAnnouncement', 'PickerClient', 'PickerState'];
 const CARD_FUNCTIONS = ['CardButtonList', 'ClaudeStops', 'CodexGroupStops', 'FocusedIndex', 'CardContainer', 'CardId', 'CardButtons', 'CardRequest', 'FocusCardButton', 'InvokeCardButton'];
 
-test('the shipped helper script changes UI state only inside the two card operations', () => {
-  // #821 deliberately narrows the old "never focuses or invokes" rule: FocusCardButton may set focus and
-  // InvokeCardButton may invoke, each on one button of the open card. Everything else stays read-only.
+test('the shipped helper script changes UI state only inside the card operations and the setting actions, one kind of change each', () => {
+  // #821 narrowed the old "never focuses or invokes" rule to the two card operations; #906 adds the seven setting
+  // actions on the model and effort controls. Everything else stays read-only, and nothing in the helper types.
   const script = readFileSync(helperScriptPath(), 'utf8');
-  const focusBody = functionBody(script, 'FocusCardButton');
-  const invokeBody = functionBody(script, 'InvokeCardButton');
-  assert.ok(focusBody && invokeBody, 'both card actions are top-level functions');
-  const rest = script.replace(focusBody, '').replace(invokeBody, '');
-  for (const forbidden of [
-    /SetFocus/i, /\.Invoke\(/, /InvokePattern\]::Pattern/, /SetValue/, /\.Select\(\)/, /AddToSelection/, /\.Toggle\(/, /\.Expand\(/,
-    /SendKeys/i, /SendInput/i, /keybd_event/i, /mouse_event/i, /Start-Process/i, /Invoke-Item/i, /ShellExecute/i,
-    /Out-File/i, /Set-Content/i, /Add-Content/i, /Write-Host/i, /Write-Output/i, /Current\.Name\s*\}/,
-  ]) assert.equal(forbidden.test(rest), false, `outside the card actions the helper must not use ${forbidden}`);
-  for (const forbidden of [/SetValue/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /SendKeys/i, /SendInput/i]) {
-    assert.equal(forbidden.test(focusBody) || forbidden.test(invokeBody), false, `the card actions must not use ${forbidden}`);
+  const actions = {
+    FocusCardButton: /\.SetFocus\(\)/g, InvokeCardButton: /\.Invoke\(\)/g, ExpandSetting: /\.Expand\(\)/g, CollapseSetting: /\.Collapse\(\)/g,
+    InvokeSelectModel: /\.Invoke\(\)/g, InvokeCurrentOption: /\.Invoke\(\)/g, FocusMenuEntry: /\.SetFocus\(\)/g, SelectMenuOption: /\.Select\(\)/g, SetSliderValue: /\.SetValue\(/g, FocusComposer: /\.SetFocus\(\)/g,
+  };
+  let rest = script;
+  for (const [name, own] of Object.entries(actions)) {
+    const body = functionBody(script, name);
+    assert.ok(body, `${name} is a top-level function`);
+    assert.equal(body.match(own)?.length, 1, `${name} makes its one change once`);
+    for (const change of [/\.SetFocus\(\)/, /\.Invoke\(\)/, /\.Expand\(\)/, /\.Collapse\(\)/, /\.Select\(\)/, /\.SetValue\(/, /\.Toggle\(/, /AddToSelection/, /SendKeys/i, /SendInput/i]) {
+      if (change.source !== own.source) assert.equal(change.test(body), false, `${name} must not use ${change}`);
+    }
+    rest = rest.replace(body, '');
   }
-  assert.equal(focusBody.match(/SetFocus\(\)/g)?.length, 1, 'FocusCardButton sets focus once');
-  assert.equal(/\.Invoke\(|InvokePattern\]::Pattern/.test(focusBody), false, 'FocusCardButton never invokes');
-  assert.equal(invokeBody.match(/\.Invoke\(\)/g)?.length, 1, 'InvokeCardButton invokes once');
-  assert.equal(/SetFocus/.test(invokeBody), false, 'InvokeCardButton never moves focus');
+  for (const forbidden of [
+    /SetFocus/i, /\.Invoke\(/, /\.Expand\(/, /\.Collapse\(/, /SetValue/, /\.Select\(\)/, /AddToSelection/, /\.Toggle\(/,
+    /SendKeys/i, /SendInput/i, /keybd_event/i, /mouse_event/i, /Start-Process/i, /Invoke-Item/i, /ShellExecute/i,
+    /Out-File/i, /Set-Content/i, /Add-Content/i, /Write-Host/i, /Write-Output/i,
+  ]) assert.equal(forbidden.test(rest), false, `outside the card and setting actions the helper must not use ${forbidden}`);
+  // Names reach a reply only through the picker read (#906), which returns model and effort labels.
+  const outsidePicker = PICKER_FUNCTIONS.reduce((text, name) => text.replace(functionBody(script, name), ''), rest);
+  assert.equal(/Current\.Name\s*\}|Cached\.Name\s*\}/.test(outsidePicker), false, 'no other operation returns a Name');
 });
 
 test('the helper starts from a short encoded loader that reads the script path from its environment', () => {
@@ -367,4 +374,81 @@ test('the helper script escapes non-ASCII replies and answers a decode probe wit
   assert.match(script, /Reply\(\$value\) \{\n\s+\[Console\]::Out\.WriteLine\(\$NonAscii\.Replace\(/);
   assert.match(script, /probeLength = \$text\.Length; probeSum = \$sum/);
   assert.equal(/\[Console\]::(Out\.Write|WriteLine)\((?!\$NonAscii)/.test(script), false, 'every reply goes through the escaper');
+});
+
+test('the picker read returns only the qualified shapes\' labels, and every setting action re-reads its target before acting (#906)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  for (const op of ['pickerState', 'expandSetting', 'collapseSetting', 'invokeSelectModel', 'focusMenuEntry', 'selectMenuOption', 'invokeCurrentOption', 'setSliderValue', 'focusComposer']) {
+    const name = op[0].toUpperCase() + op.slice(1);
+    assert.match(script, new RegExp(`'${op}' \\{ \\$value = ${name} \\$request \\}`), `${op} is dispatched`);
+    assert.match(functionBody(script, name), /^\s+\$window = TargetWindow \$request$/m, `${name} refuses a window that is not the requested process`);
+  }
+  for (const name of PICKER_FUNCTIONS) {
+    const fn = functionBody(script, name);
+    assert.ok(fn, `${name} is a top-level function`);
+    for (const forbidden of [/SetFocus/, /\.Invoke\(/, /\.Select\(\)/, /\.Toggle\(/, /\.Expand\(/, /\.Collapse\(/, /SetValue/, /Automation\.ValuePattern/, /TextPattern/, /DocumentRange/]) {
+      assert.equal(forbidden.test(fn), false, `${name} must not use ${forbidden}`);
+    }
+  }
+  // F3: only the qualified menus are read; any other menu, such as one listing tasks or projects, is never named.
+  const qualified = functionBody(script, 'QualifiedMenu');
+  assert.match(qualified, /StartsWith\(\$ClaudeModelButton, \$Ordinal\)/, 'Claude: the "Model: " menu only');
+  assert.match(qualified, /\[string\]::Equals\(\$_\.Cached\.Name, \$CodexPickerName, \$Ordinal\)/, 'Codex: the "Select effort" picker');
+  assert.match(qualified, /if \(\$null -ne \$button -and \(ButtonExpanded \$button\)\)/, 'the Codex model list only while the picker button is expanded');
+  assert.match(qualified, /Where-Object \{ \$_\.kind -ne 'option' \}\)\.Count -eq 0/, 'a model list holds model options only');
+  assert.match(functionBody(script, 'PickerState'), /\$qualified = QualifiedMenu \$window \$client/);
+  assert.match(script, /^\$MaxPickerEntries = 64$/m);
+  assert.match(script, /^\$MaxPickerLabel = 128$/m);
+  assert.match(functionBody(script, 'MenuEntries'), /-gt \$MaxPickerEntries\) \{ Fail 'picker-too-many-entries' \}/);
+  assert.match(script, /^\$ClaudeModelButton = 'Model: '$/m);
+  assert.match(script, /^\$ClaudeEffortButton = 'Effort: '$/m);
+  assert.match(functionBody(script, 'PrefixedButton'), /Fail 'composer-setting-count'/);
+  assert.match(functionBody(script, 'CodexPickerButton'), /Fail 'codex-picker-button-ambiguous'/, 'the picker button is the one near the composer named as the picker');
+  // Fresh-read checks before each action (F1, F2).
+  assert.match(functionBody(script, 'ExpandSetting'), /-ne \[System\.Windows\.Automation\.ExpandCollapseState\]::Collapsed\) \{ Fail 'setting-not-collapsed' \}/);
+  const collapse = functionBody(script, 'CollapseSetting');
+  assert.match(collapse, /if \(\$control -eq 'codex-picker'\) \{ Fail 'collapse-unsupported' \}/, 'Codex closes with one Escape instead');
+  assert.match(collapse, /-ne \[System\.Windows\.Automation\.ExpandCollapseState\]::Expanded\) \{ Fail 'setting-not-expanded' \}/);
+  assert.match(functionBody(script, 'InvokeSelectModel'), /\$qualified\.kind -ne 'codex-picker'\) \{ Fail 'menu-absent' \}/);
+  const request = functionBody(script, 'MenuRequest');
+  assert.match(request, /\$qualified\.kind -ne \[string\]\$request\.menu\) \{ Fail 'menu-absent' \}/);
+  assert.match(request, /\$qualified\.entries\.Count -ne \[int\]\$count\) \{ Fail 'menu-changed' \}/);
+  const select = functionBody(script, 'SelectMenuOption');
+  assert.match(select, /if \(\$entry\.kind -ne 'option'\) \{ Fail 'not-an-option' \}/);
+  const compare = select.indexOf('[System.Windows.Automation.Automation]::Compare($entry.element, $focused)');
+  assert.ok(compare > 0 && compare < select.indexOf('.Select()'), 'Select only on the option holding keyboard focus');
+  const current = functionBody(script, 'InvokeCurrentOption');
+  assert.match(current, /\[string\]\$request\.menu -ne 'codex-models'\) \{ Fail 'invalid-menu' \}/, 'Codex model list only');
+  assert.ok(current.indexOf("Fail 'not-current-option'") > 0 && current.indexOf("Fail 'not-current-option'") < current.indexOf('.Invoke()'), 'only the selected (current) option is invoked');
+  assert.match(functionBody(script, 'SetSliderValue'), /\$range\.value -ne \$from -or \[Math\]::Abs\(\$to - \$from\) -ne \$range\.step -or \$to -lt \$range\.min -or \$to -gt \$range\.max\) \{ Fail 'slider-changed' \}/);
+  assert.match(functionBody(script, 'FocusComposer'), /if \(\$composers\.Count -ne 1\) \{ Fail 'composer-count' \}/);
+  assert.match(script, /^\$SettleMs = 400$/m, 'actions read their effect back for at most 400 ms');
+  assert.match(script, /ConvertTo-Json -InputObject \$value -Compress -Depth 6/, 'the reply keeps the menu entries');
+});
+
+test('Codex\'s picker button is identified by its name among all expandable buttons near the composer, never as a lone button (F5 on #915)', () => {
+  const script = readFileSync(helperScriptPath(), 'utf8');
+  const pattern = /^\$CodexPickerClosedName = \[regex\]::new\('(.+)', 'IgnoreCase'\)$/m.exec(script)?.[1];
+  assert.ok(pattern, 'the collapsed-name pattern is declared once');
+  const closed = new RegExp(pattern, 'i');
+  const isPicker = name => name === 'Select effort' || closed.test(name);
+  // Live names from the trial host (2026-10-06): the picker beside other expandable composer buttons.
+  for (const name of ['GPT-6 Astra High', 'GPT-6 Luna Extra High', 'GPT-6 Luna extra  high', 'GPT-5.5 Light', 'GPT-6 Astra Ultra', 'Default Minimal', 'Select effort']) {
+    assert.ok(isPicker(name), `${name} is the picker`);
+  }
+  for (const name of ['Add files and more', 'Change permissions', 'High', 'Low', 'GPT-6 Astra Highest', 'select effort', 'GPT-6 Astra High mode', '']) {
+    assert.equal(isPicker(name), false, `${JSON.stringify(name)} is not the picker`);
+  }
+  const body = functionBody(script, 'CodexPickerButton');
+  // Cross-level: the search climbs to the outermost of up to 8 composer ancestors first and reads every expandable
+  // button there once, rather than stopping at the nearest level that holds any expandable button.
+  const loop = body.slice(body.indexOf('for ($depth'), body.indexOf('$buttons = SettingButtons $root'));
+  assert.ok(loop.length > 0 && !/SettingButtons|return/.test(loop), 'the climb reads no buttons and returns nothing');
+  assert.equal(body.match(/SettingButtons/g)?.length, 1, 'one read of all expandable buttons, at the outermost level');
+  // Siblings: an attachments or permissions button beside the picker is filtered out by name, never taken as "the only one".
+  assert.match(body, /\$pickers = @\(\$buttons \| Where-Object \{ CodexPickerName \$_\.Cached\.Name \}\)/);
+  assert.match(body, /if \(\$pickers\.Count -gt 1\) \{ Fail 'codex-picker-button-ambiguous' \}/);
+  assert.match(body, /if \(\$pickers\.Count -eq 0\) \{ return \$null \}/);
+  assert.equal(/Count -eq 1 -and/.test(body), false, 'no lone-button shortcut');
+  assert.match(functionBody(script, 'CodexPickerName'), /\[string\]::Equals\(\$name, \$CodexPickerName, \$Ordinal\)/);
 });

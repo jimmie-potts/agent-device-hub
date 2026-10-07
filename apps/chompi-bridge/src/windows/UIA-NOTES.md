@@ -243,6 +243,110 @@ The installed bridge was checked on a Claude question card with three options:
   header and footer buttons. The owner expects the answers only, as Up and Down inside the option list, which led to
   the `text-left` stop rule above.
 
+## Model and effort controls
+
+Added for [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906). Knob 1 sets the model and knob 2 the
+effort through the clients' own controls, with UI Automation actions wherever the client allows it.
+
+### Live qualification (2026-10-06)
+
+Two rounds on the trial host, in throwaway tasks, on Claude Desktop `2.19675.0.0` and Codex Desktop `26.930.3930.0`.
+
+**Keyboard round.** The owner pressed the keys and the coordinator read the result with a read-only snapshot.
+
+- **Claude:**
+  - `Ctrl+Shift+I` opens a `Menu` named `Model: <current>` of model `RadioButton`s (the current one `IsSelected`) and
+    a "More models" `MenuItem`. Enter on a focused option applies it, and the session record's `model` updates within
+    about 1 s.
+  - `Ctrl+Shift+E` opens a `Slider` named `Effort`. With Haiku 4.5 there is no Effort button.
+- **Codex:** `Ctrl+Shift+M` opens a `Menu` named `Select effort` holding:
+  - a "Select model" `MenuItem`;
+  - a fast mode `CheckBox`;
+  - "Reset to default" and "Power" `MenuItem`s;
+  - a `StatusBar` announcing `<model> <level>, <n> of <count>.`, whose count differs by model.
+  
+  "Select model" opens the model list. A pick returns to the picker, which stays open.
+- **Codex chords:** the owner's `Ctrl+Alt+=` and `Ctrl+Alt+-` step the level. `Ctrl+Alt+-` splits a Claude pane.
+
+**UI Automation round** ([comment](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6027688512)).
+The owner watched while the coordinator used patterns.
+
+- **Claude:**
+  - The `Model: <name>` button supports `ExpandCollapse`. Expand opens the menu, and Collapse closes it with no change; focus then sits on the button.
+  - The menu's initial focus varies: sometimes the `Menu`, sometimes the selected option.
+  - Model options support `Invoke` and `SelectionItem`. `Select()` applied a model and closed the menu, and the button then named it.
+  - The `Effort: <level>` button supports `ExpandCollapse`.
+  - The `Effort` slider supports `RangeValue`: 0-5, `SmallChange` 1, writable. `SetValue(2)` changed Medium to High at once, and the record's `effort` read `high` within a second.
+- **Codex:**
+  - The picker button reads `<model> <effort>` while collapsed (for example `GPT-6 Luna Extra High`), so it gives model and effort readback without opening anything.
+  - Expand opens the `Select effort` menu. "Select model" supports `Invoke`, and model options support `SelectionItem`; `Select()` applied a model and returned to the picker.
+  - Collapse does not close the picker, but one Escape into it does.
+  - Power supports `Invoke` only, with no `RangeValue`.
+  - The owner's `Ctrl+Alt+=` changed the button's name to the next level.
+- **Leaving the model list** (observed 2026-10-07, S906-4 on
+  [#915](https://github.com/jimmie-potts/agent-device-hub/pull/915)): `Select()` on the current model (`IsSelected`)
+  does nothing; the list stays open. `Invoke()` on it returns to the `Select effort`
+  picker unchanged, and the picker then reports no keyboard focus, so the close moves focus into it before its one Escape.
+- **Owner decision:** Codex effort uses the owner's chords, confirmed from the picker button's name. The picker's Power entry is only the fallback when no chords are configured.
+
+### Operations
+
+The helper reads with `pickerState` and acts through eight setting operations. None of them types; the adapter's
+`tapInClient` sends the few keys the flows still need. Every operation runs against the client's own foreground window
+and process (`TargetWindow`).
+
+- **Qualified shapes only (F3 on #915).** `pickerState` reads no other menu:
+  - Claude's one `Menu` named `Model: ...`;
+  - Codex's `Select effort` menu, and, only while the picker button is expanded, the one other `Menu` whose own
+    entries are all `RadioButton`s (the model list);
+  - Claude's `Model: ` and `Effort: ` `Button`s with `ExpandCollapse`, read from one cached `FindAll` (two with one
+    prefix is `composer-setting-count`);
+  - Codex's picker button (F5 on #915): among all the `ExpandCollapse` `Button`s under the outermost of up to 8
+    ancestors of its one `ProseMirror` composer, the one named `Select effort` (expanded) or `<model> <effort>`
+    (collapsed), whose name ends, after at least one word, with a known effort label (Minimal, Low, Medium, High, Extra
+    High, Light, Standard, Extended, Max or Ultra, any case). The composer area also holds "Add files and more" and
+    "Change permissions", which are never taken for it. None is no button, and several is
+    `codex-picker-button-ambiguous`. The labels only find this button; levels are never listed from them;
+  - Claude's one `Slider` named `Effort`, with its `RangeValue` value, range and `SmallChange`;
+  - the one `StatusBar` inside Codex's picker.
+  
+  A menu's entries are its own `RadioButton`, `MenuItem` and `CheckBox` descendants (not a nested menu's), at most 64,
+  with `SelectionItem.IsSelected` or `ToggleState`. Each menu also reports the entry holding keyboard focus and whether
+  focus is in it. Labels are trimmed to 128 characters, and the adapter refuses control characters.
+- **Fresh read before every action.** Each action finds its target again and refuses on any difference, so a stale
+  read in the bridge can never make it act twice or on another element:
+  - `expandSetting` acts only on a `Collapsed` button;
+  - `collapseSetting` acts only on an `Expanded` Claude button, and refuses Codex (`collapse-unsupported`);
+  - `invokeSelectModel` acts only while the `Select effort` menu is open with exactly one "Select model" entry;
+  - `focusMenuEntry`, `selectMenuOption` and `invokeCurrentOption` need the named qualified menu with the caller's entry
+    count. `invokeCurrentOption` acts only on the Codex model list's selected option, to leave the list unchanged.
+    `selectMenuOption` also needs an option that equals the focused element (`Automation.Compare`), like
+    `invokeCardButton`, and answers `false` otherwise;
+  - `setSliderValue` needs the slider to read the caller's value, a step of exactly `SmallChange` and a target within
+    its range;
+  - `focusComposer` needs exactly one composer.
+  
+  Each action reads its effect back every 25 ms for at most 400 ms.
+
+### Residual windows
+
+These windows remain after the keystroke-free design (F2 on #915). Each lies between a confirming read and the
+action, and is about one helper round trip: typically tens of milliseconds, at most the 2 s adapter call timeout.
+
+- **Codex's closing Escape:** the bridge sends it only after a fresh read shows the `Select effort` picker holding
+  focus, through `tapInClient`, which re-reads the foreground right before `SendInput`. If the owner closes the
+  picker or moves focus inside that window, the Escape reaches whatever has focus in Codex. That is usually the
+  composer, where Escape sends nothing. Whether that Escape interrupts a running Codex turn is not qualified, so it
+  could. It never answers a card: the knobs refuse while a card is open.
+- **The owner's chords:** sent only with Codex in front, no card and the picker closed, checked just before. A card
+  that opens inside that window would receive the chord.
+- **Right and Left on Power (no chords):** sent only while a fresh read shows Power focused. If focus moves inside
+  that window, the arrow reaches the newly focused element in Codex.
+- **UI Automation actions:** inside the helper, the gap between the fresh read and the pattern call is a few
+  milliseconds, and the call acts on the element itself, not on whatever has focus.
+
+The knobs send no Enter, and none of these keys can send a prompt.
+
 ## Not established
 
 - **Other card kinds.** Only Claude's question and permission cards and Codex's escalation card were opened.
@@ -262,6 +366,18 @@ The installed bridge was checked on a Claude question card with three options:
 - **Other card shapes.** Only the question card with single-choice option rows and the permission card were probed.
   Any other Claude card shape, for example a multi-select question with checkboxes, has no `text-left` buttons as far
   as is known and falls back to every actionable button as a stop.
+- **The picker read and the setting actions against the live clients.** The qualification used the coordinator's
+  own pattern calls, not the helper's operations. Still to observe with the helper (#745's installed checks):
+  - each menu and the slider are descendants of the client's window rather than a separate popup;
+  - exactly one `ExpandCollapse` button near Codex's composer has the picker's name (the selector found by name);
+  - `RangeValue.SmallChange` and `SetValue` behave as qualified;
+  - the picker announcement is the `StatusBar`'s name or its first `Text` child;
+  - Claude's composer takes focus from `SetFocus` after a Collapse or a pick.
+  
+  Any of these failing makes a knob refuse or report `unverified`, rather than act.
+- **Codex's level range with chords.** Codex's picker button carries no range, so a chord at an end reads as
+  `mismatch` (`unchanged`), which an unbound chord would also give. The Power fallback reads the range from its
+  announcement.
 - **Split panes, pop-out windows and several Codex windows.** These were not observed. A pop-out could hold
   its own composer.
 

@@ -1,4 +1,4 @@
-import { MAX_VOLUME_PRESSES, type KeyName, type KeyRequest, type VolumeKey } from '../os-adapter.js';
+import { MAX_CLIENT_PRESSES, MAX_VOLUME_PRESSES, type KeyName, type KeyRequest, type NavigationKey, type VolumeKey } from '../os-adapter.js';
 import { HeldModifierError, KeyboardError } from './errors.js';
 
 /** One injected key transition. */
@@ -16,11 +16,23 @@ const NAMED: ReadonlyArray<readonly [KeyName, number]> = [
   ['Enter', 0x0d], ['LeftShift', 0xa0], ['LeftControl', 0xa2], ['LeftAlt', 0xa4], ['LeftWindows', 0x5b],
 ];
 
-/** Platform-neutral key names this adapter can type: the named keys above, `A`-`Z` and `0`-`9`. */
+/**
+ * Platform-neutral key names this adapter can type: the named keys above, `A`-`Z`, `0`-`9`, and `Equal` and `Minus`
+ * (`VK_OEM_PLUS` and `VK_OEM_MINUS`, the `=` and `-` keys of the owner's Codex effort chords, #906).
+ */
 export const VIRTUAL_KEYS: ReadonlyMap<KeyName, number> = new Map<KeyName, number>([
   ...NAMED,
   ...Array.from({ length: 26 }, (_, i) => [String.fromCharCode(0x41 + i), 0x41 + i] as const),
   ...Array.from({ length: 10 }, (_, i) => [String(i), 0x30 + i] as const),
+  ['Equal', 0xbb], ['Minus', 0xbd],
+]);
+
+/**
+ * The keys only `tapInClient` types (#906): `VK_LEFT`, `VK_RIGHT` and `VK_ESCAPE`, into the named client's window. They
+ * are not in `VIRTUAL_KEYS`, so no profile can name them and `send` refuses them.
+ */
+export const NAVIGATION_KEY_CODES: ReadonlyMap<NavigationKey, number> = new Map<NavigationKey, number>([
+  ['Left', 0x25], ['Right', 0x27], ['Escape', 0x1b],
 ]);
 
 /**
@@ -29,12 +41,30 @@ export const VIRTUAL_KEYS: ReadonlyMap<KeyName, number> = new Map<KeyName, numbe
  */
 export const VOLUME_KEYS: ReadonlyMap<VolumeKey, number> = new Map<VolumeKey, number>([['VolumeUp', 0xaf], ['VolumeDown', 0xae], ['VolumeMute', 0xad]]);
 
-const NAMES = new Map<number, KeyName>([...VIRTUAL_KEYS, ...VOLUME_KEYS].map(([name, vk]) => [vk, name]));
+const NAMES = new Map<number, KeyName>([...VIRTUAL_KEYS, ...VOLUME_KEYS, ...NAVIGATION_KEY_CODES].map(([name, vk]) => [vk, name]));
 
 export function virtualKeyCode(name: KeyName): number {
   const vk = typeof name === 'string' ? VIRTUAL_KEYS.get(name) : undefined;
   if (vk === undefined) throw new KeyboardError('unknown-key', { key: typeof name === 'string' ? name.slice(0, 32) : undefined });
   return vk;
+}
+
+/**
+ * The virtual-key codes of a client-scoped chord (#906): 1-8 distinct `VIRTUAL_KEYS` or `NAVIGATION_KEY_CODES` names,
+ * tapped 1-`MAX_CLIENT_PRESSES` times, never `Enter`: only Send types Enter, so no knob can (F7 on #915). Throws
+ * `invalid-key-request` or `unknown-key` before anything is observed or sent.
+ */
+export function chordCodes(keys: readonly KeyName[], presses: number): number[] {
+  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 8 || keys.includes('Enter') || !Number.isInteger(presses) || presses < 1 || presses > MAX_CLIENT_PRESSES) {
+    throw new KeyboardError('invalid-key-request');
+  }
+  const codes = keys.map(key => {
+    const vk = typeof key === 'string' ? VIRTUAL_KEYS.get(key) ?? NAVIGATION_KEY_CODES.get(key as NavigationKey) : undefined;
+    if (vk === undefined) throw new KeyboardError('unknown-key', { key: typeof key === 'string' ? key.slice(0, 32) : undefined });
+    return vk;
+  });
+  if (new Set(codes).size !== codes.length) throw new KeyboardError('invalid-key-request');
+  return codes;
 }
 
 /** Every modifier code `GetAsyncKeyState` can report, with the side-specific codes that satisfy a generic one. */
@@ -125,6 +155,20 @@ export class Keyboard {
     if (this.down.length > 0) throw new KeyboardError('keys-held');
     this.checkPhysical([vk]);
     this.dispatch(Array.from({ length: presses }, () => [{ vk, up: false }, { vk, up: true }]).flat());
+  }
+
+  /**
+   * Taps one chord `presses` times in one batch (#906), for `tapInClient`. The keys are `VIRTUAL_KEYS` or
+   * `NAVIGATION_KEY_CODES` names (`chordCodes`). Like a `tap`, it is refused while this adapter holds any key and while
+   * the user holds a modifier; the caller checks the window in front.
+   */
+  tapChord(keys: readonly KeyName[], presses: number): void {
+    const codes = chordCodes(keys, presses);
+    if (this.pending) throw new KeyboardError('release-pending');
+    if (this.down.length > 0) throw new KeyboardError('keys-held');
+    this.checkPhysical(codes);
+    const once = [...codes.map(vk => ({ vk, up: false })), ...[...codes].reverse().map(vk => ({ vk, up: true }))];
+    this.dispatch(Array.from({ length: presses }, () => once).flat());
   }
 
   /** Releases every key this adapter holds. Never throws; returns whether nothing remains held. */

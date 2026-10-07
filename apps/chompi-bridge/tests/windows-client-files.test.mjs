@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { claudeSessions, CodexArchiveIndex, codexArchived, CodexThreadNames } from '../dist/windows/index.js';
+import { claudeSessions, claudeSettings, CodexArchiveIndex, codexArchived, CodexThreadNames } from '../dist/windows/index.js';
 
 const thread = '019a3b1c-7d2e-7f00-8a11-0123456789ab';
 const other = '019a3b1c-7d2e-7f00-8a11-ba9876543210';
@@ -263,4 +263,25 @@ test('Claude IDs are validated and a record found under two organizations is amb
   writeFileSync(join(second, `${localA}.json`), JSON.stringify({ sessionId: localA, isArchived: true }));
   assert.deepEqual(await claudeSessions(root, [localA]), { status: 'unknown', reason: 'claude-record-duplicate' });
   assert.deepEqual(await claudeSessions(root, [localA], { maxDirectories: 1 }), { status: 'unknown', reason: 'claude-store-too-large' });
+});
+
+test('Claude settings come from one session record\'s model and effort keys only (#906)', async t => {
+  const { root, org, record } = claudeStore(t);
+  record(localA, { isArchived: false, model: 'claude-haiku-4-5-20251001', effort: 'medium', title: CANARY });
+  const result = await claudeSettings(root, localA);
+  assert.deepEqual(result, { status: 'known', value: { model: 'claude-haiku-4-5-20251001', effort: 'medium' } });
+  assert.equal(JSON.stringify(result).includes(CANARY), false, 'no other record key crosses the boundary');
+  record(localB, { isArchived: false, model: undefined, effort: 3 });
+  assert.deepEqual(await claudeSettings(root, localB), { status: 'known', value: { model: null, effort: '3' } }, 'absent is null; a number is kept as text');
+  assert.deepEqual(await claudeSettings(root, localC), { status: 'known', value: null }, 'no record');
+  for (const [label, body] of [
+    ['model type', { sessionId: localA, isArchived: false, model: { id: 'x' } }],
+    ['long model', { sessionId: localA, isArchived: false, model: 'x'.repeat(129) }],
+    ['control characters', { sessionId: localA, isArchived: false, effort: 'hi\nthere' }],
+    ['wrong id', { sessionId: localB, isArchived: false, model: 'm' }],
+  ]) {
+    writeFileSync(join(org, `${localA}.json`), JSON.stringify(body));
+    assert.equal((await claudeSettings(root, localA)).status, 'unknown', label);
+  }
+  assert.deepEqual(await claudeSettings(root, 'local_x'), { status: 'unknown', reason: 'invalid-local-id' });
 });

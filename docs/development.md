@@ -1108,10 +1108,11 @@ checks that the named-pipe lock refuses a second holder and is released on
 exit and on kill, and runs the Windows OS adapter's read-only observations:
 the koffi FFI load, the foreground window identity, a ping to the UI
 Automation helper, the composer, Codex selected-thread, approval-card and
-card-button observations and the installed client versions. Its Win32 surface replaces `SendInput` and
-`ShellExecute` with throwing guards, so it types nothing and opens no link. It checks the volume key table and
-that malformed volume requests are refused before any attempt, without sending a volume key. It
-reads card buttons only; it never focuses or presses one.
+card-button observations, the read-only model and effort picker reads (#906) with the UI Automation patterns each
+client's controls expose, and the installed client versions. Its Win32 surface replaces `SendInput` and `ShellExecute`
+with throwing guards, so it types nothing and opens no link. It checks the volume, client-tap and chord key tables and
+that malformed volume requests and client taps are refused before any attempt, without sending a key. It
+reads card buttons only; it never focuses or presses one, and calls no model or effort setting action.
 It then reruns the portable suites except the codec fixtures, which need the
 protocol workspace link. It opens no device. Linux CI does not qualify
 Windows HID, named pipes, FFI or UI Automation.
@@ -1128,16 +1129,22 @@ file migration, interrupted writes, corrupt files and rollback), knob-4 paging, 
 each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
 answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), the
 Attention click on knob 4 and volume knob (#865: first-seen order across pages, repeat cycling, refusal, volume detents, mute and
-Record), loss handling,
+Record), the model and effort knobs (#906, `routing-knobs.test.mjs`: per-detent UI Automation steps, selection only
+of a confirmed focused option, readback outcomes, range ends, unsupported effort, Codex chords first and the Power
+fallback, a single Codex Escape even with every read lagging, no stray key, refusals and closing before other
+controls), loss handling,
 exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
 `run --profile` session. The fake adapter models the
 qualified app behavior; the tests do not open links, type keys, read Codex or
 Claude data or contact a Hub. `windows-adapter.test.mjs` checks how the
 Windows adapter reads the helper's approval-card counts and card-button
 replies for each client, and `windows-uia-helper.test.mjs` checks the helper
-operations' scope statically, including that only the two card operations
-focus or invoke anything. Live focus, dictation placement, card answers and
-lights on the device belong to the installed trials (#743, #821).
+operations' scope statically, including that only the two card operations and
+the eight setting actions change UI state, each with one kind of change after a
+fresh read, and that the picker read is read-only and returns only the qualified
+controls' model and effort labels. Live focus, dictation placement, card answers, model
+and effort menus and lights on the device belong to the installed trials (#743,
+#821, and #745 for #906).
 
 ### CHOMPI bridge verification runs
 

@@ -1,8 +1,11 @@
 # CHOMPI bridge UI Automation helper, protocol 1. Windows PowerShell 5.1, started by uia-helper.ts.
-# It never sends input or clicks. Only FocusCardButton and InvokeCardButton change UI state, each on one button
-# of the open card (#821); every other operation is read-only.
+# It never sends input or clicks. Only FocusCardButton and InvokeCardButton change UI state on a card, each on one
+# button of the open card (#821), and only the eight setting actions (#906) on the model and effort controls; every
+# other operation is read-only.
 # One JSON request per stdin line; one JSON reply per stdout line. Replies carry only booleans, counts, indexes,
-# package versions and fixed reason codes, never names, values or other text read from a window.
+# package versions and fixed reason codes, never names, values or other text read from a window. The one exception is
+# PickerState (#906): it returns only model and effort labels, the names of the qualified model and effort controls and
+# their entries, never conversation text and nothing from any other menu.
 # The selectors below were established read-only; see UIA-NOTES.md.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -35,7 +38,7 @@ $FocusSettleMs = 400
 $NonAscii = [regex]'[^\x00-\x7F]'
 $EscapeChar = [System.Text.RegularExpressions.MatchEvaluator]{ param($match) '\u{0:x4}' -f [int][char]$match.Value }
 function Reply($value) {
-  [Console]::Out.WriteLine($NonAscii.Replace((ConvertTo-Json -InputObject $value -Compress -Depth 4), $EscapeChar))
+  [Console]::Out.WriteLine($NonAscii.Replace((ConvertTo-Json -InputObject $value -Compress -Depth 6), $EscapeChar))
   [Console]::Out.Flush()
 }
 # Length and UTF-16 code-unit sum of a probe string, so a check can confirm decoding without echoing text.
@@ -294,6 +297,385 @@ function InvokeCardButton($request) {
   return @{ invoked = $true }
 }
 
+# Model and effort controls (#906). PickerState reads; the eight setting actions below change UI state, each only on a
+# qualified control found afresh and checked against what the caller read: Claude's "Model: " and "Effort: " buttons,
+# its model menu and Effort slider, Codex's picker button, its "Select effort" menu, that menu's "Select model" entry and
+# the model list. Names are returned only for those, and only model and effort labels.
+$MenuId = [System.Windows.Automation.ControlType]::Menu.Id
+$RadioButtonId = [System.Windows.Automation.ControlType]::RadioButton.Id
+$CheckBoxId = [System.Windows.Automation.ControlType]::CheckBox.Id
+$PickerEntryTypes = [System.Windows.Automation.OrCondition]::new([System.Windows.Automation.Condition[]]@(
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::RadioButton)),
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::MenuItem)),
+  (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::CheckBox))))
+$ExpandState = [System.Windows.Automation.ExpandCollapsePattern]::ExpandCollapseStateProperty
+$MaxPickerEntries = 64
+$MaxPickerMenus = 32
+$MaxPickerLabel = 128
+$MaxComposerAncestors = 8
+$ClaudeModelButton = 'Model: '
+$ClaudeEffortButton = 'Effort: '
+$EffortSliderName = 'Effort'
+$CodexPickerName = 'Select effort'
+$CodexSelectModel = 'Select model'
+# Codex's collapsed picker button: "<model> <effort>", at least one word of model name, then an effort label at the end
+# (labels seen on the trial host, 2026-10-06; case and spacing tolerant). Labels are matched only to find this button.
+$CodexPickerClosedName = [regex]::new('^\S.*\s(minimal|low|medium|high|extra\s+high|light|standard|extended|max|ultra)$', 'IgnoreCase')
+# After a setting action, read its effect back every 25 ms for at most 400 ms, as FocusCardButton does.
+$SettlePollMs = 25
+$SettleMs = 400
+
+# A label as the adapter takes it: trimmed, at most 128 characters, $null when empty.
+function PickerLabel([string]$text) {
+  if (-not $text) { return $null }
+  $trimmed = $text.Trim()
+  if ($trimmed.Length -eq 0) { return $null }
+  if ($trimmed.Length -gt $MaxPickerLabel) { return $trimmed.Substring(0, $MaxPickerLabel) }
+  return $trimmed
+}
+
+# The nearest Menu at or above an element, inside the target window; $null when there is none below the window.
+function MenuAbove($element, $window) {
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $node = $element
+  for ($depth = 0; $null -ne $node; $depth++) {
+    if ($depth -ge 256) { Fail 'focus-ancestry-too-deep' }
+    if ([System.Windows.Automation.Automation]::Compare($node, $window)) { return $null }
+    if ($node.Current.ControlType.Id -eq $MenuId) { return $node }
+    $node = $walker.GetParent($node)
+  }
+  return $null
+}
+
+# The window's keyboard focus when it belongs to the target process, else $null.
+function WindowFocus($request) {
+  $focused = $AE::FocusedElement
+  if ($null -eq $focused -or $focused.Current.ProcessId -ne [int]$request.processId) { return $null }
+  return $focused
+}
+
+# A menu's own entries (RadioButton option, MenuItem action, CheckBox toggle) in tree order, not those of a menu nested
+# in it, read from one cached FindAll. More than 64 entry elements under the menu is an error.
+function MenuEntries($menu, $window) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Add($AE::ControlTypeProperty)
+  $cache.Add([System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty)
+  $cache.Add([System.Windows.Automation.TogglePattern]::ToggleStateProperty)
+  $cache.Push()
+  try { $found = $menu.FindAll($Scope::Descendants, $PickerEntryTypes) } finally { $cache.Pop() }
+  if ($found.Count -gt $MaxPickerEntries) { Fail 'picker-too-many-entries' }
+  $entries = New-Object System.Collections.ArrayList
+  foreach ($entry in $found) {
+    $owner = MenuAbove $entry $window
+    if ($null -eq $owner -or -not [System.Windows.Automation.Automation]::Compare($owner, $menu)) { continue }
+    $label = PickerLabel $entry.Cached.Name
+    if ($null -eq $label) { Fail 'picker-entry-unnamed' }
+    $type = $entry.Cached.ControlType.Id
+    if ($type -eq $RadioButtonId) {
+      $kind = 'option'
+      $value = $entry.GetCachedPropertyValue([System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty)
+      $selected = ($value -is [bool]) -and $value
+    } elseif ($type -eq $CheckBoxId) {
+      $kind = 'toggle'
+      $value = $entry.GetCachedPropertyValue([System.Windows.Automation.TogglePattern]::ToggleStateProperty)
+      $selected = ($value -is [System.Windows.Automation.ToggleState]) -and $value -eq [System.Windows.Automation.ToggleState]::On
+    } else { $kind = 'action'; $selected = $false }
+    [void]$entries.Add(@{ element = $entry; kind = $kind; label = $label; selected = $selected })
+  }
+  return ,$entries
+}
+
+# The window's Buttons with their names and ExpandCollapse state, from one cached FindAll under $root.
+function SettingButtons($root) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Add($AE::IsExpandCollapsePatternAvailableProperty)
+  $cache.Add($ExpandState)
+  $cache.Push()
+  try { $found = $root.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button))) } finally { $cache.Pop() }
+  $list = New-Object System.Collections.ArrayList
+  foreach ($button in $found) { if ([bool]$button.GetCachedPropertyValue($AE::IsExpandCollapsePatternAvailableProperty)) { [void]$list.Add($button) } }
+  return ,$list
+}
+
+function ButtonExpanded($button) { return $button.GetCachedPropertyValue($ExpandState) -eq [System.Windows.Automation.ExpandCollapseState]::Expanded }
+
+# Claude's one expandable button whose name starts with $prefix among $buttons (from SettingButtons); $null when there
+# is none, an error for several.
+function PrefixedButton($buttons, [string]$prefix) {
+  $match = @($buttons | Where-Object { $_.Cached.Name -and $_.Cached.Name.StartsWith($prefix, $Ordinal) })
+  if ($match.Count -gt 1) { Fail 'composer-setting-count' }
+  if ($match.Count -eq 0) { return $null }
+  return $match[0]
+}
+
+# Codex's picker button, found by identity among ALL expandable Buttons under the composer's 8th ancestor (or the
+# window, when it is nearer): the composer area also holds other expandable buttons, such as "Add files and more" and
+# "Change permissions". It is the one named "Select effort" (expanded) or named "<model> <effort>" (collapsed), whose
+# name ends, after at least one word of model name, with a known effort label. None is $null; several are an error.
+function CodexPickerButton($window) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ClassNameProperty)
+  $cache.Push()
+  try { $edits = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit))) } finally { $cache.Pop() }
+  $composers = @($edits | Where-Object { HasToken $_.Cached.ClassName $ComposerToken })
+  if ($composers.Count -ne 1) { return $null }
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $root = $composers[0]
+  for ($depth = 0; $depth -lt $MaxComposerAncestors; $depth++) {
+    if ([System.Windows.Automation.Automation]::Compare($root, $window)) { break }
+    $parent = $walker.GetParent($root)
+    if ($null -eq $parent) { break }
+    $root = $parent
+  }
+  $buttons = SettingButtons $root
+  $pickers = @($buttons | Where-Object { CodexPickerName $_.Cached.Name })
+  if ($pickers.Count -gt 1) { Fail 'codex-picker-button-ambiguous' }
+  if ($pickers.Count -eq 0) { return $null }
+  return $pickers[0]
+}
+
+# Whether a button name is Codex's picker: "Select effort", or "<model> <effort>" ending in a known effort label.
+function CodexPickerName([string]$name) {
+  if (-not $name) { return $false }
+  if ([string]::Equals($name, $CodexPickerName, $Ordinal)) { return $true }
+  return $CodexPickerClosedName.IsMatch($name)
+}
+
+function SettingButton($window, [string]$control) {
+  switch ($control) {
+    'claude-model' { return PrefixedButton (SettingButtons $window) $ClaudeModelButton }
+    'claude-effort' { return PrefixedButton (SettingButtons $window) $ClaudeEffortButton }
+    'codex-picker' { return CodexPickerButton $window }
+    default { Fail 'invalid-setting' }
+  }
+}
+
+# The one open qualified menu of the client, as @{ kind; menu; entries }, or $null. Other menus are never read.
+function QualifiedMenu($window, [string]$client) {
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::NameProperty)
+  $cache.Push()
+  try { $menus = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Menu))) } finally { $cache.Pop() }
+  if ($menus.Count -gt $MaxPickerMenus) { Fail 'picker-too-many-menus' }
+  if ($client -eq 'claude') {
+    $model = @($menus | Where-Object { $_.Cached.Name -and $_.Cached.Name.StartsWith($ClaudeModelButton, $Ordinal) })
+    if ($model.Count -gt 1) { Fail 'picker-menu-count' }
+    if ($model.Count -eq 0) { return $null }
+    return @{ kind = 'claude-model'; menu = $model[0]; entries = (MenuEntries $model[0] $window) }
+  }
+  $picker = @($menus | Where-Object { [string]::Equals($_.Cached.Name, $CodexPickerName, $Ordinal) })
+  if ($picker.Count -gt 1) { Fail 'picker-menu-count' }
+  $button = CodexPickerButton $window
+  # The model list counts only while the picker button is expanded: a menu other than the picker whose own entries are
+  # all model options.
+  if ($null -ne $button -and (ButtonExpanded $button)) {
+    $lists = New-Object System.Collections.ArrayList
+    foreach ($menu in $menus) {
+      if ([string]::Equals($menu.Cached.Name, $CodexPickerName, $Ordinal)) { continue }
+      $entries = MenuEntries $menu $window
+      if ($entries.Count -gt 0 -and @($entries | Where-Object { $_.kind -ne 'option' }).Count -eq 0) { [void]$lists.Add(@{ kind = 'codex-models'; menu = $menu; entries = $entries }) }
+    }
+    if ($lists.Count -gt 1) { Fail 'picker-menu-count' }
+    if ($lists.Count -eq 1) { return $lists[0] }
+  }
+  if ($picker.Count -eq 0) { return $null }
+  return @{ kind = 'codex-picker'; menu = $picker[0]; entries = (MenuEntries $picker[0] $window) }
+}
+
+function EntryIndex($entries, $element) {
+  if ($null -eq $element) { return -1 }
+  for ($i = 0; $i -lt $entries.Count; $i++) { if ([System.Windows.Automation.Automation]::Compare($entries[$i].element, $element)) { return $i } }
+  return -1
+}
+
+# Claude's open Effort slider, $null when there is none; several are an error.
+function EffortSlider($window) {
+  $sliders = $window.FindAll($Scope::Descendants, [System.Windows.Automation.AndCondition]::new([System.Windows.Automation.Condition[]]@(
+    (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Slider)), (Condition $AE::NameProperty $EffortSliderName))))
+  if ($sliders.Count -gt 1) { Fail 'effort-slider-count' }
+  if ($sliders.Count -eq 0) { return $null }
+  return $sliders[0]
+}
+
+function SliderRange($slider) {
+  $range = $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current
+  return @{ value = [double]$range.Value; min = [double]$range.Minimum; max = [double]$range.Maximum; step = [double]$range.SmallChange; readOnly = [bool]$range.IsReadOnly }
+}
+
+# Codex's picker announcement: the Name (or, when empty, the first Text child's Name) of the one StatusBar inside $menu.
+function PickerAnnouncement($menu) {
+  $bars = $menu.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::StatusBar)))
+  if ($bars.Count -ne 1) { return $null }
+  $text = PickerLabel $bars[0].Current.Name
+  if ($null -eq $text) {
+    $child = $bars[0].FindFirst($Scope::Children, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)))
+    if ($null -ne $child) { $text = PickerLabel $child.Current.Name }
+  }
+  return $text
+}
+
+function PickerClient($request) {
+  $client = [string]$request.client
+  if ($client -ne 'claude' -and $client -ne 'codex') { Fail 'invalid-client' }
+  return $client
+}
+
+function PickerState($request) {
+  $window = TargetWindow $request
+  $client = PickerClient $request
+  $focused = WindowFocus $request
+  $menu = $null; $slider = $null; $model = $null; $effort = $null; $announcement = $null
+  $qualified = QualifiedMenu $window $client
+  if ($null -ne $qualified) {
+    $label = PickerLabel $qualified.menu.Current.Name
+    if ($null -eq $label) { Fail 'picker-menu-unnamed' }
+    $items = New-Object System.Collections.ArrayList
+    foreach ($entry in $qualified.entries) { [void]$items.Add([ordered]@{ kind = $entry.kind; label = $entry.label; selected = $entry.selected }) }
+    $hasFocus = $false
+    if ($null -ne $focused) { $owner = MenuAbove $focused $window; $hasFocus = $null -ne $owner -and [System.Windows.Automation.Automation]::Compare($owner, $qualified.menu) }
+    $menu = [ordered]@{ kind = $qualified.kind; label = $label; items = $items; focused = (EntryIndex $qualified.entries $focused); hasFocus = $hasFocus }
+    if ($client -eq 'codex') {
+      $pickerMenu = $qualified.menu
+      if ($qualified.kind -eq 'codex-models') { $pickerMenu = $null }
+      if ($null -ne $pickerMenu) { $announcement = PickerAnnouncement $pickerMenu }
+    }
+  }
+  if ($client -eq 'claude') {
+    $buttons = SettingButtons $window
+    $modelButton = PrefixedButton $buttons $ClaudeModelButton
+    if ($null -ne $modelButton) { $model = [ordered]@{ label = (PickerLabel $modelButton.Cached.Name.Substring($ClaudeModelButton.Length)); expanded = (ButtonExpanded $modelButton) } }
+    $effortButton = PrefixedButton $buttons $ClaudeEffortButton
+    if ($null -ne $effortButton) { $effort = [ordered]@{ label = (PickerLabel $effortButton.Cached.Name.Substring($ClaudeEffortButton.Length)); expanded = (ButtonExpanded $effortButton) } }
+    $effortSlider = EffortSlider $window
+    if ($null -ne $effortSlider) { $range = SliderRange $effortSlider; $slider = [ordered]@{ value = $range.value; min = $range.min; max = $range.max; step = $range.step } }
+  } else {
+    $pickerButton = CodexPickerButton $window
+    if ($null -ne $pickerButton) { $model = [ordered]@{ label = (PickerLabel $pickerButton.Cached.Name); expanded = (ButtonExpanded $pickerButton) } }
+  }
+  return [ordered]@{ menu = $menu; slider = $slider; model = $model; effort = $effort; announcement = $announcement }
+}
+
+# Waits up to $SettleMs for $check to answer true, polling every $SettlePollMs; answers the last check.
+function Settle([scriptblock]$check) {
+  $clock = [System.Diagnostics.Stopwatch]::StartNew()
+  $ok = & $check
+  while (-not $ok -and $clock.ElapsedMilliseconds -lt $SettleMs) { Start-Sleep -Milliseconds $SettlePollMs; $ok = & $check }
+  return [bool]$ok
+}
+
+function SettingRequest($request) {
+  $client = PickerClient $request
+  $control = [string]$request.control
+  $allowed = @{ claude = @('claude-model', 'claude-effort'); codex = @('codex-picker') }
+  if ($allowed[$client] -notcontains $control) { Fail 'invalid-setting' }
+  return $control
+}
+
+function ExpandSetting($request) {
+  $window = TargetWindow $request
+  $control = SettingRequest $request
+  $button = SettingButton $window $control
+  if ($null -eq $button) { Fail 'setting-missing' }
+  if ($button.GetCurrentPropertyValue($ExpandState) -ne [System.Windows.Automation.ExpandCollapseState]::Collapsed) { Fail 'setting-not-collapsed' }
+  $button.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+  return @{ expanded = (Settle { $button.GetCurrentPropertyValue($ExpandState) -eq [System.Windows.Automation.ExpandCollapseState]::Expanded }) }
+}
+
+# Claude only: Codex's picker stays expanded on Collapse, so the bridge closes it with one Escape instead.
+function CollapseSetting($request) {
+  $window = TargetWindow $request
+  $control = SettingRequest $request
+  if ($control -eq 'codex-picker') { Fail 'collapse-unsupported' }
+  $button = SettingButton $window $control
+  if ($null -eq $button) { Fail 'setting-missing' }
+  if ($button.GetCurrentPropertyValue($ExpandState) -ne [System.Windows.Automation.ExpandCollapseState]::Expanded) { Fail 'setting-not-expanded' }
+  $button.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Collapse()
+  return @{ collapsed = (Settle { $button.GetCurrentPropertyValue($ExpandState) -eq [System.Windows.Automation.ExpandCollapseState]::Collapsed }) }
+}
+
+function InvokeSelectModel($request) {
+  $window = TargetWindow $request
+  if ((PickerClient $request) -ne 'codex') { Fail 'invalid-client' }
+  $qualified = QualifiedMenu $window 'codex'
+  if ($null -eq $qualified -or $qualified.kind -ne 'codex-picker') { Fail 'menu-absent' }
+  $entries = @($qualified.entries | Where-Object { $_.kind -eq 'action' -and [string]::Equals($_.label, $CodexSelectModel, $Ordinal) })
+  if ($entries.Count -ne 1) { Fail 'select-model-count' }
+  $entries[0].element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  return @{ invoked = $true }
+}
+
+# The open qualified menu named by the request, when it still has the request's number of entries and a valid index.
+function MenuRequest($request, $window) {
+  $index = $request.index; $count = $request.count
+  if (-not (($index -is [int] -or $index -is [long]) -and ($count -is [int] -or $count -is [long]) -and $index -ge 0 -and $index -lt $count -and $count -le $MaxPickerEntries)) { Fail 'invalid-menu-index' }
+  $qualified = QualifiedMenu $window (PickerClient $request)
+  if ($null -eq $qualified -or $qualified.kind -ne [string]$request.menu) { Fail 'menu-absent' }
+  if ($qualified.entries.Count -ne [int]$count) { Fail 'menu-changed' }
+  return $qualified.entries
+}
+
+function FocusMenuEntry($request) {
+  $window = TargetWindow $request
+  $entries = MenuRequest $request $window
+  $index = [int]$request.index
+  $entries[$index].element.SetFocus()
+  [void](Settle { (EntryIndex $entries (WindowFocus $request)) -eq $index })
+  return @{ focused = (EntryIndex $entries (WindowFocus $request)) }
+}
+
+function SelectMenuOption($request) {
+  $window = TargetWindow $request
+  $entries = MenuRequest $request $window
+  $entry = $entries[[int]$request.index]
+  if ($entry.kind -ne 'option') { Fail 'not-an-option' }
+  $focused = WindowFocus $request
+  if ($null -eq $focused -or -not [System.Windows.Automation.Automation]::Compare($entry.element, $focused)) { return @{ selected = $false } }
+  $entry.element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+  return @{ selected = $true }
+}
+
+# Codex: Invoke on the model list's selected (current) option, which returns to the picker with nothing changed: the way
+# to leave the list without a pick, because Select on the selected option does nothing there (observed 2026-10-07).
+function InvokeCurrentOption($request) {
+  $window = TargetWindow $request
+  if ((PickerClient $request) -ne 'codex' -or [string]$request.menu -ne 'codex-models') { Fail 'invalid-menu' }
+  $entries = MenuRequest $request $window
+  $entry = $entries[[int]$request.index]
+  if ($entry.kind -ne 'option') { Fail 'not-an-option' }
+  if (-not $entry.selected) { Fail 'not-current-option' }
+  $entry.element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  return @{ invoked = $true }
+}
+
+function SetSliderValue($request) {
+  $window = TargetWindow $request
+  if ((PickerClient $request) -ne 'claude') { Fail 'invalid-client' }
+  $from = [double]$request.from; $to = [double]$request.to
+  $slider = EffortSlider $window
+  if ($null -eq $slider) { Fail 'slider-absent' }
+  $range = SliderRange $slider
+  if ($range.readOnly -or $range.value -ne $from -or [Math]::Abs($to - $from) -ne $range.step -or $to -lt $range.min -or $to -gt $range.max) { Fail 'slider-changed' }
+  $slider.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).SetValue($to)
+  [void](Settle { (SliderRange $slider).value -eq $to })
+  return @{ value = (SliderRange $slider).value }
+}
+
+# Gives the window's one composer keyboard focus, as Codex's Alt+L would; Claude's composer is its "Prompt" field.
+function FocusComposer($request) {
+  $window = TargetWindow $request
+  [void](PickerClient $request)
+  $cache = New-Object System.Windows.Automation.CacheRequest
+  $cache.Add($AE::ClassNameProperty)
+  $cache.Push()
+  try { $edits = $window.FindAll($Scope::Descendants, (Condition $AE::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit))) } finally { $cache.Pop() }
+  $composers = @($edits | Where-Object { HasToken $_.Cached.ClassName $ComposerToken })
+  if ($composers.Count -ne 1) { Fail 'composer-count' }
+  $composers[0].SetFocus()
+  return @{ focused = (Settle { [bool]$composers[0].GetCurrentPropertyValue($AE::HasKeyboardFocusProperty) }) }
+}
+
 function ClientVersions {
   $result = [ordered]@{}
   foreach ($client in $Packages.Keys) {
@@ -322,6 +704,15 @@ while ($true) {
       'cardButtons' { $value = CardButtons $request }
       'focusCardButton' { $value = FocusCardButton $request }
       'invokeCardButton' { $value = InvokeCardButton $request }
+      'pickerState' { $value = PickerState $request }
+      'expandSetting' { $value = ExpandSetting $request }
+      'collapseSetting' { $value = CollapseSetting $request }
+      'invokeSelectModel' { $value = InvokeSelectModel $request }
+      'focusMenuEntry' { $value = FocusMenuEntry $request }
+      'selectMenuOption' { $value = SelectMenuOption $request }
+      'invokeCurrentOption' { $value = InvokeCurrentOption $request }
+      'setSliderValue' { $value = SetSliderValue $request }
+      'focusComposer' { $value = FocusComposer $request }
       'clientVersions' { $value = ClientVersions }
       default { Fail 'unknown-op' }
     }

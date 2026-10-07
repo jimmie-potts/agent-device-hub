@@ -6,7 +6,8 @@ import { readBoundedFile } from './files.js';
 
 /**
  * The routing profile: one versioned JSON file mapping physical controls to the three core actions, the app
- * shortcuts they use, colors, timings, big-wheel card navigation, task pages, black-key actions and the volume knob.
+ * shortcuts they use, colors, timings, big-wheel card navigation, task pages, black-key actions, the volume knob and
+ * the model and effort knobs.
  * Fields added after the first release are optional. It is data only: no URIs, paths, commands or package
  * identities, and key names come from an allowlist, so loading it can never run anything.
  */
@@ -17,12 +18,15 @@ export const DEFAULT_PROFILE_PATH = fileURLToPath(new URL('../../profiles/defaul
 const MODIFIERS = ['LeftShift', 'LeftControl', 'LeftAlt', 'LeftWindows'] as const;
 /**
  * Platform-neutral key names, exactly the set the Windows adapter can type (`VIRTUAL_KEYS`). Nothing else can appear
- * in a profile, so a profile can never ask the adapter for a key it would refuse at runtime.
+ * in a profile, so a profile can never ask the adapter for a key it would refuse at runtime. `Equal` and `Minus` are
+ * the `=` and `-` keys of the owner's Codex effort chords (#906). The keys only `tapInClient` types (`NAVIGATION_KEYS`:
+ * Left, Right and Escape) are never profile key names.
  */
 export const KEY_NAMES: readonly string[] = Object.freeze([
   'Enter', ...MODIFIERS,
   ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)),
   ...Array.from({ length: 10 }, (_, i) => String(i)),
+  'Equal', 'Minus',
 ]);
 
 /** Click IDs of the four small top knobs (`ENC_1`-`ENC_4`) and the volume knob (`ENC_6`): never Send. */
@@ -37,6 +41,15 @@ export const PAGE_CLICK = 31;
 /** The volume knob (`ENC_6`): its turn steps the system volume and its click toggles mute (#865). */
 export const VOLUME_TURN = 46;
 export const VOLUME_CLICK = 34;
+/**
+ * Small knob 1 (`ENC_4`, the leftmost) sets the model and small knob 2 (`ENC_1`) the effort (owner decision on #744,
+ * 2026-10-06; #906). A turn steps through the client's own model menu or effort levels; knob 1's still click picks the
+ * focused model, and knob 2's click closes its effort control.
+ */
+export const MODEL_TURN = 44;
+export const MODEL_CLICK = 32;
+export const EFFORT_TURN = 41;
+export const EFFORT_CLICK = 29;
 
 /** The ten second-row black keys (#865), which the optional `keys` map can give an action. */
 export const BLACK_KEYS: readonly number[] = Object.freeze(Array.from({ length: 10 }, (_, i) => 16 + i));
@@ -68,9 +81,13 @@ export interface VolumeSettings {
 export const DEFAULT_VOLUME_SETTINGS: VolumeSettings = Object.freeze({ stepCounts: 1, invert: false });
 /** How soon a second Attention click moves on to the next waiting task instead of the earliest again. */
 export const DEFAULT_ATTENTION_REPEAT_MS = 4000;
+/** How long an open model menu, effort slider or picker stays open after the knob's last turn before the bridge closes it. */
+export const DEFAULT_MENU_TIMEOUT_MS = 5000;
 
 export const COLOR_NAMES = ['empty', 'active', 'idle', 'unread', 'attention', 'ended', 'unknown', 'stale', 'error', 'record'] as const;
 export type ColorName = typeof COLOR_NAMES[number];
+/** The knob LED's flash for a model or effort change the client confirmed (#906). Optional in the file. */
+export const DEFAULT_APPLIED_COLOR: Rgb = Object.freeze([0, 255, 120]) as unknown as Rgb;
 /**
  * Colors the press-time model (#821) retired: the selected key and the Send-readiness wheel LEDs. A profile may still
  * list them, as the one installed for the #743 trial does; they must be valid colors and are otherwise ignored.
@@ -104,6 +121,29 @@ export interface PageSettings {
   /** Whether knob 4's click (control 31) is the Attention click. False leaves the click inert. */
   readonly attentionClick: boolean;
 }
+/** Knob 1, the model knob (#906). */
+export interface ModelKnobSettings {
+  /** Encoder counts per menu step; the count restarts on a direction reversal. */
+  readonly stepCounts: number;
+  /** False: clockwise moves down the menu. */
+  readonly invert: boolean;
+  /** How long knob 1 must be still before its click picks the focused model. */
+  readonly clickStillMs: number;
+}
+/** Knob 2, the effort knob (#906). */
+export interface EffortKnobSettings {
+  /** Encoder counts per effort level; the count restarts on a direction reversal. */
+  readonly stepCounts: number;
+  /** False: clockwise raises the effort. */
+  readonly invert: boolean;
+}
+/**
+ * Knobs 1-3 have not been measured on the device, so both knobs step once per `DEFAULT_CARD_STEP_COUNTS` counts, the
+ * conservative default knob 4 pages with: a light touch never changes a setting. #745 measures them.
+ */
+export const DEFAULT_MODEL_SETTINGS: ModelKnobSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false, clickStillMs: 250 });
+export const DEFAULT_EFFORT_SETTINGS: EffortKnobSettings = Object.freeze({ stepCounts: DEFAULT_CARD_STEP_COUNTS, invert: false });
+
 export const DEFAULT_PAGE_SETTINGS: PageSettings = Object.freeze({ count: 4, stepCounts: DEFAULT_CARD_STEP_COUNTS, attentionClick: true });
 const PAGE_BOUNDS: Record<'count' | 'stepCounts', [number, number]> = { count: [1, 8], stepCounts: [1, 96] };
 /**
@@ -126,6 +166,8 @@ export interface RoutingTiming {
   profilePollMs: number;
   /** Optional in the file (#865); absent, it is `DEFAULT_ATTENTION_REPEAT_MS`. */
   attentionRepeatMs: number;
+  /** Optional in the file (#906); absent, it is `DEFAULT_MENU_TIMEOUT_MS`. */
+  menuTimeoutMs: number;
 }
 
 const TIMING_BOUNDS: Record<keyof RoutingTiming, [number, number]> = {
@@ -139,9 +181,10 @@ const TIMING_BOUNDS: Record<keyof RoutingTiming, [number, number]> = {
   archiveCheckMs: [1000, 600_000],
   profilePollMs: [500, 60_000],
   attentionRepeatMs: [500, 30_000],
+  menuTimeoutMs: [1000, 30_000],
 };
 /** Timing fields added after the first release, with their defaults. */
-const OPTIONAL_TIMING: Partial<RoutingTiming> = { attentionRepeatMs: DEFAULT_ATTENTION_REPEAT_MS };
+const OPTIONAL_TIMING: Partial<RoutingTiming> = { attentionRepeatMs: DEFAULT_ATTENTION_REPEAT_MS, menuTimeoutMs: DEFAULT_MENU_TIMEOUT_MS };
 
 export interface RoutingProfile {
   readonly schemaVersion: 1;
@@ -159,12 +202,19 @@ export interface RoutingProfile {
     readonly codexComposer: readonly string[];
     readonly send: readonly ['Enter'];
     readonly dictation: readonly string[];
+    /**
+     * The owner's Codex "Increase reasoning effort" and "Decrease reasoning effort" chords (#906), both or neither.
+     * Optional in the file; null when absent, and Codex effort then uses only its picker.
+     */
+    readonly codexEffortIncrease: readonly string[] | null;
+    readonly codexEffortDecrease: readonly string[] | null;
   };
   /** Big-wheel scrolling of the client conversation through the adapter's mouse-wheel primitive. */
   readonly scroll: { readonly notchesPerStep: number; readonly invert: boolean };
   /** Optional in the file; absent fields take `DEFAULT_CARD_SETTINGS`. */
   readonly cards: CardSettings;
-  readonly colors: Readonly<Record<ColorName, Rgb>> & { readonly pages: readonly Rgb[] };
+  /** `pages` and `applied` are optional in the file. */
+  readonly colors: Readonly<Record<ColorName, Rgb>> & { readonly pages: readonly Rgb[]; readonly applied: Rgb };
   /** Optional in the file; absent fields take `DEFAULT_PAGE_SETTINGS`. */
   readonly pages: PageSettings;
   /** Black-key actions (#865). Optional in the file; absent, `DEFAULT_KEY_ACTIONS` (none). */
@@ -175,6 +225,13 @@ export interface RoutingProfile {
    * knob sends no volume key.
    */
   readonly volume: VolumeSettings | null;
+  /**
+   * Knob 1 sets the model and knob 2 the effort (#906). Optional in the file; absent fields take the defaults. Null when
+   * an earlier profile without the section maps the knob's turn or click to something else: that mapping stays and the
+   * knob is off.
+   */
+  readonly model: ModelKnobSettings | null;
+  readonly effort: EffortKnobSettings | null;
   readonly brightnessPercent: number;
   readonly timing: Readonly<RoutingTiming>;
   /** Both clients' UI selectors and links depend on the client version; an unlisted or unknown version disables that client. */
@@ -207,7 +264,7 @@ function keys(value: unknown, path: string, issues: Issues, rule: (key: string) 
   const seen = new Set<string>();
   for (const [i, key] of value.entries()) {
     if (typeof key !== 'string' || !KEY_NAMES.includes(key)) {
-      issues.push(`${path}[${i}]: ${JSON.stringify(key)} is not an allowed key name (Enter, ${MODIFIERS.join(', ')}, A-Z or 0-9)`);
+      issues.push(`${path}[${i}]: ${JSON.stringify(key)} is not an allowed key name (Enter, ${MODIFIERS.join(', ')}, A-Z, 0-9, Equal or Minus)`);
       return undefined;
     }
     if (seen.has(key)) { issues.push(`${path}[${i}]: ${key} is repeated`); return undefined; }
@@ -266,24 +323,44 @@ function controls(value: unknown, issues: Issues): RoutingProfile['controls'] | 
 function shortcuts(value: unknown, issues: Issues): RoutingProfile['shortcuts'] | undefined {
   const path = 'profile.shortcuts';
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
-  if (!fields(value, path, ['codexComposer', 'send', 'dictation'], [], issues)) return undefined;
+  if (!fields(value, path, ['codexComposer', 'send', 'dictation'], ['codexEffortIncrease', 'codexEffortDecrease'], issues)) return undefined;
   const before = issues.length;
   const noEnter = (key: string) => key === 'Enter' ? 'must not include Enter; only Send types Enter' : undefined;
   const codexComposer = keys(value.codexComposer, `${path}.codexComposer`, issues, noEnter);
   if (!Array.isArray(value.send) || value.send.length !== 1 || value.send[0] !== 'Enter') issues.push(`${path}.send: must be exactly ["Enter"]`);
   const holdable = new Set<string>(MODIFIERS);
   const dictation = keys(value.dictation, `${path}.dictation`, issues, key => holdable.has(key) ? undefined : `${key} is not a modifier; dictation holds modifiers only`);
-  if (issues.length > before || !codexComposer || !dictation) return undefined;
-  return { codexComposer, send: ['Enter'], dictation };
+  // The Codex effort chords are the owner's own bindings (#906): a chord with Control, Alt or Windows and one other key,
+  // so a chord can never type a character into a composer.
+  const chord = (name: 'codexEffortIncrease' | 'codexEffortDecrease'): string[] | null | undefined => {
+    if (!(name in value)) return null;
+    const found = keys(value[name], `${path}.${name}`, issues, noEnter);
+    if (!found) return undefined;
+    const chordModifiers = found.filter(key => key !== 'LeftShift' && holdable.has(key));
+    if (chordModifiers.length === 0 || found.filter(key => !holdable.has(key)).length !== 1) {
+      issues.push(`${path}.${name}: must hold LeftControl, LeftAlt or LeftWindows with exactly one other key`);
+      return undefined;
+    }
+    return found;
+  };
+  const increase = chord('codexEffortIncrease');
+  const decrease = chord('codexEffortDecrease');
+  if ((increase === null) !== (decrease === null) && increase !== undefined && decrease !== undefined) {
+    issues.push(`${path}: codexEffortIncrease and codexEffortDecrease go together; give both or neither`);
+  } else if (increase && decrease && isDeepStrictEqual([...increase].sort(), [...decrease].sort())) {
+    issues.push(`${path}.codexEffortDecrease: must differ from codexEffortIncrease`);
+  }
+  if (issues.length > before || !codexComposer || !dictation || increase === undefined || decrease === undefined) return undefined;
+  return { codexComposer, send: ['Enter'], dictation, codexEffortIncrease: increase, codexEffortDecrease: decrease };
 }
 
 function colors(value: unknown, issues: Issues): RoutingProfile['colors'] | undefined {
   const path = 'profile.colors';
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
-  if (!fields(value, path, COLOR_NAMES, [...RETIRED_COLOR_NAMES, 'pages'], issues)) return undefined;
+  if (!fields(value, path, COLOR_NAMES, [...RETIRED_COLOR_NAMES, 'pages', 'applied'], issues)) return undefined;
   const before = issues.length;
   const isColor = (color: unknown) => Array.isArray(color) && color.length === 3 && color.every(c => isInt(c, 0, 255));
-  for (const name of [...COLOR_NAMES, ...RETIRED_COLOR_NAMES]) {
+  for (const name of [...COLOR_NAMES, ...RETIRED_COLOR_NAMES, 'applied']) {
     if (!(name in value)) continue;
     if (!isColor(value[name])) issues.push(`${path}.${name}: must be [r, g, b] with integers 0-255`);
   }
@@ -291,7 +368,10 @@ function colors(value: unknown, issues: Issues): RoutingProfile['colors'] | unde
   if (!Array.isArray(pages) || pages.length < 1 || pages.length > 8) issues.push(`${path}.pages: must list 1-8 colors, page 1 first`);
   else for (const [i, color] of pages.entries()) if (!isColor(color)) issues.push(`${path}.pages[${i}]: must be [r, g, b] with integers 0-255`);
   if (issues.length > before) return undefined;
-  return { ...Object.fromEntries(COLOR_NAMES.map(name => [name, value[name]])), pages: (pages as Rgb[]).map(c => [...c]) } as unknown as RoutingProfile['colors'];
+  return {
+    ...Object.fromEntries(COLOR_NAMES.map(name => [name, value[name]])), pages: (pages as Rgb[]).map(c => [...c]),
+    applied: [...(value.applied as Rgb | undefined ?? DEFAULT_APPLIED_COLOR)],
+  } as unknown as RoutingProfile['colors'];
 }
 
 function cards(value: unknown, issues: Issues): CardSettings | undefined {
@@ -370,6 +450,29 @@ function volume(value: unknown, controls: RoutingProfile['controls'] | undefined
   return { ...DEFAULT_VOLUME_SETTINGS, ...value as Partial<VolumeSettings> };
 }
 
+/**
+ * Knob 1 (model) or knob 2 (effort), #906. Like the volume knob, an earlier profile without the section that maps the
+ * knob's turn (as `controls.scroll`) or click (as Record or Back) keeps that mapping and the knob is off (null).
+ */
+function knob<T extends ModelKnobSettings | EffortKnobSettings>(name: 'model' | 'effort', value: unknown, controls: RoutingProfile['controls'] | undefined,
+  defaults: T, issues: Issues): T | null | undefined {
+  const path = `profile.${name}`;
+  const [turn, click] = name === 'model' ? [MODEL_TURN, MODEL_CLICK] : [EFFORT_TURN, EFFORT_CLICK];
+  const turnTaken = controls?.scroll === turn;
+  const clickTaken = controls?.record === click ? 'record' : controls?.back === click ? 'back' : undefined;
+  if (value === undefined) return turnTaken || clickTaken ? null : defaults;
+  if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
+  if (!fields(value, path, [], Object.keys(defaults), issues)) return undefined;
+  const before = issues.length;
+  if ('stepCounts' in value && !isInt(value.stepCounts, 1, 96)) issues.push(`${path}.stepCounts: must be an integer 1-96`);
+  if ('invert' in value && typeof value.invert !== 'boolean') issues.push(`${path}.invert: must be true or false`);
+  if ('clickStillMs' in value && !isInt(value.clickStillMs, 0, 2000)) issues.push(`${path}.clickStillMs: must be an integer 0-2000 ms`);
+  if (turnTaken) issues.push(`profile.controls.scroll: ${turn} is knob ${name === 'model' ? 1 : 2}'s turn`);
+  if (clickTaken) issues.push(`profile.controls.${clickTaken}: ${click} is knob ${name === 'model' ? 1 : 2}'s click`);
+  if (issues.length > before) return undefined;
+  return { ...defaults, ...value as Partial<T> };
+}
+
 function scroll(value: unknown, issues: Issues): RoutingProfile['scroll'] | undefined {
   const path = 'profile.scroll';
   if (!isObject(value)) { issues.push(`${path}: must be an object`); return undefined; }
@@ -425,7 +528,7 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (!isObject(input)) throw new ProfileError(['profile: must be a JSON object']);
   const value = structuredClone(input) as Record<string, unknown>;
   const required = ['schemaVersion', 'profileVersion', 'controls', 'shortcuts', 'scroll', 'colors', 'brightnessPercent', 'timing', 'qualifiedVersions'];
-  fields(value, 'profile', required, ['cards', 'pages', 'keys', 'volume'], issues);
+  fields(value, 'profile', required, ['cards', 'pages', 'keys', 'volume', 'model', 'effort'], issues);
   if ('schemaVersion' in value && value.schemaVersion !== PROFILE_SCHEMA_VERSION) issues.push(`profile.schemaVersion: must be ${PROFILE_SCHEMA_VERSION}`);
   if ('profileVersion' in value && !isInt(value.profileVersion, 0, 0xffffffff)) issues.push('profile.profileVersion: must be an integer 0-4294967295');
   if ('brightnessPercent' in value && !isInt(value.brightnessPercent, 0, 100)) issues.push('profile.brightnessPercent: must be an integer 0-100');
@@ -437,6 +540,8 @@ export function validateProfile(input: unknown): RoutingProfile {
     pages: pages(value.pages, issues),
     keys: undefined as KeyMap | undefined,
     volume: undefined as VolumeSettings | null | undefined,
+    model: undefined as ModelKnobSettings | null | undefined,
+    effort: undefined as EffortKnobSettings | null | undefined,
     colors: 'colors' in value ? colors(value.colors, issues) : undefined,
     timing: 'timing' in value ? timing(value.timing, issues) : undefined,
     qualifiedVersions: 'qualifiedVersions' in value ? versions(value.qualifiedVersions, issues) : undefined,
@@ -445,6 +550,8 @@ export function validateProfile(input: unknown): RoutingProfile {
   if (!('controls' in value) || parts.controls) {
     parts.keys = blackKeys(value.keys, parts.controls, issues);
     parts.volume = volume(value.volume, parts.controls, issues);
+    parts.model = knob('model', value.model, parts.controls, DEFAULT_MODEL_SETTINGS, issues);
+    parts.effort = knob('effort', value.effort, parts.controls, DEFAULT_EFFORT_SETTINGS, issues);
   }
   if (parts.pages && parts.colors && parts.colors.pages.length < parts.pages.count) {
     issues.push(`profile.colors.pages: must list a color for each of the ${parts.pages.count} pages`);
@@ -454,6 +561,7 @@ export function validateProfile(input: unknown): RoutingProfile {
     schemaVersion: PROFILE_SCHEMA_VERSION, profileVersion: value.profileVersion as number, brightnessPercent: value.brightnessPercent as number,
     controls: parts.controls!, shortcuts: parts.shortcuts!, scroll: parts.scroll!, cards: { ...parts.cards! }, pages: { ...parts.pages! }, colors: parts.colors!,
     keys: { ...parts.keys! }, volume: parts.volume ? { ...parts.volume } : null,
+    model: parts.model ? { ...parts.model } : null, effort: parts.effort ? { ...parts.effort } : null,
     timing: parts.timing!,
     qualifiedVersions: parts.qualifiedVersions!,
   });

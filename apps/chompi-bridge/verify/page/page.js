@@ -100,7 +100,8 @@ function encoderCard(encoder, defaultCounts) {
     return [led, light];
   });
   const isWheel = encoder.id === 'wheel';
-  // The big wheel starts at one card step and knob 4 at one page step; the other knobs at one count.
+  // The big wheel starts at one card step, knob 4 at one page step and knobs 1 and 2 at one model or effort step;
+  // the other knobs at one count.
   const counts = el('input', { id: `${encoder.id}-counts`, type: 'number', min: '1', max: '96', value: String(defaultCounts[encoder.id] ?? 1), inputmode: 'numeric' });
   const turn = sign => () => {
     const n = Math.max(1, Math.min(96, Number.parseInt(counts.value, 10) || 1));
@@ -170,6 +171,9 @@ function windowCard(id) {
   card.text = el('dd', { class: 'composer-text' }, '(empty)');
   card.submitted = el('dd', {}, 'nothing yet');
   card.cardState = el('dd', {}, 'none');
+  card.model = el('dd', {}, 'unknown');
+  card.effort = el('dd', {}, 'unknown');
+  card.picker = el('dd', {}, 'closed');
   card.stops = el('ol', { class: 'stops', 'aria-label': `${CLIENT_NAMES[id]} card stops` });
   card.tasks = el('ul', { class: 'tasks', 'aria-label': `${CLIENT_NAMES[id]} tasks` });
   const input = el('input', { id: `${id}-type`, type: 'text', maxlength: '200', autocomplete: 'off', placeholder: 'synthetic text' });
@@ -188,7 +192,10 @@ function windowCard(id) {
       el('dt', {}, 'Composer'), card.composer,
       el('dt', {}, 'Composer text'), card.text,
       el('dt', {}, 'Last submitted'), card.submitted,
-      el('dt', {}, 'Card'), card.cardState),
+      el('dt', {}, 'Card'), card.cardState,
+      el('dt', {}, 'Model'), card.model,
+      el('dt', {}, 'Effort'), card.effort,
+      el('dt', {}, id === 'claude' ? 'Model menu or slider' : 'Picker'), card.picker),
     card.stops,
     form,
     el('div', { class: 'row' }, card.focusButton,
@@ -242,6 +249,12 @@ function renderDesktop(desktop) {
     setText(card.focusButton, w.composer.focused ? 'Unfocus composer' : 'Focus composer');
     setText(card.text, w.composer.text || '(empty)');
     setText(card.submitted, w.composer.submitted.length ? `"${w.composer.submitted.at(-1)}" (${w.composer.submitted.length} submitted)` : 'nothing yet');
+    // The model and effort controls the knobs drive (#906): what is open and which entry has focus.
+    if (w.picker) {
+      setText(card.model, w.picker.model);
+      setText(card.effort, w.picker.effort ?? 'none for this model');
+      setText(card.picker, w.picker.open ? `${PICKER_NAMES[w.picker.open] ?? w.picker.open} open${w.picker.focus ? `, ${w.picker.focus} focused` : ''}` : 'closed');
+    }
     setText(card.cardState, w.card ? `${w.card.kind} card, ${w.card.focused === null ? 'no stop focused' : `stop ${w.card.focused + 1} of ${w.card.stops.length} focused`}${w.card.established ? '' : ', not established'}` : 'none');
     renderList(card.stops, w.card ? w.card.stops.map((label, i) => ({ label, i, focused: w.card.focused === i, card: w.card.id })) : [], s => `${s.card}:${s.i}`,
       () => el('li'), (node, s) => { setText(node, s.focused ? `${s.label} (focused)` : s.label); node.classList.toggle('focused', s.focused); });
@@ -252,6 +265,21 @@ function renderDesktop(desktop) {
     }, (node, t) => setText(node.firstChild, `${t.title}${t.archived ? ' (archived)' : ''}${t.id === w.selected ? ' (selected)' : ''}`));
   }
   renderList($('desktop-log'), desktop.log.slice().reverse(), e => String(e.seq), () => el('li'), (node, e) => setText(node, describe(e)));
+}
+
+const PICKER_NAMES = { 'model-menu': 'model menu', 'effort-slider': 'Effort slider', 'picker-main': 'picker', 'picker-list': 'model list' };
+
+/** A picker change in the desktop log (#906): what opened, moved, changed or closed. */
+function describePicker(e) {
+  const where = CLIENT_NAMES[e.client];
+  const at = e.position ? ` ${e.position} of ${e.count}` : '';
+  switch (e.action) {
+    case 'focus': return `${where} menu focus on entry${at}`;
+    case 'pick-model': return `${where} model set to ${e.label}`;
+    case 'effort': return `${where} effort set to ${e.label} (${e.position} of ${e.count})`;
+    case 'split-pane': return `${where} split a pane (a Codex effort chord reached Claude)`;
+    default: return `${where} ${e.action.replaceAll('-', ' ')}${e.label ? `: ${e.label}` : ''}`;
+  }
 }
 
 function describe(e) {
@@ -266,6 +294,7 @@ function describe(e) {
     case 'scroll': return `${time} scrolled ${CLIENT_NAMES[e.client]} ${e.notches}`;
     case 'dictation': return `${time} dictation ended${e.client ? `, text into ${CLIENT_NAMES[e.client]}` : ', no composer had focus'}`;
     case 'volume': return `${time} system volume key ${e.key}${e.presses > 1 ? ` x${e.presses}` : ''}, no window: volume ${e.volume}%${e.muted ? ', muted' : ''}`;
+    case 'picker': return `${time} ${describePicker(e)}`;
     default: return `${time} operator ${e.action}`;
   }
 }

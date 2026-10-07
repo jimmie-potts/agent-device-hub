@@ -121,9 +121,6 @@
   "apps/chompi-bridge/src/windows/client-files.ts": {
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
     }
   },
   "apps/chompi-bridge/src/windows/package-path.ts": {

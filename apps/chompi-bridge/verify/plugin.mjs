@@ -189,7 +189,7 @@ export default definePlugin({
     { id: 'chompi-bridge', kind: 'actual', note: 'the bridge CLI from this checkout: run --simulate --desktop sim, with its routing core, slot store, lights, profile watcher and feed client' },
     { id: 'control-page', kind: 'actual', note: 'the run\'s loopback control page (apps/chompi-bridge/verify/page), a test tool' },
     { id: 'controller', kind: 'simulated', note: 'ChompiSimulator speaking HID protocol v1 to the bridge; the page injects input through it' },
-    { id: 'desktop', kind: 'simulated', note: 'SimulatedDesktop behind OS adapter interface version 4: Codex, Claude and another app with composers, cards, a synthetic system volume and a key log' },
+    { id: 'desktop', kind: 'simulated', note: 'SimulatedDesktop behind OS adapter interface version 5: Codex, Claude and another app with composers, cards, model and effort controls, a synthetic system volume and a key log' },
     { id: 'hub-feed', kind: 'simulated', note: 'SyntheticHub serving the sessions snapshot 1.3 and change stream with a run-generated token' },
   ],
   checks: [

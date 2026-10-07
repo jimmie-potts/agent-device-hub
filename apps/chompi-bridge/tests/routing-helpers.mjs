@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeSnapshot } from '../dist/routing/feed.js';
 import { hubEnvelope, hubSession } from '../dist/sim/hub.js';
+import { PickerRefusal, SimPickers } from '../dist/sim/pickers.js';
+import { NAVIGATION_KEYS } from '../dist/os-adapter.js';
+import { KEY_NAMES } from '../dist/routing/profile.js';
+
+const CLIENT_KEYS = new Set([...KEY_NAMES, ...NAVIGATION_KEYS]);
 import { helperScriptPath } from '../dist/windows/index.js';
 
 /** The helper's focus read-back bound (`$FocusSettleMs` in uia-helper.ps1), so the fake models the shipped helper. */
@@ -71,14 +76,15 @@ export function view(sessions, { status = 'current', revision = 1 } = {}) {
 }
 
 /**
- * A scripted desktop behind OS adapter interface version 4. By default the apps behave as qualified:
+ * A scripted desktop behind OS adapter interface version 5. By default the apps behave as qualified:
  * a Codex link selects an existing thread and raises Codex, `LeftAlt+L` focuses its composer, and a Claude link
  * selects the target and raises Claude with its composer focused. Like Claude Desktop, the link stamps the target's
  * `lastFocusedAt` unless Claude was already in front with that session selected. Tests then break one step.
- * Cards are scripted per client with `openCard`; pressing a card button closes the card as the clients do.
+ * Cards are scripted per client with `openCard`; pressing a card button closes the card as the clients do. The model
+ * and effort controls (#906) are the simulated desktop's own model (`SimPickers`), so both drive the same behavior.
  */
 export class FakeAdapter {
-  version = 4;
+  version = 5;
   platform = 'win32';
   calls = [];
   keys = [];
@@ -162,7 +168,11 @@ export class FakeAdapter {
     this.keys.push({ action: request.action, keys: [...request.keys] });
     if (request.action === 'down') for (const key of request.keys) this.held.add(key);
     if (request.action === 'up') for (const key of request.keys) this.held.delete(key);
-    if (request.action === 'tap' && request.keys.join('+') === 'LeftAlt+L' && this.foreground.packageIdentity === CODEX_PACKAGE) this.composer.codex = true;
+    if (request.action !== 'tap') return;
+    // An open menu or slider has keyboard focus and takes the keys: an Enter there would pick a model (#906).
+    const front = this.#front('codex') ? 'codex' : this.#front('claude') ? 'claude' : null;
+    if (front && this.pickers.open(front) && this.#pickerTap(front, request.keys.join('+'))) return;
+    if (request.keys.join('+') === 'LeftAlt+L' && this.foreground.packageIdentity === CODEX_PACKAGE) this.composer.codex = true;
   }
 
   /**
@@ -180,6 +190,107 @@ export class FakeAdapter {
   }
 
   async releaseAll() { this.calls.push(['releaseAll']); this.held.clear(); }
+
+  /**
+   * Both clients' model and effort controls (#906); Claude's values follow the session Claude shows. Set
+   * `pickers.lag = true` to make every read after a change return the state from before it once.
+   */
+  pickers = new SimPickers(() => this.claudeSelected ?? '');
+  /**
+   * Keys `tapInClient` typed: { client, keys, picker }, where `picker` is what was open in that client when the key went
+   * in: 'codex-picker' (focused), another menu or slider kind, or null.
+   */
+  clientTaps = [];
+  /** Picker changes, as the simulated desktop logs them: { client, action, label?, position?, count? }. */
+  pickerEvents = [];
+  pickerUnknown = false;
+
+  #front(client) { return this.foreground.packageIdentity === (client === 'codex' ? CODEX_PACKAGE : CLAUDE_PACKAGE); }
+
+  #apply(client, result) {
+    if (result.composerFocused !== undefined) this.composer[client] = result.composerFocused;
+    this.pickerEvents.push(...result.events.map(event => ({ client, ...event })));
+    return result.value;
+  }
+
+  #pickerTap(client, chord) {
+    return this.#apply(client, this.pickers.tap(client, chord, { composerFocused: this.composer[client], card: this.cards[client] !== null }));
+  }
+
+  /** What is open in the client right now, never lagged: the qualified menu kind (focused or not), 'slider', or null. */
+  #openNow(client) {
+    const lag = this.pickers.lag;
+    this.pickers.lag = false;
+    const view = this.pickers.describe(client);
+    this.pickers.lag = lag;
+    return view.open;
+  }
+
+  /** Like the Windows adapter: typed only while the client is in front, refused while keys are held. */
+  async tapInClient(client, keys, presses) {
+    const pending = this.#enter('tapInClient', [client, [...keys], presses]);
+    if (pending) return pending;
+    if (!['codex', 'claude'].includes(client) || !Array.isArray(keys) || keys.length < 1 || keys.length > 4 || !keys.every(key => CLIENT_KEYS.has(key) && key !== 'Enter')
+      || new Set(keys).size !== keys.length || !Number.isInteger(presses) || presses < 1 || presses > 10) {
+      throw new Error('invalid-key-request');
+    }
+    if (this.held.size > 0) throw new Error('keys-held');
+    if (this.foregroundUnknown) return unknown('no foreground');
+    if (!this.#front(client)) return known(false);
+    for (let i = 0; i < presses; i++) {
+      this.clientTaps.push({ client, keys: [...keys], picker: this.#openNow(client) });
+      this.#pickerTap(client, keys.join('+'));
+    }
+    return known(true);
+  }
+
+  async pickerState(client) {
+    const pending = this.#enter('pickerState', [client]);
+    if (pending) return pending;
+    if (this.pickerUnknown) return unknown('picker unreadable');
+    if (!this.#front(client)) return unknown(`${client}-not-foreground`);
+    return known(this.pickers.state(client));
+  }
+
+  /** A UI Automation action on the controls: only for the client in front; a refusal is unknown, as in the adapter. */
+  #action(name, args, client, act) {
+    const pending = this.#enter(name, args);
+    if (pending) return pending;
+    if (!this.#front(client)) return Promise.resolve(unknown(`${client}-not-foreground`));
+    try {
+      return Promise.resolve(known(this.#apply(client, act())));
+    } catch (error) {
+      if (error instanceof PickerRefusal) return Promise.resolve(unknown(error.message));
+      throw error;
+    }
+  }
+
+  expandSetting(client, control) { return this.#action('expandSetting', [client, control], client, () => this.pickers.expand(client, control)); }
+  collapseSetting(client, control) { return this.#action('collapseSetting', [client, control], client, () => this.pickers.collapse(client, control)); }
+  invokeSelectModel(client) { return this.#action('invokeSelectModel', [client], client, () => this.pickers.invokeSelectModel(client)); }
+  focusMenuEntry(client, menu, index, count) { return this.#action('focusMenuEntry', [client, menu, index, count], client, () => this.pickers.focusEntry(client, menu, index, count)); }
+  selectMenuOption(client, menu, index, count) { return this.#action('selectMenuOption', [client, menu, index, count], client, () => this.pickers.selectOption(client, menu, index, count)); }
+  invokeCurrentOption(client, index, count) { return this.#action('invokeCurrentOption', [client, index, count], client, () => this.pickers.invokeCurrent(client, index, count)); }
+  setSliderValue(client, from, to) { return this.#action('setSliderValue', [client, from, to], client, () => this.pickers.setSlider(client, from, to)); }
+
+  async focusComposer(client) {
+    const pending = this.#enter('focusComposer', [client]);
+    if (pending) return pending;
+    if (!this.#front(client)) return unknown(`${client}-not-foreground`);
+    this.pickers.dismiss(client);
+    this.composer[client] = !(client === 'codex' && this.cards.codex);
+    return known(this.composer[client]);
+  }
+
+  async claudeSettings(localId) {
+    const pending = this.#enter('claudeSettings', [localId]);
+    if (pending) return pending;
+    if (this.claudeUnknown) return unknown('store unreadable');
+    return known(this.claudeRecords.has(localId) ? this.pickers.claudeSettings(localId) : null);
+  }
+
+  /** Keys `tapInClient` typed into a client, as `+`-joined chords. */
+  tapped(client) { return this.clientTaps.filter(tap => !client || tap.client === client).map(tap => tap.keys.join('+')); }
 
   async codexSelectedThread(threadId, fallbackTitle) {
     const pending = this.#enter('codexSelectedThread', [threadId, fallbackTitle]);

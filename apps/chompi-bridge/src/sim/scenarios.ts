@@ -1,13 +1,17 @@
 import type { Client } from '../os-adapter.js';
 import type { Rgb } from '../protocol.js';
 import type { Activity, AttentionKind } from '../routing/feed.js';
-import { DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS, DEFAULT_VOLUME_SETTINGS } from '../routing/profile.js';
+import {
+  DEFAULT_APPLIED_COLOR, DEFAULT_ATTENTION_REPEAT_MS, DEFAULT_EFFORT_SETTINGS, DEFAULT_MENU_TIMEOUT_MS, DEFAULT_MODEL_SETTINGS, DEFAULT_PAGE_COLORS, DEFAULT_PAGE_SETTINGS,
+  DEFAULT_VOLUME_SETTINGS,
+} from '../routing/profile.js';
 import { PULSE_LOW } from '../routing/lights.js';
 import { SLOT_COUNT } from '../routing/slots.js';
 import type { ChompiSimulator } from '../simulator.js';
 import type { CardSeed, SimulatedDesktop, WindowId } from './desktop.js';
 import type { SyntheticHub } from './hub.js';
-import { CONTROL, PAGE_LED, VOLUME_LED, WHEEL_LEDS } from './panel.js';
+import { CONTROL, KNOB_LEDS, PAGE_LED, VOLUME_LED, WHEEL_LEDS } from './panel.js';
+import type { PickerSeed } from './pickers.js';
 
 /**
  * The CHOMPI bridge scenario catalog (#853): data plus small step functions, shared by the in-memory runner in CI
@@ -43,6 +47,10 @@ export interface DesktopSeed {
   selected?: Partial<Record<Client, number>>;
   composers?: Partial<Record<Client, { focused?: boolean; text?: string }>>;
   cards?: Partial<Record<Client, CardSeed>>;
+  /** The clients' starting models and effort levels (#906). */
+  pickers?: PickerSeed;
+  /** Whether the clients' UI Automation view lags one change behind (#906): each read after a change shows the state before it, once. */
+  pickerLag?: boolean;
 }
 export interface RunSeed { tasks: readonly TaskSeed[]; desktop?: DesktopSeed }
 
@@ -80,6 +88,8 @@ export function seedDesktop(desktop: SimulatedDesktop, seed: RunSeed): void {
     desktop.focusComposer(client, composer.focused ?? false);
   }
   for (const [client, card] of Object.entries(d.cards ?? {}) as [Client, CardSeed][]) desktop.openCard(client, card);
+  if (d.pickers) desktop.seedPickers(d.pickers);
+  desktop.pickers.lag = d.pickerLag === true;
   desktop.bringToFront(d.foreground === undefined ? 'other' : d.foreground);
 }
 
@@ -201,6 +211,36 @@ const clientsUntouched = (h: Harness): true | string => {
   return (now.length === mark.inputs && s.foreground === mark.foreground && s.windows.codex.composer.text === mark.text)
     || `foreground ${s.foreground}, new client input ${show(now.slice(mark.inputs).map(e => e.kind))}, draft ${show(s.windows.codex.composer.text)}`;
 };
+
+/** The model and effort knobs (#906): the profile fields the scenarios read, the clients' controls and the knob LEDs. */
+interface KnobProfile { model?: { stepCounts?: number }; effort?: { stepCounts?: number }; timing?: { menuTimeoutMs?: number }; colors: Record<string, readonly number[]> }
+const knobProfile = (h: Harness) => h.profile() as KnobProfile;
+const modelStep = (h: Harness): number => knobProfile(h).model?.stepCounts ?? DEFAULT_MODEL_SETTINGS.stepCounts;
+const effortStep = (h: Harness): number => knobProfile(h).effort?.stepCounts ?? DEFAULT_EFFORT_SETTINGS.stepCounts;
+const menuTimeout = (h: Harness): number => knobProfile(h).timing?.menuTimeoutMs ?? DEFAULT_MENU_TIMEOUT_MS;
+const picker = (h: Harness, client: Client) => h.desktop.snapshot().windows[client].picker;
+const pickerIs = (h: Harness, client: Client, expected: Partial<ReturnType<typeof picker>>): true | string => {
+  const now = picker(h, client);
+  return Object.entries(expected).every(([key, value]) => now[key as keyof typeof now] === value) || `${client} ${show(now)}`;
+};
+const knobLed = (h: Harness, knob: 'model' | 'effort') => h.simulator.leds[KNOB_LEDS[knob]];
+const knobShows = (h: Harness, knob: 'model' | 'effort', name: 'active' | 'applied' | 'unknown' | 'error'): true | string => {
+  const expected = name === 'applied' ? knobProfile(h).colors.applied ?? DEFAULT_APPLIED_COLOR : knobProfile(h).colors[name] ?? [];
+  return same(knobLed(h, knob), expected) || `knob ${knob === 'model' ? 1 : 2} LED ${show(knobLed(h, knob))}`;
+};
+/** The picker changes the clients logged (opened, focused, picked, stepped, closed, split pane). */
+const pickerActions = (h: Harness, client: Client) => h.desktop.log.flatMap(e => e.kind === 'picker' && e.client === client ? [e.action] : []);
+/** The keys a client window received, as `+`-joined chords (`Enter` from Send included). */
+const keysInto = (h: Harness, client: Client) => h.desktop.log.flatMap(e => e.kind === 'key' && e.window === client && e.action === 'tap' ? [e.keys.join('+')] : []);
+/** Nothing was submitted from either composer and no Claude pane was split. */
+const noPrompt = (h: Harness): true | string => {
+  const sent = [...submitted(h, 'codex'), ...submitted(h, 'claude')];
+  const split = ['codex', 'claude'].some(client => pickerActions(h, client as Client).includes('split-pane'));
+  return (sent.length === 0 && !split) || `submitted ${show(sent)}${split ? ', a pane split' : ''}`;
+};
+/** Claude in front on its task (task 2 of `DESK_BASIC`) with its composer focused. */
+const CLAUDE_IN_FRONT: DesktopSeed = { foreground: 'claude', selected: { claude: 2 }, composers: { claude: { focused: true } } };
+const CODEX_IN_FRONT: DesktopSeed = { foreground: 'codex', selected: { codex: 1 }, composers: { codex: { focused: true } } };
 
 export const SCENARIOS: readonly Scenario[] = Object.freeze([
   {
@@ -438,6 +478,172 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
       act('turn the volume knob one detent clockwise', h => h.simulator.turn(CONTROL.volumeTurn, volumeStep(h))),
       expect('the knob works again: the volume is 56', h => volumeIs(h, 56, false)),
       holds('no Enter was typed', h => enters(h) === 0 || `${enters(h)} Enter`, 500),
+    ],
+  },
+  {
+    id: 'claude-model-knob',
+    title: 'Knob 1 expands Claude\'s model menu on the current model, moves focus one model per detent, and a still click selects it, confirmed by the client, without any key',
+    seed: { ...DESK_BASIC, desktop: CLAUDE_IN_FRONT },
+    steps: [
+      act('turn knob 1 one step clockwise', h => h.simulator.turn(CONTROL.modelTurn, modelStep(h))),
+      expect('Claude\'s model menu opens with the current model, Sonnet 5.5, focused', h => pickerIs(h, 'claude', { open: 'model-menu', focus: 'Sonnet 5.5' })),
+      expect('the bridge logs the open menu and knob 1 shows the active color', h => (logged(h, 'knob-menu', { knob: 'model', client: 'claude', action: 'opened' }).length === 1
+        && knobShows(h, 'model', 'active') === true) || `${show(logged(h, 'knob-menu'))}, ${show(knobShows(h, 'model', 'active'))}`),
+      act('turn knob 1 one step counter-clockwise', h => h.simulator.turn(CONTROL.modelTurn, -modelStep(h))),
+      expect('Fable 5.1 has focus', h => pickerIs(h, 'claude', { open: 'model-menu', focus: 'Fable 5.1' })),
+      act('hold knob 1 still for 300 ms, then click it', async h => { await h.wait(300); h.simulator.click(CONTROL.modelClick); }),
+      expect('Claude now uses Fable 5.1, the menu is closed and the composer has focus again', h => (pickerIs(h, 'claude', { model: 'Fable 5.1', open: null }) === true
+        && h.desktop.snapshot().windows.claude.composer.focused) || show(picker(h, 'claude'))),
+      expect('the bridge logs `model` applied, confirmed by the Model button and the session record', h => logged(h, 'model', { client: 'claude', outcome: 'applied', evidence: 'button-and-record' }).length === 1
+        || show(logged(h, 'model'))),
+      expect('knob 1 flashes the applied color', h => knobShows(h, 'model', 'applied'), 1000),
+      holds('no key reached Claude, no prompt was sent and the effort is unchanged', h => (noPrompt(h) === true && keysInto(h, 'claude').length === 0
+        && picker(h, 'claude').effort === 'Low') || `${show(noPrompt(h))}, keys ${show(keysInto(h, 'claude'))}, ${show(picker(h, 'claude'))}`, 500),
+    ],
+  },
+  {
+    id: 'claude-effort-knob',
+    title: 'Knob 2 sets Claude\'s Effort slider one step per detent, confirmed by the client, stops at the top of the range and collapses after the timeout',
+    seed: { ...DESK_BASIC, desktop: { ...CLAUDE_IN_FRONT, pickers: { claude: { effort: 'Higher' } } } },
+    steps: [
+      act('turn knob 2 one step clockwise', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('the slider is open and the effort is Max, the top', h => pickerIs(h, 'claude', { open: 'effort-slider', effort: 'Max' })),
+      expect('the bridge logs `effort` applied through the slider, level 6 of 6', h => logged(h, 'effort', { client: 'claude', route: 'slider', direction: 'up', outcome: 'applied', position: 6, count: 6 }).length === 1
+        || show(logged(h, 'effort'))),
+      expect('knob 2 flashes the applied color', h => knobShows(h, 'effort', 'applied'), 1000),
+      act('turn knob 2 three more steps clockwise', h => h.simulator.turn(CONTROL.effortTurn, 3 * effortStep(h))),
+      expect('the bridge sets nothing and logs one `at-limit`, with a red knob 2', h => (logged(h, 'effort', { outcome: 'at-limit' }).length === 1
+        && knobShows(h, 'effort', 'error') === true) || show(logged(h, 'effort'))),
+      act('turn knob 2 one step counter-clockwise', h => h.simulator.turn(CONTROL.effortTurn, -effortStep(h))),
+      expect('the effort is Higher again', h => pickerIs(h, 'claude', { effort: 'Higher' })),
+      act('leave knob 2 alone past the menu timeout', h => h.wait(menuTimeout(h) + 600)),
+      expect('the bridge collapsed the slider and gave the composer focus, keeping Higher', h => (pickerIs(h, 'claude', { open: null, effort: 'Higher' }) === true
+        && logged(h, 'knob-menu', { knob: 'effort', action: 'closed', reason: 'timeout', method: 'collapse' }).length === 1
+        && h.desktop.snapshot().windows.claude.composer.focused) || `${show(picker(h, 'claude'))}, ${show(logged(h, 'knob-menu'))}`),
+      holds('no key reached Claude and the model is unchanged', h => (noPrompt(h) === true && keysInto(h, 'claude').length === 0 && picker(h, 'claude').model === 'Sonnet 5.5')
+        || `${show(noPrompt(h))}, ${show(picker(h, 'claude'))}`, 500),
+    ],
+  },
+  {
+    id: 'claude-effort-unsupported',
+    title: 'With a Claude model that has no effort setting (Haiku), knob 2 reports unsupported with a red flash and does nothing',
+    seed: { ...DESK_BASIC, desktop: { ...CLAUDE_IN_FRONT, pickers: { claude: { model: 'Haiku 4.5' } } } },
+    steps: [
+      expect('Claude uses Haiku 4.5, which shows no Effort control', h => pickerIs(h, 'claude', { model: 'Haiku 4.5', effort: null })),
+      act('note the desktop: Claude in front, no input yet', markDesktop),
+      act('turn knob 2 one step clockwise', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('the bridge logs `effort` unsupported', h => logged(h, 'effort', { client: 'claude', outcome: 'unsupported' }).length === 1 || show(logged(h, 'effort'))),
+      expect('knob 2 flashes the error color', h => knobShows(h, 'effort', 'error'), 1000),
+      holds('nothing reached Claude and the same window is in front', desktopUntouched, 500),
+    ],
+  },
+  {
+    id: 'codex-model-knob',
+    title: 'Knob 1 expands Codex\'s picker and model list, moves focus one model per detent, a still click selects it, and one Escape closes the picker, confirmed by its button',
+    seed: { ...DESK_BASIC, desktop: CODEX_IN_FRONT },
+    steps: [
+      act('turn knob 1 one step clockwise', h => h.simulator.turn(CONTROL.modelTurn, modelStep(h))),
+      expect('Codex\'s model list opens on the current model, GPT-6 Luna', h => pickerIs(h, 'codex', { open: 'picker-list', focus: 'GPT-6 Luna' })),
+      act('turn knob 1 one step counter-clockwise', h => h.simulator.turn(CONTROL.modelTurn, -modelStep(h))),
+      expect('GPT-6 Astra has focus', h => pickerIs(h, 'codex', { focus: 'GPT-6 Astra' })),
+      act('hold knob 1 still for 300 ms, then click it', async h => { await h.wait(300); h.simulator.click(CONTROL.modelClick); }),
+      expect('Codex now uses GPT-6 Astra and the picker, which stays open after a pick, is closed', h => pickerIs(h, 'codex', { model: 'GPT-6 Astra', open: null })),
+      expect('the bridge logs `model` applied, confirmed by the closed picker button\'s name', h => logged(h, 'model', { client: 'codex', outcome: 'applied', evidence: 'picker-name' }).length === 1
+        || show(logged(h, 'model'))),
+      expect('the only key Codex received was one Escape', h => show(keysInto(h, 'codex')) === show(['Escape']) || show(keysInto(h, 'codex'))),
+      holds('no prompt was sent', noPrompt, 500),
+    ],
+  },
+  {
+    id: 'codex-effort-chords',
+    title: 'With the owner\'s chords in the profile, knob 2 sends one chord per detent with Codex in front and the picker closed, confirmed by the picker button\'s name',
+    seed: { ...DESK_BASIC, desktop: CODEX_IN_FRONT },
+    steps: [
+      act('save the profile with the owner\'s Codex effort chords', h => h.writeProfile(p => ({
+        ...p, profileVersion: 3, shortcuts: { ...(p.shortcuts as Record<string, unknown>), codexEffortIncrease: ['LeftControl', 'LeftAlt', 'Equal'], codexEffortDecrease: ['LeftControl', 'LeftAlt', 'Minus'] },
+      }))),
+      expect('the bridge applies it', h => logged(h, 'profile-applied', { profileVersion: 3 }).length === 1 || 'not applied', 6000),
+      act('turn knob 2 one step clockwise', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('the effort is Standard and the bridge logs `effort` applied through the chord', h => (pickerIs(h, 'codex', { open: null, effort: 'Standard' }) === true
+        && logged(h, 'effort', { client: 'codex', route: 'chord', outcome: 'applied', evidence: 'picker-name' }).length === 1) || `${show(picker(h, 'codex'))}, ${show(logged(h, 'effort'))}`),
+      act('turn knob 2 one step counter-clockwise', h => h.simulator.turn(CONTROL.effortTurn, -effortStep(h))),
+      expect('the effort is Light again', h => pickerIs(h, 'codex', { effort: 'Light' })),
+      expect('Codex received only the two chords and its picker never opened', h => (show(keysInto(h, 'codex')) === show(['LeftControl+LeftAlt+Equal', 'LeftControl+LeftAlt+Minus'])
+        && !pickerActions(h, 'codex').includes('open-picker')) || show(keysInto(h, 'codex'))),
+      holds('no prompt was sent', noPrompt, 500),
+    ],
+  },
+  {
+    id: 'codex-effort-knob',
+    title: 'Without chords in the profile, knob 2 steps Codex\'s effort through the picker\'s Power entry, reads the level count from the announcement, stops at the top, and its click closes the picker with one Escape',
+    seed: { ...DESK_BASIC, desktop: CODEX_IN_FRONT },
+    steps: [
+      act('turn knob 2 one step clockwise', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('the effort is Standard, level 2 of 5', h => (pickerIs(h, 'codex', { open: 'picker-main', focus: 'Power', effort: 'Standard' }) === true
+        && logged(h, 'effort', { client: 'codex', route: 'picker', outcome: 'applied', position: 2, count: 5 }).length === 1) || `${show(picker(h, 'codex'))}, ${show(logged(h, 'effort'))}`),
+      act('turn knob 2 three more steps clockwise', h => h.simulator.turn(CONTROL.effortTurn, 3 * effortStep(h))),
+      expect('the effort is Extra High, level 5 of 5', h => pickerIs(h, 'codex', { effort: 'Extra High' })),
+      act('turn knob 2 once more', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('the bridge sends nothing and logs `at-limit` with a red knob 2', h => (logged(h, 'effort', { outcome: 'at-limit', position: 5, count: 5 }).length === 1
+        && knobShows(h, 'effort', 'error') === true) || show(logged(h, 'effort').at(-1))),
+      act('click knob 2', h => h.simulator.click(CONTROL.effortClick)),
+      expect('the picker is closed with one Escape and the level stays Extra High', h => (pickerIs(h, 'codex', { open: null, effort: 'Extra High' }) === true
+        && logged(h, 'knob-menu', { knob: 'effort', action: 'closed', reason: 'click', method: 'escape', verified: true }).length === 1) || show(picker(h, 'codex'))),
+      holds('Codex received Right four times and one Escape, and the model is unchanged', h => (show(keysInto(h, 'codex')) === show(['Right', 'Right', 'Right', 'Right', 'Escape'])
+        && noPrompt(h) === true && picker(h, 'codex').model === 'GPT-6 Luna') || show(keysInto(h, 'codex')), 500),
+    ],
+  },
+  {
+    id: 'knob-lagging-reads',
+    title: 'With every UI Automation read lagging one change behind, a Codex model pick still closes its picker with exactly one Escape and a Claude menu collapses once',
+    seed: { ...DESK_BASIC, desktop: { ...CODEX_IN_FRONT, pickerLag: true } },
+    steps: [
+      act('turn knob 1 one step clockwise, then one step counter-clockwise', async h => {
+        h.simulator.turn(CONTROL.modelTurn, modelStep(h));
+        await h.wait(1500);
+        h.simulator.turn(CONTROL.modelTurn, -modelStep(h));
+      }),
+      expect('GPT-6 Astra has focus in the model list', h => pickerIs(h, 'codex', { open: 'picker-list', focus: 'GPT-6 Astra' }), 5000),
+      act('hold knob 1 still for 1 s, then click it', async h => { await h.wait(1000); h.simulator.click(CONTROL.modelClick); }),
+      expect('Codex uses GPT-6 Astra and its picker is closed', h => pickerIs(h, 'codex', { model: 'GPT-6 Astra', open: null }), 6000),
+      holds('Codex received exactly one Escape, though the first read after it still showed the picker', h => show(keysInto(h, 'codex')) === show(['Escape']) || show(keysInto(h, 'codex')), 1000),
+      act('bring Claude to the front and turn knob 1 one step', h => { h.desktop.bringToFront('claude'); h.simulator.turn(CONTROL.modelTurn, modelStep(h)); }),
+      expect('Claude\'s model menu opens', h => pickerIs(h, 'claude', { open: 'model-menu' }), 5000),
+      act('leave knob 1 alone past the menu timeout', h => h.wait(menuTimeout(h) + 1500)),
+      expect('the menu collapsed once and nothing was picked', h => (pickerIs(h, 'claude', { open: null, model: 'Sonnet 5.5' }) === true
+        && logged(h, 'knob-menu', { knob: 'model', client: 'claude', action: 'closed', method: 'collapse' }).length === 1) || show(logged(h, 'knob-menu'))),
+      holds('no key reached Claude and no prompt was sent', h => (keysInto(h, 'claude').length === 0 && noPrompt(h) === true) || show(keysInto(h, 'claude')), 500),
+    ],
+  },
+  {
+    id: 'knob-refusals',
+    title: 'Knobs 1 and 2 refuse with a red flash and do nothing while a card is open or another app is in front; any other control closes an open menu first',
+    seed: {
+      ...DESK_BASIC,
+      desktop: {
+        ...CLAUDE_IN_FRONT, composers: { claude: { focused: true, text: 'synthetic draft' } },
+        cards: { claude: { kind: 'approval', stops: ['Synthetic allow', 'Synthetic deny'] } },
+      },
+    },
+    steps: [
+      act('note the desktop: Claude in front with a card open', markDesktop),
+      act('turn knob 1 one step', h => h.simulator.turn(CONTROL.modelTurn, modelStep(h))),
+      expect('it is refused with `card-open`', h => logged(h, 'knob-refused', { knob: 'model', client: 'claude', reason: 'card-open' }).length === 1 || show(logged(h, 'knob-refused'))),
+      act('turn knob 2 one step', h => h.simulator.turn(CONTROL.effortTurn, effortStep(h))),
+      expect('it is refused with `card-open` too', h => logged(h, 'knob-refused', { knob: 'effort', client: 'claude', reason: 'card-open' }).length === 1 || show(logged(h, 'knob-refused'))),
+      expect('knob 1 and knob 2 flash the error color', h => (knobShows(h, 'model', 'error') === true && knobShows(h, 'effort', 'error') === true) || show([knobLed(h, 'model'), knobLed(h, 'effort')]), 1000),
+      holds('nothing reached Claude and the card stays open', h => (desktopUntouched(h) === true && card(h, 'claude') !== null) || show(desktopUntouched(h)), 500),
+      act('close the card and bring another app to the front', h => { h.desktop.closeCard('claude'); h.desktop.bringToFront('other'); }),
+      act('note the desktop: another app in front', markDesktop),
+      act('turn knob 1 one step', h => h.simulator.turn(CONTROL.modelTurn, modelStep(h))),
+      expect('it is refused with `not-agent-client`', h => logged(h, 'knob-refused', { knob: 'model', reason: 'not-agent-client' }).length === 1 || show(logged(h, 'knob-refused'))),
+      holds('nothing reached the other app', desktopUntouched, 500),
+      act('bring Claude back to the front and turn knob 1 one step', h => { h.desktop.bringToFront('claude'); h.simulator.turn(CONTROL.modelTurn, modelStep(h)); }),
+      expect('Claude\'s model menu opens', h => pickerIs(h, 'claude', { open: 'model-menu' })),
+      act('press Play while the menu is open', h => h.simulator.click(CONTROL.play)),
+      expect('the bridge collapses the menu and refocuses the composer first, then Send submits the draft', h => (show(submitted(h, 'claude')) === show(['synthetic draft'])
+        && logged(h, 'knob-menu', { knob: 'model', action: 'closed', reason: 'other-control', method: 'collapse' }).length === 1) || `submitted ${show(submitted(h, 'claude'))}, ${show(logged(h, 'knob-menu'))}`),
+      holds('the menu picked nothing: Claude still uses Sonnet 5.5', h => pickerIs(h, 'claude', { model: 'Sonnet 5.5', open: null }), 500),
     ],
   },
 ] satisfies Scenario[]);
