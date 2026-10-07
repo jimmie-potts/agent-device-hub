@@ -8,7 +8,7 @@
 
 - [x] 2.1 Assert the dashboard and Now Playing views over `session/2.0` and `playback/2.0` records, with the synthetic previews' frame hashes unchanged (`agent-dashboard`, `now-playing`, `dashboard-service` tests).
 - [x] 2.2 Read 2.0 records in the presentation, render through injectable renderers, and drop the agent-state and observability imports.
-- [x] 2.3 Assert each completion's result and evidence and the three restored cancellation cases (`control.test.ts`, `monitor-presentation.test.ts`), then add `PixooControl`.
+- [x] 2.3 Assert each completion's result and evidence, a start a whole takeover holds back completed `observed` and one a newer command superseded kept `cancelled`, and the three restored cancellation cases (`control.test.ts`, `monitor-presentation.test.ts`), then add `PixooControl`.
 
 ## 3. The module
 

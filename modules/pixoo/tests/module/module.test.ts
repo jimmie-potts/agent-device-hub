@@ -20,7 +20,7 @@ import {monitorView} from '../../src/presentation/sources.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
-import {DEVICE, FAST, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
+import {DEVICE, FAST, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackState, sleep, waitFor} from './support.js';
 
 const FAILING_WORKER = new URL('./fixtures/failing-render-worker.js', import.meta.url);
 const HEAP_WORKER = new URL('./fixtures/heap-worker.js', import.meta.url);
@@ -284,6 +284,37 @@ void describe('Now Playing', () => {
       await waitFor(() => world.device.state().shown?.digests[0] === card ? true : undefined, 'the card on the device');
       const display = await waitFor(() => world.display()?.showing === 'card' ? world.display() : undefined, 'the card in the display record');
       assert.deepEqual(display.nowPlaying, {media: 'off', card: true, stale: false, takeover: null});
+    });
+  });
+
+  void it('completes a playlist start that a whole takeover holds back as observed, and plays it once the song stops', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const whole = await accepted(world.request(FAMILIES.nowPlaying, 'org.bunny.pixoo-now-playing.set.requested', {media: 'whole'}));
+      assert.equal((await world.outcome(whole)).data.result, 'succeeded');
+      const rendition = await importSolid(world, [10, 20, 30], 'Teal');
+      const created = await accepted(playlist(world, {operation: 'create', name: 'Desk'}));
+      assert.equal((await world.outcome(created)).data.result, 'succeeded');
+      const list = await waitFor(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist');
+      const filled = await accepted(playlist(world, {operation: 'items', playlistId: list.id, revision: list.playlistRevision, items: [{renditionId: rendition.id}]}));
+      assert.equal((await world.outcome(filled)).data.result, 'succeeded');
+      const record = await world.publishPlayback();
+      await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the song\'s card offered');
+      // The start commits the playlist as the selection; the takeover pauses it for the card before its first picture
+      // goes out. The selection is the start's effect, so the start is observed, not cancelled.
+      const started = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}));
+      assert.deepEqual((await world.outcome(started)).data, {requestId: started, result: 'succeeded', evidence: 'observed'});
+      const held = await waitFor(() => world.display()?.nowPlaying.takeover === 'whole' ? world.display() : undefined, 'the whole takeover');
+      assert.equal(held.player.playlistId, list.id);
+      const card = frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
+      await waitFor(() => world.device.state().shown?.digests[0] === card ? true : undefined, 'the card on the device');
+      // The song stops: the takeover gives the display back, and the playlist plays its picture.
+      world.revision += 1;
+      world.playback = [{...record, revision: world.revision, playback: {status: 'known', player: 'stopped', controls: ['play']}}];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(world.playback[0] ?? record)});
+      const teal = frameDigest(Buffer.alloc(12288).map((_, index) => [10, 20, 30][index % 3] ?? 0));
+      await waitFor(() => world.device.state().shown?.digests[0] === teal ? true : undefined, 'the playlist\'s picture once the song stops');
     });
   });
 });

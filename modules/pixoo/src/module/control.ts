@@ -124,8 +124,8 @@ export class PixooControl {
   readonly #commands = new AsyncLocalStorage<object>();
   /** The first media operation each command's action launched. */
   readonly #launched = new WeakMap<object, number>();
-  /** Media operations a command launched: their result once known, or the command's wait for it. */
-  readonly #tracked = new Map<number, {result?: OperationResult<unknown>; resolve?: (result: OperationResult<unknown>) => void}>();
+  /** Media operations a command launched: the player generation each ran for, its result once known, or the command's wait for it. */
+  readonly #tracked = new Map<number, {generation: number; result?: OperationResult<unknown>; resolve?: (result: OperationResult<unknown>) => void}>();
   readonly #unsubscribe: () => void;
 
   constructor({player, monitor, library, profile}: ControlOptions) {
@@ -276,7 +276,7 @@ export class PixooControl {
       const command = this.#commands.getStore();
       if (command === undefined || this.#launched.has(command)) return;
       this.#launched.set(command, event.operationId);
-      this.#tracked.set(event.operationId, {});
+      this.#tracked.set(event.operationId, {generation: event.generation});
       return;
     }
     const entry = this.#tracked.get(event.operationId);
@@ -294,6 +294,11 @@ export class PixooControl {
    * display back from Monitor first, and any other interrupts it at once, which cancels a pending start. When the action
    * launched an upload for its own player generation, the completion is that upload's; otherwise the action changed only
    * the module's playback state, which it saved, and the completion is observed.
+   *
+   * A Now Playing takeover is the exception. While a song plays and Media wants a whole takeover, a start pauses for the
+   * card at once, rather than at the next tick, so its first picture never flashes. When the takeover's pause cancels the
+   * upload, the selection the command committed stands and plays once the song ends, so the command completes
+   * `observed`: its committed state is the evidence. An upload that a newer command cancelled stays `cancelled`.
    */
   async #playback(action: () => Promise<void>, starts: boolean): Promise<Completion> {
     const command = {};
@@ -302,15 +307,19 @@ export class PixooControl {
     } catch (error) {
       return errorCompletion(error);
     }
+    if (starts) this.#monitor.takeOverNow();
     const operationId = this.#launched.get(command);
     const entry = operationId === undefined ? undefined : this.#tracked.get(operationId);
     if (operationId === undefined || entry === undefined) return OBSERVED;
-    const {result} = entry;
-    if (result !== undefined) {
-      this.#tracked.delete(operationId);
-      return deviceCompletion(result, 'media');
+    let {result} = entry;
+    if (result === undefined) result = await new Promise<OperationResult<unknown>>(resolve => { entry.resolve = resolve; });
+    else this.#tracked.delete(operationId);
+    if (!result.ok && (result.code === 'cancelled' || result.code === 'stale-generation')) {
+      // The pause cancels the upload before the takeover records itself, so the presentation's queue settles first.
+      await this.#monitor.settled();
+      if (this.#monitor.heldBack(entry.generation)) return OBSERVED;
     }
-    return deviceCompletion(await new Promise<OperationResult<unknown>>(resolve => { entry.resolve = resolve; }), 'media');
+    return deviceCompletion(result, 'media');
   }
 }
 

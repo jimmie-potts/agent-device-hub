@@ -5,13 +5,14 @@ import {LibraryError} from '../../src/library/index.js';
 import {MediaError} from '../../src/media/index.js';
 import {PlaybackError,Player} from '../../src/playback/index.js';
 import {MonitorPresentation} from '../../src/presentation/monitor-presentation.js';
+import type {PlaybackSourceStatus} from '../../src/presentation/sources.js';
 import {PixooControl,deviceCompletion,errorCompletion} from '../../src/module/control.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 
 async function flush(clock?:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock?.advance(0);}}
-async function setup(options:{online?:boolean}={}){
- const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});device.setOnline(options.online??true);
+async function setup(options:{online?:boolean;latencyMs?:number}={}){
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock,latencyMs:options.latencyMs??0});device.setOnline(options.online??true);
  const player=await Player.open({store,device,clock}),monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
  const control=new PixooControl({player,monitor});
  const close=async()=>{control.close();await monitor.close();await player.close();};
@@ -54,6 +55,37 @@ it('attributes each upload to the command that launched it while another command
   expect(b).toMatchObject({result:'succeeded',evidence:'transmitted'});
   expect(['succeeded','failed']).toContain(a.result);
   if(a.result==='failed')expect(a.error?.code).toBe('cancelled');
+ }finally{await s.close();}
+});
+const song:PlaybackSourceStatus={source:'current',view:{card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false}};
+const uploaded=(s:Awaited<ReturnType<typeof setup>>)=>s.device.operations.filter(o=>o.kind==='uploadAnimation'&&o.outcome==='success').length;
+it('completes a start that a whole Now Playing takeover pauses for the card as observed, and plays it once the song ends',async()=>{
+ // Each upload takes 50 ms at the device, so the takeover pauses the start before its first picture goes out.
+ const s=await setup({latencyMs:50});
+ try{
+  await s.monitor.setNowPlaying('whole');s.monitor.submitPlayback(song);
+  expect(await s.settle(s.control.start(s.store.playlist.id))).toEqual({result:'succeeded',evidence:'observed'});
+  expect(s.monitor.nowPlayingSummary().takeover).toBe('whole');
+  expect(s.player.getState()).toMatchObject({intent:'paused',playlistId:s.store.playlist.id});
+  expect(uploaded(s)).toBe(0);
+  // The song ends: the takeover gives the display back, and the start's selection plays.
+  s.monitor.submitPlayback({source:'current',view:{card:false}});
+  for(let i=0;i<5;i++){await flush(s.clock);s.clock.advance(50);}
+  expect(s.player.getState().intent).toBe('active');
+  expect(uploaded(s)).toBe(1);
+ }finally{await s.close();}
+});
+it('keeps a start that a newer command superseded cancelled, though a takeover then pauses the newer one',async()=>{
+ const s=await setup({latencyMs:50});
+ try{
+  await s.monitor.setNowPlaying('whole');
+  const start=s.control.start(s.store.playlist.id);
+  await flush();
+  // The start's upload waits at the device. Next supersedes it, and the song that starts at once pauses next for the card.
+  const next=s.control.control('next');s.monitor.submitPlayback(song);
+  expect(await s.settle(start)).toMatchObject({result:'failed',evidence:'none',error:{code:'cancelled'}});
+  expect(await s.settle(next)).toEqual({result:'succeeded',evidence:'observed'});
+  expect(s.monitor.nowPlayingSummary().takeover).toBe('whole');
  }finally{await s.close();}
 });
 it('refuses resume without a context as invalid-state, proving no effect',async()=>{

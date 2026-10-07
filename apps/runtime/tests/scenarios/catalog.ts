@@ -1547,6 +1547,8 @@ const pixooNowPlaying: Scenario = {
     expect('the setting completes', h => completedAs(h, 'pixoo-whole-1', 'succeeded', 'observed')),
     ...pixooPlaylist(),
     act('the operator starts the playlist while the song plays on', h => startPlaylist(h, 'pixoo-start', 'pixoo-start-2')),
+    // The takeover pauses the playlist for the card at once, so the start's selection, committed, is its evidence.
+    expect('the start completes succeeded, observed: the playlist is selected and waits behind the card', h => completedAs(h, 'pixoo-start-2', 'succeeded', 'observed'), 8000),
     expect('Media hands the Pixoo to the song\'s card', h => {
       const display = pixooDisplay(h);
       return (display?.mode === 'media' && display.nowPlaying.takeover === 'whole' && showsCard(h) === true) || `display ${show(display)}, ${show(showsCard(h))}`;

@@ -189,6 +189,12 @@ outcome:
 - **Observed.** A change to state the module owns (pause, stop, clear,
   settings, playlists, media, a dismissal) is `succeeded` with `observed`: its
   committed state, published in the same transaction, is the evidence.
+- **Held back by Now Playing.** While a song plays and Media wants a `whole`
+  takeover, a start, show, resume or restart pauses for the card at once,
+  rather than at the next tick. When that pause cancels the command's upload,
+  the command is `succeeded` with `observed`: the selection it committed is
+  the evidence, and it plays once the song stops. An upload that a newer
+  command cancelled stays `failed` with `cancelled`.
 - **Refused after acceptance.** A domain refusal after acceptance is `failed`
   with its registry code; any other failure once the work began is
   `uncertain`.

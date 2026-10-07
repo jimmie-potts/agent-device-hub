@@ -70,6 +70,7 @@ Otherwise it SHALL store its record of the work in the transaction that publishe
 - Of the failures it did not answer, a write or upload that may have reached the device SHALL be `uncertain` with `uncertain-result` and no evidence.
 - One that did not reach it SHALL be `failed`: `unavailable` for a device that did not answer, `cancelled` for one a newer command superseded.
 - A change to state the module owns (pause, stop, clear, the presentation and Now Playing settings, playlists, media and a dismissal) SHALL complete `succeeded` with `observed`, its committed state being the evidence.
+- While a song plays and Media wants a `whole` takeover, a start, show, resume or restart SHALL pause for the card at once. One whose upload that pause cancelled SHALL complete `succeeded` with `observed`, the selection it committed being the evidence, and SHALL play once the takeover ends.
 - A domain refusal after acceptance SHALL be `failed` with its registry code; any other failure after the work began SHALL be `uncertain`.
 
 A repeated `(source, requestId)` with the same family, subject and data SHALL be accepted again and change nothing; with other content, it SHALL be refused with `duplicate-conflict`, for 24 hours after its completion and across restarts. A command accepted before a restart and never completed SHALL be reported `uncertain` with `uncertain-result` at the next start and SHALL NOT run again. As ControlService did, a playback command that starts SHALL take the display from Monitor, and any other SHALL interrupt Monitor, so a stop, pause or clear SHALL cancel a pending Media selection at once.
@@ -85,6 +86,14 @@ A repeated `(source, requestId)` with the same family, subject and data SHALL be
 #### Scenario: A pending Media selection cancelled
 - **WHEN** a start waits on its capture with Monitor present, and a stop, pause or clear arrives
 - **THEN** the start completes `failed` with `cancelled` and no evidence, the stop, pause or clear completes `observed`, nothing is selected and nothing was uploaded
+
+#### Scenario: A start held back by a whole takeover
+- **WHEN** Now Playing is `whole` in Media, a song plays, and a playlist is started
+- **THEN** the start completes `succeeded` with `observed`, the takeover holds the card with the playlist selected and nothing of the playlist uploaded, and the playlist plays once the song stops
+
+#### Scenario: A start superseded before a takeover
+- **WHEN** a start's upload waits at the device, a `next` supersedes it, and a song then starts with Now Playing `whole`
+- **THEN** the start completes `failed` with `cancelled`, and the `next` completes `observed` behind the card
 
 #### Scenario: A write the Pixoo refused
 - **WHEN** the Pixoo answers a brightness write with an error code

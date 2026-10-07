@@ -45,6 +45,8 @@ export class MonitorPresentation {
  private takeover:Takeover|null=null;
  private takeoverPending=false;
  private lastTakeover:NowPlayingStatus['lastTakeover']=null;
+ /** The player generation the last takeover's pause retired, so a command whose upload that pause cancelled is known. */
+ private heldFrom:number|null=null;
  private lastOutcome:PresentationStatus['lastOutcome']=null;
  /** The current card's frame: null while it renders, or after a failed render until `retryAt`. */
  private card:{key:string;rgb:Uint8Array|null;retryAt:number}|null=null;
@@ -135,10 +137,11 @@ export class MonitorPresentation {
   this.takeoverPending=true;
   void this.enqueue(async()=>{
    if(!this.eligible(kind))return;
+   const from=this.player.getState().generation;
    await this.player.pause();
    const state=this.player.getState();
    if(this.closed||this.configuration.mode!=='media'||state.intent!=='paused'||!state.requestedScreenOn)return;
-   this.takeover={kind,generation:state.generation,until:kind==='popup'?this.clock()+POPUP_MS:Infinity};this.lastFrame='';this.onChange();
+   this.takeover={kind,generation:state.generation,until:kind==='popup'?this.clock()+POPUP_MS:Infinity};this.heldFrom=from;this.lastFrame='';this.onChange();
   }).catch(()=>{}).finally(()=>{this.takeoverPending=false;});
  }
  /** End a takeover whose card is gone, whose pop-up expired or whose setting changed. */
@@ -152,6 +155,15 @@ export class MonitorPresentation {
    await this.player.resume();this.lastTakeover='resumed';this.onChange();
   }).catch(()=>{this.lastTakeover='dropped';});
  }
+ /** Starts a whole takeover now if Now Playing wants one, as the next tick would. */
+ takeOverNow(){if(this.nowPlaying.media==='whole'&&this.playback.view.card)this.beginTakeover('whole');}
+ /**
+  * Whether a Now Playing takeover paused the player at `generation` and took the display: the selection made at that
+  * generation stood until the card took over, and the takeover gives it back once the song ends.
+  */
+ heldBack(generation:number):boolean{return this.heldFrom===generation;}
+ /** Settles once the presentation's queued work, such as a takeover's pause, has run. */
+ settled():Promise<void>{return this.tail.then(()=>undefined);}
  /** Forget a takeover without resuming: the user, the screen or a failure owns what happens next. */
  private dropTakeover(){if(!this.takeover)return;this.takeover=null;this.lastTakeover='dropped';this.lastFrame='';this.onChange();}
  /** The picture the display should show now, if the presentation owns it. */
@@ -233,7 +245,7 @@ export class MonitorPresentation {
   if(this.popupUntil!==0&&(this.clock()>=this.popupUntil||!this.playback.view.card)){this.popupUntil=0;changed=true;}
   this.settleTakeover();
   // A song already playing when Media starts takes the display over too; the owner publishes nothing new to start it.
-  if(this.nowPlaying.media==='whole'&&this.playback.view.card)this.beginTakeover('whole');
+  this.takeOverNow();
   const frame=this.frame();
   if(changed)this.onChange();
   if(!frame||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;
