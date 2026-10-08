@@ -8,14 +8,14 @@
 // the runtime's state directory: `migrate` writes the Pixoo module's SQLite file and private folder there, as the runtime
 // creates them (#919), and `verify` compares them with the library. Each prints one JSON line (`pixoo-migration/1.0`)
 // with counts, codes and SHA-256 digests only, never a path, name or file content, and exits with one of `EXIT`.
-import {lstat, readdir, rm, statfs} from 'node:fs/promises';
+import {lstat, rm, statfs} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {parseArgs} from 'node:util';
 import {InstalledLibrary, MIGRATION_SCHEMA, MigrationError, migrateLibrary, verifyMigration} from '@jimmie-potts/pixoo';
 import {fullDisk} from '@jimmie-potts/sdk';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
-import {RuntimeError, openModuleDatabase, openModuleFolder, prepareStateDirectory} from './state.js';
+import {RuntimeError, freshModule, openModuleDatabase, openModuleFolder, prepareStateDirectory} from './state.js';
 
 export const PIXOO_MIGRATION_USAGE = 'usage: migrate-pixoo.js migrate --library <dir> --state-dir <dir> [--min-free-bytes <bytes>] | ' +
   'migrate-pixoo.js verify --library <dir> --state-dir <dir>; both directories absolute';
@@ -130,23 +130,13 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** Whether a directory is a real one, owned by the tool's user, that no one else may open. */
-const privateDirectory = (info: {uid: number; mode: number; isDirectory: () => boolean}): boolean =>
-  info.isDirectory() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0;
-
 /**
  * Refuses, before anything is written, a module that already has a database, log or journal, or a folder that holds
- * anything (`destination-not-empty`), and a `modules` folder or module folder that is a link or that others may open
- * (`module-folder-not-private`), as the runtime's `openModuleFolder` would once the database exists.
+ * anything (`destination-not-empty`), and, through the runtime's `freshModule`, a `modules` folder or module folder that
+ * is a link or that others may open (`module-folder-not-private`), as `openModuleFolder` would once the database exists.
  */
-async function checkFresh(stateDir: string, database: string, folder: string): Promise<void> {
-  const modules = join(stateDir, 'modules');
-  if (!await exists(modules)) return;
-  if (!privateDirectory(await lstat(modules))) throw new Refusal('module-folder-not-private');
-  for (const suffix of ['', '-wal', '-shm', '-journal']) if (await exists(`${database}${suffix}`)) throw new Refusal('destination-not-empty');
-  if (!await exists(folder)) return;
-  if (!privateDirectory(await lstat(folder))) throw new Refusal('module-folder-not-private');
-  if ((await readdir(folder)).length > 0) throw new Refusal('destination-not-empty');
+async function checkFresh(stateDir: string): Promise<void> {
+  if (!await freshModule(stateDir, MODULE)) throw new Refusal('destination-not-empty');
 }
 
 /** The nearest part of `path` that exists: the directory a new state directory would be made in. */
@@ -212,14 +202,14 @@ export async function runPixooMigration(argv: readonly string[], options: PixooM
       emit(report);
       return report.result === 'verified' ? EXIT.ok : EXIT.mismatch;
     }
-    if (existing) await checkFresh(stateDir, database, folder);
+    if (existing) await checkFresh(stateDir);
     const {freeBytes, blockSize} = await (options.freeSpace ?? freeSpaceOf)(await nearestExisting(stateDir));
     if (freeBytes < spaceNeeded(source, blockSize, input.minFreeBytes)) throw new Refusal('disk-short');
     stop();
     // Every check has passed: create what the runtime would, take the lease, and check the module's files again under it.
     stateDir = await prepareStateDirectory(stateDir);
     lease ??= await holdRuntimeLease(stateDir);
-    await checkFresh(stateDir, database, folder);
+    await checkFresh(stateDir);
     return await migrateInto(source, stateDir, database, folder, emit, options);
   } catch (error) {
     emit({operation, result: 'refused', ...refusalOf(error)});

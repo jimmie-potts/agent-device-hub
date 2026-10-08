@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {chmod, lstat, mkdir, readdir, readFile, realpath, writeFile} from 'node:fs/promises';
+import {chmod, lstat, mkdir, readdir, readFile, realpath, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -263,6 +263,48 @@ it('refuses a secrets directory or a section folder that others can open', async
   assert.deepEqual([section.exit, section.line.code], [EXIT.refused, 'section-dir-refused']);
   assert.ok(await untouched(p));
   assert.ok(await absent(p.state), 'neither refusal created the state directory or took the lease');
+});
+
+it('refuses a modules folder or module folder that others may open or that is a link, before the lease, and leaves it as it was', async context => {
+  const cases: [string, (state: string) => Promise<string>][] = [
+    ['modules folder open to others', async state => {
+      await mkdir(join(state, 'modules'), {recursive: true, mode: 0o700});
+      await chmod(join(state, 'modules'), 0o755);
+      return join(state, 'modules');
+    }],
+    ['module folder open to others', async state => {
+      await mkdir(join(state, 'modules', 'nanoleaf'), {recursive: true, mode: 0o700});
+      await chmod(join(state, 'modules', 'nanoleaf'), 0o750);
+      return join(state, 'modules', 'nanoleaf');
+    }],
+    ['module folder a link', async state => {
+      await mkdir(join(state, 'modules'), {recursive: true, mode: 0o700});
+      await mkdir(join(state, 'elsewhere'), {mode: 0o700});
+      await symlink(join(state, 'elsewhere'), join(state, 'modules', 'nanoleaf'));
+      return join(state, 'modules', 'nanoleaf');
+    }],
+    ['modules folder a link', async state => {
+      await mkdir(join(state, 'elsewhere'), {recursive: true, mode: 0o700});
+      await symlink(join(state, 'elsewhere'), join(state, 'modules'));
+      return join(state, 'modules');
+    }],
+  ];
+  for (const [name, plant] of cases) {
+    const p = await paths(context);
+    const folder = await plant(p.state);
+    const before = await lstat(folder);
+    const {exit, line} = await tool(args('migrate', p));
+    assert.deepEqual([exit, line.result, line.code, line.message], [EXIT.refused, 'refused', 'module-folder-not-private',
+      'The Nanoleaf module\'s folder, or the modules folder, is not a private directory.'], name);
+    // Nothing was written, through the link or not: no database, no lease file, no secrets directory and no section.
+    assert.ok(await absent(join(p.state, 'modules', 'nanoleaf.sqlite')), name);
+    assert.ok(await absent(join(p.state, 'modules', 'core.sqlite-owner')), `${name}: refused before the lease`);
+    assert.ok(await absent(p.secrets), name);
+    assert.ok(await absent(p.section), name);
+    assert.deepEqual(await readdir(join(p.state, 'elsewhere')).catch(() => []), [], `${name}: nothing was made through the link`);
+    const after = await lstat(folder);
+    assert.deepEqual([after.mode, after.isSymbolicLink()], [before.mode, before.isSymbolicLink()], `${name}: the folder is as it was`);
+  }
 });
 
 it('removes what it wrote when it fails after writing began, and exits 4', async context => {
