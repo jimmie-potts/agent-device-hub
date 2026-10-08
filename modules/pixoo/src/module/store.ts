@@ -121,7 +121,9 @@ export class PixooStore {
       this.#set('configurationRevision', String(this.configurationRevision + 1));
       this.#db.exec('COMMIT');
     } catch (error) {
-      this.#db.exec('ROLLBACK');
+      // SQLite may already have rolled the transaction back, as after a full disk; a second ROLLBACK would then fail and
+      // hide the error that ended it.
+      if (this.#db.isTransaction) this.#db.exec('ROLLBACK');
       throw error;
     }
   }
