@@ -26,4 +26,4 @@
 
 - [x] 5.1 Prove the two-tab Disconnect regression fails at the original PR head and passes with shared sign-in and session replacement.
 - [x] 5.2 Verify positive read evidence and any consumer acknowledgment clear unread without a page command; update catalog, provenance and acceptance steps.
-- [ ] 5.3 Gate the candidate, synchronize all three affected specs and rearchive.
+- [x] 5.3 Gate the candidate, synchronize all three affected specs and rearchive. Evidence: runtime verification passes 67/67 with zero skips; both browser drivers and both dashboard smoke checks pass; every delta requirement matches its main spec.
