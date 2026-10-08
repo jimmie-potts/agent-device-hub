@@ -6,7 +6,8 @@ import test from 'node:test';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {RemoteParticipant, Scheduler, SyncChange, SyncResult} from '@jimmie-potts/sdk/remote';
+import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncTransport} from '../../../../packages/sdk/dist/src/sync.js';
 import {DashboardConnection} from '../src/connection.ts';
 
 /** Timers that run only when the test moves the clock. */
@@ -91,5 +92,65 @@ void test('a sync refused as unauthenticated ends the link at once, with no retr
     assert.deepEqual([connection.getState().feed, connection.getState().sessions.records, script.closed()], ['ended', [record], true], code);
     await clock.advance(60_000);
     assert.equal(script.syncs.length, 2, `${code}: never tried again`);
+  }
+});
+
+void test('retained records stay stale until the SDK replacement snapshot completes, with or without a stream reconnect', async () => {
+  for (const reconnect of [true, false]) {
+    let diagnose: (value: Diagnostic) => void = () => {};
+    let overflow: () => void = () => {};
+    let finish: () => void = () => {};
+    let requests = 0;
+    let copy: SyncedCopy<SessionRecord> | undefined;
+    const answer = (requestId: string): SyncAnswer => ({
+      status: 'served', requestId,
+      states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0'}],
+      completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
+        data: {requestId, revision: 3, members: [{family: 'session', id: record.id}]}},
+    });
+    const transport: SyncTransport = {
+      now: Date.now,
+      subscribe: (_pattern, _handler, options) => {
+        overflow = () => { void options.onOverflow?.({}); };
+        return Promise.resolve({close: () => Promise.resolve()});
+      },
+      request: request => {
+        requests += 1;
+        if (requests === 1) return Promise.resolve(answer(request.requestId));
+        return new Promise(resolve => { finish = () => { resolve(answer(request.requestId)); }; });
+      },
+      report: error => { throw error; },
+      restarted: () => { diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', level: 'debug'}); },
+    };
+    const participant = {
+      sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
+        const result = await startSync<SessionRecord>(transport, families, handler, options);
+        if (result.status === 'synced') copy = result.copy;
+        return result;
+      },
+      close: async () => { await copy?.close(); },
+    } as unknown as RemoteParticipant;
+    const connection = new DashboardConnection({url: 'http://synthetic.invalid', connect: options => {
+      diagnose = options.onDiagnostic ?? (() => {});
+      return Promise.resolve(participant);
+    }});
+    try {
+      await connection.start();
+      assert.equal(connection.getState().sessions.synced, true);
+      if (reconnect) diagnose({event: 'remote.disconnected', source: 'bunny/parts/dashboard', level: 'warn'});
+      overflow();
+      if (reconnect) diagnose({event: 'remote.reconnected', source: 'bunny/parts/dashboard', level: 'info', attempts: 0});
+      await new Promise(resolve => { setImmediate(resolve); });
+      assert.equal(requests, 2, 'the real SDK copy requested a replacement snapshot');
+      const pending = connection.getState();
+      assert.deepEqual([pending.feed, pending.sessions.synced, pending.sessions.records, pending.sessions.syncs],
+        ['connected', false, [record], 1], 'stream recovery cannot make retained rows current');
+      finish();
+      await new Promise(resolve => { setImmediate(resolve); });
+      assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.syncs], [true, 2], 'only the completed snapshot restores current evidence');
+    } finally {
+      finish();
+      await connection.close();
+    }
   }
 });

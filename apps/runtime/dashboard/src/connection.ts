@@ -26,7 +26,7 @@ export type Feed = 'connecting' | 'connected' | 'reconnecting' | 'ended';
 
 /** The page's copy of the core's sessions. */
 export type SessionsCopy = {
-  /** true while the copy follows the core; false before its first sync and after a sync failed, until one succeeds. */
+  /** true while the copy follows the core; false after a gap or failure until a replacement sync succeeds. */
   synced: boolean;
   /** The core's current records, in the copy's order; the last ones it had while it is not synced. */
   records: readonly SessionRecord[];
@@ -198,11 +198,12 @@ export class DashboardConnection {
     }});
   }
 
-  /** The participant's own decisions: its stream lost and back, and the runtime refusing this session. */
+  /** Stream recovery restores transport only; the replacement snapshot restores the copy's freshness. */
   #heard(diagnostic: Diagnostic): void {
     const {event, code} = diagnostic;
-    if (event === 'remote.disconnected' && this.#state.feed === 'connected') this.#update({feed: 'reconnecting'});
+    if (event === 'remote.disconnected' && this.#state.feed === 'connected') this.#update({feed: 'reconnecting', sessions: {...this.#state.sessions, synced: false}});
     else if (event === 'remote.reconnected' && this.#state.feed === 'reconnecting') this.#update({feed: 'connected'});
+    else if (event === 'sync.restarted') this.#update({sessions: {...this.#state.sessions, synced: false}});
     else if (event === 'remote.refused' && ended(code)) this.#end();
   }
 

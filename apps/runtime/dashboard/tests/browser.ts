@@ -91,16 +91,41 @@ try {
 
   // A lost stream: the page syncs again and shows the core's current state; nothing missed is replayed or sent.
   const before = syncs.length;
-  world.dropDashboardStreams();
-  await world.observe(turnEnded, {identity: DESKTOP, turn: 'turn-2'});
-  await world.observe(sessionStarted, {identity: {...OTHER, sessionId: 'session-sim-3'}, title: {value: 'Review the inbox', source: 'provider'}});
+  let releaseSync = (): void => {};
+  const heldSync = new Promise<void>(resolve => { releaseSync = resolve; });
+  let continuedSync = (): void => {};
+  let routeEntered = false;
+  const routeContinued = new Promise<void>(resolve => { continuedSync = resolve; });
+  await page.route('**/api/sdk/v1/sync', async route => {
+    routeEntered = true;
+    await heldSync;
+    try { await route.continue(); } finally { continuedSync(); }
+  });
+  try {
+    const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
+    world.dropDashboardStreams();
+    await world.observe(turnEnded, {identity: DESKTOP, turn: 'turn-2'});
+    await world.observe(sessionStarted, {identity: {...OTHER, sessionId: 'session-sim-3'}, title: {value: 'Review the inbox', source: 'provider'}});
+    await replacement;
+    await feed(page, 'connected');
+    assert.match(await row('Plan wave three').innerText(), /Stale evidence/, 'retained rows remain stale while the replacement snapshot is held');
+    assert.match(await page.locator('main#main').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
+    await chip('Plan wave three', 'Working');
+    assert.equal(await row('Review the inbox').count(), 0, 'new membership waits for the replacement snapshot');
+    assert.deepEqual(sent, [], 'holding a replacement sync sends no command');
+    await shot(page, 'reconnect-snapshot-pending');
+  } finally {
+    releaseSync();
+    if (routeEntered) await routeContinued;
+    await page.unroute('**/api/sdk/v1/sync');
+  }
   await page.waitForFunction(count => Number(document.getElementById('main')?.dataset.syncs) >= count, 2);
   await feed(page, 'connected');
   await chip('Plan wave three', 'Finished · unread');
   await row('Review the inbox').waitFor();
   assert.ok(syncs.length > before, 'the copy synced again after the stream came back');
   assert.deepEqual(sent, [], 'a reconnect replays no command');
-  checks.push('a reconnect resyncs to current state with no replayed command');
+  checks.push('a reconnect keeps retained rows stale until its replacement snapshot, with no replayed command');
 
   // Positive read evidence clears one row; a device's acknowledgment clears another. The page sends neither.
   assert.equal(await row('Port the wall').getByRole('button', {name: /Acknowledge/}).count(), 0, 'there is no row acknowledge control');
