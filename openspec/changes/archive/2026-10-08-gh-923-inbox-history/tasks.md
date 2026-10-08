@@ -12,4 +12,9 @@
 ## 3. Validation and handoff
 
 - [x] 3.1 Run affected build/type/lint/runtime/dashboard/SDK/event/contract/workflow checks and record exact exits, skips and specification inventory.
-- [ ] 3.2 Prepare committed proposal and Acceptance journey; coordinator obtains independent acceptance, synchronizes affected specifications and archives before final review.
+- [x] 3.2 Prepare committed proposal and Acceptance journey; coordinator obtains independent acceptance, synchronizes affected specifications and archives before final review.
+
+Independent Acceptance was satisfied at `966b1bbd6de00a33e91da3a8a7e922de47431066`
+in disposable run `runtime-20261008T190735Z-071fad`. The catalog, actual dashboard,
+HTTP/MCP journey and focused desktop/phone accessibility checks passed. The run
+and review checkout were cleaned. Installation remains at #840.
