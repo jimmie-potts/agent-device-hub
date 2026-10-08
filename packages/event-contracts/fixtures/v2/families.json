@@ -1540,6 +1540,85 @@
      }
     ]
    }
+  },
+  "operation-accepted": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-operation-1",
+   "source": "bunny/core",
+   "type": "org.bunny.operation.updated",
+   "subject": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195",
+   "time": "2026-10-06T12:00:01.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/operation/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195",
+    "revision": 7,
+    "requestId": "req-power-1",
+    "kind": "device",
+    "family": "power-set",
+    "command": "org.bunny.power.set.requested",
+    "target": "lamp-1",
+    "requestedBy": "bunny/parts/dashboard",
+    "status": "accepted",
+    "reply": "accepted",
+    "sentAtMs": 1791288000000,
+    "updatedAtMs": 1791288000200,
+    "deadlineAtMs": 1791288030000
+   }
+  },
+  "operation-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-operation-2",
+   "source": "bunny/core",
+   "type": "org.bunny.operation.updated",
+   "subject": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195",
+   "time": "2026-10-06T12:00:01.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/operation/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195",
+    "revision": 8,
+    "requestId": "req-power-1",
+    "kind": "device",
+    "family": "power-set",
+    "command": "org.bunny.power.set.requested",
+    "target": "lamp-1",
+    "requestedBy": "bunny/parts/dashboard",
+    "status": "completed",
+    "reply": "accepted",
+    "sentAtMs": 1791288000000,
+    "updatedAtMs": 1791288000900,
+    "deadlineAtMs": 1791288030000,
+    "result": "succeeded",
+    "evidence": "observed"
+   }
+  },
+  "operation-retired": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-operation-3",
+   "source": "bunny/core",
+   "type": "org.bunny.operation.removed",
+   "subject": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195",
+   "time": "2026-10-06T12:00:01.000Z",
+   "kind": "removal",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/removal/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "entity": {
+     "family": "operation",
+     "id": "a15b65b38367aa531a9f2226051f1f7a37fbfd8887074d388c72f3ce9dd17195"
+    },
+    "revision": 9,
+    "reason": "retired"
+   }
   }
  },
  "invalid": [
@@ -2321,6 +2400,61 @@
    },
    "expect": "invalid-message",
    "detail": "envelope /subject not a routing id"
+  },
+  {
+   "name": "an operation whose ID is not its request's",
+   "base": "operation-accepted",
+   "set": {
+    "/data/requestId": "req-power-2"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id not the request's entity"
+  },
+  {
+   "name": "an operation whose command is another family's",
+   "base": "operation-accepted",
+   "set": {
+    "/data/command": "org.bunny.brightness.set.requested"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /command not the family's"
+  },
+  {
+   "name": "a pending operation with a result",
+   "base": "operation-accepted",
+   "set": {
+    "/data/result": "succeeded"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /result false schema"
+  },
+  {
+   "name": "a settled operation without a result",
+   "base": "operation-completed",
+   "set": {
+    "/data/result": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required result"
+  },
+  {
+   "name": "a failed operation without its error",
+   "base": "operation-completed",
+   "set": {
+    "/data/result": "failed",
+    "/data/evidence": "none"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required error"
+  },
+  {
+   "name": "a succeeded operation without evidence that anything reached the device",
+   "base": "operation-completed",
+   "set": {
+    "/data/evidence": "none"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /evidence enum"
   }
  ],
  "scenarios": [
@@ -2425,6 +2559,15 @@
     "session-claude",
     "sync-completed-at-14-with-claude",
     "session-claude-at-15"
+   ],
+   "expect": []
+  },
+  {
+   "name": "a retired operation is removed",
+   "steps": [
+    "operation-accepted",
+    "operation-completed",
+    "operation-retired"
    ],
    "expect": []
   }

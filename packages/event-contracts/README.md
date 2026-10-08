@@ -154,7 +154,7 @@ carries a device-specific payload: modules define those.
 
 | Kind | Family | Type |
 | --- | --- | --- |
-| state | `session`, `mode`, `inbox-item`, `playback` | `org.bunny.<family>.updated` |
+| state | `session`, `mode`, `inbox-item`, `playback`, `operation` | `org.bunny.<family>.updated` |
 | occurrence | `lifecycle` (a hook observation for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
@@ -195,6 +195,20 @@ The rules:
   acknowledges for itself only: the core refuses one whose source does not end
   in its consumer ID with `forbidden`. It commits the acknowledgment before it
   replies `accepted`, and no outcome follows ([MAPPING.md](MAPPING.md)).
+- `operation` (Hub #922) is the latest state of one action the core tracks
+  (#782): a device command, a moment or a mode change. The core publishes it
+  from the tracker's change, in the same transaction, and serves it through
+  sync, so a display shows an action requested (`sent`), `accepted` and
+  `completed` without reading the tracker, whose row stays the authority. Its
+  `id` is `operationEntityId(requestId)`, the lowercase hex SHA-256 of the
+  request ID, and its `command` is its family's type; the validator refuses
+  either otherwise. `result` is absent while the action is `sent` or `accepted`
+  and present after; a failed one carries its error, and a succeeded one
+  `transmitted` or `observed` evidence. An accepted reply is never evidence
+  that anything was done. The record carries no command payload. The core
+  keeps the latest records only, removing the oldest settled one with reason
+  `retired`, never a pending one. The inbox (#923) points at an operation by
+  its request ID.
 - `playback-control` asks the owner of the `playback` record (#929) for play,
   pause, next or previous. The owner sends it once, to the source presented at
   admission, and never redirects or retries it. The record's `id`, and so the
