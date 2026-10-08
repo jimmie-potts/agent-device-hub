@@ -5,7 +5,7 @@ Define the Codex Desktop runtime module under ADR 0012 (Hub #926): its section a
 
 ## Requirements
 
-### Requirement: Codex Desktop configuration and the cutover's conversion
+### Requirement: Codex Desktop configuration and optional legacy conversion
 
 The runtime SHALL host one module, `codex-desktop` (module API 1.2), that turns Codex Desktop's read marker into read evidence for the core's sessions. Its `configure` SHALL accept a section with exactly the old Hub's `codexDesktop` members: `home`, an absolute, normalized path of at most 1024 characters without a NUL, which may lie on a Windows mount, and `hostId` and `sourceId`, each 1 to 128 letters, digits, underscores, dots or hyphens; the runtime's `secrets` member SHALL be ignored, and the module SHALL read no secret. A refusal SHALL be `invalid-request` with fixed text that repeats no value. `convertHubCodexDesktop(hostConfiguration)` SHALL turn the old Hub's host configuration into this section, give undefined when the Hub has no `codexDesktop`, and check the result with the module's own `configure`. The module's settings SHALL show `hostId` and `sourceId`, never the home. A runtime without the module's section SHALL refuse it with `not-found` and run on.
 
@@ -13,7 +13,7 @@ The runtime SHALL host one module, `codex-desktop` (module API 1.2), that turns 
 - **WHEN** the section is the Hub's valid setting, on a Windows mount or not, with or without the runtime's `secrets` member, or adds a member, misses one, gives a relative or unnormalized home, a home with a NUL or over 1024 characters, or an ID with a space, empty or over 128 characters
 - **THEN** the runtime admits the valid sections and refuses the others with `invalid-request`, whose detail repeats none of the values; without a section the module is refused with `not-found`
 
-#### Scenario: The cutover's conversion
+#### Scenario: Optional legacy conversion
 - **WHEN** the conversion reads a Hub configuration with a valid `codexDesktop`, one without it, and ones whose setting is malformed or carries `secrets`
 - **THEN** it gives the setting as the section, gives undefined, and refuses the others with `invalid-request`
 

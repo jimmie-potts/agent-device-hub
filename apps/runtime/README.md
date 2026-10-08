@@ -380,11 +380,14 @@ they took 153 ms, and against one that never answers 2.91 s, the hook's budget.
 Most of it is starting Node and loading the hook's modules: the old Hub's hook
 took 138 ms at the median against a stopped endpoint.
 
-The [fresh setup procedure](SETUP.md) switches the qualified hook link to this
-release's `apps/runtime/bin/monitor-hook.mjs` during the owner-present cutover.
-Keep the release and its dependencies in place so `@jimmie-potts/runtime/hook`
-resolves there. The clients keep their command when that link matches their
-configured path. Until then the installed Hub keeps its hook unchanged.
+The [fresh setup procedure](SETUP.md) switches only the qualified hook link
+during the owner-present cutover. The documented directory link, invoked as
+`<link>/bin/monitor-hook.mjs`, points to the retained release's `apps/runtime`
+directory. A separately qualified direct file link instead points to
+`apps/runtime/bin/monitor-hook.mjs`. Keep the release and its dependencies in
+place so the client's unchanged complete script path and
+`@jimmie-potts/runtime/hook` resolve there. Until then the installed Hub keeps
+its hook unchanged.
 
 ## Run
 
@@ -691,7 +694,7 @@ refusal quotes the file.
 Credentials are granted, revoked and rotated by changing the file, as today:
 `grantCredential(file, credential)` and `revokeCredential(file, id)` rewrite it
 whole and owner-only, as an operator adds a producer's credential by hand until grant operations exist ([Agent hooks](#agent-hooks)), and
-`writeEdgeCredentials(file, credentials)` writes it as the installer does. Each
+`writeEdgeCredentials(file, credentials)` writes the selected credentials. Each
 writer holds the file's lock, `<file>.lock`, which names its process: writers in
 one process take turns, so a grant and a revocation made at once both take
 effect, and a writer in another process is refused with
@@ -1011,7 +1014,7 @@ Every path is absolute.
   `migrate` writes each device's token, alone and without a line break, as
   `nanoleaf-<device>-token`, mode 600.
 - `--section` is the private file where `migrate` writes the module's section,
-  which names those files. The installer puts it under `modules.nanoleaf` in
+  which names those files. A caller using this utility puts it under `modules.nanoleaf` in
   the configuration file. Its directory must be private too. `verify` also
   takes the configuration file itself and reads the section there.
 
@@ -1084,7 +1087,7 @@ exit but 0 is a no-go.
 | `source-corrupt` | 3 | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
 | `source-config` | 3 | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
 | `source-device-id` | 3 | A registered device ID is not a routing ID, which the configuration requires |
-| `source-not-configured` | 3 | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
+| `source-not-configured` | 3 | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. This utility requires a separately qualified source; the `linux-state-v4` fixture as it is gets this refusal. Fresh setup does not invoke the utility |
 | `disk-short` | 3, 4 | The disk filled while `migrate` wrote, its final checkpoint included |
 | `destination-not-clean` | 4 | A log or journal with content was left beside the module's database after `migrate` closed it |
 | `interrupted` | 3, 4 | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
@@ -1595,7 +1598,7 @@ The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.
 
 A seed's `config` gives configured modules their sections. Each harness writes
-them, as the installer would, into a private configuration file with a token
+them into a private synthetic configuration file with a token
 file per module that holds the synthetic token, and the edge's section with the
 parts' credentials, and starts the runtime with it.
 Both configured scenarios check that the token appears in no log record,

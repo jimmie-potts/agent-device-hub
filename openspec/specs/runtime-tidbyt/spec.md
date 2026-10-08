@@ -27,7 +27,7 @@ The module SHALL provide `convertTidbytRunner(runner, credentials)`, an optional
 
 #### Scenario: Installation IDs kept
 - **WHEN** the runner's credentials name installation `agentstatus` and its now-playing block names `nowplaying2` for source `living-room`
-- **THEN** the section keeps `agentstatus` and `nowplaying2` and the cloud's device ID, the key comes back apart from the section, and the runtime admits the section once the installer adds the key's file
+- **THEN** the section keeps `agentstatus` and `nowplaying2` and the cloud's device ID, the key comes back apart from the section, and the runtime admits the section once a caller adds the key's file
 
 #### Scenario: Defaults and a renamed source
 - **WHEN** the credentials name no installation and the now-playing source is `HT-A9`

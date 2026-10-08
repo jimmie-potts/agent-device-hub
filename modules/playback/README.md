@@ -79,7 +79,7 @@ and does not run it.
 - A 1.x ID outside the routing-ID form is renamed by `routingIdOf`: lowercased,
   each run of other characters a single hyphen, and `playback` if nothing is
   left. `HT-A9` becomes `ht-a9`, and `living_room.1` becomes `living-room-1`.
-  The result's `renamedFrom` names the old ID, so the installer can report the
+  The result's `renamedFrom` names the old ID, so a caller can report the
   rename ([MAPPING.md](../../packages/event-contracts/MAPPING.md#playback-snapshot)).
 - The Hub saves no playback preference beyond the configured order, so nothing
   else is carried: the configured order applies from the first start (owner

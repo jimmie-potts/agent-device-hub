@@ -21,7 +21,7 @@ Record these choices privately before changing a service:
 | Fresh configuration | A new private `runtime-config/1.0` file and owner-selected private secret references, following [Configuration](README.md#configuration). Enter device addresses, routes and module settings explicitly. |
 | Gateway | Loopback port 8788 after its old owner stops, preserving existing bookmark and hook addresses. |
 | Credentials | An explicitly selected set of credential IDs, sources, digests and scopes in a new private [edge credentials file](README.md#credentials). Do not import or enumerate the old credential inventory. |
-| Hook | The exact existing hook link, its previous target and the producer files used by the selected clients. Qualify these paths at cutover; do not guess them. |
+| Hook | The exact existing hook link, whether it targets a directory or file, its previous target and the complete script paths used by the selected clients. Qualify these paths and the selected producer files at cutover; do not guess them. |
 | Writers | The exact old service units and any separately started processes that own the selected devices or port. Record their prior enabled/active states. |
 
 The existing [boot setup](../hub/SETUP.md#start-the-runtime-at-boot) documents
@@ -40,7 +40,9 @@ invalid section can refuse a module; a listening gateway alone does not prove
 the desired modules started. Existing selected reader files remain read in
 place within their permissions. Do not convert old rules, media, layouts,
 settings, session labels or history. Add new content through the supported
-settings/pages as needed; fresh state contains no historical records.
+settings/pages as needed; fresh state contains no historical records. Module
+guides' physical-check examples are references for the owner's selected smoke
+sequence, not a required webcam or exhaustive device campaign.
 
 ## Prepare the release and service
 
@@ -94,9 +96,13 @@ invoke its upgrade, rollback or conversion commands.
    expected core/modules running and healthy, and the lag check active. Inspect
    module refusals before continuing. Do not treat a successful HTTP response
    as successful module startup or physical acceptance.
-5. Point only the qualified hook link at this release's
-   `apps/runtime/bin/monitor-hook.mjs`. Its package import must resolve from
-   the retained release. Preserve the previous link target. The selected
+5. Preserve the qualified hook link's shape and previous target. The documented
+   directory link is invoked as `<link>/bin/monitor-hook.mjs`; point that link
+   at the retained release's `apps/runtime` directory. If the selected client
+   instead invokes a file link directly, point that file link at
+   `apps/runtime/bin/monitor-hook.mjs`. Confirm the client's unchanged complete
+   script path resolves to that file and its package import resolves from the
+   retained release. The selected
    producer's ID/source and token digest must match its explicit new `ingest`
    grant; an unchanged producer file works only when that grant matches.
    See [Agent hooks](README.md#agent-hooks). Do not rewrite client permissions

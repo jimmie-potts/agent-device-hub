@@ -94,7 +94,7 @@ until its first sync selects shared input.
 
 The verifier compares each carried row by its key, with its SQLite storage class; each file as parsed JSON; the section
 member by member; and each secret through the runtime's own reader. It also counts what should not be there. The
-cutover goes ahead only on zero mismatches.
+optional conversion succeeds only on zero mismatches; this does not gate fresh setup.
 
 There is no enrollment command yet (owner decision, 2026-10-07): it waits until a device is added, and
 `src/enrollment.ts`, the port's enrollment, is ready for it. Until then, a new address is a one-line edit of the
