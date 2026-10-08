@@ -38,17 +38,38 @@ only `@jimmie-potts/sdk` and `@jimmie-potts/event-contracts`.
 | The read state, settle and unusable marker cases | `tests/module.test.ts`, and with the real core `apps/runtime/tests/codex-desktop.test.ts` | The same decisions, observed as published observations; the real core's reduction in the runtime's test. |
 | The host's polling case | `apps/runtime/tests/codex-desktop.test.ts` | The real reader process on a synthetic marker, through the real core. |
 
-Not ported, because the issue covers the read marker only: the Hub's other two uses
-of its `codexDesktop` setting, which the runtime does not have yet. Each needs its
-own story before the cutover:
-- **Archive admission** (`archivedSession`, Hub #195): the Hub's agent-state owner
-  refuses a hook for a Desktop conversation whose rollout file is in
-  `archived_sessions`, so a late hook never brings an archived conversation back.
-  The runtime's core reads no Codex file.
-- **Desktop titles** (`enrichCodexTitle`): the Hub adds the title from Codex's
-  `session_index.jsonl` in this Codex home to each Desktop hook's observation.
-  The 2.0 hook reads only its own process's Codex home, which need not be
-  Desktop's.
+Hub #990 adds the other two existing Desktop behaviors through the same reader:
+positive archive filename evidence and titles from the existing
+`session_index.jsonl` format. Its `metadata-observed` event is an additive member
+of the lifecycle family; the envelope, schema identifier and routing stay the
+same. The old Hub stays unchanged.
+
+## Archive admission and titles
+
+The reader scans only filenames in `archived_sessions`, up to 10,000 entries,
+using the old Hub's rollout-name rule. It never opens an archived transcript.
+The module reports positives every 2 s and clears earlier positives when a
+complete scan no longer finds them or the source becomes unavailable. A stalled
+read clears them at the existing 5 s deadline. The core keeps this evidence in
+memory for at most 7 s from its observation and clears it at runtime restart.
+Its existing ancestor-aware archive predicate refuses admission for a new
+Desktop identity or descendant of the archived conversation. It leaves existing
+session records alone. Removing an archive entry admits fresh work after the
+next completed poll; missing evidence always fails open.
+
+Titles are independent of marker usability. The reader uses the old Hub's bounded
+index tail: 1 MiB, at most 8,192 lines and 65,536 bytes per line. The latest
+matching `thread_name` wins. The current display-text contract rejects credentials
+before truncating to 160 Unicode scalars. Only configured top-level Desktop
+sessions receive provider titles. The core updates a known session's title via
+the owner's queued metadata operation, preserving labels, activity, read state,
+turn, ordering, notices, host session IDs and lifecycle/restart freshness. It
+cannot establish a session. Explicit labels remain the display winner.
+
+Only `bunny/modules/codex-desktop` may publish these metadata facts to the core.
+The remote gateway reserves module sources and binds a caller's publication to
+its credential source; an ingestion credential cannot impersonate this module.
+No new service, migration, indexing framework or producer-file write is added.
 
 ## Configuration
 
@@ -155,8 +176,9 @@ Records carry `bunny.module` `codex-desktop`, never the home or the marker:
 
 ## What leaves the module
 
-Only read observations of Codex Desktop sessions reach the bus, and only the
-unread thread IDs leave the reader's process. The marker is only read, never
+Read and metadata observations of configured Codex Desktop sessions reach the
+bus. Unread/archive IDs and validated provider titles leave the reader process;
+raw marker/index rows and transcript contents stay there. The source files are only read, never
 written. No message, record, setting or health entry carries the home or the
 marker's content.
 

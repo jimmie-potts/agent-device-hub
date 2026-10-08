@@ -26,6 +26,8 @@ export type View = {
 /** The 1.x event the reducer admits for a 2.0 lifecycle event: the same evidence, with its dotted kind. */
 function eventOf(event: LifecycleEvent): Envelope['event'] {
   switch (event.kind) {
+    case 'metadata-observed':
+      throw new Error('metadata observations use the owner title operation');
     case 'session-started':
       return {kind: 'session.started'};
     case 'turn-started':
@@ -75,7 +77,7 @@ export function toEnvelope(observation: LifecycleObservation): Envelope {
 }
 
 /** The 1.x event kind a 2.0 observation reduces as, as the reducer's journal names it. */
-export const reducedKind = (observation: LifecycleObservation): string => eventOf(observation.event).kind;
+export const reducedKind = (observation: LifecycleObservation): string => observation.event.kind === 'metadata-observed' ? 'metadata.observed' : eventOf(observation.event).kind;
 
 /** 2.0 ordering for a session's identity: known ordering names its source as the authority. */
 export function orderingOf(identity: Identity, ordering: Session['ordering']): Ordering {

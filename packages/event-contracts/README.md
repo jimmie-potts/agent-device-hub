@@ -155,7 +155,7 @@ carries a device-specific payload: modules define those.
 | Kind | Family | Type |
 | --- | --- | --- |
 | state | `session`, `mode`, `inbox-item`, `playback`, `operation` | `org.bunny.<family>.updated` |
-| occurrence | `lifecycle` (a hook observation for the core) | `org.bunny.lifecycle.observed` |
+| occurrence | `lifecycle` (hook or Desktop metadata evidence for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
 | occurrence | `outcome-recorded` (the core's outcome acknowledgment) | `org.bunny.outcome.recorded` |
@@ -191,6 +191,15 @@ The rules:
   The core refuses a stale session revision with `revision-conflict` and an
   unknown session with `not-found`. Its completed outcome uses `outcome/2.0`;
   observed evidence means the metadata committed, with no physical observation.
+- `metadata-observed` (Hub #990) adds Desktop metadata to `lifecycle/2.0`,
+  with optional `event.archived` and the existing `title`; at least one is
+  required. It uses Codex Desktop identity, unknown turn and ordering, and
+  unknown or top-level parentage. It carries no label, project, project ID, host session
+  ID, native event ID or occurrence instant. The core accepts it only from
+  `bunny/modules/codex-desktop`. Archive evidence guards new admission;
+  titles update known roots without refreshing activity or restart evidence.
+  This additive input has no lifecycle 1.x equivalent and emits no synthetic
+  lifecycle, read or notice occurrence.
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the

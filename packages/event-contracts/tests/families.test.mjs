@@ -123,3 +123,14 @@ test('a sync request and its sync.completed carry the requested families, joined
     for (const message of sync) assert.equal(message.subject, families.get(message.data.requestId)?.join(','), message.id);
   }
 });
+
+test('Desktop metadata observations use the lifecycle family without invented lifecycle evidence',()=>{
+ const base=Object.values(fixtures.valid).find(m=>m.type==='org.bunny.lifecycle.observed');
+ const message={...structuredClone(base),data:{identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'one'},turn:{status:'unknown'},parent:{status:'top-level'},ordering:{status:'unknown'},observedAtMs:1000,event:{kind:'metadata-observed',archived:true}}};
+ message.subject=sessionEntityId(message.data.identity);
+ const v=validator();assert.equal(v.validate(message).ok,true);
+ message.data.event={kind:'metadata-observed'};assert.equal(v.validate(message).ok,false);
+ message.data.title={value:'Desktop title',source:'provider'};assert.equal(v.validate(message).ok,true);
+ message.data.identity.client='cli';assert.equal(v.validate(message).ok,false);
+ message.data.identity.client='desktop';message.data.label={value:'Owner',origin:'user'};assert.equal(v.validate(message).ok,false);
+});

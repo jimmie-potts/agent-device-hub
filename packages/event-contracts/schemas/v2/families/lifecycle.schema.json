@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/lifecycle/2.0",
-  "description": "Occurrence: one agent hook observation for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field except the acknowledgment, which a consumer now sends as the `notice-acknowledge` command (Hub #918); event kinds are kebab-case. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
+  "description": "Occurrence: one agent hook observation or trusted Codex Desktop metadata input for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field except the acknowledgment, which a consumer now sends as the `notice-acknowledge` command (Hub #918); event kinds are kebab-case. Hub #990 adds metadata-observed with optional archived and existing title fields, at least one required, without a 1.x equivalent or synthetic lifecycle evidence. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
   "type": "object",
   "additionalProperties": false,
   "required": ["identity", "turn", "parent", "event", "observedAtMs", "ordering"],
@@ -25,7 +25,9 @@
           "kind": {"const": "evidence-unavailable"},
           "dimension": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/dimension"},
           "reason": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/reason"}
-        }}
+        }},
+      {"type": "object", "additionalProperties": false, "required": ["kind"],
+        "properties": {"kind": {"const": "metadata-observed"}, "archived": {"type": "boolean"}}}
     ]},
     "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
     "occurredAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
@@ -39,6 +41,20 @@
   "allOf": [
     {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/hostSessionOnlyAtRoot"},
     {"if": {"properties": {"event": {"type": "object", "properties": {"kind": {"const": "read-observed"}}}}},
-      "then": {"properties": {"identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}}
+      "then": {"properties": {"identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}},
+    {"if": {"properties": {"event": {"type": "object", "properties": {"kind": {"const": "metadata-observed"}}}}},
+      "then": {
+        "anyOf": [
+          {"properties": {"event": {"type": "object", "required": ["archived"], "properties": {"archived": {"type": "boolean"}}}}},
+          {"required": ["title"], "properties": {"title": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/title"}}}
+        ],
+        "properties": {
+          "identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}},
+          "turn": {"type": "object", "properties": {"status": {"const": "unknown"}}},
+          "ordering": {"type": "object", "properties": {"status": {"const": "unknown"}}},
+          "parent": {"type": "object", "properties": {"status": {"enum": ["unknown", "top-level"]}}},
+          "label": false, "project": false, "projectId": false, "hostSessionId": false, "nativeEventId": false, "occurredAtMs": false
+        }
+      }}
   ]
 }

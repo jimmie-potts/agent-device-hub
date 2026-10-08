@@ -77,8 +77,8 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 ## Lifecycle observation
 
 The source is the lifecycle envelope 1.0 to 1.2. The 2.0 home is `lifecycle/2.0`,
-which a hook publishes as `org.bunny.lifecycle.observed`. Its envelope `subject`
-is `sessionEntityId(identity)`.
+which a hook or the Desktop module publishes as `org.bunny.lifecycle.observed`.
+Its envelope `subject` is `sessionEntityId(identity)`.
 
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
@@ -98,6 +98,16 @@ is `sessionEntityId(identity)`.
 | `label`, `label.origin`, `label.value` | `lifecycle /label` | Unchanged. 1.0 allowed only `user`; 2.0 allows both origins, as 1.1 does. |
 | `title`, `title.value`, `title.source` | `lifecycle /title` | Unchanged. |
 | `hostSessionId` | `lifecycle /hostSessionId` | Root observations only (schema). |
+
+Hub #990 adds `metadata-observed` within this existing 2.0 family. It has no
+1.x field or event to convert: `event.archived` is an optional boolean, and
+`title` keeps its existing shape; at least one must be present. Identity must
+be Codex Desktop, with unknown turn and ordering and unknown or top-level
+parentage. Label, project, project ID, host session ID, native event ID and
+occurrence instant are forbidden. The core accepts this input only from
+`bunny/modules/codex-desktop`, uses archive evidence for admission and titles
+for known roots, and never maps it to a 1.x lifecycle observation. Metadata
+alone selects no turn and creates no activity, read or notice evidence.
 
 1.x had byte limits of its own: 8 KiB for the lifecycle envelope and 2,048 bytes
 for an event the owner admits. In 2.0 only the profile's 256 KiB cap is in the

@@ -21,6 +21,7 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 | `subscribe(consumerId, cursor?)` | One bounded async iterator per registered consumer. Revision notifications tell the consumer to read `snapshot()`. |
 | `onCommit(callback)` | Registers a listener that runs synchronously after every committed revision, from any admission path. No consumer ID or cursor; returns an unsubscribe function. A throwing listener is caught and never faults the collector or the triggering call's outcome. Callers should keep the listener cheap and defer heavier work, for example with `setImmediate`. |
 | `acknowledge(identity, noticeId, consumerId)` | Durably acknowledges that notice for that consumer. It does not prove readership or clear attention. |
+| `setTitle(identity, title, observedAtMs)` | Updates a known top-level session's validated title through the owner queue, preserving labels and lifecycle/restart evidence. Older metadata is stale; no session is created. It uses the existing optional-journal commit shape. |
 | `setLabel(identity, stringOrNull, origin?)` | Persists or removes a label; origin defaults to user, and agent labels cannot replace user labels. It does not refresh session evidence. |
 | `recoverApproval(identity, turnId, expectedRevision)` | Explicitly retires one uncertain unknown-ID approval for that exact session and turn. Requires the current revision; does not act on the provider permission. |
 | `journal()` / `maintain()` | Read retained diagnostics or force durable retention maintenance. |

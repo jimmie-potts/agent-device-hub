@@ -1,8 +1,8 @@
 // The Codex Desktop module's scenarios (Hub #926, #999): its read marker as read evidence for the core's sessions. The
 // catalog collects this file.
 import {CODEX_DESKTOP_SIMULATED_SECTION} from '@jimmie-potts/codex-desktop';
-import {sessionEntityId, type Identity} from '@jimmie-potts/event-contracts/v2/families';
-import {turnEnded} from '../../fixtures/agents.js';
+import {sessionEntityId, sessionTitle, type Identity} from '@jimmie-potts/event-contracts/v2/families';
+import {observation, turnEnded} from '../../fixtures/agents.js';
 import {act, expect, holds, logged, publish, running, session, show, type Harness, type Scenario, type Simulation} from '../framework.js';
 
 const desktopIdentity = (sessionId: string): Identity => ({
@@ -25,6 +25,25 @@ const codexDesktopRead: Scenario = {
   title: 'Codex Desktop\'s read marker becomes read evidence for its top-level sessions',
   seed: {modules: ['core', 'codex-desktop'], follows: [['session']], config: {'codex-desktop': CODEX_DESKTOP_SIMULATED_SECTION}},
   steps: [
+    act('Desktop archives one conversation and names another, with the read marker unavailable', marker({device: 'codex-desktop', action: 'archive', sessions: ['closed-thread']})),
+    act('Desktop supplies its existing title', marker({device: 'codex-desktop', action: 'title', session: 'titled-thread', title: 'Desktop title'})),
+    act('the marker is missing', marker({device: 'codex-desktop', action: 'unusable'})),
+    act('a titled Desktop turn ends with an explicit owner label', async h => {
+      const {key, draft} = observation(turnEnded, h.now(), {identity: desktopIdentity('titled-thread')});
+      await h.sdk('hook').publish(key, {...draft, data: {...draft.data, label: {value: 'Owner label', origin: 'user'}}});
+    }),
+    expect('the Desktop title arrives independently of the marker', h => (session(h, sessionEntityId(desktopIdentity('titled-thread')))?.title?.value === 'Desktop title' && sessionTitle(session(h, sessionEntityId(desktopIdentity('titled-thread'))) ?? {}) === 'Owner label') || 'title or owner label missing', 6000),
+    act('late hooks arrive for the archived root and child', async h => {
+      await desktopTurnEnds(h, 'closed-thread');
+      await desktopTurnEnds(h, 'closed-child', 'closed-thread');
+    }),
+    holds('positive archive evidence keeps both closed', h =>
+      (desktopRead(h, 'closed-thread') === 'missing' && desktopRead(h, 'closed-child') === 'missing') || 'archive admitted a session', 1000),
+    act('Desktop unarchives the conversation', marker({device: 'codex-desktop', action: 'archive', sessions: []})),
+    holds('the reader completes another poll', () => true, 2500),
+    act('fresh unarchived work arrives', h => desktopTurnEnds(h, 'closed-thread')),
+    expect('the unarchived conversation is admitted', h => desktopRead(h, 'closed-thread') !== 'missing' || 'missing'),
+    act('Desktop restores a usable marker', marker({device: 'codex-desktop', action: 'list', sessions: []})),
     act('a Codex Desktop turn ends, and one of its subagent\'s', async h => {
       await desktopTurnEnds(h, 'thread-1');
       await desktopTurnEnds(h, 'thread-1-agent', 'thread-1');

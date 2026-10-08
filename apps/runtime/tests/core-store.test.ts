@@ -20,7 +20,7 @@ import {
 } from './fixtures/agents.js';
 import {fillDisk} from './fixtures/disk.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
-import {START, flush, it, stateDir} from './support.js';
+import {START, flush, it, manualClock, stateDir} from './support.js';
 
 const sessions = (messages: readonly Message[]): SessionRecord[] =>
   messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
@@ -703,4 +703,37 @@ it('a save that does not commit changes neither condition (Hub #976)', async con
     ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 150}],
     ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 5}],
   ]);
+});
+
+
+it('a same-title metadata confirmation durably advances its watermark without refreshing core lifecycle facts', async context => {
+  const world = await World.open(context, {clock: manualClock(1000)});
+  const identity = {...IDENTITY, provider: 'codex', client: 'desktop'} as const;
+  const title = {value: 'A', source: 'provider'} as const;
+  await world.observe(turnEnded, {identity, atMs: 100, title, hostSessionId: 'synthetic-host-session'});
+  assert.ok(world.owner);
+  await world.owner.setLabel(identity, 'Owner label');
+  await world.observe({kind: 'read-observed', state: 'unread'}, {identity, atMs: 100, hostSessionId: 'synthetic-host-session'});
+  await world.crashAndRestart();
+  const before = structuredClone(world.store.records()[0]);assert.ok(before);
+  assert.equal(before.hostSessionId, 'synthetic-host-session');assert.equal(before.restartUncertain, true);
+  const confirm = async (value: string, atMs: number) => {
+    const owner = world.owner;assert.ok(owner);
+    const metadataTitle = {value, source: 'provider'} as const;
+    const data = lifecycleOf({kind: 'metadata-observed'}, atMs, {identity, turn: null, title: metadataTitle});
+    const message = {...lifecycleMessage(data, world.clock.now()), source: 'bunny/modules/codex-desktop'};
+    const result = await world.store.during({message, kind: 'metadata.observed', entity: message.subject, observation: data}, () => owner.setTitle(identity, metadataTitle, atMs));
+    assert.ok(result.ok);
+    return result;
+  };
+  assert.equal((await confirm('A', 200)).outcome, 'applied');
+  const after = world.store.records()[0];assert.ok(after);
+  for (const field of ['title', 'label', 'activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'freshness', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  assert.equal((await confirm('B', 150)).outcome, 'stale');
+  const saved = await world.owner.exportState();assert.equal(validateExport(saved).ok, true);
+  assert.equal(saved.sessions[0]?.metadataObservedAtMs, 200);
+  await world.crashAndRestart();
+  assert.equal((await confirm('B', 150)).outcome, 'stale');
+  assert.equal((await world.owner.exportState()).sessions[0]?.metadataObservedAtMs, 200);
+  assert.deepEqual(world.store.records()[0]?.title, title);
 });

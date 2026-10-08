@@ -131,10 +131,10 @@ export async function createAgentState(options:Options) {
     tail=result;return result;
   }
   /** `committed` updates owner memory after the durable write succeeds and before the revision is published. */
-  async function commit(session:Session|undefined,kind:string,outcome:'applied'|'ambiguous'='applied',journalKey?:string,committed?:()=>void):Promise<Outcome> {
+  async function commit(session:Session|undefined,kind:string|undefined,outcome:'applied'|'ambiguous'='applied',journalKey?:string,committed?:()=>void):Promise<Outcome> {
     if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
     const at=now(),revision=data.revision+1;
-    const journal=session?{revision,atMs:at,sessionKey:journalKey??hash(session.identity),kind,outcome}:undefined;
+    const journal=session&&kind!==undefined?{revision,atMs:at,sessionKey:journalKey??hash(session.identity),kind,outcome}:undefined;
     const change:Commit={expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs:at-LIMITS.journalAgeMs,
       ...(session?{session}:{}),...(journal?{journal}:{})};
     await io(signal=>lease.commit(freeze(structuredClone(change)),signal));
@@ -313,6 +313,18 @@ export async function createAgentState(options:Options) {
           else if(event.apiVersion==='1.2'){if(event.hostSessionId!==undefined)hostSessions.set(key,event.hostSessionId);else hostSessions.delete(key);}
         });
         if(result.ok&&reduced.fresh)restarted.delete(key);return result;
+      });
+    },
+    /** Provider title evidence changes display metadata only; it cannot establish a session or refresh lifecycle evidence. */
+    setTitle(identity:Identity,title:NonNullable<Envelope['title']>,observedAtMs:number):Promise<Outcome>{
+      if(!validateEvent({apiVersion:'1.1',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs,ordering:{status:'unknown'},title}).ok)return Promise.resolve({ok:false,code:'invalid-operation'});
+      const selected=structuredClone(identity),value=structuredClone(title);
+      return queue(async()=>{
+        const old=get(selected);
+        if(!old||old.parent.status==='known'||observedAtMs<(old.metadataObservedAtMs??0))return {ok:true,revision:data.revision,outcome:'stale'};
+        if(old.title?.value===value.value&&old.title.source===value.source&&old.metadataObservedAtMs===observedAtMs)return {ok:true,revision:data.revision,outcome:'duplicate'};
+        const next=structuredClone(old);next.title=value;next.metadataObservedAtMs=observedAtMs;
+        return commit(next,undefined);
       });
     },
     setLabel(identity:Identity,label:string|null,origin:'user'|'agent'='user'):Promise<Outcome>{
