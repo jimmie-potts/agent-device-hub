@@ -164,8 +164,8 @@ function snapshot(directory: string): Record<string, string> {
 }
 
 const START_FRESH = ['sessions', 'activity', 'waits', 'receipts', 'slots', 'comets', 'task_info', 'display_v3', 'locate', 'shared_stale',
-  'shared_suppressed_waves', 'shared_ack', 'shared_evictions', 'control_journal', 'control_scenes', 'nanoleaf_devices', 'nanoleaf_transmissions',
-  'nanoleaf_commands', 'nanoleaf_machine_edits', 'nanoleaf_module'];
+  'shared_suppressed_waves', 'shared_ack', 'shared_evictions', 'control_journal', 'control_holds', 'control_scenes', 'nanoleaf_devices',
+  'nanoleaf_transmissions', 'nanoleaf_commands', 'nanoleaf_machine_edits', 'nanoleaf_module'];
 
 const zeroMismatches: StoreMismatches = {database: 0, projects: 0, palette: 0, elements: 0, mapSettings: 0, pendingEdits: 0, favorites: 0, deviceState: 0,
   startFresh: 0, layout: 0, scenes: 0, unexpected: 0};
