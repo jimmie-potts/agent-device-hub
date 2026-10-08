@@ -12,6 +12,7 @@ import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
 import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
+import {OperatorTools} from './operator-tools.tsx';
 import {LabelEditor} from './label-editor.tsx';
 import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, trustedSignIn} from './signin.ts';
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
@@ -203,6 +204,9 @@ function ConnectionsPage({state, now}: {state: DashboardState; now: number}): Re
       ['Last sync refusal', sessions.refused ?? 'None observed'],
     ]}/></div>
     <BuildIdentity/>
+    <OperatorTools sessions={sessions} live={state.feed === 'connected'} control={state.runtime.control}
+      operations={state.runtime.copies.filter(copy => copy.owner === 'bunny/core' && copy.family === 'operation').flatMap(copy => copy.records as readonly OperationRecord[])}
+      operationsSynced={state.runtime.copies.some(copy => copy.owner === 'bunny/core' && copy.family === 'operation' && copy.synced)}/>
     <div className="card"><h2>Observed sources</h2>{sources.map(source => <p key={source}>{source}</p>)}
       {sources.length === 0 && <p>No source evidence yet.</p>}
       <p className="hint">A connected feed does not prove a fresh session, successful task, read chat or physical device result.</p></div>
