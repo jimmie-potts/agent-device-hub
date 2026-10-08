@@ -5,19 +5,21 @@ import {build} from 'esbuild';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {moduleFrontends} from '../dist/build/frontend.js';
 
+const root = fileURLToPath(new URL('../../../', import.meta.url));
 const out = new URL('../dist/dashboard/', import.meta.url);
 await mkdir(out, {recursive: true});
 await build({
   entryPoints: [fileURLToPath(new URL('src/main.tsx', import.meta.url))], bundle: true, minify: true, format: 'esm', target: 'es2022',
   platform: 'browser', outfile: fileURLToPath(new URL('dashboard.js', out)), legalComments: 'eof', logLevel: 'warning',
+  plugins: [moduleFrontends(root)],
 });
 await writeFile(new URL('index.html', out), '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
   + '<title>B.U.N.N.Y. · Integration</title><link rel="stylesheet" href="/dashboard.css"></head><body><div id="root"></div>'
   + '<script type="module" src="/dashboard.js"></script></body></html>\n');
 
 // Freeze the source identity at build time. The running gateway reads it once, never querying Git per request.
-const root = fileURLToPath(new URL('../../../', import.meta.url));
 let revision = null;
 let dirty = null;
 try {

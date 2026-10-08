@@ -509,6 +509,29 @@ export const sign: BunnyModule<SignConfig> = {
 
   Page access adds no command permission. Editors use the authenticated tracked
   command path, and opening or drafting on a page changes no device or library.
+
+  For a React page, add an explicit package export such as
+  `"./frontend": "./frontend/index.tsx"`. That browser entry exports a named
+  `frontend` value typed as `FrontendContribution` from
+  `@jimmie-potts/sdk/frontend`: `{module, pages: [{id, Component}]}`. The existing
+  dashboard build collects these static imports. Components take a `context`
+  prop; they do not import the module's Node registration or open a connection.
+  The SDK frontend entry contains types only.
+
+  `context.api.read(path)` reads runtime JSON with the browser session; the
+  feature validates the returned document. `api.sync(families, changed)` syncs
+  only this module's declared families on the shared participant. Close a copy
+  when finished; the shell also closes active and late copies when the page or
+  session ends. `api.command(action)` sends once through the existing dispatcher.
+  `connected`, `control`, `operations` and `operationsLive` describe current
+  shell evidence. They do not turn an accepted command into a completed one.
+
+  `context.ui` supplies `Badge`, `Facts`, `InfoTip`, `Select` and `Command` with
+  the shell's styling. A feature wraps its form in
+  `<Command context={context} target={target}>` and renders from its child
+  callback's `{text, locked, requestId, run}`. This reuses the existing command
+  attempt retention, tracked results and reload behavior; no command values or
+  credentials are stored, and an uncertain command is never resent by recovery.
 - **`start(context)`** subscribes, responds and opens local resources: its
   database, its private folder and its secrets. A throw, a rejection or a start
   that outlasts the runtime's start deadline fails the module.

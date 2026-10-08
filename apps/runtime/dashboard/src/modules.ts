@@ -1,7 +1,10 @@
 // The authenticated module catalog is the only source of module pages and device owners (Hub #922).
 import {childOf} from '@jimmie-potts/sdk/remote';
+import type {FrontendContribution} from '@jimmie-potts/sdk/frontend';
 export type ModulePage = {id: string; title: string; path: string; presentation: 'passive' | 'react' | 'trusted-editor'};
 export type ModuleEntry = {name: string; state: string; serves: string[]; pages: ModulePage[]};
+export type ModuleView = {kind: 'react'; Component: FrontendContribution['pages'][number]['Component']}
+  | {kind: 'frame'; path: string; trusted: boolean} | {kind: 'unavailable'};
 const PAGE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -22,6 +25,17 @@ export function moduleEntries(value: unknown): ModuleEntry[] {
     }) : [];
     return [{name, state: entry.state, serves, pages}];
   });
+}
+
+/** Only current declarations select shipped code. A missing or failed contribution has no fallback destination. */
+export function moduleView(module: ModuleEntry, pageId: string, frontends: readonly FrontendContribution[]): ModuleView | undefined {
+  const page = module.pages.find(candidate => candidate.id === pageId);
+  if (page === undefined) return undefined;
+  if (module.state !== 'running') return {kind: 'unavailable'};
+  if (page.presentation !== 'react') return {kind: 'frame', path: page.path, trusted: page.presentation === 'trusted-editor'};
+  const matches = frontends.filter(frontend => frontend.module === module.name).flatMap(frontend => frontend.pages.filter(candidate => candidate.id === pageId));
+  const match = matches.length === 1 ? matches[0] : undefined;
+  return match === undefined ? {kind: 'unavailable'} : {kind: 'react', Component: match.Component};
 }
 export const moduleOwner = (name: string): string => name === 'core' ? 'bunny/core' : `bunny/modules/${name}`;
 export async function readModules(): Promise<ModuleEntry[]> {

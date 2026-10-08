@@ -633,6 +633,12 @@ React shell, which owns navigation, common UI/style, connection handling and
 authenticated API access. Its browser entry never imports the Node module
 registration. A component URL redirects to `/#/module/<name>/<page>` only while
 the module runs; the shell also requires a matching built component.
+Module packages opt in with an explicit `./frontend` export whose named
+`frontend` contribution follows `@jimmie-potts/sdk/frontend`. The existing
+esbuild step collects these static imports through its build-only
+`@bunny/module-frontends` module. Nothing discovers or imports a frontend URL
+at runtime. The shared shell supplies authenticated reads, tracked command
+attempts, common components and module-scoped sync on its existing connection.
 
 Reviewed existing editors may use declared bundles. The gateway wraps their
 markup with declared module scripts and styles. Their policy allows same-origin

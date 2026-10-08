@@ -965,6 +965,12 @@ command refusal and reads without device effects. After the root build, run
 `node --test apps/runtime/dist/tests/gateway.test.js` for the gateway boundary.
 These tests are already discovered by the core CI SDK/runtime commands below;
 they do not replace the browser interaction or disposable Acceptance checks.
+`frontend-build.test.ts` uses the production build plugin to bundle a synthetic
+module's explicit browser entry and rejects one that imports its Node-side
+implementation. Run it after the root build with
+`node --test apps/runtime/dist/tests/frontend-build.test.js`; core CI's existing
+runtime test discovery includes it. It starts no listener and keeps temporary
+workspaces under the checkout's ignored `.local/scratch/frontend-build/`.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
@@ -1135,6 +1141,12 @@ build step of their own.
 Use Node 24 from the worktree root. `npm run build` builds the page into
 `apps/runtime/dist/dashboard/`, after the SDK and the event contracts, and
 `npm run typecheck` checks both projects.
+
+The module-page tests cover catalog/build agreement and reuse of the shell's
+connection, including read-only refusal and cleanup of active or late syncs.
+The normal dashboard build also compiles the fixed frontend imports for the
+browser. Real feature interactions and trusted iframe execution are verified
+by the owning story's focused browser and disposable Acceptance checks.
 
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens

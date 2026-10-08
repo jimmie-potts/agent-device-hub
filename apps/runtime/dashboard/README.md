@@ -52,6 +52,33 @@ selection request. Current mode evidence and control authority enable the
 buttons, including explicit same-mode reapplication. A lost reply stays
 uncertain; reload, reconnect and restart never resend a selection.
 
+## Module interfaces
+
+The authenticated module catalog and static browser build jointly select each
+React page. A missing component, unavailable module or undeclared route opens
+no fallback destination. Module-owned browser entries export `frontend` from
+their package's explicit `./frontend` subpath; the existing esbuild step collects
+them without importing Node registrations. The SDK's type-only
+`@jimmie-potts/sdk/frontend` entry defines their component context.
+
+`src/module-page.tsx` supplies the shell's UI, connection evidence, scoped
+authenticated API and tracked operation records. `DashboardConnection.openModule`
+creates an inert page scope; its first read, sync or command registers it with
+the connection. Unmounting or ending the session aborts reads and closes active
+and late sync copies. Each copy follows that module's declared owner on the
+existing participant. Opening a page creates no second connection or command.
+
+`src/command-control.tsx` holds the existing command-attempt behavior shared by
+device cards and module forms: explicit send, retained request identity,
+accepted versus completed/uncertain status, and no resend after reload. Feature
+forms use the context's `Command` component and still require current control
+authority and operation evidence.
+
+Passive pages keep their script-free frame. A declared trusted editor uses an
+application frame under the gateway's trusted asset policy. It is reviewed
+same-origin application code, not an untrusted extension sandbox. User media
+remains on the separate non-executable content route.
+
 ## Agent sessions
 
 `src/connection.ts` holds the page's one remote participant, acting as the

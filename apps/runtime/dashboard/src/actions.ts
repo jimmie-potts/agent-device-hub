@@ -1,9 +1,10 @@
 // One explicit browser action, with no retry or replay (Hub #1006). Device controls reuse this transport.
 import {MAX_DETAIL, RETRYABLE, errorBody, isErrorCode, type ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
+import type {FrontendAction, FrontendActionReply} from '@jimmie-potts/sdk/frontend';
 
-export type ActionReply = {status: 'accepted'; requestId: string} | ErrorBody;
-export type BrowserAction = {family: string; target: string; data: object; requestId: string};
+export type ActionReply = FrontendActionReply;
+export type BrowserAction = FrontendAction;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 

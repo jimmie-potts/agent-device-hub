@@ -3,14 +3,17 @@
 // its live changes. There is no polling and no replay: a lost stream reconnects, the copy syncs again and shows the
 // core's current state, and nothing the page missed is played back. Any answer that says the runtime no longer takes
 // this browser's session, `unauthenticated` or `forbidden`, ends the page's link, which then offers one sign-in.
-import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  SdkError, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type Scheduler, type SyncChange,
+  SdkError, childOf, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
   type SyncCompleted, type SyncedCopy, type SyncResult,
 } from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {RuntimeFeeds, type RuntimeData} from './runtime-feeds.ts';
+import {moduleOwner} from './modules.ts';
+import {sendAction} from './actions.ts';
 
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
@@ -42,6 +45,7 @@ export type SessionsCopy = {
 };
 
 export type DashboardState = {feed: Feed; sessions: SessionsCopy; runtime: RuntimeData};
+export type ModuleScope = {readonly api: FrontendApi; close(): Promise<void>};
 
 export type ConnectionOptions = {
   /** The page's own origin. */
@@ -69,6 +73,7 @@ export class DashboardConnection {
   #state: DashboardState = {runtime: {modules: undefined, control: false, copies: [], catalogFailed: false}, feed: 'connecting', sessions: {synced: false, records: [], revision: undefined, syncs: 0, changedAtMs: undefined, refused: undefined}};
   #participant: RemoteParticipant | undefined;
   readonly #runtime: RuntimeFeeds;
+  readonly #moduleScopes = new Set<ModuleScope>();
   #copy: SyncedCopy<SessionRecord> | undefined;
   #closed = false;
   /** The `sync.completed` last counted. */
@@ -125,13 +130,88 @@ export class DashboardConnection {
     this.#closed = true;
     this.#cancelRetry();
     this.#runtime.close();
+    const scopes = [...this.#moduleScopes].map(scope => scope.close());
     const participant = this.#participant;
     this.#participant = undefined;
     this.#copy = undefined;
-    await participant?.close();
+    await Promise.all([...scopes, participant?.close()]);
   }
 
   readonly refreshDevices = async (): Promise<void> => { await this.#runtime.refresh(); };
+
+  /** One mounted page owns its reads/copies; all pages use this connection's authenticated participant. */
+  openModule(name: string): ModuleScope {
+    let closed = false;
+    const controller = new AbortController();
+    const copies = new Set<Subscription>();
+    const active = (): boolean => {
+      if (closed || this.#closed || this.#state.feed !== 'connected'
+        || this.#state.runtime.modules?.some(module => module.name === name && module.state === 'running') !== true) return false;
+      // Creation is inert, so an abandoned React render owns no connection resource. Register on first use.
+      this.#moduleScopes.add(scope);
+      return true;
+    };
+    const unavailable = (): SdkError => new SdkError(errorBody('unavailable', {detail: 'the module page is not connected'}));
+    const rejected = <T>(): SyncResult<T> => ({status: 'rejected', requestId: 'not-sent', error: unavailable().body});
+    const scope: ModuleScope = {
+      close: async () => {
+        if (closed) return;
+        closed = true;
+        controller.abort();
+        this.#moduleScopes.delete(scope);
+        await Promise.all([...copies].map(copy => copy.close()));
+        copies.clear();
+      },
+      api: {
+        read: async path => {
+          if (!active()) throw unavailable();
+          const origin = new URL(this.#options.url).origin;
+          const url = new URL(path, origin);
+          if (!path.startsWith('/') || path.startsWith('//') || url.origin !== origin || url.hash !== ''
+            || !(url.pathname.startsWith('/api/v2/') || url.pathname.startsWith(`/modules/${name}/content/`))) {
+            throw new SdkError(errorBody('invalid-request', {detail: 'a module read names a runtime JSON route'}));
+          }
+          let response: Response;
+          let body: unknown;
+          try {
+            response = await fetch(`${url.pathname}${url.search}`, {
+              credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: childOf(undefined), signal: controller.signal,
+            });
+            body = await response.json();
+          } catch { throw unavailable(); }
+          if (!active()) throw unavailable();
+          if (!response.ok) {
+            const code = typeof body === 'object' && body !== null ? (body as {error?: {code?: unknown}}).error?.code : undefined;
+            throw new SdkError(errorBody(isErrorCode(code) ? code : 'unavailable', {detail: 'the module read was refused'}));
+          }
+          return body;
+        },
+        command: async action => {
+          if (!active()) return unavailable().body;
+          if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
+          return sendAction(action);
+        },
+        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>): Promise<SyncResult<T>> => {
+          const participant = this.#participant;
+          if (!active() || participant === undefined) return rejected<T>();
+          const module = this.#state.runtime.modules?.find(candidate => candidate.name === name);
+          if (module === undefined || families.some(family => !module.serves.includes(family))) {
+            return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
+          }
+          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS});
+          if (result.status === 'rejected') return result;
+          if (!active()) { await result.copy.close(); return rejected<T>(); }
+          const copy: SyncedCopy<T> = {
+            states: () => result.copy.states(), get: entity => result.copy.get(entity),
+            close: async () => { if (copies.delete(copy)) await result.copy.close(); },
+          };
+          copies.add(copy);
+          return {...result, copy};
+        },
+      },
+    };
+    return scope;
+  }
 
   /** Syncs the core's sessions, and syncs again with the capped backoff while the core refuses or a copy fails. */
   async #follow(): Promise<void> {
