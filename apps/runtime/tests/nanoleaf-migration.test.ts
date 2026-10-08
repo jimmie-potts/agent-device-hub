@@ -97,7 +97,10 @@ it('migrates and verifies, each with one JSON line of counts and hashes and exit
   // The module's files are private, as the runtime creates them, and the database closed cleanly.
   assert.equal(await mode(join(p.state, 'modules', 'nanoleaf.sqlite')), 0o600);
   assert.equal(await mode(join(p.state, 'modules', 'nanoleaf')), 0o700);
-  assert.ok(await absent(join(p.state, 'modules', 'nanoleaf.sqlite-wal')));
+  // Opened as the runtime opens it (#972): WAL with exclusive locking, so no index file, and closed, so no log either.
+  const header = await readFile(join(p.state, 'modules', 'nanoleaf.sqlite'));
+  assert.deepEqual([header[18], header[19]], [2, 2], 'the file is in WAL mode');
+  for (const suffix of ['-wal', '-shm', '-journal']) assert.ok(await absent(join(p.state, 'modules', `nanoleaf.sqlite${suffix}`)), suffix);
   assert.deepEqual((await readdir(join(p.state, 'modules', 'nanoleaf'))).sort(), ['layout.json', 'scene-state.json', 'scene-state.panels.json']);
   // Each token is a private secret file the section names, holding the token alone.
   assert.equal(await mode(p.secrets), 0o700);
