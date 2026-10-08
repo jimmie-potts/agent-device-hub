@@ -10,6 +10,7 @@ import {request as httpRequest, type IncomingMessage} from 'node:http';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
   MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, type BunnyModule,
 } from '@jimmie-potts/sdk';
@@ -584,7 +585,7 @@ it('no grant limits a reader to some devices: it reads every device\'s records a
   const links = await call(url, '/api/v2/links', {token: reader.token});
   assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'});
   const listed = ((await call(url, '/api/v2/modules', {token: reader.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
-  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
   for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
     assert.equal((await call(url, path, {token: reader.token})).status, 200, path);
   }
@@ -821,3 +822,77 @@ async function rawStream(url: string, bearer: string | undefined, headers: Recor
     request.end();
   });
 }
+
+it('the module list names the families each module serves now, as health does, for a browser that cannot read health', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader]);
+  const answer = await g.ask(g.url, '/api/v2/modules', {token: reader.token});
+  const modules = (answer.body as {modules: {name: string; state: string; serves?: string[]}[]}).modules;
+  const health = g.runtime.health().modules;
+  assert.ok(modules.length > 1);
+  for (const module of modules) assert.deepEqual(module.serves, health.find(entry => entry.name === module.name)?.serves, module.name);
+  assert.deepEqual(modules.find(module => module.name === 'core')?.serves?.includes('operation'), true, 'the core serves its operation records (#922)');
+  assert.deepEqual(modules.find(module => module.name === 'sign')?.serves?.includes('device'), true, 'a device module serves device');
+  await g.runtime.stop();
+  assertNoToken(g);
+});
+
+it('module serves follows current registration for refused, failed and running modules that serve nothing', async context => {
+  const reader = READER();
+  const refused: BunnyModule = {
+    manifest: {name: 'refused', apiVersion: '1.2', configure: () => errorBody('invalid-request')},
+    start: () => { throw new Error('a refused module must not start'); }, stop: () => {},
+  };
+  const failsFirst = fixture('fails-first', () => { throw new Error('the fixture failed before serving'); });
+  const empty = fixture('empty');
+  const owner = deviceOwner('later-failed', ['d1']);
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), refused, failsFirst, empty, owner]});
+  type Listed = {name: string; state: string; serves?: string[]};
+  const listed = async (): Promise<Listed[]> => {
+    const answer = await g.ask(g.url, '/api/v2/modules', {token: reader.token});
+    assert.equal(answer.status, 200);
+    const modules = (answer.body as {modules: Listed[]}).modules;
+    for (const module of modules) assert.deepEqual(module.serves, g.runtime.health().modules.find(entry => entry.name === module.name)?.serves);
+    return modules;
+  };
+  const before = await listed();
+  for (const [name, state] of [['refused', 'refused'], ['fails-first', 'failed'], ['empty', 'running']]) {
+    const module = before.find(entry => entry.name === name);
+    assert.equal(module?.state, state);
+    assert.equal(Object.hasOwn(module ?? {}, 'serves'), false, 'an empty family list is omitted');
+  }
+  assert.deepEqual(before.find(module => module.name === 'later-failed')?.serves, ['device']);
+  assert.equal((await g.ask(g.url, '/modules/later-failed/broken', {token: reader.token})).status, 500);
+  const after = (await listed()).find(module => module.name === 'later-failed');
+  assert.equal(after?.state, 'failed');
+  assert.equal(Object.hasOwn(after ?? {}, 'serves'), false, 'closed sync registration is no longer served');
+  assertNoToken(g);
+});
+
+it('authenticated readers and a browser session read the latest operation through family and snapshot routes without replay', async context => {
+  const reader = READER(), core = createCoreModule();
+  const g = await gateway(context, [reader], {modules: [core], browserAccess: 'trusted-loopback'});
+  await core.actions.dispatch({
+    key: 'bunny.cmd.widget-set.w1', requestedBy: 'bunny/parts/operator', requestId: 'req-read',
+    draft: {type: 'org.bunny.widget.set.requested', subject: 'w1', dataschema: 'https://bunny.invalid/events/widget-set/2.0', data: {level: 1}},
+  });
+  const read = await g.ask(g.url, '/api/v2/families/operation', {token: reader.token});
+  assert.equal(read.status, 200);
+  const records = (read.body as {records: OperationRecord[]}).records;
+  assert.equal(records.length, 1);
+  assert.deepEqual([records[0]?.requestId, records[0]?.status, records[0]?.result, records[0]?.evidence], ['req-read', 'rejected', 'failed', 'none']);
+  const snapshot = await g.ask(g.url, '/api/v2/snapshot?families=operation', {token: reader.token});
+  assert.equal(snapshot.status, 200);
+  assert.deepEqual((snapshot.body as {records: {operation: OperationRecord[]}}).records.operation, records);
+  assert.equal((await g.ask(g.url, '/api/v2/families/operation')).status, 401);
+  const signed = await g.ask(g.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: g.url, 'bunny-request': '1', 'sec-fetch-site': 'same-origin'}});
+  assert.equal(signed.status, 200);
+  const cookie = signed.headers.get('set-cookie')?.split(';')[0] ?? '';
+  const browser = await g.ask(g.url, '/api/v2/families/operation', {headers: {cookie, 'sec-fetch-site': 'same-origin'}});
+  assert.equal(browser.status, 200);
+  assert.deepEqual((browser.body as {records: OperationRecord[]}).records, records);
+  const modules = await g.ask(g.url, '/api/v2/modules', {headers: {cookie, 'sec-fetch-site': 'same-origin'}});
+  assert.equal((modules.body as {modules: {name: string; serves?: string[]}[]}).modules.find(module => module.name === 'core')?.serves?.includes('operation'), true);
+  assert.equal(g.logs.filter(record => record.event_name === 'command.queued').length, 1, 'reads send no second action');
+  assertNoToken(g);
+});

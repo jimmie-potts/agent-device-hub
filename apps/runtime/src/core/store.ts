@@ -555,7 +555,7 @@ export class CoreStore implements Storage {
           // Kept as long as agent-state still admits the observation, which it judges by the hook's own instant.
           tx.take(plan.cause.message, Math.max(0, observation.observedAtMs - atMs) + TAKEN_LIFECYCLE_MS);
         }
-        if (added.length > 0) {
+        if (added.length > 0 || revision !== undefined) {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }

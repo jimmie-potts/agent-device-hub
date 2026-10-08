@@ -11,6 +11,7 @@ export {
   type TakenOutcome,
 } from './core/operations.js';
 export {MAX_REFUSED, type ChangeEvent, type HistoryKind, type OperationStep} from './core/history.js';
+export {MAX_OPERATION_RECORDS, OPERATION_FAMILY, OPERATION_SCHEMA, operationRecord} from './core/operation-records.js';
 export {Redactions, type LogSink} from './log.js';
 export {
   buildModules, coreFactory, moduleSchemas, orderModules, registrations, shippedList, shippedModules, type ModuleFactory, type ModuleRegistration,

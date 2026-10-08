@@ -305,9 +305,11 @@ serves it: another may start at any time, and a sync that names none is then
 refused. It syncs the family from each owner and keeps one copy per owner.
 Nothing merges the owners' records, so each copy recovers on its own.
 
-To learn the owners, a remote part, such as the dashboard, reads the runtime's
-health: each module's entry lists the families it serves now in `serves`, and
-a module's source is `bunny/modules/<name>`. It syncs only from those, so it
+To learn the owners, a remote part reads the runtime's health: each module's
+entry lists the families it serves now in `serves`, and a module's source is
+`bunny/modules/<name>`. A browser page, such as the dashboard, which may not
+read health, reads the same `serves` in the gateway's `GET /api/v2/modules`
+(Hub #922). It syncs only from those, so it
 asks no module that serves nothing, which would only be refused as
 `unavailable`. A module inside the runtime knows the device modules it shows,
 from its code or its configuration. `bus.served(source)` gives the same list on

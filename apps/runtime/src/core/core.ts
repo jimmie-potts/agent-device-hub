@@ -5,6 +5,7 @@
 // await, so a module that starts after it syncs from it, or republishes to it, finds it listening (#882). Its action
 // dispatcher, tracker and outcome intake (#782, tracker.ts) and its history (history.ts) are its own; parts that later
 // stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
+// Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -15,6 +16,7 @@ import {
   type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
+import {OperationRecords} from './operation-records.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
@@ -93,6 +95,8 @@ export type CoreOptions = {
   consumers?: readonly Consumer[];
   /** Runs right after each commit, before anything is published. Crash tests kill the process here. */
   beforePublish?: () => void;
+  /** How many `operation` records the core keeps (Hub #922). Defaults to `MAX_OPERATION_RECORDS`; tests lower it. */
+  operationLimit?: number;
 };
 
 /** The consumer a source may acknowledge for: the last segment of its source, such as `pixoo` for `bunny/modules/pixoo`. */
@@ -197,11 +201,13 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts = [], consumers = DEFAULT_CONSUMERS, beforePublish}: CoreOptions) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit}: CoreOptions) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
+    // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);

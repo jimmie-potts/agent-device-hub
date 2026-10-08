@@ -81,6 +81,21 @@ export type InboxItem = {
   };
 };
 /**
+ * `org.bunny.operation.updated`: the latest state of one action the core tracks (Hub #922, #782), a copy of the tracker's
+ * row that the core publishes from the tracker's change, in the same transaction, and serves through sync. Its `id` is
+ * `operationEntityId(requestId)`. `result` is absent while the action is `sent` or `accepted`. An accepted reply is never
+ * evidence of an effect; `evidence` describes the action's transmitted or observed effect. `kind` is the tracker's
+ * existing category and deadline class, not proof of a physical target; `family` and `target` identify the action,
+ * including tracked core-local metadata changes. The core keeps the latest records only, removing the
+ * oldest settled one with reason `retired`; the inbox (#923) points at an operation by its request ID.
+ */
+export type OperationRecord = {
+  id: string; revision: number; requestId: string; kind: 'device' | 'moment' | 'mode'; family: string; command: string; target: string;
+  requestedBy: string; status: 'sent' | 'accepted' | 'rejected' | 'expired' | 'uncertain' | 'completed' | 'conflict';
+  result?: 'succeeded' | 'failed' | 'uncertain' | 'conflict'; evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail; reply?: string;
+  sentAtMs: number; updatedAtMs: number; deadlineAtMs: number;
+};
+/**
  * `org.bunny.outcome.recorded`: the outcome acknowledgment (ADR 0012, "Acknowledging outcomes", Hub #782). The core,
  * and only the core, tells the module whose `source` it names that it recorded the outcome with message `id`. It goes
  * out on `outcomeRecordedKey(source)` once the outcome commits, and again for each exact duplicate. Its subject is `id`.
@@ -124,6 +139,11 @@ export type PlaybackState = {
 export function sessionEntityId(identity: Identity): string {
   const {client, hostId, provider, sessionId, sourceId} = identity;
   return createHash('sha256').update(JSON.stringify({client, hostId, provider, sessionId, sourceId}), 'utf8').digest('hex');
+}
+
+/** The ID of an operation entity: the lowercase hex SHA-256 of its request ID in UTF-8, so one request has one entity. */
+export function operationEntityId(requestId: string): string {
+  return createHash('sha256').update(requestId, 'utf8').digest('hex');
 }
 
 /** The display title by precedence: the label, then the title. Undefined leaves the consumer's neutral fallback. */
@@ -178,6 +198,13 @@ const checkRaised: PayloadCheck = message => {
   return checkOccurrence(message) ?? (sameId(raised.attention.turn, raised.turn) ? undefined : 'payload /attention/turn not the observed turn');
 };
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
+// An operation's entity is its request's, and its command is its family's.
+const checkOperation: PayloadCheck = message => {
+  const record = message.data as OperationRecord;
+  const verb = record.family.lastIndexOf('-');
+  return entity(message, record.id) ?? (record.id === operationEntityId(record.requestId) ? undefined : 'payload /id not the request\'s entity')
+    ?? (verb > 0 && record.command === `org.bunny.${record.family.slice(0, verb)}.${record.family.slice(verb + 1)}.requested` ? undefined : 'payload /command not the family\'s');
+};
 // Only the core acknowledges an outcome, and the acknowledgment's subject is the outcome's message ID.
 const checkRecorded: PayloadCheck = message => {
   if (message.source !== CORE_SOURCE) return 'envelope /source not the core';
@@ -196,6 +223,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkEntity),
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
+  define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
   define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence),

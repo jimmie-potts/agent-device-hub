@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/operation/2.0",
+  "description": "State: the latest state of one action the core tracks (Hub #922, #782), a device command, a moment or a mode change, so a display can show it requested, accepted and completed without reading the tracker. The core publishes it from the tracker's change, in the same transaction, and serves it through sync; it is a copy of the tracker's row, which stays the authority. `id` is operationEntityId(requestId), the SHA-256 of the request ID, so one request has one entity. `status` is the tracker's: sent, accepted, then completed, or rejected, expired, uncertain or conflict. `result` is absent while the action waits for its fate (sent or accepted) and present after. `kind` is the tracker's existing category and deadline class, not proof that the target is a physical device; `family` and `target` identify the action, including tracked core-local metadata changes. `evidence` describes the action's transmitted or observed effect: an accepted reply is never evidence that anything was done. The core keeps the latest records only, the oldest settled one removed with reason `retired` after each tracked change while more than the core's bound exist; a pending one is never removed, even above the bound, and settlement restores the limit as it permits. The inbox (#923) points at an operation by its request ID.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "requestId", "kind", "family", "command", "target", "requestedBy", "status", "sentAtMs", "updatedAtMs", "deadlineAtMs"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "kind": {"enum": ["device", "moment", "mode"]},
+    "family": {"type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", "maxLength": 64},
+    "command": {"type": "string", "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,3}\\.requested$", "maxLength": 256},
+    "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "requestedBy": {"type": "string", "pattern": "^bunny(/[a-z0-9][a-z0-9-]*)+$", "maxLength": 256},
+    "status": {"enum": ["sent", "accepted", "rejected", "expired", "uncertain", "completed", "conflict"]},
+    "result": {"enum": ["succeeded", "failed", "uncertain", "conflict"]},
+    "evidence": {"$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome/properties/evidence"},
+    "error": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"},
+    "reply": {"description": "The owner's reply: accepted, or the refusal's registry code; absent until it comes, and for a request whose fate is unknown.", "type": "string", "pattern": "^[a-z]+(-[a-z]+)*$", "maxLength": 64},
+    "sentAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "updatedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "deadlineAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"enum": ["sent", "accepted"]}}}, "then": {"properties": {"result": false}}, "else": {"required": ["result"], "properties": {"result": true}}},
+    {"if": {"properties": {"result": {"const": "failed"}}, "required": ["result"]}, "then": {"required": ["error"], "properties": {"error": true}}},
+    {"if": {"properties": {"result": {"const": "succeeded"}}, "required": ["result"]}, "then": {"required": ["evidence"], "properties": {"error": false, "evidence": {"enum": ["transmitted", "observed"]}}}}
+  ]
+}
