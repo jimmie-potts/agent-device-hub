@@ -82,8 +82,9 @@ each of them in its report:
 
 - tasks and what follows them: `sessions`, `task_info`, `activity`, `waits`, `receipts` and the shared-input task tables;
 - reservations (`slots`), comets, Locate and display caches;
-- task and effect epochs, holds and failures in `meta`;
-- the controller ledger and the integration API's requests;
+- task and effect epochs, holds (`controller_hold_revision`) and failures (`control_error`) in `meta`: a carried hold
+  at the carried mode revision would stop every write to its device;
+- the controller ledger, each device's included, and the integration API's requests;
 - the legacy task backup and the shared-input configuration's `bindings`;
 - the rows, layout entries and scene files of a device the registry no longer names.
 

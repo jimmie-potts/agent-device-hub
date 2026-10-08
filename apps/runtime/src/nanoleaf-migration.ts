@@ -22,7 +22,9 @@ import {
 } from '@jimmie-potts/nanoleaf';
 import {loadSecret} from './host.js';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
-import {CONFIG_SCHEMA, MAX_CONFIG_BYTES, RuntimeError, openModuleDatabase, openModuleFolder, prepareStateDirectory, readPrivateFile} from './state.js';
+import {
+  CONFIG_SCHEMA, MAX_CONFIG_BYTES, RuntimeError, checkStateDirectory, openModuleDatabase, openModuleFolder, prepareStateDirectory, readPrivateFile,
+} from './state.js';
 
 export const NANOLEAF_MIGRATION_USAGE = 'usage: migrate-nanoleaf.js migrate|verify --source <dir> --state-dir <dir> --secrets-dir <dir> --section <file>; '
   + 'every path absolute';
@@ -76,7 +78,8 @@ const TEXT: Readonly<Record<string, string>> = {
   'lease-unavailable': 'The runtime\'s lease file in the state directory is not a regular file private to this user.',
   'secrets-dir-refused': 'The secrets directory is refused: it must be private (mode 700), outside every Git checkout and off /mnt, with no link along it.',
   'section-dir-refused': 'The section file\'s directory is refused: it must be private (mode 700), outside every Git checkout and off /mnt, with no link along it.',
-  'destination-not-empty': 'The Nanoleaf module already has a database or files in the state directory, or a secret file or the section already exists: '
+  'destination-not-empty': 'Something the tool writes is already there: modules/nanoleaf.sqlite or its -wal, -shm or -journal file, or a non-empty '
+    + 'modules/nanoleaf/ folder, in the state directory; a nanoleaf-<device>-token file in the secrets directory; or the section file. Remove them, or '
     + 'migrate into fresh ones.',
   'destination-missing': 'The state directory holds no Nanoleaf module database to verify.',
   'module-db-not-private': 'The Nanoleaf module\'s database file is not a private regular file with one link.',
@@ -145,10 +148,13 @@ async function fresh(database: string, folder: string): Promise<boolean> {
   return (await lstat(folder)).isDirectory() && (await readdir(folder)).length === 0;
 }
 
-/** The private directory `path` as the runtime's state rules accept it, created when missing, or the refusal `code`. */
-async function privateDirectory(path: string, code: string): Promise<string> {
+/**
+ * The private directory `path` as the runtime's state rules accept it, through `check` (`checkStateDirectory`, which
+ * creates nothing, or `prepareStateDirectory`, which creates it when missing), or the refusal `code`.
+ */
+async function outputDirectory(path: string, code: string, check: (dir: string) => Promise<string>): Promise<string> {
   try {
-    return await prepareStateDirectory(path);
+    return await check(path);
   } catch (error) {
     if (error instanceof RuntimeError) throw new Refusal(code);
     throw error;
@@ -162,10 +168,12 @@ const configurationDigest = (section: unknown): string => sha256(dumps(section))
 
 /**
  * Runs `migrate` or `verify` as `argv` says, writing one JSON line through `options.write`, and returns the exit code.
- * Both hold the runtime's lease and the bridge's locks for as long as they run. `migrate` refuses, before it writes
- * anything, a running runtime, a destination that already has a module database or files, a secret file or the section,
- * a secrets directory or section folder that is not private, and a source `InstalledState` or the conversion refuses. If
- * it fails once it has begun to write, it removes the module's database and folder and the files it wrote.
+ * Both hold the runtime's lease and the bridge's locks for as long as they run. `migrate` refuses, before it creates
+ * anything, a secrets directory or section folder that is not private, a destination that already has a module database
+ * or files, a secret file or the section, and a source `InstalledState` or the conversion refuses; then it takes the
+ * lease, which creates the state directory, `modules/` and the lease's empty lock file as a runtime's start does, and
+ * refuses a running runtime. If it fails once it has begun to write, or a signal stops it, it removes the module's
+ * database with its log and journal, its folder and the files it wrote, and reports `failed`.
  */
 export async function runNanoleafMigration(argv: readonly string[], options: NanoleafMigrationOptions): Promise<number> {
   const emit = (record: object): void => { options.write(`${JSON.stringify({schema: MIGRATION_SCHEMA, ...record})}\n`); };
@@ -177,24 +185,33 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
   const {operation} = input;
   let lease: RuntimeLease | undefined;
   let source: InstalledState | undefined;
+  const stopped = (): boolean => options.signal?.aborted === true;
   try {
+    if (stopped()) throw new Refusal('interrupted');
+    // Every refusal but the lease's comes before anything is created: the paths, the destination and the source.
     if (operation === 'verify' && !await exists(input.stateDir)) throw new Refusal('destination-missing');
-    const stateDir = await prepareStateDirectory(input.stateDir);
-    lease = await holdRuntimeLease(stateDir);
+    const stateDir = await checkStateDirectory(input.stateDir);
     const database = join(stateDir, 'modules', `${MODULE}.sqlite`);
     const folder = join(stateDir, 'modules', MODULE);
     if (operation === 'verify') {
       if (!await exists(database)) throw new Refusal('destination-missing');
       source = InstalledState.open(input.source);
+      lease = await holdRuntimeLease(stateDir);
       return await verify(source, input, database, folder, emit, options.signal);
     }
-    const secretsDir = await privateDirectory(input.secretsDir, 'secrets-dir-refused');
-    await privateDirectory(dirname(input.section), 'section-dir-refused');
+    const secretsDir = await outputDirectory(input.secretsDir, 'secrets-dir-refused', checkStateDirectory);
+    const sectionDir = await outputDirectory(dirname(input.section), 'section-dir-refused', checkStateDirectory);
     if (!await fresh(database, folder) || await exists(input.section)) throw new Refusal('destination-not-empty');
     source = InstalledState.open(input.source);
     const converted = convertNanoleafState(source, secretsDir);
     for (const path of Object.values(converted.section.secrets)) if (await exists(path)) throw new Refusal('destination-not-empty');
-    if (options.signal?.aborted === true) throw new Refusal('interrupted');
+    // The lease creates the state directory, `modules/` and its empty lock file, as a runtime's start does. Under it the
+    // destination is checked again, since a runtime that started meanwhile may have made it; then the output folders.
+    lease = await holdRuntimeLease(await prepareStateDirectory(stateDir));
+    if (!await fresh(database, folder)) throw new Refusal('destination-not-empty');
+    await outputDirectory(secretsDir, 'secrets-dir-refused', prepareStateDirectory);
+    await outputDirectory(sectionDir, 'section-dir-refused', prepareStateDirectory);
+    if (stopped()) throw new Refusal('interrupted');
     return await migrateInto(source, converted, {stateDir, database, folder, secretsDir, section: input.section}, options, emit);
   } catch (error) {
     emit({operation, result: 'refused', ...refusalOf(error)});

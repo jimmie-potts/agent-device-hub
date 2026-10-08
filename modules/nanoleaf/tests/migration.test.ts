@@ -17,9 +17,10 @@ import {configureNanoleaf, LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from 
 import {layoutDevices} from '../src/devices.js';
 import {readJson} from '../src/jsonfile.js';
 import {
-  convertNanoleafState, FRESH_SHARED_INPUT, InstalledState, MIGRATION_SCHEMA, MigrationError, migrateNanoleaf, secretFileName, SYNTHETIC_SOURCE,
+  CARRIED_META, convertNanoleafState, FRESH_SHARED_INPUT, InstalledState, MIGRATION_SCHEMA, MigrationError, migrateNanoleaf, secretFileName, SYNTHETIC_SOURCE,
   verifyNanoleafStore, writeSyntheticNanoleafState, type MigrationReport, type NanoleafSection, type StoreMismatches,
 } from '../src/migration/index.js';
+import {HOLD} from '../src/journal.js';
 import {selected} from '../src/shared-input.js';
 import {ModuleWorld} from './module-support.js';
 import {FIXTURES, suite, temporary, test} from './support.js';
@@ -182,8 +183,8 @@ suite('the installed shape, with the Lines and NL22 Light Panels', () => {
     const {report, databaseFile, folder} = migrate(source, directory);
     assert.deepEqual(report.counts, {devices: 2, projects: 3, palette: 2, elements: 5, mapSettings: 2, pendingEdits: 1, favorites: 2, deviceState: 8,
       layouts: 2, scenes: 2});
-    assert.deepEqual(report.leftInBackup, {sessions: 2, taskRows: 4, reservations: 3, comets: 1, locates: 1, displayCaches: 1, controllerLedger: 2,
-      integrationRequests: 1, legacyBackup: 1, bindings: 2, otherMeta: 6, unregistered: 3});
+    assert.deepEqual(report.leftInBackup, {sessions: 2, taskRows: 4, reservations: 3, comets: 1, locates: 1, displayCaches: 1, controllerLedger: 3,
+      integrationRequests: 1, legacyBackup: 1, bindings: 2, otherMeta: 7, unregistered: 3});
     assert.deepEqual(rowsOf(databaseFile, 'SELECT role,color FROM palette ORDER BY role'), [['unread', '#cc33ff'], ['working', '#11aa22']]);
     assert.deepEqual(rowsOf(databaseFile, 'SELECT name FROM animation_favorites ORDER BY name'), [['Marker Favorite Calm'], ['Marker Favorite Wave']]);
     assert.deepEqual(rowsOf(databaseFile, "SELECT line_id,project FROM line_prefs WHERE device='panels' ORDER BY line_id"), [['200', 'project-beta'], ['201', 'project-gamma']]);
@@ -191,6 +192,10 @@ suite('the installed shape, with the Lines and NL22 Light Panels', () => {
     assert.deepEqual(rowsOf(databaseFile, "SELECT key,value FROM meta WHERE key LIKE '%@panels' ORDER BY key"),
       [['controller_power@panels', '1'], ['mode@panels', 'quiet'], ['mode_applied@panels', '1'], ['mode_revision@panels', '2']]);
     assert.deepEqual(rowsOf(databaseFile, 'SELECT * FROM shared_input'), [[...FRESH_SHARED_INPUT]], 'no configuration, bindings, envelope or legacy backup');
+    // Each device's hold, at its carried mode revision, stays behind: carried, it would stop every write while the device shows available.
+    assert.ok(!(CARRIED_META as readonly string[]).some(name => name === HOLD || name.startsWith('controller_hold')), 'no hold is a carried meta value');
+    assert.deepEqual(rowsOf(source + '/status.sqlite', `SELECT key FROM meta WHERE key LIKE '${HOLD}%' ORDER BY key`), [[HOLD], [`${HOLD}@panels`]]);
+    assert.deepEqual(rowsOf(databaseFile, `SELECT key FROM meta WHERE key LIKE '${HOLD}%' OR key LIKE 'control_error%'`), [], 'no hold or failure migrates');
     for (const table of START_FRESH) assert.deepEqual(rowsOf(databaseFile, `SELECT * FROM ${table}`), [], table);
     assert.deepEqual(readdirSync(folder).sort(), ['layout.json', 'scene-state.json', 'scene-state.panels.json']);
     assert.deepEqual([...layoutDevices(readJson(join(folder, 'layout.json'))).keys()], ['wall', 'panels']);
@@ -508,6 +513,9 @@ suite('the module on the migrated store', () => {
     assert.equal(wall.elements.find(element => element.id === '100:101')?.project, 'project-alpha');
     assert.deepEqual(world.device_()?.desired, {power: {status: 'unknown'}, brightness: {status: 'known', value: 40}, mode: {status: 'known', value: 'work'}});
     assert.deepEqual(world.state<DeviceRecord>('device', 'panels')?.desired.mode, {status: 'known', value: 'quiet'});
+    // The source held both devices; the migrated store holds neither, so their writes go on and their records are true.
+    await world.until(() => ['wall', 'panels'].every(id => world.state<DeviceRecord>('device', id)?.availability === 'available'), 10_000, 'both devices available');
+    assert.deepEqual(['wall', 'panels'].map(id => world.state<{held: boolean}>('nanoleaf-wall', id)?.held), [false, false]);
     const favorites = world.state<{favorites: {name: string}[]}>('nanoleaf-animations', 'wall')?.favorites.map(favorite => favorite.name);
     assert.deepEqual(favorites, ['Marker Favorite Calm', 'Marker Favorite Wave']);
     world.verify();

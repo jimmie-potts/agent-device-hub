@@ -769,7 +769,7 @@ file's content.
 | --- | --- |
 | `runtime-running` | A runtime, or another tool, holds the state directory's lease |
 | `lease-unavailable` | The lease's lock file is not a regular file private to the user |
-| `destination-not-empty` | The module already has a database, a log, a journal or a non-empty folder, or a secret file or the section already exists: migrate into fresh ones |
+| `destination-not-empty` | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
 | `destination-missing` | `verify` found no module database |
 | `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
 | `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
@@ -783,8 +783,15 @@ file's content.
 | `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows |
 | `disk-short` | The disk filled while `migrate` wrote, its final checkpoint included |
 | `destination-not-clean` | A log or journal with content was left beside the module's database after `migrate` closed it |
-| `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4, what it wrote removed). A second signal stops it at once |
+| `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
 | `internal` | Anything else |
+
+`migrate` checks its arguments, the three output paths, the destination and
+the source before it creates anything, so every refusal but the lease's
+creates nothing. Then it takes the lease, which creates the state directory,
+`modules/` and the lease's empty lock file as a runtime's start does, and
+checks the destination again under it. A failure after that leaves those and
+the secrets and section folders, empty.
 
 `migrate` checkpoints the module's log into the file before it closes it,
 because the close's own checkpoint keeps the log on a full disk without an

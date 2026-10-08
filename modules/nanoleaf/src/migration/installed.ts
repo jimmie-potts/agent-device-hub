@@ -42,8 +42,9 @@ const SQLITE_HEADER = 'SQLite format 3\0';
 
 /** The tables whose rows follow live sessions, which start fresh (owner decision 10). */
 const TASK_TABLES = ['task_info', 'activity', 'waits', 'receipts', 'shared_stale', 'shared_suppressed_waves', 'shared_evictions', 'shared_ack'] as const;
-const LEDGER_TABLES = ['controller_meta', 'controller_requests', 'controller_events', 'controller_credentials'] as const;
-const INTEGRATION_TABLES = ['integration_meta', 'integration_requests'] as const;
+/** The bridge's controller ledger and integration API tables, each device's own ledger suffixed `@<device>` (ADR 0009). */
+const LEDGER_PREFIX = 'controller_';
+const INTEGRATION_PREFIX = 'integration_';
 
 /** The source directories this process has open, by real path: a second opener of one is refused while it is. */
 const opened = new Set<string>();
@@ -157,6 +158,11 @@ type Shape = {columns: string[]} | undefined;
 function shapeOf(db: DatabaseSync, table: string): Shape {
   if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table) === undefined) return undefined;
   return {columns: db.prepare(`PRAGMA table_info("${table}")`).all().map(row => String(row.name))};
+}
+
+/** The tables whose names start with `prefix`. */
+function tablesNamed(db: DatabaseSync, prefix: string): string[] {
+  return db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND substr(name, 1, ?) = ?").all(prefix.length, prefix).map(row => String(row.name));
 }
 
 function countOf(db: DatabaseSync, table: string): number {
@@ -372,8 +378,8 @@ export class InstalledState {
       sessions: countOf(db, 'sessions'),
       taskRows: TASK_TABLES.reduce((sum, table) => sum + countOf(db, table), 0),
       reservations: countOf(db, 'slots'), comets: countOf(db, 'comets'), locates: countOf(db, 'locate'), displayCaches: countOf(db, 'display_v3'),
-      controllerLedger: LEDGER_TABLES.reduce((sum, table) => sum + countOf(db, table), 0),
-      integrationRequests: INTEGRATION_TABLES.reduce((sum, table) => sum + countOf(db, table), 0),
+      controllerLedger: tablesNamed(db, LEDGER_PREFIX).reduce((sum, table) => sum + countOf(db, table), 0),
+      integrationRequests: tablesNamed(db, INTEGRATION_PREFIX).reduce((sum, table) => sum + countOf(db, table), 0),
       legacyBackup, bindings,
       otherMeta: 0,
       unregistered: unregisteredLayouts + unregisteredScenes,

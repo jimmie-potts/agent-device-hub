@@ -108,11 +108,16 @@ export async function writeSyntheticNanoleafState(directory: string, options: Sy
     execute(db, "INSERT INTO display_v3 (snapshot,looping,rendered,device) VALUES ('[]',0,1789999101.0,'wall')");
     execute(db, "INSERT INTO shared_stale VALUES ('shared-task-2')");
     for (const [key, value] of [['wave_cutoff', '1789998000.0'], ['event_revision', '42'], ['dirty', '1'], ['shared_wave_cutoff', '1789998500.0'],
-      [metaKey('controller_hold_revision', 'panels'), '2'], [metaKey('control_error', 'panels'), 'Light update failed; retrying.']] as const) {
+      // A hold on each device at its current mode revision, as an uncertain write leaves it: carried, it would stop every write.
+      [metaKey('controller_hold_revision', 'wall'), '4'], [metaKey('controller_hold_revision', 'panels'), '2'],
+      [metaKey('control_error', 'panels'), 'Light update failed; retrying.']] as const) {
       execute(db, 'INSERT OR REPLACE INTO meta VALUES (?,?)', key, value);
     }
     execute(db, "INSERT INTO controller_credentials VALUES ('codex','0000000000000000000000000000000000000000000000000000000000000000','[\"read\"]',1)");
     execute(db, "INSERT INTO controller_meta VALUES (1,'{}')");
+    // The Panels' own ledger, suffixed with its device as the bridge names it.
+    db.exec('CREATE TABLE "controller_meta@panels" (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
+    execute(db, 'INSERT INTO "controller_meta@panels" VALUES (1,?)', '{}');
     execute(db, "INSERT INTO integration_meta VALUES (1,1)");
     // A device the registry no longer names: its rows and meta value stay in the backup.
     execute(db, "INSERT INTO line_prefs (line_id,project,signature,device) VALUES ('300','project-alpha',0,'old-panels')");

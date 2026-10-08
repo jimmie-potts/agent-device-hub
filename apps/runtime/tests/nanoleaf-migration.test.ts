@@ -17,6 +17,7 @@ import {it, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const ENTRY = fileURLToPath(new URL('../src/migrate-nanoleaf.js', import.meta.url));
+const INTERRUPT = fileURLToPath(new URL('./fixtures/nanoleaf-interrupt.js', import.meta.url));
 
 type Line = {
   schema: string; operation: string; result: string; code?: string; message?: string; destination?: string;
@@ -64,6 +65,9 @@ async function untouched(p: Paths): Promise<boolean> {
   return await absent(join(p.state, 'modules', 'nanoleaf.sqlite')) && await absent(join(p.state, 'modules', 'nanoleaf')) && secrets.length === 0 &&
     await absent(p.section);
 }
+
+/** Whether no refusal created anything: no state directory and no secrets directory. */
+const nothingCreated = async (p: Paths): Promise<boolean> => await absent(p.state) && await absent(p.secrets);
 
 const mode = async (path: string): Promise<number> => (await lstat(path)).mode & 0o777;
 
@@ -151,7 +155,7 @@ it('refuses malformed arguments with exit 2', async context => {
     const {exit, line} = await tool(argv);
     assert.deepEqual([exit, line.result, line.code], [EXIT.usage, 'refused', 'usage'], JSON.stringify(argv));
   }
-  assert.ok(await untouched(p));
+  assert.ok(await nothingCreated(p));
 });
 
 it('refuses while a runtime runs on the state directory, and a runtime that starts while it runs cannot take the lease', async context => {
@@ -159,11 +163,13 @@ it('refuses while a runtime runs on the state directory, and a runtime that star
   await mkdir(p.state, {mode: 0o700});
   const runtime = await startRuntime(p.state);
   try {
-    for (const operation of ['migrate', 'verify']) {
-      const {exit, line} = await tool(args(operation, p));
-      assert.deepEqual([exit, line.result, line.code], [EXIT.refused, 'refused', 'runtime-running'], operation);
-    }
+    const migrate = await tool(args('migrate', p));
+    assert.deepEqual([migrate.exit, migrate.line.result, migrate.line.code], [EXIT.refused, 'refused', 'runtime-running']);
+    // With nothing migrated yet, verify finds no database before it would take the lease.
+    const verify = await tool(args('verify', p));
+    assert.deepEqual([verify.exit, verify.line.code], [EXIT.refused, 'destination-missing']);
     assert.ok(await untouched(p));
+    assert.ok(await absent(p.secrets), 'the lease is refused before the output folders are made');
   } finally {
     await runtime.stop();
   }
@@ -217,6 +223,7 @@ it('refuses a destination that already has files, and a verify with nothing to v
     const {exit, line} = await tool(args('migrate', q));
     assert.deepEqual([exit, line.code], [EXIT.refused, 'destination-not-empty']);
     assert.ok(await absent(join(q.state, 'modules', 'nanoleaf.sqlite')));
+    assert.ok(await absent(join(q.state, 'modules', 'core.sqlite-owner')), 'refused before the lease');
   }
 });
 
@@ -224,11 +231,11 @@ it('refuses a source it cannot carry, naming the code, and writes nothing', asyn
   const empty = await paths(context);
   const {exit, line} = await tool(['migrate', '--source', empty.root, ...args('migrate', empty).slice(3)]);
   assert.deepEqual([exit, line.code, line.message], [EXIT.refused, 'source-missing', 'The source directory holds no status.sqlite or no config.json.']);
-  assert.ok(await untouched(empty));
+  assert.ok(await nothingCreated(empty), 'a source refusal creates no folder and takes no lease');
   const unconfigured = await paths(context, false);
   const refused = await tool(args('migrate', unconfigured));
   assert.deepEqual([refused.exit, refused.line.code], [EXIT.refused, 'source-not-configured']);
-  assert.ok(await untouched(unconfigured));
+  assert.ok(await nothingCreated(unconfigured));
 });
 
 it('refuses a secrets directory or a section folder that others can open', async context => {
@@ -242,6 +249,7 @@ it('refuses a secrets directory or a section folder that others can open', async
   const section = await tool(args('migrate', p));
   assert.deepEqual([section.exit, section.line.code], [EXIT.refused, 'section-dir-refused']);
   assert.ok(await untouched(p));
+  assert.ok(await absent(p.state), 'neither refusal created the state directory or took the lease');
 });
 
 it('removes what it wrote when it fails after writing began, and exits 4', async context => {
@@ -294,6 +302,31 @@ it('a signal stops a migration: before it writes, nothing is written; once it ha
     target.emit(name);
     assert.equal(signal.aborted, true, name);
     assert.deepEqual([target.listenerCount('SIGINT'), target.listenerCount('SIGTERM')], [0, 0], `after ${name}, either signal stops the process`);
+  }
+});
+
+it('a real SIGINT or SIGTERM mid-run removes the database with its log, the folder and the secrets, and exits 4 with one failed line', async context => {
+  for (const [signal, stage] of [['SIGINT', 'checkpoint'], ['SIGTERM', 'section']] as const) {
+    const p = await paths(context);
+    const child = spawn(process.execPath, [INTERRUPT, stage, ...args('migrate', p)], {stdio: ['ignore', 'pipe', 'pipe']});
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+    const exited = once(child, 'exit');
+    await waitFor(() => stderr.includes(`paused ${stage}`), 15_000, `the child paused at ${stage}`);
+    // What the signal interrupts: the open database with every row in its log, or the written secrets.
+    if (stage === 'checkpoint') assert.ok((await lstat(join(p.state, 'modules', 'nanoleaf.sqlite-wal'))).size > 0, 'the log holds the rows');
+    else assert.deepEqual((await readdir(p.secrets)).sort(), ['nanoleaf-panels-token', 'nanoleaf-wall-token']);
+    child.kill(signal);
+    const [code, killed] = await exited as [number | null, NodeJS.Signals | null];
+    assert.deepEqual([code, killed], [EXIT.failed, null], `${signal}: ${stderr}`);
+    const lines = stdout.split('\n').filter(line => line !== '');
+    assert.equal(lines.length, 1, 'one line');
+    const line = JSON.parse(lines[0] ?? '{}') as Line;
+    assert.deepEqual([line.result, line.code, line.destination], ['failed', 'interrupted', 'removed'], signal);
+    for (const suffix of ['', '-wal', '-shm', '-journal']) assert.ok(await absent(join(p.state, 'modules', `nanoleaf.sqlite${suffix}`)), `${signal} ${suffix}`);
+    assert.ok(await untouched(p), signal);
   }
 });
 
