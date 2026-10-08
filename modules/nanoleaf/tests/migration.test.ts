@@ -4,7 +4,8 @@
 // into the module's section with each token as a secret, refuses what it cannot carry, and its verifier counts every
 // mismatch. The module then starts on the migrated store.
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
+import {once} from 'node:events';
 import {createHash} from 'node:crypto';
 import {
   chmodSync, copyFileSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
@@ -112,6 +113,39 @@ const refusal = (action: () => unknown): string => {
   }
   return 'none';
 };
+
+/** Runs one statement on a SQLite file in another process, without waiting for a lock: `ok`, or SQLite's error name. */
+function tryInChild(file: string, sql: string): string {
+  const script = [
+    'const {DatabaseSync} = require("node:sqlite");',
+    `const db = new DatabaseSync(${JSON.stringify(file)}, {timeout: 0});`,
+    `try { db.exec(${JSON.stringify(sql)}); process.stdout.write("ok"); } catch (error) { process.stdout.write(error.errcode === 5 ? "SQLITE_BUSY" : String(error.errcode)); }`,
+  ].join('\n');
+  return spawnSync(process.execPath, ['-e', script], {encoding: 'utf8'}).stdout;
+}
+
+/** Holds a SQLite file's exclusive lock from another process, as a bridge worker does, until `release`. */
+async function holdInChild(context: TestContext, file: string): Promise<{release: () => Promise<void>}> {
+  const script = [
+    'const {DatabaseSync} = require("node:sqlite");',
+    `const db = new DatabaseSync(${JSON.stringify(file)}, {timeout: 0});`,
+    'db.exec("BEGIN EXCLUSIVE");',
+    'process.stdout.write("held\\n");',
+    'process.stdin.resume();',
+    'process.stdin.on("end", () => { db.exec("ROLLBACK"); db.close(); });',
+  ].join('\n');
+  const child = spawn(process.execPath, ['-e', script], {stdio: ['pipe', 'pipe', 'inherit']});
+  context.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  const exited = once(child, 'exit');
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { if (chunk.includes('held')) resolve(); });
+    void exited.then(() => { reject(new Error('the holder exited before it held the lock')); });
+  });
+  return {release: async () => {
+    child.stdin.end();
+    await exited;
+  }};
+}
 
 /** Every entry under `directory`: its type, mode, size, modification time and content's SHA-256. */
 function snapshot(directory: string): Record<string, string> {
@@ -329,25 +363,20 @@ suite('refusals of the source', () => {
   test('refuses a running worker, and a worker that starts during the migration cannot take its lock', async context => {
     const directory = temporary(context);
     const source = await syntheticState(directory);
-    const worker = new DatabaseSync(join(source, 'notification-lock.panels.sqlite'), {timeout: 0});
-    worker.exec('BEGIN EXCLUSIVE');
-    assert.equal(refusal(() => InstalledState.open(source).close()), 'source-in-use');
-    worker.exec('ROLLBACK');
-    const enrollment = new DatabaseSync(join(source, 'registry-lock.sqlite'), {timeout: 0});
-    enrollment.exec('BEGIN EXCLUSIVE');
-    assert.equal(refusal(() => InstalledState.open(source).close()), 'source-in-use');
-    enrollment.exec('ROLLBACK');
-    enrollment.close();
+    // The bridge's worker and its enrollment are other processes, as they are on the host.
+    for (const lock of ['notification-lock.panels.sqlite', 'registry-lock.sqlite']) {
+      const holder = await holdInChild(context, join(source, lock));
+      assert.equal(refusal(() => InstalledState.open(source).close()), 'source-in-use', lock);
+      await holder.release();
+    }
     const state = InstalledState.open(source);
     try {
-      assert.throws(() => { worker.exec('BEGIN EXCLUSIVE'); }, {errcode: 5}, 'the worker cannot take its lock');
-      const writer = new DatabaseSync(join(source, 'status.sqlite'), {timeout: 0});
-      assert.throws(() => { writer.exec("INSERT INTO sessions VALUES ('late','t1','working',1.0)"); }, {errcode: 5}, 'no bridge process commits');
-      writer.close();
+      assert.equal(tryInChild(join(source, 'notification-lock.panels.sqlite'), 'BEGIN EXCLUSIVE'), 'SQLITE_BUSY', 'the worker cannot take its lock');
+      assert.equal(tryInChild(join(source, 'status.sqlite'), "INSERT INTO sessions VALUES ('late','t1','working',1.0)"), 'SQLITE_BUSY', 'no bridge process commits');
     } finally {
       state.close();
-      worker.close();
     }
+    assert.equal(tryInChild(join(source, 'notification-lock.panels.sqlite'), 'BEGIN EXCLUSIVE'), 'ok', 'once closed, the worker takes its lock');
   });
 
   test('refuses a second reader of an open source, so no plain read drops the first one\'s locks', async context => {
@@ -355,10 +384,12 @@ suite('refusals of the source', () => {
     const source = await syntheticState(directory);
     const state = InstalledState.open(source);
     try {
-      assert.equal(refusal(() => InstalledState.open(source).close()), 'source-in-use');
-      const writer = new DatabaseSync(join(source, 'status.sqlite'), {timeout: 0});
-      assert.throws(() => { writer.exec("INSERT INTO sessions VALUES ('late','t1','working',1.0)"); }, {errcode: 5}, 'the first reader\'s lock still holds');
-      writer.close();
+      const second = refusal(() => InstalledState.open(source).close());
+      // Another process, which SQLite's bookkeeping in this one cannot refuse: only the OS lock keeps it out. A second
+      // reader that read the header with a plain descriptor and closed it would have dropped that lock.
+      assert.equal(tryInChild(join(source, 'status.sqlite'), "INSERT INTO sessions VALUES ('late','t1','working',1.0)"), 'SQLITE_BUSY',
+        'the first reader\'s lock still holds');
+      assert.equal(second, 'source-in-use');
     } finally {
       state.close();
     }

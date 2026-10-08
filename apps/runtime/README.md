@@ -762,7 +762,7 @@ file's content.
 | 0 | `migrated`, `verified` | Done; `verified` has zero mismatches |
 | 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
 | 2 | `refused`, code `usage` | Malformed arguments |
-| 3 | `refused` | Refused before writing anything; `code` and `message` say why |
+| 3 | `refused` | Refused before writing any of the module's data, secrets or section; a refusal before the lease creates nothing. `code` and `message` say why |
 | 4 | `failed` | `migrate` stopped after it began to write, on a failure or a signal; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
 
 | Code | Refusal or failure |

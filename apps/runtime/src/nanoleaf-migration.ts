@@ -31,8 +31,9 @@ export const NANOLEAF_MIGRATION_USAGE = 'usage: migrate-nanoleaf.js migrate|veri
 
 /**
  * Exit codes: `ok` migrated, or verified with zero mismatches; `mismatch` the verifier found one or more; `usage` the
- * arguments are malformed; `refused` the tool refused before writing anything; `failed` it stopped after it began to
- * write, and removed what it wrote unless the line says `"destination": "left"`.
+ * arguments are malformed; `refused` the tool refused before writing any of the module's data, secrets or section (a
+ * refusal before the lease creates nothing); `failed` it stopped after it began to write, and removed what it wrote
+ * unless the line says `"destination": "left"`.
  */
 export const EXIT = {ok: 0, mismatch: 1, usage: 2, refused: 3, failed: 4} as const;
 
