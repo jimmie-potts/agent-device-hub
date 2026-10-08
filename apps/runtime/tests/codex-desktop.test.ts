@@ -8,7 +8,7 @@ import {chmod, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile} from 'nod
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import {MARKER_FILE, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
+import {MARKER_FILE, SimulatedMarker, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
 import {sessionEntityId, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Sdk, SyncedCopy} from '@jimmie-potts/sdk';
 import {createCoreModule, type LogRecord} from '../src/index.js';
@@ -176,7 +176,9 @@ it('Desktop metadata guards scoped root and ancestor admission, unarchive and ex
   await send(trusted, expires, {kind: 'metadata-observed', archived: true});
   clock.advance(7000);
   await send(untrusted, expires, {kind: 'turn-started'});assert.ok(record(expires));
-  assert.ok(logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.code'] === 'forbidden'));
+  const refusals = logs.filter(log => log.event_name === 'message.received' && log.attributes['bunny.code'] === 'forbidden');
+  assert.equal(refusals.length, 2);
+  assert.equal(refusals.every(log => log.severity_text === 'WARN'), true);
 });
 
 it('Desktop metadata from the real reader keeps archives closed and titles independent of a missing marker', async context => {
@@ -228,4 +230,34 @@ it('Desktop metadata title commits preserve real core restart uncertainty and ho
   const after = await until(synced.copy, identity, record => record.title?.value === 'Desktop title', 'the persisted metadata');
   for (const field of ['activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
   assert.equal(after.label?.value, 'Owner label');
+});
+
+
+it('Desktop archive batches above the SDK queue limit retain trailing admission and continued title/read evidence', async context => {
+  const home = await codexHome(context), marker = new SimulatedMarker();
+  const archived = Array.from({length: 1100}, (_, index) => `closed-${index}`);
+  marker.archive(archived);marker.title('one', 'First title');marker.list(['one']);
+  const probe = fixture('probe');
+  const {logs} = await run(context, {logLevel: 'debug', modules: [createCoreModule(), createCodexDesktopModule({transport: marker}), probe], configFile: await privateConfig(context, home)});
+  const sdk = contextOf(probe).sdk, result = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  if (result.status !== 'synced') assert.fail('the core served its sessions');
+  const copy = result.copy;context.after(async () => { await copy.close(); });
+  await observe(sdk, desktop('one'), {kind: 'turn-ended'});
+  await until(copy, desktop('one'), () => true, 'the existing root');
+  // Two completed scans use the production bus's default 1,024-slot queue.
+  const deadline = performance.now() + 6000;
+  const publications = () => logs.filter(log => log.event_name === 'lifecycle.observed' && log.attributes['bunny.module'] === 'codex-desktop').length;
+  while (publications() < 2200 && performance.now() < deadline) await flush();
+  assert.ok(marker.state().reads >= 2);
+  assert.ok(publications() >= 2200, 'both supported archive batches finished publication');
+  for (let n = 0; n < 20; n += 1) await flush();
+  for (const id of [archived[0], archived.at(-1)]) {
+    if (id === undefined) assert.fail('the archive batch has a first and trailing ID');
+    await observe(sdk, desktop(id), {kind: 'turn-started'});
+    for (let n = 0; n < 8; n += 1) await flush();
+    assert.equal(copy.states().some(message => message.data.identity.sessionId === id), false, `${id} remains archived`);
+  }
+  await until(copy, desktop('one'), record => record.title?.value === 'First title' && record.read === 'unread', 'independent title and unread evidence after the archive batch');
+  marker.title('one', 'Next title');marker.list([]);
+  await until(copy, desktop('one'), record => record.title?.value === 'Next title' && record.read === 'read', 'continued title and read evidence across another archive batch');
 });

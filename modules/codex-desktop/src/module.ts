@@ -8,6 +8,7 @@
 // summary while it lasts, and the next read waits for that one, so a stalled mount holds one reader, never more. A
 // reader that fails is tried again with capped backoff. The module never fails for the folder, and its stop never waits
 // on a read.
+import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {DeviceAvailability, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
@@ -79,7 +80,7 @@ class DesktopRun {
   #feedDown = false;
   // The marker.
   #poll: Cancel | undefined;
-  /** Whether a read is under way: the next waits for it, so a stalled folder holds one read at most. */
+  /** Whether a read or its publications are under way: the next waits, keeping scans and evidence in order. */
   #reading = false;
   /** Whether the read under way has outlasted its deadline, so the marker is unavailable. */
   #overdue = false;
@@ -87,6 +88,8 @@ class DesktopRun {
   #failures = 0;
   #stamp = '';
   readonly #archived = new Set<string>();
+  /** Serialize paced batches, including deadline clears followed by a late reader answer. */
+  #metadataWork: Promise<void> = Promise.resolve();
   readonly #metadataSent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
   /** The unread threads of the last good read, or null when the marker gives no evidence now. */
   #unread: ReadonlySet<string> | null = null;
@@ -225,34 +228,36 @@ class DesktopRun {
       reading = Promise.reject(error instanceof Error ? error : new Error('the marker could not be read'));
     }
     // Not tracked: a read on a stalled folder may never settle, and the stop never waits for one.
-    void reading.then(read => { this.#settled(deadline, read); }, () => { this.#settled(deadline, undefined); }).catch((error: unknown) => {
+    const settled = (read: MarkerRead | undefined): void => {
+      this.#track(this.#settled(deadline, read).finally(() => { this.#reading = false; }));
+    };
+    void reading.then(settled, () => { settled(undefined); }).catch((error: unknown) => {
       this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
   }
 
   /**
-   * The read under way outlasted its deadline: the marker is unavailable. Evidence comes only from a read that answered,
-   * so nothing is published until this one does.
+   * The read under way outlasted its deadline: the marker is unavailable. Clear archive admission evidence;
+   * read evidence still waits for a reader answer.
    */
   #overdueRead(): void {
     if (this.#closing || !this.#reading) return;
     this.#overdue = true;
-    this.#metadata(null, []);
+    this.#track(this.#metadata(null, []));
     this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
     this.#schedule(POLL_MS);
   }
 
   /** A read ended, with the marker's answer, or undefined when the reader failed. */
-  #settled(deadline: Cancel | undefined, read: MarkerRead | undefined): void {
+  async #settled(deadline: Cancel | undefined, read: MarkerRead | undefined): Promise<void> {
     this.#cancel(deadline);
-    this.#reading = false;
     this.#overdue = false;
     if (this.#closing) return;
     if (read === undefined) {
       this.#failures += 1;
       this.#stamp = '';
       this.#unread = null;
-      this.#metadata(null, []);
+      await this.#metadata(null, []);
       this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
       // After the nth failure in a row, the next read waits 2 s times 2 to the n, at most a minute.
       this.#schedule(Math.min(READ_BACKOFF_MAX_MS, POLL_MS * 2 ** this.#failures));
@@ -275,8 +280,8 @@ class DesktopRun {
         this.#usability(read.unread !== null);
         break;
     }
-    this.#metadata(read.archived ?? null, read.titles ?? []);
-    this.#evaluate();
+    await this.#metadata(read.archived ?? null, read.titles ?? []);
+    if (!this.#closing) this.#evaluate();
   }
 
   /** Logs a change of the marker's usability once: unusable, it gives no evidence until it is usable again. */
@@ -289,19 +294,31 @@ class DesktopRun {
   }
 
   /** Metadata is independent of marker usability. Archive absence/unavailability clears earlier positives. */
-  #metadata(archived: readonly string[] | null, titles: readonly {id: string; title: Title}[]): void {
+  #metadata(archived: readonly string[] | null, titles: readonly {id: string; title: Title}[]): Promise<void> {
     const nowMs = this.#context.clock.now();
+    const work = this.#metadataWork.then(() => this.#publishMetadataBatch(archived, titles, nowMs));
+    this.#metadataWork = work.catch(() => {});
+    return work;
+  }
+
+  async #publishMetadataBatch(archived: readonly string[] | null, titles: readonly {id: string; title: Title}[], nowMs: number): Promise<void> {
+    if (this.#closing) return;
     const confirmed = new Set(archived ?? []);
     const identity = (sessionId: string): Identity => ({provider: 'codex', client: 'desktop', hostId: this.#config.hostId, sourceId: this.#config.sourceId, sessionId});
-    for (const id of this.#archived) if (!confirmed.has(id)) this.#track(this.#publishMetadata(identity(id), nowMs, undefined, false));
+    for (const id of this.#archived) {
+      if (this.#closing) return;
+      if (!confirmed.has(id)) await this.#publishMetadata(identity(id), nowMs, undefined, false);
+    }
     this.#archived.clear();
     for (const id of confirmed) {
+      if (this.#closing) return;
       this.#archived.add(id);
       // Admission evidence has no session revision to acknowledge it: refresh on every successful poll.
-      this.#track(this.#publishMetadata(identity(id), nowMs, undefined, true));
+      await this.#publishMetadata(identity(id), nowMs, undefined, true);
     }
     const indexed = new Map(titles.map(entry => [entry.id, entry.title]));
     for (const message of this.#copy?.states() ?? []) {
+      if (this.#closing) return;
       const session = message.data;
       if (session.identity.provider !== 'codex' || session.identity.client !== 'desktop' || session.identity.hostId !== this.#config.hostId ||
         session.identity.sourceId !== this.#config.sourceId || session.parent.status === 'known') continue;
@@ -311,7 +328,7 @@ class DesktopRun {
       const sent = this.#metadataSent.get(session.id);
       if (sent?.mark === mark && nowMs - sent.atMs < sent.waitMs) continue;
       this.#metadataSent.set(session.id, {mark, atMs: nowMs, waitMs: sent?.mark === mark ? Math.min(RESEND_MAX_MS, sent.waitMs * 2) : RESEND_FIRST_MS});
-      this.#track(this.#publishMetadata(session.identity, nowMs, title));
+      await this.#publishMetadata(session.identity, nowMs, title);
     }
     const current = new Set((this.#copy?.states() ?? []).map(message => message.subject));
     for (const id of this.#metadataSent.keys()) if (!current.has(id)) this.#metadataSent.delete(id);
@@ -328,6 +345,8 @@ class DesktopRun {
       });
       this.#context.log.debug('lifecycle.observed', {'bunny.operation': 'lifecycle', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
     } catch { this.#metadataSent.delete(id); }
+    // Publish acceptance is not delivery. Let the SDK's bounded subscriber queues drain before the next input.
+    await yieldToBus();
   }
 
   // Evidence

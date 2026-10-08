@@ -485,7 +485,7 @@ class Core {
       const observation = message.data;
       if (observation.event.kind === 'metadata-observed') {
         if (message.source !== 'bunny/modules/codex-desktop') {
-          this.#log.info('message.received', {...fields, ...refused('forbidden')}, message);
+          this.#log.warn('message.received', {...fields, ...refused('forbidden')}, message);
           return;
         }
         const key = sessionEntityId(observation.identity), nowMs = this.#clock.now();
