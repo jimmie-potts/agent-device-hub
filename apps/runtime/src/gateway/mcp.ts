@@ -140,9 +140,9 @@ function recoverTool(host: McpHost): ServiceExtension {
  * The core's dispatcher as an MCP action (#782): one device command, moment or mode change, tracked from sent to its
  * outcome. Its answer is the owner's reply, `accepted`, or a refusal; an uncertain result is never retried.
  */
-function commandTool(host: McpHost): ServiceExtension {
+function commandTool(host: McpHost, handling = false): ServiceExtension {
   return {
-    inputSchema: {
+    inputSchema: handling ? {type: 'object', additionalProperties: false, required: ['id', 'expectedRevision', 'action'], properties: {id: {type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 128}, expectedRevision: {type: 'integer', minimum: 0}, action: {enum: ['dismiss', 'send-again']}}} : {
       type: 'object', additionalProperties: false, required: ['family', 'target', 'data'],
       properties: {
         family: {type: 'string', pattern: '^[a-z][a-z0-9]*(-[a-z0-9]+)+$', maxLength: 64}, target: {type: 'string', pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 128},
@@ -154,7 +154,7 @@ function commandTool(host: McpHost): ServiceExtension {
       properties: {status: {const: 'accepted'}, requestId: {type: 'string', pattern: ID}},
     }, 'urn:bunny:tool:core:send_command:output'),
     scope: 'control',
-    description: 'Only on the user\'s explicit request, send one command to one device, such as power-set {"on": true}, brightness-set {"percent": 40} '
+    description: handling ? 'Only on explicit user request, dismiss one inbox item or send its saved command again as a new tracked operation. Pass its current revision. Handling does not release a held device. Never retry automatically.' : 'Only on the user\'s explicit request, send one command to one device, such as power-set {"on": true}, brightness-set {"percent": 40} '
       + 'or playback-control {"action": "pause"}, or label a session with session-label-set {"label": "Name", "expectedRevision": 1} '
       + '(null clears the label), through the core, which tracks it until its outcome. family is the command family, target the device\'s '
       + 'routing ID or qualified session ID, and data the command\'s payload without a requestId. accepted means the owner took responsibility; read its state to confirm the change. '
@@ -164,7 +164,8 @@ function commandTool(host: McpHost): ServiceExtension {
       const credential = host.access.current(context.principalId);
       if (credential === undefined) return failure(errorBody('unauthenticated', {detail: 'the credential was revoked'}));
       if (!credential.scopes.includes('control')) return failure(errorBody('forbidden', {detail: 'the credential may not control'}));
-      const {family, target, data, requestId} = args as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
+      const selected = handling ? {family: 'inbox-handle', target: args.id, data: {expectedRevision: args.expectedRevision, action: args.action}} : args;
+      const {family, target, data, requestId} = selected as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
       if (Object.hasOwn(data, 'requestId')) return failure(errorBody('invalid-request', {detail: 'the command\'s payload names no requestId; pass it beside data'}));
       const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId})});
       return 'error' in answer ? failure(answer) : {data: {result: answer}};
@@ -188,6 +189,7 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
       extensions.recover_approval = recoverTool(host);
       extensions.send_command = commandTool(host);
       extensions.set_mode = modeTool(host, resultSchema);
+      extensions.handle_inbox = commandTool(host, true);
     }
     if (Object.keys(extensions).length === 0) continue;
     registrations.push({controllerId: CONTROLLER, deviceId: module.name, extensions});

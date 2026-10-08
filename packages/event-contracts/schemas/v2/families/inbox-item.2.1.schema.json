@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/inbox-item/2.1",
+  "description": "Shared operation inbox. Late success updates an open item; handling alone deletes it. Conflict retains both definitive outcomes and reopens a handled item.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "createdAtMs",
+    "dismissedBy",
+    "item"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "createdAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "dismissedBy": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "requestId",
+        "command",
+        "target",
+        "result"
+      ],
+      "properties": {
+        "kind": {
+          "const": "operation"
+        },
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "command": {
+          "type": "string",
+          "pattern": "^org\\.bunny(\\.[a-z][a-z0-9-]*){2,3}\\.requested$",
+          "maxLength": 256
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "result": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "uncertain",
+            "conflict"
+          ]
+        },
+        "evidence": {
+          "$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome/properties/evidence"
+        },
+        "error": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"
+        },
+        "outcomes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "id",
+              "result",
+              "evidence",
+              "atMs"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "pattern": "^bunny(/[a-z0-9][a-z0-9-]*)+$",
+                "maxLength": 256
+              },
+              "id": {
+                "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+              },
+              "result": {
+                "enum": [
+                  "succeeded",
+                  "failed"
+                ]
+              },
+              "evidence": {
+                "$ref": "https://bunny.invalid/events/kinds/2.0#/$defs/outcome/properties/evidence"
+              },
+              "atMs": {
+                "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+              },
+              "error": {
+                "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorBody/properties/error"
+              }
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "result": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "conflict"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcomes"
+            ],
+            "properties": {
+              "outcomes": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

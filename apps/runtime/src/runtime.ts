@@ -288,7 +288,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     const gateway = new Gateway({
       bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
       clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}), ...(actions === undefined ? {} : {actions}),
-      ...(operatorActions === undefined ? {} : {operatorActions}),
+      ...(operatorActions === undefined ? {} : {operatorActions}), ...(core === undefined ? {} : {history: core.history}),
       ...(options.edge.dashboard === undefined ? {} : {dashboard: options.edge.dashboard}),
       ...(tracing === undefined ? {} : {trace: tracing.recorder(RUNTIME_SCOPE)}),
     });

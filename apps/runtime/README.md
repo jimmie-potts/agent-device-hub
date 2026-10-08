@@ -1448,24 +1448,11 @@ content, a 1-pixel PNG; the read tool `status`, each sign's availability; and it
 settings, the greeting and the signs that `configureSign` accepted, never the
 token.
 
-`tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with its
-real tracker, history and outcome acknowledgment (#782), and stand-in parts
-through its extension point. Each part derives its rows from the tracker's
-changes, in the tracker's own transactions, and goes when its owner lands:
-- a readable copy of what history recorded of each tracked action, until #923's
-  history read API: a `stand-in-history` entry for each outcome the tracker took,
-  by its source, and for each result an action reached without one (a refusal,
-  an expiry or an uncertain end), by the core;
-- as the inbox, until Hub #923 turns failed and uncertain results into inbox
-  items, it records each failed or uncertain action as one `inbox-item`
-  operation, which a later result never removes.
-
-The fixture uses the real Hub-mode owner. Unanswered synthetic mode commands
-target `fixture-hub`, separately from the real owner's `hub` target.
-
-Their changes go out through the core's outbox after they commit, and the core
-serves their families through its sync with `session`. The fixture core's
-consumers add the catalog's panel to the shipped ones.
+`tests/fixtures/core.ts` hosts the real core with its mode owner, tracker, inbox,
+history and outcome acknowledgment. It adds only the catalog's panel consumer
+and the optional publication hook. Core changes commit in its store and go out
+through its outbox. The lamp fixture accepts unanswered synthetic mode commands
+at `fixture-hub`, separately from the real owner's `hub` target.
 
 `tests/fixtures/gadget.ts` holds a scripted device module for the tracker's
 tests: it answers `gadget-set` as each test scripts the command, holds it, or
@@ -1694,3 +1681,37 @@ Use the repository's Node and temporary-directory setup. The test creates no
 runtime, listener or service and uses only synthetic facts. It is also included
 in the core CI job's existing `test:runtime:built` file discovery. The complete
 runtime suite includes process tests and requires its own isolated execution.
+
+## Shared inbox and retained history
+
+The core derives `inbox-item/2.1` from failed (expired included), uncertain and
+conflicting operations in its tracker transaction. Late definitive evidence
+updates an open item; handling alone deletes it. Conflict opens or reopens one
+item above the prior removal revision. Other late outcomes after handling and
+refused reused message identities open none. Finished turns remain session
+notices. Gateway-only session-label-set and notice-clear metadata operations keep
+tracker/history evidence and never enter this device-operation inbox. Items and handling actors survive restart; display `dismissedBy` and
+device holds stay separate.
+
+`GET /api/v2/history` reads committed `core_history`, oldest first, with optional
+inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
+Filters combine; unknown, repeated or invalid fields are refused. Every caller
+with read scope sees the whole history and inbox. The MCP tools `core_inbox`
+and `core_history` read the same owner without triggering actions.
+
+`POST /api/v2/commands/inbox-handle` takes `{target, requestId, data:
+{expectedRevision, action}}`, where action is `dismiss` or `send-again`.
+`core_handle_inbox` takes `{id, expectedRevision, action}`. Both need control;
+the authenticated source supplies the handling actor. Dismiss commits the actor
+and a `deleted` removal atomically. Send-again commits handling with a new
+tracked sent operation using saved data and a fresh request ID, then sends once.
+A failed initial commit leaves the original open. A crash after commit never
+resends; the new tracked operation can become uncertain. Accepted handling is
+separate from device completion: a later device refusal or uncertainty stays on
+the new operation and does not reject committed handling. There is no automatic
+retry, replay or expiry.
+
+The catalog's `shared-inbox-history` journey and focused core/gateway tests use
+synthetic state. One synthetic 1,000-item sync check records the largest encoded
+state/completed message and total answer bytes against the existing per-message
+256 KiB limit. Paging and timing targets remain outside this feature.

@@ -2,7 +2,7 @@
 
 ### Requirement: The approved home with its panels
 
-The home SHALL follow the owner-approved mockup ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode panel and the agent sessions in the wide column, the inbox panel and the attention summary in the narrow one. The Hub mode panel SHALL show the synced saved selection with explicit Work/Free/Quiet controls. It SHALL distinguish the saved choice from independently tracked device results. The inbox (#923) panel SHALL be a slot that its story fills: it SHALL say it is not shown on the page yet, and SHALL read and send nothing. The page SHALL NOT claim the inbox is empty.
+The home SHALL follow the owner-approved mockup ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode panel and the agent sessions in the wide column, the inbox panel and the attention summary in the narrow one. The Hub mode panel SHALL show the synced saved selection with explicit Work/Free/Quiet controls. It SHALL distinguish the saved choice from independently tracked device results. The inbox panel SHALL retain #923's synced failed, uncertain and conflicting operations and its explicit handling controls. An empty synced inbox SHALL say that no commands need handling.
 
 #### Scenario: The panels in place
 - **WHEN** a signed-in page opens the home with no sessions

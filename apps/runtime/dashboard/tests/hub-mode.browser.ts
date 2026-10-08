@@ -28,6 +28,7 @@ try {
     await panel.locator('[data-mode-device="wall"]', {hasText: 'completed · failed · evidence: none · code: unavailable'}).waitFor();
     await panel.locator('[data-mode-device="pixoo-1"]', {hasText: 'completed · succeeded · evidence: observed'}).waitFor();
     await panel.getByText('Selection completion: completed.', {exact: true}).waitFor();
+    await page.locator('[data-inbox-panel] [data-inbox]').filter({hasText: 'wall · failed'}).first().waitFor();
     const violations = (await new AxeBuilder({page}).include('[data-widget="hub-mode"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
     assert.deepEqual(violations.map(item => item.id), []);
     assert.equal(requests(), 1); assert.equal(nativeCalls(), 2);
@@ -51,6 +52,6 @@ try {
     await panel.getByText('Read-only connection. Mode controls require control authority.', {exact: true}).waitFor();
     for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await panel.getByRole('button', {name, exact: true}).isDisabled(), true);
     assert.equal(requests(), 3); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, checks: ['keyboard selection', 'saved choice and independent outcomes', 'changed-panel axe', 'same-mode reapply', 'lost reply', 'reconnect/reload/restart no replay', 'read-only'], requests: requests(), nativeCalls: nativeCalls()})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, checks: ['keyboard selection', 'saved choice and independent outcomes', 'failed participant in the real inbox', 'changed-panel axe', 'same-mode reapply', 'lost reply', 'reconnect/reload/restart no replay', 'read-only'], requests: requests(), nativeCalls: nativeCalls()})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

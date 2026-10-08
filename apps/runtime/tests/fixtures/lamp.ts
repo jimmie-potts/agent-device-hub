@@ -157,6 +157,9 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       const count = await outbox.republish();
       log.info('outbox.republished', {'bunny.outbox.republished_count': count});
 
+      // The inbox scenario's deliberately unanswered synthetic mode command is separate from the real Hub owner.
+      await sdk.respond('bunny.cmd.mode-set.fixture-hub', () => ({status: 'accepted'}));
+
       // The core's mode and sessions: quiet mode keeps the lamps off, and the indicator shows a session that waits.
       let mode = 'work';
       const waiting = new Set<string>();

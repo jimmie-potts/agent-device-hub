@@ -295,8 +295,8 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     const listed = await ask(url, '/mcp', {method: 'POST', token: part.token, headers: await session(part), body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
-  assert.deepEqual(await tools(operator), ['core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_mode', 'sign_status']);
-  assert.deepEqual(await tools(reader), ['core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
+  assert.deepEqual(await tools(operator), ['core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_mode', 'sign_status']);
+  assert.deepEqual(await tools(reader), ['core_history', 'core_inbox', 'core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
   // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
   const action = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 9, method: 'tools/call',

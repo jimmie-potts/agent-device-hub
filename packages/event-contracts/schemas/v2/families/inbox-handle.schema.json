@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/inbox-handle/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "expectedRevision",
+    "action"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "expectedRevision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "action": {
+      "enum": [
+        "dismiss",
+        "send-again"
+      ]
+    }
+  }
+}

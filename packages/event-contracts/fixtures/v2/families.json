@@ -1,6 +1,71 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "inbox-item-conflict": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-inbox-3",
+  "source": "bunny/core",
+  "type": "org.bunny.inbox-item.updated",
+  "subject": "inbox-3",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/inbox-item/2.1",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "inbox-3",
+   "revision": 7,
+   "createdAtMs": 1791287999000,
+   "dismissedBy": [],
+   "item": {
+    "kind": "operation",
+    "requestId": "req-mode-2",
+    "command": "org.bunny.mode.set.requested",
+    "target": "pixoo",
+    "result": "conflict",
+    "outcomes": [
+     {
+      "source": "bunny/modules/lamp",
+      "id": "outcome-success",
+      "result": "succeeded",
+      "evidence": "observed",
+      "atMs": 1000
+     },
+     {
+      "source": "bunny/modules/lamp",
+      "id": "outcome-failure",
+      "result": "failed",
+      "evidence": "none",
+      "atMs": 1001,
+      "error": {
+       "code": "unavailable",
+       "retryable": true
+      }
+     }
+    ]
+   }
+  }
+ },
+ "inbox-handle": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-approval-recover",
+  "source": "bunny/parts/operator",
+  "type": "org.bunny.inbox.handle.requested",
+  "subject": "inbox-3",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/inbox-handle/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "handle-inbox",
+   "expectedRevision": 1,
+   "action": "dismiss"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
   "session": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",

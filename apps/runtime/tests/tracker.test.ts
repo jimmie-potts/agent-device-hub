@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
+import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule, Sdk} from '@jimmie-potts/sdk';
 import {
   DEADLINES, createCoreModule, type ActionAnswer, type CoreHandle, type CoreModule, type LogRecord, type Operation, type OperationChange,
@@ -285,6 +286,7 @@ it('a reused (source, id) with other content is refused as duplicate-conflict, k
   assert.deepEqual(kept.map(row => [row.source, row.message_id, (JSON.parse(row.message) as Message<{result: string}>).data.result]), [['bunny/modules/gadget', outcome.id, 'failed']]);
   assert.deepEqual(shape(t.operation('req-reused')), ['completed', 'succeeded', 'observed', undefined], 'the stored outcome stands');
   assert.equal(t.changes.length, changes, 'no change, so no inbox item');
+  assert.deepEqual(inboxRecords(t), [], 'a reused source and ID opens no item');
   await flush();
   assert.equal(t.gadget.acknowledged.length, acknowledged, 'and no acknowledgment');
 });
@@ -547,4 +549,141 @@ it('an intake queue that overflows logs what it dropped as operation.failed with
   assert.deepEqual(overflows().map(record => [
     record.severity_text, record.attributes['bunny.operation'], record.attributes['bunny.outcome'], record.attributes['bunny.reason'], record.attributes['bunny.pattern'],
   ]), [['WARN', 'storage', 'failed', 'busy', 'bunny.*.*.*']], 'one record for the gap');
+});
+
+// #923: the shipped core, without the fixture stand-in, owns failed items.
+it('a failed command creates one durable shared inbox item', async context => {
+  const t = await trackerRun(context);
+  t.gadget.script({reply: 'unavailable'});
+  await t.dispatch('inbox-failed');
+  const items = t.database().prepare('SELECT record FROM inbox_records WHERE handled_by IS NULL').all() as {record: string}[];
+  assert.equal(items.length, 1);
+  const item = JSON.parse(items[0]?.record ?? '{}') as {item: {requestId: string; result: string}};
+  assert.deepEqual(item.item.requestId, 'inbox-failed');
+  assert.equal(item.item.result, 'failed');
+  const synced = await t.handle().sdk.sync(['inbox-item'], () => {}, {timeoutMs: 5000});
+  assert.equal(synced.status, 'synced');
+  assert.equal(synced.copy.states().length, 1, 'the shipped sync serves the item');
+  await synced.copy.close();
+});
+
+const inboxRecords = (t: TrackerRun): {id: string; revision: number; item: {requestId: string; result: string; outcomes?: unknown[]}; dismissedBy: string[]}[] =>
+  (t.database().prepare('SELECT record FROM inbox_records WHERE handled_by IS NULL').all() as {record: string}[]).map(row => JSON.parse(row.record) as ReturnType<typeof inboxRecords>[number]);
+const handleInbox = (t: TrackerRun, id: string, revision: number, action = 'dismiss') => t.handle().sdk.request(`bunny.cmd.inbox-handle.${id}`, {
+  type: 'org.bunny.inbox.handle.requested', subject: id, dataschema: 'https://bunny.invalid/events/inbox-handle/2.0',
+  data: {expectedRevision: revision, action},
+}, {timeoutMs: 5000});
+
+it('late evidence updates an open item, handling survives restart, and only conflict reopens above its removal', async context => {
+  const dir = await stateDir(context), t = await trackerRun(context, {dir, manual: true});
+  t.gadget.script({outcome: {result: 'uncertain', evidence: 'none'}});
+  await t.dispatch('inbox-late');
+  await waitFor(() => inboxRecords(t).length === 1);
+  const first = inboxRecords(t)[0]; assert.ok(first);
+  await t.gadget.report('inbox-late', {result: 'succeeded', evidence: 'observed'});
+  await waitFor(() => inboxRecords(t)[0]?.item.result === 'succeeded');
+  const updated = inboxRecords(t)[0]; assert.ok(updated); assert.equal(updated.id, first.id);
+  assert.equal((await handleInbox(t, updated.id, first.revision)).status, 'rejected', 'stale handling changes nothing');
+  assert.equal((await handleInbox(t, updated.id, updated.revision)).status, 'accepted');
+  assert.deepEqual(inboxRecords(t), []);
+  const removed = t.database().prepare('SELECT handled_by, removal_revision FROM inbox_records WHERE id = ?').get(updated.id) as {handled_by: string; removal_revision: number};
+  assert.equal(removed.handled_by, 'bunny/core');
+  await t.gadget.report('inbox-late', {result: 'succeeded', evidence: 'transmitted'});
+  await flush(); await flush(); assert.deepEqual(inboxRecords(t), [], 'late nonconflicting outcome does not reopen');
+  await t.runtime.stop();
+  const next = await trackerRun(context, {dir}); assert.deepEqual(inboxRecords(next), [], 'handling survives restart');
+  await next.gadget.report('inbox-late', {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}});
+  await waitFor(() => inboxRecords(next).length === 1);
+  const reopened = inboxRecords(next)[0]; assert.ok(reopened);
+  assert.equal(reopened.id, first.id); assert.equal(reopened.item.result, 'conflict'); assert.equal(reopened.item.outcomes?.length, 2);
+  assert.ok(reopened.revision > removed.removal_revision);
+  assert.equal((await handleInbox(next, reopened.id, reopened.revision)).status, 'accepted');
+  assert.equal((await handleInbox(next, reopened.id, reopened.revision)).status, 'rejected', 'handling happens once');
+  await next.gadget.report('inbox-late', {result: 'succeeded', evidence: 'observed'});
+  await waitFor(() => (next.operation('inbox-late')?.outcomes.length ?? 0) >= 5);
+  assert.deepEqual(inboxRecords(next), [], 'a further nonconflicting outcome does not reopen a handled conflict');
+});
+
+it('an explicit resend atomically handles the item with one fresh tracked command and saved data', async context => {
+  const t = await trackerRun(context);
+  t.gadget.script({outcome: {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}}});
+  await t.dispatch('inbox-resend', 37); await waitFor(() => inboxRecords(t).length === 1);
+  const original = inboxRecords(t)[0]; assert.ok(original);
+  const copy = await t.handle().sdk.sync(['inbox-item'], () => {}, {timeoutMs: 5000}); assert.equal(copy.status, 'synced');
+  const answers = await Promise.all([handleInbox(t, original.id, original.revision, 'send-again'), handleInbox(t, original.id, original.revision, 'send-again')]);
+  assert.deepEqual(answers.map(answer => answer.status).sort(), ['accepted', 'rejected']);
+  await waitFor(() => t.gadget.commands.length === 2);
+  const resent = t.gadget.commands[1]; assert.ok(resent);
+  assert.notEqual(resent.data.requestId, 'inbox-resend'); assert.equal(resent.data.level, 37);
+  assert.deepEqual(inboxRecords(t), []);
+  assert.equal(t.operation(resent.data.requestId)?.requestedBy, 'bunny/core');
+  await waitFor(() => copy.copy.states().length === 0); await copy.copy.close();
+});
+
+it('a failed resend commit preserves the original item and sends nothing', async context => {
+  const t = await trackerRun(context);
+  t.gadget.script({reply: 'unavailable'}); await t.dispatch('inbox-full');
+  const original = inboxRecords(t)[0]; assert.ok(original);
+  t.database().exec("CREATE TRIGGER reject_inbox_handle BEFORE UPDATE OF handled_by ON inbox_records BEGIN SELECT RAISE(ABORT, 'synthetic commit refusal'); END");
+  const answer = await handleInbox(t, original.id, original.revision, 'send-again');
+  assert.equal(answer.status, 'rejected'); assert.equal(t.gadget.commands.length, 1, 'only the original refused command reached the handler');
+  assert.equal(inboxRecords(t)[0]?.id, original.id);
+  assert.equal((t.database().prepare('SELECT count(*) AS count FROM core_operations').get() as {count: number}).count, 1, 'failed admission leaves no new tracked row');
+});
+
+it('a conflict opens an item after success', async context => {
+  const t = await trackerRun(context);
+  await t.dispatch('inbox-success'); await waitFor(() => t.operation('inbox-success')?.result === 'succeeded');
+  assert.deepEqual(inboxRecords(t), []);
+  await t.gadget.report('inbox-success', {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}});
+  await waitFor(() => inboxRecords(t)[0]?.item.result === 'conflict');
+  assert.equal(inboxRecords(t).length, 1);
+});
+
+it('one thousand synthetic open items fit the existing per-message sync cap', async context => {
+  const t = await trackerRun(context);
+  await t.handle().transaction(tx => {
+    const insert = tx.database.prepare('INSERT INTO inbox_records (id, record) VALUES (?, ?)');
+    for (let n = 0; n < 1000; n += 1) {
+      const id = `synthetic-${n}`, record = {id, revision: tx.revision(), createdAtMs: tx.atMs, dismissedBy: [],
+        item: {kind: 'operation', requestId: `size-${n}`, command: 'org.bunny.power.set.requested', target: 'lamp-1', result: 'uncertain', evidence: 'none'}};
+      insert.run(id, JSON.stringify(record));
+    }
+  });
+  const synced = await t.handle().sdk.sync(['inbox-item'], () => {}, {timeoutMs: 5000});
+  assert.equal(synced.status, 'synced'); assert.equal(synced.copy.states().length, 1000);
+  const validator = new MessageValidator(); registerCoreFamilies(validator);
+  for (const message of [...synced.copy.states(), synced.message]) assert.equal(validator.validate(message).ok, true);
+  const sizes = [...synced.copy.states(), synced.message].map(message => Buffer.byteLength(JSON.stringify(message)));
+  const largestMessageBytes = Math.max(...sizes), totalAnswerBytes = sizes.reduce((sum, size) => sum + size, 0);
+  assert.ok(largestMessageBytes <= 256 * 1024); assert.ok(totalAnswerBytes > 256 * 1024, 'the aggregate is not the cap');
+  context.diagnostic(JSON.stringify({items: 1000, largestMessageBytes, totalAnswerBytes}));
+  await synced.copy.close();
+});
+
+it('open expired items survive restart and display dismissal never handles an item', async context => {
+  const dir = await stateDir(context), t = await trackerRun(context, {dir});
+  t.gadget.script({reply: 'expired'}); await t.dispatch('inbox-expired');
+  const original = inboxRecords(t)[0]; assert.ok(original); assert.equal(original.item.result, 'failed');
+  t.database().prepare('UPDATE inbox_records SET record = ? WHERE id = ?').run(JSON.stringify({...original, dismissedBy: ['dashboard']}), original.id);
+  assert.equal(inboxRecords(t).length, 1, 'a display dismissal remains an open item');
+  await t.runtime.stop();
+  const next = await trackerRun(context, {dir});
+  assert.deepEqual(inboxRecords(next)[0]?.dismissedBy, ['dashboard']);
+  assert.equal(inboxRecords(next)[0]?.id, original.id, 'open item survives restart');
+});
+
+it('gateway-only operator metadata failures remain in tracker/history and never enter the device inbox', async context => {
+  const t = await trackerRun(context), target = 'f'.repeat(64);
+  for (const [family, type, data] of [
+    ['session-label-set', 'org.bunny.session-label.set.requested', {label: null, expectedRevision: 0}],
+    ['notice-clear', 'org.bunny.notice.clear.requested', {noticeId: null, expectedRevision: 0}],
+  ] as const) {
+    const requestId = `metadata-${family}`;
+    const answer = await t.core.operatorActions.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: OPERATOR, requestId,
+      draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/2.0`, data}});
+    assert.equal('error' in answer && answer.error.code, 'not-found');
+    assert.equal(t.operation(requestId)?.result, 'failed'); assert.ok(t.history(requestId).length > 0);
+  }
+  assert.deepEqual(inboxRecords(t), []);
 });

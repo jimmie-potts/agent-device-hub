@@ -245,10 +245,15 @@ The rules:
   (`CORE_SOURCE`, `bunny/core`), after it committed the outcome and its
   `(source, id)`, and again for each exact duplicate. A module's outbox forgets
   the outcome only when the sender is the core.
-- `inbox-item` holds a failed or uncertain operation, a result a person must
-  decide on. A finished turn is never an inbox item: its unread state stays on
-  the session record, and #782 removed the turn-ended item, so the validator
-  refuses one with `invalid-message`.
+- `inbox-item/2.0` remains registered. Additive `inbox-item/2.1` holds failed,
+  uncertain or conflicting operations and late definitive evidence, including
+  success while an item stays open. Conflict carries two opposite definitive
+  outcomes. Items stay until handled, without expiry; `dismissedBy` remains a
+  separate display fact. A handled item is removed with reason `deleted`.
+- `inbox-handle/2.0` (Hub #923) is the direct core command with `requestId`,
+  `expectedRevision` and action `dismiss` or `send-again`, targeting its inbox ID.
+  Its authenticated source supplies the actor. Send-again uses a fresh tracked
+  request and saved data; it never automatically retries or replays commands.
 - A removal event, with reason `expired`, `retired` or `deleted`, drops an
   entity. A sync replaces the consumer's membership of the synced families.
 

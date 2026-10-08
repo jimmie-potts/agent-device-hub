@@ -37,7 +37,9 @@ try {
   const row = page.locator('article.session').filter({has: page.getByRole('heading', {name: 'Port the wall', exact: true})});
   await row.locator('.chip', {hasText: 'Finished · unread'}).waitFor();
   assert.equal(await page.locator('[data-widget="hub-mode"]').count(), 1, 'the Hub mode panel');
-  assert.equal(await page.locator('[data-slot="inbox"]').count(), 1, 'the inbox slot');
+  const inbox = page.locator('[data-inbox-panel]');
+  assert.equal(await inbox.count(), 1, 'the inbox panel');
+  await inbox.getByText('No commands need handling.', {exact: true}).waitFor();
   checks.push('the home shows the synced session\'s finished turn unread, with the Hub mode and inbox panels');
 
   const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();

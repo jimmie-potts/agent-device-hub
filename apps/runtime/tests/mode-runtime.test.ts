@@ -1,6 +1,6 @@
 // Real core store, dispatcher, native responders and operation projection, on one owned port-0 runtime at a time.
 import assert from 'node:assert/strict';
-import type {Mode, ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, Mode, ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {modeChildRequestId} from '../src/core/mode-participants.js';
@@ -40,6 +40,12 @@ it('real mode admission saves once, maps independent outcomes and never replays 
   const outcomes = await records();
   assert.equal(outcomes.find(record => record.requestId === nanoId)?.result, 'failed');
   assert.equal(outcomes.find(record => record.requestId === pixooId)?.result, 'succeeded');
+  const inbox = await contextOf(watcher).sdk.sync<InboxItem>(['inbox-item'], () => {}, {timeoutMs: 2000});
+  assert.equal(inbox.status, 'synced');
+  if (inbox.status === 'synced') {
+    assert.deepEqual(inbox.copy.states().map(message => [message.data.item.requestId, message.data.item.result]), [[nanoId, 'failed']], 'only the failed participant enters the real inbox');
+    await inbox.copy.close();
+  }
   assert.deepEqual([nano.commands[0]?.data.mode, pixoo.commands[0]?.data.mode], ['work', 'monitor']);
   assert.equal((await states())[0]?.mode, 'work');
   await core.actions.dispatch(action('work', 'req-work', initial?.revision)); await states();
@@ -79,10 +85,55 @@ it('qualified failed modules remain targets; refused modules are excluded and pe
   clock.advance(0);
   await waitFor(() => coreHandle?.operation(pixooId)?.status === 'uncertain', 5000, 'restart deadline uncertainty');
   assert.equal(pixoo.commands.length, 1);
+  assert.ok(coreHandle);
+  const inbox = await coreHandle.sdk.sync<InboxItem>(['inbox-item'], () => {}, {timeoutMs: 2000});
+  assert.equal(inbox.status, 'synced');
+  if (inbox.status === 'synced') {
+    const items = inbox.copy.states().map(message => message.data.item);
+    assert.equal(items.find(item => item.requestId === nanoId)?.result, 'failed');
+    assert.equal(items.find(item => item.requestId === pixooId)?.result, 'uncertain', 'restart uncertainty enters the real inbox without resend');
+    await inbox.copy.close();
+  }
   await second.runtime.stop();
   nano.failStart = false; nano.refuse = true; const thirdCore = createCoreModule({parts: [{start: handle => {coreHandle = handle; return Promise.resolve();}}]});
   const third = await run(context, {modules: [thirdCore, nano.module(), pixoo.module()], configFile: files.config, clock: {now: clock.now}, scheduler: clock.scheduler});
   await thirdCore.actions.dispatch(action('free', 'req-refused'));
   assert.equal(coreHandle?.operation(await modeChildRequestId('req-refused', 'wall')), undefined, 'refused module is not a target');
   await waitFor(() => pixoo.commands.length === 2, 5000, 'the admitted target'); await third.runtime.stop();
+});
+
+it('resending a stale mode request accepts committed inbox handling and records the fresh refusal separately', async context => {
+  const operator = {source: 'bunny/parts/operator', token: 'synthetic-mode-inbox', scopes: ['read', 'control'] as const};
+  const core = createCoreModule();
+  const nano = new ModeDevice('nanoleaf', 'wall');
+  const pixoo = new ModeDevice('pixoo', 'pixoo-1');
+  const files = await edgeConfig(context, [operator], {modules: {nanoleaf: {}, pixoo: {}}});
+  const {runtime} = await run(context, {modules: [core, nano.module(), pixoo.module()], configFile: files.config, edge: {schemas: {}}});
+  const read = async <T>(family: string): Promise<T[]> => {
+    const response = await fetch(new URL(`/api/v2/families/${family}`, runtime.url), {headers: {authorization: `Bearer ${operator.token}`}});
+    assert.equal(response.status, 200);
+    return (await response.json() as {records: T[]}).records;
+  };
+  const initial = (await read<ModeState>('mode'))[0]; assert.ok(initial);
+  assert.deepEqual(await core.actions.dispatch(action('work', 'mode-before-resend', initial.revision)), {status: 'accepted', requestId: 'mode-before-resend'});
+  await waitFor(() => nano.commands.length + pixoo.commands.length === 2);
+  const saved = (await read<ModeState>('mode'))[0]; assert.ok(saved);
+  const stale = await core.actions.dispatch(action('quiet', 'stale-mode-original', initial.revision));
+  assert.ok('error' in stale && stale.error.code === 'revision-conflict');
+  await waitFor(async () => (await read<InboxItem>('inbox-item')).length === 1);
+  const original = (await read<InboxItem>('inbox-item'))[0]; assert.ok(original);
+  const response = await fetch(new URL('/api/v2/commands/inbox-handle', runtime.url), {
+    method: 'POST', headers: {authorization: `Bearer ${operator.token}`, 'content-type': 'application/json'},
+    body: JSON.stringify({target: original.id, requestId: 'handle-stale-mode', data: {action: 'send-again', expectedRevision: original.revision}}),
+  });
+  assert.equal(response.status, 200, 'the sent operation and original handling committed before the fresh mode refusal');
+  assert.equal((await response.json() as {status: string}).status, 'accepted');
+  const current = await read<InboxItem>('inbox-item');
+  assert.equal(current.length, 1);
+  assert.notEqual(current[0]?.id, original.id, 'the original item is handled');
+  assert.notEqual(current[0]?.item.requestId, original.item.requestId, 'the new request has its own identity');
+  assert.equal(current[0]?.item.result, 'failed');
+  assert.equal(current[0]?.item.error?.code, 'revision-conflict');
+  assert.deepEqual((await read<ModeState>('mode'))[0], saved, 'refused selections leave the saved choice unchanged');
+  assert.equal(nano.commands.length + pixoo.commands.length, 2, 'refused original and explicit resend send no native command');
 });

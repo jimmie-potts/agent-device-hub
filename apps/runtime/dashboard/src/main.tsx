@@ -1,3 +1,5 @@
+import {InboxPanel} from './inbox.tsx';
+import {Timeline} from './timeline.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
 // shell, its hash routes, the Places navigation, browser sign-in on the runtime's gateway and the agent sessions, which
 // the page syncs from the core and follows live (ADR 0012). Device cards, music and module pages join in the story's
@@ -5,7 +7,7 @@
 import React, {useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
 import {BuildIdentity} from './build-identity.tsx';
@@ -239,11 +241,15 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedPage = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module)?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'timeline' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       devices={devices.map(({record}) => record)}/></Widget>;
+    if (placement.widget === 'inbox') {
+      const copy = runtime.copies.find(item => item.family === 'inbox-item');
+      return <Widget key="inbox" id="inbox" size={placement.size}><InboxPanel items={(copy?.records ?? []) as readonly InboxItem[]} live={state.feed === 'connected' && copy?.synced === true} control={runtime.control}/></Widget>;
+    }
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
     if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} size={placement.size}/>;
     if (placement.widget === 'attention') return <AttentionWidget key="attention" rows={rows} size={placement.size}/>;
@@ -255,6 +261,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
       <nav aria-label="Main navigation">
         <NavLink route={{kind: 'home'}} current={route}>Home <span>{rows.length}</span></NavLink>
+        <NavLink route={{kind: 'timeline'}} current={route}>Timeline</NavLink>
         <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
         {devices.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
         {playback.map(({record}) => <NavLink key={record.id} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
@@ -297,6 +304,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {selectedPage !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
         <iframe className="module-page" title={selectedPage.title} src={selectedPage.path} sandbox="allow-same-origin"/>
       </section>}
+      {route.kind === 'timeline' && <Timeline/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
       {!known && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
