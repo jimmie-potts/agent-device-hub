@@ -60,6 +60,14 @@ void test('a correct run passes every check, and each negative control fails exa
       assert.deepEqual(await checks(run), outcomes, scenario);
       const seen = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
       assert.equal(seen.home, `${run.dataDir}/home`, `${scenario}: the runtime's home is observed`);
+      if (scenario === 'fixtures' || scenario === 'shipped') {
+        const restart = await fetch(new URL(`${HARNESS_PATH}/restart`, run.harness), {method: 'POST', body: '{}'});
+        assert.equal(restart.status, 200);
+        await restart.body?.cancel();
+        const after = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
+        assert.equal(after.home, `${run.dataDir}/home`, `${scenario}: the new child supplies its own home`);
+        assert.deepEqual(await checks(run), outcomes, `${scenario}: boundaries after restart`);
+      }
       if (scenario === 'fixtures') {
         const modules = ['chime', 'core', 'lamp'].map(name => `${run.dataDir}/state/modules/${name}.sqlite`);
         assert.deepEqual(seen.stateFiles, modules, 'the databases the runtime has open are observed');

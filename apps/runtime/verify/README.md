@@ -151,6 +151,15 @@ runtime's stderr to drain before it starts the next, so a clean stop shows its `
 
 ## Boundaries
 
+The HOME observation contains only that selected value, with a 4096-byte limit.
+The supervisor validates its exact message shape and accepts it only from the
+current child and generation. Each spawn clears the previous value. It waits at
+most one second after runtime readiness for the report; absent or malformed
+evidence stays empty and fails `private-state`. An outside-run HOME also fails.
+No process-environment file is inspected, and no environment object is reported.
+The open-database, default-state and credentials-file checks remain independent.
+
+
 A run never reaches an installed service, a port of one, personal state or a device. Three checks prove it at `start`
 and in `doctor`:
 
@@ -158,7 +167,7 @@ and in `doctor`:
 | --- | --- | --- | --- |
 | `simulated-transports` | The runtime's `runtime.started` record says it built its modules with `--simulate` | `control-real-transports` | The shipped runtime runs without `--simulate` |
 | `no-outbound-connections` | The guard refused no outbound TCP connection or UDP datagram; the runtime only listens | `control-installed-port` | A probe module reaches for the installed Hub's port 8788 with `fetch` and with `node:http`; the guard refuses both before they connect |
-| `private-state` | What the run observes: the runtime's home, read from its environment, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the edge's credentials file and the parts' token file are owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
+| `private-state` | What the run observes: the current runtime child's HOME, reported by its preloaded guard over private IPC, is private to the run; nothing exists under `<home>/.local/state`; every database the runtime has open is under `<data>/state`; and the edge's credentials file and the parts' token file are owner-only | `control-default-state` | The runtime runs without `--state-dir`, so it creates its default directory under `<home>/.local/state`, which in a run lies under the run's private home |
 
 The guard loads through `NODE_OPTIONS`, so it runs first in the runtime, in each worker thread that inherits its
 environment (a file worker, as the runtime starts) and in every Node process it starts. It refuses every outbound TCP

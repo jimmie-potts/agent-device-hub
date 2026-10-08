@@ -13,6 +13,7 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {GUARD, guardEnvironment} from '../environment.js';
+import {HOME_REPORT} from '../home.js';
 import {base} from './support.js';
 
 const PROBE = fileURLToPath(new URL('./probe.js', import.meta.url));
@@ -64,4 +65,49 @@ void test('the guard refuses every outbound connection and datagram, from every 
   assert.equal(open.main['http.get'], 'connected');
   assert.equal(open.main['dgram.send'], 'sent');
   assert.ok(ears.reached() > 0);
+});
+
+// This child has only synthetic environment values, and no runtime or supervisor is started.
+void test('the preloaded guard reports only the directly forked child HOME through IPC', async context => {
+  const at = await base(context);
+  const home = join(at, 'synthetic-home');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', 'process.disconnect();'], {
+    env: {HOME: home, SYNTHETIC_UNRELATED: 'tok_SYNTHETIC1015_not_reported', ...guardEnvironment(join(at, 'guard-report.jsonl'))},
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  });
+  context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+  assert.ok(child.stdout !== null && child.stderr !== null);
+  const messages: unknown[] = [];
+  let output = '';
+  child.on('message', message => { messages.push(message); });
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+  await once(child, 'close');
+  assert.deepEqual(messages, [{type: HOME_REPORT, home}]);
+  assert.equal(output, '', 'HOME and the unrelated synthetic value never enter stdout or stderr');
+});
+
+void test('a HOME report meeting a closed IPC channel stops silently, whether send throws or calls back', async context => {
+  const at = await base(context);
+  for (const mode of ['throw', 'callback']) {
+    const script = `
+      process.send = (_message, callback) => {
+        const error = new Error('tok_SYNTHETIC1015_send_failure');
+        ${mode === 'throw' ? 'throw error;' : 'callback(error); return false;'}
+      };
+      await import(${JSON.stringify(GUARD)});
+      setTimeout(() => process.exit(3), 1000);
+    `;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+      env: {HOME: join(at, 'synthetic-home')}, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    });
+    context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+    assert.ok(child.stdout !== null && child.stderr !== null);
+    let output = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+    const [, signal] = await once(child, 'close');
+    assert.equal(signal, 'SIGTERM', mode);
+    assert.equal(output, '', `${mode}: the failure never reaches stdout or stderr`);
+  }
 });
