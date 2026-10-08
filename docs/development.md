@@ -881,8 +881,10 @@ message they see against profile 2.0 with the event contracts' validator, and a
 test fails if one is invalid; the bus itself does not validate. One conformance
 suite runs against both transports. The remote tests start an edge on
 127.0.0.1 at a free port with run-generated tokens, and the outbox and kit tests
-keep SQLite files under the system temporary directory. They need no runtime,
-device or other network.
+keep SQLite files under the system temporary directory. The one-call publish
+helper's tests (Hub #926) also use loopback listeners that refuse the
+connection, never answer or answer with something other than an edge's answer.
+They need no runtime, device or other network.
 
 ## Runtime checks
 
@@ -923,13 +925,24 @@ and says why. The Nanoleaf migration's tool
 it writes with the Nanoleaf module's code, and starts the runtime in a child
 process to show each one refusing the other's lease. Its full-disk test fills a
 4 MiB tmpfs in a user and mount namespace (`unshare -rm`) at each stage of the
-write, and skips with the reason where the host refuses that. They need no device or network.
+write, and skips with the reason where the host refuses that. The agent hook tests (#926) run `apps/runtime/bin/monitor-hook.mjs`
+as child processes with synthetic 1.x producer files and synthetic Claude Code
+payloads, against the runtime's gateway, a closed port and a listener that never
+answers; they strip any `CLAUDE_CODE_*` variable and `CODEX_HOME` from the hook's
+environment. The Codex Desktop tests
+run the module's real reader process on a synthetic marker in a temporary Codex
+home, and make the marker a FIFO with `mkfifo` to stand in for a stalled mount.
+No test reads a real client's hook settings or Codex files. They need no device
+or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
 stalled reader; the README's Memory section says how.
 `node apps/runtime/scripts/measure-commits.mjs` measures the SQLite commits,
 blocked time and event-loop delay of the core's intake, a LIFX command and the
 outbox (#972, #123); the README's Commits section says how.
+`node apps/runtime/scripts/measure-hook.mjs` measures the agent hook from its
+start to its exit against a disposable runtime's edge (#926); the README's
+[Agent hooks](../apps/runtime/README.md#agent-hooks) section says how.
 
 ### Runtime test layers
 
@@ -941,7 +954,7 @@ job judges the fourth layer's capture steps without a user manager.
 
 | Layer | Command | What it runs |
 | --- | --- | --- |
-| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built`, `npm run test:tidbyt-module:built` | The package's and its modules' own tests, moved tests included |
+| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built`, `npm run test:tidbyt-module:built`, `npm run test:codex-desktop:built` | The package's and its modules' own tests, moved tests included |
 | Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
 | End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
 | Acceptance | `npm run -s verify:runtime -- <operation>`, with `npm run test:runtime:verify:built` in CI | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
@@ -1977,6 +1990,35 @@ reaches no cloud. The runtime's catalog scenario `tidbyt-tiles` runs the module
 in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical
 check belong to the cutover (#840).
+
+## Codex Desktop module checks
+
+Hub #926 ports the old Hub's Codex Desktop reader (`apps/hub/src/codex-desktop.ts`)
+into the runtime module `modules/codex-desktop`, under the
+[strict profile](#strict-profile-for-new-code) and the module boundary. Its
+[README](../modules/codex-desktop/README.md) records the provenance, the read
+rules and why the reader runs in a process of its own. The runtime ships it
+last, after the Nanoleaf module. The installed Hub keeps its own reader until #839.
+
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`npm run test:codex-desktop` from the worktree root. `test:codex-desktop`
+builds, then runs `test:codex-desktop:built`: the compiled tests in
+`modules/codex-desktop/dist/tests/`. The core CI job runs
+`npm run test:codex-desktop:built` after its fresh build. The suite covers the
+Hub's marker parser and read rules as published observations: top-level
+sessions of the configured producer only, the settle rule, an unusable marker,
+evidence sent again with a doubling wait while the core leaves its record
+unchanged, as after a refusal; a folder that stalls, before and after the
+first read; a reader that fails and its backoff; a stop that never waits on a
+read; that nothing carries the Codex home; the section and the cutover's
+conversion; the real reader process on a synthetic marker in a temporary Codex
+home, and a reader stuck in a FIFO's open that closing the transport ends; and
+the [module test kit](../packages/sdk/README.md#module-test-kit). The runtime's
+tests run it with the real core (`apps/runtime/tests/codex-desktop.test.ts`), and
+its catalog scenario `codex-desktop-read` runs it with a simulated marker in
+`test:runtime:scenarios:built` and in
+[disposable runs](#runtime-verification-runs). No test reads a real Codex file.
+Installation belongs to the cutover (#840).
 
 ## Nanoleaf port
 

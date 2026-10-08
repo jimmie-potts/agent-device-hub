@@ -1,8 +1,12 @@
 // What every execution adapter of the scenario catalog shares (Hub #846, #920): the parts' sources, the reader's
 // copies, the validator every message a harness sees must pass, and how a request's result reads as an answer.
+import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
+import {once} from 'node:events';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import type {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
@@ -11,11 +15,15 @@ import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
 import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import type {SimulatedSpeakers} from '@jimmie-potts/playback';
 import type {CommandDraft, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
+import {producerCredentialId, producerSource} from '../../src/hook/index.js';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, tokenDigest} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
-import {GRANTS, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type ReaderView, type Role, type Seed, type Simulation} from './catalog.js';
+import {
+  GRANTS, PRODUCER, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
+  type Simulation,
+} from './catalog.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
@@ -36,6 +44,8 @@ export function scenarioValidator(): MessageValidator {
 /** A run-generated token for each part, with the synthetic prefix that every token scan looks for (Hub #835). */
 export const partTokens = (): Record<Role, string> =>
   Object.fromEntries(ROLES.map(role => [role, `${TOKEN_PREFIX}_${randomBytes(24).toString('base64url')}`])) as Record<Role, string>;
+/** The producer's run-generated token (Hub #926): in the Hub's form, 43 base64url characters, with the synthetic prefix. */
+export const producerToken = (): string => `${TOKEN_PREFIX}_${randomBytes(20).toString('base64url').slice(0, 42 - TOKEN_PREFIX.length)}`;
 
 async function writePrivate(file: string, text: string): Promise<void> {
   await writeFile(file, text, {mode: 0o600});
@@ -50,8 +60,10 @@ async function writePrivate(file: string, text: string): Promise<void> {
  * the launcher off.
  * Returns the configuration file's path for `--config`.
  */
-export async function writeConfiguration(dir: string, {modules: config = {}, sections = {}, tokens}: {
+export async function writeConfiguration(dir: string, {modules: config = {}, sections = {}, tokens, producer}: {
   modules?: Seed['config']; sections?: Readonly<Record<string, object>>; tokens: Readonly<Record<Role, string>>;
+  /** The agent hooks' producer token (Hub #926), granted `ingest` under its converted credential's ID and source. */
+  producer?: string;
 }): Promise<string> {
   const secrets = join(dir, 'secrets');
   for (const folder of [dir, secrets]) {
@@ -66,13 +78,69 @@ export async function writeConfiguration(dir: string, {modules: config = {}, sec
     modules[name] = {...section, secrets: {token}};
   }
   const credentials = join(dir, 'edge-credentials.json');
-  const listed = ROLES.map(role => ({id: role, source: sourceOf(role), digest: tokenDigest(tokens[role]), scopes: [...GRANTS[role].scopes]}));
+  const listed = [
+    ...ROLES.map(role => ({id: role, source: sourceOf(role), digest: tokenDigest(tokens[role]), scopes: [...GRANTS[role].scopes]})),
+    ...producer === undefined ? [] : [{id: producerCredentialId(PRODUCER), source: producerSource(PRODUCER), digest: tokenDigest(producer), scopes: ['ingest']}],
+  ];
   await writePrivate(credentials, `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}, null, 2)}\n`);
   const file = join(dir, 'runtime-config.json');
   // A run's state directory lies too deep for the launcher's socket; the scenarios sign a browser in from a trusted page,
   // and call MCP, which is on.
   await writePrivate(file, `${JSON.stringify({schema: CONFIG_SCHEMA, modules, edge: {credentials, browserAccess: 'trusted-loopback', launcher: false, mcp: true}}, null, 2)}\n`);
   return file;
+}
+
+/**
+ * Writes the agent hooks' producer file (Hub #926) as the Hub's setup wrote it, unchanged 1.x with lifecycle 1.2, naming
+ * the runtime's port: owner-only, in an owner-only folder `producer` under `dir`. Returns its path, which the hook
+ * script takes as its argument.
+ */
+export async function writeProducer(dir: string, port: number, token: string): Promise<string> {
+  const folder = join(dir, 'producer');
+  await mkdir(folder, {recursive: true, mode: 0o700});
+  await chmod(folder, 0o700);
+  const file = join(folder, 'producer.json');
+  await writePrivate(file, `${JSON.stringify({lifecycleVersion: '1.2', enabled: true, qualified: true, source: PRODUCER, endpoint: `http://127.0.0.1:${port}/api/monitor/v1/events`, token})}\n`);
+  return file;
+}
+
+/** The 2.0 hook script (Hub #926), from the built scenarios in `dist/tests/scenarios/`. */
+const HOOK_SCRIPT = fileURLToPath(new URL('../../../bin/monitor-hook.mjs', import.meta.url));
+/**
+ * The hook's environment: the harness's own, without what a real client's hook would find in it, so a run inside an
+ * agent session reads nothing of that session's.
+ */
+const HOOK_ENVIRONMENT: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('CLAUDE_CODE_') && name !== 'CODEX_HOME'));
+
+/** Runs the hook script once, as a client's hook command does: `node monitor-hook.mjs <producer>` with `payload` on stdin. */
+export async function runHookScript(producer: string, payload: HookPayload): Promise<HookRun> {
+  const started = performance.now();
+  const child = spawn(process.execPath, [HOOK_SCRIPT, producer], {stdio: ['pipe', 'pipe', 'pipe'], env: HOOK_ENVIRONMENT});
+  let output = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
+  child.stdin.on('error', () => {});
+  child.stdin.end(JSON.stringify(payload));
+  const [code, signal] = await once(child, 'exit') as [number | null, string | null];
+  return {code, signal, output, elapsedMs: performance.now() - started};
+}
+
+/** Makes the simulated Codex Desktop marker do what a scenario asks (Hub #926), in either harness. */
+export function simulateMarker(marker: SimulatedMarker, simulation: Extract<Simulation, {device: 'codex-desktop'}>): void {
+  switch (simulation.action) {
+    case 'list':
+      marker.list(simulation.sessions);
+      return;
+    case 'unusable':
+      marker.unusable();
+      return;
+    case 'stall':
+      marker.stall();
+      return;
+    case 'answer':
+      marker.answer();
+      return;
+  }
 }
 
 /** Makes the playback module's simulated speakers do what a scenario asks (Hub #929), in either harness. */
@@ -116,11 +184,13 @@ export function simulatePlayback(speakers: SimulatedSpeakers, {speaker, action, 
 export class GatewayClient {
   readonly #origin: () => string;
   readonly #tokens: Readonly<Record<Role, string>>;
+  readonly #producer: string;
   #cookie: string | undefined;
 
-  constructor(origin: () => string, tokens: Readonly<Record<Role, string>>) {
+  constructor(origin: () => string, tokens: Readonly<Record<Role, string>>, producer: string) {
     this.#origin = origin;
     this.#tokens = tokens;
+    this.#producer = producer;
   }
 
   async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
@@ -136,6 +206,8 @@ export class GatewayClient {
       }
     } else if (as === 'stranger') {
       sent.authorization = `Bearer ${TOKEN_PREFIX}_stranger_${randomBytes(12).toString('hex')}`;
+    } else if (as === 'producer') {
+      sent.authorization = `Bearer ${this.#producer}`;
     } else if (as !== 'anonymous') {
       sent.authorization = `Bearer ${this.#tokens[as]}`;
     }

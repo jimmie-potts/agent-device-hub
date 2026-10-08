@@ -8,6 +8,7 @@
 // module that reaches it: the child reports what the Pixoo shows, and the supervisor sets how it answers and starts each
 // runtime with the mode and the panel the last one had, as a real Pixoo keeps its picture across a runtime restart.
 import http from 'node:http';
+import {createCodexDesktopModule, type MarkerRead, type MarkerTransport} from '@jimmie-potts/codex-desktop';
 import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
 import {HttpError, createNanoleafModule, nanoleafSchemas, type LightRequest} from '@jimmie-potts/nanoleaf';
 import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
@@ -38,6 +39,7 @@ const cloudCalls = new Map<number, {resolve: (response: Response) => void; rejec
 const lightRequests = new Map<number, {resolve: (reply: unknown) => void; reject: (error: Error) => void}>();
 /** How long the child keeps a Nanoleaf request the simulated controller never answers; the module's own deadline is shorter. */
 const ABANDON_MS = 10_000;
+const markerReads = new Map<number, {resolve: (read: MarkerRead) => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -80,6 +82,14 @@ process.on('message', (value: unknown) => {
     case 'cloud.answered':
       cloudCalls.get(message.id)?.resolve(new Response(message.body, {status: message.status, headers: message.headers}));
       cloudCalls.delete(message.id);
+      return;
+    case 'marker.answered':
+      markerReads.get(message.id)?.resolve(message.read);
+      markerReads.delete(message.id);
+      return;
+    case 'marker.failed':
+      markerReads.get(message.id)?.reject(new Error('the marker could not be read'));
+      markerReads.delete(message.id);
       return;
     case 'cloud.failed':
       // A refused connection fails as undici reports one, so the module knows nothing was sent.
@@ -217,6 +227,20 @@ const cloud: CloudFetch = (url, init) => new Promise<Response>((resolve, reject)
   else send({type: 'cloud.call', id, method: init.method, url, authorization: init.headers.authorization ?? '', ...(init.body === undefined ? {} : {body: init.body})});
 });
 
+/**
+ * The Codex Desktop marker, reached over the IPC channel: each read goes to the supervisor's simulated marker (Hub #926),
+ * which answers at once, or once its folder answers again after a stall. No path crosses the channel.
+ */
+const marker: MarkerTransport = {
+  read: (_home, stamp) => new Promise<MarkerRead>((resolve, reject) => {
+    next += 1;
+    const id = next;
+    markerReads.set(id, {resolve, reject});
+    send({type: 'marker.read', id, stamp});
+  }),
+  close: () => {},
+};
+
 /** The speakers, reached over the IPC channel; the supervisor's simulated speakers answer. Their addresses stay here. */
 const speakers: SpeakerTransport = {
   sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
@@ -291,6 +315,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   // Its outbox follows the core's acknowledgments, so it forgets what the core took.
   pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo}), pixooOwnSchemas),
   nanoleaf: fixture('nanoleaf', () => createNanoleafModule({transport: nanoleaf}), nanoleafSchemas),
+  // The shipped Codex Desktop module with the supervisor's simulated marker (Hub #926).
+  'codex-desktop': fixture('codex-desktop', () => createCodexDesktopModule({transport: marker})),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({

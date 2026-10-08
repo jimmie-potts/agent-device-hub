@@ -4,6 +4,7 @@
 // means every earlier message has arrived. The network guard writes each refusal to the run's report file instead, so
 // that worker threads and the child's own child processes report too. A run adapter reads and drives the run through
 // the supervisor's loopback harness API, whose documents are below.
+import type {MarkerRead} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {SimulatedAction} from '@jimmie-potts/nanoleaf';
 import type {SimulatedMode, SimulatedPixooState} from '@jimmie-potts/pixoo';
@@ -47,6 +48,8 @@ export type ChildMessage =
   | {type: 'cloud.abandon'; id: number}
   /** The Nanoleaf module's request to a simulated controller, with the token it read from its secret file (Hub #844). */
   | {type: 'nanoleaf.request'; id: number; address: string; token: string; method: string; endpoint: string; payload: unknown}
+  /** The Codex Desktop module reads its simulated marker (Hub #926), unless its stamp is still `stamp`. No path is sent. */
+  | {type: 'marker.read'; id: number; stamp: string}
   | {type: 'published'; message: Message}
   /** What the child's simulated Pixoo shows now. */
   | {type: 'pixoo.state'; state: SimulatedPixooState}
@@ -68,6 +71,9 @@ export type SupervisorMessage =
   | {type: 'nanoleaf.replied'; id: number; reply: unknown}
   /** The simulated controller did not answer, or answered with the HTTP error `status`. */
   | {type: 'nanoleaf.failed'; id: number; status?: number}
+  /** The simulated marker's answer to a read, which waits while its folder stalls; or a read that failed. */
+  | {type: 'marker.answered'; id: number; read: MarkerRead}
+  | {type: 'marker.failed'; id: number}
   | {type: 'control'; id: number; control: Control}
   | {type: 'simulate'; id: number; simulation: ChildSimulation}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
@@ -121,4 +127,5 @@ export type SimulateRequest =
   | {device: 'lifx'; action: 'online' | 'offline'; address: string}
   | Extract<Simulation, {device: 'tidbyt'}>
   | {device: 'nanoleaf'; action: SimulatedAction}
+  | Extract<Simulation, {device: 'codex-desktop'}>
   | ChildSimulation;

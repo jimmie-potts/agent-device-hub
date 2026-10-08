@@ -1,0 +1,39 @@
+## 1. One publication without a stream (SDK)
+
+- [x] 1.1 Assert, red against stubs (9 of 9 failing), a message published in one call with no stream, the edge's refusals as `rejected` with its body and the trace ID, an edge never reached as `unavailable`, a silent edge as `uncertain` at the deadline, a failed or foreign answer as `uncertain`, the call's headers, and a malformed call refused before anything is sent (`packages/sdk/tests/remote-publish.test.ts`).
+- [x] 1.2 Implement `prepareMessage` and `publishOnce` with `node:http`, telling a call that never connected from one that lost its answer (`packages/sdk/src/remote-publish.ts`), and document them in the SDK README.
+
+## 2. The 2.0 agent hook
+
+- [x] 2.1 Assert, red against a hook that publishes nothing (6 of 10 failing; the 4 pure mapping and reading tests were written with their code), a session through five hooks with an unchanged 1.x producer file, each lifecycle version, the intake record's trace, every producer file and receipt the hook may not use, unmapped input, a stopped runtime, a refused credential, a silent runtime and stdin left open within the budget, the producer's grant, the credential ID against the Hub's and the conversion's, and every 1.x kind's round trip through the core's mapping (`apps/runtime/tests/hook.test.ts`).
+- [x] 2.2 Implement the producer file's checks and the converted source (`src/hook/producer.ts`), the 1.x-to-2.0 mapping (`src/hook/observation.ts`), the hook (`src/hook/hook.ts`), the `./hook` export and `bin/monitor-hook.mjs`, which arms its deadline before it loads anything.
+- [x] 2.3 Measure the hook end to end against a disposable runtime (`scripts/measure-hook.mjs`): 25 runs, median 151 ms, worst 158 ms, all accepted; a stopped runtime 153 ms; a silent one 2.91 s.
+
+## 3. The Codex Desktop module
+
+- [x] 3.1 Assert, red against a module that never reads (9 of 9 failing), the read rules on published observations, the settle rule, an unusable marker logged once, evidence once per revision, a stalled folder before and after the first read, a failing reader's backoff, a stop during a stalled read and what leaves the module (`modules/codex-desktop/tests/module.test.ts`); port the parser, configuration and read cases (`marker.test.ts`, `configuration.test.ts`); pass the module test kit (`kit.test.ts`).
+- [x] 3.2 Implement the configuration and conversion, the marker read, the reader process and its transport, the read rules, the module and the simulated marker; measure the reader process's memory (49 MiB resident against 44 MiB for an idle Node process).
+- [x] 3.3 Add the module to the shipped list, last (after the Tidbyt module at first, after the Nanoleaf module once rebased onto #968), and test it with the real core and the real reader, a stuck reader included (`apps/runtime/tests/codex-desktop.test.ts`); take each shipped module's API version from its manifest in the process test.
+
+## 4. Both tiers
+
+- [x] 4.1 Add `agent-hooks` and `codex-desktop-read` to the catalog, the `hook` call and the producer credential to the harness contract, and play them in the in-memory harness on both transports.
+- [x] 4.2 Play them in disposable runs: the supervisor writes the producer file, holds the simulated marker over IPC and holds the runtime stopped for a restart's `holdMs`; serve and watch the hook script and the module's build (`build.test.ts`).
+
+## 5. Documentation, checks and closure
+
+- [x] 5.1 Document the hook, the helper, the module and the runs in the runtime, SDK, module and verify READMEs and `docs/development.md`; run `test:codex-desktop:built` in the core CI job, with `tests/workflow_checks.cjs`.
+- [x] 5.2 Show each protection's mutant fails its named tests.
+- [x] 5.3 Run the gate on a committed head, synchronize the affected specifications and archive the change.
+
+## 6. Fix round 1 (PR #992 review)
+
+- [x] 6.1 Assert that a call whose connection the edge ends or resets after reading it is uncertain, and name that loss for what it is (`packages/sdk/tests/remote-publish.test.ts`).
+- [x] 6.2 Refuse quietly a receipt that names another source, endpoint, directory, lifecycle version, qualification or receipt version, and take one that lists the source's members in another order (`apps/runtime/tests/hook.test.ts`).
+- [x] 6.3 Send read evidence again while the core leaves its record unchanged, as after a refusal: 4 s after it went out, then after a wait that doubles to a minute (`modules/codex-desktop/tests/module.test.ts`).
+- [x] 6.4 Run the hook's attention, turn, approval and tool flow at lifecycle 1.0, 1.1 and 1.2, and subagents of a known, an unseen and a top-level session through the script, with the 2.0 parentage check at the edge.
+- [x] 6.5 Refuse a restart body that is not an object of `holdMs` alone, or not JSON, with 400 and a registry body, and test the marker's 64-thread bound (`apps/runtime/verify/tests/supervisor.test.ts`).
+- [x] 6.6 End the hook by `SIGKILL` only when a file read is still stuck at its deadline, since `process.exit` would wait for it; exit 0 otherwise.
+- [x] 6.7 Read the marker asynchronously in the reader, which kills itself when its channel closes, so a runtime killed during a stall leaves no reader; release every stalled FIFO at a test's end, kill each hook a test starts after 6 s, and run each mutant in a process group that is killed afterwards.
+- [x] 6.8 Show each new protection's mutant fails its named tests, and run the gate on a committed head.
+- [x] 6.9 Rebase onto main `f0f2fcce` (#996's `device/2.1` held record, #991, #993, #998, #994), and count a pending-read check that throws as no read, so the hook stays fail-open.

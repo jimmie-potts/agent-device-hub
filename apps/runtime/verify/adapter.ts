@@ -6,6 +6,7 @@
 // end the part's stream, and the same remote part reconnects on its own, as in the in-memory harness; its timers wait
 // until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
 import {readFile} from 'node:fs/promises';
+import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedPixoo} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
@@ -13,11 +14,12 @@ import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type Role, type Seed, type Simulation,
+  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  type Simulation,
 } from '../tests/scenarios/catalog.js';
-import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
+import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
-import {partTokensOf} from './seed.js';
+import {partTokensOf, producerOf} from './seed.js';
 
 /** Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. */
 export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed};
@@ -29,6 +31,8 @@ export interface RunHarness extends Harness {
 
 /** How long a remote part whose stream was lost waits before it reconnects. */
 const RECONNECT_MS = 50;
+/** How long the supervisor holds the runtime stopped while a hook runs against it (Hub #926). */
+const STOPPED_HOLD_MS = 4000;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
 /**
@@ -63,9 +67,11 @@ class HeldScheduler implements Scheduler {
   }
 }
 
-/** The parts' run-generated tokens, by role, from the run's private token file. They are never printed. */
-export async function readPartTokens(dataDir: string): Promise<Record<Role, string>> {
-  return JSON.parse(await readFile(partTokensOf(dataDir), 'utf8')) as Record<Role, string>;
+/** The parts' run-generated tokens, by role, and the agent hooks' producer token (Hub #926). */
+export type PartTokens = Record<Role, string> & {producer: string};
+/** The parts' run-generated tokens from the run's private token file. They are never printed. */
+export async function readPartTokens(dataDir: string): Promise<PartTokens> {
+  return JSON.parse(await readFile(partTokensOf(dataDir), 'utf8')) as PartTokens;
 }
 
 /** The parts' tokens by source. They are never printed. */
@@ -94,7 +100,7 @@ class Run implements RunHarness {
     generation: 0, devices: {
       lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
       playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(), pixoo: new SimulatedPixoo().state(),
-      nanoleaf: {online: false, held: 0, devices: {}},
+      nanoleaf: {online: false, held: 0, devices: {}}, codexDesktop: new SimulatedMarker().state(),
     },
     logs: [], published: [],
   };
@@ -105,11 +111,11 @@ class Run implements RunHarness {
 
   readonly #client: GatewayClient;
 
-  constructor(target: RunTarget, tokens: Readonly<Record<Role, string>>) {
+  constructor(target: RunTarget, tokens: PartTokens) {
     this.#target = target;
     this.#grants = new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
     this.#origin = new URL(target.url).origin;
-    this.#client = new GatewayClient(() => this.#origin, tokens);
+    this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
     this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler()}]));
   }
@@ -231,6 +237,35 @@ class Run implements RunHarness {
     // What the call made the runtime log or publish is in the copy before the scenario reads it.
     await this.#refresh();
     return answer;
+  }
+
+  /**
+   * Runs the hook script against the run's runtime, with the producer file the supervisor wrote. While it runs
+   * `stopped`, the supervisor holds the runtime stopped: the adapter asks for a restart that waits before it starts the
+   * runtime again, and runs the hook once the runtime's port refuses connections.
+   */
+  async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
+    await this.#actions;
+    const producer = producerOf(this.#target.dataDir);
+    if (runtime === 'running') {
+      const ran = await runHookScript(producer, payload);
+      await this.#refresh();
+      return ran;
+    }
+    const restarted = this.#post('restart', {holdMs: STOPPED_HOLD_MS});
+    // Until the restart's answer, the run's refresh would wait on the stopped runtime; a failed restart fails the hook.
+    restarted.catch(() => {});
+    const deadline = Date.now() + STOPPED_HOLD_MS;
+    while (await fetch(new URL(HEALTH_PATH, this.#origin)).then(() => true, () => false)) {
+      if (Date.now() > deadline) throw new Error('the runtime did not stop');
+      await sleep(25);
+    }
+    const ran = await runHookScript(producer, payload);
+    await restarted;
+    // The restart ended the browser's session with the runtime that opened it.
+    this.#client.forget();
+    await this.#refresh();
+    return ran;
   }
 
   problems(): readonly string[] {

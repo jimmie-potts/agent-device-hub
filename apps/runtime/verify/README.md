@@ -14,8 +14,9 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
 | Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
 | Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
-| Fixture modules | simulated | The core (#831), with its action tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), the shipped Nanoleaf module (#844) with a simulated Lines controller, and a harness module that reports what the bus publishes |
-| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx`, the Tidbyt module's `SimulatedCloud` and the Nanoleaf module's `SimulatedNanoleaf`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
+| Fixture modules | simulated | The core (#831), with its action tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), the shipped Nanoleaf module (#844) with a simulated Lines controller, the shipped Codex Desktop module (#926) with a simulated marker, and a harness module that reports what the bus publishes |
+| Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx`, the Tidbyt module's `SimulatedCloud`, the Nanoleaf module's `SimulatedNanoleaf` and the Codex Desktop module's `SimulatedMarker`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
+| Agent hook | actual | The 2.0 hook script, `apps/runtime/bin/monitor-hook.mjs` (#926), run by the capture step as a client's hook command, with a synthetic, unchanged 1.x producer file at `<data>/config/producer/producer.json` that names the run's port and the converted producer credential's token, `producer` in `part-tokens.json`, and synthetic Claude Code payloads on stdin |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
 The supervisor restarts a runtime that dies on its own, such as an armed crash between the lamp's commit and its
@@ -24,7 +25,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart. A simulation that names an unknown device, action or field is refused with 400 and changes nothing. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, have the simulated Codex Desktop marker list threads as unread, turn unusable, stall or answer again, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart, optionally holding the runtime stopped for up to 10 s first (`{"holdMs": n}`, #926). A simulation that names an unknown device, action or field, a restart with any field but a whole `holdMs` from 0 to 10 000, and a body that is not JSON or is over 4 KiB are refused with 400 and a registry body, and change nothing. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -35,10 +36,10 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 | Scenario | Starts |
 | --- | --- |
 | `fixtures` | The core with its stand-in parts, the lamp and the chime, for exploring (the default) |
-| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, the Pixoo's simulated device `pixoo-1`, and the Nanoleaf module's simulated Lines) |
+| `shipped` | The runtime's own entry point with the shipped module list: the core and each device module, configured with its factory's simulated section (the playback module's simulated speakers, the LIFX module's simulated pendant and Beam, the Tidbyt module's simulated cloud, the Pixoo's simulated device `pixoo-1`, the Nanoleaf module's simulated Lines, and the Codex Desktop module's simulated marker) |
 | `pixoo-migrated` | The same shipped runtime on a migrated Pixoo library (#931): the seed writes a synthetic library of the installed schema version 3 to `<data>/pixoo-library`, migrates and verifies it into the run's state directory with the [migration tool](../README.md#pixoo-library-migration), as the installer will at the cutover, keeps each one's JSON line in `<data>/migration/`, and fails the start unless both exit 0 |
 | `nanoleaf-migrated` | The same shipped runtime with the Nanoleaf module on a migrated bridge state (#933): the seed writes a synthetic bridge state of the installed shape, the Lines and NL22 Light Panels at the simulated controllers' addresses, to `<data>/nanoleaf-bridge`, runs the [migration tool](../README.md#nanoleaf-migration)'s `migrate` into the run's state directory, with the tokens in `<data>/config/secrets/` and the section in `<data>/migration/`, puts that section into the run's configuration file in place of the simulated one, runs `verify` against that file, keeps each line in `<data>/migration/`, and fails the start unless both exit 0 |
-| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), the four Pixoo scenarios below, and `nanoleaf-wall` (the core and the Nanoleaf module with a simulated Lines controller) |
+| one per catalog scenario, such as `end-to-end` | The modules that catalog scenario's seed names, with its configuration file when the seed has one: `configured-module` (a valid section, with the sign offline at first), `misconfigured-module` (an invalid one, so health shows the sign `refused`), `speaker-playback` (the core and the playback module, with both simulated speakers answering on another input), `lifx-bulbs` (the core and the LIFX module, with a simulated pendant and Beam), `tidbyt-tiles` (the core, the playback module and the Tidbyt module, with an empty simulated cloud), the four Pixoo scenarios below, `nanoleaf-wall` (the core and the Nanoleaf module with a simulated Lines controller), `agent-hooks` (the core alone, for the hook script) and `codex-desktop-read` (the core and the Codex Desktop module, with a simulated marker that lists nothing) |
 | `control-real-transports`, `control-installed-port`, `control-default-state` | Boundary negative controls; see below |
 
 ## Capture steps
@@ -286,6 +287,50 @@ node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-librar
 printf x >> "$(ls -d $t/a/modules/pixoo/media/originals/* | head -1)"
 node apps/runtime/dist/src/migrate-pixoo.js verify --library $data/pixoo-library --state-dir $t/a; echo $?         # mismatch with files 1, 1
 rm -rf $t
+npm run -s verify:runtime -- stop <run-id>
+```
+
+To try the agent hooks (#926) as a client would, start the `agent-hooks` scenario. Its capture step runs the 2.0 hook
+script with the run's producer file through a session: a start, a prompt, a permission dialog and the tool that ends it,
+and the turn's end. It checks that the session appears, the approval prompt is raised and cleared, the producer's
+credential may not command or read, and a hook that runs while the supervisor holds the runtime stopped exits 0 quietly
+within its budget, its observation lost, before the next hook reaches the restarted runtime.
+
+```bash
+npm run -s verify:runtime -- start --scenario agent-hooks
+npm run -s verify:runtime -- capture <run-id> scenario-agent-hooks
+```
+
+By hand, from the checkout, with the run's producer file, which the supervisor writes once the runtime is ready, naming its
+port. Leave out the two Claude Code variables a shell inside an agent session carries, as a real hook would read them:
+
+```bash
+producer=<runtime dir>/data/config/producer/producer.json
+hook() { env -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_HOST_SESSION_ID node apps/runtime/bin/monitor-hook.mjs "$producer"; }
+echo '{"hook_event_name":"SessionStart","session_id":"by-hand-1","cwd":"/home/owner/projects/demo"}' | hook; echo "exit $?"   # exit 0, nothing printed
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"by-hand-1","prompt_id":"p1"}' | hook
+reader=$(node -p "require('<runtime dir>/data/config/part-tokens.json').reader")
+curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, its project demo, active in turn p1
+curl -s -X POST -H 'content-type: application/json' -d '{"holdMs":8000}' "<harness endpoint>api/harness/v1/restart" &   # the runtime stops for 8 s
+sleep 2; curl -s "<origin>/api/runtime/v1/health" || echo "the runtime is stopped"
+time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook); echo "exit $?"   # exit 0 at once, nothing printed
+wait   # the restarted runtime: the Stop above was lost, so by-hand-1 is still active
+echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook
+curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # by-hand-1 idle, with its turn-ended notice
+npm run -s verify:runtime -- stop <run-id>
+```
+
+To watch Codex Desktop's read marker (#926) become read evidence, start `codex-desktop-read`. Its capture step ends a
+Desktop turn and a subagent's, lists both as unread, clears the flag, turns the marker unusable, stalls the Codex home
+and lets it answer again, and checks each session's read state and the marker's records. Time is real, so it takes about
+half a minute. By hand, `POST /api/harness/v1/simulate` with `{"device": "codex-desktop", "action": "list", "sessions":
+["<thread id>"]}` (up to 64 IDs of letters, digits, `.`, `_` and `-`), or with the action `unusable`, `stall` or
+`answer`, drives the marker, and `GET /api/harness/v1/state` shows `devices.codexDesktop`: what it lists, whether it
+stalls and how many reads it answered or holds.
+
+```bash
+npm run -s verify:runtime -- start --scenario codex-desktop-read
+npm run -s verify:runtime -- capture <run-id> scenario-codex-desktop-read
 npm run -s verify:runtime -- stop <run-id>
 ```
 

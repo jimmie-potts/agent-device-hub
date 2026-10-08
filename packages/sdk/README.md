@@ -4,7 +4,9 @@ Private workspace package `@jimmie-potts/sdk`. It is the one way B.U.N.N.Y. part
 talk, as [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) decides.
 It offers `publish`, `publishMessage`, `subscribe`, `request`, `respond`, `sync`
 and its owner side, `serveSync`, over two transports: the in-process bus, and an
-SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime.
+SSE/HTTP [remote transport](#remote-transport) for parts outside the runtime,
+with [one publication without a stream](#one-publication-without-a-stream) for a
+part that sends one message and ends.
 Both carry the same calls, so a module or remote part never sees which transport
 carries its messages. It also holds the [module API](#modules) that the runtime
 (`apps/runtime`) hosts, a module's [outbox](#outbox), the
@@ -1101,6 +1103,42 @@ cancels their deadlines and the reconnect backoff. It then closes its sync
 copies: a first sync still under way resolves `cancelled`, and its request is
 withdrawn from the owner's queue. Last it ends the stream, and every later call
 is refused with `invalid-state`.
+
+## One publication without a stream
+
+A short-lived remote part that sends one message and ends, such as an agent hook
+(Hub #926), needs neither the remote client's stream nor its reconnects.
+`prepareMessage` builds the message and `publishOnce` sends it in one call to the
+edge's `publish`, bounded as a whole:
+
+```ts
+import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
+
+const message = prepareMessage('bunny/parts/hub-079d58c5ae9c2723c5920d98dbb07935', draft);
+const result = await publishOnce({url: 'http://127.0.0.1:8788', source: message.source, token, timeoutMs: 2500}, key, message);
+```
+
+- `prepareMessage(source, draft, {now?, parent?})` gives a profile 2.0 message from
+  `source`, as a participant would send it: a new `id`, the current `time` and a
+  `traceparent` that continues `parent`, or starts a new sampled trace.
+- `publishOnce({url, source, token, timeoutMs}, key, message)` posts
+  `{schema, key, message}` to `<url>/api/sdk/v1/publish` over `http`, with the
+  token in `authorization` only, the source in `bunny-source` and the message's
+  `traceparent` as a header. `timeoutMs`, an integer from 1 to `MAX_TIMEOUT_MS`,
+  bounds the whole call, connecting included. It resolves with what happened and
+  never rejects for the edge's answer:
+  - `{status: 'published'}`;
+  - `{status: 'rejected', error}`: the edge refused the message with a registry
+    code, or could not be reached (`unavailable`), so it was not published;
+  - `{status: 'uncertain', error}` with `uncertain-result`: the call reached the
+    edge and its answer was lost, late, over 16 KiB or not the edge's, or the
+    edge failed (`internal`), so it may have been published.
+
+  Each error body carries the message's trace ID. It rejects with `SdkError`
+  (`invalid-request`), before anything is sent, a malformed deadline, a URL that is
+  not `http`, or a token or source that cannot be sent in a header. It sends
+  nothing again and reports nothing but its result: the caller decides, and the
+  edge records its own refusals.
 
 ## Checks
 

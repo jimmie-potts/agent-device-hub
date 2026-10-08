@@ -282,7 +282,7 @@ async function update<T>(
 }
 
 /**
- * Grants a credential, as a producer's setup does (Hub #926): adds it to the file, and changes nothing when the file
+ * Grants a credential, as an operator adds a producer (Hub #926): adds it to the file, and changes nothing when the file
  * already holds it as it is. A credential with its ID but another digest, source or scopes belongs to another
  * owner, and one with another ID but its source would share it: either is refused with `edge-credential-conflict`, as
  * the old setup authority refused a credential it did not own. To rotate a token, revoke the credential and grant it

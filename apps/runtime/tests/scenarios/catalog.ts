@@ -2,8 +2,9 @@
 // type has one execution adapter that runs these definitions unchanged: the in-memory harness (`memory.ts`, tier 1, in
 // CI) and #920's disposable runs (tier 2). A step acts through the harness, expects an observation within a time bound,
 // or expects one to hold for a while. Time is virtual in memory and real in a run; only the harness differs.
+import {CODEX_DESKTOP_SIMULATED_SECTION, type MarkerState} from '@jimmie-potts/codex-desktop';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {InboxItem, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type InboxItem, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {LINES_ADDRESS, NANOLEAF_FAMILIES, SIMULATED_SECTION as SIMULATED_WALL, type SimulatedAction, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIMULATED_SECTION, controlPlayback, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
 import {LIFX_SIMULATED_SECTION, PACKET, type LifxDeviceState} from '@jimmie-potts/lifx';
@@ -31,7 +32,7 @@ export type TransportName = (typeof TRANSPORTS)[number];
 export const ROLES = ['hook', 'operator', 'panel', 'reader'] as const;
 export type Role = (typeof ROLES)[number];
 /** The modules a run can start, each built by its factory with its simulated transport. */
-export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx' | 'tidbyt' | 'pixoo' | 'nanoleaf';
+export type ModuleName = 'core' | 'lamp' | 'chime' | 'sign' | 'playback' | 'lifx' | 'tidbyt' | 'pixoo' | 'nanoleaf' | 'codex-desktop';
 
 /**
  * One copy the reader keeps: one owner's families, synced from their only owner, or from the owner named by its source
@@ -78,10 +79,11 @@ export interface ReaderView {
 }
 
 /**
- * Who calls the runtime's gateway (Hub #835): a part, with its client credential; `browser`, with a session that a trusted
- * loopback page opened; `stranger`, with a made-up token; or `anonymous`, with neither.
+ * Who calls the runtime's gateway (Hub #835): a part, with its client credential; `producer`, with the agent hooks'
+ * converted producer credential (Hub #926); `browser`, with a session that a trusted loopback page opened; `stranger`,
+ * with a made-up token; or `anonymous`, with neither.
  */
-export type Caller = Role | 'browser' | 'stranger' | 'anonymous';
+export type Caller = Role | 'producer' | 'browser' | 'stranger' | 'anonymous';
 /** One HTTP call to the gateway. `origin: 'other'` sends it as a page on another site would. */
 export type GatewayCall = {
   as: Caller; method: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; headers?: Readonly<Record<string, string>>; origin?: 'other';
@@ -106,11 +108,18 @@ export const GRANTS: Readonly<Record<Role, {scopes: readonly ('read' | 'control'
  * it (Hub #835).
  */
 export const TOKEN_PREFIX = 'tok_SYNTHETIC835';
+/**
+ * The agent hooks' producer (Hub #926): a synthetic Claude Code source configuration, as the Hub's setup writes it into
+ * `producer.json`. Each harness grants its converted credential (`ingest`) and writes an unchanged 1.x producer file for
+ * the 2.0 hook script, with a token in the Hub's form that carries `TOKEN_PREFIX`.
+ */
+export const PRODUCER = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code-hooks', hook: 'SessionStart'} as const;
 
 /** What the simulated devices show. Plain data, so a disposable run can report it too. */
 export type DeviceStates = {
   lamp: LampDeviceState; chime: ChimeDeviceState; sign: SignDeviceState; playback: SpeakersState; lifx: LifxDeviceState; tidbyt: CloudState;
   pixoo: SimulatedPixooState; nanoleaf: SimulatedState;
+  codexDesktop: MarkerState;
 };
 /** What a scenario can make a simulated device do. */
 export type Simulation =
@@ -130,7 +139,17 @@ export type Simulation =
   /** The simulated Pixoo (Hub #843) answers at once, refuses to connect, or never answers. */
   | {device: 'pixoo'; action: SimulatedMode}
   /** The simulated Nanoleaf Lines: answering or not, switched on or off as the Nanoleaf app would, or losing a write's answer (Hub #844). */
-  | {device: 'nanoleaf'; action: SimulatedAction};
+  | {device: 'nanoleaf'; action: SimulatedAction}
+  /**
+   * The simulated Codex Desktop marker (Hub #926): Desktop lists these threads as unread, the marker turns unusable, its
+   * folder stalls so every read waits, or it answers again.
+   */
+  | {device: 'codex-desktop'; action: 'list'; sessions: readonly string[]}
+  | {device: 'codex-desktop'; action: 'unusable' | 'stall' | 'answer'};
+/** A hook's JSON, as Claude Code passes it to a hook command on stdin. */
+export type HookPayload = Readonly<Record<string, unknown>>;
+/** How one run of the hook script ended: its exit, everything it wrote, and how long it took from its start. */
+export type HookRun = {code: number | null; signal: string | null; output: string; elapsedMs: number};
 export type Generational<T> = {generation: number} & T;
 
 /** What a scenario can touch. Each run type implements it; the in-memory harness is `memory.ts`. */
@@ -192,6 +211,13 @@ export interface Harness {
   restart(): Promise<void>;
   /** Calls the runtime's gateway over HTTP, on both transports (Hub #835). */
   gateway(call: GatewayCall): Promise<GatewayAnswer>;
+  /**
+   * Runs the 2.0 agent hook script once (Hub #926), as a client's hook command does: a new Node process with the
+   * harness's unchanged 1.x producer file, which names the runtime's port, and `payload` on stdin. With
+   * `runtime: 'stopped'` the runtime is stopped while the hook runs, as when the service is down, and starts again on the
+   * same state directory afterwards.
+   */
+  hook(payload: HookPayload, options?: {runtime?: 'running' | 'stopped'}): Promise<HookRun>;
 }
 
 // Steps
@@ -1822,12 +1848,142 @@ const nanoleafWall: Scenario = {
   ],
 };
 
+// Agent hooks and Codex Desktop (Hub #926)
+
+/** How long one hook may take from its start to its exit: its own 2.9 s budget, inside the clients' 3 s hook timeout. */
+const HOOK_EXIT_MS = 3000;
+/** Content a hook carries that the normalizers' allowlist drops: no record or message may hold it. */
+const DROPPED = 'PRIVATE_SCENARIO_926';
+const HOOKED = 'hook-sim-1';
+const HOOKED_IDENTITY: Identity = {provider: PRODUCER.provider, client: PRODUCER.client, hostId: PRODUCER.hostId, sourceId: PRODUCER.sourceId, sessionId: HOOKED};
+const HOOKED_ID = sessionEntityId(HOOKED_IDENTITY);
+const claudeHook = (name: string, extra: Record<string, unknown> = {}): HookPayload =>
+  ({hook_event_name: name, session_id: HOOKED, cwd: '/home/owner/projects/demo', ...extra});
+/** Why a hook run broke the hook's contract, or undefined: it exits 0 on its own, writes nothing and ends in time. */
+function hookProblem(ran: HookRun): string | undefined {
+  if (ran.code !== 0 || ran.signal !== null) return `the hook exited with ${String(ran.code)} ${String(ran.signal)}`;
+  if (ran.output !== '') return `the hook wrote ${JSON.stringify(ran.output.slice(0, 200))}`;
+  return ran.elapsedMs < HOOK_EXIT_MS ? undefined : `the hook took ${Math.round(ran.elapsedMs)} ms`;
+}
+const hooked = (name: string, payload: HookPayload, options: {runtime?: 'running' | 'stopped'} = {}): Step => act(name, async h => {
+  const problem = hookProblem(await h.hook(payload, options));
+  if (problem !== undefined) throw new Error(problem);
+});
+const hookedSession = (h: Harness): SessionRecord | undefined => session(h, HOOKED_ID);
+
+/**
+ * Agent hooks through the 2.0 hook script (Hub #926): an unchanged 1.x producer file drives the script, each observation
+ * commits the session it reports, an approval prompt is raised and cleared, the producer's converted credential may only
+ * publish lifecycle observations, and a hook that runs while the runtime is stopped exits quietly within its budget, its
+ * observation lost as hooks fail open.
+ */
+const agentHooks: Scenario = {
+  id: 'agent-hooks',
+  title: 'agent hooks reach the core through the 2.0 hook script, and exit quietly while the runtime is stopped',
+  seed: {modules: ['core'], follows: [CORE_FAMILIES]},
+  steps: [
+    hooked('the hook script reports a new Claude Code session', claudeHook('SessionStart')),
+    expect('the reader holds the session, with its project', h => {
+      const record = hookedSession(h);
+      return (record?.activity === 'active' && record.project === 'demo') || `session ${show(record === undefined ? undefined : {activity: record.activity, project: record.project})}`;
+    }),
+    hooked('a prompt starts a turn', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: DROPPED})),
+    expect('the session holds the turn', h => (hookedSession(h)?.turn.status === 'known' && show(hookedSession(h)?.turn) === show({status: 'known', id: 'prompt-1'})) || show(hookedSession(h)?.turn)),
+    hooked('a permission dialog opens', claudeHook('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: DROPPED}})),
+    expect('the approval prompt is raised on the turn, and the reader heard it', h => {
+      const attention = hookedSession(h)?.attention ?? [];
+      const raised = occurrences(h, 'org.bunny.attention.raised').filter(message => message.subject === HOOKED_ID).length;
+      return (show(attention) === show([{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}]) && raised === 1) || `attention ${show(attention)}, raised ${raised}`;
+    }),
+    hooked('the tool finishes', claudeHook('PostToolUse', {prompt_id: 'prompt-1', tool_use_id: 'tool-1', tool_response: {output: DROPPED}})),
+    expect('the approval prompt is cleared as resolved', h => {
+      const cleared = occurrences(h, 'org.bunny.attention.cleared').filter(message => message.subject === HOOKED_ID).map(message => (message.data as {cause: string}).cause);
+      return (hookedSession(h)?.attention.length === 0 && show(cleared) === show(['resolved'])) || `attention ${show(hookedSession(h)?.attention)}, cleared ${show(cleared)}`;
+    }),
+    hooked('the turn ends', claudeHook('Stop', {prompt_id: 'prompt-1'})),
+    expect('the session is idle with its finished turn', h => (hookedSession(h)?.activity === 'idle' && hookedSession(h)?.notices.length === 1) || show(hookedSession(h)?.activity)),
+    expect('the producer\'s credential may not send a command', answers({as: 'producer', method: 'POST', path: '/api/sdk/v1/request', body: {
+      schema: 'sdk-remote/1.0', key: `bunny.cmd.approval-recover.${HOOKED_ID}`, command: {},
+    }}, answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('nor read the sessions', answers({as: 'producer', method: 'GET', path: '/api/v2/families/session'}, answer => refusedWith(answer, 403, 'forbidden'))),
+    expect('the gateway confirms it holds ingest', answers({as: 'producer', method: 'GET', path: '/api/v2/authority?scope=ingest'}, answer =>
+      (answer.status === 200 && bodyOf<{scope?: string}>(answer)?.scope === 'ingest') || `${answer.status} ${answer.text.slice(0, 200)}`)),
+    hooked('a hook while the runtime is stopped exits quietly within its budget', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-2'}), {runtime: 'stopped'}),
+    expect('the runtime is back, and the observation sent while it was stopped was lost: hooks fail open', h => {
+      const record = hookedSession(h);
+      return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.restartUncertain === true) ||
+        `generation ${h.generation()}, turn ${show(record?.turn)}, restartUncertain ${String(record?.restartUncertain)}`;
+    }),
+    hooked('the next hook reaches the restarted runtime', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-2'})),
+    expect('fresh evidence makes the session current again on the new turn', h => {
+      const record = hookedSession(h);
+      return (show(record?.turn) === show({status: 'known', id: 'prompt-2'}) && record?.restartUncertain === false) || `turn ${show(record?.turn)}, restartUncertain ${String(record?.restartUncertain)}`;
+    }),
+    holds('nothing the allowlist drops reached the runtime', h =>
+      ![h.logs(), h.published(), h.reader.heard()].some(value => JSON.stringify(value).includes(DROPPED)) || 'dropped content reached the runtime', 100),
+    holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
+  ],
+};
+
+const desktopIdentity = (sessionId: string): Identity => ({
+  provider: 'codex', client: 'desktop', hostId: CODEX_DESKTOP_SIMULATED_SECTION.hostId, sourceId: CODEX_DESKTOP_SIMULATED_SECTION.sourceId, sessionId,
+});
+const desktopRead = (h: Harness, sessionId: string): string => session(h, sessionEntityId(desktopIdentity(sessionId)))?.read ?? 'missing';
+/** A Codex Desktop session's turn ends, as its hook reports it; a subagent names its parent. */
+const desktopTurnEnds = (h: Harness, sessionId: string, parent?: string): Promise<void> =>
+  publish(h, turnEnded, {identity: desktopIdentity(sessionId), ...(parent === undefined ? {} : {parent: {status: 'known', identity: desktopIdentity(parent)}})});
+const marker = (simulation: Extract<Simulation, {device: 'codex-desktop'}>) => (h: Harness): void => { h.simulate(simulation); };
+
+/**
+ * Codex Desktop's read marker as read evidence (Hub #926), with a simulated marker: a top-level Desktop session reads
+ * unread while Desktop lists it and read once it does not, a subagent never gets read evidence, an unusable marker gives
+ * none, and a Codex home that stalls makes the marker unavailable, logged once, while the core takes observations, until
+ * it answers again.
+ */
+const codexDesktopRead: Scenario = {
+  id: 'codex-desktop-read',
+  title: 'Codex Desktop\'s read marker becomes read evidence for its top-level sessions',
+  seed: {modules: ['core', 'codex-desktop'], follows: [['session']], config: {'codex-desktop': CODEX_DESKTOP_SIMULATED_SECTION}},
+  steps: [
+    act('a Codex Desktop turn ends, and one of its subagent\'s', async h => {
+      await desktopTurnEnds(h, 'thread-1');
+      await desktopTurnEnds(h, 'thread-1-agent', 'thread-1');
+    }),
+    expect('the reader holds both sessions, their read state unknown', h =>
+      (desktopRead(h, 'thread-1') === 'unknown' && desktopRead(h, 'thread-1-agent') === 'unknown') || `${desktopRead(h, 'thread-1')}, ${desktopRead(h, 'thread-1-agent')}`),
+    act('Desktop lists both as unread', marker({device: 'codex-desktop', action: 'list', sessions: ['thread-1', 'thread-1-agent']})),
+    expect('the top-level session reads unread, and the subagent gets no read evidence', h =>
+      (desktopRead(h, 'thread-1') === 'unread' && desktopRead(h, 'thread-1-agent') === 'unknown') || `${desktopRead(h, 'thread-1')}, ${desktopRead(h, 'thread-1-agent')}`, 6000),
+    act('Desktop clears the flag', marker({device: 'codex-desktop', action: 'list', sessions: []})),
+    expect('the session reads read', h => desktopRead(h, 'thread-1') === 'read' || desktopRead(h, 'thread-1'), 6000),
+    act('the marker turns into another format', marker({device: 'codex-desktop', action: 'unusable'})),
+    act('another Desktop turn ends', h => desktopTurnEnds(h, 'thread-2')),
+    expect('the reader holds the new session', h => desktopRead(h, 'thread-2') !== 'missing' || 'missing'),
+    holds('an unusable marker gives no read evidence, however long the turn has been over', h => desktopRead(h, 'thread-2') === 'unknown' || desktopRead(h, 'thread-2'), 8000),
+    act('Desktop writes the known format again, listing nothing', marker({device: 'codex-desktop', action: 'list', sessions: []})),
+    expect('the finished session reads read', h => desktopRead(h, 'thread-2') === 'read' || desktopRead(h, 'thread-2'), 6000),
+    act('the Codex home stalls', marker({device: 'codex-desktop', action: 'stall'})),
+    act('another Desktop turn ends', h => desktopTurnEnds(h, 'thread-3')),
+    expect('the marker is unavailable, logged once, while the core still takes observations', h => {
+      const unavailable = logged(h, 'codex-desktop', 'device.unavailable').map(entry => entry.record.severity_text);
+      return (show(unavailable) === show(['WARN']) && desktopRead(h, 'thread-3') === 'unknown') || `logged ${show(unavailable)}, thread-3 ${desktopRead(h, 'thread-3')}`;
+    }, 9000),
+    expect('the module still runs', h => running(h, ['core', 'codex-desktop'])),
+    act('the Codex home answers again', marker({device: 'codex-desktop', action: 'answer'})),
+    expect('the marker is available again, and the finished session reads read', h => {
+      const available = logged(h, 'codex-desktop', 'device.available').length;
+      return (available === 1 && desktopRead(h, 'thread-3') === 'read') || `available ${available}, thread-3 ${desktopRead(h, 'thread-3')}`;
+    }, 6000),
+  ],
+};
+
 /** The catalog, in the order a reader meets it. Every runtime story adds its scenarios here. */
 export const SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, speakerPlayback, lifxBulbs, deviceOwners, tidbytTiles, gatewayReads, grantsAndDuplicates,
   approvalRecovery, moduleContributions,
   pixooMonitor, pixooMedia, pixooNowPlaying, pixooOffline, nanoleafWall,
+  agentHooks, codexDesktopRead,
 ];
 
 export const scenario = (id: string): Scenario | undefined => SCENARIOS.find(entry => entry.id === id);

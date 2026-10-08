@@ -10,9 +10,12 @@ and, after it, the device modules: the
 [playback module](../../modules/playback/README.md) (#929), the
 [LIFX module](../../modules/lifx/README.md) (#928), the
 [Tidbyt module](../../modules/tidbyt/README.md) (#930), the
-[Pixoo module](../../modules/pixoo/README.md) (#843) and the
-[Nanoleaf module](../../modules/nanoleaf/README.md) (#844) so far. Module stories
-add theirs after the core, and the runtime also runs with no module at all.
+[Pixoo module](../../modules/pixoo/README.md) (#843), the
+[Nanoleaf module](../../modules/nanoleaf/README.md) (#844) and the
+[Codex Desktop module](../../modules/codex-desktop/README.md) (#926) so far.
+Module stories add theirs after the core, and the runtime also runs with no
+module at all. The [agent hooks](#agent-hooks) reach the core through the
+gateway, with `bin/monitor-hook.mjs`.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
 runtime then runs the core alone, with the device modules `refused`. Nothing
@@ -28,8 +31,8 @@ and secrets come from one private [configuration file](#configuration).
 A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
-reads no secret, such as the playback, LIFX and Pixoo modules, omits `secrets`; the Tidbyt module names
-`token`, its API key's file, and the Nanoleaf module names `token`. One helper,
+reads no secret, such as the playback, LIFX, Pixoo and Codex Desktop modules, omits `secrets`; the Tidbyt module
+names `token`, its API key's file, and the Nanoleaf module names `token`. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -209,6 +212,99 @@ and exits 1, and the service manager restarts it whole.
   action's change (`tracked`) in that change's transaction, and runs its own
   intake through the core's transactions and outbox. History keeps what a part
   publishes too.
+
+## Agent hooks
+
+`bin/monitor-hook.mjs` is the 2.0 agent hook (#926): the hook command of Claude
+Code and Codex, `node bin/monitor-hook.mjs <producer.json>`, with the hook's
+JSON on stdin. For each hook it:
+
+1. reads the client's existing lifecycle 1.x producer file, unchanged;
+2. normalizes the hook with agent-state's normalizers: `normalizeHook`, or
+   `enrichHook` for a producer that selected lifecycle 1.1 or 1.2;
+3. turns the 1.x envelope into the 2.0 `lifecycle` observation that
+   [MAPPING.md](../../packages/event-contracts/MAPPING.md#lifecycle-observation)
+   describes;
+4. publishes it as `org.bunny.lifecycle.observed` on
+   `bunny.event.lifecycle.<session ID>` in one call to the gateway's SDK edge,
+   with no stream, through the SDK's
+   [`publishOnce`](../../packages/sdk/README.md#one-publication-without-a-stream).
+
+The core takes it as it takes any hook observation. The hook's code is
+`src/hook/`, which the package exports as `@jimmie-potts/runtime/hook`; it loads
+none of the rest of the runtime.
+
+- **The producer file.** The old hook's checks hold
+  (`apps/hub/bin/monitor-hook.mjs`): an owner-only regular file with one link,
+  read without following a link, of at most 8 KiB, with exactly `enabled`,
+  `endpoint`, `qualified`, `source` and `token` and an optional
+  `lifecycleVersion` of `1.1` or `1.2`; enabled and qualified; a token of 43
+  base64url characters; and an endpoint
+  `http://127.0.0.1:<port>/api/monitor/v1/events`. A `receipt.json` beside it,
+  when there is one, must be private, installed and match it. The hook uses only
+  the endpoint's host and port: the runtime keeps the Hub's port, 8788 (#835).
+- **The credential.** The token authenticates as the producer's converted
+  credential. The Hub's setup named it `hub-` and the first 32 hex digits of the
+  SHA-256 of the producer's source configuration without its hook name
+  (`producerPrincipal` in `apps/hub/src/setup.ts`), and
+  [`convertHubEdge`](#credentials) makes it act as `bunny/parts/<that ID>`. The
+  hook derives the same source from the producer file (`producerSource`), so
+  the file needs no new member. Its `ingest` scope lets it publish lifecycle
+  observations and nothing else ([Grants at the SDK edge](#grants-at-the-sdk-edge)).
+  Until grant operations exist (owner decision, 2026-10-07), a new producer is
+  added by hand: `grantCredential` with that ID and source, its token's digest
+  and `ingest`, then SIGHUP, then `GET /api/v2/authority?scope=ingest` with
+  its token, which answers 200.
+- **Bounded and fail-open.** Every path writes nothing, and every path but one
+  exits 0 (see the next item): no output protocol, permission decision, retry,
+  device or child process. A 2.9 s deadline, armed before anything loads, ends
+  the process inside the clients' 3 s hook timeout whatever the runtime does,
+  and the publication gets what is left of it. A stopped runtime, a refused or revoked credential, a lost answer,
+  an unusable producer file or input the normalizers do not map end the hook
+  quietly. The observation is then lost, as hooks fail open, and the session's
+  freshness shows the gap. Input over 8 MiB is dropped.
+- **A stalled file read.** For lifecycle 1.1 and 1.2, `enrichHook` reads the
+  session's title from its transcript or Codex's `session_index.jsonl` and stops
+  waiting after 100 ms, but an open on a stalled mount never returns, and on
+  Node 24 `process.exit` waits for it. So the hook exits once no file read is
+  under way, and if one still is at the deadline, it ends by `SIGKILL` instead.
+  A check that cannot tell counts as no read, so the hook stays fail-open. That
+  is the only path that does not exit 0; the clients treat a non-zero exit as a
+  non-blocking error. Its observation was published first, unless the stall
+  left no time for it.
+- **Concurrency.** Each hook is a new Node process, and many at once share the
+  CPU. In the failure-isolation review (2026-10-07), 5 sessions sending 20 hooks
+  at once all landed, at 0.95 to 1.4 s at the median; 10 sessions sending 20 at
+  once lost 21 of 200 at the deadline. The deadline leaves about 0.1 s before the
+  clients' 3 s timeout.
+- **Outcomes.** `publishOnce` says what may have happened: `published`;
+  `rejected` with the edge's registry code, or `unavailable` when the edge was
+  never reached, so nothing was published; or `uncertain-result` when the call
+  reached the edge and its answer was lost, so it may have been. Nothing sends it
+  again: the core drops a duplicate by `(source, id)` anyway, and the hook has
+  nowhere to report either way.
+- **Trace.** Each observation starts a new sampled trace, carried in the message
+  and in the call's `traceparent` header. The core's `message.received` record
+  of it carries that trace.
+- **What leaves the hook.** Only what the normalizers' allowlist keeps: no
+  prompt, response, tool input or transcript (#425), and the token only in the
+  `authorization` header.
+
+`node apps/runtime/scripts/measure-hook.mjs [--runs 25] [--stopped 5] [--silent 3]`
+measures it from its start to its exit against a disposable runtime's edge: the
+shipped entry point with the core, its gateway and one converted producer
+credential, each hook a new Node process. On the WSL host (Ryzen 9 7950X, Node
+24.21.0, 2026-10-07), 25 hooks through one session took 151 ms at the median
+and 158 ms at worst, and the core accepted all 25. Against a stopped runtime
+they took 153 ms, and against one that never answers 2.91 s, the hook's budget.
+Most of it is starting Node and loading the hook's modules: the old Hub's hook
+took 138 ms at the median against a stopped endpoint.
+
+The cutover (#840, through the installer #935) installs this file as
+`bin/monitor-hook.mjs` behind the hook link, where the old Hub's hook is today,
+with `@jimmie-potts/runtime/hook` and its dependencies resolvable from there, so
+the clients' hook settings keep their command. Until then the installed Hub keeps
+`apps/hub/bin/monitor-hook.mjs`, which this does not change.
 
 ## Run
 
@@ -396,7 +492,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, and, once it is admitted, its pages, MCP tools and whether it shows settings. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the devices and the place links, from the edge section. |
-| `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as a producer's setup checks its credential (#926). |
+| `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as an operator checks a producer's credential with its token (#926). |
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
 | `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family whose schema the runtime does not know `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, such as 503 `unavailable` for a known family that no running module answers, which is tracked and recorded failed, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
 | `GET /modules/<name>/<page>` | `read` | A module's page (module API 1.2): its HTML in a document whose policy allows no script, frame, form or base, and only images and styles from the runtime itself. |
@@ -512,7 +608,7 @@ refusal quotes the file.
 
 Credentials are granted, revoked and rotated by changing the file, as today:
 `grantCredential(file, credential)` and `revokeCredential(file, id)` rewrite it
-whole and owner-only, as a producer's setup does (#926), and
+whole and owner-only, as an operator adds a producer's credential by hand until grant operations exist ([Agent hooks](#agent-hooks)), and
 `writeEdgeCredentials(file, credentials)` writes it as the installer does. Each
 writer holds the file's lock, `<file>.lock`, which names its process: writers in
 one process take turns, so a grant and a revocation made at once both take
@@ -1261,7 +1357,11 @@ and a reader) first join the host's bus, then reach it through the runtime's
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle
 observations, the reader may only read, and the operator and the panel read,
 request the core's operator commands and send device commands through the
-core's dispatcher. The gateway's HTTP routes serve both runs, through the
+core's dispatcher. Each harness also grants the agent hooks' converted
+producer credential (`PRODUCER`, with `ingest`) and writes its unchanged 1.x
+producer file, naming the gateway's port, for the [hook script](#agent-hooks),
+which the harness's `hook` runs as a client's hook command does, if asked while
+the runtime is stopped (#926). The gateway's HTTP routes serve both runs, through the
 harness's `gateway` call, as a part, a browser signed in by a trusted loopback
 page, a stranger with a made-up token or a caller with none, and its `dispatch`
 call sends an action on the action route (#782). A crash between the lamp's commit
@@ -1356,7 +1456,17 @@ The catalog holds:
   nothing, so once the wall answers it shows Quiet and a second session takes a
   Line; a write whose answer is lost is uncertain and shows the wall held and
   degraded, its `device/2.1` record's `held` naming that write (#975), until the
-  next mode command.
+  next mode command;
+- agent hooks through the 2.0 hook script (#926), with an unchanged 1.x producer
+  file: a session, an approval prompt raised and cleared, a finished turn, the
+  producer's credential refused a command and a read, a hook while the runtime is
+  stopped exiting quietly within its budget, its observation lost, and the next
+  hook reaching the restarted runtime;
+- the [Codex Desktop module](../../modules/codex-desktop/README.md) (#926) with a
+  simulated marker: a top-level Desktop session reads unread while Desktop lists
+  it and read once it does not, a subagent gets no read evidence, an unusable
+  marker gives none, and a Codex home that stalls makes the marker unavailable,
+  logged once, while the core takes observations, until it answers again.
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

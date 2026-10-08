@@ -10,7 +10,7 @@ import {writeSyntheticLibrary} from '@jimmie-potts/pixoo';
 import {runNanoleafMigration, runPixooMigration, shippedModules, type ModuleFactory} from '../src/index.js';
 import {simulatedSections} from '../tests/fixtures/simulated.js';
 import {SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
-import {partTokens, writeConfiguration} from '../tests/scenarios/parts.js';
+import {partTokens, producerToken, writeConfiguration} from '../tests/scenarios/parts.js';
 
 export const RUN_FILE = 'run.json';
 export const RUN_SCHEMA = 'runtime-run/1.0';
@@ -42,10 +42,16 @@ export const configDirOf = (dataDir: string): string => join(dataDir, 'config');
 /** The edge's credentials file a run's configuration names, with each part's grant under its token's digest (Hub #835). */
 export const credentialsOf = (dataDir: string): string => join(configDirOf(dataDir), 'edge-credentials.json');
 /**
- * The parts' tokens, by role, which the run's adapter reads to connect its parts and the runtime never reads: the
- * credentials file holds only their digests. Owner-only, and never printed.
+ * The parts' tokens, by role, with the agent hooks' producer token as `producer` (Hub #926), which the run's adapter
+ * reads to connect its parts and write the producer file, and the runtime never reads: the credentials file holds only
+ * their digests. Owner-only, and never printed.
  */
 export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDir), 'part-tokens.json');
+/**
+ * The agent hooks' producer file (Hub #926), unchanged 1.x, which the supervisor writes once the runtime's port is
+ * known and the hook script takes as its argument: `<data>/config/producer/producer.json`.
+ */
+export const producerOf = (dataDir: string): string => join(configDirOf(dataDir), 'producer', 'producer.json');
 
 /** Where the `pixoo-migrated` run keeps its synthetic Pixoo library, `<data>/pixoo-library` (Hub #931). */
 export const pixooLibraryOf = (dataDir: string): string => join(dataDir, 'pixoo-library');
@@ -154,12 +160,13 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
   const scenario = RUN_SCENARIOS[name];
   if (scenario === undefined) throw new Error(`no run scenario ${name}`);
   const tokens = partTokens();
+  const producer = producerToken();
   const dir = configDirOf(dataDir);
   const config = await writeConfiguration(dir, {
     ...(scenario.config === undefined ? {} : {modules: scenario.config}),
-    ...(scenario.simulated === undefined ? {} : {sections: await simulatedSections(dir, scenario.simulated)}), tokens,
+    ...(scenario.simulated === undefined ? {} : {sections: await simulatedSections(dir, scenario.simulated)}), tokens, producer,
   });
-  await writeFile(partTokensOf(dataDir), `${JSON.stringify(tokens)}\n`, {mode: 0o600});
+  await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer})}\n`, {mode: 0o600});
   await chmod(partTokensOf(dataDir), 0o600);
   const run: RunFile = {schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}), config};
   await writeFile(join(dataDir, RUN_FILE), `${JSON.stringify(run)}\n`, {mode: 0o600});

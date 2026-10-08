@@ -25,8 +25,8 @@ const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json')
 
 /**
  * The served candidate: the built runtime, its verification run and fixtures, the SDK, the profile, the agent-state
- * owner the core runs with its lifecycle contracts (#831), and the shipped device modules (the playback module, #929,
- * LIFX, #928, and the Pixoo, #843), in a stable order.
+ * owner the core runs with its lifecycle contracts (#831), the shipped device modules (the playback module, #929,
+ * LIFX, #928, and the Pixoo, #843) and the agent hook script (#926), in a stable order.
  */
 export function artifactFiles(at = root): string[] {
   const built = (dir: string, keep: (file: string) => boolean = () => true): string[] => {
@@ -45,6 +45,9 @@ export function artifactFiles(at = root): string[] {
     // The Pixoo module, with its render worker and media child process, which the runtime loads by file.
     ...built('modules/pixoo/dist/src'),
     ...built('modules/nanoleaf/dist/src'),
+    ...built('modules/codex-desktop/dist/src'),
+    // The 2.0 agent hook script (Hub #926), which a capture step runs as a client's hook command does; it is not built.
+    ...['apps/runtime/bin/monitor-hook.mjs'].filter(file => existsSync(join(at, file))),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -60,6 +63,7 @@ export const BUILD_SOURCES = [
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
   ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**', ':(glob)modules/tidbyt/src/**', ':(glob)modules/pixoo/src/**', ':(glob)modules/nanoleaf/src/**',
+  ':(glob)modules/codex-desktop/src/**',
 ];
 export const BUILD_OUTPUTS = [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
@@ -67,7 +71,7 @@ export const BUILD_OUTPUTS = [
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
   'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js', 'modules/tidbyt/dist/src/index.js', 'modules/pixoo/dist/src/index.js',
-  'modules/nanoleaf/dist/src/index.js',
+  'modules/nanoleaf/dist/src/index.js', 'modules/codex-desktop/dist/src/index.js',
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -238,9 +242,9 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --config, --environment test and the run\'s state directory'},
     {id: 'gateway', kind: 'actual', note: 'the runtime\'s gateway on its listener: the SDK edge, /api/v2, MCP, module pages and browser sign-in; each part has a run-generated credential in the run\'s configuration'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, the shipped playback, LIFX and Tidbyt modules, and a harness module that reports what the bus publishes'},
-    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns, SimulatedSpeakers, SimulatedLifx and the Tidbyt module\'s SimulatedCloud in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
-    {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, the shipped playback, LIFX, Tidbyt and Codex Desktop modules, and a harness module that reports what the bus publishes'},
+    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns, SimulatedSpeakers, SimulatedLifx, the Tidbyt module\'s SimulatedCloud and the Codex Desktop module\'s SimulatedMarker in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
+    {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step, and the 2.0 agent hook script with a synthetic 1.x producer file'},
   ],
   checks: [
     {id: 'build-current', doctor: true, run: () => buildCurrent()},

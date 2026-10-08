@@ -70,6 +70,7 @@ jobs:
       - run: npm run test:playback:built
       - run: npm run test:lifx-module:built
       - run: npm run test:tidbyt-module:built
+      - run: npm run test:codex-desktop:built
       # The old dashboard's unit tests stay, because #922 copies the dashboard into the runtime; App verification runs its browser smoke check.
       - run: npm run test:dashboard
   firmware:

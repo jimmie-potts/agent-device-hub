@@ -10,6 +10,7 @@ import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
+import {SimulatedMarker, createCodexDesktopModule} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
 import {SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
@@ -31,12 +32,12 @@ import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
 import {
-  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type ModuleName, type Role, type Seed, type Simulation,
-  type TransportName,
+  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
+  type Seed, type Simulation, type TransportName,
 } from './catalog.js';
 import {
-  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, describe, follow, partTokens, scenarioValidator, simulatePlayback, sourceOf,
-  writeConfiguration,
+  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, describe, follow, partTokens, producerToken, runHookScript, scenarioValidator,
+  simulateMarker, simulatePlayback, sourceOf, writeConfiguration, writeProducer,
 } from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
@@ -60,7 +61,7 @@ export interface MemoryHarness extends Harness {
    * One recorder serves every generation, so a restart's spans follow the crashed runtime's.
    */
   spans(): Promise<readonly string[]>;
-  /** The run-generated tokens, one per part, so a test can show they never leak. */
+  /** The run-generated tokens, one per part and the agent hooks' producer's, so a test can show they never leak. */
   tokens(): readonly string[];
   /** Stops everything the harness started and removes its state directory. */
   close(): Promise<void>;
@@ -120,8 +121,13 @@ class Memory implements MemoryHarness {
   readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
   readonly #pixoo = new SimulatedPixoo();
   readonly #nanoleaf = new SimulatedNanoleaf({now: () => this.#clock.now()});
+  /** The simulated Codex Desktop marker (Hub #926). */
+  readonly #marker = new SimulatedMarker();
   readonly #parts: ReadonlyMap<Role, Part>;
   readonly #tokens = partTokens();
+  /** The agent hooks' producer token and file (Hub #926), written once the gateway's port is known. */
+  readonly #producer = producerToken();
+  #producerFile: string | undefined;
   readonly #client: GatewayClient;
   /** The run's configuration file, read as the runtime reads it: the seed's sections and the edge's. */
   #config: RuntimeConfig | undefined;
@@ -153,7 +159,7 @@ class Memory implements MemoryHarness {
     this.stateDir = stateDir;
     this.reader = new Reader(seed.follows);
     this.#parts = new Map(ROLES.map(role => [role, {role, source: sourceOf(role), token: this.#tokens[role], participant: undefined, closed: false}]));
-    this.#client = new GatewayClient(() => this.url ?? '', this.#tokens);
+    this.#client = new GatewayClient(() => this.url ?? '', this.#tokens, this.#producer);
     this.#gateway = this.#nextGateway();
   }
 
@@ -163,7 +169,9 @@ class Memory implements MemoryHarness {
     const opening = new LogWriter(record => { this.#logs.push({generation: 1, record}); }, 'info', {now: this.#clock.now}).logger(RUNTIME_SCOPE);
     this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); }, opening);
     const {config} = this.#seed;
-    this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), {...(config === undefined ? {} : {modules: config}), tokens: this.#tokens}));
+    this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), {
+      ...(config === undefined ? {} : {modules: config}), tokens: this.#tokens, producer: this.#producer,
+    }));
     const edge = this.#config.edge;
     if (edge === undefined) throw new Error('the harness wrote no edge section');
     this.#edge = {config: edge, credentials: await readEdgeCredentials(edge.credentials)};
@@ -171,7 +179,9 @@ class Memory implements MemoryHarness {
     // The edge never closes an idle connection under a remote part that is about to reuse it.
     server.keepAliveTimeout = 0;
     this.#server = server;
-    this.url = `http://127.0.0.1:${await listenLoopback(server)}`;
+    const port = await listenLoopback(server);
+    this.url = `http://127.0.0.1:${port}`;
+    this.#producerFile = await writeProducer(join(this.stateDir, 'config'), port, this.#producer);
     await this.#boot();
     // Only a module the seed expects the runtime to refuse, such as one it configures badly, may be unhealthy here; its
     // scenario checks the refusal.
@@ -229,6 +239,7 @@ class Memory implements MemoryHarness {
     return {
       lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state(),
       pixoo: this.#pixoo.state(), nanoleaf: this.#nanoleaf.state(),
+      codexDesktop: this.#marker.state(),
     };
   }
 
@@ -257,6 +268,9 @@ class Memory implements MemoryHarness {
         return;
       case 'nanoleaf':
         this.#nanoleaf.act(simulation.action);
+        return;
+      case 'codex-desktop':
+        simulateMarker(this.#marker, simulation);
         return;
       case 'lamp':
         break;
@@ -303,7 +317,41 @@ class Memory implements MemoryHarness {
   }
 
   tokens(): readonly string[] {
-    return [...this.#parts.values()].map(part => part.token);
+    return [...[...this.#parts.values()].map(part => part.token), this.#producer];
+  }
+
+  async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
+    await this.#settled();
+    const producer = this.#producerFile;
+    if (producer === undefined) throw new Error('the harness wrote no producer file');
+    if (runtime === 'running') return runHookScript(producer, payload);
+    // The runtime stops as a process does: its gateway, its modules, and its listener, so the hook's call is refused.
+    const old = this.#current();
+    this.#gateway = this.#nextGateway();
+    await old.gateway.close();
+    this.#client.forget();
+    await old.host.stop();
+    const server = this.#server;
+    if (server === undefined) throw new Error('the harness has no listener');
+    const port = Number(new URL(this.url ?? '').port);
+    server.closeAllConnections();
+    await new Promise<void>(resolve => { server.close(() => { resolve(); }); });
+    if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#retire(part, false);
+    this.#release(old.watcher.close());
+    try {
+      return await runHookScript(producer, payload);
+    } finally {
+      // The service manager starts it again on the same port and state directory.
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen({host: '127.0.0.1', port}, () => {
+          server.off('error', reject);
+          resolve();
+        });
+      });
+      await this.#boot();
+      if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#connect(part);
+    }
   }
 
   problems(): readonly string[] {
@@ -453,6 +501,8 @@ class Memory implements MemoryHarness {
         return createPixooModule({transport: this.#pixoo});
       case 'nanoleaf':
         return createNanoleafModule({transport: this.#nanoleaf.request});
+      case 'codex-desktop':
+        return createCodexDesktopModule({transport: this.#marker});
     }
   }
 
