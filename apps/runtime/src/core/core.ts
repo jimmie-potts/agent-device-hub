@@ -188,6 +188,8 @@ class Core {
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
   #owner: AgentState | undefined;
+  /** Current positive Desktop archive evidence only; it expires when its module stops confirming it. */
+  readonly #archived = new Map<string, {observedAtMs: number; untilMs: number}>();
   /** Why the owner is not open, while it is not, and when to try again. */
   #ownerDown: ErrorCode = 'unavailable';
   readonly #reopen = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
@@ -318,7 +320,14 @@ class Core {
   }
 
   async #open(): Promise<void> {
-    this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now()});
+    this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now(),
+      isArchived: (identity, _signal, ancestors) => Promise.resolve([identity, ...ancestors].some(item => {
+        const key = sessionEntityId(item), evidence = this.#archived.get(key);
+        if (evidence === undefined) return false;
+        if (this.#clock.now() >= evidence.untilMs) { this.#archived.delete(key); return false; }
+        return true;
+      })),
+    });
     this.#reopen.reset();
   }
 
@@ -474,6 +483,28 @@ class Core {
         return;
       }
       const observation = message.data;
+      if (observation.event.kind === 'metadata-observed') {
+        if (message.source !== 'bunny/modules/codex-desktop') {
+          this.#log.info('message.received', {...fields, ...refused('forbidden')}, message);
+          return;
+        }
+        const key = sessionEntityId(observation.identity), nowMs = this.#clock.now();
+        const before = this.#archived.get(key);
+        if (observation.event.archived !== undefined && observation.observedAtMs >= (before?.observedAtMs ?? 0)) {
+          if (observation.event.archived && observation.observedAtMs + 7000 > nowMs) {
+            this.#archived.set(key, {observedAtMs: observation.observedAtMs, untilMs: Math.min(nowMs, observation.observedAtMs) + 7000});
+          } else this.#archived.delete(key);
+        }
+        const title = observation.title;
+        if (title === undefined) {
+          this.#log.debug('message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
+          return;
+        }
+        const cause = {message, kind: 'metadata.observed', entity: key, observation};
+        const result = await this.#store.during(cause, () => this.#call(owner => owner.setTitle(observation.identity, title, observation.observedAtMs)));
+        this.#log.info('message.received', {...fields, ...(result.ok ? {'bunny.outcome': result.outcome === 'applied' ? 'accepted' : result.outcome} : refused(result.refusal.code))}, message);
+        return;
+      }
       const cause = {message, kind: reducedKind(observation), entity: sessionEntityId(observation.identity), observation};
       const result = await this.#store.during(cause, () => this.#call(owner => owner.ingest(toEnvelope(observation))));
       if (result.ok) {

@@ -25,7 +25,9 @@
           "kind": {"const": "evidence-unavailable"},
           "dimension": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/dimension"},
           "reason": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/unavailable/properties/reason"}
-        }}
+        }},
+      {"type": "object", "additionalProperties": false, "required": ["kind"],
+        "properties": {"kind": {"const": "metadata-observed"}, "archived": {"type": "boolean"}}}
     ]},
     "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
     "occurredAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
@@ -39,6 +41,20 @@
   "allOf": [
     {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/hostSessionOnlyAtRoot"},
     {"if": {"properties": {"event": {"type": "object", "properties": {"kind": {"const": "read-observed"}}}}},
-      "then": {"properties": {"identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}}
+      "then": {"properties": {"identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}},
+    {"if": {"properties": {"event": {"type": "object", "properties": {"kind": {"const": "metadata-observed"}}}}},
+      "then": {
+        "anyOf": [
+          {"properties": {"event": {"type": "object", "required": ["archived"], "properties": {"archived": {"type": "boolean"}}}}},
+          {"required": ["title"], "properties": {"title": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/title"}}}
+        ],
+        "properties": {
+          "identity": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}},
+          "turn": {"type": "object", "properties": {"status": {"const": "unknown"}}},
+          "ordering": {"type": "object", "properties": {"status": {"const": "unknown"}}},
+          "parent": {"type": "object", "properties": {"status": {"enum": ["unknown", "top-level"]}}},
+          "label": false, "project": false, "projectId": false, "hostSessionId": false, "nativeEventId": false, "occurredAtMs": false
+        }
+      }}
   ]
 }

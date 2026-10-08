@@ -8,6 +8,7 @@
 import {constants} from 'node:fs';
 import {open, stat} from 'node:fs/promises';
 import {join} from 'node:path';
+import {metadataOf, type DesktopMetadata} from './metadata.js';
 
 /** The marker's name in the Codex home. */
 export const MARKER_FILE = '.codex-global-state.json';
@@ -21,7 +22,8 @@ const ID = /^[A-Za-z0-9_.-]{1,128}$/;
  * thread IDs, or null when it is missing, unreadable, oversized or not the known shape. A missing or unreadable marker
  * has the empty stamp, so the next read looks again.
  */
-export type MarkerRead = {status: 'unchanged'} | {status: 'retry'} | {status: 'read'; stamp: string; unread: readonly string[] | null};
+/** Existing marker response with independently read, validated Desktop metadata over the same private IPC. */
+export type MarkerRead = ({status: 'unchanged'} | {status: 'retry'} | {status: 'read'; stamp: string; unread: readonly string[] | null}) & Partial<DesktopMetadata>;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isId = (value: unknown): value is string => typeof value === 'string' && ID.test(value);
@@ -100,10 +102,10 @@ export async function readMarker(home: string, stamp: string): Promise<MarkerRea
 /** A reply as the module takes it from another process: one of the three shapes, or else a read that gives nothing. */
 export function markerReadOf(value: unknown): MarkerRead {
   if (isObject(value)) {
-    if (value.status === 'unchanged' || value.status === 'retry') return {status: value.status};
+    if (value.status === 'unchanged' || value.status === 'retry') return {status: value.status, ...metadataOf(value)};
     const {stamp, unread} = value;
     if (value.status === 'read' && typeof stamp === 'string' && (unread === null || (Array.isArray(unread) && unread.every(isId)))) {
-      return {status: 'read', stamp, unread: unread === null ? null : [...unread]};
+      return {status: 'read', stamp, unread: unread === null ? null : [...unread], ...metadataOf(value)};
     }
   }
   return {status: 'read', stamp: '', unread: null};

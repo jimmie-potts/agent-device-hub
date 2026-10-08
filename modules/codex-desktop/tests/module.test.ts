@@ -264,3 +264,25 @@ it('the module publishes only read observations of Codex Desktop sessions, sends
     await world.close();
   }
 });
+
+it('Desktop metadata publishes positives and independent titles, then clears unavailable archive evidence', async () => {
+  let archived: readonly string[] | null = ['closed'];
+  let stalled = false;
+  const world = await World.open({transport: {read: async () => stalled ? new Promise<MarkerRead>(() => {}) : {status: 'read', stamp: '', unread: null, archived, titles: [{id: 'one', title: {value: 'Desktop title', source: 'provider'}}]}, close: () => {}}});
+  try {
+    await world.session('one');await world.session('one-child', {parent: {status: 'known', identity: identityOf('one')}});
+    await world.session('one', {sourceId: 'other'});
+    await world.clock.advance(0);
+    const metadata = () => world.published.map(message => message.data as unknown as LifecycleObservation).filter(data => data.event?.kind === 'metadata-observed');
+    assert.equal(metadata().some(data => data.identity.sessionId === 'closed' && data.event.kind === 'metadata-observed' && data.event.archived === true), true);
+    assert.deepEqual(metadata().filter(data => data.title !== undefined).map(data => [data.identity.sessionId, data.identity.sourceId, data.title?.value]), [['one', SECTION.sourceId, 'Desktop title']]);
+    archived = null;await world.clock.advance(POLL_MS);
+    assert.equal(metadata().at(-1)?.event.kind, 'metadata-observed');
+    assert.equal(metadata().some(data => data.identity.sessionId === 'closed' && data.event.kind === 'metadata-observed' && data.event.archived === false), true);
+    archived = ['closed'];await world.clock.advance(POLL_MS);
+    stalled = true;await world.clock.advance(POLL_MS + READ_TIMEOUT_MS);
+    const closed = metadata().filter(data => data.identity.sessionId === 'closed').at(-1);
+    assert.equal(closed?.event.kind === 'metadata-observed' && closed.event.archived, false);
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});

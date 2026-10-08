@@ -40,6 +40,7 @@ export type SessionRecord = {
   label?: Label; title?: Title; project?: string; projectId?: string; hostSessionId?: string;
 };
 export type LifecycleEvent =
+  | {kind: 'metadata-observed'; archived?: boolean}
   | {kind: 'session-started' | 'turn-started' | 'activity-observed' | 'turn-ended' | 'turn-interrupted' | 'runtime-ended'}
   | {kind: 'question-continuing' | 'attention-input' | 'attention-approval' | 'attention-resolved'; attention: KnownId}
   | {kind: 'read-observed'; state: 'read' | 'unread'}

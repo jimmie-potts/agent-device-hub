@@ -56,3 +56,20 @@ test('durable 2.0 imports preserve legacy label precedence while adopting metada
   assert.equal((await owner.exportState()).formatVersion,'2.1');
  }finally{await owner.shutdown();}
 });
+
+test('Desktop metadata title preserves lifecycle evidence, labels and restart uncertainty',async()=>{
+ const storage=new MemoryStorage();let owner=await createAgentState(options(storage));
+ await owner.ingest(event(100));await owner.setLabel(identity,'Owner label');await owner.shutdown();
+ owner=await createAgentState(options(storage));
+ try{
+  const before=owner.snapshot('1.2').sessions[0];
+  assert.equal((await owner.setTitle(identity,{value:'Desktop title',source:'provider'},200)).ok,true);
+  const after=owner.snapshot('1.2').sessions[0];
+  assert.deepEqual(after.title,{value:'Desktop title',source:'provider'});assert.equal(after.label,'Owner label');
+  for(const field of ['activity','turn','read','ordering','notices','lastEvidenceAtMs','observedAtMs','restartUncertain'])assert.deepEqual(after[field],before[field],field);
+  await owner.setTitle(identity,{value:'Old title',source:'provider'},150);assert.equal(owner.snapshot('1.2').sessions[0].title.value,'Desktop title');
+  assert.equal((await owner.setTitle({...identity,sessionId:'absent'},{value:'No session',source:'provider'},250)).outcome,'stale');
+  assert.equal(owner.snapshot('1.2').sessions.length,1);
+  assert.equal(validateExport(await owner.exportState()).ok,true,'title commits keep the current durable schema');
+ }finally{await owner.shutdown();}
+});

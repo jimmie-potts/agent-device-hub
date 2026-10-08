@@ -3,6 +3,7 @@
 // reads it over its link; no path crosses it.
 import type {DeviceAction, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
 import {codexDesktopFactory} from './factory.js';
+import {metadataOf} from './metadata.js';
 import type {MarkerRead} from './marker.js';
 import {createCodexDesktopModule} from './module.js';
 import {SimulatedMarker} from './simulated.js';
@@ -12,8 +13,14 @@ const THREAD = /^[A-Za-z0-9_.-]{1,128}$/;
 const threads = (value: unknown): boolean => Array.isArray(value) && value.length <= 64 && value.every(id => typeof id === 'string' && THREAD.test(id));
 
 /** Desktop lists these threads as unread, the marker turns unusable, its folder stalls so every read waits, or it answers again. */
-function act(marker: SimulatedMarker, {action, sessions}: DeviceAction): void {
+function act(marker: SimulatedMarker, {action, sessions, session, title}: DeviceAction): void {
   switch (action) {
+    case 'archive':
+      marker.archive(sessions as readonly string[] | null);
+      return;
+    case 'title':
+      marker.title(session as string, title as string);
+      return;
     case 'list':
       marker.list(sessions as readonly string[]);
       return;
@@ -30,8 +37,16 @@ function act(marker: SimulatedMarker, {action, sessions}: DeviceAction): void {
 }
 
 export const codexDesktopSimulation: DeviceSimulation<SimulatedMarker, SimulatedMarker> = {
-  actions: ['list', 'unusable', 'stall', 'answer'],
-  admits: (action, {sessions, ...rest}) => Object.keys(rest).length === 0 && (action === 'list' ? threads(sessions) : sessions === undefined),
+  actions: ['list', 'unusable', 'stall', 'answer', 'archive', 'title'],
+  admits: (action, fields) => {
+    const {sessions, session, title, ...rest} = fields;
+    if (Object.keys(rest).length !== 0) return false;
+    if (action === 'title') return sessions === undefined && typeof session === 'string' && THREAD.test(session) &&
+      typeof title === 'string' && metadataOf({titles: [{id: session, title: {value: title, source: 'provider'}}]}).titles?.length === 1 && [...title].length <= 160;
+    if (session !== undefined || title !== undefined) return false;
+    if (action === 'archive') return sessions === null || threads(sessions);
+    return action === 'list' ? threads(sessions) : sessions === undefined;
+  },
   memory: {
     create: () => new SimulatedMarker(),
     state: marker => marker.state(),

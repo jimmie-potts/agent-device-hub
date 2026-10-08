@@ -9,7 +9,7 @@
 // reader that fails is tried again with capped backoff. The module never fails for the folder, and its stop never waits
 // on a read.
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {DeviceAvailability, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
 import {configureCodexDesktop, type CodexDesktopConfig} from './configuration.js';
 import {readEvidence, readObservation, type Evidence} from './evidence.js';
@@ -86,6 +86,8 @@ class DesktopRun {
   /** Consecutive reads that failed, for the backoff. */
   #failures = 0;
   #stamp = '';
+  readonly #archived = new Set<string>();
+  readonly #metadataSent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
   /** The unread threads of the last good read, or null when the marker gives no evidence now. */
   #unread: ReadonlySet<string> | null = null;
   /** Whether the last read found a usable marker, for logging each change once. */
@@ -235,6 +237,7 @@ class DesktopRun {
   #overdueRead(): void {
     if (this.#closing || !this.#reading) return;
     this.#overdue = true;
+    this.#metadata(null, []);
     this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
     this.#schedule(POLL_MS);
   }
@@ -249,6 +252,7 @@ class DesktopRun {
       this.#failures += 1;
       this.#stamp = '';
       this.#unread = null;
+      this.#metadata(null, []);
       this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
       // After the nth failure in a row, the next read waits 2 s times 2 to the n, at most a minute.
       this.#schedule(Math.min(READ_BACKOFF_MAX_MS, POLL_MS * 2 ** this.#failures));
@@ -271,6 +275,7 @@ class DesktopRun {
         this.#usability(read.unread !== null);
         break;
     }
+    this.#metadata(read.archived ?? null, read.titles ?? []);
     this.#evaluate();
   }
 
@@ -281,6 +286,48 @@ class DesktopRun {
     this.#usable = usable;
     if (!usable) this.#context.log.warn('operation.failed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'unavailable', 'bunny.reason': 'invalid-input'});
     else if (before === false) this.#context.log.info('operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'current'});
+  }
+
+  /** Metadata is independent of marker usability. Archive absence/unavailability clears earlier positives. */
+  #metadata(archived: readonly string[] | null, titles: readonly {id: string; title: Title}[]): void {
+    const nowMs = this.#context.clock.now();
+    const confirmed = new Set(archived ?? []);
+    const identity = (sessionId: string): Identity => ({provider: 'codex', client: 'desktop', hostId: this.#config.hostId, sourceId: this.#config.sourceId, sessionId});
+    for (const id of this.#archived) if (!confirmed.has(id)) this.#track(this.#publishMetadata(identity(id), nowMs, undefined, false));
+    this.#archived.clear();
+    for (const id of confirmed) {
+      this.#archived.add(id);
+      // Admission evidence has no session revision to acknowledge it: refresh on every successful poll.
+      this.#track(this.#publishMetadata(identity(id), nowMs, undefined, true));
+    }
+    const indexed = new Map(titles.map(entry => [entry.id, entry.title]));
+    for (const message of this.#copy?.states() ?? []) {
+      const session = message.data;
+      if (session.identity.provider !== 'codex' || session.identity.client !== 'desktop' || session.identity.hostId !== this.#config.hostId ||
+        session.identity.sourceId !== this.#config.sourceId || session.parent.status === 'known') continue;
+      const title = indexed.get(session.identity.sessionId);
+      if (title === undefined || title.value === session.title?.value && title.source === session.title.source) continue;
+      const mark = JSON.stringify([session.revision, title]);
+      const sent = this.#metadataSent.get(session.id);
+      if (sent?.mark === mark && nowMs - sent.atMs < sent.waitMs) continue;
+      this.#metadataSent.set(session.id, {mark, atMs: nowMs, waitMs: sent?.mark === mark ? Math.min(RESEND_MAX_MS, sent.waitMs * 2) : RESEND_FIRST_MS});
+      this.#track(this.#publishMetadata(session.identity, nowMs, title));
+    }
+    const current = new Set((this.#copy?.states() ?? []).map(message => message.subject));
+    for (const id of this.#metadataSent.keys()) if (!current.has(id)) this.#metadataSent.delete(id);
+  }
+
+  /** A title/archive observation is no activity, read, end or notice evidence. */
+  async #publishMetadata(identity: Identity, observedAtMs: number, title?: Title, archived?: boolean): Promise<void> {
+    const id = sessionEntityId(identity);
+    try {
+      const message = await this.#context.sdk.publish(`bunny.event.lifecycle.${id}`, {
+        kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject: id, dataschema: LIFECYCLE_SCHEMA,
+        data: {identity, turn: {status: 'unknown'}, parent: {status: 'unknown'}, ordering: {status: 'unknown'}, observedAtMs,
+          event: {kind: 'metadata-observed', ...(archived === undefined ? {} : {archived})}, ...(title === undefined ? {} : {title})},
+      });
+      this.#context.log.debug('lifecycle.observed', {'bunny.operation': 'lifecycle', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
+    } catch { this.#metadataSent.delete(id); }
   }
 
   // Evidence

@@ -627,7 +627,7 @@ export class CoreStore implements Storage {
     const intake = cause?.observation === undefined ? undefined : {...cause, observation: cause.observation};
     const before = new Map((prior?.sessions ?? []).map(session => [entityOf(session), session]));
     const after = new Map((next?.sessions ?? []).map(session => [entityOf(session), session]));
-    if (intake !== undefined && change?.replace === undefined) {
+    if (intake !== undefined && intake.kind !== 'metadata.observed' && change?.replace === undefined) {
       const session = after.get(intake.entity), old = before.get(intake.entity);
       if (session !== undefined) {
         // Fresh lifecycle evidence ends restart uncertainty; read evidence and a repeat that refreshed nothing do not.
@@ -705,6 +705,10 @@ export class CoreStore implements Storage {
     const intake = this.#cause;
     if (intake === undefined) return undefined;
     if (change.replace === undefined) {
+      const metadata = intake.observation;
+      if (intake.kind === 'metadata.observed' && change.journal === undefined && change.session !== undefined && entityOf(change.session) === intake.entity &&
+        metadata?.event.kind === 'metadata-observed' && metadata.title !== undefined && change.session.metadataObservedAtMs === metadata.observedAtMs &&
+        change.session.title?.value === metadata.title.value && change.session.title.source === metadata.title.source) return intake;
       return change.session !== undefined && entityOf(change.session) === intake.entity && change.journal?.kind === intake.kind ? intake : undefined;
     }
     // A runtime end retires the session's tree in one replacement, with a retirement guard at the commit's instant.

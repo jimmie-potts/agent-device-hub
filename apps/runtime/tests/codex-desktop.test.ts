@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {constants} from 'node:fs';
-import {chmod, mkdtemp, open, readdir, realpath, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
@@ -13,7 +13,7 @@ import {sessionEntityId, type Identity, type LifecycleEvent, type SessionRecord}
 import type {Sdk, SyncedCopy} from '@jimmie-potts/sdk';
 import {createCoreModule, type LogRecord} from '../src/index.js';
 import {lifecycleOf} from './fixtures/agents.js';
-import {contextOf, entry, fixture, health, it, run} from './support.js';
+import {contextOf, entry, fixture, flush, health, it, manualClock, run, stateDir} from './support.js';
 
 const SOURCE = {hostId: 'host-sim', sourceId: 'codex-desktop'} as const;
 const desktop = (sessionId: string, sourceId: string = SOURCE.sourceId): Identity => ({provider: 'codex', client: 'desktop', hostId: SOURCE.hostId, sourceId, sessionId});
@@ -132,4 +132,100 @@ it('a Codex home that stalls leaves the core taking observations, the module run
   await runtime.stop();
   assert.ok(performance.now() - started < 3000, `the runtime stopped in ${Math.round(performance.now() - started)} ms`);
   assert.equal(logs.some(record => record.event_name === 'runtime.module.stop-timed-out'), false);
+});
+
+
+it('Desktop metadata guards scoped root and ancestor admission, unarchive and expiry without inventing activity', async context => {
+  const clock = manualClock();
+  const metadata = fixture('codex-desktop'), hook = fixture('hook');
+  const {logs} = await run(context, {modules: [createCoreModule(), metadata, hook], clock, scheduler: clock.scheduler});
+  const trusted = contextOf(metadata).sdk, untrusted = contextOf(hook).sdk;
+  const result = await untrusted.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  if (result.status !== 'synced') assert.fail('the core served its sessions');
+  const copy = result.copy;
+  context.after(async () => { await copy.close(); });
+  const send = async (sdk: Sdk, identity: Identity, event: LifecycleEvent, options: {title?: string; parent?: Identity; label?: string; hostSessionId?: string} = {}) => {
+    const subject = sessionEntityId(identity);
+    const data = {...lifecycleOf(event, clock.now(), {identity, turn: event.kind === 'metadata-observed' ? null : 'turn', ...(options.parent === undefined ? {} : {parent: {status: 'known', identity: options.parent}}), ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}), ...(options.hostSessionId === undefined ? {} : {hostSessionId: options.hostSessionId})}), ...(options.label === undefined ? {} : {label: {value: options.label, origin: 'user' as const}})};
+    await sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data});
+    for (let n = 0; n < 8; n += 1) await flush();
+  };
+  const record = (identity: Identity) => copy.states().find(message => message.subject === sessionEntityId(identity))?.data;
+  const closed = desktop('closed');
+  await send(trusted, closed, {kind: 'metadata-observed', archived: true});
+  await send(untrusted, closed, {kind: 'turn-started'});
+  await send(untrusted, desktop('child'), {kind: 'turn-started'}, {parent: closed});
+  assert.equal(record(closed), undefined);assert.equal(record(desktop('child')), undefined);
+  await send(untrusted, desktop('closed', 'other'), {kind: 'turn-started'});
+  assert.ok(record(desktop('closed', 'other')));
+  await send(trusted, closed, {kind: 'metadata-observed', archived: false});
+  await send(untrusted, closed, {kind: 'turn-ended'}, {label: 'Owner label', hostSessionId: 'host-session'});
+  const before = structuredClone(record(closed));assert.ok(before);
+  clock.advance(1000);
+  await send(trusted, closed, {kind: 'metadata-observed'}, {title: 'Desktop title'});
+  const after = record(closed);assert.ok(after);
+  assert.deepEqual(after.title, {value: 'Desktop title', source: 'provider'});assert.equal(after.label?.value, 'Owner label');
+  for (const field of ['activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  await send(untrusted, closed, {kind: 'metadata-observed'}, {title: 'Forged title'});
+  await send(untrusted, desktop('forged'), {kind: 'metadata-observed', archived: true});
+  await send(untrusted, desktop('forged'), {kind: 'turn-started'});
+  assert.equal(record(closed)?.title?.value, 'Desktop title');assert.ok(record(desktop('forged')));
+  await send(trusted, desktop('absent-title'), {kind: 'metadata-observed'}, {title: 'No session'});
+  assert.equal(record(desktop('absent-title')), undefined);
+  const expires = desktop('expires');
+  await send(trusted, expires, {kind: 'metadata-observed', archived: true});
+  clock.advance(7000);
+  await send(untrusted, expires, {kind: 'turn-started'});assert.ok(record(expires));
+  assert.ok(logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.code'] === 'forbidden'));
+});
+
+it('Desktop metadata from the real reader keeps archives closed and titles independent of a missing marker', async context => {
+  const home = await codexHome(context);
+  await mkdir(join(home, 'archived_sessions'));
+  const file = join(home, 'archived_sessions', 'rollout-2026-10-08T01-00-00-closed.jsonl');
+  await writeFile(file, 'PRIVATE_TRANSCRIPT_CANARY');
+  await writeFile(join(home, 'session_index.jsonl'), JSON.stringify({id: 'one', thread_name: 'Desktop title'}));
+  const probe = fixture('probe');
+  const {logs} = await run(context, {modules: [createCoreModule(), createCodexDesktopModule({transport: folderReader()}), probe], configFile: await privateConfig(context, home)});
+  const sdk = contextOf(probe).sdk;
+  const result = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  if (result.status !== 'synced') assert.fail('the core served its sessions');
+  const copy = result.copy;context.after(async () => { await copy.close(); });
+  await observe(sdk, desktop('one'), {kind: 'turn-ended'});
+  await until(copy, desktop('one'), record => record.title?.value === 'Desktop title', 'the independent title');
+  await observe(sdk, desktop('closed'), {kind: 'turn-started'});
+  await observe(sdk, desktop('closed-child'), {kind: 'turn-started'}, desktop('closed'));
+  await new Promise(resolve => { setTimeout(resolve, 100); });
+  assert.equal(copy.states().some(message => ['closed', 'closed-child'].includes(message.data.identity.sessionId)), false);
+  await rm(file);
+  const limit = performance.now() + 6000;
+  while (!logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.participant'] === 'bunny/modules/codex-desktop' && log.attributes['bunny.outcome'] === 'accepted') && performance.now() < limit) await flush();
+  // The next completed poll reports the missing positive; a fresh hook then admits the conversation.
+  await new Promise(resolve => { setTimeout(resolve, 2200); });
+  await observe(sdk, desktop('closed'), {kind: 'turn-started'});
+  await until(copy, desktop('closed'), () => true, 'fresh unarchived work');
+  assert.equal(JSON.stringify(logs).includes(home), false);
+});
+
+
+it('Desktop metadata title commits preserve real core restart uncertainty and host session identity', async context => {
+  const directory = await stateDir(context), clock = manualClock();
+  const hook = fixture('hook');
+  const first = await run(context, {modules: [createCoreModule(), hook], stateDir: directory, clock, scheduler: clock.scheduler});
+  const identity = desktop('restart'), subject = sessionEntityId(identity);
+  const original = {...lifecycleOf({kind: 'turn-ended'}, clock.now(), {identity, hostSessionId: 'host-session'}), label: {value: 'Owner label', origin: 'user' as const}};
+  await contextOf(hook).sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data: original});
+  for (let n = 0; n < 8; n += 1) await flush();
+  await first.runtime.stop();
+  clock.advance(1000);
+  const metadata = fixture('codex-desktop');
+  await run(context, {modules: [createCoreModule(), metadata], stateDir: directory, clock, scheduler: clock.scheduler});
+  const sdk = contextOf(metadata).sdk, synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  if (synced.status !== 'synced') assert.fail('the restarted core served its sessions');
+  context.after(async () => { await synced.copy.close(); });
+  const before = synced.copy.states()[0]?.data;assert.ok(before);assert.equal(before.restartUncertain, true);
+  await sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data: lifecycleOf({kind: 'metadata-observed'}, clock.now(), {identity, turn: null, title: {value: 'Desktop title', source: 'provider'}})});
+  const after = await until(synced.copy, identity, record => record.title?.value === 'Desktop title', 'the persisted metadata');
+  for (const field of ['activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  assert.equal(after.label?.value, 'Owner label');
 });

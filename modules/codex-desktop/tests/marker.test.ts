@@ -106,7 +106,7 @@ it('the real reader reads the marker in its own process, and starts again after 
   try {
     const first = await reader.read(dir, '');
     assert.deepEqual(listed(first), ['one']);
-    assert.deepEqual(await reader.read(dir, first.status === 'read' ? first.stamp : ''), {status: 'unchanged'});
+    assert.deepEqual(await reader.read(dir, first.status === 'read' ? first.stamp : ''), {status: 'unchanged', archived: null, titles: []});
     reader.close();
     assert.deepEqual(listed(await reader.read(dir, '')), ['one'], 'a new reader after the first ended');
   } finally {
