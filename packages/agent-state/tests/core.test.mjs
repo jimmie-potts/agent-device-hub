@@ -376,3 +376,41 @@ test('journal count caps keep state, chosen labels and undismissed notices until
   assert.equal(restored.snapshot().sessions.length,0);
   await restored.shutdown();
 });
+
+test('all consumers acknowledge one notice in one save without changing read or lifecycle evidence',async()=>{
+  const storage=new MemoryStorage(),commits=[];
+  const acquire=storage.acquire.bind(storage);
+  storage.acquire=async(...args)=>{
+    const lease=await acquire(...args);
+    return {...lease,commit:async(change,signal)=>{commits.push(structuredClone(change));return lease.commit(change,signal);}};
+  };
+  const owner=await createAgentState(options(storage));
+  await owner.ingest(envelope('turn.started',1));
+  await owner.ingest(envelope('turn.ended',2));
+  const before=owner.snapshot(),notice=before.sessions[0].notices.at(-1);
+  // Read back the actual committed owner state; one revision identifies one atomic replacement.
+  const saved=commits.length;
+  const result=await owner.acknowledgeAll(identity,notice.id);
+  assert.equal(result.ok,true);
+  const after=owner.snapshot();
+  assert.equal(commits.length,saved+1);
+  assert.equal(after.revision,before.revision+1);
+  assert.deepEqual(after.sessions[0].notices.at(-1).acknowledgedBy,['pixoo','nanoleaf']);
+  assert.deepEqual([after.sessions[0].read,after.sessions[0].lastEvidenceAtMs,after.sessions[0].activity],
+    [before.sessions[0].read,before.sessions[0].lastEvidenceAtMs,before.sessions[0].activity]);
+  assert.equal((await owner.acknowledgeAll(identity,notice.id)).outcome,'duplicate');
+  assert.equal(owner.snapshot().revision,after.revision);
+  await owner.shutdown();
+});
+
+test('all-consumer acknowledgment refuses an older retained notice after a newer one arrives',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(envelope('turn.started',1));await owner.ingest(envelope('turn.ended',2));
+  const old=owner.snapshot().sessions[0].notices.at(-1).id;
+  await owner.ingest(envelope('turn.started',3,{turn:{status:'known',id:'turn-2'}}));
+  await owner.ingest(envelope('turn.ended',4,{turn:{status:'known',id:'turn-2'}}));
+  const before=owner.snapshot();
+  assert.deepEqual(await owner.acknowledgeAll(identity,old),{ok:false,code:'revision-conflict'});
+  assert.deepEqual(owner.snapshot(),before);
+  await owner.shutdown();
+});

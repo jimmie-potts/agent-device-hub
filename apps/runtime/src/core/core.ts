@@ -11,7 +11,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionLabelSetRequest, type SessionRecord,
+  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
   type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
@@ -259,6 +259,7 @@ class Core {
       this.#sdk.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => this.#observe(message)),
       this.#sdk.respond<NoticeAcknowledgeRequest>('bunny.cmd.notice-acknowledge.*', command => this.#acknowledge(command)),
       this.#sdk.respond<ApprovalRecoverRequest>('bunny.cmd.approval-recover.*', command => this.#recover(command)),
+      this.#sdk.respond<NoticeClearRequest>('bunny.cmd.notice-clear.*', command => this.#clearNotice(command)),
       this.#sdk.respond<SessionLabelSetRequest>('bunny.cmd.session-label-set.*', command => this.#label(command)),
       ...this.#tracker.start(),
       ...this.#parts.flatMap(part => part.start?.(handle) ?? []),
@@ -615,6 +616,56 @@ class Core {
     } finally {
       this.#tracker.endOperator(command);
     }
+  }
+
+  /** One operator override: all configured acknowledgments and completion share the owner's save. */
+  async #clearNotice(command: Command<NoticeClearRequest>): Promise<Reply> {
+    if (!this.#tracker.admitOperator(command)) return errorBody('forbidden', {detail: 'this command has no operator admission'});
+    command = {...command, data: structuredClone(command.data)};
+    try {
+      await this.#ready;
+      if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
+      return await this.#run(async () => {
+        const owner = await this.#ensureOwner();
+        if (!('ingest' in owner)) return errorBody(owner.code, {detail: owner.detail});
+        const {noticeId, expectedRevision} = command.data;
+        const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
+        const guard = (): Refusal | undefined => {
+          const record = current();
+          return record === undefined ? {code: 'not-found', detail: 'no such session'} :
+            record.revision !== expectedRevision || (record.notices.at(-1)?.id ?? null) !== noticeId
+              ? {code: 'revision-conflict', detail: 'the session or current notice changed since it was read; read it again'} : undefined;
+        };
+        const refusal = guard();
+        if (refusal !== undefined) return errorBody(refusal.code, {detail: refusal.detail});
+        const record = current();
+        if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
+        const notice = record.notices.at(-1);
+        let committed: (() => void) | undefined;
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        if (noticeId === null || this.#consumers.every(consumer => notice?.acknowledgedBy.includes(consumer.id) === true)) {
+          try { await this.#store.transaction(complete); }
+          catch { return errorBody(this.#store.takeFailure() === 'full' ? 'capacity' : 'internal', {detail: 'the core could not complete the notice action'}); }
+        } else {
+          let intervened: Refusal | undefined;
+          const result = await this.#store.during({message: command, kind: 'notice.acknowledged', entity: record.id},
+            () => this.#call(selected => selected.acknowledgeAll(record.identity, noticeId), () => intervened),
+            (_change, tx) => {
+              intervened = guard();
+              if (intervened !== undefined) throw new Error('notice-revision-conflict');
+              complete(tx);
+            });
+          if (!result.ok) {
+            const failed = intervened ?? result.refusal;
+            return errorBody(failed.code, {detail: failed.detail});
+          }
+          if (committed === undefined) return errorBody('internal', {detail: 'the notice save did not complete its action'});
+        }
+        committed?.();
+        this.#schedule();
+        return {status: 'accepted'};
+      });
+    } finally { this.#tracker.endOperator(command); }
   }
 
   /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */

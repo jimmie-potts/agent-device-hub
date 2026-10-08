@@ -27,7 +27,7 @@ it('the catalog names each scenario once, the core\'s first, and each one observ
     'approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions',
     'end-to-end', 'configured-module', 'misconfigured-module', 'device-owners', 'gateway-reads', 'grants-and-duplicates', 'approval-recovery',
     'module-contributions', 'agent-hooks',
-    'dashboard-sessions', 'dashboard-finished-turn', 'session-label', 'dashboard-controls', 'operation-records',
+    'dashboard-sessions', 'dashboard-finished-turn', 'session-label', 'dashboard-controls', 'notice-clear', 'operation-records',
   ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);

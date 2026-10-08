@@ -332,6 +332,21 @@ export async function createAgentState(options:Options) {
       const selected=structuredClone(identity);
       return queue(async()=>{const old=get(selected);if(!old)return {ok:false,code:'invalid-operation'};const next=structuredClone(old);if(origin==='agent'&&old.label!==undefined&&old.labelOrigin!=='agent')return {ok:true,revision:data.revision,outcome:'stale'};if(label===null){delete next.label;delete next.labelOrigin;}else{next.label=label;next.labelOrigin=origin;}return commit(next,'label');});
     },
+    /** Acknowledges the selected latest notice for every configured consumer in one queued save. */
+    acknowledgeAll(identity:Identity,noticeId:string):Promise<Outcome>{
+      if(!identify(identity)||!id(noticeId))return Promise.resolve({ok:false,code:'invalid-operation'});
+      const selected=structuredClone(identity);
+      return queue(async()=>{
+        const previous=get(selected);if(!previous)return {ok:false,code:'invalid-operation'};
+        if(previous.notices.at(-1)?.id!==noticeId)return {ok:false,code:'revision-conflict'};
+        const session=structuredClone(previous),notice=session.notices.at(-1);
+        if(!notice)return {ok:false,code:'invalid-operation'};
+        const missing=consumers.filter(consumer=>!notice.acknowledgedBy.includes(consumer.id));
+        if(missing.length===0)return {ok:true,revision:data.revision,outcome:'duplicate'};
+        notice.acknowledgedBy.push(...missing.map(consumer=>consumer.id));
+        return commit(session,'notice.acknowledged');
+      });
+    },
     acknowledge(identity:Identity,noticeId:string,consumerId:string):Promise<Outcome>{
       if(!identify(identity)||!id(noticeId)||!consumers.some(c=>c.id===consumerId))return Promise.resolve({ok:false,code:'invalid-operation'});
       const selected=structuredClone(identity);

@@ -1118,6 +1118,7 @@ Use Node 24 from the worktree root. `npm run build` builds the page into
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
+node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use

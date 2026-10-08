@@ -5,10 +5,13 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
 import {deviceAction, operationView} from '../../dashboard/src/devices.js';
 import {SIGN_SECTION} from '../fixtures/sign.js';
+import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, frameDigest, renderDashboard, type DisplayRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
+import {NANOLEAF_FAMILIES, SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
+import {PLAYBACK_SECTION} from './modules/playback.js';
 import {chipOf} from '../../dashboard/src/sessions.js';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../fixtures/agents.js';
 import {
-  CORE_FAMILIES, StepFailure, act, answers, bodyOf, expect, holds, publish, sendOnce, session, show, type Harness, type Outcome, type Scenario,
+  CORE_FAMILIES, StepFailure, act, answers, bodyOf, deviceState, dispatchOnce, expect, holds, publish, sendOnce, session, show, type Harness, type Outcome, type Scenario,
 } from './framework.js';
 
 const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
@@ -186,4 +189,52 @@ const dashboardControls: Scenario = {
   ],
 };
 
-export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn, dashboardLabels, dashboardControls];
+/** The module records and the Pixoo simulator follow the same acknowledged owner record. */
+const pixooShowsNoticeRecord = (h: Harness): Outcome => {
+  const record = session(h);
+  if (record === undefined) return 'no session record';
+  const {label, ...visible} = record;
+  const layout = new DashboardPager().layout({connection: 'current', snapshot: {revision: record.revision, collector: 'running',
+    sessions: [{...visible, ...(label === undefined ? {} : {label: label.value})}]}}, 0);
+  const expected = renderDashboard(layout).map(frame => frameDigest(frame));
+  const shown = deviceState<SimulatedPixooState>(h, 'pixoo').shown?.digests;
+  const display = h.reader.states<DisplayRecord>(PIXOO.display, 'bunny/modules/pixoo')[0]?.data;
+  return display?.mode === 'monitor' && display.monitor.connection === 'current' && display.monitor.matched === 1 && show(shown) === show(expected)
+    || `Pixoo record ${show(display)}, frame digests ${show(shown)}, expected ${show(expected)}`;
+};
+const dashboardNoticeClear: Scenario = {
+  id: 'notice-clear', title: 'one operator override clears the current notice in the dashboard, Nanoleaf and Pixoo records',
+  seed: {modules: ['core', 'playback', 'nanoleaf', 'pixoo'], follows: [['session', 'operation'],
+    {owner: 'bunny/modules/nanoleaf', families: [NANOLEAF_FAMILIES.wall.family]}, {owner: 'bunny/modules/pixoo', families: [PIXOO.display]}],
+    config: {playback: PLAYBACK_SECTION, nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION}},
+  steps: [
+    act('the operator selects Pixoo Monitor', h => dispatchOnce(h, 'operator', 'notice-monitor', {key: 'bunny.cmd.device-mode-set.pixoo-1',
+      draft: {type: 'org.bunny.device-mode.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}}, 'req-notice-monitor')),
+    act('the hook observes a finished turn', async h => {await publish(h, sessionStarted); await publish(h, turnStarted); await publish(h, turnEnded);}),
+    expect('the dashboard row is unread', dashboardShows('finished')),
+    expect('Nanoleaf holds the unread notice', h => h.reader.states<{tasks: {status: string}[]}>(NANOLEAF_FAMILIES.wall.family, 'bunny/modules/nanoleaf')
+      .some(message => message.data.tasks.some(task => task.status === 'unread')) || 'no unread Nanoleaf task', 5000),
+    expect('Pixoo displays the unread record', pixooShowsNoticeRecord, 5000),
+    expect('a reader cannot use the override', async h => {
+      const record = session(h); if (record === undefined) return 'no session';
+      const answer = await h.gateway({as: 'reader', method: 'POST', path: '/api/v2/commands/notice-clear', body: {target: record.id,
+        requestId: 'req-notice-reader', data: {noticeId: record.notices.at(-1)?.id, expectedRevision: record.revision}}});
+      return answer.status === 403 && bodyOf<{error?: {code?: string}}>(answer)?.error?.code === 'forbidden' || `reader answered ${answer.status}`;
+    }),
+    act('the operator clears the selected current notice once', async h => {
+      const record = session(h); if (record === undefined) throw new StepFailure('no session');
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/notice-clear', body: {target: record.id,
+        requestId: 'req-notice-clear', data: {noticeId: record.notices.at(-1)?.id, expectedRevision: record.revision}}});
+      if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure(`override answered ${answer.status}`);
+    }),
+    expect('the owner records every configured consumer', h => acknowledgedBy(h, ['dashboard', 'nanoleaf', 'pixoo'])),
+    expect('the passive dashboard row clears from the synced record', dashboardShows('idle')),
+    expect('Nanoleaf holds the cleared notice', h => h.reader.states<{tasks: {status: string}[]}>(NANOLEAF_FAMILIES.wall.family, 'bunny/modules/nanoleaf')
+      .some(message => message.data.tasks.length === 1 && message.data.tasks.every(task => task.status === 'idle')) || 'Nanoleaf notice remains unread', 5000),
+    expect('Pixoo displays the cleared record', pixooShowsNoticeRecord, 5000),
+    expect('the operation copy records observed metadata completion', h => h.reader.states<OperationRecord>('operation')
+      .some(message => message.data.requestId === 'req-notice-clear' && message.data.status === 'completed' && message.data.evidence === 'observed') || 'no completed override'),
+  ],
+};
+
+export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn, dashboardLabels, dashboardControls, dashboardNoticeClear];

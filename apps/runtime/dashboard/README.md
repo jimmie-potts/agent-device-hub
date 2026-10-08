@@ -86,7 +86,14 @@ read evidence, any consumer's acknowledgment, or a later known turn. Ending the
 session removes the row. Missing read evidence or an unknown turn never counts
 as read. The page never clears a finished turn itself or on a timer, and has no
 row acknowledge button (owner decision, 2026-10-08). Clearing a notice on every
-device is the operator tool on Connections owned by #1009.
+device is the confirmed **Clear this notice on every device** override in Connections' **Operator
+tools** section (#1009). Select a session and confirm its current notice. Control authority and
+current synced session evidence are required; a changed notice or revision is refused. Requested
+state, the accepted or uncertain reply, operation completion and the synced consumer acknowledgments
+remain separate. The result comes from those records, never an accepted reply alone. The override
+acknowledges all configured consumers atomically, preserves consumer self-acknowledgment, and proves
+no provider readership or physical-device result. Lost replies, reload and reconnect never resend
+it.
 
 ## Sign-in
 
