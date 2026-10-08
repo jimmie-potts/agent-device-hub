@@ -36,12 +36,35 @@ export const EXIT = {ok: 0, mismatch: 1, usage: 2, refused: 3, failed: 4} as con
 
 const MODULE = 'nanoleaf';
 
+/** The stages of `migrate`'s write after the module's store is filled, in order. */
+export type Stage = 'checkpoint' | 'closed' | 'secrets' | 'section';
+
 export type NanoleafMigrationOptions = {
   /** Writes one line of output, with its newline. */
   write: (line: string) => void;
-  /** Runs after the module's store is written and before the secret files are; only tests pass it. */
-  beforeSecrets?: () => Promise<void>;
+  /** Runs at each stage of `migrate`'s write, before the stage; only tests pass it. */
+  stage?: (name: Stage) => Promise<void>;
+  /**
+   * Stops the tool. Before `migrate` writes, it refuses with `interrupted`; once it has written, it stops at the next
+   * stage and removes what it wrote. `verify` refuses with `interrupted` instead of reporting.
+   */
+  signal?: AbortSignal;
 };
+
+/**
+ * A signal that aborts on the process's first SIGINT or SIGTERM, which the entry point passes, so a stopped migration
+ * removes what it wrote. Both listeners go with the first signal, so a second one stops the process at once.
+ */
+export function abortOnSignals(target: Pick<NodeJS.EventEmitter, 'once' | 'removeListener'> = process): AbortSignal {
+  const controller = new AbortController();
+  const names = ['SIGINT', 'SIGTERM'] as const;
+  const stop = (): void => {
+    for (const name of names) target.removeListener(name, stop);
+    controller.abort();
+  };
+  for (const name of names) target.once(name, stop);
+  return controller.signal;
+}
 
 type Operation = 'migrate' | 'verify';
 type Input = {operation: Operation; source: string; stateDir: string; secretsDir: string; section: string};
@@ -59,6 +82,8 @@ const TEXT: Readonly<Record<string, string>> = {
   'module-db-not-private': 'The Nanoleaf module\'s database file is not a private regular file with one link.',
   'module-folder-not-private': 'The Nanoleaf module\'s folder, or the modules folder, is not a private directory.',
   'disk-short': 'The file system ran out of space while the tool wrote.',
+  'destination-not-clean': 'The module\'s database kept a log after the tool closed it, so its file lacks commits: nothing was migrated.',
+  interrupted: 'A signal stopped the tool before it finished.',
   internal: 'The tool failed unexpectedly.',
 };
 const STATE_DIR = 'The state directory is refused: it must be absolute, private, outside every Git checkout and off /mnt, with no link along it.';
@@ -161,7 +186,7 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
     if (operation === 'verify') {
       if (!await exists(database)) throw new Refusal('destination-missing');
       source = InstalledState.open(input.source);
-      return await verify(source, input, database, folder, emit);
+      return await verify(source, input, database, folder, emit, options.signal);
     }
     const secretsDir = await privateDirectory(input.secretsDir, 'secrets-dir-refused');
     await privateDirectory(dirname(input.section), 'section-dir-refused');
@@ -169,6 +194,7 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
     source = InstalledState.open(input.source);
     const converted = convertNanoleafState(source, secretsDir);
     for (const path of Object.values(converted.section.secrets)) if (await exists(path)) throw new Refusal('destination-not-empty');
+    if (options.signal?.aborted === true) throw new Refusal('interrupted');
     return await migrateInto(source, converted, {stateDir, database, folder, secretsDir, section: input.section}, options, emit);
   } catch (error) {
     emit({operation, result: 'refused', ...refusalOf(error)});
@@ -186,13 +212,25 @@ async function migrateInto(source: InstalledState, converted: ConvertedNanoleaf,
   emit: (record: object) => void): Promise<number> {
   let db: DatabaseSync | undefined;
   const written: string[] = [];
+  // Every write is synchronous and they run one after another, so none is still running when a failure removes what
+  // was written. A signal is handled between stages.
+  const stage = async (name: Stage): Promise<void> => {
+    await options.stage?.(name);
+    await new Promise<void>(resolve => { setImmediate(resolve); });
+    if (options.signal?.aborted === true) throw new Refusal('interrupted');
+  };
   try {
     db = openModuleDatabase(targets.stateDir, MODULE);
     const report = migrateNanoleaf(source, {database: db, folder: openModuleFolder(targets.stateDir, MODULE)});
-    // A clean close folds any log into the file, so the verifier and the runtime find the file whole.
+    await stage('checkpoint');
+    // The log goes into the file before the close, whose own checkpoint would keep the log on a full disk without an
+    // error: so a full disk is `disk-short` here, and the verifier and the runtime find the file whole.
+    foldLog(db);
     db.close();
     db = undefined;
-    await options.beforeSecrets?.();
+    await stage('closed');
+    if (await logLeft(targets.database)) throw new Refusal('destination-not-clean');
+    await stage('secrets');
     for (const [name, token] of converted.tokens) {
       const path = converted.section.secrets[name];
       if (path === undefined) throw new TypeError('the section names no file for a secret');
@@ -202,6 +240,7 @@ async function migrateInto(source: InstalledState, converted: ConvertedNanoleaf,
       written.push(path);
     }
     syncDirectory(targets.secretsDir);
+    await stage('section');
     writePrivate(targets.section, sectionText(converted.section));
     written.push(targets.section);
     syncDirectory(dirname(targets.section));
@@ -222,6 +261,28 @@ async function migrateInto(source: InstalledState, converted: ConvertedNanoleaf,
     emit({operation: 'migrate', result: 'failed', code, message, destination: removed ? 'removed' : 'left'});
     return EXIT.failed;
   }
+}
+
+/**
+ * Checkpoints the module's log into its file and truncates it. SQLite refuses on a full disk with `SQLITE_FULL`; a
+ * checkpoint that leaves frames behind is refused too. A file that kept its rollback journal, as a new file on a full
+ * disk does, reports -1 for both counts.
+ */
+function foldLog(db: DatabaseSync): void {
+  const result = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
+  if (result?.busy !== 0 || result.log !== result.checkpointed) throw new Refusal('destination-not-clean');
+}
+
+/** Whether a log or journal with content is left beside the module's database after its close. */
+async function logLeft(database: string): Promise<boolean> {
+  for (const suffix of ['-wal', '-journal']) {
+    try {
+      if ((await lstat(`${database}${suffix}`)).size > 0) return true;
+    } catch (error) {
+      if (errno(error) !== 'ENOENT') throw error;
+    }
+  }
+  return false;
 }
 
 /** Removes what `migrate` wrote: the module's database with its log and journal, its folder, and each file it created. */
@@ -276,7 +337,8 @@ function sectionDifferences(expected: NanoleafSection, actual: unknown): number 
  * Compares the module's store and folder, the section and each secret file with the source, and reports each kind of
  * mismatch. A secret is read through the runtime's own reader, as the module will read it, and compared by digest.
  */
-async function verify(source: InstalledState, input: Input, database: string, folder: string, emit: (record: object) => void): Promise<number> {
+async function verify(source: InstalledState, input: Input, database: string, folder: string, emit: (record: object) => void,
+  signal: AbortSignal | undefined): Promise<number> {
   const store = verifyNanoleafStore(source, {databaseFile: database, folder});
   const expected = convertNanoleafState(source, input.secretsDir);
   const actual = await readSection(input.section);
@@ -292,6 +354,7 @@ async function verify(source: InstalledState, input: Input, database: string, fo
     }
     if (text === undefined || !sameSecret(text, token)) secrets += 1;
   }
+  if (signal?.aborted === true) throw new Refusal('interrupted');
   const mismatches = {...store.mismatches, configuration, secrets};
   const total = Object.values(mismatches).reduce((sum, count) => sum + count, 0);
   emit({

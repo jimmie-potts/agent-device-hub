@@ -29,3 +29,9 @@
 - [x] 5.1 Add the `nanoleaf-migrated` run scenario, which migrates a synthetic state into the run and its configuration before the shipped runtime starts: `apps/runtime/verify/tests/nanoleaf-migrated.test.ts`.
 - [x] 5.2 Document the tool in the runtime README, the migration in the Nanoleaf module README and PORTING.md, the run and the reviewer's steps in the verification README, and the tests and stream owner in `docs/development.md`.
 - [x] 5.3 Run build, typecheck, lint, the SDK, runtime, scenario, verification, events, maintenance and Nanoleaf suites, and the workflow and OpenSpec checks.
+
+## 6. Data-integrity fixes (from the sibling Pixoo migration's review, PR #994)
+
+- [x] 6.1 Checkpoint the log into the file before the close and fail on a log left after it: `apps/runtime/tests/nanoleaf-full-disk.test.ts`, a real full disk at the final checkpoint, the secrets and the start, and "a log left beside the database after its close…" (mutant R9).
+- [x] 6.2 Stop on a first SIGINT or SIGTERM between stages, removing what was written: "a signal stops a migration…" (mutant R10).
+- [x] 6.3 Require every table that starts fresh to be empty: `migration.test.ts`, "requires every table that starts fresh to be empty…".

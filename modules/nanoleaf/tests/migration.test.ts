@@ -430,6 +430,24 @@ suite('the verifier', () => {
     }
   });
 
+  test('requires every table that starts fresh to be empty, the module\'s own included', async context => {
+    const directory = temporary(context);
+    const source = await syntheticState(directory);
+    const store = migrate(source, directory);
+    const carried = new Set(['projects', 'palette', 'line_prefs', 'map_settings', 'map_pending', 'animation_favorites', 'meta', 'shared_input']);
+    const tables = rowsOf(store.databaseFile, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+      .map(([name]) => String(name)).filter(name => !carried.has(name));
+    assert.deepEqual(tables, [...START_FRESH].sort(), 'every other table of the module\'s schema starts fresh');
+    for (const table of tables) {
+      // One row of plausible values: an integer for an INTEGER column, a real for a REAL one, text otherwise.
+      const columns = rowsOf(store.databaseFile, `PRAGMA table_info("${table}")`).map(([, name, type]) => [String(name), String(type)] as const);
+      const values = columns.map(([name, type]) => name === 'phase' ? "'queued'" : type === 'INTEGER' ? '1' : type === 'REAL' ? '1.5' : "'x'");
+      change(store.databaseFile, `INSERT INTO "${table}" (${columns.map(([name]) => `"${name}"`).join(', ')}) VALUES (${values.join(', ')})`);
+      assert.deepEqual(verify(source, store).mismatches, {...zeroMismatches, startFresh: 1}, table);
+      change(store.databaseFile, `DELETE FROM "${table}"`);
+    }
+  });
+
   test('a missing database counts as the database and every carried row', async context => {
     const directory = temporary(context);
     const source = await syntheticState(directory);

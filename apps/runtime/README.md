@@ -763,7 +763,7 @@ file's content.
 | 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
 | 2 | `refused`, code `usage` | Malformed arguments |
 | 3 | `refused` | Refused before writing anything; `code` and `message` say why |
-| 4 | `failed` | `migrate` stopped after it began to write; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
+| 4 | `failed` | `migrate` stopped after it began to write, on a failure or a signal; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
 
 | Code | Refusal or failure |
 | --- | --- |
@@ -781,11 +781,17 @@ file's content.
 | `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
 | `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
 | `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows |
-| `disk-short` | The disk filled while `migrate` wrote |
+| `disk-short` | The disk filled while `migrate` wrote, its final checkpoint included |
+| `destination-not-clean` | A log or journal with content was left beside the module's database after `migrate` closed it |
+| `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4, what it wrote removed). A second signal stops it at once |
 | `internal` | Anything else |
 
-A refusal and a failure name no path or value. The tool never retries; a
-failed or killed `migrate` is run again only into fresh destinations. Run
+`migrate` checkpoints the module's log into the file before it closes it,
+because the close's own checkpoint keeps the log on a full disk without an
+error. Its writes run one after another, so none is still running when a
+failure removes what was written. A refusal and a failure name no path or
+value. The tool never retries; a failed or killed `migrate` is run again only
+into fresh destinations. Run
 `verify` before the runtime's first start: the module writes its own rows when
 it starts, which `verify` would count.
 

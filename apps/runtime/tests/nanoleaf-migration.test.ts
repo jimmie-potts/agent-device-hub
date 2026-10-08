@@ -10,7 +10,8 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN, writeSyntheticNanoleafState} from '@jimmie-potts/nanoleaf';
 import {holdRuntimeLease} from '../src/lease.js';
-import {EXIT, runNanoleafMigration} from '../src/nanoleaf-migration.js';
+import {EventEmitter} from 'node:events';
+import {abortOnSignals, EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from '../src/nanoleaf-migration.js';
 import {CONFIG_SCHEMA} from '../src/state.js';
 import {it, stateDir, waitFor} from './support.js';
 
@@ -39,9 +40,9 @@ const args = (operation: string, p: Paths, ...rest: string[]): string[] =>
   [operation, '--source', p.source, '--state-dir', p.state, '--secrets-dir', p.secrets, '--section', p.section, ...rest];
 
 /** Runs the tool in this process, returning its exit code and its one line. */
-async function tool(argv: readonly string[], beforeSecrets?: () => Promise<void>): Promise<{exit: number; line: Line; text: string}> {
+async function tool(argv: readonly string[], extra: Omit<NanoleafMigrationOptions, 'write'> = {}): Promise<{exit: number; line: Line; text: string}> {
   const lines: string[] = [];
-  const exit = await runNanoleafMigration(argv, {write: line => { lines.push(line); }, ...(beforeSecrets === undefined ? {} : {beforeSecrets})});
+  const exit = await runNanoleafMigration(argv, {write: line => { lines.push(line); }, ...extra});
   assert.equal(lines.length, 1, 'one line');
   const [text = ''] = lines;
   assert.ok(text.endsWith('\n'));
@@ -246,13 +247,54 @@ it('refuses a secrets directory or a section folder that others can open', async
 it('removes what it wrote when it fails after writing began, and exits 4', async context => {
   const p = await paths(context);
   // Another process makes a secret file between the checks and the write: the tool fails, removes its own files and keeps that one.
-  const {exit, line} = await tool(args('migrate', p), async () => { await writeFile(join(p.secrets, 'nanoleaf-panels-token'), 'theirs', {mode: 0o600}); });
+  const {exit, line} = await tool(args('migrate', p), {stage: async name => {
+    if (name === 'secrets') await writeFile(join(p.secrets, 'nanoleaf-panels-token'), 'theirs', {mode: 0o600});
+  }});
   assert.deepEqual([exit, line.result, line.code, line.destination], [EXIT.failed, 'failed', 'internal', 'removed']);
   assert.ok(await absent(join(p.state, 'modules', 'nanoleaf.sqlite')));
   assert.ok(await absent(join(p.state, 'modules', 'nanoleaf')));
   assert.ok(await absent(p.section));
   assert.deepEqual(await readdir(p.secrets), ['nanoleaf-panels-token']);
   assert.equal(await readFile(join(p.secrets, 'nanoleaf-panels-token'), 'utf8'), 'theirs', 'the other file is not the tool\'s to remove');
+});
+
+it('a log left beside the database after its close fails the migration, and nothing is reported migrated', async context => {
+  const p = await paths(context);
+  // As when the final checkpoint met a full disk: SQLite's close keeps the log without an error.
+  const {exit, line} = await tool(args('migrate', p), {stage: async name => {
+    if (name === 'closed') await writeFile(join(p.state, 'modules', 'nanoleaf.sqlite-wal'), Buffer.alloc(4096, 1), {mode: 0o600});
+  }});
+  assert.deepEqual([exit, line.result, line.code, line.destination], [EXIT.failed, 'failed', 'destination-not-clean', 'removed']);
+  assert.ok(await untouched(p));
+  assert.ok(await absent(join(p.state, 'modules', 'nanoleaf.sqlite-wal')));
+});
+
+it('a signal stops a migration: before it writes, nothing is written; once it has written, what it wrote is removed', async context => {
+  for (const stage of ['checkpoint', 'closed', 'secrets', 'section'] as const) {
+    const p = await paths(context);
+    const controller = new AbortController();
+    const {exit, line} = await tool(args('migrate', p), {signal: controller.signal, stage: name => {
+      if (name === stage) controller.abort();
+      return Promise.resolve();
+    }});
+    assert.deepEqual([exit, line.result, line.code, line.destination], [EXIT.failed, 'failed', 'interrupted', 'removed'], stage);
+    assert.ok(await untouched(p), stage);
+  }
+  const p = await paths(context);
+  const before = new AbortController();
+  before.abort();
+  const early = await tool(args('migrate', p), {signal: before.signal});
+  assert.deepEqual([early.exit, early.line.result, early.line.code], [EXIT.refused, 'refused', 'interrupted']);
+  assert.ok(await untouched(p));
+  // The entry point aborts on the first SIGINT or SIGTERM and then stops listening, so a second signal stops the process at once.
+  for (const name of ['SIGINT', 'SIGTERM']) {
+    const target = new EventEmitter();
+    const signal = abortOnSignals(target);
+    assert.equal(signal.aborted, false);
+    target.emit(name);
+    assert.equal(signal.aborted, true, name);
+    assert.deepEqual([target.listenerCount('SIGINT'), target.listenerCount('SIGTERM')], [0, 0], `after ${name}, either signal stops the process`);
+  }
 });
 
 it('verify exits 1 and counts a changed secret, a changed address and a changed store', async context => {
