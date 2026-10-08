@@ -1,5 +1,9 @@
 # runtime-dashboard Specification
 
+## Purpose
+
+Define the B.U.N.N.Y. dashboard that the runtime serves (Hub #922), copied from the old Hub's dashboard: its shell, routes, Places and skin, browser sign-in on the runtime's gateway, the agent sessions it syncs from the core and follows live with no polling and no replay, a finished turn shown from the session record alone, and the owner-approved home with its panels. It is source behavior verified in disposable runs; installation happens at the cutover.
+
 ## Requirements
 
 ### Requirement: The dashboard on the runtime
