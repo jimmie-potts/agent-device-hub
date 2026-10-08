@@ -20,6 +20,10 @@ The module SHALL run one supervised worker per configured device on the runtime'
 - **WHEN** another instance holds the device's lock and ten commands arrive
 - **THEN** each command starts the worker, which ends at once, and one restart waits at a time, so once its wait is the longest the worker starts again once per 30 s, not once per command
 
+#### Scenario: A second take of a lock in the same process
+- **WHEN** the device's worker lock, or any other lock file the module opens, is held and a second take of it in the same process is refused
+- **THEN** another process is still refused that lock until the first holder lets it go
+
 #### Scenario: The module test kit
 - **WHEN** the kit runs the module with a simulated Lines controller, and with one that never answers
 - **THEN** every check passes, the offline one included
