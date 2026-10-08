@@ -886,6 +886,7 @@ nothing: the process exits with the code the line reports.
 
 | Code | Exit | Refusal or failure |
 | --- | --- | --- |
+| `usage` | 2 | Malformed arguments |
 | `runtime-running` | 3 | A runtime, or another tool, holds the state directory's lease |
 | `lease-unavailable` | 3 | The lease's lock file is not a regular file private to the user |
 | `disk-short` | 3, 4 | Less free space than the space it needs (3), or the file system or the database filled up while it wrote (4) |
@@ -995,6 +996,7 @@ exit but 0 is a no-go.
 
 | Code | Exit | Refusal or failure |
 | --- | --- | --- |
+| `usage` | 2 | Malformed arguments |
 | `runtime-running` | 3 | A runtime, or another tool, holds the state directory's lease |
 | `lease-unavailable` | 3 | The lease's lock file is not a regular file private to the user |
 | `destination-not-empty` | 3 | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
