@@ -1,6 +1,6 @@
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
-// modules' pages and content, and browser sign-in,
+// modules' pages and content, the dashboard's page (#922) and browser sign-in,
 // each with one error body from the 2.0 registry. Every caller is a client credential or a browser session (access.ts),
 // each with the old Hub's scopes; no caller is limited to some devices (owner decision, 2026-10-07). A route of the old Hub answers `not-found` and is logged with the
 // route it asked for (retired.ts), for the retirement story's check (#839).
@@ -11,8 +11,9 @@ import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {
-  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, statusOf, type Cancel, type Clock, type Diagnostic, type EdgeRoute,
-  type InProcessBus, type ModulePage, type OnDiagnostic, type Participant, type Scheduler, type SyncedCopy,
+  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
+  type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
+  type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS, type ActionAnswer, type CoreActions} from '../core/tracker.js';
 import type {EdgeCredential, Scope} from '../credentials.js';
@@ -23,6 +24,7 @@ import type {EdgeConfig} from '../state.js';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
 } from './access.js';
+import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, dashboardFile} from './dashboard.js';
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
@@ -101,6 +103,10 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
+  /** The built dashboard's folder (#922), `DASHBOARD_DIR` by default; tests give their own. */
+  dashboard?: URL;
+  /** Records the dashboard's five sign-in/read HTTP handoffs after their boundary checks (#922). */
+  trace?: SpanRecorder;
 };
 
 /** One repeated refusal: its record, the repeats since, and its window. */
@@ -113,6 +119,8 @@ export class Gateway {
   readonly #log: RuntimeLogger;
   /** The principal each SDK request was admitted as, which the edge's `authenticate` reads. */
   readonly #admitted = new WeakMap<IncomingMessage, Principal>();
+  /** Only validated dashboard handoffs receive a context; a later refusal keeps that request's trace. */
+  readonly #dashboardTraces = new WeakMap<IncomingMessage, TraceContext>();
   readonly #participants = new Map<string, Participant>();
   readonly #copies = new Map<string, Promise<SyncedCopy<Record<string, unknown>>>>();
   readonly #repeats = new Map<string, Repeats>();
@@ -221,7 +229,8 @@ export class Gateway {
         return;
       }
       let answer: Answer;
-      if (path.startsWith('/api/v2/browser/')) answer = await this.#browser(request, path.slice('/api/v2/browser/'.length));
+      if (Object.hasOwn(DASHBOARD_FILES, path)) answer = await this.#dashboard(request, url);
+      else if (path.startsWith('/api/v2/browser/')) answer = await this.#browser(request, path.slice('/api/v2/browser/'.length));
       else {
         if (route === undefined) {
           const retired = retiredRoute(method, path);
@@ -241,7 +250,7 @@ export class Gateway {
         'bunny.route': 'other', 'http.request.method': methodOf(method), 'bunny.code': code,
         ...(route !== undefined ? {'http.route': route} : retired !== undefined ? {'http.route': retired.path} : {}),
         ...(principal === undefined ? {} : {'bunny.participant': principal.source}),
-      }, code === 'internal' ? 'error' : levelOf(code));
+      }, code === 'internal' ? 'error' : levelOf(code), this.#dashboardTraces.get(request));
       this.#write(response, json(statusOf(code), body));
     }
   }
@@ -285,7 +294,7 @@ export class Gateway {
       const scope = url.searchParams.get('scope');
       if (query.length !== 1 || scope === null || !['read', 'control', 'ingest', 'admin'].includes(scope)) throw refuse('invalid-request', 'name one scope: read, control, ingest or admin');
       needs(scope as Scope);
-      return json(200, {schema: 'authority/2.0', scope});
+      return this.#dashboardRequest(request, path, () => json(200, {schema: 'authority/2.0', scope}));
     }
     if (method === 'POST' && path === '/api/v2/commands/approval-recover') {
       noQuery();
@@ -311,7 +320,7 @@ export class Gateway {
     if (path === '/api/v2/links') {
       noQuery();
       const {editorLinks, placeLinks} = this.#options.edge;
-      return json(200, {schema: 'links/2.0', editors: editorLinks, places: placeLinks});
+      return this.#dashboardRequest(request, path, () => json(200, {schema: 'links/2.0', editors: editorLinks, places: placeLinks}));
     }
     if (path === '/api/v2/snapshot') return this.#snapshot(url);
     const family = /^\/api\/v2\/families\/([^/]+)$/.exec(path)?.[1];
@@ -621,6 +630,22 @@ export class Gateway {
     return participant;
   }
 
+  /**
+   * The dashboard's page and assets (#922). They hold no secret and load without a session, from this origin, a bookmark
+   * or the launcher, and the page also from a link on another local app's page (`dashboardAllowed`); the page signs in
+   * through the routes below.
+   */
+  async #dashboard(request: IncomingMessage, url: URL): Promise<Answer> {
+    if (request.method !== 'GET') throw refuse('not-found', 'no such route');
+    if (url.search !== '') throw refuse('invalid-request', 'this route takes no query');
+    if (!dashboardAllowed(request, this.#originOf(request), url.pathname)) {
+      throw refuse('forbidden', 'the dashboard opens from this origin\'s own pages, a bookmark, the launcher or a link from another local app');
+    }
+    const found = await dashboardFile(this.#options.dashboard ?? DASHBOARD_DIR, url.pathname);
+    if (found === undefined) throw refuse('not-found', 'the dashboard is not built');
+    return {status: 200, body: found.bytes, headers: {'content-type': found.type, ...DASHBOARD_HEADERS}};
+  }
+
   /** Browser sign-in: the launcher's code, a trusted loopback page, and the end of a session. */
   async #browser(request: IncomingMessage, action: string): Promise<Answer> {
     const known = ['launch', 'session', 'logout'].includes(action);
@@ -633,20 +658,50 @@ export class Gateway {
     }
     const input = await readBody(request);
     const closed = (): void => { if (this.#closed) throw refuse('unavailable', 'the runtime is stopping'); };
+    /**
+     * A new session replaces the one the browser's cookie names, which ends with its streams (#922): every tab of the
+     * origin shares one cookie, so a session no cookie names any more would outlive every logout until its expiry.
+     */
+    const replace = (): Answer => {
+      const previous = this.access.endSession(request);
+      if (previous !== undefined) this.edge.disconnectPrincipal(previous);
+      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+    };
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
       if (Object.keys(input).length !== 1 || typeof code !== 'string' || !this.access.takeLaunch(code)) throw refuse('unauthenticated', 'the launch code is not good');
-      closed();
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return this.#dashboardRequest(request, '/api/v2/browser/launch', () => { closed(); return replace(); });
     }
     if (Object.keys(input).length > 0) throw refuse('invalid-request', 'the body is an empty object');
     if (action === 'session') {
-      closed();
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return this.#dashboardRequest(request, '/api/v2/browser/session', () => { closed(); return replace(); });
     }
-    const ended = this.access.endSession(request);
-    if (ended !== undefined) this.edge.disconnectPrincipal(ended);
-    return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+    // Logout remains harmless without a live cookie, but that caller cannot supply an authenticated parent.
+    const admission = this.access.admit(request, origin);
+    return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
+      const ended = this.access.endSession(request);
+      if (ended !== undefined) this.edge.disconnectPrincipal(ended);
+      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+    }, 'principal' in admission && admission.principal.kind === 'browser');
+  }
+
+  /** Runs only after the route's authentication, ownership and input checks; no incoming context grants authority. */
+  #dashboardRequest(request: IncomingMessage, route: string, handle: () => Answer, authenticated = true): Answer {
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = authenticated && candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, request.method === 'GET' ? 'bunny.feed.read' : 'bunny.command.request', {
+      parent, kind: 'server', attributes: {'http.route': route, 'http.request.method': methodOf(request.method ?? 'GET')},
+    });
+    this.#dashboardTraces.set(request, span.context);
+    try {
+      return handle();
+    } catch (error) {
+      span.end(error instanceof Refused ? 'unset' : 'error');
+      throw error;
+    } finally {
+      span.end();
+    }
   }
 
   #write(response: ServerResponse, answer: Answer): void {
@@ -658,7 +713,7 @@ export class Gateway {
    * Records a refusal by the repetition rule (ADR 0012, "Repetition"): the first of a run at once, then its repeats as
    * one summary a minute with their count, until a quiet minute. A record never holds what the caller sent.
    */
-  #refused(fields: Record<string, string | number>, level: 'debug' | 'info' | 'warn' | 'error'): void {
+  #refused(fields: Record<string, string | number>, level: 'debug' | 'info' | 'warn' | 'error', trace?: TraceContext): void {
     const severity = level === 'debug' ? 'info' : level;
     const key = JSON.stringify(fields);
     const open = this.#repeats.get(key);
@@ -669,7 +724,7 @@ export class Gateway {
     const code = fields['bunny.code'] as ErrorCode;
     const reason = REGISTRY_REASONS[code];
     const record = {...fields, ...(reason === undefined ? {} : {'bunny.reason': reason})};
-    this.#log[severity]('runtime.edge.refused', record);
+    this.#log[severity]('runtime.edge.refused', record, trace);
     if (this.#closed) return;
     const repeats: Repeats = {fields: record, level: severity, count: 0, cancel: () => {}};
     this.#repeats.set(key, repeats);
@@ -697,6 +752,7 @@ export class Gateway {
 /** The routes the gateway serves, as the templates its records name; undefined for a path it does not serve. */
 function templateOf(path: string): string | undefined {
   if (path === '/mcp') return '/mcp';
+  if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
   if (path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';

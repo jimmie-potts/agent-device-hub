@@ -37,6 +37,7 @@ function eventOf(diagnostic: Diagnostic): string | undefined {
       return `runtime.${diagnostic.event}`;
     case 'remote.disconnected':
     case 'remote.reconnected':
+    case 'remote.refused':
     case 'remote.command.uncertain':
       return undefined;
   }

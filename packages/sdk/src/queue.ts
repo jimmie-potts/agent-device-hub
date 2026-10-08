@@ -1,10 +1,37 @@
 // One subscriber's delivery queue (ADR 0012, "a slow consumer lags only itself"). Items are delivered one at a time
 // and in order, so a slow handler delays only its own queue, never the sender or other subscribers.
-import {AsyncLocalStorage} from 'node:async_hooks';
 
 type Delivering = {queue: object; done: boolean};
+/** What the queue needs of an async context store: Node's `AsyncLocalStorage`, or the browser's stand-in. */
+type ContextStore<T> = {getStore(): T | undefined; run<R>(store: T, callback: () => R): R};
+type Builtins = {getBuiltinModule?: (id: string) => unknown};
+
+/**
+ * Node's `AsyncLocalStorage`, which follows a handler's async flow. It is looked up at run time, never imported, so a
+ * browser part such as the dashboard can bundle the SDK's remote client (Hub #922). A browser has no async context, so
+ * there the store follows only the synchronous part of a handler: a browser handler that closes its own subscription
+ * does so before its first await, or does not await the close.
+ */
+function contextStore<T>(): ContextStore<T> {
+  const node = (globalThis as {process?: Builtins}).process?.getBuiltinModule?.('node:async_hooks') as typeof import('node:async_hooks') | undefined;
+  if (node !== undefined) return new node.AsyncLocalStorage<T>();
+  let current: T | undefined;
+  return {
+    getStore: () => current,
+    run: (store, callback) => {
+      const previous = current;
+      current = store;
+      try {
+        return callback();
+      } finally {
+        current = previous;
+      }
+    },
+  };
+}
+
 // The delivery whose handler runs in the current async context, so that close() called from it never waits for itself.
-const delivering = new AsyncLocalStorage<Delivering>();
+const delivering = contextStore<Delivering>();
 
 export class DeliveryQueue<T extends object> {
   readonly #items: T[] = [];

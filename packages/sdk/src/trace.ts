@@ -1,6 +1,6 @@
 // W3C trace context (ADR 0012, Observability). Only version-00 traceparent is accepted, as the diagnostic contract
-// says; a malformed or all-zero parent is ignored, never adopted.
-import {randomBytes} from 'node:crypto';
+// says; a malformed or all-zero parent is ignored, never adopted. Its IDs come from Web Crypto, which Node and a browser
+// both have, so a browser part can bundle it (Hub #922).
 import type {TraceContext} from './sdk.js';
 
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
@@ -9,7 +9,7 @@ const ZERO = /^0+$/;
 function nonzeroHex(bytes: number): string {
   let value: string;
   do {
-    value = randomBytes(bytes).toString('hex');
+    value = Array.from(crypto.getRandomValues(new Uint8Array(bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
   } while (ZERO.test(value));
   return value;
 }

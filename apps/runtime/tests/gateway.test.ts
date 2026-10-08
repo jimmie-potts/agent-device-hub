@@ -449,17 +449,19 @@ it('the route map covers every route of the old Hub\'s server and its route modu
   assert.equal(retiredRoute('POST', '/api/monitor/v1/events')?.replacement.includes('bunny.event.lifecycle'), true);
   // Every replacement names its owner's story or is already served; none is left for later with no owner.
   assert.deepEqual(RETIRED_ROUTES.filter(route => /\byet\b/.test(route.replacement)).map(route => route.path), []);
-  assert.equal(retiredRoute('POST', '/api/monitor/v1/commands')?.owner, '#922', 'the label command\'s owner');
+  assert.equal(retiredRoute('POST', '/api/monitor/v1/commands')?.owner, '#1006', 'the label command\'s owner');
   assert.match(retiredRoute('GET', '/api/playback/v1/snapshot')?.replacement ?? '', /GET \/api\/v2\/families\/playback/);
 
   const reader = READER();
   const g = await gateway(context, [reader]);
-  for (const path of ['/api/monitor/v1/events', '/api/controllers/v1/pixoo-desk/snapshot', '/api/automation/v1/rules/r1/enable', '/']) {
-    const answer = await g.ask(g.url, path, {token: reader.token, method: path === '/' ? 'GET' : 'POST', ...(path === '/' ? {} : {body: {}})});
+  // The dashboard's page, `/`, is served again since #922; the old Hub's health is not.
+  for (const path of ['/api/monitor/v1/events', '/api/controllers/v1/pixoo-desk/snapshot', '/api/automation/v1/rules/r1/enable', '/api/hub/v1/health']) {
+    const read = path === '/api/hub/v1/health';
+    const answer = await g.ask(g.url, path, {token: reader.token, method: read ? 'GET' : 'POST', ...(read ? {} : {body: {}})});
     assert.deepEqual([answer.status, codeOf(answer)], [404, 'not-found'], path);
   }
   const logged = g.logs.filter(record => record.event_name === 'runtime.edge.refused' && record.attributes['bunny.code'] === 'not-found').map(record => record.attributes['http.route']);
-  assert.deepEqual(logged, ['/api/monitor/v1/events', '/api/controllers/v1/{device}/snapshot', '/api/automation/v1/rules/{rule}/enable', '/']);
+  assert.deepEqual(logged, ['/api/monitor/v1/events', '/api/controllers/v1/{device}/snapshot', '/api/automation/v1/rules/{rule}/enable', '/api/hub/v1/health']);
   assert.equal(JSON.stringify(g.logs).includes('pixoo-desk'), false, 'a record names the route, never the device in its path');
 });
 

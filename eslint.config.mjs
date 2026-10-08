@@ -38,6 +38,7 @@ export const workspaceScopes = ['@jimmie-potts/'];
 // Code that runs in a page.
 const browser = [
   'apps/dashboard/src/**',
+  'apps/runtime/dashboard/src/**',
   'apps/chompi-bridge/verify/page/**',
   'docs/system-design/assets/**',
   'docs/work-guide/browser/renderer.mjs',
@@ -47,6 +48,7 @@ const browser = [
 // Node scripts that drive Playwright and pass callbacks that run in the page.
 const pageDrivers = [
   'apps/dashboard/tests/**',
+  'apps/runtime/dashboard/tests/**',
   'apps/hub/verify/**',
   'docs/skins/check_*.cjs',
   'docs/skins/screenshot.cjs',
@@ -198,7 +200,7 @@ export default defineConfig(
   },
   {
     name: 'bunny/react-hooks',
-    files: ['apps/dashboard/**/*.{ts,tsx}'],
+    files: ['apps/dashboard/**/*.{ts,tsx}', 'apps/runtime/dashboard/**/*.{ts,tsx}'],
     plugins: {'react-hooks': reactHooks},
     rules: {'react-hooks/rules-of-hooks': 'error', 'react-hooks/exhaustive-deps': 'error'},
   },

@@ -924,6 +924,7 @@ refusals a correct caller should never receive (`unauthenticated`,
 | `edge.refused` | The code's level | The edge, for a call it refused, a call outside its grant (`forbidden`) and a command sent again (`duplicate-conflict`) included. Before authentication it carries only the route and the code. A call its caller drops while the edge reads it is `cancelled`. A repeat with the same route, code and source is counted, and each minute that counted any ends with one summary whose `attempts` is that count; a quiet minute ends the run (`REFUSAL_WINDOW_MS`). The window runs on the edge's scheduler, so with the default `setTimeout` a host that never calls `edge.close()` stays alive up to a minute after a refusal; the runtime closes its edge. |
 | `edge.failed` | ERROR, an internal fault | The edge, for an exception it did not expect, with the code it answered (`internal`, or `uncertain-result` once it had handed a command to its bus) and the exception's type, never its message. After dispatch it also carries the command's key, request ID, message ID and trace. |
 | `remote.disconnected`, `remote.reconnected` | WARN, INFO | The remote client, once for a lost stream and once for its recovery, with the count of failed attempts. |
+| `remote.refused` | WARN | The remote client, when the edge refuses a reconnect with `unauthenticated` or `forbidden`, with the code and the attempts so far: once per code until it reconnects. The runtime writes no record of a client's own decisions. |
 | `remote.command.uncertain` | WARN | The remote client, when it settles a request `uncertain-result` itself: the edge answered `internal` or `uncertain-result`, could not be heard by the deadline and its grace, or the requester closed first. A refusal it passes on is the edge's record. |
 
 Each request makes one admission record when it reaches the queue and one
@@ -1001,6 +1002,22 @@ HTTP status that fits its code.
   `publishes` names the payload families, by the family of a message's
   `dataschema`, it may publish, so a hook's grant can carry lifecycle
   observations only.
+- **Browser pages (Hub #922).** A page, such as the dashboard, imports the
+  client alone from `@jimmie-potts/sdk/remote`, whose modules import no Node
+  built-in and read no file (`browser.test.ts` bundles it for a browser), and
+  connects with `{browser: true}` in place of a token. The browser sends the
+  page's session cookie and its `Origin` itself; the client sends no
+  `authorization` header and marks every call with `bunny-request: 1`
+  (`REQUEST_HEADER`), which the runtime's gateway requires of a page's change.
+  Message and request IDs come from Web Crypto, which Node and a browser both
+  have. The same entry exports `childOf(parent)` for a page's other HTTP calls:
+  put its `traceparent` in the request headers, with `undefined` for a new root.
+  A browser has no async context, so a page's handler that closes its own
+  subscription does so before its first await, or does not await the close.
+  When the edge refuses a reconnect with `unauthenticated` or `forbidden`, as
+  after a session ended, the client keeps trying with its backoff and reports
+  `remote.refused` with the code once until it reconnects, so the page can offer
+  to sign in again.
 - **Declared source.** The client names the source it acts as in every call's
   `bunny-source` header (`SOURCE_HEADER`), and the edge refuses a token used
   under another source with `forbidden` at once, before the stream opens.

@@ -96,6 +96,8 @@ export type RuntimeOptions = {
   edge?: {
     schemas: Readonly<Record<string, object>>; onServing?: (edge: RemoteEdge) => void;
     liveness?: {heartbeatMs?: number; stallMs?: number; scheduler?: Scheduler};
+    /** The built dashboard's folder (#922), the build's `dist/dashboard/` by default; tests give their own. */
+    dashboard?: URL;
   };
 };
 
@@ -282,6 +284,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     const gateway = new Gateway({
       bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
       clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}), ...(actions === undefined ? {} : {actions}),
+      ...(options.edge.dashboard === undefined ? {} : {dashboard: options.edge.dashboard}),
+      ...(tracing === undefined ? {} : {trace: tracing.recorder(RUNTIME_SCOPE)}),
     });
     try {
       await gateway.start(url, [`${HOST}:${bound}`, `localhost:${bound}`]);
