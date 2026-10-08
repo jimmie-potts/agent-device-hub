@@ -196,9 +196,9 @@ export class CoreStore implements Storage {
     return [...this.#records.values()];
   }
 
-  /** Whether the store is open, so parts may use it. */
+  /** Whether the store is open, so parts may use it: not before it opens, and not once its database closed, as a crash closes it. */
   get open(): boolean {
-    return this.#opened !== undefined;
+    return this.#opened !== undefined && this.#db.isOpen;
   }
 
   /** The core's history (#782), once the store is open. */
@@ -512,6 +512,13 @@ export class CoreStore implements Storage {
     } finally {
       this.#frozen = undefined;
       addTo = () => { throw new Error('add a message only inside the transaction'); };
+    }
+    // A database that closed under the store, as a crash closes it, committed nothing; the outbox's refusal is taken
+    // here, so it is never left unhandled.
+    if (!this.#db.isOpen) {
+      await sent.catch(() => {});
+      this.#failure = 'failed';
+      throw new Error('the core store\'s database is closed');
     }
     // The outbox commits before it returns, or returns a rejection with the transaction rolled back, and it resolves
     // only once the publication ends. The commit counter tells the two apart at once, so the publication is not awaited.

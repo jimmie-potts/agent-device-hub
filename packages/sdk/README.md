@@ -680,8 +680,10 @@ async start({sdk, database, clock, log, trace}) {
   that passes `publishMessage` alone, never hears one: pass `subscribe` through.
   The acknowledgments one turn of the event loop brings are forgotten together
   at its end, in one commit, so a burst costs one sync to disk rather than one
-  each, and each is then recorded. `acknowledgmentOf(outcome)` builds the
-  core's acknowledgment, for a core and for tests.
+  each, and each is then recorded. One that arrives as the module stops, before
+  its turn ends, forgets nothing: the outcome goes out again at the next start
+  and is acknowledged again. `acknowledgmentOf(outcome)` builds the core's
+  acknowledgment, for a core and for tests.
 - `republish()` follows the acknowledgments, then sends again, in order,
   everything still stored, and resolves with how many messages went out, or
   rejects with a refusal. Call it once in the module's start, so that it hears

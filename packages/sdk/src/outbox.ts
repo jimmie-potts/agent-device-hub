@@ -248,8 +248,9 @@ export class Outbox {
   /**
    * Forgets the outcomes whose acknowledgments this turn brought, in one commit at the connection's level, so a burst of
    * acknowledgments costs one sync to disk instead of one each, and records each as `outbox.acknowledged` once it
-   * commits. Inside a transaction someone else holds open, they join it, as `acknowledge` does. A commit that fails
-   * forgets nothing: the outcomes go out again at the next start, and the core acknowledges them again.
+   * commits. Inside a transaction someone else holds open, they join it, as `acknowledge` does. A commit that fails,
+   * or a database that closed before the turn ended, as when the module stopped, forgets nothing: the outcomes go out
+   * again at the next start, and the core acknowledges them again.
    */
   #forgetHeard(): void {
     const heard = this.#heardThisTurn;

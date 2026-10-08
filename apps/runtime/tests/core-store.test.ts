@@ -477,6 +477,21 @@ it('a failure names only the commit it came from: a later commit clears it', asy
   assert.equal(world.store.takeFailure(), undefined, 'the full disk is no longer named');
 });
 
+it('a database that closed under the store, as a crash closes it, ends the store\'s use: a transaction is refused, and nothing is left unhandled', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  assert.equal(world.store.open, true);
+  const unhandled: unknown[] = [];
+  const heard = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', heard);
+  context.after(() => { process.off('unhandledRejection', heard); });
+  world.db.close();
+  assert.equal(world.store.open, false, 'the store is no longer open, so the tracker takes nothing more');
+  await assert.rejects(world.store.transaction(() => {}));
+  await new Promise(resolve => { setImmediate(resolve); });
+  assert.deepEqual(unhandled, [], 'the outbox\'s refusal is taken');
+});
+
 it('a store that holds another owner\'s state is refused before anything is written to it', async context => {
   const file = join(await stateDir(context), 'core.sqlite');
   const other = new DatabaseSync(file);

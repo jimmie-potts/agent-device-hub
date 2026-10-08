@@ -555,6 +555,8 @@ export class Tracker {
   /** Runs `work` in one core transaction; a refusal says why: a full disk is `unavailable` with `storage-full`. */
   async #transaction<R>(work: (tx: CoreTransaction) => R): Promise<R> {
     const {store, storage} = this.#options;
+    // A store that is not open, or whose database a crash closed, takes nothing; it is not a store failure.
+    if (!store.open) throw new Refused('unavailable', 'the core store is not open');
     try {
       const result = await store.transaction(work);
       storage?.recovered();

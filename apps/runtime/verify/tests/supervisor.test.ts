@@ -8,7 +8,7 @@ import {request} from 'node:http';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
-import {connectRemote} from '@jimmie-potts/sdk';
+import {connectRemote, type CommandDraft} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {readGrants} from '../adapter.js';
@@ -41,12 +41,12 @@ const post = (run: Started, route: string, body: object = {}): Promise<Response>
  * Switches lamp-1 on as the run's operator, through the core's dispatcher on the gateway's action route (Hub #782), and
  * answers `accepted`, the refusal's code, or `lost` when the call loses its connection with the runtime.
  */
-async function act(run: Started, requestId: string): Promise<string> {
+async function act(run: Started, requestId: string, {key, draft}: {key: string; draft: CommandDraft<object>} = switchLamp('lamp-1', 'on')): Promise<string> {
   const grants = await readGrants(run.dataDir);
-  const {draft} = switchLamp('lamp-1', 'on');
-  const response = await fetch(new URL('/api/v2/commands/lamp-switch', run.url), {
+  const [, , family = '', target = ''] = key.split('.');
+  const response = await fetch(new URL(`/api/v2/commands/${family}`, run.url), {
     method: 'POST', headers: {authorization: `Bearer ${grants.get('bunny/parts/operator') ?? ''}`, 'content-type': 'application/json'},
-    body: JSON.stringify({target: 'lamp-1', data: draft.data, requestId}),
+    body: JSON.stringify({target, data: draft.data, requestId}),
   }).catch(() => undefined);
   if (response === undefined) return 'lost';
   const body = await response.json().catch(() => undefined) as {status?: string; error?: {code?: string}} | undefined;
@@ -163,14 +163,10 @@ void test('the harness refuses a simulation it does not know with 400, and the P
     assert.equal((await post(run, 'simulate', body)).status, 400, JSON.stringify(body));
   }
   assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');
-  // The operator sets the Pixoo's brightness, as a person would; the simulated panel shows it.
-  const grants = await readGrants(run.dataDir);
-  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
-  context.after(() => operator.close());
-  const result = await operator.request('bunny.cmd.brightness-set.pixoo-1', {
+  // The operator sets the Pixoo's brightness on the action route, as a person would (#782); the simulated panel shows it.
+  assert.equal(await act(run, 'req-pixoo-30', {key: 'bunny.cmd.brightness-set.pixoo-1', draft: {
     type: 'org.bunny.brightness.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/brightness-set/2.0', data: {percent: 30},
-  }, {timeoutMs: 5000});
-  assert.equal(result.status, 'accepted');
+  }}), 'accepted');
   await until(async () => (await state(run)).devices.pixoo.brightness === 30, 'the panel at 30 percent');
   const before = (await state(run)).devices.pixoo;
   assert.equal((await post(run, 'restart')).status, 200);

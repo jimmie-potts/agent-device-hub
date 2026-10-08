@@ -214,7 +214,9 @@ it('a resent outcome counts once and is acknowledged again, so a lost acknowledg
   assert.deepEqual(shape(second.operation('req-lost')), ['completed', 'succeeded', 'observed', undefined]);
   await waitFor(() => second.logs.some(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'duplicate'
     && record.severity_text === 'INFO' && record.attributes['bunny.request.id'] === 'req-lost'), 5000, 'the duplicate\'s record, a recovery at INFO');
-  // Forgotten now: a third start sends nothing.
+  // The gadget's outbox forgets it at the end of the turn that brought the acknowledgment; a third start sends nothing.
+  await waitFor(() => second.logs.some(record => record.event_name === 'outbox.acknowledged' && record.attributes['bunny.module'] === 'gadget' &&
+    record.attributes['bunny.message.id'] === outcome?.id), 5000, 'the gadget forgetting the outcome');
   await second.runtime.stop();
   const sent = gadget.published.length;
   await trackerRun(context, {gadget, dir});
