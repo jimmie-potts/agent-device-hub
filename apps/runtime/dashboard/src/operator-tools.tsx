@@ -1,9 +1,10 @@
 // One confirmed Connections override on the existing authenticated action path (Hub #1009).
 import React, {useEffect, useId, useRef, useState} from 'react';
-import {sessionTitle, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionsCopy} from './connection.ts';
 import {sendAction, type ActionReply} from './actions.ts';
 import {noticeAttempt, noticeEvidence, type NoticeAttempt} from './notice-clear.ts';
+import {sessionName} from './sessions.ts';
 
 export function OperatorTools({sessions, live, control, operations, operationsSynced}: {
   sessions: SessionsCopy; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsSynced: boolean;
@@ -46,7 +47,7 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
     <label htmlFor={id}>Session<select id={id} value={selectedId} disabled={pending || confirmation !== undefined}
       onChange={event => {setSelectedId(event.target.value); setAttempt(undefined); setAnswer(undefined);}}>
       <option value="">Choose a session</option>
-      {sessions.records.map(record => <option key={record.id} value={record.id}>{sessionTitle(record)}</option>)}
+      {sessions.records.map(record => <option key={record.id} value={record.id}>{sessionName(record)}</option>)}
     </select></label>
     <button ref={trigger} type="button" onClick={open} disabled={!available || current === undefined || confirmation !== undefined}>Clear this notice on every device</button>
     {!control && <p className="warning">Read-only connection. Operator controls require control authority.</p>}
@@ -54,7 +55,7 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
     {selected !== undefined && current === undefined && <p>No current notice to clear.</p>}
     {confirmation !== undefined && <form className="edit" aria-label="Confirm notice override" onSubmit={event => {event.preventDefault(); void submit();}}
       onKeyDown={event => {if (event.key === 'Escape' && !pending) {event.preventDefault(); close();}}}>
-      <p>Confirm clearing this notice for {selected === undefined ? 'the selected session' : sessionTitle(selected)} on every configured device.</p>
+      <p>Confirm clearing this notice for {selected === undefined ? 'the selected session' : sessionName(selected)} on every configured device.</p>
       <div className="actions"><button ref={confirm} type="submit" disabled={!available || !unchanged || attempt !== undefined}>Confirm clear</button>
         <button type="button" onClick={close} disabled={pending}>{attempt === undefined ? 'Cancel' : 'Close'}</button></div>
       {!unchanged && attempt === undefined && <p className="warning">The session or notice changed. Cancel and select the current notice.</p>}
