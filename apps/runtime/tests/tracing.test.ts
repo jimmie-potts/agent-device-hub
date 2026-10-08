@@ -82,7 +82,7 @@ it('the bus\'s and the modules\' spans reach the span sink through the host adap
   assert.equal(request.traceId, traceFields(PARENT)?.traceId);
   assert.equal(request.parentSpanId, traceFields(PARENT)?.spanId, 'the caller\'s parent');
   assert.deepEqual([attribute(request, 'bunny.request.id'), attribute(request, 'bunny.routing.key'), attribute(request, 'bunny.participant'),
-    attribute(request, 'bunny.schema.version')], ['req-1', KEY, 'bunny/modules/caller', '1.4']);
+    attribute(request, 'bunny.schema.version')], ['req-1', KEY, 'bunny/modules/caller', '1.5']);
   assert.equal(traceFields(commands[0] ?? {traceparent: ''})?.spanId, request.spanId, 'the command carries its request span\'s context');
   const [queue] = children(spans, request, 'bunny.command.queue');
   const [execute] = children(spans, request, 'bunny.command.execute');

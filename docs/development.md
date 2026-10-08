@@ -2632,7 +2632,8 @@ Fixtures cover safe canonical records, exact OTLP mappings, strict version
 projections, privacy, context isolation and bounded sink failures. Profile 1.2
 fixtures cover the runtime's records and their negative controls, profile 1.3
 fixtures its decision, outbox and device records and theirs (#949), profile 1.4
-fixtures the gateway's route, method and credentials reload and theirs (#835), and
+fixtures the gateway's route, method and credentials reload and theirs (#835),
+profile 1.5 fixtures the core's costly-save records and theirs (#976), and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
 earlier profile rejects each profile's additions, and the runtime scopes'
 rules. `tests/host.test.mjs` checks that a host records only its profile's span

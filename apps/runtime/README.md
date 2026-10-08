@@ -108,6 +108,22 @@ and exits 1, and the service manager restarts it whole.
   the change stands, and its messages go out at the next commit or start, with
   their stored `id`, `time` and trace context. A crash between a commit and its
   publication sends them at the next start, once.
+- **Save cost.** Each save rewrites agent-state's whole state block, so the
+  store measures every save that commits (Hub #976). A save is agent-state's
+  commit through the store's lease: applying the change to the last committed
+  state, which clones, validates and serializes all of it, then the one
+  transaction with its records, history, intake and outbox rows, up to its
+  `COMMIT`. Publication comes after and is not counted. The intake's grouped
+  transactions for other participants' messages (Hub #782) and freshness
+  refreshes do not write the state block and are not timed. The store logs
+  `storage.cost.high` at WARN once the block passes half of the 16 MiB limit
+  (`bunny.state.bytes`) or once a save takes longer than 100 ms
+  (`bunny.save.duration_ms`, whole milliseconds rounded up), and
+  `storage.cost.normal` at INFO with the size or time of the first save back
+  within the limit. Each condition is recorded once per run, and a restart
+  starts a new run. Both records carry `bunny.operation` `storage` and never
+  the state's content, and a logger that throws never changes a save. The
+  16 MiB limit still refuses a larger block with `state-capacity`.
 - **Freshness.** Each record's `freshness` holds at the `time` of the message
   that carries it. A timer publishes a record again, at a new revision, when it
   turns uncertain five minutes after its last evidence, and a sync brings
@@ -1081,7 +1097,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.4, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.5, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and

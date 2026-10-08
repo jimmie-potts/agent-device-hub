@@ -195,6 +195,14 @@ it('a module record is checked as the runtime writes it: the module scope, its n
   assert.match(checkModuleRecord('Bad Name', entry('command.completed')) ?? '', /outside its registered type/, 'the module name is a registered attribute too');
 });
 
+it('a module record is checked at the runtime\'s profile, 1.5, so a costly save\'s records pass (Hub #976)', () => {
+  const high: HarnessRecord = {level: 'warn', event: 'storage.cost.high', fields: {'bunny.operation': 'storage', 'bunny.state.bytes': 8_388_609}};
+  const normal: HarnessRecord = {level: 'info', event: 'storage.cost.normal', fields: {'bunny.operation': 'storage', 'bunny.save.duration_ms': 5}};
+  assert.equal(checkModuleRecord('core', high), undefined, 'profile 1.5\'s event and size');
+  assert.equal(checkModuleRecord('core', normal), undefined, 'profile 1.5\'s event and time');
+  assert.match(checkModuleRecord('core', {...high, fields: {...high.fields, 'bunny.state.bytes': 1.5}}) ?? '', /outside its registered type/, 'a size is whole bytes');
+});
+
 it('a module that only consumes runs the checks that apply to it', async () => {
   const MODE = `${BASE}mode/2.0`;
   const listener: BunnyModule = {

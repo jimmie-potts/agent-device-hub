@@ -6,15 +6,16 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {createAgentState, recoveryJournalKey, validateExport, type DurableState} from '@jimmie-potts/agent-state';
+import {createAgentState, recoveryJournalKey, validateExport, type DurableState, type StorageLease} from '@jimmie-potts/agent-state';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {SdkError} from '@jimmie-potts/sdk';
+import {SdkError, type LogFields, type Logger} from '@jimmie-potts/sdk';
 import {countCommits} from '@jimmie-potts/sdk/testing';
-import {CoreStore, type Deriver} from '../src/core/store.js';
+import {CoreStore, SAVE_COST, type Deriver} from '../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../src/index.js';
+import {MODULE_SCOPE, record, runtimeResource} from '../src/record.js';
 import {
-  CHILD, CHILD_ID, IDENTITY, SESSION_ID, approvalPrompt, approvalResolved, lifecycleOf, runtimeEnded, sessionStarted, turnEnded, turnStarted,
+  CHILD, CHILD_ID, IDENTITY, OTHER, SESSION_ID, approvalPrompt, approvalResolved, lifecycleOf, runtimeEnded, sessionStarted, turnEnded, turnStarted,
   unknownApproval,
 } from './fixtures/agents.js';
 import {fillDisk} from './fixtures/disk.js';
@@ -502,4 +503,138 @@ it('a store that holds another owner\'s state is refused before anything is writ
   await assert.rejects(World.open(context, {file}));
   assert.deepEqual(tables(), before, 'no core table was created');
   other.close();
+});
+
+/** What a store logged, as level, event and fields. */
+type Logged = [level: string, event: string, fields: LogFields];
+
+/** A logger that keeps each record; with `failing`, every call throws after keeping its record. */
+function recorder(failing = false): {log: Logger; logged: Logged[]} {
+  const logged: Logged[] = [];
+  const keep = (level: string) => (event: string, fields: LogFields = {}): void => {
+    logged.push([level, event, fields]);
+    if (failing) throw new Error('the sink failed');
+  };
+  return {logged, log: {debug: keep('debug'), info: keep('info'), warn: keep('warn'), error: keep('error')}};
+}
+
+/** The save-cost records among what a store logged. */
+const costs = (logged: readonly Logged[]): Logged[] => logged.filter(([, event]) => event.startsWith('storage.cost.'));
+
+/** The state block's size in bytes, as the store holds it. */
+const stateBytes = (world: World): number => Buffer.byteLength((world.rows('SELECT payload FROM state')[0] as {payload: string}).payload);
+
+/** Each record as the runtime writes it for the core: kept whole, with only its own fields, or the test fails. */
+function asWritten(logged: readonly Logged[]): void {
+  const resource = runtimeResource('test', '00000000-0000-4000-8000-000000000976');
+  for (const [level, event, fields] of logged) {
+    const written = record(level === 'warn' ? 'warn' : 'info', MODULE_SCOPE, event, {...fields, 'bunny.module': 'core'}, START, resource);
+    assert.ok(written, `${event} is a registered module record`);
+    assert.deepEqual(written.attributes, {...fields, 'bunny.module': 'core', 'bunny.provenance': 'source'}, `${event} keeps every field it was given`);
+  }
+}
+
+it('a state block past its limit is recorded once with its size, and once more when it is back within it (Hub #976)', async context => {
+  const {log, logged} = recorder();
+  // A limit between one session's state and two sessions', so the block passes it as a second session starts, and is
+  // back within it a day later, once agent-state's maintenance has let go of what it keeps for a day. Every save takes
+  // 0 ms.
+  const LIMIT = 1_500;
+  const world = await World.open(context, {watch: {log, saveCost: {...SAVE_COST, stateBytes: LIMIT}, timer: () => 0}});
+  const sizes: number[] = [];
+  const step = async (...observation: Parameters<World['observe']>): Promise<void> => {
+    assert.equal((await world.observe(...observation)).ok, true);
+    sizes.push(stateBytes(world));
+  };
+  await step(sessionStarted);
+  await step(sessionStarted, {identity: OTHER});
+  await step(turnStarted, {identity: OTHER, turn: 'turn-2'});
+  world.clock.advance(86_400_001);
+  assert.equal((await world.owner?.maintain())?.ok, true);
+  sizes.push(stateBytes(world));
+  await step(sessionStarted);
+  await step(turnStarted, {turn: 'turn-2'});
+  assert.deepEqual(sizes.map(size => size > LIMIT), [false, true, true, false, false, false], `the block's sizes in bytes: ${sizes.join(', ')}`);
+  assert.deepEqual(costs(logged), [
+    ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.state.bytes': sizes[1]}],
+    ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.state.bytes': sizes[3]}],
+  ], 'one WARN as the block passes the limit and one INFO as it is back within it, each with only the block\'s size');
+  asWritten(costs(logged));
+});
+
+it('a save that takes longer than 100 ms is recorded once with its time, and once more when a save is quick again (Hub #976)', async context => {
+  const {log, logged} = recorder();
+  // Each save takes `work` milliseconds of the store's timer: half as the store applies agent-state's change to the whole
+  // state, which it does from the change's first read, before it serializes the state, and half in a part's rows in the
+  // save's transaction. Each message's publication after the commit takes a second, which is no part of the save.
+  let now = 0, work = 0;
+  const applying = (lease: StorageLease): StorageLease => ({
+    ...lease,
+    commit: (change, signal) => {
+      let read = false;
+      return lease.commit(new Proxy(change, {get: (target, key) => {
+        if (!read) now += work / 2;
+        read = true;
+        return Reflect.get(target, key) as unknown;
+      }}), signal);
+    },
+  });
+  const slowPart: Deriver = () => { now += work / 2; };
+  const world = await World.open(context, {derivers: [slowPart], lease: applying, watch: {log, timer: () => now}});
+  world.publishing = () => { now += 1000; };
+  assert.deepEqual(SAVE_COST, {stateBytes: 8 * 1024 * 1024, saveMs: 100}, 'half of the 16 MiB limit, and 100 ms');
+  const save = async (ms: number, ...observation: Parameters<World['observe']>): Promise<void> => {
+    work = ms;
+    const result = await world.observe(...observation);
+    assert.equal(result.ok && result.outcome, 'applied');
+  };
+  await save(5, sessionStarted);
+  await save(100, turnStarted, {turn: 'turn-2'});
+  assert.deepEqual(costs(logged), [], 'a save of exactly 100 ms is not past the limit');
+  await save(100.25, approvalPrompt('approval-1'), {turn: 'turn-2'});
+  await save(250, approvalResolved('approval-1'), {turn: 'turn-2'});
+  await save(5, turnEnded, {turn: 'turn-2'});
+  await save(5, turnStarted, {turn: 'turn-3'});
+
+  assert.deepEqual(costs(logged), [
+    ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 101}],
+    ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 5}],
+  ], 'one WARN for the run of slow saves and one INFO once a save is quick, each with only the save\'s time in whole milliseconds rounded up');
+  asWritten(costs(logged));
+  assert.deepEqual(world.rows('SELECT revision FROM state'), [{revision: 6}], 'every save committed');
+});
+
+it('a costly save stands when its record cannot be written (Hub #976)', async context => {
+  const {log, logged} = recorder(true);
+  let now = 0, work = 0;
+  const world = await World.open(context, {derivers: [() => { now += work; }], watch: {log, timer: () => now}});
+  work = 150;
+  assert.deepEqual(await world.observe(sessionStarted), {ok: true, revision: 1, outcome: 'applied'});
+  work = 5;
+  assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: true, revision: 2, outcome: 'applied'}, 'the owner was never faulted');
+  assert.deepEqual(costs(logged).map(([level, event]) => [level, event]), [['warn', 'storage.cost.high'], ['info', 'storage.cost.normal']]);
+  assert.deepEqual(world.rows('SELECT revision FROM state'), [{revision: 2}]);
+});
+
+it('a save that does not commit changes neither condition (Hub #976)', async context => {
+  const {log, logged} = recorder();
+  let now = 0, work = 0, failing = false;
+  const part: Deriver = () => {
+    now += work;
+    if (failing) throw new Error('the part failed');
+  };
+  const world = await World.open(context, {derivers: [part], watch: {log, timer: () => now}});
+  work = 150;
+  assert.equal((await world.observe(sessionStarted)).ok, true);
+  failing = true;
+  work = 5;
+  assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: false, code: 'storage-failed'}, 'the part rolls the quick save back');
+  assert.deepEqual(costs(logged).map(([level]) => level), ['warn'], 'a refused save does not end the run');
+  failing = false;
+  await world.reopen();
+  assert.equal((await world.observe(turnStarted, {turn: 'turn-2'})).ok, true);
+  assert.deepEqual(costs(logged), [
+    ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 150}],
+    ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 5}],
+  ]);
 });

@@ -150,7 +150,7 @@ test('two hosts without a process context keep their own spans and explicit pare
 
 test('a host names the profile of its records and of its spans\' metadata',async()=>{
  await assert.rejects(createHostDiagnostics({enabled:true,resource:runtimeResource,localSink:()=>{}}),/Invalid host resource/,'profile 1.1 has no runtime service');
- await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,schemaVersion:'1.5',localSink:()=>{}}),/Invalid host/);
+ await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,schemaVersion:'1.6',localSink:()=>{}}),/Invalid host/);
  const lines=[];
  const host=await createHostDiagnostics({enabled:true,resource:runtimeResource,schemaVersion:'1.3',tracing:true,samplingRatio:1,globalContext:false,
   localSink:()=>{},localSpanSink:line=>{lines.push(JSON.parse(line).resourceSpans[0].scopeSpans[0]);}});
@@ -170,7 +170,7 @@ test('each profile registers only its own span names, so an earlier host records
  assert.deepEqual(later,['bunny.outcome.publish','bunny.device.call']);
  for(const version of ['1.0','1.1','1.2'])assert.deepEqual(profileSpanNames(version).filter(name=>later.includes(name)),[],`profile ${version}`);
  assert.deepEqual(profileSpanNames('1.3'),catalog.span_names);
- assert.deepEqual(profileSpanNames('1.5'),[],'an unknown profile registers none');
+ assert.deepEqual(profileSpanNames('1.6'),[],'an unknown profile registers none');
  // A host's spans carry its records' profile, so a 1.2 or 1.1 host records the names its profile has and drops the rest.
  const recorded=async(schemaVersion,resource,scope)=>{
   const names=[];
