@@ -32,6 +32,7 @@ void test('a full database from SQLite is a full disk, by its result code', asyn
   }
   assert.ok(caught !== undefined, 'the insert failed');
   assert.equal(fullDisk(caught), true);
+  for (const depth of [1, 7]) assert.equal(fullDisk(wrapped(caught, depth)), true, `the real error ${String(depth)} causes deep`);
   // An extended result code keeps SQLITE_FULL in its low byte.
   assert.equal(fullDisk({errcode: 13 | (1 << 8)}), true);
 });
@@ -42,10 +43,12 @@ void test('ENOSPC from the file system is a full disk, by its code', () => {
 });
 
 void test('a full disk is found through the causes that wrap it, as far as seven deep', () => {
-  assert.equal(fullDisk(wrapped({errcode: 13}, 1)), true, 'SQLITE_FULL one cause deep');
-  assert.equal(fullDisk(wrapped({code: 'ENOSPC'}, 1)), true, 'ENOSPC one cause deep');
-  assert.equal(fullDisk(wrapped({errcode: 13}, 7)), true, 'the seventh cause is read');
-  assert.equal(fullDisk(wrapped({errcode: 13}, 8)), false, 'the eighth cause is not: the walk is bounded');
+  const kinds: [string, unknown][] = [['SQLITE_FULL', {errcode: 13}], ['an extended SQLITE_FULL', {errcode: 13 | (1 << 8)}], ['ENOSPC', {code: 'ENOSPC'}]];
+  for (const [name, inner] of kinds) {
+    assert.equal(fullDisk(wrapped(inner, 1)), true, `${name} one cause deep`);
+    assert.equal(fullDisk(wrapped(inner, 7)), true, `${name} seven causes deep: the seventh cause is read`);
+    assert.equal(fullDisk(wrapped(inner, 8)), false, `${name} eight causes deep: the walk is bounded`);
+  }
 });
 
 void test('nothing else is a full disk: other codes, the text alone, non-errors and a cycle', () => {

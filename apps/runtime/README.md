@@ -891,7 +891,7 @@ nothing: the process exits with the code the line reports.
 | `disk-short` | 3, 4 | Less free space than the space it needs (3), or the file system or the database filled up while it wrote (4) |
 | `destination-not-empty` | 3 | The module already has files. Migrate into a fresh state directory, or remove every path the tool creates: `modules/pixoo.sqlite`, `modules/pixoo.sqlite-wal`, `modules/pixoo.sqlite-shm`, `modules/pixoo.sqlite-journal` and `modules/pixoo/` |
 | `destination-missing` | 3 | `verify` found no module database |
-| `module-folder-not-private` | 3 | `modules/` or `modules/pixoo/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse |
+| `module-folder-not-private` | 3, 4 | `modules/` or `modules/pixoo/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse (3); or, only if the module's folders change under the tool while it holds the lease, `openModuleFolder` refuses them as it writes (4) |
 | `state-dir-*` | 3 | The runtime's [State](#state) rules refuse the state directory |
 | `source-missing` | 3 | The library path is missing, is not a folder, or holds no `catalog.sqlite` |
 | `source-in-use` | 3 | The Pixoo service holds the library: stop it first |
@@ -1002,7 +1002,7 @@ exit but 0 is a no-go.
 | `paths-overlap` | 3 | The state directory, the secrets directory or the section's folder lies inside the source directory, or the source inside one of them |
 | `secrets-dir-refused`, `section-dir-refused` | 3 | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
 | `state-dir-*` | 3 | The runtime's [State](#state) rules refuse the state directory |
-| `module-folder-not-private` | 3 | `modules/` or `modules/nanoleaf/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse |
+| `module-folder-not-private` | 3, 4 | `modules/` or `modules/nanoleaf/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse (3); or, only if the module's folders change under the tool while it holds the lease, `openModuleFolder` refuses them as it writes (4) |
 | `module-db-not-private` | 4 | Only if the module's files change under the tool while it holds the lease: the runtime's [State](#state) rules refuse the database it creates |
 | `source-missing` | 3 | The source directory, its `status.sqlite` or its `config.json` is missing |
 | `source-in-use` | 3 | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |

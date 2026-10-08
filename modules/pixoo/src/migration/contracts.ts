@@ -124,7 +124,6 @@ export type VerificationReport = {
 
 export const sha256 = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
 
-
 /** The digest of the carried rows, each table's rows in ID order. */
 export function catalogDigest(rows: CatalogRows): string {
   return sha256(JSON.stringify(CARRIED_TABLES.map(table => [table, [...rows[table]].sort(byId)])));
