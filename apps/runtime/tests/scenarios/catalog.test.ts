@@ -28,7 +28,6 @@ it('the catalog names each scenario once, the core\'s first, and each one observ
     'end-to-end', 'configured-module', 'misconfigured-module', 'device-owners', 'gateway-reads', 'grants-and-duplicates', 'approval-recovery',
     'module-contributions', 'agent-hooks',
     'dashboard-sessions', 'dashboard-finished-turn',
-
   ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);

@@ -68,7 +68,6 @@ export const BUILD_SOURCES = [
   ':(glob)modules/*/src/**', ':(glob)modules/*/package.json',
   // The dashboard's page (Hub #922), built from its sources and the Places manifest it reads.
   ':(glob)apps/runtime/dashboard/src/**', 'apps/runtime/dashboard/build.mjs', 'docs/skins/places.json',
-
 ];
 /** The build's outputs the run serves, with the registry and each module folder's entry in the checkout at `at`. */
 export const buildOutputs = (at = root): string[] => [
@@ -78,7 +77,6 @@ export const buildOutputs = (at = root): string[] => [
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
   ...moduleFolders(at).map(folder => `modules/${folder}/dist/src/index.js`),
   'apps/runtime/dist/dashboard/dashboard.js',
-
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */

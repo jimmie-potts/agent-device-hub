@@ -1020,4 +1020,3 @@ The browser entry SHALL expose the existing `childOf` helper for other HTTP call
 #### Scenario: A session that ended
 - **WHEN** the edge ends a browser part's stream and refuses its reconnects as `unauthenticated` several times, then admits it again
 - **THEN** the client reports `remote.disconnected`, one `remote.refused` with `unauthenticated` at WARN, and `remote.reconnected`, in that order
-

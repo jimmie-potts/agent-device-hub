@@ -4,14 +4,12 @@
 // editing this file (Hub #999). Scenarios build on the framework (`framework.ts`), which every run type's harness
 // implements.
 import {readdirSync} from 'node:fs';
-import {chipOf} from '../../dashboard/src/sessions.js';
-
-
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CommandDraft} from '@jimmie-potts/sdk';
 import {DEADLINES, type LogRecord} from '../../src/index.js';
+import {chipOf} from '../../dashboard/src/sessions.js';
 import {
   OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from '../fixtures/agents.js';
@@ -759,7 +757,6 @@ const moduleContributions: Scenario = {
 
 // Agent hooks (Hub #926)
 
-
 /** How long one hook may take from its start to its exit: its own 2.9 s budget, inside the clients' 3 s hook timeout. */
 const HOOK_EXIT_MS = 3000;
 /** Content a hook carries that the normalizers' allowlist drops: no record or message may hold it. */
@@ -840,7 +837,6 @@ const agentHooks: Scenario = {
 export type ModuleScenarios = {readonly scenarios: readonly Scenario[]; readonly runs?: Readonly<Record<string, ModuleRun>>};
 
 /**
-
  * The dashboard's sessions (Hub #922): a browser signed in by a trusted loopback page reads the core's sessions on
  * `/api/v2`, as the dashboard's page loads from the gateway, and the dashboard's chip comes from its row helper
  * over the record alone. Sessions appear as the hook observes them, and an approval prompt is raised and cleared.
@@ -940,11 +936,9 @@ const dashboardFinishedTurn: Scenario = {
 
 /** The core's and the fixture modules' scenarios, in the order a reader meets them. */
 const CORE_SCENARIOS: readonly Scenario[] = [
-
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, deviceOwners, gatewayReads, grantsAndDuplicates, approvalRecovery, moduleContributions, agentHooks,
   dashboardSessions, dashboardFinishedTurn,
-
 ];
 
 /** Every module scenario file in `folder`, by its name without `.js`, in name order. */
