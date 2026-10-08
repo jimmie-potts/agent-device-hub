@@ -62,7 +62,7 @@ function loopbackLink(value: string | undefined): string | undefined {
 const installed = (): boolean => new URL(places.find(place => place.id === 'bunny')?.localUrl ?? 'http://127.0.0.1:8788/').port === location.port;
 
 function PlacesNav({links}: {links: Readonly<Record<string, string>> | undefined}): React.JSX.Element {
-  return <div className="places-group"><p className="nav-label">PLACES</p><nav aria-label="Places">{places.map(place => {
+  return <div className="places-group"><p className="nav-label">PLACES</p><nav aria-label="Places" data-links={links === undefined ? 'loading' : 'loaded'}>{places.map(place => {
     if (place.id === 'bunny') return <span key={place.id} aria-current="page">{place.label}<small>Local</small></span>;
     if (place.group === 'Local') {
       // Local links wait for the runtime's links, so a preview never shows an installed destination while it loads.

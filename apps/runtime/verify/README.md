@@ -453,7 +453,8 @@ hook() { node apps/runtime/dashboard/tests/hook.ts "$origin" "$tokens" "$@"; }
 hook session-started --title "Port the wall"; hook turn-started       # the session appears, Working
 hook attention-approval; hook attention-resolved                        # Waiting for approval, then Working again
 hook turn-ended                                                         # Finished · unread, and it stays so
-curl -s -X POST -H 'content-type: application/json' -d '{"source":"bunny/parts/dashboard"}' "<harness>/disconnect"  # the page resyncs
+harness=<the run's harness endpoint, without its trailing slash>
+curl -s -X POST -H 'content-type: application/json' -d '{"source":"bunny/parts/dashboard"}' "$harness/api/harness/v1/disconnect"  # the page resyncs
 hook turn-started --turn turn-2; hook turn-ended --turn turn-2          # the new turn clears the first; the second is unread
 hook runtime-ended --turn turn-2                                        # after Acknowledge for the dashboard, the session ends
 npm run -s verify:runtime -- capture <run-id> scenario-dashboard-sessions
