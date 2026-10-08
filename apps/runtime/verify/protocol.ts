@@ -3,24 +3,18 @@
 // published; the supervisor sends the run's controls. One channel carries them all in order, so a flush that comes back
 // means every earlier message has arrived. The network guard writes each refusal to the run's report file instead, so
 // that worker threads and the child's own child processes report too. A run adapter reads and drives the run through
-// the supervisor's loopback harness API, whose documents are below.
-import type {MarkerRead} from '@jimmie-potts/codex-desktop';
+// the supervisor's loopback harness API, whose documents are below. The fixture modules' devices have messages of their
+// own; every registered module's device is reached through its registration's link (link.ts), with `device.*` messages
+// that name the module (Hub #999).
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {SimulatedAction} from '@jimmie-potts/nanoleaf';
-import type {SimulatedMode, SimulatedPixooState} from '@jimmie-potts/pixoo';
-import type {SonosReply, SonyReply} from '@jimmie-potts/playback';
+import type {DeviceAction} from '@jimmie-potts/sdk';
 import type {LogRecord} from '../src/index.js';
 import type {ChimeRing} from '../tests/fixtures/chime.js';
 import type {Indicator, Power} from '../tests/fixtures/lamp.js';
-import type {DeviceStates, Generational, Simulation} from '../tests/scenarios/catalog.js';
+import type {DeviceStates, Generational} from '../tests/scenarios/framework.js';
 
 /** A control the supervisor sends a child, which the child acknowledges once applied. */
 export type Control = 'arm-crash' | 'lose-acknowledgment' | 'chime-fault';
-/**
- * What the child's own simulated device does (Hub #843): the simulated Pixoo lives in the child, beside the module that
- * reaches it, and reports its state to the supervisor.
- */
-export type ChildSimulation = {device: 'pixoo'; action: SimulatedMode};
 
 export type ChildMessage =
   | {type: 'lamp.switch'; id: number; lamp: string; power: Power}
@@ -30,29 +24,11 @@ export type ChildMessage =
   | {type: 'sign.show'; id: number; address: string; token: string; frame: string}
   /** The sign module's deadline for that show passed, so the simulated sign stops waiting. */
   | {type: 'sign.abandon'; id: number}
-  /** The playback module calls a simulated speaker (Hub #929): one Sony JSON-RPC call or one Sonos SOAP action. No address is sent. */
-  | {type: 'speaker.sony'; id: number; method: string; version: string}
-  | {type: 'speaker.sonos'; id: number; action: string; args: string}
-  /** The playback module's deadline for that call passed, or it stopped, so the simulated speaker stops waiting. */
-  | {type: 'speaker.abandon'; id: number}
-  /** The LIFX module sends one packet, its payload in base64, to the simulated bulb at `address` (Hub #928). */
-  | {type: 'lifx.exchange'; id: number; address: string; packet: number; payload: string; expected: number}
-  /** The LIFX module stopped waiting for that packet's answer, so the simulated bulb stops too. */
-  | {type: 'lifx.abandon'; id: number}
-  /**
-   * The Tidbyt module makes one request to the simulated cloud (Hub #930): its method, URL, bearer header with the
-   * synthetic token, and JSON body.
-   */
-  | {type: 'cloud.call'; id: number; method: 'GET' | 'POST' | 'DELETE'; url: string; authorization: string; body?: string}
-  /** The Tidbyt module's deadline for that request passed, or it stopped, so the simulated cloud stops waiting. */
-  | {type: 'cloud.abandon'; id: number}
-  /** The Nanoleaf module's request to a simulated controller, with the token it read from its secret file (Hub #844). */
-  | {type: 'nanoleaf.request'; id: number; address: string; token: string; method: string; endpoint: string; payload: unknown}
-  /** The Codex Desktop module reads its simulated marker (Hub #926), unless its stamp is still `stamp`. No path is sent. */
-  | {type: 'marker.read'; id: number; stamp: string}
+  /** A registered module calls its simulated device in the supervisor (Hub #999), with JSON arguments. */
+  | {type: 'device.call'; id: number; device: string; method: string; args: unknown}
+  /** The module stopped waiting for that call, so the device stops too. */
+  | {type: 'device.abandon'; id: number}
   | {type: 'published'; message: Message}
-  /** What the child's simulated Pixoo shows now. */
-  | {type: 'pixoo.state'; state: SimulatedPixooState}
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number};
 
@@ -61,21 +37,12 @@ export type SupervisorMessage =
   | {type: 'lamp.failed'; id: number}
   | {type: 'sign.shown'; id: number}
   | {type: 'sign.failed'; id: number}
-  | {type: 'speaker.replied'; id: number; reply: SonyReply | SonosReply}
-  | {type: 'speaker.failed'; id: number}
-  | {type: 'lifx.answered'; id: number; payload: string}
-  | {type: 'lifx.failed'; id: number}
-  | {type: 'cloud.answered'; id: number; status: number; headers: Record<string, string>; body: string}
-  /** The simulated cloud refused the connection before anything was sent, or never answered. */
-  | {type: 'cloud.failed'; id: number; refused: boolean}
-  | {type: 'nanoleaf.replied'; id: number; reply: unknown}
-  /** The simulated controller did not answer, or answered with the HTTP error `status`. */
-  | {type: 'nanoleaf.failed'; id: number; status?: number}
-  /** The simulated marker's answer to a read, which waits while its folder stalls; or a read that failed. */
-  | {type: 'marker.answered'; id: number; read: MarkerRead}
-  | {type: 'marker.failed'; id: number}
+  /** The device's answer to a registered module's call, or its failure. */
+  | {type: 'device.answered'; id: number; value: unknown}
+  | {type: 'device.failed'; id: number}
   | {type: 'control'; id: number; control: Control}
-  | {type: 'simulate'; id: number; simulation: ChildSimulation}
+  /** A simulation for a registered module's links in the child, which acknowledges it once its handlers heard it. */
+  | {type: 'device.push'; id: number; device: string; simulation: DeviceAction}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
   | {type: 'flush'; id: number};
@@ -118,14 +85,9 @@ export type BoundaryReport = {
 /** `POST disconnect`: the remote part whose stream the edge ends. Only a part's source, `bunny/parts/<role>`, is taken. */
 export type DisconnectRequest = {source: string};
 
-/** `POST simulate`: what a device should do, as the catalog's `Simulation`. */
-export type SimulateRequest =
+/** `POST simulate`: what a device should do, as the catalog's `Simulation`: a fixture module's, or a registered module's. */
+export type FixtureSimulation =
   | {device: 'lamp'; action: 'hold' | 'release' | 'fail-next'}
   | {device: 'chime'; action: 'fault-next'}
-  | {device: 'sign'; action: 'online' | 'offline'}
-  | Extract<Simulation, {device: 'playback'}>
-  | {device: 'lifx'; action: 'online' | 'offline'; address: string}
-  | Extract<Simulation, {device: 'tidbyt'}>
-  | {device: 'nanoleaf'; action: SimulatedAction}
-  | Extract<Simulation, {device: 'codex-desktop'}>
-  | ChildSimulation;
+  | {device: 'sign'; action: 'online' | 'offline'};
+export type SimulateRequest = FixtureSimulation | DeviceAction;

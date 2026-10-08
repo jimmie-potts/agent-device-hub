@@ -8,7 +8,8 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {SYNTHETIC_TOKEN} from '@jimmie-potts/nanoleaf';
 import {HEALTH_PATH, NANOLEAF_MIGRATION_EXIT, runNanoleafMigration, type RuntimeHealth} from '../../src/index.js';
-import {migrationOf, nanoleafMigrationArgs, partTokensOf} from '../seed.js';
+import {nanoleafMigrationArgs} from '../../tests/scenarios/modules/nanoleaf.js';
+import {migrationOf, partTokensOf} from '../seed.js';
 import {base, startRun} from './support.js';
 
 type Line = {result: string; code?: string; counts?: Record<string, number>; mismatches?: {total: number}; digest?: unknown};

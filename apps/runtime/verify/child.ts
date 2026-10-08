@@ -1,25 +1,22 @@
-// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none> <pixoo state>
-// -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each fixture module's factory,
-// whose simulated transport reaches the supervisor's simulated device over the IPC channel; the arguments name the run's
-// configuration file when its seed has one (Hub #919). With any module, a harness module reports every message the bus
-// publishes. The supervisor's controls arm a crash between the lamp's commit and
-// its publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
-// stream at the edge, which `runMain` hands over once it serves. The simulated Pixoo (Hub #843) lives here, beside the
-// module that reaches it: the child reports what the Pixoo shows, and the supervisor sets how it answers and starts each
-// runtime with the mode and the panel the last one had, as a real Pixoo keeps its picture across a runtime restart.
+// The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none>
+// <handovers> -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each
+// module's factory, whose simulated transport reaches the supervisor's simulated device over the IPC channel; the
+// arguments name the run's configuration file when its seed has one (Hub #919). The fixture modules have transports of
+// their own here; every registered module is built through its registration's link (link.ts), so this file names none
+// (Hub #999). `handovers` is base64url JSON of what the last runtime left with the supervisor for each registered
+// module, such as what a simulated device that lives beside its module showed. With any module, a harness module
+// reports every message the bus publishes. The supervisor's controls arm a crash between the lamp's commit and its
+// publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
+// stream at the edge, which `runMain` hands over once it serves.
 import http from 'node:http';
-import {createCodexDesktopModule, type MarkerRead, type MarkerTransport} from '@jimmie-potts/codex-desktop';
-import {createLifxModule, lifxSchemas, type LifxNetwork} from '@jimmie-potts/lifx';
-import {HttpError, createNanoleafModule, nanoleafSchemas, type LightRequest} from '@jimmie-potts/nanoleaf';
-import {SimulatedPixoo, createPixooModule, pixooOwnSchemas, type SimulatedMode, type SimulatedPixooState} from '@jimmie-potts/pixoo';
-import {createPlaybackModule, type SonosReply, type SonyReply, type SpeakerTransport} from '@jimmie-potts/playback';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
-import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
-import {runMain, type ModuleFactory} from '../src/index.js';
+import {registrations, runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
-import {createCoreModule, historySchemas} from '../tests/fixtures/core.js';
+import {createCoreModule} from '../tests/fixtures/core.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
+import {SCENARIO_SCHEMAS} from '../tests/scenarios/parts.js';
+import {ChildLinks} from './link.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
 
 const send = (message: ChildMessage): void => { if (process.connected) process.send?.(message); };
@@ -33,13 +30,6 @@ const take = (control: Control): boolean => {
 
 const switches = new Map<number, {resolve: (power: Power) => void; reject: (error: Error) => void}>();
 const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
-const speakerCalls = new Map<number, {resolve: (reply: SonyReply | SonosReply) => void; reject: (error: Error) => void}>();
-const exchanges = new Map<number, {resolve: (payload: Buffer) => void; reject: (error: Error) => void}>();
-const cloudCalls = new Map<number, {resolve: (response: Response) => void; reject: (error: Error) => void}>();
-const lightRequests = new Map<number, {resolve: (reply: unknown) => void; reject: (error: Error) => void}>();
-/** How long the child keeps a Nanoleaf request the simulated controller never answers; the module's own deadline is shorter. */
-const ABANDON_MS = 10_000;
-const markerReads = new Map<number, {resolve: (read: MarkerRead) => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
 
@@ -64,57 +54,8 @@ process.on('message', (value: unknown) => {
       shows.get(message.id)?.reject(new Error('the sign refused the frame'));
       shows.delete(message.id);
       return;
-    case 'speaker.replied':
-      speakerCalls.get(message.id)?.resolve(message.reply);
-      speakerCalls.delete(message.id);
-      return;
-    case 'speaker.failed':
-      speakerCalls.get(message.id)?.reject(new Error('the speaker did not answer'));
-      speakerCalls.delete(message.id);
-      return;
-    case 'lifx.answered':
-      exchanges.get(message.id)?.resolve(Buffer.from(message.payload, 'base64'));
-      exchanges.delete(message.id);
-      return;
-    case 'lifx.failed':
-      exchanges.get(message.id)?.reject(new Error('the bulb refused the packet'));
-      exchanges.delete(message.id);
-      return;
-    case 'cloud.answered':
-      cloudCalls.get(message.id)?.resolve(new Response(message.body, {status: message.status, headers: message.headers}));
-      cloudCalls.delete(message.id);
-      return;
-    case 'marker.answered':
-      markerReads.get(message.id)?.resolve(message.read);
-      markerReads.delete(message.id);
-      return;
-    case 'marker.failed':
-      markerReads.get(message.id)?.reject(new Error('the marker could not be read'));
-      markerReads.delete(message.id);
-      return;
-    case 'cloud.failed':
-      // A refused connection fails as undici reports one, so the module knows nothing was sent.
-      cloudCalls.get(message.id)?.reject(message.refused ?
-        new TypeError('fetch failed', {cause: Object.assign(new Error('connect ECONNREFUSED'), {code: 'ECONNREFUSED'})}) :
-        new DOMException('the cloud did not answer', 'AbortError'));
-      cloudCalls.delete(message.id);
-      return;
-    case 'nanoleaf.replied':
-      lightRequests.get(message.id)?.resolve(message.reply);
-      lightRequests.delete(message.id);
-      return;
-    case 'nanoleaf.failed':
-      // A controller that answered with an HTTP error status is reached, as the Nanoleaf HTTP client reports it.
-      lightRequests.get(message.id)?.reject(message.status === undefined ? new Error('the simulated controller did not answer')
-        : new HttpError(message.status));
-      lightRequests.delete(message.id);
-      return;
     case 'control':
       flags[message.control] = true;
-      send({type: 'applied', id: message.id});
-      return;
-    case 'simulate':
-      pixoo.set(message.simulation.action);
       send({type: 'applied', id: message.id});
       return;
     case 'disconnect':
@@ -125,6 +66,11 @@ process.on('message', (value: unknown) => {
     case 'flush':
       // Every delivery already queued runs before the next turn of the event loop.
       setImmediate(() => { send({type: 'flushed', id: message.id}); });
+      return;
+    case 'device.answered':
+    case 'device.failed':
+    case 'device.push':
+      links.hear(message);
       return;
   }
 });
@@ -161,104 +107,6 @@ const signs: SignTransport = {
   }),
 };
 
-/**
- * One call to the supervisor's simulated speakers (Hub #929). A speaker that does not answer never replies, so the
- * playback module's deadline aborts the call, which then tells the supervisor's speaker to stop waiting.
- */
-function speakerCall(signal: AbortSignal, message: (id: number) => ChildMessage): Promise<SonyReply | SonosReply> {
-  return new Promise((resolve, reject) => {
-    next += 1;
-    const id = next;
-    const abandon = (): void => {
-      if (!speakerCalls.delete(id)) return;
-      send({type: 'speaker.abandon', id});
-      reject(new Error('the speaker did not answer'));
-    };
-    speakerCalls.set(id, {
-      resolve: reply => { signal.removeEventListener('abort', abandon); resolve(reply); },
-      reject: error => { signal.removeEventListener('abort', abandon); reject(error); },
-    });
-    signal.addEventListener('abort', abandon, {once: true});
-    if (signal.aborted) abandon();
-    else send(message(id));
-  });
-}
-/**
- * The LIFX bulbs, reached over the IPC channel: each packet goes to the supervisor's simulated bulb (Hub #928). A bulb
- * off the network never answers, so the module's own deadline aborts the wait, which tells the supervisor to stop too.
- */
-const bulbs: LifxNetwork = {connect: address => ({
-  exchange: (packet, payload, expected, signal) => new Promise<Buffer>((resolve, reject) => {
-    next += 1;
-    const id = next;
-    const abandon = (): void => {
-      if (!exchanges.delete(id)) return;
-      send({type: 'lifx.abandon', id});
-      reject(new Error('the bulb did not answer'));
-    };
-    exchanges.set(id, {
-      resolve: answer => { signal.removeEventListener('abort', abandon); resolve(answer); },
-      reject: error => { signal.removeEventListener('abort', abandon); reject(error); },
-    });
-    signal.addEventListener('abort', abandon, {once: true});
-    if (signal.aborted) abandon();
-    else send({type: 'lifx.exchange', id, address, packet, payload: Buffer.from(payload).toString('base64'), expected});
-  }),
-  close: () => {},
-})};
-/**
- * The Tidbyt cloud, reached over the IPC channel: each request goes to the supervisor's simulated cloud (Hub #930), which
- * answers as the cloud would. A cloud that does not answer never replies, so the module's own deadline aborts the call,
- * which then tells the supervisor's cloud to stop waiting.
- */
-const cloud: CloudFetch = (url, init) => new Promise<Response>((resolve, reject) => {
-  next += 1;
-  const id = next;
-  const abandon = (): void => {
-    if (!cloudCalls.delete(id)) return;
-    send({type: 'cloud.abandon', id});
-    reject(new DOMException('the cloud did not answer', 'AbortError'));
-  };
-  cloudCalls.set(id, {
-    resolve: response => { init.signal.removeEventListener('abort', abandon); resolve(response); },
-    reject: error => { init.signal.removeEventListener('abort', abandon); reject(error); },
-  });
-  init.signal.addEventListener('abort', abandon, {once: true});
-  if (init.signal.aborted) abandon();
-  else send({type: 'cloud.call', id, method: init.method, url, authorization: init.headers.authorization ?? '', ...(init.body === undefined ? {} : {body: init.body})});
-});
-
-/**
- * The Codex Desktop marker, reached over the IPC channel: each read goes to the supervisor's simulated marker (Hub #926),
- * which answers at once, or once its folder answers again after a stall. No path crosses the channel.
- */
-const marker: MarkerTransport = {
-  read: (_home, stamp) => new Promise<MarkerRead>((resolve, reject) => {
-    next += 1;
-    const id = next;
-    markerReads.set(id, {resolve, reject});
-    send({type: 'marker.read', id, stamp});
-  }),
-  close: () => {},
-};
-
-/** The speakers, reached over the IPC channel; the supervisor's simulated speakers answer. Their addresses stay here. */
-const speakers: SpeakerTransport = {
-  sony: async (_endpoint, method, version, signal) => await speakerCall(signal, id => ({type: 'speaker.sony', id, method, version})) as SonyReply,
-  sonos: async (_endpoint, action, args, signal) => await speakerCall(signal, id => ({type: 'speaker.sonos', id, action, args})) as SonosReply,
-};
-/**
- * The Nanoleaf controllers, reached over the IPC channel; the supervisor's simulated controllers answer, and keep their
- * state across a runtime restart. One that never answers is dropped here after `ABANDON_MS`.
- */
-const nanoleaf: LightRequest = (address, method, endpoint = '', payload = null) => new Promise<unknown>((resolve, reject) => {
-  next += 1;
-  const id = next;
-  lightRequests.set(id, {resolve, reject});
-  setTimeout(() => { if (lightRequests.delete(id)) reject(new Error('the simulated controller did not answer')); }, ABANDON_MS).unref();
-  send({type: 'nanoleaf.request', id, address: address.ip, token: address.token, method, endpoint, payload});
-});
-
 /** The chime, reached over the IPC channel. A fault the supervisor set throws here, inside the chime's handler. */
 const chime: ChimeTransport = {
   ring: (ring: ChimeRing) => {
@@ -267,22 +115,18 @@ const chime: ChimeTransport = {
   },
 };
 
-const [list = '-', fault = 'none', panel = '', separator, ...runtimeArgs] = process.argv.slice(2);
-const MODES: readonly string[] = ['online', 'offline', 'silent'] satisfies SimulatedMode[];
-/** The Pixoo the last runtime left, as the supervisor hands it over: base64url JSON of its state, mode included. */
-const left = ((): SimulatedPixooState | undefined => {
+const [list = '-', fault = 'none', handover = '', separator, ...runtimeArgs] = process.argv.slice(2);
+/** What the last runtime left with the supervisor for each registered module, by name. */
+const handovers = ((): Readonly<Record<string, unknown>> | undefined => {
   try {
-    const value = JSON.parse(Buffer.from(panel, 'base64url').toString('utf8')) as Partial<SimulatedPixooState> | null;
-    return value !== null && typeof value === 'object' && MODES.includes(String(value.mode)) ? value as SimulatedPixooState : undefined;
+    const value = JSON.parse(Buffer.from(handover, 'base64url').toString('utf8')) as unknown;
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
   } catch {
     return undefined;
   }
 })();
-if (separator !== '--' || left === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <pixoo state> -- <runtime arguments>');
-/** The simulated Pixoo, in the mode the supervisor last set and showing what the last runtime's Pixoo showed. */
-const {mode: pixooMode, ...pixooPanel} = left;
-const pixoo = new SimulatedPixoo({mode: pixooMode, panel: pixooPanel});
-pixoo.onChange(state => { send({type: 'pixoo.state', state}); });
+if (separator !== '--' || handovers === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <handovers> -- <runtime arguments>');
+const links = new ChildLinks(send, handovers);
 
 const fixture = (name: string, simulate: () => BunnyModule, schemas?: Readonly<Record<string, object>>): ModuleFactory => ({
   name, simulate, ...(schemas === undefined ? {} : {schemas}),
@@ -308,16 +152,6 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   }), lampSchemas),
   chime: fixture('chime', () => createChimeModule({transport: chime})),
   sign: fixture('sign', () => createSignModule({transport: signs}), signSchemas),
-  playback: fixture('playback', () => createPlaybackModule({transport: speakers})),
-  // The shipped LIFX module with simulated bulbs; its outbox follows the core's acknowledgments.
-  lifx: fixture('lifx', () => createLifxModule({transport: bulbs}), lifxSchemas),
-  // The shipped Tidbyt module with the supervisor's simulated cloud (Hub #930).
-  tidbyt: fixture('tidbyt', () => createTidbytModule({transport: cloud})),
-  // Its outbox follows the core's acknowledgments, so it forgets what the core took.
-  pixoo: fixture('pixoo', () => createPixooModule({transport: pixoo}), pixooOwnSchemas),
-  nanoleaf: fixture('nanoleaf', () => createNanoleafModule({transport: nanoleaf}), nanoleafSchemas),
-  // The shipped Codex Desktop module with the supervisor's simulated marker (Hub #926).
-  'codex-desktop': fixture('codex-desktop', () => createCodexDesktopModule({transport: marker})),
   // The installed-port negative control: a module that reaches for the installed Hub with fetch and with node:http. The
   // guard refuses both before they connect.
   prober: fixture('prober', () => ({
@@ -332,17 +166,18 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
     },
     stop: () => {},
   })),
+  // Every registered module, with the link to its simulated device in the supervisor (Hub #999).
+  ...Object.fromEntries(registrations.flatMap(({name, schemas, simulation}) =>
+    simulation === undefined ? [] : [[name, fixture(name, () => simulation.run.remote(links.link(name)), schemas)] as const])),
 };
 
 const names = [...(list === '-' ? [] : list.split(',')), ...(fault === 'installed-port' ? ['prober'] : [])];
 const factories = names.map(name => {
   const factory = FACTORIES[name];
-  if (factory === undefined) throw new Error(`no fixture module ${name}`);
+  if (factory === undefined) throw new Error(`no fixture or simulated module ${name}`);
   return factory;
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge and gateway still
-// know the fixture families the scenario's parts use, as the in-memory harness's do: the fixture core's stand-in
-// history among them, so `/api/v2/families/stand-in-history` serves it.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {
-  schemas: {...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas}, onEdge: served => { edge = served; },
-});
+// know every family the scenario's parts use, from the one list the in-memory harness takes too: the fixture core's
+// stand-in history among them, so `/api/v2/families/stand-in-history` serves it.
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }});

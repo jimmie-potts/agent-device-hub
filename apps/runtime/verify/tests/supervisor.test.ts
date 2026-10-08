@@ -9,6 +9,8 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {MarkerState} from '@jimmie-potts/codex-desktop';
+import type {SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {connectRemote, type CommandDraft} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
@@ -28,6 +30,11 @@ async function until(condition: () => boolean | Promise<boolean>, what: string, 
     await new Promise(resolve => { setTimeout(resolve, 50); });
   }
 }
+/** What a registered module's simulated device shows, which the state document keys by the module's name (Hub #999). */
+async function deviceOf<T>(run: Started, device: string): Promise<T> {
+  return (await state(run)).devices[device] as T;
+}
+
 async function state(run: Started): Promise<HarnessState> {
   return await (await fetch(new URL(`${HARNESS_PATH}/state`, run.harness))).json() as HarnessState;
 }
@@ -220,7 +227,7 @@ void test('the harness refuses a simulation it does not know with 400, and the P
   const threads = (count: number): string[] => Array.from({length: count}, (_, index) => `thread-${index}`);
   assert.equal((await post(run, 'simulate', {device: 'codex-desktop', action: 'list', sessions: threads(65)})).status, 400, '65 threads');
   assert.equal((await post(run, 'simulate', {device: 'codex-desktop', action: 'list', sessions: threads(64)})).status, 200, '64 threads');
-  assert.equal((await state(run)).devices.codexDesktop.unread?.length, 64);
+  assert.equal((await deviceOf<MarkerState>(run, 'codex-desktop')).unread?.length, 64);
   // A restart takes only `holdMs`, a whole number of milliseconds up to 10 s. Anything else is refused with a registry
   // body, as a simulation is, and restarts nothing.
   for (const body of [null, [], 7, {holdMs: -1}, {holdMs: 1.5}, {holdMs: 10_001}, {holdMs: '5'}, {holdMs: null}, {hold: 5}, {holdMs: 5, extra: true}, '{"holdMs":']) {
@@ -229,19 +236,19 @@ void test('the harness refuses a simulation it does not know with 400, and the P
   }
   assert.equal((await post(run, 'simulate', 'not JSON')).status, 400, 'a simulation that is not JSON');
   assert.equal((await state(run)).generation, 1, 'a refused restart restarts nothing');
-  assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');
+  assert.equal((await deviceOf<SimulatedPixooState>(run, 'pixoo')).mode, 'online', 'a refused simulation changes nothing');
   // The operator sets the Pixoo's brightness on the action route, as a person would (#782); the simulated panel shows it.
   assert.equal(await act(run, 'req-pixoo-30', {key: 'bunny.cmd.brightness-set.pixoo-1', draft: {
     type: 'org.bunny.brightness.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/brightness-set/2.0', data: {percent: 30},
   }}), 'accepted');
-  await until(async () => (await state(run)).devices.pixoo.brightness === 30, 'the panel at 30 percent');
-  const before = (await state(run)).devices.pixoo;
+  await until(async () => (await deviceOf<SimulatedPixooState>(run, 'pixoo')).brightness === 30, 'the panel at 30 percent');
+  const before = await deviceOf<SimulatedPixooState>(run, 'pixoo');
   assert.equal((await post(run, 'restart')).status, 200);
   await until(async () => (await state(run)).generation === 2, 'the restarted runtime');
-  const after = (await state(run)).devices.pixoo;
+  const after = await deviceOf<SimulatedPixooState>(run, 'pixoo');
   assert.deepEqual([after.brightness, after.writes, after.shown], [before.brightness, before.writes, before.shown], 'the panel kept what it showed');
   assert.equal((await post(run, 'simulate', {device: 'pixoo', action: 'offline'})).status, 200);
-  assert.equal((await state(run)).devices.pixoo.mode, 'offline');
+  assert.equal((await deviceOf<SimulatedPixooState>(run, 'pixoo')).mode, 'offline');
 });
 
 void test('a burst limit allows its count within a window, and allows again once the window has passed', () => {

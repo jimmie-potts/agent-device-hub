@@ -7,7 +7,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {LINES_ADDRESS, NANOLEAF_FAMILIES, OBSERVE_MS, REQUEST_MS, SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
 import type {RequestResult, Sdk} from '@jimmie-potts/sdk';
 import {createCoreModule} from '../src/index.js';
-import {NANOLEAF_SECTION} from './scenarios/catalog.js';
+import {NANOLEAF_SECTION} from './scenarios/modules/nanoleaf.js';
 import {partTokens, writeConfiguration} from './scenarios/parts.js';
 import {entry, fixture, it, run, stateDir, waitFor} from './support.js';
 

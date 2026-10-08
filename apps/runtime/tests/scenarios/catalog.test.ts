@@ -2,8 +2,11 @@
 // parts on the runtime's bus and once through the runtime's SDK edge over SSE and HTTP. Every message the harness sees
 // must follow profile 2.0, and no part may report an error.
 import assert from 'node:assert/strict';
+import {readdirSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {moduleFolders} from '../../build/registry.js';
 import {it} from '../support.js';
-import {ROLES, SCENARIOS, TRANSPORTS, runScenario, type ScenarioResult} from './catalog.js';
+import {MODULE_FILES, ROLES, SCENARIOS, TRANSPORTS, runScenario, type ScenarioResult} from './catalog.js';
 import {startMemoryHarness, type MemoryHarness} from './memory.js';
 
 /** A failed run's steps and the runtime's last log records, to show why it failed. */
@@ -13,20 +16,35 @@ function describe(result: ScenarioResult, h: MemoryHarness): string {
   return [`${result.id} over ${result.transport} failed:`, ...steps, 'last runtime records:', ...logs].join('\n');
 }
 
-it('the catalog names each scenario once, and each one observes something', () => {
+/** The module scenario files in the source tree, by name: each one's `.ts` beside the catalog's source. */
+const SOURCES = readdirSync(fileURLToPath(new URL('../../../tests/scenarios/modules/', import.meta.url))).filter(file => file.endsWith('.ts')).map(file => file.slice(0, -'.ts'.length)).sort();
+const MODULE_FOLDERS = moduleFolders(fileURLToPath(new URL('../../../../../', import.meta.url)));
+
+it('the catalog names each scenario once, the core\'s first, and each one observes something', () => {
   const ids = SCENARIOS.map(scenario => scenario.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids, [
+  assert.deepEqual(ids.slice(0, 15), [
     'approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions',
-    'end-to-end', 'configured-module', 'misconfigured-module', 'speaker-playback', 'lifx-bulbs', 'device-owners', 'tidbyt-tiles', 'gateway-reads',
-    'grants-and-duplicates', 'approval-recovery', 'module-contributions',
-    'pixoo-monitor', 'pixoo-media', 'pixoo-now-playing', 'pixoo-offline', 'nanoleaf-wall', 'agent-hooks', 'codex-desktop-read',
+    'end-to-end', 'configured-module', 'misconfigured-module', 'device-owners', 'gateway-reads', 'grants-and-duplicates', 'approval-recovery',
+    'module-contributions', 'agent-hooks',
   ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);
     assert.ok(scenario.steps.some(step => step.kind !== 'act'), `${scenario.id} observes something`);
     assert.ok(scenario.steps.every(step => step.name.length > 3), `${scenario.id} names its steps`);
     if (scenario.seed.modules.length > 0) assert.equal(scenario.seed.modules[0], 'core', `${scenario.id} starts the core first`);
+  }
+});
+
+// Each module's scenarios live in its own file, which the catalog collects without naming it (Hub #999).
+it('the catalog collects every module\'s scenario file, in name order, each named after a module folder with a scenario of its own', () => {
+  assert.deepEqual(Object.keys(MODULE_FILES), SOURCES, 'every source file was built and collected');
+  const ids = SCENARIOS.map(scenario => scenario.id);
+  assert.deepEqual(ids.slice(ids.length - Object.values(MODULE_FILES).flatMap(file => file.scenarios).length),
+    Object.values(MODULE_FILES).flatMap(file => file.scenarios.map(scenario => scenario.id)), 'the modules\' scenarios follow the core\'s, file by file');
+  for (const [name, file] of Object.entries(MODULE_FILES)) {
+    assert.ok(MODULE_FOLDERS.includes(name), `${name}.ts names a module folder`);
+    assert.ok(file.scenarios.length > 0, `${name}.ts holds a scenario`);
   }
 });
 

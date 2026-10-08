@@ -12,7 +12,7 @@
 // is judged by what it must say and must not say.
 import type {CaptureContext} from '@jimmie-potts/app-verify';
 import {switchLamp} from '../tests/fixtures/lamp.js';
-import type {Seed} from '../tests/scenarios/catalog.js';
+import type {Seed} from '../tests/scenarios/framework.js';
 import {connectRun, type RunHarness} from './adapter.js';
 import type {Followed} from './follow.js';
 import {HARNESS_PATH} from './protocol.js';
