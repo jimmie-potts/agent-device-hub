@@ -32,11 +32,11 @@ import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
 import {
-  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
+  ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
   type Seed, type Simulation, type TransportName,
 } from './catalog.js';
 import {
-  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, describe, follow, partTokens, producerToken, runHookScript, scenarioValidator,
+  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, follow, partTokens, producerToken, runHookScript, scenarioValidator,
   simulateMarker, simulatePlayback, sourceOf, writeConfiguration, writeProducer,
 } from './parts.js';
 
@@ -201,7 +201,7 @@ class Memory implements MemoryHarness {
 
   sdk(role: Role): Participant {
     const {participant} = this.#part(role);
-    if (participant === undefined) throw new Error(`the ${role} is not connected`);
+    if (participant === undefined) throw new StepFailure(`the ${role} is not connected`);
     return participant;
   }
 
@@ -209,7 +209,7 @@ class Memory implements MemoryHarness {
     const start = (): Promise<string> => {
       const participant = this.sdk(role);
       this.#answers.set(label, 'pending');
-      return participant.request(key, draft, options).then(answerOf, (error: unknown) => `threw ${describe(error)}`).then(answer => {
+      return participant.request(key, draft, options).then(answerOf, (error: unknown) => `threw ${failureOf(error)}`).then(answer => {
         const final = this.#crashed.has(participant) ? 'lost' : answer;
         this.#answers.set(label, final);
         return final;
@@ -323,7 +323,7 @@ class Memory implements MemoryHarness {
   async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
     await this.#settled();
     const producer = this.#producerFile;
-    if (producer === undefined) throw new Error('the harness wrote no producer file');
+    if (producer === undefined) throw new StepFailure('the harness wrote no producer file');
     if (runtime === 'running') return runHookScript(producer, payload);
     // The runtime stops as a process does: its gateway, its modules, and its listener, so the hook's call is refused.
     const old = this.#current();
@@ -332,7 +332,7 @@ class Memory implements MemoryHarness {
     this.#client.forget();
     await old.host.stop();
     const server = this.#server;
-    if (server === undefined) throw new Error('the harness has no listener');
+    if (server === undefined) throw new StepFailure('the harness has no listener');
     const port = Number(new URL(this.url ?? '').port);
     server.closeAllConnections();
     await new Promise<void>(resolve => { server.close(() => { resolve(); }); });
@@ -458,7 +458,7 @@ class Memory implements MemoryHarness {
     });
     await host.start();
     const edge = this.#edge;
-    if (edge === undefined) throw new Error('the harness has no edge');
+    if (edge === undefined) throw new StepFailure('the harness has no edge');
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
     const actions = modules.find(isCoreModule)?.actions;
@@ -533,7 +533,7 @@ class Memory implements MemoryHarness {
       await this.#boot();
       if (this.transport === 'in-process') for (const part of this.#parts.values()) await this.#connect(part);
     })());
-    throw new Error('the runtime crashed');
+    throw new StepFailure('the runtime crashed');
   }
 
   /** A request to the gateway waits while the runtime restarts, as a remote part's connection would wait for the port. */
@@ -550,7 +550,7 @@ class Memory implements MemoryHarness {
     const url = this.url;
     const participant = this.transport === 'remote' && url !== undefined ? await connectRemote({
       url, source: part.source, token: part.token, now: this.#clock.now, scheduler: this.#clock.scheduler, reconnectDelayMs: RECONNECT_MS,
-      onError: (error, scope) => { this.#problem(`${scope.source} on ${scope.pattern}: ${describe(error)}`); },
+      onError: (error, scope) => { this.#problem(`${scope.source} on ${scope.pattern}: ${failureOf(error)}`); },
     }) : this.#current().host.bus.connect(part.source);
     part.participant = participant;
     if (part.role === 'reader') await this.#follow(participant);
@@ -573,13 +573,13 @@ class Memory implements MemoryHarness {
 
   #part(role: Role): Part {
     const part = this.#parts.get(role);
-    if (part === undefined) throw new Error(`no part ${role}`);
+    if (part === undefined) throw new StepFailure(`no part ${role}`);
     return part;
   }
 
   #current(): Generation {
     const generation = this.#generations.at(-1);
-    if (generation === undefined) throw new Error('the runtime has not started');
+    if (generation === undefined) throw new StepFailure('the runtime has not started');
     return generation;
   }
 
@@ -597,7 +597,7 @@ class Memory implements MemoryHarness {
   }
 
   #track(work: Promise<void>): void {
-    const tracked = work.catch((error: unknown) => { this.#problem(`the harness failed: ${describe(error)}`); });
+    const tracked = work.catch((error: unknown) => { this.#problem(`the harness failed: ${failureOf(error)}`); });
     this.#pending.add(tracked);
     void tracked.finally(() => { this.#pending.delete(tracked); });
   }

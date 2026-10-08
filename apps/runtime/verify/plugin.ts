@@ -11,7 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type RuntimeHealth} from '../src/index.js';
-import {SCENARIOS, expect, runScenario, type Scenario} from '../tests/scenarios/catalog.js';
+import {SCENARIOS, expect, runScenario, type Scenario, type ScenarioResult} from '../tests/scenarios/catalog.js';
 import {sourceOf} from '../tests/scenarios/parts.js';
 import {connectRun, readGrants} from './adapter.js';
 import {checkNoOutboundConnections, checkPrivateState, checkSimulatedTransports} from './boundaries.js';
@@ -170,6 +170,17 @@ async function boundariesHold(t: CaptureContext): Promise<void> {
   });
 }
 
+/**
+ * What a scenario's capture keeps: the result it attaches, with the parts' problems, and the reason its expectation gives
+ * when a step failed. A step's detail and a problem name an exception only by its type or registry code (Hub #954).
+ */
+export function scenarioProof(result: ScenarioResult, problems: readonly string[]): {attachment: string; failure?: string} {
+  const attachment = JSON.stringify({synthetic: true, physical: false, ...result, problems}, null, 2);
+  if (result.outcome === 'passed') return {attachment};
+  const failed = result.steps.at(-1);
+  return {attachment, failure: `${failed?.name ?? 'no step'}: ${failed?.detail ?? ''}`};
+}
+
 /** Runs one scenario through the run adapter, attaches its result and expects every step to pass. */
 async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   const run = await connectRun({url: t.url, harness: harnessOf(t), dataDir: t.dataDir, seed: scenario.seed});
@@ -179,12 +190,10 @@ async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   } finally {
     await run.close();
   }
-  await t.attach('scenario-result.json', JSON.stringify({synthetic: true, physical: false, ...result, problems: run.problems()}, null, 2));
+  const proof = scenarioProof(result, run.problems());
+  await t.attach('scenario-result.json', proof.attachment);
   await t.expect(`the scenario ${scenario.id} passed every step`, () => {
-    if (result.outcome !== 'passed') {
-      const failed = result.steps.at(-1);
-      throw new Error(`${failed?.name ?? 'no step'}: ${failed?.detail ?? ''}`);
-    }
+    if (proof.failure !== undefined) throw new Error(proof.failure);
   });
   await t.expect('every message the parts saw followed profile 2.0, and no part reported an error', () => {
     if (run.problems().length > 0) throw new Error(run.problems().join('; '));

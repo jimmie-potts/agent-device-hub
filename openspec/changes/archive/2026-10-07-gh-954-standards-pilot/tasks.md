@@ -6,7 +6,7 @@
 
 ## 2. Safe errors in the verification harness
 
-- [x] 2.1 Assert that the harness's refusals are the registry's body and that a body that is not JSON is `internal` with fixed text that never quotes it (`supervisor.test.ts`), and that the run adapter names a failure without an exception's message (`adapter.test.ts`).
+- [x] 2.1 Assert that the harness's refusals are the registry's body, that a malformed or `null` body is `invalid-request` and an oversized one `too-large`, never quoting it (`supervisor.test.ts`), and that the run adapter and a failed step name a failure without an exception's message (`adapter.test.ts`, `runner.test.ts`).
 - [x] 2.2 Convert the supervisor, the child's lamp failure and the run adapter; remove the `verification-harness` lint exception and record the runtime's usage exception as permanent.
 
 ## 3. A run's health
@@ -26,3 +26,11 @@
 - [x] 5.1 Add the rule-to-check table and the lint misses with their reasons to `docs/development.md`.
 - [x] 5.2 Run the gate and show that named tests fail under each negative control.
 - [x] 5.3 Synchronize the affected specifications and archive the change.
+
+## 6. Review fix round (PR #997)
+
+- [x] 6.1 Assert, red before the fix, that a failed step's detail, the attached result and the failed expectation never quote an exception, and that a step's own failure keeps its text (`runner.test.ts`, `adapter.test.ts`); name failures in `attempt` as the adapter does.
+- [x] 6.2 Assert that health fails when the runtime reports degraded for a reason no module or lag check shows (`health.test.ts`).
+- [x] 6.3 Assert that the scratch root never climbs past a checkout that is not a scratch or worktree tree, such as a home directory kept in Git (`tests/scratch_root.test.mjs`).
+- [x] 6.4 Refuse a malformed or `null` body with `invalid-request` and an oversized one with `too-large` (`supervisor.test.ts`).
+- [x] 6.5 Map "Cancellation is not undo" and "each observation or sync attempt has a deadline" in the rule table, and say that the lint checks were added at the coordinator's request.

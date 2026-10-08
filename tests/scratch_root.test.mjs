@@ -24,6 +24,17 @@ test('the scratch root is beside the outermost checkout, never inside a checkout
   assert.equal(outermostCheckout(worktree), main);
   assert.equal(outermostCheckout(clone), main, 'a clone in another checkout\'s scratch belongs to it');
   for (const at of [main, worktree, clone]) assert.equal(scratchRootFor(at, 'package-hub'), join(base, '.local/scratch/package-hub'));
+  // A checkout around the repository that is not one of its scratch or worktree trees, such as a home directory kept
+  // in Git, is not climbed past.
+  const home = checkout('home');
+  const repo = checkout('home/projects/repo');
+  const reviewer = checkout('home/projects/repo/.local/scratch/r997/clone');
+  const claude = join(repo, '.claude/worktrees/w2');
+  mkdirSync(claude, {recursive: true});
+  writeFileSync(join(claude, '.git'), `gitdir: ${join(repo, '.git/worktrees/w2')}\n`);
+  const nested = checkout('home/projects/repo/.claude/worktrees/w2/.local/scratch/r/clone');
+  for (const at of [repo, reviewer, claude, nested]) assert.equal(outermostCheckout(at), repo, at);
+  assert.equal(scratchRootFor(reviewer, 'package-hub'), join(home, 'projects/.local/scratch/package-hub'), 'beside the repository, not beside the home checkout');
   const outside = join(base, 'loose');
   mkdirSync(outside);
   assert.equal(scratchRootFor(outside, 'package-observability'), join(base, '.local/scratch/package-observability'), 'a directory in no checkout');

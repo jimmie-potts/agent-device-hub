@@ -154,9 +154,9 @@ void test('the harness answers only local JSON requests that name its listener',
   assert.equal(await raw(followUrl, 'POST', {'content-type': 'application/json'}), 404, 'the query only reads');
 });
 
-// Acceptance reviewers and scenarios read the harness's refusals over HTTP, so they come from the registry, and an
-// unexpected failure, such as a body that is not JSON, is `internal` with fixed text that never quotes it (Hub #954).
-void test('the harness refuses in the registry\'s error body, and answers an unexpected failure with internal, never quoting it', {timeout: 60_000}, async context => {
+// Acceptance reviewers and scenarios read the harness's refusals over HTTP, so they come from the registry with fixed
+// text that never quotes the request, and a caller's mistake is a refusal, not an internal failure (Hub #954).
+void test('the harness refuses in the registry\'s error body, a caller\'s malformed or oversized body included, never quoting it', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'fixtures');
   const raw = (route: string, body: string): Promise<Response> =>
     fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body});
@@ -164,8 +164,11 @@ void test('the harness refuses in the registry\'s error body, and answers an une
     [await fetch(new URL(`${HARNESS_PATH}/nothing`, run.harness)), 404, 'not-found'],
     [await post(run, 'simulate', {device: 'toaster', action: 'tok_SYNTHETIC954'}), 400, 'invalid-request'],
     [await post(run, 'disconnect', {source: 'tok_SYNTHETIC954'}), 400, 'invalid-request'],
-    // JSON.parse's own message quotes a short body whole.
-    [await raw('simulate', 'tok_SYNTHETIC954'), 500, 'internal'],
+    // A caller's mistakes are refusals: a body that is not JSON (JSON.parse's own message would quote it whole), a body
+    // that is not an object, and one over the limit.
+    [await raw('simulate', 'tok_SYNTHETIC954'), 400, 'invalid-request'],
+    [await raw('disconnect', 'null'), 400, 'invalid-request'],
+    [await raw('simulate', JSON.stringify({device: 'lamp', action: 'hold', padding: 'tok_SYNTHETIC954'.repeat(300)})), 413, 'too-large'],
   ];
   for (const [response, status, code] of answers) {
     assert.equal(response.status, status, code);
@@ -173,7 +176,6 @@ void test('the harness refuses in the registry\'s error body, and answers an une
     const body = JSON.parse(text) as ErrorBody;
     assert.deepEqual(body, errorBody(code, {detail: body.error.detail ?? ''}), `${code}: the code and its retryable flag come from the registry`);
     assert.equal(text.includes('tok_SYNTHETIC954'), false, `${code}: the answer never quotes the request`);
-    if (status === 500) assert.equal(body.error.detail, 'the harness failed');
   }
 });
 

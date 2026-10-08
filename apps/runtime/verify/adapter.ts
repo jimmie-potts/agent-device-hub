@@ -13,10 +13,10 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedPixoo} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
 import {SimulatedCloud} from '@jimmie-potts/tidbyt';
-import {SdkError, connectRemote, errorType, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
+import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/catalog.js';
 import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
@@ -31,18 +31,14 @@ export interface RunHarness extends Harness {
   close(): Promise<void>;
 }
 
-/** A failure of the adapter's own, with fixed text from the code that raised it. */
-export class RunFailure extends Error {}
+/** A failure of the adapter's own, with fixed text from the code that raised it, which a step's detail keeps. */
+export class RunFailure extends StepFailure {}
 
 /**
- * How the adapter names a failure in a step's answer or its problems, which the proof keeps: its own fixed text, an SDK
- * refusal's registry code, or the exception's type. The exception itself is never turned into text.
+ * How the adapter names a failure in a step's answer or its problems, which the proof keeps: as a step does, by its own
+ * fixed text, an SDK refusal's registry code or the exception's type, never by the exception's text.
  */
-export function failureOf(error: unknown): string {
-  if (error instanceof RunFailure) return error.message;
-  if (error instanceof SdkError) return `SdkError ${error.body.error.code}`;
-  return errorType(error);
-}
+export {failureOf};
 
 /** How long a remote part whose stream was lost waits before it reconnects. */
 const RECONNECT_MS = 50;

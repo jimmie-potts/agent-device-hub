@@ -504,10 +504,12 @@ name or this listing, and on a file exception that no longer hides a finding.
 | `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
 | `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message, which repeats only the operator's own argument, in the usage output before the runtime starts. ADR 0012's surfaces do not include usage output. | Permanent ([#954](https://github.com/jimmie-potts/agent-device-hub/issues/954)) |
 
-The verification run's harness and run adapter follow the rules since #954:
-the supervisor's refusals come from `errorBody`, an unexpected failure is
-`internal` with fixed text, and the adapter names a failure in a capture's
-proof by its own text, a refusal's registry code or the exception's type.
+The verification run's harness, run adapter and scenario runner follow the
+rules since #954. The supervisor's refusals come from `errorBody`: a malformed
+body is `invalid-request`, an oversized one `too-large`, and any other failure
+`internal` with fixed text. The adapter's reports and a failed step's detail,
+which a capture's proof keeps, name a failure by its own text, a refusal's
+registry code or the exception's type (`failureOf` in the scenario catalog).
 
 ### ADR 0012 rules and their checks
 
@@ -527,11 +529,13 @@ is a test file in the named package's `tests/` directory.
 | A rejection proves no effect | SDK `conformance.test.ts` on both transports (a responder that fails after it started is `uncertain-result` and nothing sends it again), `workers.test.ts`; catalog scenario `end-to-end` | |
 | `accepted` after durable state; a full disk refuses; a restart reports and never reruns | Kit check `keeps the outcome in its outbox and sends it again after a restart`; runtime `core.test.ts`, `core-store.test.ts` and `full-disk.test.ts` (full disk); the LIFX, Pixoo, playback and Nanoleaf restart tests | A full disk in each module: the kit cannot fill a disk, so each module story tests its own store (LIFX does) |
 | Retries: nothing resends a command; one owner and capped backoff per loop | SDK `expiry.test.ts`, `remote.test.ts` and `grants.test.ts` (`duplicate-conflict`, the responder runs once); runtime `core.test.ts` (capped backoff, one record and a summary) | That `retryable` never permits a resend and each loop has one owner: the Specification review. A module's write budget: its own tests |
+| Each observation or sync attempt has a deadline | SDK `sync.test.ts` (a sync past its deadline is `unavailable`; `timeoutMs` is required); the kit check `starts while its device never answers, and reports it unavailable` (a module whose device never answers must report it within the kit's timeout) | A module whose kit description gives no `offline`: the core reaches no device, and every shipped device module gives one |
 | Deadlines: queued is `expired`, held is `uncertain` | SDK `expiry.test.ts`; LIFX `queue.test.ts` | Partial effects kept in an outcome: each module's tests |
+| Cancellation is not undo | SDK `workers.test.ts` (a call aborted after its worker started is `uncertain`, one aborted before is `cancelled`) and `diagnostics.test.ts` (a command cancelled while it waits is one cancellation) | That a module's own cancellation keeps the effects already made: each module story |
 | Committed is not published | SDK `outbox.test.ts`; runtime `core-store.test.ts`; the kit's outbox check | |
 | Acknowledging outcomes | SDK `outbox.test.ts` (an acknowledged outcome is forgotten); runtime `lamp.test.ts` (the stand-in refuses a reused `(source, id)`) | The core's acknowledgment, after its commit and only from the authenticated core: [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) |
 | Late and conflicting outcomes | None yet | [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) and [#923](https://github.com/jimmie-potts/agent-device-hub/issues/923) build the tracker and inbox rules with their tests |
-| Safe errors | The [safe-error rules](#safe-error-rules); the kit's secret and record checks (`checkModuleRecord`); runtime `safe-errors.test.ts`, `log.test.ts` and the gateway tests' token scan; verify `supervisor.test.ts` and `adapter.test.ts` | [The lint misses](#lint-misses-and-their-reasons): the Standards review |
+| Safe errors | The [safe-error rules](#safe-error-rules); the kit's secret and record checks (`checkModuleRecord`); runtime `safe-errors.test.ts`, `log.test.ts` and the gateway tests' token scan; scenario `runner.test.ts`; verify `supervisor.test.ts` and `adapter.test.ts` | [The lint misses](#lint-misses-and-their-reasons): the Standards review |
 | Correlation: `traceparent` on every message and call, trace IDs on every record | The profile 2.0 validator in `v2.test.mjs`, the SDK tests and every kit check; the kit's `accepts` check (each record carries the command's trace); runtime `diagnostics.test.ts`, `context.test.ts` and `tracing.test.ts` | `traceparent` on HTTP calls other than the edge's: the Standards review |
 | Recorded spans through the host adapter, with registered names | Runtime `tracing.test.ts` and `span-file.test.ts`; observability `host.test.mjs`; every kit check (no span loses its parent) | |
 | Context stays inside B.U.N.N.Y. | SDK `trace.test.ts`; runtime `tracing.test.ts` (only authenticated context continues); the kit's outbox check (a replay is linked, never reparented); LIFX `module.test.ts` (no trace context to the bulb) | No trace context to other devices: each module story. No span open across downtime: the Standards review |
@@ -546,9 +550,11 @@ is a test file in the named package's `tests/` directory.
 #### Lint misses and their reasons
 
 The safe-error rules read syntax only, so they cannot follow a value through
-code. #954 added checks for the misses a syntax rule can catch reliably, each
-with an invalid case in `tests/strict_profile.test.mjs` that fails without it.
-The rest stay unchecked for these reasons:
+code. #954 added checks for five misses at the coordinator's request, beyond
+the owner's scope note on #954, which gave known misses a stated reason unless a
+real finding needed a check. Each has an invalid case in
+`tests/strict_profile.test.mjs` that fails without it. The rest stay unchecked
+for these reasons:
 
 | Miss | Status | Reason |
 | --- | --- | --- |

@@ -30,6 +30,11 @@ void test('a run is healthy when every module runs, or a module its seed expects
     {ok: false, reason: 'the runtime is degraded: sign failed (internal)'}, 'an expected refusal excuses a refusal only');
   assert.deepEqual(judgeHealth(health([module('core', 'starting')])), {ok: false, reason: 'the runtime is degraded: core starting'}, 'not ready yet');
   assert.deepEqual(judgeHealth(health([module('core', 'running')], {status: 'stopped', limitMs: 1000})), {ok: false, reason: 'the runtime is degraded: the lag check stopped'});
+  // A runtime that reports degraded for a reason this judge does not know is never healthy: the status decides.
+  assert.deepEqual(judgeHealth({...health([module('core', 'running')]), status: 'degraded'}),
+    {ok: false, reason: 'the runtime is degraded, for no reason its modules or lag check show'});
+  assert.deepEqual(judgeHealth({...health([module('core', 'running'), module('sign', 'refused', 'invalid-request')]), status: 'degraded'}, ['sign']), {ok: true},
+    'an expected refusal explains a degraded status');
   const reason = judgeHealth(health([module('lamp', 'failed', 'internal')]));
   assert.equal(JSON.stringify(reason).includes('tok_SYNTHETIC954'), false, 'a reason names states and codes, never a module\'s detail');
 });

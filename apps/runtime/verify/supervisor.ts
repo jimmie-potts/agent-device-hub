@@ -453,20 +453,27 @@ const answer = (response: ServerResponse, status: number, body: object): void =>
 /** The harness's refusals, in the shared error body from the registry, with fixed text (ADR 0012, "Safe errors"). */
 const refusal = (code: ErrorCode, detail: string): ErrorBody => errorBody(code, {detail});
 
-/** A request body the harness refuses with 400: over 4 KiB, or not JSON. */
-class BodyRefusal extends Error {}
+/**
+ * A request body the harness refuses before it acts, with its status and registry code: over 4096 characters (413,
+ * `too-large`), or not JSON (400, `invalid-request`).
+ */
+class BodyRefusal extends Error {
+  constructor(readonly status: 400 | 413, readonly code: ErrorCode, detail: string) {
+    super(detail);
+  }
+}
 
 async function body(request: IncomingMessage): Promise<unknown> {
   let text = '';
   for await (const chunk of request) {
     text += String(chunk);
-    if (text.length > 4096) throw new BodyRefusal('the body is over 4096 bytes');
+    if (text.length > 4096) throw new BodyRefusal(413, 'too-large', 'the body is over 4096 characters');
   }
   if (text === '') return {};
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new BodyRefusal('the body is not JSON');
+    throw new BodyRefusal(400, 'invalid-request', 'the body is not JSON');
   }
 }
 
@@ -629,7 +636,7 @@ const server = createServer((request, response) => {
   // A caller's body the harness refuses is its refusal. Any other failure is the registry's `internal` with fixed text,
   // and the error is never quoted.
   handle(request, response).catch((error: unknown) => {
-    if (error instanceof BodyRefusal) answer(response, 400, refusal('invalid-request', error.message));
+    if (error instanceof BodyRefusal) answer(response, error.status, refusal(error.code, error.message));
     else answer(response, 500, refusal('internal', 'the harness failed'));
   });
 });

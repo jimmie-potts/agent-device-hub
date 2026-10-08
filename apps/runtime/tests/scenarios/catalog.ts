@@ -8,7 +8,7 @@ import {sessionEntityId, type Identity, type InboxItem, type PlaybackState, type
 import {LINES_ADDRESS, NANOLEAF_FAMILIES, SIMULATED_SECTION as SIMULATED_WALL, type SimulatedAction, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIMULATED_SECTION, controlPlayback, type SimulatedKind, type SpeakersState} from '@jimmie-potts/playback';
 import {LIFX_SIMULATED_SECTION, PACKET, type LifxDeviceState} from '@jimmie-potts/lifx';
-import type {CommandDraft, Participant} from '@jimmie-potts/sdk';
+import {SdkError, errorType, type CommandDraft, type Participant} from '@jimmie-potts/sdk';
 import {
   SIMULATED_API_KEY, SIMULATED_DEVICE, SIMULATED_SECTION as TIDBYT_SIMULATED_SECTION, nowPlayingFrame, nowPlayingView, picture, statusFrame, statusView,
   type CloudState,
@@ -244,11 +244,24 @@ export type ScenarioResult = {
 /** How often a step looks again: virtual milliseconds in memory, real ones in a run. */
 export const POLL_MS = 10;
 
+/**
+ * A step's or a harness's own failure, with fixed text from the code that raised it. A run keeps each step's detail in
+ * its proof, so any other exception is named only by its registry code or its type (ADR 0012, "Safe errors"; Hub #954).
+ */
+export class StepFailure extends Error {}
+
+/** How a step or a harness names a failure: its own fixed text, an SDK refusal's registry code, or the exception's type. */
+export function failureOf(error: unknown): string {
+  if (error instanceof StepFailure) return error.message;
+  if (error instanceof SdkError) return `SdkError ${error.body.error.code}`;
+  return errorType(error);
+}
+
 async function attempt(check: () => Outcome | Promise<Outcome>): Promise<Outcome> {
   try {
     return await check();
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return error instanceof StepFailure ? error.message : `threw ${failureOf(error)}`;
   }
 }
 
@@ -301,12 +314,12 @@ const byTransport = <T>(h: Harness, answers: Readonly<Record<TransportName, T>>)
 const answered = (h: Harness, label: string, expected: string): Outcome => h.answer(label) === expected || `${label} is ${h.answer(label)}`;
 const sendOnce = async (h: Harness, role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<void> => {
   const answer = await h.send(role, label, command, {timeoutMs: 5000, requestId});
-  if (answer !== 'accepted') throw new Error(`${label} is ${answer}`);
+  if (answer !== 'accepted') throw new StepFailure(`${label} is ${answer}`);
 };
 /** Sends a device's command through the core's dispatcher (#782) and expects it accepted. */
 const dispatchOnce = async (h: Harness, role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<void> => {
   const answer = await h.dispatch(role, label, command, requestId);
-  if (answer !== 'accepted') throw new Error(`${label} is ${answer}`);
+  if (answer !== 'accepted') throw new StepFailure(`${label} is ${answer}`);
 };
 const publish = async (h: Harness, event: Parameters<typeof observation>[0], options: ObservationOptions = {}): Promise<void> => {
   const {key, draft} = observation(event, h.now(), options);
@@ -420,7 +433,7 @@ const marks = new WeakMap<Harness, {published: number; gap: readonly Message[]}>
 const markGap = (h: Harness): void => { marks.set(h, {published: h.published().length, gap: []}); };
 const closeGap = (h: Harness): void => {
   const mark = marks.get(h);
-  if (mark === undefined) throw new Error('no gap was marked');
+  if (mark === undefined) throw new StepFailure('no gap was marked');
   marks.set(h, {...mark, gap: h.published().slice(mark.published).map(entry => entry.message)});
 };
 const noReplay = (h: Harness): Outcome => {
@@ -544,9 +557,9 @@ const zeroModules: Scenario = {
       const result = await h.sdk('reader').sync(['session'], () => {}, {timeoutMs: 1000});
       if (result.status === 'synced') {
         await result.copy.close();
-        throw new Error('a sync was served');
+        throw new StepFailure('a sync was served');
       }
-      if (result.error.error.code !== 'unavailable') throw new Error(`the sync is ${result.error.error.code}`);
+      if (result.error.error.code !== 'unavailable') throw new StepFailure(`the sync is ${result.error.error.code}`);
     }),
   ],
 };
@@ -1039,7 +1052,7 @@ async function askForDevices(h: Harness, label: string, owner?: string): Promise
   const result = await h.sdk('reader').sync(['device'], () => {}, {timeoutMs: 1000, ...owner === undefined ? {} : {owner}});
   if (result.status === 'synced') {
     await result.copy.close();
-    throw new Error('the sync was served');
+    throw new StepFailure('the sync was served');
   }
   const answers = asked.get(h) ?? new Map<string, {code: string; requestId: string}>();
   answers.set(label, {code: result.error.error.code, requestId: result.requestId});
@@ -1368,7 +1381,7 @@ const grantsAndDuplicates: Scenario = {
     act('the panel sends a raw command acknowledging the notice for itself', async h => {
       const answer = keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key, rawCommand(h, 'bunny/parts/panel', acknowledgment(h, 'panel'), 'req-raw', 'msg-raw-1'))));
       const result = bodyOf<{result?: {status?: string}}>(answer)?.result;
-      if (answer.status !== 200 || result?.status !== 'accepted') throw new Error(`${answer.status} ${answer.text.slice(0, 200)}`);
+      if (answer.status !== 200 || result?.status !== 'accepted') throw new StepFailure(`${answer.status} ${answer.text.slice(0, 200)}`);
     }),
     expect('the notice is acknowledged by the panel', h => session(h)?.notices[0]?.acknowledgedBy.includes('panel') === true || show(session(h)?.notices)),
     expect('the same message sent again is refused as duplicate-conflict', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key,
@@ -1420,9 +1433,9 @@ const approvalRecovery: Scenario = {
     }),
     act('the operator recovers it with the revision it read', async h => {
       const record = session(h);
-      if (record === undefined) throw new Error('no session');
+      if (record === undefined) throw new StepFailure('no session');
       const answer = keep(h, await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/approval-recover', body: {...recovery(record), requestId: 'req-recover'}}));
-      if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new Error(`${answer.status} ${answer.text.slice(0, 200)}`);
+      if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure(`${answer.status} ${answer.text.slice(0, 200)}`);
     }),
     expect('the reader\'s session waits for nothing', h => session(h)?.attention.length === 0 || `attention ${show(session(h)?.attention)}`),
     expect('the reader heard the approval cleared as recovered', h => h.reader.heard().some(message =>
@@ -1557,7 +1570,7 @@ const pixooPlaylist = (): Step[] => [
   expect('the reader\'s copy holds the playlist', h => h.reader.states<PlaylistRecord>(PIXOO.playlist).length === 1 || 'no playlist'),
   act('the operator puts the picture in the playlist', h => {
     const [rendition] = h.reader.states<RenditionRecord>(PIXOO.rendition), [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
-    if (rendition === undefined || list === undefined) throw new Error('the catalog is missing');
+    if (rendition === undefined || list === undefined) throw new StepFailure('the catalog is missing');
     return dispatchOnce(h, 'operator', 'pixoo-items', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
       change: {operation: 'items', playlistId: list.data.id, revision: list.data.playlistRevision, items: [{renditionId: rendition.data.id}]},
     }), 'pixoo-items-1');
@@ -1566,7 +1579,7 @@ const pixooPlaylist = (): Step[] => [
 /** The operator starts the playlist the reader holds, as `requestId`. */
 const startPlaylist = (h: Harness, label: string, requestId: string): Promise<string> => {
   const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
-  if (list === undefined) throw new Error('no playlist');
+  if (list === undefined) throw new StepFailure('no playlist');
   return h.dispatch('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), requestId);
 };
 
@@ -1862,12 +1875,13 @@ const claudeHook = (name: string, extra: Record<string, unknown> = {}): HookPayl
 /** Why a hook run broke the hook's contract, or undefined: it exits 0 on its own, writes nothing and ends in time. */
 function hookProblem(ran: HookRun): string | undefined {
   if (ran.code !== 0 || ran.signal !== null) return `the hook exited with ${String(ran.code)} ${String(ran.signal)}`;
-  if (ran.output !== '') return `the hook wrote ${JSON.stringify(ran.output.slice(0, 200))}`;
+  // Its output may be a crash's stack, which the proof never quotes: its length says it wrote something (Hub #954).
+  if (ran.output !== '') return `the hook wrote ${ran.output.length} characters`;
   return ran.elapsedMs < HOOK_EXIT_MS ? undefined : `the hook took ${Math.round(ran.elapsedMs)} ms`;
 }
 const hooked = (name: string, payload: HookPayload, options: {runtime?: 'running' | 'stopped'} = {}): Step => act(name, async h => {
   const problem = hookProblem(await h.hook(payload, options));
-  if (problem !== undefined) throw new Error(problem);
+  if (problem !== undefined) throw new StepFailure(problem);
 });
 const hookedSession = (h: Harness): SessionRecord | undefined => session(h, HOOKED_ID);
 

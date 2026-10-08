@@ -29,9 +29,9 @@ bulb off the network or back, take the simulated Tidbyt cloud offline or back, s
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
-`bunny/parts/<role>`. Its refusals are the shared error body from the registry, with fixed text, and an unexpected
-failure, such as a body that is not JSON, is a 500 with `internal` and `the harness failed`, never the error's own text
-(#954).
+`bunny/parts/<role>`. Its refusals are the shared error body from the registry, with fixed text that never quotes the
+request: a body that is not JSON, or not an object where one is expected, is a 400 with `invalid-request`, one over 4096
+characters a 413 with `too-large`, and any other failure a 500 with `internal` and `the harness failed` (#954).
 
 The supervisor's simulated devices serve the fixture modules. A `shipped` run's modules reach the simulated devices
 that their own `--simulate` transports create inside the runtime, so two limits apply there (#954):
@@ -440,7 +440,7 @@ manager, and starts each negative control. It tests the supervisor's stop, crash
 handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,
 that `build-current` watches every source the run loads, that health fails once a module fails in a run and passes an
-expected refusal, that the harness's refusals come from the registry, and that the run adapter names a failure without
-an exception's text.
+expected refusal, that the harness's refusals come from the registry, a malformed or oversized body included, and that
+neither the run adapter nor a failed step's detail in a capture's proof quotes an exception's text.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).

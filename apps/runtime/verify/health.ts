@@ -12,5 +12,8 @@ export function judgeHealth(health: RuntimeHealth, refused: readonly string[] = 
     .filter(module => !module.healthy && !(module.state === 'refused' && refused.includes(module.name)))
     .map(module => `${module.name} ${module.state}${module.reason === undefined ? '' : ` (${module.reason.code})`}`);
   if (health.lagCheck.status === 'stopped') problems.push('the lag check stopped');
-  return problems.length === 0 ? {ok: true} : {ok: false, reason: `the runtime is ${health.status}: ${problems.join(', ')}`};
+  if (problems.length > 0) return {ok: false, reason: `the runtime is ${health.status}: ${problems.join(', ')}`};
+  // The runtime's own status decides when its reason is one this judge does not know, so the two never drift apart.
+  const explained = health.modules.some(module => !module.healthy);
+  return health.status === 'degraded' && !explained ? {ok: false, reason: 'the runtime is degraded, for no reason its modules or lag check show'} : {ok: true};
 }
