@@ -10,7 +10,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, traceFields} from '@jimmie-potts/sdk';
 import {RuntimeError} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
-import {StepFailure, act, expect, holds, runScenario, scenario, type Harness, type Scenario} from './catalog.js';
+import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, type Harness, type Scenario} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
 
 const EMPTY = {modules: [], follows: []} as const;
@@ -73,6 +73,13 @@ it('a failed step names an exception by its type or registry code, never its mes
     assert.deepEqual(result.steps.map(entry => [entry.outcome, entry.detail]), [['failed', detail]], step.name);
     assert.equal(JSON.stringify(result).includes(secret), false, `${step.name}: no detail quotes the exception`);
   }
+});
+
+// A hook that writes anything breaks its contract, and what it wrote may be a crash's stack, so the step names its length.
+it('a hook run that wrote output fails with the output\'s length, never the output', () => {
+  const output = 'TypeError: tok_SYNTHETIC954 is not a function\n    at file:///hook.mjs:1:1';
+  assert.equal(hookProblem({code: 0, signal: null, output, elapsedMs: 5}), `the hook wrote ${output.length} characters`);
+  assert.equal(hookProblem({code: 0, signal: null, output: '', elapsedMs: 5}), undefined);
 });
 
 it('a catalog scenario fails at the step whose behavior breaks', async () => {

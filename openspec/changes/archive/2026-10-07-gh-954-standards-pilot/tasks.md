@@ -34,3 +34,8 @@
 - [x] 6.3 Assert that the scratch root never climbs past a checkout that is not a scratch or worktree tree, such as a home directory kept in Git (`tests/scratch_root.test.mjs`).
 - [x] 6.4 Refuse a malformed or `null` body with `invalid-request` and an oversized one with `too-large` (`supervisor.test.ts`).
 - [x] 6.5 Map "Cancellation is not undo" and "each observation or sync attempt has a deadline" in the rule table, and say that the lint checks were added at the coordinator's request.
+
+## 7. Rebase onto main (after #782, #926, #931, #933 and #975)
+
+- [x] 7.1 Keep main's not-JSON and `null`-body refusals and send an oversized body to 413 `too-large`; name #926's hook failures, #782's dispatch failures and the memory harness's answers and problems through `failureOf` or `StepFailure`; never quote a hook's output in a step's detail (`runner.test.ts`).
+- [x] 7.2 Rebuild the `bunny-sdk` delta from the synced text that #782 changed, and confirm all three synced requirements equal their deltas.

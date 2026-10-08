@@ -1873,7 +1873,7 @@ const HOOKED_ID = sessionEntityId(HOOKED_IDENTITY);
 const claudeHook = (name: string, extra: Record<string, unknown> = {}): HookPayload =>
   ({hook_event_name: name, session_id: HOOKED, cwd: '/home/owner/projects/demo', ...extra});
 /** Why a hook run broke the hook's contract, or undefined: it exits 0 on its own, writes nothing and ends in time. */
-function hookProblem(ran: HookRun): string | undefined {
+export function hookProblem(ran: HookRun): string | undefined {
   if (ran.code !== 0 || ran.signal !== null) return `the hook exited with ${String(ran.code)} ${String(ran.signal)}`;
   // Its output may be a crash's stack, which the proof never quotes: its length says it wrote something (Hub #954).
   if (ran.output !== '') return `the hook wrote ${ran.output.length} characters`;
