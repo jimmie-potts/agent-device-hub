@@ -379,11 +379,11 @@ they took 153 ms, and against one that never answers 2.91 s, the hook's budget.
 Most of it is starting Node and loading the hook's modules: the old Hub's hook
 took 138 ms at the median against a stopped endpoint.
 
-The cutover (#840, through the installer #935) installs this file as
-`bin/monitor-hook.mjs` behind the hook link, where the old Hub's hook is today,
-with `@jimmie-potts/runtime/hook` and its dependencies resolvable from there, so
-the clients' hook settings keep their command. Until then the installed Hub keeps
-`apps/hub/bin/monitor-hook.mjs`, which this does not change.
+The [fresh setup procedure](SETUP.md) switches the qualified hook link to this
+release's `apps/runtime/bin/monitor-hook.mjs` during the owner-present cutover.
+Keep the release and its dependencies in place so `@jimmie-potts/runtime/hook`
+resolves there. The clients keep their command when that link matches their
+configured path. Until then the installed Hub keeps its hook unchanged.
 
 ## Run
 
@@ -461,9 +461,10 @@ address.
 ### Callers
 
 Two kinds of caller reach the gateway, and each acts as one source with the old
-Hub's scopes. No caller is limited to some devices: the old Hub's device grants
-are dropped (owner decision, 2026-10-07), and the cutover's conversion lists
-each credential that dropping them widened (see [Credentials](#credentials)).
+Hub's scope names. No caller is limited to some devices. Fresh setup grants
+only the owner's explicitly selected scopes, whose runtime meaning covers all
+devices. The optional legacy conversion reports widened grants
+(see [Credentials](#credentials)); fresh setup does not use it.
 
 - **A client credential**, from the edge's [credentials file](#credentials),
   presents its bearer token from outside any browser page: a request with a
@@ -715,16 +716,18 @@ Each reload logs one `runtime.edge.reloaded` record: INFO with `bunny.outcome`
 `succeeded` and the count, or ERROR with `failed` and the refusal's
 `error.code`. Automatic rotation is not built.
 
-At the cutover the installer (#935) runs `convertHubEdge(hubConfig)` offline on
-the old Hub's configuration: each credential keeps its ID, digest and scopes,
+The optional `convertHubEdge(hubConfig)` utility converts an old Hub
+configuration offline. [Fresh setup](SETUP.md) does not run it or import the
+old credential inventory. When separately selected, each converted credential
+keeps its ID, digest and scopes,
 and acts as `bunny/parts/<its ID in routing form>`, so the token its client
 holds authenticates unchanged; one called `dashboard` acts as
 `bunny/parts/dashboard-credential`, since the browser sessions' source is theirs
 alone. Its device grant is dropped. The Hub limited `read` and `control` to the
 devices a credential named, and the runtime limits neither, so the conversion
 returns `widened`: the ID alone of each credential with `read` or `control`,
-which now reads or commands every device, for the owner to review at the
-cutover. `browserAccess`, `mcp`, `editorLinks` and `placeLinks` become the edge
+which now reads or commands every device, for the owner to review before using
+the conversion. `browserAccess`, `mcp`, `editorLinks` and `placeLinks` become the edge
 section's, checked as the runtime's reader checks them. It refuses, with
 `convert-invalid`, IDs that would share a source, editor links that are not
 routing IDs, and links or counts the runtime would refuse, which the owner fixes
@@ -777,9 +780,10 @@ refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,
 `config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
 user may not read, or one under a directory it may not search, included),
-`config-too-large` or `config-invalid`. No refusal quotes the file. The cutover's installer (#935)
-writes the file from today's files. There is no reload: a change takes effect
-when the runtime restarts.
+`config-too-large` or `config-invalid`. No refusal quotes the file.
+[Fresh setup](SETUP.md) writes a new file from the owner's explicit choices,
+without copying or converting old configuration. There is no reload: a change
+takes effect when the runtime restarts.
 
 Before it starts the modules, the runtime admits each one in list order with
 the SDK's `checkConfiguration`, against its own section only. A section for a
@@ -863,9 +867,11 @@ another user or that others can open is refused with
 
 ## Offline tools
 
-Tools that change a module's files run while the runtime is stopped, as the
-installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
-runs them at the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+Tools that change a module's files require the runtime to be stopped.
+The migration utilities below remain available for a separately selected
+import; the [fresh setup procedure](SETUP.md) uses empty state and runs none
+of them. Their examples and synthetic scenarios describe the utilities, not
+a required cutover step.
 
 ### The runtime's lease
 
@@ -1631,12 +1637,14 @@ See [Runtime checks](../../docs/development.md#runtime-checks).
 
 ### Cutover preparation
 
-The internal planner in `src/install/planner.ts` prepares an ordered cutover
-from explicit synthetic or privately collected facts. It reads no installed
-state and performs no operation. A preparation digest binds the supplied facts;
-it grants no execution authority. Missing converters and insufficient space are
-reported before any writer could stop. Installed discovery, receipts, migration
-execution and activation belong to the later installer adapter.
+Use [Set up a fresh runtime](SETUP.md) for the selected procedure: empty state,
+manual configuration, a single-writer switch and a manual return to the old
+installation. No transfer, migration or new installer adapter is required.
+
+The internal model in `src/install/planner.ts` remains an unused pure planner
+for the earlier migration proposal. It reads no installed state and performs
+no operation. Its preparation digest grants no execution authority. Its
+converter, receipt and capacity requirements do not apply to fresh setup.
 
 After the root build, run the pure tests directly:
 
