@@ -7,6 +7,7 @@ import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
 import {isCoreModule} from './core/core.js';
+import {modeParticipants} from './core/mode-participants.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
@@ -278,9 +279,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // A record carries the listener's port, never its URL.
   log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   await host.start();
+  const core = modules.find(isCoreModule);
+  const hosted = host.modules();
+  if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) core?.setModeParticipants(modeParticipants(hosted));
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
-    const core = modules.find(isCoreModule);
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({
       bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,

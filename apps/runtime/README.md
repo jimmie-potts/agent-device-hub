@@ -281,6 +281,15 @@ and exits 1, and the service manager restarts it whole.
   row does. State and removal messages retain the causal outcome trace, or the
   stored action trace when no outcome caused the change. The inbox (#923) points at
   an operation by its request ID.
+- **Hub mode.** The core owns the durable `mode/2.0` record `hub` (#924), initially
+  Free. An authorized `mode-set` saves the choice, checks its revision and
+  completes the selection in one transaction, then independently dispatches
+  native modes to the qualified admitted Nanoleaf and Pixoo devices. An admitted
+  device remains a target after its module stops or fails; refused modules are
+  excluded. The saved choice and each device's result remain separate. Startup,
+  restart, duplicate submission and native changes send no application command;
+  an explicit same-mode selection with a new request ID reapplies it. The
+  dashboard and MCP's `core_set_mode` use ordinary control scope.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
   occurrence and outcome another participant publishes. It drops a duplicate
   by `(source, id)` durably, since history keeps each whole message once, and
@@ -1439,22 +1448,11 @@ content, a 1-pixel PNG; the read tool `status`, each sign's availability; and it
 settings, the greeting and the signs that `configureSign` accepted, never the
 token.
 
-`tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with its
-real tracker, history and outcome acknowledgment (#782), and stand-in parts
-through its extension point. Each part derives its rows from the tracker's
-changes, in the tracker's own transactions, and goes when its owner lands:
-- a readable copy of what history recorded of each tracked action, until #923's
-  history read API: a `stand-in-history` entry for each outcome the tracker took,
-  by its source, and for each result an action reached without one (a refusal,
-  an expiry or an uncertain end), by the core;
-- as the inbox, until Hub #923 turns failed and uncertain results into inbox
-  items, it records each failed or uncertain action as one `inbox-item`
-  operation, which a later result never removes;
-- it owns the mode, until #924.
-
-Their changes go out through the core's outbox after they commit, and the core
-serves their families through its sync with `session`. The fixture core's
-consumers add the catalog's panel to the shipped ones.
+`tests/fixtures/core.ts` hosts the real core with its mode owner, tracker, inbox,
+history and outcome acknowledgment. It adds only the catalog's panel consumer
+and the optional publication hook. Core changes commit in its store and go out
+through its outbox. The lamp fixture accepts unanswered synthetic mode commands
+at `fixture-hub`, separately from the real owner's `hub` target.
 
 `tests/fixtures/gadget.ts` holds a scripted device module for the tracker's
 tests: it answers `gadget-set` as each test scripts the command, holds it, or

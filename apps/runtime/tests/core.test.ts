@@ -13,7 +13,6 @@ import {createCoreModule, type CoreOptions, type CorePart, type LogRecord, type 
 import {
   IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from './fixtures/agents.js';
-import {standInParts} from './fixtures/core.js';
 import {fillDisk} from './fixtures/disk.js';
 import {World} from './fixtures/store-world.js';
 import {lampSchemas} from './fixtures/lamp.js';
@@ -290,7 +289,7 @@ it('the core starts first: a module that syncs and republishes in its own start 
     });
   });
   await run(context, {modules: [bridge()], stateDir: dir}).then(({runtime}) => runtime.stop()).catch(() => {});
-  const {logs} = await run(context, {modules: [createCoreModule({parts: [standInParts()]}), bridge()], stateDir: dir});
+  const {logs} = await run(context, {modules: [createCoreModule(), bridge()], stateDir: dir});
   await waitFor(() => received(logs, 'accepted').some(record => record.attributes['bunny.request.id'] === 'req-bridge'), 5000, 'the republished outcome');
   assert.equal(logs.filter(record => record.attributes['bunny.module'] === 'bridge' && record.event_name === 'runtime.module.failed').length, 0);
 });

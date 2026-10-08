@@ -7,7 +7,8 @@ import {Timeline} from './timeline.tsx';
 import React, {useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {InboxItem, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import placesManifest from '../../../../docs/skins/places.json';
@@ -96,9 +97,7 @@ function Widget({id, size, children}: {id: string; size: WidgetSize; children: R
 
 /** A panel the layout places now and another story fills; it reads nothing and sends nothing. */
 function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
-  const text = placement.widget === 'hub-mode'
-    ? 'Changing the Hub mode is not available on this page yet. Nothing here sends a mode command.'
-    : 'Failed and uncertain device commands will be listed here. This page does not show them yet.';
+  const text = 'Failed and uncertain device commands will be listed here. This page does not show them yet.';
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
 }
 
@@ -237,11 +236,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const operationsCopy = runtime.copies.find(copy => copy.family === 'operation');
   const operations = (operationsCopy?.records ?? []) as readonly OperationRecord[];
   const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
+  const modeCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
+  const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedPage = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module)?.pages.find(page => page.id === route.page) : undefined;
   const known = route.kind === 'timeline' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
+    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
+      live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
+      devices={devices.map(({record}) => record)}/></Widget>;
     if (placement.widget === 'inbox') {
       const copy = runtime.copies.find(item => item.family === 'inbox-item');
       return <Widget key="inbox" id="inbox" size={placement.size}><InboxPanel items={(copy?.records ?? []) as readonly InboxItem[]} live={state.feed === 'connected' && copy?.synced === true} control={runtime.control}/></Widget>;

@@ -20,6 +20,7 @@ import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
 import {isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
+import {modeParticipants} from '../../src/core/mode-participants.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
 import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
 import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from '../../src/state.js';
@@ -452,6 +453,8 @@ class Memory implements MemoryHarness {
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
     const core = modules.find(isCoreModule);
+    const hosted = host.modules();
+    if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) core?.setModeParticipants(modeParticipants(hosted));
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({
       bus: host.bus, host, validator: this.#validator, families: readableFamilies(this.#schemas), edge: edge.config, credentials: edge.credentials,

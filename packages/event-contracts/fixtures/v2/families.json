@@ -1764,6 +1764,16 @@
  },
  "invalid": [
   {
+   "name": "a mode owner identifier that is not a routing token",
+   "base": "mode",
+   "set": {
+    "/subject": "Hub.Owner",
+    "/data/id": "Hub.Owner"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id pattern"
+  },
+  {
    "name": "a parent in another source",
    "base": "session-child",
    "set": {

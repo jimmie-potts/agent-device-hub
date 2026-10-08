@@ -36,7 +36,7 @@ try {
 
   const row = page.locator('article.session').filter({has: page.getByRole('heading', {name: 'Port the wall', exact: true})});
   await row.locator('.chip', {hasText: 'Finished · unread'}).waitFor();
-  assert.equal(await page.locator('[data-slot="hub-mode"]').count(), 1, 'the hub-mode panel');
+  assert.equal(await page.locator('[data-widget="hub-mode"]').count(), 1, 'the Hub mode panel');
   const inbox = page.locator('[data-inbox-panel]');
   assert.equal(await inbox.count(), 1, 'the inbox panel');
   await inbox.getByText('No commands need handling.', {exact: true}).waitFor();

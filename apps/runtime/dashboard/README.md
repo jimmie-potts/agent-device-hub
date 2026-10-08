@@ -43,9 +43,14 @@ code.
 description, its sizes, its source kind (`core`, `module` or `external`), the
 families it syncs, and whether it offers commands. `homeLayout` places the Hub
 mode and the agent sessions in the wide column, and the inbox and the attention
-summary in the narrow one. The Hub mode and the inbox are slots: the layout
-places them now and says they are not shown here yet, and they read and send
-nothing until #924 and #923 fill them.
+summary in the narrow one. The Hub mode offers Work, Free and Quiet controls;
+the inbox shows failed, uncertain and conflicting commands until handled.
+
+The mode panel syncs the core's `mode` and `operation` records. It shows the
+saved choice separately from each device's result for the most recent completed
+selection request. Current mode evidence and control authority enable the
+buttons, including explicit same-mode reapplication. A lost reply stays
+uncertain; reload, reconnect and restart never resend a selection.
 
 ## Agent sessions
 

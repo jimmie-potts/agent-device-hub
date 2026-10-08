@@ -12,6 +12,7 @@ import {DEADLINES, type LogRecord} from '../../src/index.js';
 import {dashboardScenarios} from './dashboard.js';
 import {inboxScenarios} from './inbox.js';
 import {operationScenarios} from './operations.js';
+import {hubModeScenarios} from './hub-mode.js';
 import {
   OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from '../fixtures/agents.js';
@@ -842,7 +843,7 @@ export type ModuleScenarios = {readonly scenarios: readonly Scenario[]; readonly
 const CORE_SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, deviceOwners, gatewayReads, grantsAndDuplicates, approvalRecovery, moduleContributions, agentHooks,
-  ...dashboardScenarios, ...operationScenarios, ...inboxScenarios,
+  ...dashboardScenarios, ...operationScenarios, ...inboxScenarios, ...hubModeScenarios,
 ];
 
 /** Every module scenario file in `folder`, by its name without `.js`, in name order. */

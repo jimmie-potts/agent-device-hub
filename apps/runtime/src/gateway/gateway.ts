@@ -629,10 +629,15 @@ export class Gateway {
     }
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
+    // The validated mode handoff continues the browser trace in the tracker's existing request span.
+    const incoming = family === 'mode-set' ? request?.headers.traceparent : undefined;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
     try {
       return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
         ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({
         ...command, requestedBy: principal.source, ...(input.requestId === undefined ? {} : {requestId: input.requestId}),
+        ...(parent === undefined ? {} : {parent}),
       }));
     } catch (error) {
       if (error instanceof ModuleUnavailable) return errorBody('unavailable', {detail: 'the core is not running'});

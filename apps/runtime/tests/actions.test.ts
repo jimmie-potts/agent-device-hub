@@ -7,7 +7,6 @@ import {randomBytes} from 'node:crypto';
 import type {TestContext} from 'node:test';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle, type LogRecord, type Runtime} from '../src/index.js';
-import {standInParts} from './fixtures/core.js';
 import {lampSchemas, SimulatedLamps, createLampModule, switchLamp} from './fixtures/lamp.js';
 import {edgeConfig, it, run, waitFor, type EdgePart} from './support.js';
 
@@ -44,8 +43,8 @@ async function actions(context: TestContext, parts: readonly EdgePart[], {core =
   const lamps = new SimulatedLamps();
   let handle: CoreHandle | undefined;
   const modules = [
-    // The stand-in parts serve the mode the lamp copies.
-    ...(core ? [createCoreModule({parts: [standInParts(), {start: given => { handle = given; return Promise.resolve(); }}]})] : []),
+    // The real core serves the mode the lamp copies.
+    ...(core ? [createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]})] : []),
     createLampModule({transport: lamps}),
   ];
   const {runtime, logs} = await run(context, {modules, configFile: files.config, edge: {schemas: lampSchemas}});

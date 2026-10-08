@@ -65,7 +65,7 @@ type Phase = 'manifest' | 'start' | 'handler' | 'timer' | 'worker' | 'async' | '
 type Failure = Reason & {phase: Phase};
 type Flow = {fail: (failure: Failure, error: unknown) => void};
 /** What the module's section gave it once admitted: its configuration and its secret files by name. */
-type Setup = {config: unknown; secrets: ReadonlyMap<string, string>};
+type Setup = {config: unknown; secrets: ReadonlyMap<string, string>; devices: readonly string[]};
 /**
  * A hosted module as the gateway sees it (Hub #835): its manifest, its state and, once admitted, the configuration its
  * section gave it.
@@ -76,6 +76,8 @@ export type HostedModule = {
   readonly state: ModuleState;
   readonly admitted: boolean;
   readonly config: unknown;
+  /** Device IDs from qualified admission, retained after stop/failure; private configuration stays private. */
+  readonly devices: readonly string[];
   /**
    * The families the module has served through sync while it ran, kept after it stops or fails, so the gateway can tell
    * a family whose module is down (`unavailable`) from one no module serves (`not-found`) (Hub #835).
@@ -318,7 +320,7 @@ export class ModuleHost {
   modules(): HostedModule[] {
     return this.#slots.map(slot => ({
       name: slot.name, manifest: slot.module.manifest, state: slot.state, admitted: slot.setup !== undefined, config: slot.setup?.config,
-      served: [...slot.served],
+      served: [...slot.served], devices: [...slot.setup?.devices ?? []],
     }));
   }
 
@@ -370,7 +372,7 @@ export class ModuleHost {
       }
     }
     for (const id of checked.devices) devices.add(id);
-    slot.setup = {config: checked.config, secrets: checked.secrets};
+    slot.setup = {config: checked.config, secrets: checked.secrets, devices: [...checked.devices]};
   }
 
   /** Refuses the module: it never starts, and health and its record name the reason. */

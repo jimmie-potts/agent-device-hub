@@ -26,7 +26,7 @@ export const inboxScenarios: readonly Scenario[] = [{
       return (items(h).length === 0 && operations.some(op => op.requestId !== 'inbox-failed' && op.result === 'succeeded')) || 'resend not completed';
     }),
     act('the fixture mode accepts but never answers with an outcome', h => dispatchOnce(h, 'operator', 'mode-inbox', {
-      key: 'bunny.cmd.mode-set.hub', draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode: 'quiet'}},
+      key: 'bunny.cmd.mode-set.fixture-hub', draft: {type: 'org.bunny.mode.set.requested', subject: 'fixture-hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode: 'quiet'}},
     }, 'inbox-mode')),
     expect('the unanswered mode becomes one uncertain item', h => inboxOf(h, 'inbox-mode')[0]?.result === 'uncertain' || 'no uncertain mode item', 62_000),
     act('the operator dismisses the uncertain item', async h => {

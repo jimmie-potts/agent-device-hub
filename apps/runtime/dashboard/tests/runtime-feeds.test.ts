@@ -6,7 +6,7 @@ import {RuntimeFeeds, type RuntimeData, type RuntimeRecord} from '../src/runtime
 void test('named owners coexist; a gap keeps copies stale until their own replacement arrives, without commands', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
     schema: 'module-list/2.0', modules: [
-      {name: 'core', state: 'running', serves: ['session', 'operation'], pages: []},
+      {name: 'core', state: 'running', serves: ['session', 'operation', 'mode'], pages: []},
       {name: 'wall', state: 'running', serves: ['device'], pages: []}, {name: 'sign', state: 'failed', serves: ['device'], pages: []},
     ],
   } : {schema: 'authority/2.0', scope: 'control'})));
@@ -20,14 +20,14 @@ void test('named owners coexist; a gap keeps copies stale until their own replac
   let state: RuntimeData | undefined;
   const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
   await feeds.start(participant);
-  assert.deepEqual(syncs, ['bunny/core:operation', 'bunny/modules/wall:device', 'bunny/modules/sign:device']);
+  assert.deepEqual(syncs, ['bunny/core:operation', 'bunny/core:mode', 'bunny/modules/wall:device', 'bunny/modules/sign:device']);
   assert.equal(state?.copies.every(copy => copy.synced), true);
   feeds.hear({event: 'remote.disconnected', level: 'warn'});
   assert.equal(state?.copies.every(copy => !copy.synced), true);
   feeds.hear({event: 'remote.reconnected', level: 'info'});
   assert.equal(state?.copies.every(copy => !copy.synced), true);
   handlers.get('bunny/modules/wall:device')?.({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
-  assert.deepEqual(state?.copies.map(copy => [copy.owner, copy.synced]), [['bunny/core', false], ['bunny/modules/wall', true], ['bunny/modules/sign', false]]);
-  assert.equal(syncs.length, 3, 'the page never requests a command or replays one');
+  assert.deepEqual(state?.copies.map(copy => [copy.owner, copy.synced]), [['bunny/core', false], ['bunny/core', false], ['bunny/modules/wall', true], ['bunny/modules/sign', false]]);
+  assert.equal(syncs.length, 4, 'the page never requests a command or replays one');
   feeds.close();
 });

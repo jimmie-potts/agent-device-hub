@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["id", "revision", "mode", "selectedAtMs"],
   "properties": {
-    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
     "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
     "mode": {"$ref": "#/$defs/mode"},
     "selectedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}

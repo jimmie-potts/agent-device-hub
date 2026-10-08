@@ -15,6 +15,7 @@ import {connectRemote, type RemoteParticipant} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
+import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 
 /** The synthetic marker of the hook's token: no record, answer or page may carry it (Hub #835). */
 export const TOKEN_MARKER = 'tok_SYNTHETIC835';
@@ -23,6 +24,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** Qualified scripted Nanoleaf/Pixoo native responders; Nanoleaf fails and Pixoo succeeds independently. */
+  modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
   devices?: boolean;
   inbox?: boolean;
@@ -90,7 +93,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   })};
   const signToken = join(configDir, 'sign-token');
   if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
-  const moduleConfig = options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {};
+  const moduleConfig = {...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
+    ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
     credentials, mcp: options.inbox === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
@@ -98,8 +102,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   }}));
   const logs: LogRecord[] = [];
   let core = createCoreModule();
+  const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
+  const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : [])],
+    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : [])],
     port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);

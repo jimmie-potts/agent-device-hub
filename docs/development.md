@@ -1036,6 +1036,20 @@ outside every Git checkout, and checks every message against profile 2.0. It
 needs no device. The [runtime README](../apps/runtime/README.md#scenario-catalog)
 describes the catalog and how a story adds to it.
 
+The fixed Hub mode checks (#924) use synthetic Nanoleaf/Pixoo participants.
+After the root build, use Node 24 and an outside-checkout `TMPDIR`:
+
+```bash
+node --test --test-concurrency=1 apps/runtime/dist/tests/mode.test.js apps/runtime/dist/tests/mode-participants.test.js apps/runtime/dist/tests/mode-runtime.test.js
+node --test --test-concurrency=1 --test-name-pattern='MCP lists|Hub mode HTTP|a core the configuration refuses' apps/runtime/dist/tests/gateway.test.js apps/runtime/dist/tests/config.test.js
+node --test --test-concurrency=1 --test-name-pattern='hub-mode over' apps/runtime/dist/tests/scenarios/catalog.test.js
+```
+
+These checks cover the durable selection, independent device outcomes, failed
+saves, duplicates, explicit reapply, authorization and restart without replay.
+The existing runtime and catalog CI suites discover them. The inbox-dependent
+Acceptance journey uses the real inbox in a disposable run.
+
 ### Runtime verification runs
 
 Hub #920 adds the runtime adapter for the
@@ -1119,6 +1133,7 @@ npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the sess
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
+node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 ```
 
@@ -1150,6 +1165,12 @@ reload without replay, and desktop/phone axe scans.
 Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
 page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
+
+The focused `hub-mode.browser.ts` journey uses synthetic participants to check
+keyboard selection, the saved choice and each device's result, same-mode
+reapply, a lost reply, read-only controls and reconnect/reload/restart without
+replay. It runs axe on the changed panel and writes a screenshot to its optional
+private evidence directory. It contacts no physical device.
 
 ## Agent lifecycle contract checks
 
