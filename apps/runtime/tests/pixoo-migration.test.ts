@@ -278,7 +278,7 @@ it('a log left beside the database after its close fails the migration, which re
     // What a close leaves when its checkpoint cannot finish, as on a full disk: the log, with commits the file lacks.
     writeFileSync(join(state, 'modules', 'pixoo.sqlite-wal'), 'synthetic log');
   }});
-  assert.deepEqual([exit, line.result, line.code, line.destination], [EXIT.failed, 'failed', 'destination-unclean', 'removed']);
+  assert.deepEqual([exit, line.result, line.code, line.destination], [EXIT.failed, 'failed', 'destination-not-clean', 'removed']);
   assert.ok(await untouched(state));
 });
 

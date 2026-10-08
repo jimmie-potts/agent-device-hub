@@ -11,7 +11,8 @@ import {fileURLToPath} from 'node:url';
 import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN, writeSyntheticNanoleafState} from '@jimmie-potts/nanoleaf';
 import {holdRuntimeLease} from '../src/lease.js';
 import {EventEmitter} from 'node:events';
-import {abortOnSignals, EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from '../src/nanoleaf-migration.js';
+import {EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from '../src/nanoleaf-migration.js';
+import {abortOnSignals} from '../src/signals.js';
 import {CONFIG_SCHEMA} from '../src/state.js';
 import {it, stateDir, waitFor} from './support.js';
 

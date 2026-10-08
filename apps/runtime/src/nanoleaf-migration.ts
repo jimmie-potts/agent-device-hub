@@ -21,6 +21,7 @@ import {
   convertNanoleafState, dumps, InstalledState, MIGRATION_SCHEMA, MigrationError, migrateNanoleaf, sameValue, sha256, syncDirectory, verifyNanoleafStore,
   writePrivate, type ConvertedNanoleaf, type NanoleafSection,
 } from '@jimmie-potts/nanoleaf';
+import {fullDisk} from '@jimmie-potts/sdk';
 import {loadSecret} from './host.js';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
 import {
@@ -54,21 +55,6 @@ export type NanoleafMigrationOptions = {
    */
   signal?: AbortSignal;
 };
-
-/**
- * A signal that aborts on the process's first SIGINT or SIGTERM, which the entry point passes, so a stopped migration
- * removes what it wrote. Both listeners go with the first signal, so a second one stops the process at once.
- */
-export function abortOnSignals(target: Pick<NodeJS.EventEmitter, 'once' | 'removeListener'> = process): AbortSignal {
-  const controller = new AbortController();
-  const names = ['SIGINT', 'SIGTERM'] as const;
-  const stop = (): void => {
-    for (const name of names) target.removeListener(name, stop);
-    controller.abort();
-  };
-  for (const name of names) target.once(name, stop);
-  return controller.signal;
-}
 
 type Operation = 'migrate' | 'verify';
 type Input = {operation: Operation; source: string; stateDir: string; secretsDir: string; section: string};
@@ -104,16 +90,13 @@ class Refusal extends Error {
 
 const errno = (error: unknown): string | undefined =>
   typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
-const sqliteCode = (error: unknown): number | undefined =>
-  typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode & 0xff : undefined;
-const SQLITE_FULL = 13;
 
 /** A refusal's code and fixed text: never an exception's own text, which may hold a path. */
 function refusalOf(error: unknown): {code: string; message: string} {
   if (error instanceof MigrationError) return {code: error.code, message: error.message};
   if (error instanceof Refusal) return {code: error.code, message: error.message};
   if (error instanceof RuntimeError) return {code: error.code, message: TEXT[error.code] ?? STATE_DIR};
-  if (errno(error) === 'ENOSPC' || sqliteCode(error) === SQLITE_FULL) return {code: 'disk-short', message: TEXT['disk-short'] ?? ''};
+  if (fullDisk(error)) return {code: 'disk-short', message: TEXT['disk-short'] ?? ''};
   return {code: 'internal', message: TEXT.internal ?? ''};
 }
 

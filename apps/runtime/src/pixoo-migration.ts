@@ -12,7 +12,8 @@ import {lstat, readdir, rm, statfs} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {parseArgs} from 'node:util';
-import {InstalledLibrary, MIGRATION_SCHEMA, MigrationError, fullDisk, migrateLibrary, verifyMigration} from '@jimmie-potts/pixoo';
+import {InstalledLibrary, MIGRATION_SCHEMA, MigrationError, migrateLibrary, verifyMigration} from '@jimmie-potts/pixoo';
+import {fullDisk} from '@jimmie-potts/sdk';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
 import {RuntimeError, openModuleDatabase, openModuleFolder, prepareStateDirectory} from './state.js';
 
@@ -73,7 +74,7 @@ const TEXT: Readonly<Record<string, string>> = {
   'destination-missing': 'The state directory holds no Pixoo module database to verify.',
   'module-db-not-private': 'The Pixoo module\'s database file is not a private regular file with one link.',
   'module-folder-not-private': 'The Pixoo module\'s folder, or the modules folder, is not a private directory.',
-  'destination-unclean': 'The Pixoo module\'s database kept a log after the tool closed it, so the migration is discarded.',
+  'destination-not-clean': 'The Pixoo module\'s database kept a log after the tool closed it, so the migration is discarded.',
   interrupted: 'The migration was interrupted.',
   internal: 'The tool failed unexpectedly.',
 };
@@ -255,11 +256,11 @@ async function migrateInto(
     // Fold the log into the file before closing: a checkpoint that cannot finish, as on a full disk, throws here, where
     // a close would keep the log and report nothing. A file that never took WAL mode answers with no log at all.
     const checkpoint = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get();
-    if (checkpoint !== undefined && checkpoint.busy !== 0) throw new Refusal('destination-unclean');
+    if (checkpoint !== undefined && checkpoint.busy !== 0) throw new Refusal('destination-not-clean');
     (options.close ?? closeDatabase)(db);
     db = undefined;
     // Whatever the close did, the file must stand alone: a log or journal left with content holds commits it lacks.
-    for (const suffix of ['-wal', '-journal']) if (await sizeOf(`${database}${suffix}`) > 0) throw new Refusal('destination-unclean');
+    for (const suffix of ['-wal', '-journal']) if (await sizeOf(`${database}${suffix}`) > 0) throw new Refusal('destination-not-clean');
     emit(report);
     return EXIT.ok;
   } catch (error) {

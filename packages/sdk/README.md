@@ -521,6 +521,14 @@ The context:
 | `files()` | The absolute path of the module's own private folder, `modules/<name>/` in the runtime's state directory beside its SQLite file, for media, layouts and scenes. It is created with mode 700 on first use and kept across restarts. |
 | `signal` | Aborted when the module stops, so device calls given it end. |
 
+A store write can fail because the disk is full. `fullDisk(error)` tells that
+from any other failure by codes alone: `SQLITE_FULL` in the low byte of a
+node:sqlite error's `errcode`, or `ENOSPC`, on the error or on any of up to
+seven causes that wrap it, never by its text. The Nanoleaf module answers a
+command its full store refused with the registry's `capacity`, and any other
+store failure with `internal` (Hub #1001), and the runtime's migration tools
+report a full disk as `disk-short` (Hub #1003).
+
 Once the module's stop begins, its `sdk`, `scheduler`, `workers`,
 `database()`, `files()` and `secrets` refuse use with an `SdkError` carrying
 `invalid-state`. Its `config`, `log`, `trace`, `clock` and `signal` keep

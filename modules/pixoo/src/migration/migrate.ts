@@ -7,11 +7,12 @@ import {constants} from 'node:fs';
 import {mkdir, open} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
+import {fullDisk} from '@jimmie-potts/sdk';
 import {Library, LibraryError} from '../library/index.js';
 import {MIGRATIONS, migrate, transaction} from '../library/migrations.js';
 import {MediaError} from '../media/contracts.js';
 import {
-  CARRIED, CARRIED_TABLES, INSTALLED_LIBRARY, MIGRATION_SCHEMA, MigrationError, catalogDigest, filesDigest, fullDisk, sha256, type MigrationReport,
+  CARRIED, CARRIED_TABLES, INSTALLED_LIBRARY, MIGRATION_SCHEMA, MigrationError, catalogDigest, filesDigest, sha256, type MigrationReport,
 } from './contracts.js';
 import type {InstalledLibrary, MediaFile} from './installed.js';
 

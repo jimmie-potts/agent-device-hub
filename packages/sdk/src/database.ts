@@ -2,10 +2,26 @@
 // tests commit as the runtime does.
 import {DatabaseSync} from 'node:sqlite';
 
-/** SQLite's result code for a full disk, from a node:sqlite error's `errcode`. */
+/** SQLite's result code for a full disk, the low byte of a node:sqlite error's `errcode`. */
 const SQLITE_FULL = 13;
-const errcode = (error: unknown): number | undefined =>
-  typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode : undefined;
+/** How many errors `fullDisk` reads: the error itself and up to seven causes. */
+const FULL_DISK_DEPTH = 8;
+
+/**
+ * Whether an error, or one it was caused by, is a full disk: `SQLITE_FULL` from SQLite (in the low byte of `errcode`,
+ * so an extended result code counts too) or `ENOSPC` from the file system. It reads only each error's `errcode` and
+ * `code`, never its text, and reads the error and at most seven causes, so a cycle or a long chain ends the walk. A
+ * module answers a full disk with the registry's `capacity`; the runtime's offline tools report `disk-short` (Hub #1003).
+ */
+export function fullDisk(error: unknown): boolean {
+  let current = error;
+  for (let read = 0; read < FULL_DISK_DEPTH && typeof current === 'object' && current !== null; read += 1) {
+    if ('errcode' in current && typeof current.errcode === 'number' && (current.errcode & 0xff) === SQLITE_FULL) return true;
+    if ('code' in current && current.code === 'ENOSPC') return true;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
+}
 
 /**
  * Opens the SQLite file at `file`, creating it when missing, as a module's own database:
@@ -31,7 +47,7 @@ export function openModuleDatabaseFile(file: string): DatabaseSync {
     try {
       database.exec('PRAGMA journal_mode = WAL');
     } catch (error) {
-      if (errcode(error) !== SQLITE_FULL) throw error;
+      if (!fullDisk(error)) throw error;
       if (database.isTransaction) database.exec('ROLLBACK');
     }
   } catch (error) {

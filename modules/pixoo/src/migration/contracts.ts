@@ -124,22 +124,6 @@ export type VerificationReport = {
 
 export const sha256 = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
 
-/** SQLite's result code for a full database, from a node:sqlite error's `errcode`. */
-const SQLITE_FULL = 13;
-
-/**
- * Whether an error, or one it was caused by, is a full disk: `ENOSPC` from the file system or `SQLITE_FULL` from SQLite.
- * It reads only each error's `code` and `errcode`, never its text, and follows at most eight causes.
- */
-export function fullDisk(error: unknown): boolean {
-  let current = error;
-  for (let depth = 0; depth < 8 && typeof current === 'object' && current !== null; depth += 1) {
-    if ('code' in current && current.code === 'ENOSPC') return true;
-    if ('errcode' in current && typeof current.errcode === 'number' && (current.errcode & 0xff) === SQLITE_FULL) return true;
-    current = 'cause' in current ? current.cause : undefined;
-  }
-  return false;
-}
 
 /** The digest of the carried rows, each table's rows in ID order. */
 export function catalogDigest(rows: CatalogRows): string {
