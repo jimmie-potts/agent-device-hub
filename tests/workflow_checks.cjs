@@ -682,3 +682,43 @@ test('guide CI retains its validation and review artifacts', () => {
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });
+
+// Each runtime module registers itself from its own folder, so the files every module story would otherwise edit name
+// no device module (Hub #999). The core and the fixture modules live outside `modules/`, so their names are not module
+// names. The negative control reintroduces one module's name, in each spelling, into a copy of a shared file.
+const moduleNamesCheck = require('../scripts/check-module-names.cjs');
+
+test('no shared file names a device module, and a shared file that does fails the check', (t) => {
+  assert.deepEqual(moduleNamesCheck.findModuleNames(root), []);
+  const modules = moduleNamesCheck.moduleNames(root);
+  assert.ok(modules.length > 0, 'the checkout has module folders');
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-hub-module-names-'));
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+  for (const file of moduleNamesCheck.SHARED_FILES) {
+    fs.mkdirSync(path.dirname(path.join(scratch, file)), { recursive: true });
+    fs.copyFileSync(path.join(root, file), path.join(scratch, file));
+  }
+  for (const name of modules) {
+    fs.mkdirSync(path.join(scratch, 'modules', name), { recursive: true });
+    fs.writeFileSync(path.join(scratch, 'modules', name, 'package.json'), '{}\n');
+  }
+  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [], 'the copy names no module');
+  const [file] = moduleNamesCheck.SHARED_FILES;
+  const original = fs.readFileSync(path.join(scratch, file), 'utf8');
+  const lines = original.split('\n').length;
+  // A hyphenated folder name is also written with a space or with nothing between its words.
+  const hyphenated = 'desk-probe';
+  fs.mkdirSync(path.join(scratch, 'modules', hyphenated), { recursive: true });
+  fs.writeFileSync(path.join(scratch, 'modules', hyphenated, 'package.json'), '{}\n');
+  const cases = [
+    [modules[0], modules[0]], [modules[0], modules[0].toUpperCase()], [modules[0], `@jimmie-potts/${modules[0]}`],
+    [hyphenated, 'desk-probe'], [hyphenated, 'Desk Probe'], [hyphenated, 'deskProbe'],
+  ];
+  for (const [name, spelling] of cases) {
+    fs.writeFileSync(path.join(scratch, file), `${original}\n// ${spelling}\n`);
+    assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{ file, line: lines + 1, name }], spelling);
+  }
+  // The core and a fixture module are not device modules, and a longer word that holds a name is not the name.
+  fs.writeFileSync(path.join(scratch, file), `${original}\n// core lamp chime sign ${modules[0]}s x${modules[0]}\n`);
+  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), []);
+});
