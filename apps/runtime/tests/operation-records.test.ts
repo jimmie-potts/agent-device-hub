@@ -139,6 +139,32 @@ it('an action\'s record goes sent, accepted, then completed with its evidence, f
   assertValid(w.heard);
 });
 
+it('a live operation copy agrees with a fresh sync after distinct outcomes settle in one transaction', async context => {
+  const w = await world(context);
+  w.gadget.script({outcome: 'none'});
+  await w.dispatch('req-batched');
+  const synced = await w.reader.sync<OperationRecord>(['operation'], () => {}, {timeoutMs: 2000});
+  assert.equal(synced.status, 'synced');
+  if (synced.status !== 'synced') return;
+  context.after(() => synced.copy.close());
+  await Promise.all([
+    w.gadget.report('req-batched', {result: 'succeeded', evidence: 'observed'}),
+    w.gadget.report('req-batched', {result: 'failed', evidence: 'none', error: errorBody('unavailable').error}),
+  ]);
+  await waitFor(() => latest(w, 'req-batched')?.status === 'conflict', 5000, 'the final conflict publication');
+  const outcomes = w.database.prepare("SELECT revision FROM core_history WHERE kind = 'outcome' AND request_id = ?").all('req-batched') as {revision: number}[];
+  assert.equal(outcomes.length, 2, 'both distinct outcomes remain in history');
+  assert.equal(outcomes[0]?.revision, outcomes[1]?.revision, 'the fixture delivered both outcomes in one transaction');
+  assert.equal(w.database.prepare('SELECT status FROM core_operations WHERE request_id = ?').get('req-batched')?.status, 'conflict');
+  const fresh = await records(w);
+  assert.equal(fresh[0]?.status, 'conflict');
+  assert.deepEqual(synced.copy.states().map(state => state.data), fresh, 'the live copy holds the final committed record');
+  assert.equal(w.heard.filter(message => message.kind === 'state' && (message.data as OperationRecord).revision === outcomes[0]?.revision).length,
+    1, 'the transaction publishes one final operation state');
+  assert.equal(w.gadget.commands.length, 1, 'publication never replays the command');
+  assertValid(w.heard);
+});
+
 it('a full disk changes no tracker, operation projection, history or outbox row and sends no command', async context => {
   const w = await world(context);
   await w.dispatch('req-before-full');
@@ -290,17 +316,19 @@ it('settlement prunes excess pending records without a new dispatch, and a late 
   }
   assert.equal((await records(w)).length, 3, 'all pending actions survive, even above the bound');
   assert.equal(w.heard.filter(message => message.kind === 'removal').length, 0);
+  const retirements = (): Message[] => w.heard.filter(message => message.kind === 'removal' && message.subject === operationEntityId('req-old'));
   const first = await w.gadget.report('req-old', {result: 'succeeded', evidence: 'observed'});
-  await waitFor(() => latest(w, 'req-old')?.status === 'completed', 5000, 'the oldest action settles');
+  await waitFor(() => retirements().length === 1, 5000, 'the oldest action settles and retires');
+  assert.equal(w.database.prepare('SELECT status FROM core_operations WHERE request_id = ?').get('req-old')?.status, 'completed');
   assert.deepEqual((await records(w)).map(record => record.requestId), ['req-middle', 'req-new'], 'settlement restores the bound');
   for (const id of ['req-middle', 'req-new']) {
     await w.gadget.report(id, {result: 'succeeded', evidence: 'observed'});
     await waitFor(() => latest(w, id)?.status === 'completed', 5000, id);
   }
   const late = await w.gadget.report('req-old', {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}});
-  await waitFor(() => latest(w, 'req-old')?.status === 'conflict', 5000, 'a late conflicting outcome');
+  await waitFor(() => retirements().length === 2, 5000, 'the late conflicting outcome retires again');
   assert.deepEqual((await records(w)).map(record => record.requestId), ['req-middle', 'req-new'], 'an old retired projection cannot displace recent records');
-  const retirement = w.heard.filter(message => message.kind === 'removal' && message.subject === operationEntityId('req-old'));
+  const retirement = retirements();
   assert.equal(retirement.length, 2, 'the late update retires its projection again');
   assert.equal(retirement[0]?.traceparent.slice(3, 35), first.traceparent.slice(3, 35), 'retirement joins the settling outcome\'s trace');
   assert.equal(w.database.prepare('SELECT count(*) AS count FROM core_operations').get()?.count, 3, 'projection retirement preserves every tracker row');
