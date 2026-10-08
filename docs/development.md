@@ -1119,6 +1119,7 @@ npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the sess
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
+node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
@@ -1143,6 +1144,9 @@ reload and read-only refresh without replay, a manifest-declared sign page in th
 shell, Connections build identity, keyboard activation and desktop/phone axe.
 It also runs directly with `node apps/runtime/dashboard/tests/controls.browser.ts`
 after a build when the accepted local scope calls for only that changed journey.
+The focused `inbox-history.browser.ts` journey checks explicit resend, dashboard
+dismissal visible through MCP, timeline filters, keyboard and read-only access,
+reload without replay, and desktop/phone axe scans.
 Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
 page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.

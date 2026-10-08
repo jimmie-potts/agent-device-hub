@@ -239,3 +239,11 @@ label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--
 
 /* Declared module pages remain in the copied shell. Their gateway policy forbids scripts and forms. */
 .module-page {width:100%;min-height:32rem;border:0;background:var(--bg);}
+
+.timeline form { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; }
+.timeline label { display: grid; gap: .4rem; min-width: 0; }
+.timeline input, .timeline select { max-width: 100%; }
+.timeline ol { padding-left: 1.5rem; }
+.timeline .session { min-width: 0; overflow-wrap: anywhere; }
+.timeline pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+[data-inbox-panel] .session { overflow-wrap: anywhere; }

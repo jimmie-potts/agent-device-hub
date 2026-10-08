@@ -232,3 +232,22 @@ UI evidence. Run that journey with
 accepted/completed timing, an uncertain lock after reload and explicit refresh,
 no replay, declared-page navigation, keyboard operation and desktop/phone axe.
 Installation and physical acceptance remain separate.
+
+## Inbox and timeline
+
+Home syncs the core's shared inbox and shows failed, uncertain and conflicting
+operations. **Send again** explicitly sends saved operation data as a fresh
+tracked command and handles the old item; **Dismiss** only handles the item.
+Both use its current revision. Stale copies disable actions; read-only sessions
+show the records without controls. A handling reply is separate from the synced
+removal and the new operation's completion. Device holds and display dismissal
+remain separate. Nothing resends on reload, reconnect or elapsed time.
+
+**Timeline** reads retained history on entry and **Apply filters**, with inclusive
+From/To, Kind, Source and qualified Session filters. Reads send no command and
+use the existing authenticated gateway. Only the latest submitted read can
+update the results or status, even when replies arrive out of order.
+The focused synthetic journey is
+`node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
+it checks explicit resend, dashboard dismissal visible through MCP, timeline
+filters, keyboard, read-only presentation and desktop/phone axe.

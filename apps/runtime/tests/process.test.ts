@@ -65,7 +65,7 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation']}, ...UNCONFIGURED]);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation', 'inbox-item']}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -243,7 +243,7 @@ it('a health port already in use names its reason in the runtime.failed record',
 });
 
 it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again', async context => {
-  // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps what its stand-in history took in its own file.
+  // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps the outcome in its own history.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
   const of = (runtime: Spawned, module: string, event: string): LogRecord[] =>

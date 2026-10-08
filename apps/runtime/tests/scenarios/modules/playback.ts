@@ -64,7 +64,7 @@ const speakerPlayback: Scenario = {
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
     act('the operator pauses it as req-pb-pause, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
     expect('the pause went to the HT-A9 only, once', h => speakersGot(h, 'move [] ht-a9 [pause]')),
-    expect('history holds req-pb-pause as succeeded, transmitted', h => recorded(h, 'req-pb-pause', 'succeeded', 'transmitted')),
+    expect('history holds req-pb-pause as succeeded, transmitted', async h => (await recorded(h, 'req-pb-pause', 'succeeded', 'transmitted'))),
     expect('the reader sees the HT-A9 paused, offering next and previous only', h => playbackShows(h, 'available paused "HT-A9 Song" [next,previous]'), 5000),
     act('the phone switches AirPlay to the Move: the HT-A9 leaves AirPlay and the Move plays another song', h => {
       h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
@@ -89,15 +89,15 @@ const speakerPlayback: Scenario = {
     // The module answers once the Move's call reaches its deadline, so the step does not wait for the answer.
     act('the operator asks the Move to play as req-pb-hang', h => { void h.dispatch('operator', 'pb-hang', playbackCommand('play'), 'req-pb-hang'); }),
     expect('req-pb-hang is accepted once the Move\'s call reaches its deadline', h => answered(h, 'pb-hang', 'accepted'), 5000),
-    expect('history and the inbox hold req-pb-hang as uncertain', h => {
+    expect('history and the inbox hold req-pb-hang as uncertain', async h => {
       const items = inboxOf(h, 'req-pb-hang');
       const item = items[0];
       const inbox = (items.length === 1 && item?.kind === 'operation' && item.result === 'uncertain' && item.error?.code === 'uncertain-result') || `inbox ${show(items)}`;
-      return recorded(h, 'req-pb-hang', 'uncertain', 'none') === true ? inbox : recorded(h, 'req-pb-hang', 'uncertain', 'none');
+      return (await recorded(h, 'req-pb-hang', 'uncertain', 'none')) === true ? inbox : (await recorded(h, 'req-pb-hang', 'uncertain', 'none'));
     }, 5000),
     act('the operator sends req-pb-hang again: the same action, which the core answers itself', h => dispatchOnce(h, 'operator', 'pb-again', playbackCommand('play'), 'req-pb-hang')),
     holds('the Move heard play once: an uncertain command is never sent again', h => speakersGot(h, 'move [pause,play] ht-a9 [pause]'), 500),
-    holds('no message, reader copy or log record names a speaker\'s address, and nothing carries the token', async h => {
+    holds('no message, reader copy or log record names a speaker\'s address, and nothing carries the token', h => {
       const address = noSpeakerAddress(h);
       return address === true ? noToken(h) : address;
     }, 100),
