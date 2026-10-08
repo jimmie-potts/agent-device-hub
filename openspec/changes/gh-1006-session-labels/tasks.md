@@ -19,6 +19,11 @@
 
 ## 4. Delivery validation
 
-- [ ] 4.1 Run build/type/focused lint and the coordinator-approved label/operation/gateway/family/UI/catalog checks, plus applicable contract/workflow checks; record exact commands, exits, counts and specification inventory. Retain full hosted CI and independent review, using the affected disposable label scenario instead of repeating unrelated local suites under the approved reduced scope.
-- [ ] 4.2 Obtain current OpenSpec status/instructions, validate, synchronize affected specifications and archive the exact change on the delivery branch; verify planning and task status.
-- [ ] 4.3 Provide base/head and source evidence for independent Standards, Specification and Acceptance reviews and PR/main CI; retain installation at #840 as a separate obligation.
+- [x] 4.1 Run build/type/focused lint and the coordinator-approved label/operation/gateway/family/UI/catalog checks, plus applicable contract/workflow checks; record exact commands, exits, counts and specification inventory.
+- [ ] 4.2 After independent disposable Acceptance, obtain current OpenSpec status/instructions, validate, synchronize affected specifications and archive the exact change on the delivery branch; verify planning and task status.
+- [ ] 4.3 Obtain independent disposable tier 2 Acceptance evidence for the affected session-label scenario at the assigned candidate; retain its observed session/operation results and owned cleanup evidence.
+
+Final delivery gates follow implementation and archive: independent Standards and
+Specification review of the same committed base/head, qualified PR and merged-main
+CI, and coordinator tracker reconciliation. Keep full hosted coverage and
+installation at #840 as a separate obligation.
