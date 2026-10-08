@@ -13,6 +13,8 @@
 
 ## 3. Delivery verification
 
-- [ ] 3.1 Verify mixed outcomes in the real #923 inbox and restart/no replay in a disposable runtime during independently owned Acceptance.
+- [x] 3.1 Verify mixed outcomes in the real #923 inbox and restart/no replay in a disposable runtime during independently owned Acceptance (`runtime-20261008T204750Z-1b73c5`, reviewed head `3c2ae8c6`).
 - [x] 3.2 Complete applicable shared build/type/lint/contract/workflow checks and focused browser evidence at the frozen source revision.
-- [ ] 3.3 Obtain independent Standards/Specification/Acceptance evidence, then have the coordinator sync affected specifications and archive this change before final review.
+- [x] 3.3 After independent Acceptance, synchronize every affected specification and prepare the complete change for archive before final source review.
+
+Independent Standards and Specification reviews, PR/main CI and guarded merge remain required SDLC gates after archive. This task follows that order and does not claim those reviews have run.

@@ -446,3 +446,11 @@ The message profile SHALL define the closed `notice-clear/2.0` command payload w
 #### Scenario: Valid and invalid commands
 - **WHEN** a sender names the selected notice and session revision
 - **THEN** the command validates; missing guards, invalid notice identifiers, unqualified subjects and wire authority flags are refused
+
+### Requirement: Routed mode owner identifier
+
+The `mode/2.0` record's `id` SHALL satisfy the existing routing identifier contract so it can be addressed as `bunny.state.mode.<id>` and `bunny.cmd.mode-set.<id>`. The Hub owner SHALL remain `hub`.
+
+#### Scenario: Invalid mode owner identifier
+- **WHEN** a mode record names `Hub.Owner` as its owner
+- **THEN** the family validator refuses it as `invalid-message`

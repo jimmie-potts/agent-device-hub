@@ -26,4 +26,4 @@ Hub #924 fills the existing home slot. The core already owns a SQLite store, tra
 
 ## Migration Plan
 
-No data import or cutover occurs. A new core table starts Free; later starts retain it. Removing this source feature leaves the private table intact. Installed migration and acceptance belong to #840.
+No data import or cutover occurs. A new core table starts Free; later starts retain it. Removing this source feature leaves the private table intact. Fresh installation and physical acceptance belong to #840; no data transfer or migration is required.
