@@ -1107,7 +1107,8 @@ session's finished turn unread with the Hub mode and inbox panels, passes axe at
 1,280 px and sends no command while it loads. The full suite (`browser.ts` and
 `trusted.ts`) adds sessions appearing, an approval raised and cleared, a
 finished turn that stays unread until the record clears it, a resync after a
-lost stream with no replayed command, the explicit acknowledgment, routes,
+lost stream with no replayed command, positive read evidence and a synthetic
+device acknowledgment clearing rows without a page command, routes,
 Places, axe at 1,440 and 390 px, a session that ends with a restart, Disconnect,
 the launcher's code, the bookmark on either loopback name, a reload and a
 second tab, and another local app's link, frame and hostile re-navigation

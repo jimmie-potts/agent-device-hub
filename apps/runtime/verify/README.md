@@ -456,11 +456,28 @@ hook turn-ended                                                         # Finish
 harness=<the run's harness endpoint, without its trailing slash>
 curl -s -X POST -H 'content-type: application/json' -d '{"source":"bunny/parts/dashboard"}' "$harness/api/harness/v1/disconnect"  # the page resyncs
 hook turn-started --turn turn-2; hook turn-ended --turn turn-2          # the new turn clears the first; the second is unread
-hook runtime-ended --turn turn-2                                        # after Acknowledge for the dashboard, the session ends
+hook session-started --desktop --session desktop-read --title "Read evidence"
+hook turn-started --desktop --session desktop-read; hook turn-ended --desktop --session desktop-read
+hook read-observed --desktop --session desktop-read                    # positive Codex Desktop read evidence clears its row
+hook runtime-ended --turn turn-2                                        # the session ends
 npm run -s verify:runtime -- capture <run-id> scenario-dashboard-sessions
 npm run -s verify:runtime -- capture <run-id> scenario-dashboard-finished-turn
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+Before dropping the stream, set the browser context offline, then call the harness
+Disconnect endpoint and return the browser online. A stream closed by the server
+may otherwise reconnect before the page visibly enters its reconnecting state.
+The page must resync to the current records and send no command.
+
+Open a second tab in the same browser. Disconnect the first, sign in again from
+the second, then sign in from the first. Disconnect the first again: both tabs must
+end their sessions, with no automatic sign-in. This catches an orphaned session
+after both tabs sign in again. The separate localhost browser, if opened, keeps
+its own session. The row has no acknowledge button. The catalog's
+`dashboard-finished-turn` capture also records a panel consumer's acknowledgment
+and positive read evidence; the browser suite separately checks a synthetic
+Nanoleaf consumer acknowledgment.
 
 A capture step seeds its run afresh, which restarts the runtime and ends the browser's session: the page then says so
 and offers **Sign in again**.

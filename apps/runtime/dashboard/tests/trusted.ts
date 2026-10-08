@@ -96,7 +96,16 @@ try {
     await second.getByRole('button', {name: 'Sign in again', exact: true}).click();
     await signedIn(second);
     assert.equal(world.browserSessions(), 2);
-    checks.push('Disconnect ends the session in every tab, which each offer one sign-in');
+    // Regression: both tabs sign in again after a shared logout. The first must reuse the session the second opened.
+    await page.getByRole('button', {name: 'Sign in', exact: true}).click();
+    await signedIn(page);
+    await signedIn(second);
+    await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
+    await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
+    await feed(second, 'ended');
+    await second.getByRole('button', {name: 'Sign in again', exact: true}).waitFor();
+    assert.equal(world.browserSessions(), 1, 'after both tabs sign in again, Disconnect leaves only the separate localhost session');
+    checks.push('two tabs sign in again, then Disconnect ends both tabs and leaves no orphaned session');
 
     // A sign-in that fails shows an alert with the launcher's text.
     const failing = await (await fresh()).newPage();

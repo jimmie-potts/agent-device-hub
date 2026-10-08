@@ -7,7 +7,7 @@ import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {LifecycleEvent} from '@jimmie-potts/event-contracts/v2/families';
+import type {LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {connectRemote, type RemoteParticipant} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
@@ -38,6 +38,8 @@ export type World = {
   observe(event: LifecycleEvent, options?: ObservationOptions): Promise<void>;
   /** How many browser sessions the runtime holds. */
   browserSessions(): number;
+  /** A synthetic Nanoleaf consumer acknowledges its notice through the real core command. */
+  acknowledge(session: string): Promise<void>;
   /** Ends the dashboard's streams, as a lost connection would; its browser session stays. */
   dropDashboardStreams(): void;
   /** Stops the runtime cleanly and starts it again on the same state directory and port; every browser session ends. */
@@ -58,8 +60,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   await mkdir(configDir, {mode: 0o700});
   await chmod(root, 0o700);
   const token = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const credentials = join(configDir, 'edge-credentials.json');
-  await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']}]}));
+  await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']},
+    {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
+  ]}));
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, edge: {
     credentials, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
@@ -79,6 +84,25 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observe: async (event, observed = {}) => {
       const {key, draft} = observation(event, Date.now(), observed);
       await (await connected()).publish(key, draft);
+    },
+    acknowledge: async session => {
+      const consumer = await connectRemote({url: runtime.url, source: 'bunny/parts/nanoleaf', token: consumerToken});
+      try {
+        const synced = await consumer.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+        assert.equal(synced.status, 'synced');
+        if (synced.status !== 'synced') return;
+        const record = synced.copy.states().map(message => message.data).find(item => item.id === session);
+        const notice = record?.notices.find(item => item.acknowledgedBy.length === 0);
+        assert.ok(notice, 'an unread notice for the synthetic device');
+        const result = await consumer.request(`bunny.cmd.notice-acknowledge.${session}`, {
+          type: 'org.bunny.notice.acknowledge.requested', subject: session,
+          dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0', data: {consumerId: 'nanoleaf', noticeId: notice.id},
+        }, {timeoutMs: 5000});
+        assert.equal(result.status, 'accepted');
+        await synced.copy.close();
+      } finally {
+        await consumer.close();
+      }
     },
     browserSessions: () => runtime.gateway()?.access.counts().sessions ?? 0,
     dropDashboardStreams: () => { runtime.gateway()?.edge.disconnect('bunny/parts/dashboard'); },

@@ -1,16 +1,17 @@
 // The runtime dashboard's full browser suite (Hub #922), converted from `apps/dashboard/tests/browser.mjs`: the shell,
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
-// a lost stream resyncs with nothing replayed, the explicit acknowledgment sends one command, an ended session offers one
+// a lost stream resyncs with nothing replayed, read evidence and a device acknowledgment clear their rows, an ended session offers one
 // sign-in, and the pages pass axe at desktop and phone widths. It contacts no device and no installed service.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Page} from 'playwright';
-import {OTHER, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
+import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {controlReach, textOverlaps} from './layout.ts';
 
+const DESKTOP = {...OTHER, provider: 'codex', client: 'desktop', sourceId: 'codex-desktop'} as const;
 const PAIRED = 'http://127.0.0.1:47123/';
 const world = await startWorld({placeLinks: {wall: PAIRED}});
 const browser = await chromium.launch({headless: true});
@@ -79,11 +80,11 @@ try {
   checks.push('a finished turn stays unread until the record clears it');
 
   // A second session's new turn clears its finished turn for the consumers set to clear on one, which the record shows.
-  await world.observe(sessionStarted, {identity: OTHER, title: {value: 'Plan wave three', source: 'provider'}});
-  await world.observe(turnStarted, {identity: OTHER});
-  await world.observe(turnEnded, {identity: OTHER});
+  await world.observe(sessionStarted, {identity: DESKTOP, title: {value: 'Plan wave three', source: 'provider'}});
+  await world.observe(turnStarted, {identity: DESKTOP});
+  await world.observe(turnEnded, {identity: DESKTOP});
   await chip('Plan wave three', 'Finished · unread');
-  await world.observe(turnStarted, {identity: OTHER, turn: 'turn-2'});
+  await world.observe(turnStarted, {identity: DESKTOP, turn: 'turn-2'});
   await chip('Plan wave three', 'Working');
   await row('Plan wave three').getByText('Acknowledged by: nanoleaf, pixoo.', {exact: false}).waitFor();
   checks.push('a new turn clears the earlier finished turn, as the record says');
@@ -91,7 +92,7 @@ try {
   // A lost stream: the page syncs again and shows the core's current state; nothing missed is replayed or sent.
   const before = syncs.length;
   world.dropDashboardStreams();
-  await world.observe(turnEnded, {identity: OTHER, turn: 'turn-2'});
+  await world.observe(turnEnded, {identity: DESKTOP, turn: 'turn-2'});
   await world.observe(sessionStarted, {identity: {...OTHER, sessionId: 'session-sim-3'}, title: {value: 'Review the inbox', source: 'provider'}});
   await page.waitForFunction(count => Number(document.getElementById('main')?.dataset.syncs) >= count, 2);
   await feed(page, 'connected');
@@ -101,14 +102,16 @@ try {
   assert.deepEqual(sent, [], 'a reconnect replays no command');
   checks.push('a reconnect resyncs to current state with no replayed command');
 
-  // The explicit acknowledgment: one command, for the dashboard; the record's change is its evidence.
-  await row('Port the wall').getByRole('button', {name: 'Acknowledge for the dashboard', exact: true}).click();
-  await row('Port the wall').getByText('Acknowledged for the dashboard.', {exact: true}).waitFor();
+  // Positive read evidence clears one row; a device's acknowledgment clears another. The page sends neither.
+  assert.equal(await row('Port the wall').getByRole('button', {name: /Acknowledge/}).count(), 0, 'there is no row acknowledge control');
+  await world.observe({kind: 'read-observed', state: 'read'}, {identity: DESKTOP, turn: 'turn-2'});
+  await chip('Plan wave three', 'Idle');
+  await row('Plan wave three').getByText('Acknowledged by: none.', {exact: false}).waitFor();
+  await world.acknowledge(SESSION_ID);
   await chip('Port the wall', 'Idle');
-  await row('Port the wall').getByText('Acknowledged by: dashboard.', {exact: false}).waitFor();
-  assert.equal(await row('Port the wall').getByRole('button', {name: 'Acknowledge for the dashboard'}).count(), 0);
-  assert.deepEqual(sent, ['/api/sdk/v1/request'], 'exactly one command');
-  checks.push('an explicit acknowledgment sends one command and the record clears the finished turn');
+  await row('Port the wall').getByText('Acknowledged by: nanoleaf.', {exact: false}).waitFor();
+  assert.deepEqual(sent, [], 'read evidence and a device acknowledgment send no page command');
+  checks.push('positive read evidence and a synthetic device acknowledgment each clear an unread row');
 
   // A session's end removes it.
   await world.observe(runtimeEnded, {identity: {...OTHER, sessionId: 'session-sim-3'}});
@@ -173,7 +176,7 @@ try {
   assert.equal(world.browserSessions(), 1);
   checks.push('Disconnect and Sign in');
 
-  assert.deepEqual(sent, ['/api/sdk/v1/request'], 'still exactly one command');
+  assert.deepEqual(sent, [], 'the page sent no command');
   assert.deepEqual(errors, []);
   process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);
 } catch (error) {

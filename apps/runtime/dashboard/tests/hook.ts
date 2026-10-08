@@ -4,10 +4,10 @@
 // from the run's `part-tokens.json` and never prints. Every identity is synthetic. Run `npm run build` first.
 //
 //   node apps/runtime/dashboard/tests/hook.ts <origin> <part-tokens.json> <event> [--session <id>] [--turn <id>]
-//     [--title <text>] [--attention <id>]
+//     [--title <text>] [--attention <id>] [--desktop]
 //
 // <event> is a lifecycle kind: session-started, turn-started, turn-ended, attention-approval, attention-resolved,
-// question-continuing or runtime-ended.
+// question-continuing, read-observed or runtime-ended.
 import {readFile} from 'node:fs/promises';
 import {parseArgs} from 'node:util';
 import type {LifecycleEvent} from '@jimmie-potts/event-contracts/v2/families';
@@ -16,15 +16,16 @@ import {IDENTITY, observation} from '../../dist/tests/fixtures/agents.js';
 
 const {positionals, values} = parseArgs({
   allowPositionals: true,
-  options: {session: {type: 'string'}, turn: {type: 'string'}, title: {type: 'string'}, attention: {type: 'string'}},
+  options: {session: {type: 'string'}, turn: {type: 'string'}, title: {type: 'string'}, attention: {type: 'string'}, desktop: {type: 'boolean'}},
 });
 const [origin, tokensFile, kind] = positionals;
 if (origin === undefined || tokensFile === undefined || kind === undefined) {
-  throw new Error('usage: hook.ts <origin> <part-tokens.json> <event> [--session <id>] [--turn <id>] [--title <text>] [--attention <id>]');
+  throw new Error('usage: hook.ts <origin> <part-tokens.json> <event> [--session <id>] [--turn <id>] [--title <text>] [--attention <id>] [--desktop]');
 }
 const attention = {status: 'known', id: values.attention ?? 'approval-1'} as const;
 const events: Readonly<Record<string, LifecycleEvent>> = {
   'session-started': {kind: 'session-started'}, 'turn-started': {kind: 'turn-started'}, 'turn-ended': {kind: 'turn-ended'},
+  'read-observed': {kind: 'read-observed', state: 'read'},
   'runtime-ended': {kind: 'runtime-ended'}, 'attention-approval': {kind: 'attention-approval', attention},
   'attention-resolved': {kind: 'attention-resolved', attention}, 'question-continuing': {kind: 'question-continuing', attention},
 };
@@ -35,7 +36,7 @@ if (typeof token !== 'string') throw new Error('the tokens file holds no hook to
 const hook = await connectRemote({url: origin, source: 'bunny/parts/hook', token});
 try {
   const {key, draft} = observation(event, Date.now(), {
-    identity: {...IDENTITY, sessionId: values.session ?? IDENTITY.sessionId}, turn: values.turn ?? 'turn-1',
+    identity: {...IDENTITY, ...(values.desktop === true ? {provider: 'codex', client: 'desktop', sourceId: 'codex-desktop'} as const : {}), sessionId: values.session ?? IDENTITY.sessionId}, turn: values.turn ?? 'turn-1',
     ...(values.title === undefined ? {} : {title: {value: values.title, source: 'provider'}}),
   });
   await hook.publish(key, draft);

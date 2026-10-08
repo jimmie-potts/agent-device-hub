@@ -22,7 +22,7 @@ What the runtime copy has now, the first of #922's three slices:
   (#923).
 
 Device cards, their general controls and music come in the second slice, and
-module pages and the run preview in the third. The Wispr page comes with #927
+module pages, the run preview and the running build identity on Connections in the third. The Wispr page comes with #927
 and the automation pages with #925.
 
 ## Pages, routes and widgets
@@ -64,7 +64,8 @@ live changes:
 - **A session that ended.** When the runtime refuses the browser's session, as
   after Disconnect in another tab, an eviction, its expiry or a runtime restart,
   the SDK client reports `remote.refused`. The page then stops, keeps its last
-  records, says the session ended and offers **Sign in again**. It never signs in
+  records, says the session ended and offers **Sign in again**. An
+  `unauthenticated` or `forbidden` sync answer ends the link too. It never signs in
   by itself.
 
 `src/sessions.ts` derives what each row shows from its record alone:
@@ -72,27 +73,19 @@ live changes:
 - the name: the label, then the title, then the native session ID;
 - where it runs: the project, then the client, such as
   `agent-device-hub · Claude Code`;
-- the chip: the shared status helper's state (`sessionState` in
-  `@jimmie-potts/event-contracts/v2/status`), naming the attention (**Waiting
+- the chip: the dashboard's `chipOf` policy, naming the attention (**Waiting
   for approval**, **Waiting for input** or **Question**), **Working**,
   **Finished · unread**, or the activity;
 - the attention lines, each retained turn-ended notice with who acknowledged it,
   and the rare facts behind Details: source, session ID, activity, the age of the
   last evidence, read evidence, parent and children.
 
-A finished turn shows **Finished · unread** until the record holds an
-acknowledgment from any consumer, as LIFX and Tidbyt read it, or the session
-ends. The consumers set to clear on a new turn (`nanoleaf` and `pixoo`)
-acknowledge the earlier turn when the next one starts. Read evidence is shown as
-a separate fact and does not clear it. The page never clears a finished turn
-itself or on a timer.
-
-A notice the dashboard has not acknowledged offers **Acknowledge for the
-dashboard**, one `notice-acknowledge` command for the `dashboard` consumer, the
-only consumer this page may acknowledge for. The core commits it before it
-answers, and the session's next record is the evidence. A refusal says nothing
-changed; an uncertain answer locks the button until the record changes, and the
-page never sends it again.
+A finished turn shows **Finished · unread** until its record carries positive
+read evidence, any consumer's acknowledgment, or a later known turn. Ending the
+session removes the row. Missing read evidence or an unknown turn never counts
+as read. The page never clears a finished turn itself or on a timer, and has no
+row acknowledge button (owner decision, 2026-10-08). Clearing a notice on every
+device is the operator tool on Connections owned by #1009.
 
 ## Sign-in
 
@@ -109,7 +102,10 @@ the address and exchanges once (`POST /api/v2/browser/launch`). Every change
 the page makes carries `bunny-request: 1` and its own `Origin`.
 
 **Disconnect** ends the browser's session (`POST /api/v2/browser/logout`), in
-every tab of the origin; the page then offers **Sign in**. The old dashboard
+every tab of the origin; the page then offers **Sign in**. If both tabs sign in
+again, they reuse the same live session, so a later Disconnect still ends both.
+When the gateway creates a replacement session, it ends the old cookie's session
+and streams first. The old dashboard
 logged a page's own session out as it unloaded; with one shared session the
 runtime copy does not, since that would sign out every other tab.
 

@@ -449,7 +449,7 @@ it('the route map covers every route of the old Hub\'s server and its route modu
   assert.equal(retiredRoute('POST', '/api/monitor/v1/events')?.replacement.includes('bunny.event.lifecycle'), true);
   // Every replacement names its owner's story or is already served; none is left for later with no owner.
   assert.deepEqual(RETIRED_ROUTES.filter(route => /\byet\b/.test(route.replacement)).map(route => route.path), []);
-  assert.equal(retiredRoute('POST', '/api/monitor/v1/commands')?.owner, '#922', 'the label command\'s owner');
+  assert.equal(retiredRoute('POST', '/api/monitor/v1/commands')?.owner, '#1006', 'the label command\'s owner');
   assert.match(retiredRoute('GET', '/api/playback/v1/snapshot')?.replacement ?? '', /GET \/api\/v2\/families\/playback/);
 
   const reader = READER();

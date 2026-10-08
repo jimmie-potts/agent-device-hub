@@ -1552,8 +1552,9 @@ The catalog holds:
 - the dashboard (#922): a browser signed in by a trusted loopback page loads its
   page and reads the core's sessions, which appear as the hook observes them,
   with an approval prompt raised and cleared (`dashboard-sessions`), and a
-  finished turn that the dashboard shows unread, by the shared status helper,
-  until a new turn or an acknowledgment in the record clears it, never on a
+  finished turn that the dashboard shows unread under its own policy,
+  until a new turn, positive read evidence or any consumer acknowledgment in
+  the record clears it, never on a
   timer and never as an inbox item, and that leaves with its session
   (`dashboard-finished-turn`).
 
