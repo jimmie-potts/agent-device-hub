@@ -1,7 +1,8 @@
 // Shared command attempts, extracted from device-controls for module pages without changing reload or outcome behavior.
 import React, {useEffect, useRef, useState} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {FrontendApi, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import type {FrontendAction, FrontendActionReply, FrontendUpload, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {errorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import {ATTEMPTS_KEY, rememberAttempt} from './attempts.ts';
 import {sendAction} from './actions.ts';
 import {operationView} from './devices.ts';
@@ -20,7 +21,10 @@ function saved(target: string): Attempt | undefined {
 function remember(attempt: Attempt): boolean {
   try { return rememberAttempt(attempt, sessionStorage); } catch { return false; }
 }
-export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: FrontendApi['command'] = sendAction): FrontendCommand {
+type Send = (action: FrontendAction | FrontendUpload) => Promise<FrontendActionReply>;
+const ordinary: Send = action => 'upload' in action
+  ? Promise.resolve(errorBody('invalid-request', {detail: 'uploads use a module page'})) : sendAction(action);
+export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary): FrontendCommand {
   const [attempt, setAttempt] = useState<Attempt | undefined>(() => saved(target));
   const sending = useRef(false);
   const latest = operations.filter(operation => operation.target === target).sort((a, b) => (b.sentAtMs - a.sentAtMs) === 0 ? b.revision - a.revision : b.sentAtMs - a.sentAtMs)[0];
@@ -69,6 +73,6 @@ export function useAttempt(target: string, operations: readonly OperationRecord[
 export function Command({context, target, children}: {
   context: FrontendContext; target: string; children: (command: FrontendCommand) => React.ReactNode;
 }): React.JSX.Element {
-  const command = useAttempt(target, context.operations, context.operationsLive, action => context.api.command(action));
+  const command = useAttempt(target, context.operations, context.operationsLive, action => 'upload' in action ? context.api.upload(action) : context.api.command(action));
   return <>{children(command)}</>;
 }

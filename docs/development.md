@@ -1156,6 +1156,7 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
+node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use

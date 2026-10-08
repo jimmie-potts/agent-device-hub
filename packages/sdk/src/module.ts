@@ -66,6 +66,7 @@ export const ASSETS_PATH = 'assets';
 export const MAX_ASSETS = 64;
 /** The gateway's per-asset response bound; admission never invokes an asset reader. */
 export const MAX_ASSET_BYTES = 16 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ASSET_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const SCRIPT_TYPE = 'text/javascript; charset=utf-8';
 const STYLE_TYPE = 'text/css; charset=utf-8';
@@ -82,10 +83,19 @@ const isObjectSchema = (value: unknown): value is JsonObjectSchema =>
  * or `assets`; editor script/style links resolve declared assets. Checks invoke no renderer or asset reader.
  */
 export function checkContributions(manifest: ModuleManifest): ManifestProblem | undefined {
-  const {pages, content, tools, settings, assets} = manifest;
-  if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined) return undefined;
+  const {pages, content, tools, settings, assets, upload} = manifest;
+  if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined && upload === undefined) return undefined;
   const frontendVersion = checkApiVersion(FRONTEND_VERSION, manifest.apiVersion) === undefined;
   if (assets !== undefined && !frontendVersion) return contributionProblem(`frontend pages and assets need module API ${FRONTEND_VERSION}`);
+  if (upload !== undefined) {
+    if (!frontendVersion) return contributionProblem(`uploads need module API ${FRONTEND_VERSION}`);
+    if (!isObject(upload) || typeof upload.family !== 'string' || upload.family.length > 64
+      || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(upload.family)
+      || !Number.isSafeInteger(upload.maxBytes) || upload.maxBytes < 1 || upload.maxBytes > MAX_UPLOAD_BYTES
+      || typeof upload.stage !== 'function' || Object.keys(upload).some(key => !['family', 'maxBytes', 'stage'].includes(key))) {
+      return contributionProblem('an upload needs a command family, a byte limit within 10 MiB and a stage callback');
+    }
+  }
   // The module must be written for 1.2 or a later minor version of the same major.
   if (checkApiVersion(CONTRIBUTIONS_VERSION, manifest.apiVersion) !== undefined) {
     return contributionProblem(`pages, content, tools and settings need module API ${CONTRIBUTIONS_VERSION}`);
@@ -251,6 +261,24 @@ export type ModuleContent = {readonly type: string; readonly bytes: Uint8Array};
 /** API 1.3 content parameters. The reader validates its own query fields and remains read-only. */
 export type ModuleContentRequest = {readonly query: Readonly<Record<string, string>>; readonly signal: AbortSignal};
 
+/** One ordinary upload preparation, before dispatch through the existing tracked command boundary. */
+export type ModuleUploadRequest = {
+  readonly target: string; readonly requestId: string; readonly name: string;
+  readonly bytes: Uint8Array; readonly signal: AbortSignal;
+};
+export type ModuleUploadReply = {status: 'accepted'; requestId: string} | ErrorBody;
+/** The module owns staged input until a definitive refusal or terminal outcome; uncertainty is not cancellation. */
+export type ModuleStagedUpload = {
+  readonly data: Record<string, unknown>;
+  /** Called once with the dispatcher reply. Never replace a known command reply with a cleanup failure. */
+  readonly finish: (reply: ModuleUploadReply) => void | Promise<void>;
+};
+export type ModuleUpload = {
+  readonly family: string;
+  readonly maxBytes: number;
+  readonly stage: (request: ModuleUploadRequest) => ModuleStagedUpload | ErrorBody | Promise<ModuleStagedUpload | ErrorBody>;
+};
+
 /**
  * A read tool the module contributes to MCP (module API 1.2, Hub #835). The gateway publishes it as
  * `<module>_<name>` to a credential with the `read` scope, checks its arguments against `input`, and returns what
@@ -307,6 +335,8 @@ export type ModuleManifest<Config = unknown> = {
    * bounded query parameters, a signal aborted on completion or timeout, and safe returned ErrorBody refusals.
    */
   readonly content?: (ref: string, request?: ModuleContentRequest) => ModuleContent | ErrorBody | undefined | Promise<ModuleContent | ErrorBody | undefined>;
+  /** One bounded binary preparation for an existing tracked command (module API 1.3). */
+  readonly upload?: ModuleUpload;
   /** Its read tools, at most `MAX_TOOLS` (module API 1.2). */
   readonly tools?: readonly ModuleTool[];
   /** What the gateway shows of its configuration (module API 1.2). */

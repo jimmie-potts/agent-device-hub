@@ -4,13 +4,14 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendApi, FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import type {PlaylistRecord} from '../module/schemas.js';
+import {LibraryPage} from './library.js';
 
 type Record = DeviceRecord | PlaylistRecord;
 type Catalog = {live: boolean; device: DeviceRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined};
 type Draft = {id: string; revision: number; name: string};
 
 /** This small first view follows the owner directly; full catalog pagination is a later slice. */
-function useCatalog(api: FrontendApi): Catalog {
+function useCatalog(api: FrontendApi, includePlaylists = true): Catalog {
   const [catalog, setCatalog] = useState<Catalog>({live: false, device: undefined, playlists: [], error: undefined});
   useEffect(() => {
     let disposed = false;
@@ -51,7 +52,7 @@ function useCatalog(api: FrontendApi): Catalog {
           break;
       }
     };
-    void api.sync<Record>(['device', 'pixoo-playlist'], changed).then(result => {
+    void api.sync<Record>(includePlaylists ? ['device', 'pixoo-playlist'] : ['device'], changed).then(result => {
       if (result.status === 'rejected') { show(false, result.error.error.code); return; }
       if (disposed) { void result.copy.close(); return; }
       copy = result.copy;
@@ -64,7 +65,7 @@ function useCatalog(api: FrontendApi): Catalog {
       show(true);
     }).catch(() => { show(false, 'unavailable'); });
     return () => { disposed = true; void copy?.close(); };
-  }, [api]);
+  }, [api, includePlaylists]);
   return catalog;
 }
 
@@ -145,4 +146,11 @@ function Playlists({context}: {context: FrontendContext}): React.JSX.Element {
   </section>;
 }
 
-export const frontend: FrontendContribution = {module: 'pixoo', pages: [{id: 'playlists', Component: Playlists}]};
+function Library({context}: {context: FrontendContext}): React.JSX.Element {
+  const catalog = useCatalog(context.api, false);
+  return <LibraryPage context={context} device={catalog.device} live={catalog.live}/>;
+}
+
+export const frontend: FrontendContribution = {module: 'pixoo', pages: [
+  {id: 'library', Component: Library}, {id: 'playlists', Component: Playlists},
+]};

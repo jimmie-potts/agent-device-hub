@@ -98,6 +98,40 @@ void test('module image reads share scoped authentication and reject executable 
   await assert.rejects(page.api.image('/modules/pixoo/content/thumbnail.abc'));
 });
 
+void test('module uploads use one authenticated binary request, keep uncertainty and refuse read-only work', async context => {
+  const {connection} = await moduleConnection(context);
+  const page = connection.openModule('pixoo');
+  const file = new Blob([new Uint8Array([1, 2, 3])]);
+  const action = {family: 'pixoo-asset-change', target: 'pixoo', requestId: 'upload-one', upload: {name: '界.png', file}};
+  const calls: {path: string; init: RequestInit}[] = [];
+  context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit) => {
+    calls.push({path, init});
+    return Promise.resolve(Response.json({schema: 'command-reply/2.0', status: 'accepted', requestId: action.requestId}));
+  });
+  assert.deepEqual(await page.api.upload(action), {status: 'accepted', requestId: action.requestId});
+  assert.equal(calls.length, 1);
+  const sent = calls[0]; assert.ok(sent);
+  const url = new URL(sent.path, 'http://localhost');
+  assert.equal(url.pathname, '/api/v2/modules/pixoo/upload');
+  assert.equal(url.searchParams.get('name'), '界.png');
+  assert.equal(url.searchParams.get('requestId'), action.requestId);
+  assert.equal(sent.init.body, file);
+  assert.equal(sent.init.credentials, 'same-origin');
+  assert.equal(new Headers(sent.init.headers).get('bunny-request'), '1');
+  const lost = context.mock.method(globalThis, 'fetch', () => Promise.reject(new Error('synthetic lost reply')));
+  const uncertain = await page.api.upload(action);
+  assert.ok('error' in uncertain && uncertain.error.code === 'uncertain-result');
+  assert.equal(lost.mock.callCount(), 1);
+  await page.close();
+  const ended = await page.api.upload(action);
+  assert.ok('error' in ended && ended.error.code === 'unavailable');
+  const readOnly = await moduleConnection(context, false);
+  const before = readOnly.requests.length;
+  const refused = await readOnly.connection.openModule('pixoo').api.upload(action);
+  assert.ok('error' in refused && refused.error.code === 'forbidden');
+  assert.equal(readOnly.requests.length, before);
+});
+
 /** Timers that run only when the test moves the clock. */
 function manual(): {scheduler: Scheduler; advance: (ms: number) => Promise<void>; now: () => number} {
   let now = 0;

@@ -96,6 +96,59 @@ const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', tok
 const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
 
+it('binary uploads require control and dispatch one retained command through the core', async context => {
+  const operator = OPERATOR(), reader = READER();
+  let stages = 0, commands = 0, finishes = 0;
+  let beforeStage: (() => Promise<void>) | undefined;
+  let finishCode: string | undefined;
+  const module: BunnyModule = {manifest: {name: 'uploader', apiVersion: '1.3', upload: {
+    family: 'power-set', maxBytes: 4,
+    stage: async request => {
+      stages++;
+      assert.deepEqual([...request.bytes], [1, 2, 3]);
+      if (request.name === 'refuse') return errorBody('invalid-request', {detail: '/private/fixture/input'});
+      await beforeStage?.();
+      return {data: {on: true}, finish: reply => {finishes++; finishCode = 'error' in reply ? reply.error.code : undefined;}};
+    },
+  }}, start: async ({sdk}) => {
+    await sdk.respond('bunny.cmd.power-set.upload-target', () => {commands++; return {status: 'accepted'};});
+  }, stop: () => {}};
+  const g = await gateway(context, [operator, reader], {modules: [createCoreModule(), module]});
+  const upload = (part: EdgePart | undefined, fields: Record<string, string> = {}, bytes = new Uint8Array([1, 2, 3]), origin?: string) => fetch(
+    `${g.url}/api/v2/modules/uploader/upload?${new URLSearchParams({family: 'power-set', target: 'upload-target', requestId: 'upload-one', name: 'Synthetic', ...fields})}`,
+    {method: 'POST', headers: {'content-type': 'application/octet-stream', ...part === undefined ? {} : {authorization: `Bearer ${part.token}`},
+      ...origin === undefined ? {} : {origin}}, body: bytes});
+  assert.equal((await upload(undefined)).status, 401);
+  assert.equal((await upload(reader)).status, 403);
+  assert.equal((await upload(operator, {}, undefined, 'http://other.invalid')).status, 403);
+  assert.equal((await upload(operator, {family: 'brightness-set'})).status, 400);
+  assert.equal((await upload(operator, {extra: 'x'})).status, 400);
+  assert.equal((await upload(operator, {}, new Uint8Array(5))).status, 413);
+  assert.equal(stages, 0, 'refused HTTP admission never reaches upload preparation');
+  const accepted = await upload(operator);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), {schema: 'command-reply/2.0', status: 'accepted', requestId: 'upload-one'});
+  assert.deepEqual([stages, commands, finishes], [1, 1, 1]);
+  assert.equal((await upload(operator)).status, 200);
+  assert.deepEqual([stages, commands, finishes], [2, 1, 2], 'same identity finishes staging without another command');
+  const refused = await upload(operator, {name: 'refuse', requestId: 'upload-refused'});
+  assert.equal(refused.status, 400);
+  assert.equal((await refused.text()).includes('/private/fixture'), false);
+  assert.equal(commands, 1);
+  let prepared!: () => void, resume!: () => void;
+  const reached = new Promise<void>(resolve => {prepared = resolve;});
+  const held = new Promise<void>(resolve => {resume = resolve;});
+  context.after(() => {resume();});
+  beforeStage = async () => {prepared(); await held;};
+  const pending = upload(operator, {requestId: 'revoked-during-upload'});
+  await reached;
+  await revokeCredential(g.files.credentials, operator.id ?? '');
+  await g.runtime.reload();
+  resume();
+  assert.equal((await pending).status, 401);
+  assert.deepEqual([commands, finishes, finishCode], [1, 3, 'unauthenticated'], 'revocation during preparation refuses dispatch and finalizes the input');
+});
+
 it('modern content receives bounded query values while legacy content still refuses queries', async context => {
   const reader = READER();
   const heard: unknown[] = [];

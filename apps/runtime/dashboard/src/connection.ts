@@ -13,7 +13,7 @@ import {
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {RuntimeFeeds, type RuntimeData} from './runtime-feeds.ts';
 import {moduleOwner} from './modules.ts';
-import {sendAction} from './actions.ts';
+import {sendAction, sendUpload} from './actions.ts';
 
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
@@ -210,6 +210,11 @@ export class DashboardConnection {
           if (!active()) return unavailable().body;
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
           return sendAction(action);
+        },
+        upload: async action => {
+          if (!active()) return unavailable().body;
+          if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
+          return sendUpload(name, action);
         },
         sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>): Promise<SyncResult<T>> => {
           const participant = this.#participant;

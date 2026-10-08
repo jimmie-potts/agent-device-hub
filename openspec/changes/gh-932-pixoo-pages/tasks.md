@@ -12,7 +12,7 @@
 
 ## 3. Complete the Pixoo views
 
-- [ ] 3.1 Reuse existing catalog/media behavior with bounded pagination, referenced previews and authenticated staging for ordinary uploads; verify an oversized catalog splits below 256 KiB, a preview resolves by reference and the import outcome cleans its staged input, using fresh synthetic media.
+- [x] 3.1 Reuse existing catalog/media behavior with bounded pagination, referenced previews and authenticated staging for ordinary uploads; verify an oversized catalog splits below 256 KiB, a preview resolves by reference and the import outcome cleans its staged input, using fresh synthetic media.
 - [ ] 3.2 Port the remaining library, playlists, player, preview, Monitor and settings flows with provenance; verify their supported interactions through runtime reads and existing commands, preserving Monitor/Media policy and consumer-only dismissal.
 - [ ] 3.3 Add the affected catalog scenarios and focused keyboard/browser/accessibility journey; verify those scenarios in memory and through the existing disposable adapter with simulated Pixoo and no installed endpoints.
 

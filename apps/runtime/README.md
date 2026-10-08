@@ -607,6 +607,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `GET /api/v2/snapshot?families=<a>,<b>[&owner=<source>]` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept. `&owner=<source>`, such as `bunny/modules/lifx`, names the owner, as a family that several modules serve needs; a named owner that does not serve every named family is `not-found`, and one that is down `unavailable`. Families of more than one owner are `invalid-request`, which says to name families of one module. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
 | `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, `serves`, the families it serves through sync now, as health lists them (#922), since a browser cannot read health, and, once it is admitted, its pages, MCP tools and whether it shows settings. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
+| `POST /api/v2/modules/<name>/upload` | `control` | API 1.3 declared binary upload. Exact query fields are `family`, `target`, `requestId` and `name`; the body is nonempty `application/octet-stream`, bounded by the module's limit of at most 10 MiB. Prepares module-owned input, then dispatches its existing command through the core with the supplied request ID. Returns the ordinary `command-reply/2.0` or shared refusal. |
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the devices and the place links, from the edge section. |
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as an operator checks a producer's credential with its token (#926). |
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
@@ -625,6 +626,14 @@ refusals expose a registry code with fixed text, without failing the module or
 returning private error details. Pixoo uses SQL catalog pages within 256 KiB
 and separate PNG preview references; these reads leave cached compatibility
 evidence unchanged.
+
+Uploads use the same unsafe-request checks as commands. The gateway rechecks
+the caller after reading the body and again after preparation, before dispatch.
+The module receives a bounded preparation signal and finalizes its temporary
+input from the dispatcher reply and owner outcome. Reusing an accepted request
+ID does not send another command. Cleanup failures preserve the known reply;
+uncertain work is never resent. Uploads do not increase the 16 KiB command JSON
+limit and are never served as executable assets.
 
 A module's pages, assets, content, settings and tools are every reader's. A module is
 called only while it runs (otherwise `unavailable`), within 5 s (otherwise

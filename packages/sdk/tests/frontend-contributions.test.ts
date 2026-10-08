@@ -20,6 +20,17 @@ const refused = (changes: object): void => {
   assert.ok(answer?.detail !== undefined && answer.detail.length > 0);
 };
 
+it('upload declarations are bounded command preparations, admitted without running them', () => {
+  let called = 0;
+  const upload = {family: 'pixoo-asset-change', maxBytes: 10 * 1024 * 1024, stage: () => {called++; throw new Error('not at admission');}};
+  assert.equal(checkManifest(declared({upload})), undefined);
+  for (const apiVersion of ['1.0', '1.1', '1.2']) refused({apiVersion, upload});
+  for (const invalid of [null, [], {...upload, family: 'wrong'}, {...upload, family: 'x'.repeat(65)},
+    {...upload, maxBytes: 0}, {...upload, maxBytes: 1.5}, {...upload, maxBytes: 10 * 1024 * 1024 + 1},
+    {...upload, stage: undefined}, {...upload, path: '/private/path'}]) refused({upload: invalid});
+  assert.equal(called, 0);
+});
+
 it('passive, React and trusted editor pages coexist without calling renderers or asset readers at admission', async () => {
   let called = 0;
   const render = (): string => { called++; return '<p>Editor</p>'; };

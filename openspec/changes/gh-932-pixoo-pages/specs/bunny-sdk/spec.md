@@ -43,3 +43,10 @@ The SDK SHALL define browser-safe frontend contributions for the fixed shipped m
 #### Scenario: User content is not an executable asset
 - **WHEN** a client supplies an undeclared asset reference or uploads content containing executable markup
 - **THEN** no declaration is created and that content cannot execute through the trusted asset route
+
+### Requirement: Bounded upload preparation
+Module API 1.3 SHALL permit one upload contribution naming a command family, a maximum of at most 10 MiB, and a stage callback. Preparation SHALL return command data and a finish callback for the dispatcher reply, or a safe shared refusal. Preparation SHALL receive bounded bytes, a target, display name, retained request ID and cancellation signal, never caller credentials or a filesystem path. Admission SHALL validate the declaration without invoking it.
+
+#### Scenario: Upload declarations and retained identity
+- **WHEN** a module declares a bounded upload on API 1.3 and an authorized caller supplies media
+- **THEN** preparation supplies data for the existing tracked command, the original request identity follows its accepted or refused reply, and older module APIs or invalid declarations are refused

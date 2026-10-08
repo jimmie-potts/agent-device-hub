@@ -6,12 +6,14 @@ import type {SyncHandler, SyncResult} from './remote.js';
 
 /** An explicit command; acceptance is separate from the operation's completed or uncertain outcome. */
 export type FrontendAction = {family: string; target: string; data: object; requestId: string};
+/** A file remains in this page's memory; only its request identity is retained for reload recovery. */
+export type FrontendUpload = {family: string; target: string; requestId: string; upload: {name: string; file: Blob}};
 export type FrontendActionReply = {status: 'accepted'; requestId: string} | ErrorBody;
 export type FrontendCommand = {
   readonly text: string;
   readonly locked: boolean;
   readonly requestId: string | undefined;
-  run(action: FrontendAction | string): Promise<void>;
+  run(action: FrontendAction | FrontendUpload | string): Promise<void>;
 };
 
 /** Authenticated facilities owned by one mounted module page. No token, storage or device transport is exposed. */
@@ -22,6 +24,8 @@ export type FrontendApi = {
   image(path: string): Promise<Blob>;
   /** Sends once through the core's tracked command boundary, without automatic retry. */
   command(action: FrontendAction): Promise<FrontendActionReply>;
+  /** Stages bounded media and dispatches its declared command once, using the same tracked outcome UI. */
+  upload(action: FrontendUpload): Promise<FrontendActionReply>;
   /** Syncs this module's families on the shell's existing participant; the page closes the copy when done. */
   sync<T extends object>(families: readonly string[], changed: SyncHandler<T>): Promise<SyncResult<T>>;
 };

@@ -74,6 +74,12 @@ accepted versus completed/uncertain status, and no resend after reload. Feature
 forms use the context's `Command` component and still require current control
 authority and operation evidence.
 
+Pixoo's Library form uses that same command component for a bounded binary
+upload. Choosing a file changes only the draft; Add media sends once, and the
+catalog refreshes from the completed owner operation. Files remain in page
+memory and are not restored or resent on reload. Read-only callers can browse
+the catalog but have no upload controls.
+
 Passive pages keep their script-free frame. A declared trusted editor uses an
 application frame under the gateway's trusted asset policy. It is reviewed
 same-origin application code, not an untrusted extension sandbox. User media

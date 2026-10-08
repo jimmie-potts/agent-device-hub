@@ -296,6 +296,11 @@ export class Gateway {
     const query = [...url.searchParams.keys()];
     const noQuery = (): void => { if (query.length > 0) throw refuse('invalid-request', 'this route takes no query'); };
     const needs = (scope: Scope): void => { if (!principal.scopes.has(scope)) throw refuse('forbidden', `this route needs the ${scope} scope`); };
+    const uploadModule = /^\/api\/v2\/modules\/([^/]+)\/upload$/.exec(path)?.[1];
+    if (method === 'POST' && uploadModule !== undefined) {
+      needs('control');
+      return this.#upload(request, uploadModule, url.searchParams, principal);
+    }
     if (method === 'GET' && path === '/api/v2/authority') {
       const scope = url.searchParams.get('scope');
       if (query.length !== 1 || scope === null || !['read', 'control', 'ingest', 'admin'].includes(scope)) throw refuse('invalid-request', 'name one scope: read, control, ingest or admin');
@@ -553,6 +558,55 @@ export class Gateway {
     }
     if (this.#options.redactions.holdsBytes(bytes)) throw refuse('internal', 'the module\'s asset holds a secret, which the gateway never serves');
     return {status: 200, body: bytes, headers: {'content-type': asset.type, ...PAGE_HEADERS}};
+  }
+
+  /** Prepare binary input, then use the unchanged tracked dispatcher and its exact reply. */
+  async #upload(request: IncomingMessage, name: string, params: URLSearchParams, principal: Principal): Promise<Answer> {
+    const {upload} = this.#module(name).manifest;
+    if (upload === undefined) throw refuse('not-found', 'the module accepts no upload');
+    const keys = [...params.keys()];
+    const label = params.get('name');
+    const family = params.get('family');
+    const requestId = params.get('requestId');
+    if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !['name', 'family', 'requestId', 'target'].includes(key))
+      || label === null || label.trim().length === 0 || label.length > 120 || family !== upload.family || requestId === null) {
+      throw refuse('invalid-request', 'an upload names its declared family, target, requestId and display name');
+    }
+    const input = actionInput({target: params.get('target'), requestId, data: {}});
+    const bytes = await readUpload(request, upload.maxBytes);
+    this.#admit(request);
+    const controller = new AbortController();
+    let prepared;
+    try {
+      prepared = await this.#call(name, () => upload.stage({target: input.target, requestId, name: label, bytes, signal: controller.signal}));
+    } finally {controller.abort();}
+    if (typeof prepared !== 'object' || prepared === null) throw refuse('internal', 'the module returned invalid upload preparation');
+    if ('error' in prepared) {
+      const code = prepared.error?.code;
+      throw refuse(isErrorCode(code) ? code : 'internal', 'the module refused upload preparation');
+    }
+    if (typeof prepared.finish !== 'function') throw refuse('internal', 'the upload has no preparation cleanup');
+    let answer: ActionAnswer;
+    let dispatching = false;
+    try {
+      this.#admit(request);
+      const action = actionInput({target: input.target, requestId, data: prepared.data});
+      const encoded = JSON.stringify(action);
+      if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw refuse('too-large', 'the prepared command exceeds the JSON command limit');
+      if (this.#options.redactions.holds(encoded)) throw refuse('internal', 'the prepared command holds a secret');
+      dispatching = true;
+      answer = await this.#dispatch(principal, family, action, request);
+    } catch (error) {
+      answer = error instanceof Refused ? error.body : errorBody(dispatching ? 'uncertain-result' : 'internal', {
+        requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
+      });
+    }
+    try {await this.#call(name, () => prepared.finish(answer));}
+    catch {
+      // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
+      this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error');
+    }
+    return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
@@ -855,6 +909,7 @@ function templateOf(path: string): string | undefined {
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
   if (/^\/api\/v2\/modules\/[^/]+\/settings$/.test(path)) return '/api/v2/modules/{module}/settings';
+  if (/^\/api\/v2\/modules\/[^/]+\/upload$/.test(path)) return '/api/v2/modules/{module}/upload';
   if (/^\/modules\/[^/]+\/content\/[^/]+$/.test(path)) return '/modules/{module}/content/{ref}';
   if (/^\/modules\/[^/]+\/assets\/[^/]+$/.test(path)) return '/modules/{module}/assets/{asset}';
   if (/^\/modules\/[^/]+\/[^/]+$/.test(path)) return '/modules/{module}/{page}';
@@ -889,6 +944,20 @@ function actionInput(input: Record<string, unknown>): ActionInput {
     throw refuse('invalid-request', 'an action is {target, data, requestId?}: the device\'s routing ID, the command\'s payload without a request ID, and an identifier');
   }
   return {target, data: data as Record<string, unknown>, ...(typeof requestId === 'string' ? {requestId} : {})};
+}
+
+/** Reads bounded binary media without raising the JSON command limit or accepting multipart paths. */
+async function readUpload(request: IncomingMessage, maxBytes: number): Promise<Uint8Array> {
+  if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/octet-stream') throw refuse('invalid-request', 'the upload body is application/octet-stream');
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request.iterator({destroyOnReturn: false}) as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > maxBytes) {request.resume(); throw refuse('too-large', 'the upload exceeds the declared byte limit');}
+    chunks.push(chunk);
+  }
+  if (size === 0) throw refuse('invalid-request', 'the upload is empty');
+  return Buffer.concat(chunks);
 }
 
 /** Reads a JSON object body of at most 16 KiB, sent as `application/json`. */

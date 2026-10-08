@@ -97,3 +97,10 @@ A trusted editor's policy SHALL allow its reviewed same-origin scripts, styles a
 #### Scenario: Existing command authority remains decisive
 - **WHEN** a read-only or ended session attempts an edit from a trusted page
 - **THEN** the authenticated command boundary refuses it before effects; executable page access grants no control authority
+
+### Requirement: Authenticated upload dispatch
+The runtime SHALL accept a bounded binary upload only for a running module with a declared upload contribution, control authority and existing unsafe-request protections. Its closed query SHALL contain family, target, requestId and name. It SHALL recheck authority before dispatch, preserve the JSON command limit, and send the prepared command once through the existing core dispatcher. It SHALL preserve the dispatcher reply even if temporary-input cleanup fails, invoke the preparation finish callback, and never retry an uncertain command.
+
+#### Scenario: Upload admission and command outcome
+- **WHEN** an authorized upload is prepared, or a read-only, invalid or oversized upload is attempted
+- **THEN** only the admitted upload reaches the existing tracked command path, refused uploads cause no import, and acceptance remains distinct from the owner's terminal outcome

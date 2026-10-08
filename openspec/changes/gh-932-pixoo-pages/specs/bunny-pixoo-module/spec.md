@@ -18,3 +18,11 @@ The Pixoo module SHALL contribute its existing library, playlist, player, previe
 #### Scenario: Existing views remain usable
 - **WHEN** the library, playlists, player, preview, Monitor and settings views are exercised with fresh synthetic media and a simulated Pixoo
 - **THEN** their existing supported flows work through the runtime, keyboard and accessibility checks pass, and device effects occur only after explicit authorized commands
+
+#### Scenario: Ordinary upload and staging cleanup
+- **WHEN** a user uploads synthetic media larger than the JSON command limit and the import completes, fails or its accepted request is repeated
+- **THEN** one original import is tracked, no duplicate import is sent, and every terminal or definitively refused upload releases its private staged input without changing the display
+
+#### Scenario: Abandoned upload after restart
+- **WHEN** Pixoo restarts with an abandoned uploader-owned hash file
+- **THEN** unfinished commands are reported uncertain, the temporary file is removed, and no import or display command is replayed

@@ -50,6 +50,8 @@ export type World = {
   runtime(): Runtime;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
+  pixooMedia(): Promise<{items: {name: string}[]; catalogRevision: number}>;
+  readonlyUpload(bytes: Uint8Array): Promise<number>;
   createPlaylist(name: string): Promise<void>;
   readonlyPlaylistCommand(data: object): Promise<number>;
   /** Publishes one hook observation of `event` now, and resolves once the edge took it. */
@@ -146,6 +148,18 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
         requestId: `setup-${randomBytes(8).toString('hex')}`, requestedBy: 'bunny/parts/operator'});
       assert.equal('status' in answer ? answer.status : 'rejected', 'accepted');
     },
+    pixooMedia: async () => {
+      const response = await fetch(`${runtime.url}/modules/pixoo/content/catalog-media`, {headers: {authorization: `Bearer ${readerToken}`}});
+      assert.equal(response.status, 200);
+      return await response.json() as {items: {name: string}[]; catalogRevision: number};
+    },
+    readonlyUpload: async bytes => {
+      const query = new URLSearchParams({family: 'pixoo-asset-change', target: PIXOO_SECTION.config.device.id, requestId: 'readonly-upload', name: 'Denied'});
+      const response = await fetch(`${runtime.url}/api/v2/modules/pixoo/upload?${query}`, {
+        method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/octet-stream'}, body: Buffer.from(bytes),
+      });
+      await response.arrayBuffer(); return response.status;
+    },
     readonlyPlaylistCommand: async data => {
       const response = await fetch(`${runtime.url}/api/v2/commands/pixoo-playlist-change`, {
         method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'},
@@ -219,7 +233,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
 export function changes(page: Page, sent: string[] = []): string[] {
   page.on('request', request => {
     const {pathname} = new URL(request.url());
-    if (request.method() === 'POST' && (pathname === '/api/sdk/v1/request' || pathname.startsWith('/api/v2/commands/'))) sent.push(pathname);
+    if (request.method() === 'POST' && (pathname === '/api/sdk/v1/request' || pathname.startsWith('/api/v2/commands/')
+      || /^\/api\/v2\/modules\/[^/]+\/upload$/.test(pathname))) sent.push(pathname);
   });
   return sent;
 }
