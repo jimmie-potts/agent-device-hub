@@ -25,7 +25,7 @@ const TEXT: Readonly<Record<MigrationCode, string>> = {
   'source-in-use': 'A Nanoleaf bridge process holds the source state: stop the bridge, its workers and the wall server first.',
   'source-not-clean': 'The source status.sqlite was not closed cleanly: it has a journal to roll back.',
   'source-schema': 'The source status.sqlite is not the installed bridge\'s model version 4, or a table the migration reads lacks a column.',
-  'source-corrupt': 'The source status.sqlite fails SQLite\'s check, or config.json, layout.json or a scene file is damaged, too large or not a regular file.',
+  'source-corrupt': 'The source status.sqlite fails SQLite\'s check, or config.json, layout.json, a scene file or a lock file is damaged, too large or not a regular file.',
   'source-config': 'The source registry is malformed, or a registered device lacks a private IPv4 address or a token, or the module would refuse the converted section.',
   'source-device-id': 'A registered device ID is not a routing ID (lowercase letters and digits with single hyphens), which the runtime requires.',
   'source-not-configured': 'The source never configured shared input, so it names no qualified agent source for the module\'s section.',

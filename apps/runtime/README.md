@@ -777,7 +777,7 @@ file's content.
 | `source-in-use` | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
 | `source-not-clean` | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
 | `source-schema` | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
-| `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json` or a scene file is damaged, too large, a link or not a regular file |
+| `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
 | `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
 | `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
 | `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows |

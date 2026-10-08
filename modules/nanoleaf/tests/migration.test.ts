@@ -301,6 +301,10 @@ suite('refusals of the source', () => {
         unlinkSync(join(source, 'config.json'));
         symlinkSync(join(source, 'config-copy.json'), join(source, 'config.json'));
       }, 'source-corrupt'],
+      ['a linked worker lock', source => {
+        unlinkSync(join(source, 'notification-lock.sqlite'));
+        symlinkSync(join(source, 'notification-lock.panels.sqlite'), join(source, 'notification-lock.sqlite'));
+      }, 'source-corrupt'],
       ['a malformed registry', source => { editConfig(source, config => { config.devices = {wall: {kind: 'lines'}}; }); }, 'source-config'],
       ['a device ID that is no routing ID', source => {
         editConfig(source, config => {

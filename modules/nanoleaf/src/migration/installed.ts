@@ -111,11 +111,16 @@ function readLocked(path: string): DatabaseSync {
   }
 }
 
-/** A lock file's shared lock, or undefined when the bridge never made the file. */
+/**
+ * A lock file's shared lock, or undefined when the bridge never made the file. The file is checked with `lstat` and
+ * opened only through SQLite, never created and never opened another way (as the port's `privateDatabase` rule has it):
+ * closing another descriptor of it would drop the lock. A link or anything but a regular file in its place is refused.
+ */
 function lockShared(path: string): DatabaseSync | undefined {
   try {
-    lstatSync(path);
+    if (!lstatSync(path).isFile()) throw refuse('source-corrupt');
   } catch (error) {
+    if (error instanceof MigrationError) throw error;
     if (errno(error) === 'ENOENT') return undefined;
     throw refuse('source-corrupt', error);
   }
