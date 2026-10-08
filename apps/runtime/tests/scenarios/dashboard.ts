@@ -1,10 +1,10 @@
 // The dashboard's catalog scenarios (Hub #922), shared unchanged by the in-memory harness and disposable runs.
 // Their fixture identities and consumer policy belong here; the shared catalog only collects these definitions.
-import {sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type OperationRecord, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {chipOf} from '../../dashboard/src/sessions.js';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../fixtures/agents.js';
 import {
-  CORE_FAMILIES, act, answers, bodyOf, expect, holds, publish, sendOnce, session, show, type Harness, type Outcome, type Scenario,
+  CORE_FAMILIES, StepFailure, act, answers, bodyOf, expect, holds, publish, sendOnce, session, show, type Harness, type Outcome, type Scenario,
 } from './framework.js';
 
 const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
@@ -113,17 +113,19 @@ const dashboardFinishedTurn: Scenario = {
 /** Guarded user labels through the browser action route, with synced metadata as the completion evidence. */
 const browserLabel = (label: string | null, requestId: string, stale = false) => async (h: Harness): Promise<Outcome> => {
   const records = await browserSessions(h);
-  if (typeof records === 'string') return records;
+  if (typeof records === 'string') throw new StepFailure(records);
   const record = records.find(item => item.id === SESSION_ID);
-  if (record === undefined) return 'the browser holds no session';
+  if (record === undefined) throw new StepFailure('the browser holds no session');
   const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/session-label-set',
     body: {target: record.id, requestId, data: {label, expectedRevision: record.revision - (stale ? 1 : 0)}}});
   const result = bodyOf<{status?: string; error?: {code: string}}>(answer);
-  return (stale ? answer.status === 409 && result?.error?.code === 'revision-conflict' : answer.status === 200 && result?.status === 'accepted') || show(result);
+  const correct = stale ? answer.status === 409 && result?.error?.code === 'revision-conflict' : answer.status === 200 && result?.status === 'accepted';
+  if (!correct) throw new StepFailure(`the browser label action answered ${answer.status} ${result?.error?.code ?? result?.status ?? 'invalid-reply'}`);
+  return true;
 };
 const dashboardLabels: Scenario = {
   id: 'session-label', title: 'the browser labels and clears a session through tracked guarded actions',
-  seed: {modules: ['core'], follows: [['session']]},
+  seed: {modules: ['core'], follows: [['session', 'operation']]},
   steps: [
     act('the hook starts a titled session', h => publish(h, sessionStarted, {title: {value: 'Provider title', source: 'provider'}})),
     expect('the browser reads the title', async h => {
@@ -136,6 +138,11 @@ const dashboardLabels: Scenario = {
     expect('the stale attempt leaves the label unchanged', h => session(h)?.label?.value === 'Review label' || show(session(h))),
     act('the browser clears the explicit label', browserLabel(null, 'req-dashboard-label-clear')),
     expect('the record retains its provider title with no explicit label', h => session(h)?.label === undefined && session(h)?.title?.value === 'Provider title' || show(session(h))),
+    expect('the live operation copy confirms both metadata results', h => {
+      const records = h.reader.states<OperationRecord>('operation').map(message => message.data);
+      return ['req-dashboard-label', 'req-dashboard-label-clear'].every(id => records.some(record => record.requestId === id &&
+        record.family === 'session-label-set' && record.target === SESSION_ID && record.status === 'completed' && record.result === 'succeeded' && record.evidence === 'observed')) || show(records);
+    }),
     expect('the core publishes two observed metadata outcomes, with no stale completion', h => {
       const outcomes = h.published().map(item => item.message).filter(message => message.kind === 'outcome' && message.type === 'org.bunny.session-label.set.completed');
       return outcomes.length === 2 && outcomes.every(message => (message.data as {evidence?: unknown}).evidence === 'observed') || show(outcomes);

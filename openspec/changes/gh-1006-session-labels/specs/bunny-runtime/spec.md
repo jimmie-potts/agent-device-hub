@@ -32,6 +32,10 @@ The core SHALL set a label with user provenance or clear it through the existing
 - **WHEN** the current user label already equals the request or the session already has no label and clearing is requested
 - **THEN** the tracked action completes durably and the session record retains its revision
 
+#### Scenario: Live operation projection
+- **WHEN** a label action completes, including a no-op or a result arriving after transport uncertainty
+- **THEN** the real operation projection is published in the outcome's transaction and its live copy agrees with a fresh snapshot of the completed operation
+
 #### Scenario: Transaction failure
 - **WHEN** state saving, outcome validation, a tracked projection or storage capacity prevents the transaction from committing
 - **THEN** the session, completion, history and outcome roll back together, no success is reported, and the core preserves its existing recovery behavior

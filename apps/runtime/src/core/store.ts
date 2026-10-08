@@ -558,12 +558,12 @@ export class CoreStore implements Storage {
           // Kept as long as agent-state still admits the observation, which it judges by the hook's own instant.
           tx.take(plan.cause.message, Math.max(0, observation.observedAtMs - atMs) + TAKEN_LIFECYCLE_MS);
         }
+        // Only the matched label save completes its action; tracked projections must be staged before derivation.
+        if (plan.cause !== undefined && plan.cause === this.#cause) this.#completing?.({revision: revision ?? this.#revision, messages: added}, tx);
         if (added.length > 0 || revision !== undefined) {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
-        // An unrelated owner maintenance save must never consume the action's completion callback.
-        if (plan.cause !== undefined && plan.cause === this.#cause) this.#completing?.({revision: revision ?? this.#revision, messages: added}, tx);
         history.write(entries, atMs, revision ?? this.#revision);
         statements.writeRevision.run(revision ?? this.#revision, commits);
       });

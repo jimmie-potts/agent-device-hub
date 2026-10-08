@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {sessionTitle, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, childOf, noSpans, type Command, type Participant, type Reply, type Responder, type Sdk} from '@jimmie-potts/sdk';
+import {operationEntityId, sessionTitle, type OperationRecord, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {InProcessBus, childOf, noSpans, type Command, type Participant, type Reply, type Responder, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreHandle, type CoreOptions} from '../src/index.js';
 import {Tracker, type Action, type CompletedOutcome} from '../src/core/tracker.js';
@@ -71,8 +71,41 @@ async function labels(context: TestContext, options: CoreOptions = {}, controls:
   return {module, harness, handle, hook, record, db, clock, dir, commands, messages};
 }
 
+/** A display's real operation copy, opened before a label changes anything. */
+async function operationCopy(context: TestContext, world: Awaited<ReturnType<typeof labels>>): Promise<SyncedCopy<OperationRecord>> {
+  const result = await world.hook.sync<OperationRecord>(['operation'], () => {}, {timeoutMs: 5000});
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') throw new Error('the core did not sync operations');
+  context.after(() => result.copy.close());
+  return result.copy;
+}
+
+/** Live projection, fresh snapshot and SQL agree, and completion publication joins the outcome's transaction. */
+async function completedRecord(world: Awaited<ReturnType<typeof labels>>, copy: SyncedCopy<OperationRecord>, requestId: string): Promise<void> {
+  const fresh = await world.hook.sync<OperationRecord>(['operation'], () => {}, {timeoutMs: 5000});
+  assert.equal(fresh.status, 'synced');
+  if (fresh.status !== 'synced') return;
+  try {
+    await flush();
+    const records = (held: SyncedCopy<OperationRecord>): OperationRecord[] => held.states().map(message => message.data).sort((a, b) => a.id.localeCompare(b.id));
+    assert.deepEqual(records(copy), records(fresh.copy),
+      'the live operation copy agrees with a fresh snapshot');
+    const record = copy.get({family: 'operation', id: operationEntityId(requestId)})?.data;
+    assert.equal(record?.status, 'completed');
+    assert.deepEqual([record?.family, record?.target, record?.result, record?.evidence], ['session-label-set', SESSION_ID, 'succeeded', 'observed']);
+    const stored = world.db.prepare('SELECT record FROM operation_records WHERE id = ?').get(operationEntityId(requestId)) as {record: string};
+    assert.deepEqual(JSON.parse(stored.record), record);
+    const outcome = world.db.prepare("SELECT revision FROM core_history WHERE request_id = ? AND type = 'org.bunny.session-label.set.completed'").get(requestId) as {revision: number};
+    const projection = world.db.prepare("SELECT count(*) AS count FROM core_history WHERE revision = ? AND subject = ? AND kind = 'change' AND type = 'org.bunny.operation.updated'").get(outcome.revision, operationEntityId(requestId));
+    assert.equal(projection?.count, 1, 'the final projection and outcome committed together');
+  } finally {
+    await fresh.copy.close();
+  }
+}
+
 it('an operator label completes through the tracker and the synced user label is its evidence', async context => {
   const world = await labels(context);
+  const copy = await operationCopy(context, world);
   const before = await world.record();
   assert.notEqual(world.module.operatorActions, undefined, 'the runtime has a dedicated operator dispatcher');
   const answer = await world.module.operatorActions.dispatch(labelAction('Review 🐰', before.revision));
@@ -85,10 +118,12 @@ it('an operator label completes through the tracker and the synced user label is
   assert.equal(operation?.result, 'succeeded');
   assert.equal(operation?.evidence, 'observed');
   assert.equal(operation?.outcomes.length, 1);
+  await completedRecord(world, copy, 'req-label');
 });
 
 it('clear and same-user-label actions complete without inventing a session revision', async context => {
   const world = await labels(context);
+  const copy = await operationCopy(context, world);
   const empty = await world.record();
   await world.module.operatorActions.dispatch(labelAction(null, empty.revision, 'req-empty'));
   assert.equal((await world.record()).revision, empty.revision);
@@ -99,6 +134,7 @@ it('clear and same-user-label actions complete without inventing a session revis
   await world.module.operatorActions.dispatch(labelAction(null, named.revision, 'req-clear'));
   assert.equal((await world.record()).label, undefined);
   for (const id of ['req-empty', 'req-set', 'req-same', 'req-clear']) assert.equal(world.handle.operation(id)?.status, 'completed', id);
+  for (const id of ['req-empty', 'req-set', 'req-same', 'req-clear']) await completedRecord(world, copy, id);
 });
 
 it('setting an equal agent label changes its provenance and later provider metadata cannot replace the user label', async context => {
@@ -184,26 +220,35 @@ it('an admitted responder binds the actual command ID and refuses copied facts o
 
 it('a tracked hook failure rolls the label, outcome, history and participating rows back together', async context => {
   let fail = true;
+  let stagedCompletion = false;
   const world = await labels(context, {parts: [{
     open: db => { db.exec('CREATE TABLE label_projection (request_id TEXT PRIMARY KEY)'); },
     tracked: ({operation, outcome}, tx) => {
       if (outcome === undefined) return;
+      const staged = tx.database.prepare('SELECT record FROM operation_records WHERE id = ?').get(operationEntityId(operation.requestId)) as {record: string};
+      stagedCompletion = (JSON.parse(staged.record) as OperationRecord).status === 'completed';
       tx.database.prepare('INSERT INTO label_projection VALUES (?)').run(operation.requestId);
       if (fail) throw new Error('synthetic projection failure');
     },
   }]});
+  const copy = await operationCopy(context, world);
   const before = await world.record();
   const history = world.db.prepare('SELECT * FROM core_history').all();
   const refused = await world.module.operatorActions.dispatch(labelAction('Rollback', before.revision));
   assert.equal((refused as {error: {code: string}}).error.code, 'internal');
+  assert.equal(stagedCompletion, true, 'the real operation projection participated before the failing hook');
   assert.deepEqual(await world.record(), before);
   assert.deepEqual(world.db.prepare('SELECT * FROM label_projection').all(), []);
   assert.deepEqual(world.handle.operation('req-label')?.outcomes, []);
   assert.equal(world.db.prepare("SELECT count(*) AS count FROM core_history WHERE type = 'org.bunny.session-label.set.completed'").get()?.count, 0);
+  const refusedRecord = copy.get({family: 'operation', id: operationEntityId('req-label')})?.data;
+  assert.equal(refusedRecord?.status, 'rejected', 'rollback publishes no completed operation');
+  assert.equal(refusedRecord?.evidence, 'none');
   assert.ok(world.db.prepare('SELECT * FROM core_history').all().length >= history.length, 'sent/refused history remains separate from the rolled-back save');
   fail = false;
   assert.equal('error' in await world.module.operatorActions.dispatch(labelAction('Recovered', before.revision, 'req-recover')), false);
   assert.equal((await world.record()).label?.value, 'Recovered');
+  await completedRecord(world, copy, 'req-recover');
 });
 
 it('a label survives restart and repeating its request ID never sends a command again', async context => {
@@ -255,6 +300,7 @@ it('a running responder can complete after its SDK deadline without losing its a
   const world = await labels(context, {parts: [{tracked: ({previous, outcome}) => {
     if (outcome !== undefined && previous !== undefined) preceding.push(previous.status);
   }}]});
+  const copy = await operationCopy(context, world);
   const before = await world.record();
   const records = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'records')?.value as (this: CoreStore) => SessionRecord[];
   let delay = true;
@@ -270,6 +316,7 @@ it('a running responder can complete after its SDK deadline without losing its a
   assert.deepEqual(preceding, ['uncertain']);
   assert.equal(world.handle.operation('req-label')?.status, 'completed');
   assert.equal(world.commands.length, 1);
+  await completedRecord(world, copy, 'req-label');
 });
 
 it('a command that missed admission before SDK settlement cannot consume its expired waiting context', async context => {

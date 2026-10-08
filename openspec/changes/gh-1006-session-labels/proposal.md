@@ -8,7 +8,8 @@
 - Admit this operator action through the authenticated gateway's existing `control` authority, over HTTP and MCP. Ordinary core/module dispatch and SDK grants cannot admit it.
 - Set or clear the user label through agent-state's existing owner. Commit the session, tracker completion, history and outcome in the same existing transaction, preserving refusal, deduplication and recovery behavior.
 - Add row controls that distinguish requested, accepted and confirmed session state; retain drafts on a conflict and never resend after reconnect or reload.
-- Verify the contract, authorization, revision guard, no-op, rollback, deadline and restart behavior; add the catalog's label/clear scenario and browser/accessibility evidence.
+- Integrate the existing operation family through unchanged tracked hooks; verify live projection/snapshot agreement and atomic completion for label, no-op, rollback and late result paths.
+- Use focused contract/core/direct-consumer checks and one catalog label/clear scenario with its row/reload browser and accessibility journey. Preserve prior failure evidence and full hosted CI; no migration, framework or exhaustive local campaign is required (owner-approved scope, 2026-10-08).
 
 ## Capabilities
 
