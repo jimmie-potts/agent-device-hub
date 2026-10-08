@@ -1,7 +1,7 @@
 # runtime-codex-desktop Specification
 
 ## Purpose
-Define the Codex Desktop runtime module under ADR 0012 (Hub #926): its section and the cutover's conversion of the Hub's setting, the read evidence that Codex Desktop's read marker gives the core's top-level Desktop sessions, reading the marker in a process of its own under policy A, what leaves the module, and the simulated marker its tests and disposable runs use. It is source; the cutover (#840) installs it.
+Define the Codex Desktop runtime module under ADR 0012 (Hub #926): its section and the optional legacy conversion of the Hub's setting, the read evidence that Codex Desktop's read marker gives the core's top-level Desktop sessions, reading the marker in a process of its own under policy A, what leaves the module, and the simulated marker its tests and disposable runs use. It is source; the cutover (#840) installs it.
 
 ## Requirements
 

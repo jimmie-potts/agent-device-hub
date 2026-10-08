@@ -1,7 +1,7 @@
 # runtime-tidbyt Specification
 
 ## Purpose
-Define the Tidbyt runtime module under ADR 0012 (Hub #930): its private cloud configuration and the cutover's conversion of the runner's configuration, the status tile from the core's synced sessions and the now-playing tile from the playback module's record, one writer with its lease, queue, holds and 15-second gate, start, restart, stop and rendering in a worker thread, its device record, refused commands and diagnostics, the golden frames decoded independently in Node, and the simulated cloud that its tests, catalog scenario and disposable runs use. It is source verified with a simulated cloud; installation and the physical check belong to the cutover (#840).
+Define the Tidbyt runtime module under ADR 0012 (Hub #930): its private cloud configuration and the optional legacy conversion of the runner's configuration, the status tile from the core's synced sessions and the now-playing tile from the playback module's record, one writer with its lease, queue, holds and 15-second gate, start, restart, stop and rendering in a worker thread, its device record, refused commands and diagnostics, the golden frames decoded independently in Node, and the simulated cloud that its tests, catalog scenario and disposable runs use. It is source verified with a simulated cloud; installation and the physical check belong to the cutover (#840).
 
 ## Requirements
 
@@ -23,7 +23,7 @@ The runtime SHALL host one module, `tidbyt` (module API 1.1), that writes the Ti
 
 ### Requirement: Conversion of the runner's configuration
 
-The module SHALL provide `convertTidbytRunner(runner, credentials)`, which the cutover's installer runs on the old runner's parsed `tidbyt-status.json` and the text of the credentials file it names. It SHALL check both as the runner did and return the module's section, with device ID `tidbyt`, the cloud's device ID and both installation IDs kept, so no tile is left behind, and the API key separately for the installer to write into a private secret file. The runner's now-playing `sourceId` SHALL become the playback record's routing ID by the playback module's rule, and the result SHALL name a renamed one. The runner's Hub URL, owner and Hub token files SHALL NOT be carried. A configuration or credentials file the runner would refuse SHALL be refused with fixed text that repeats no credential.
+The module SHALL provide `convertTidbytRunner(runner, credentials)`, an optional utility for the old runner's parsed `tidbyt-status.json` and the text of the credentials file it names. It SHALL check both as the runner did and return the module's section, with device ID `tidbyt`, the cloud's device ID and both installation IDs kept, so no tile is left behind, and the API key separately for a caller to write into a private secret file. The runner's now-playing `sourceId` SHALL become the playback record's routing ID by the playback module's rule, and the result SHALL name a renamed one. The runner's Hub URL, owner and Hub token files SHALL NOT be carried. A configuration or credentials file the runner would refuse SHALL be refused with fixed text that repeats no credential.
 
 #### Scenario: Installation IDs kept
 - **WHEN** the runner's credentials name installation `agentstatus` and its now-playing block names `nowplaying2` for source `living-room`

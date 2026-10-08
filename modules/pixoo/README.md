@@ -76,8 +76,9 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
 `convertPixooSettings({device, hostedGif, presentation, nowPlaying})` turns the
 Pixoo service's `device.json`, `hosted-gif.json` and
 `agent-monitor/{presentation,now-playing}.json` into this section, keeping the
-Hub's device ID `pixoo-local`, for the installer
-([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)).
+Hub's device ID `pixoo-local`. It is an optional legacy utility;
+[fresh setup](../../apps/runtime/SETUP.md) uses manually selected configuration
+and does not run it.
 
 ### State
 

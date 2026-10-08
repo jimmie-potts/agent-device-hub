@@ -1,7 +1,7 @@
 # pixoo-library-migration Specification
 
 ## Purpose
-Carry the Pixoo service's library into the runtime's Pixoo module at the cutover ([Hub #931](https://github.com/jimmie-potts/agent-device-hub/issues/931)): an offline tool that reads the installed release's schema version 3 without changing it, copies its catalog, playlists, originals and renditions into the module's store, refuses what it cannot carry safely, and a verifier whose zero mismatches is the cutover's go. The installer (#935) runs it at the cutover (#840); this is source-verified on synthetic libraries and in a disposable run.
+Carry the Pixoo service's library into the runtime's Pixoo module with an optional utility ([Hub #931](https://github.com/jimmie-potts/agent-device-hub/issues/931)): an offline tool that reads the installed release's schema version 3 without changing it, copies its catalog, playlists, originals and renditions into the module's store, refuses what it cannot carry safely, and a verifier that reports mismatches. The selected fresh setup (#935/#840) does not run these tools; this is source-verified on synthetic libraries and in a disposable run.
 
 ## Requirements
 

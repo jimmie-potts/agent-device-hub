@@ -69,8 +69,9 @@ error body or health entry carries one.
 ### Conversion from the old Hub
 
 `convertHostPlayback(block)` converts the old Hub's `host.json` `playback`
-block, `{id, sources}`, into this section. The cutover's installer
-([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)) runs it.
+block, `{id, sources}`, into this section. It is an optional legacy utility;
+[fresh setup](../../apps/runtime/SETUP.md) uses manually selected configuration
+and does not run it.
 
 - It checks the block as the Hub did at its start, apart from the Hub's own
   aliases.

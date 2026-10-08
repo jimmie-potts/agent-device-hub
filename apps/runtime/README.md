@@ -322,11 +322,12 @@ none of the rest of the runtime.
   `http://127.0.0.1:<port>/api/monitor/v1/events`. A `receipt.json` beside it,
   when there is one, must be private, installed and match it. The hook uses only
   the endpoint's host and port: the runtime keeps the Hub's port, 8788 (#835).
-- **The credential.** The token authenticates as the producer's converted
-  credential. The Hub's setup named it `hub-` and the first 32 hex digits of the
+- **The credential.** The token authenticates as the producer's explicitly
+  granted credential (or one from the optional legacy conversion). The Hub's
+  setup named it `hub-` and the first 32 hex digits of the
   SHA-256 of the producer's source configuration without its hook name
   (`producerPrincipal` in `apps/hub/src/setup.ts`), and
-  [`convertHubEdge`](#credentials) makes it act as `bunny/parts/<that ID>`. The
+  the runtime grant uses `bunny/parts/<that ID>` as its source. The
   hook derives the same source from the producer file (`producerSource`), so
   the file needs no new member. Its `ingest` scope lets it publish lifecycle
   observations and nothing else ([Grants at the SDK edge](#grants-at-the-sdk-edge)).
@@ -925,9 +926,9 @@ name or a file's content.
 
 The line is the tool's own record, and its codes are the tool's own, outside
 the 2.0 error registry, as the health document `runtime-health/1.0` is the
-runtime's: no message crosses the bus while the runtime is stopped, and the
-installer (#935) reads the line and the exit code to decide whether the
-cutover goes on.
+runtime's: no message crosses the bus while the runtime is stopped. A caller
+that separately selects this utility reads the line and exit code. The fresh
+setup in #935 does not invoke it or use its result as a cutover gate.
 
 A refusal creates nothing: the tool checks the library, the state directory,
 the module's files and the free space before it makes anything. Only then does

@@ -1,7 +1,7 @@
 # nanoleaf-migration Specification
 
 ## Purpose
-Carry the codex-nanoleaf bridge's state into the runtime's Nanoleaf module at the cutover ([Hub #933](https://github.com/jimmie-potts/agent-device-hub/issues/933)): an offline tool that reads the bridge's state directory without changing it, copies the layout, preferences, project map and colors, palette, scenes and favorites into the module's store and folder, converts the registry into the module's section with each token as a private secret file, refuses what it cannot carry safely, and a verifier whose zero mismatches is the cutover's go. The installer (#935) runs it at the cutover (#840); this is source-verified on the `linux-state-v4` fixture, on synthetic states and in a disposable run.
+Carry the codex-nanoleaf bridge's state into the runtime's Nanoleaf module with an optional utility ([Hub #933](https://github.com/jimmie-potts/agent-device-hub/issues/933)): an offline tool that reads the bridge's state directory without changing it, copies the layout, preferences, project map and colors, palette, scenes and favorites into the module's store and folder, converts the registry into the module's section with each token as a private secret file, refuses what it cannot carry safely, and a verifier that reports mismatches. The selected fresh setup (#935/#840) does not run these tools; this is source-verified on the `linux-state-v4` fixture, on synthetic states and in a disposable run.
 
 ## Requirements
 
@@ -107,7 +107,7 @@ The tool SHALL write exactly one JSON line to standard output, with the schema `
 
 ### Requirement: A disposable run on a migrated Nanoleaf state
 
-The runtime verification adapter SHALL offer the run scenario `nanoleaf-migrated`: its seed SHALL write a synthetic bridge state of the installed shape, with the simulated controllers' addresses and token and the run's synthetic Claude Code hook as its qualified source, to `<data>/nanoleaf-bridge`, run the migration's `migrate` into the run's state directory with its secrets in `<data>/config/secrets` and its section in `<data>/migration/`, put that section into the run's configuration file in place of the simulated one, run `verify` against that file, as the installer will at the cutover, keep each line in `<data>/migration/`, and fail the start unless both exit 0. The run SHALL then start the shipped runtime on that state directory and configuration, so a reviewer reads the migrated preferences through the gateway and runs the tool by hand against the run's bridge state.
+The runtime verification adapter SHALL offer the run scenario `nanoleaf-migrated`: its seed SHALL write a synthetic bridge state of the installed shape, with the simulated controllers' addresses and token and the run's synthetic Claude Code hook as its qualified source, to `<data>/nanoleaf-bridge`, run the migration's `migrate` into the run's state directory with its secrets in `<data>/config/secrets` and its section in `<data>/migration/`, put that section into the run's configuration file in place of the simulated one, run `verify` against that file, keep each line in `<data>/migration/`, and fail the start unless both exit 0. The run SHALL then start the shipped runtime on that state directory and configuration, so a reviewer reads the migrated preferences through the gateway and runs the tool by hand against the run's bridge state.
 
 #### Scenario: The shipped runtime on a migrated state
 - **WHEN** a run starts with `nanoleaf-migrated`
