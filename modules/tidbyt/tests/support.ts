@@ -5,6 +5,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test as nodeTest, type TestContext} from 'node:test';
+import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -12,6 +13,7 @@ import {InProcessBus, type Participant, type Scheduler, type Snapshot} from '@ji
 import {ModuleHarness, RecordedSpans, type HarnessRecord} from '@jimmie-potts/sdk/testing';
 import type {CloudFetch} from '../src/cloud.js';
 import {DEVICE_SCHEMA, SIMULATED_SECTION, createTidbytModule, type TidbytModuleOptions} from '../src/module.js';
+import type {TidbytConfig} from '../src/configuration.js';
 import {SIMULATED_API_KEY, SimulatedCloud, type SimulatedCloudOptions} from '../src/simulated.js';
 
 /** node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. */
@@ -24,6 +26,39 @@ export const START_MS = Date.parse('2026-10-07T12:00:00.000Z');
 export const RENDER_TIMEOUT_MS = 3_600_000;
 export const SECOND = 1000;
 export const MINUTE = 60 * SECOND;
+
+/** Wraps prepared writes with a one-shot error callback at the module's real database boundary. */
+export function withWriteFailure(database: DatabaseSync, takeFailure: () => Error | undefined): DatabaseSync {
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'prepare') return (sql: string) => {
+        const statement = target.prepare(sql);
+        const run = statement.run.bind(statement);
+        return new Proxy(statement, {
+          get(inner, key) {
+            if (key === 'run') return (...parameters: Parameters<typeof run>) => {
+              const failure = takeFailure();
+              if (failure !== undefined) throw failure;
+              return run(...parameters);
+            };
+            const value: unknown = Reflect.get(inner, key, inner);
+            if (typeof value !== 'function') return value;
+            return (...args: unknown[]): unknown => {
+              const result: unknown = Reflect.apply(value, inner, args);
+              return result;
+            };
+          },
+        });
+      };
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]): unknown => {
+        const result: unknown = Reflect.apply(value, target, args);
+        return result;
+      };
+    },
+  });
+}
 
 /** A manual wall clock with a scheduler on it. `advance` runs every timer that falls due, in order. */
 export function manualClock(start = START_MS): {now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number} {
@@ -184,6 +219,8 @@ export type HostOptions = {
   maxQueued?: number;
   /** Runs before the module starts, such as to queue the cloud's answers or take its lease in its state directory. */
   before?: (cloud: SimulatedCloud, stateDir: string) => void;
+  /** Wraps the module's database for focused storage-error tests. */
+  wrapDatabase?: (database: DatabaseSync) => DatabaseSync;
   /** Holds the core's first sync until `core.release()`; `host` then returns before the module's start has finished. */
   holdCore?: boolean;
 };
@@ -272,9 +309,20 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
     }
     return cloud.fetch(url, init);
   };
-  const build = (): ModuleHarness => new ModuleHarness(createTidbytModule({transport, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module}), {
-    bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
-  });
+  const build = (): ModuleHarness => {
+    const inner = createTidbytModule({transport, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module});
+    const module: import('@jimmie-potts/sdk').BunnyModule<TidbytConfig> = {
+      manifest: inner.manifest,
+      start: context => inner.start({...context, database: () => {
+        const database = context.database();
+        return options.wrapDatabase?.(database) ?? database;
+      }}),
+      stop: () => inner.stop(),
+    };
+    return new ModuleHarness(module, {
+      bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
+    });
+  };
   const instances: ModuleHarness[] = [];
   /**
    * Lets what is due run, and waits in real time for a render in progress, so the manual clock never races a worker

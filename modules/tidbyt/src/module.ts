@@ -17,7 +17,7 @@ import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} fr
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
+  DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
   type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
@@ -68,16 +68,13 @@ export const NO_CONTROLS: Capabilities = {
 };
 /** How a refused lease shows in the start's record. */
 const LEASE_REASONS: Readonly<Record<LeaseRefusal, 'busy' | 'unauthorized' | 'unavailable'>> = {busy: 'busy', 'not-private': 'unauthorized', failed: 'unavailable'};
-/** SQLite's result code for a full disk, from a node:sqlite error's `errcode`. */
-const SQLITE_FULL = 13;
 /**
  * A database refusal's registry code: `capacity` for a full disk, `internal` for any other. No other writer can hold the
  * module's database, which it keeps to itself (Hub #972).
  */
 function storageCode(error: unknown): ErrorCode {
   if (error instanceof SdkError) return error.body.error.code;
-  const code = typeof error === 'object' && error !== null && 'errcode' in error ? error.errcode : undefined;
-  return code === SQLITE_FULL ? 'capacity' : 'internal';
+  return fullDisk(error) ? 'capacity' : 'internal';
 }
 
 export type TidbytTiming = {minIntervalMs: number; refreshMs: number; statusPollMs: number; nowPlayingPollMs: number};

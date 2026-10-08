@@ -38,6 +38,39 @@ export const flush = async (): Promise<void> => {
   for (let turn = 0; turn < 6; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
 };
 
+/** Wraps prepared writes with a one-shot error callback at the module's real database boundary. */
+export function withWriteFailure(database: DatabaseSync, takeFailure: () => Error | undefined): DatabaseSync {
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'prepare') return (sql: string) => {
+        const statement = target.prepare(sql);
+        const run = statement.run.bind(statement);
+        return new Proxy(statement, {
+          get(inner, key) {
+            if (key === 'run') return (...parameters: Parameters<typeof run>) => {
+              const failure = takeFailure();
+              if (failure !== undefined) throw failure;
+              return run(...parameters);
+            };
+            const value: unknown = Reflect.get(inner, key, inner);
+            if (typeof value !== 'function') return value;
+            return (...args: unknown[]): unknown => {
+              const result: unknown = Reflect.apply(value, inner, args);
+              return result;
+            };
+          },
+        });
+      };
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]): unknown => {
+        const result: unknown = Reflect.apply(value, target, args);
+        return result;
+      };
+    },
+  });
+}
+
 export type ManualClock = {now: () => number; scheduler: Scheduler; advance: (ms: number) => Promise<void>; pending: () => number};
 
 /** A clock that moves only when a test advances it, running each timer that falls due in order. */
@@ -140,6 +173,8 @@ export type WorldOptions = {
   /** Whether the stand-in core serves sessions. Defaults to true. */
   core?: boolean;
   beforePublish?: (message: Message<unknown>) => void;
+  /** Wraps the module's database for focused storage-error tests. */
+  wrapDatabase?: (database: DatabaseSync) => DatabaseSync;
 };
 
 /** The LIFX module on its own bus, with simulated bulbs, a stand-in core and an operator, on a manual clock. */
@@ -209,8 +244,9 @@ export class World {
     const module: BunnyModule<LifxConfig> = {
       manifest: inner.manifest,
       start: context => inner.start({...context, database: () => {
-        this.db = context.database();
-        return this.db;
+        const database = context.database();
+        this.db = database;
+        return this.#options.wrapDatabase?.(database) ?? database;
       }}),
       stop: () => inner.stop(),
     };

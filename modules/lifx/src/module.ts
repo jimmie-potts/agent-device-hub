@@ -18,7 +18,7 @@ import {commandSupported, type Capabilities, type CompletedOutcome, type DeviceC
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
 import {
-  DeviceAvailability, errorType, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
+  DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
   type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
@@ -40,8 +40,6 @@ export const PROBE_MAX_MS = 300_000;
 const SYNC_TIMEOUT_MS = 5000;
 const RESYNC_FIRST_MS = 1000;
 const RESYNC_MAX_MS = 60_000;
-/** SQLite's result code for a full disk, from a node:sqlite error's `errcode`. */
-const SQLITE_FULL = 13;
 
 /** The command families each bulb answers on `bunny.cmd.<family>.<bulb id>`. */
 export const COMMAND_FAMILIES = ['power-set', 'brightness-set', 'device-mode-set', 'lifx-color-set', 'lifx-temperature-set'] as const;
@@ -129,7 +127,7 @@ const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** A request ID as a record field, left out when the diagnostic contract's pattern refuses it. */
 const requestField = (requestId: string): LogFields => REQUEST_ID.test(requestId) ? {'bunny.request.id': requestId} : {};
 const storageCode = (error: unknown): ErrorCode =>
-  typeof error === 'object' && error !== null && 'errcode' in error && error.errcode === SQLITE_FULL ? 'capacity' : 'internal';
+  fullDisk(error) ? 'capacity' : 'internal';
 
 /** What the device record shows of a reading: power and brightness in percent. */
 const deviceReading = (observed: Observation | undefined): string =>

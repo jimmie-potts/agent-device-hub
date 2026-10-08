@@ -28,7 +28,7 @@ import {
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
-  Outbox, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
+  fullDisk, Outbox, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
 import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
@@ -135,7 +135,6 @@ const MAX_DURATION_MS = 86_400_000;
 const JOURNAL_ROWS = 10_000;
 // SQLite's result codes, from a node:sqlite error's `errcode`.
 const SQLITE_BUSY = 5;
-const SQLITE_FULL = 13;
 const LEASE_POLL_MS = 20;
 const errcode = (error: unknown): number | undefined =>
   typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode : undefined;
@@ -325,7 +324,7 @@ export class CoreStore implements Storage {
     } catch (error) {
       this.#leased = false;
       // A store that cannot create its tables on a full disk, as at a first start, is full, not broken (Hub #972).
-      if (errcode(error) === SQLITE_FULL) this.#failure = 'full';
+      if (fullDisk(error)) this.#failure = 'full';
       throw new Error('storage-unavailable', {cause: error});
     }
     const lease = {released: false};
@@ -593,7 +592,7 @@ export class CoreStore implements Storage {
       try {
         await sent;
       } catch (error) {
-        this.#failure = errcode(error) === SQLITE_FULL ? 'full' : 'failed';
+        this.#failure = fullDisk(error) ? 'full' : 'failed';
         throw error;
       }
       throw new Error('the core store did not commit');
@@ -832,4 +831,3 @@ function noticeOf(before: Session['notices'], after: Session['notices'], turn: K
   if (added.length === 1) return added[0]?.id;
   return after.find(notice => sameTurn(notice.turn, turn))?.id;
 }
-

@@ -253,6 +253,9 @@ the Tidbyt's routing ID. It never logs the cloud's device ID, the key or a frame
 | `operation.failed` / `operation.completed` | ERROR / INFO | A fault of the module's own in a tile's evaluation, with `bunny.code` `internal` and its `error.type`, once per run of faults; and the next evaluation that completes, with no `bunny.operation.id` |
 | `operation.failed` / `operation.completed` | WARN / INFO | A copy stopped following its owner, or follows again: `bunny.operation` `feed`, `bunny.participant` the owner |
 | `operation.failed` / `operation.completed` | WARN, or ERROR for `internal` / INFO | The database refused a commit, once per run, with `bunny.operation` `storage` |
+
+The SDK's `fullDisk(error)` classifier recognizes a wrapped filesystem
+`ENOSPC` as a storage capacity failure, just like SQLite `SQLITE_FULL`.
 | `operation.failed` | WARN | The writer lease was refused at start: `bunny.operation` `startup`, `bunny.reason` `busy`, `unauthorized` or `unavailable` |
 | `outbox.republished` | INFO | Each start |
 

@@ -218,6 +218,9 @@ before the speaker answered") and never sends it.
 
 The database can refuse a commit, as when the disk is full:
 
+The module uses the SDK's `fullDisk(error)` classifier, so filesystem `ENOSPC`
+wrapped as a cause follows the same capacity path as SQLite `SQLITE_FULL`.
+
 - If it refuses the intent, the command is refused `capacity`, and no speaker
   hears it.
 - If it refuses the outcome after the speaker heard the command, the module

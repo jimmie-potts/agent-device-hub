@@ -26,6 +26,54 @@ const sessions = (messages: readonly Message[]): SessionRecord[] =>
   messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
 const types = (messages: readonly Message[]): string[] => messages.map(message => message.type);
 
+const wrappedEnospc = (): Error => new Error('database operation failed', {cause: Object.assign(new Error('filesystem is full'), {code: 'ENOSPC'})});
+
+function failStoreExec(database: DatabaseSync, shouldFail: (sql: string) => boolean, error: () => Error): DatabaseSync {
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'exec') return (sql: string): void => {
+        if (shouldFail(sql)) throw error();
+        target.exec(sql);
+      };
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]): unknown => {
+        const result: unknown = Reflect.apply(value, target, args);
+        return result;
+      };
+    },
+  });
+}
+
+it('classifies a wrapped ENOSPC while the core opens its store as full', async context => {
+  const database = new DatabaseSync(join(await stateDir(context), 'startup-full.sqlite'));
+  const store = new CoreStore({
+    database: failStoreExec(database, sql => sql.includes('CREATE TABLE IF NOT EXISTS state'), wrappedEnospc),
+    clock: {now: () => START},
+    sdk: {source: 'bunny/core', publishMessage: <T extends object>(_key: string, message: Message<T>): Promise<Message<T>> => Promise.resolve(message)},
+    onError: () => {},
+  });
+  context.after(() => { store.close(); database.close(); });
+
+  await assert.rejects(store.acquire(OWNER_ID, new AbortController().signal), /storage-unavailable/);
+  assert.equal(store.takeFailure(), 'full', 'the startup path follows the wrapped filesystem error');
+});
+
+it('classifies a wrapped ENOSPC on a core transaction as full without taking or publishing the observation', async context => {
+  let failCommit = false;
+  const world = await World.open(context, {wrap: database => failStoreExec(database, sql => failCommit && sql === 'COMMIT', wrappedEnospc)});
+  await world.observe(sessionStarted);
+  const before = world.snapshot();
+  const published = world.published.length;
+  failCommit = true;
+
+  const result = await world.observe(turnStarted, {turn: 'turn-2'});
+  assert.deepEqual(result, {ok: false, code: 'storage-failed'});
+  assert.equal(world.store.takeFailure(), 'full', 'the transaction path follows the wrapped filesystem error');
+  assert.deepEqual(world.snapshot(), before, 'nothing from the failed transaction committed');
+  assert.equal(world.published.length, published, 'nothing from the failed transaction was published');
+});
+
 it('a committed observation publishes its session state and occurrence after the commit, with history and the intake in the same transaction', async context => {
   const world = await World.open(context);
   assert.deepEqual(await world.observe(sessionStarted), {ok: true, revision: 1, outcome: 'applied'});

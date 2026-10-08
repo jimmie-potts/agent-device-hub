@@ -125,6 +125,9 @@ A command is checked, then stored, then accepted. These refusals prove no effect
 | `internal` | The store refused the command for another reason. |
 | `duplicate-conflict` | The source already used this `requestId` for another command. |
 
+The SDK's `fullDisk(error)` classifier recognizes a wrapped filesystem
+`ENOSPC` as `capacity`, just like SQLite `SQLITE_FULL`.
+
 A repeat of an accepted command, the same source, `requestId` and body, is
 accepted again and changes nothing; the module remembers the last 1024 completed
 commands. Each accepted command moves the bulb's `configurationRevision`.
