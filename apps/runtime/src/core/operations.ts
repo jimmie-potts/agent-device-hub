@@ -39,7 +39,7 @@ export const DEADLINES: Readonly<Record<ActionKind, {readonly replyMs: number; r
   mode: Object.freeze({replyMs: 5000, outcomeMs: 60_000}),
 });
 
-/** The kind of action a command family is: a moment, a mode change, or otherwise a command to one device. */
+/** The tracker deadline class: moment, mode, or the default device budget, also used by core-local actions. */
 export function kindOf(family: string): ActionKind {
   if (family === 'moment-play') return 'moment';
   if (family === 'mode-set') return 'mode';

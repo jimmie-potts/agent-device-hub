@@ -193,6 +193,7 @@ export class CoreStore implements Storage {
   /** Each root session's latest host session ID, kept with its record. */
   #hostSessions = new Map<string, string>();
   #cause: Cause | undefined;
+  #completing: ((change: CoreChange, tx: CoreTransaction) => void) | undefined;
   /** The instant every message of the transaction under way is stamped with. */
   #frozen: number | undefined;
   #failure: StoreFailure | undefined;
@@ -244,13 +245,15 @@ export class CoreStore implements Storage {
     return failure;
   }
 
-  /** Runs `work`, during which the change `cause` makes commits as its answer: in its trace, with its occurrences. */
-  async during<T>(cause: Cause, work: () => Promise<T>): Promise<T> {
+  /** Runs `work` in the cause's trace; optional completion joins only its matching owner save transaction. */
+  async during<T>(cause: Cause, work: () => Promise<T>, completing?: (change: CoreChange, tx: CoreTransaction) => void): Promise<T> {
     this.#cause = cause;
+    this.#completing = completing;
     try {
       return await work();
     } finally {
       this.#cause = undefined;
+      this.#completing = undefined;
     }
   }
 
@@ -559,6 +562,8 @@ export class CoreStore implements Storage {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
+        // An unrelated owner maintenance save must never consume the action's completion callback.
+        if (plan.cause !== undefined && plan.cause === this.#cause) this.#completing?.({revision: revision ?? this.#revision, messages: added}, tx);
         history.write(entries, atMs, revision ?? this.#revision);
         statements.writeRevision.run(revision ?? this.#revision, commits);
       });

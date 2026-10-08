@@ -154,8 +154,9 @@ function commandTool(host: McpHost): ServiceExtension {
     }, 'urn:bunny:tool:core:send_command:output'),
     scope: 'control',
     description: 'Only on the user\'s explicit request, send one command to one device, such as power-set {"on": true}, brightness-set {"percent": 40} '
-      + 'or playback-control {"action": "pause"}, through the core, which tracks it until its outcome. family is the command family, target the device\'s '
-      + 'routing ID, and data the command\'s payload without a requestId. accepted means the device took responsibility, not that anything changed. '
+      + 'or playback-control {"action": "pause"}, or label a session with session-label-set {"label": "Name", "expectedRevision": 1} '
+      + '(null clears the label), through the core, which tracks it until its outcome. family is the command family, target the device\'s '
+      + 'routing ID or qualified session ID, and data the command\'s payload without a requestId. accepted means the owner took responsibility; read its state to confirm the change. '
       + 'Never retry an uncertain or failed result automatically, and never reuse a requestId for another command.',
     annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},
     async invoke(args, context) {

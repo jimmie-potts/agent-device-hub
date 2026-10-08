@@ -15,7 +15,7 @@ import {
   type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
-import {DIRECT_COMMANDS, type ActionAnswer, type CoreActions} from '../core/tracker.js';
+import {DIRECT_COMMANDS, OPERATOR_ACTIONS, type ActionAnswer, type CoreActions, type CoreOperatorActions} from '../core/tracker.js';
 import type {EdgeCredential, Scope} from '../credentials.js';
 import {REGISTRY_REASONS, diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
@@ -103,6 +103,8 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
+  /** The authenticated control route alone uses this capability for tracked core operator actions. */
+  operatorActions?: CoreOperatorActions;
   /** The built dashboard's folder (#922), `DASHBOARD_DIR` by default; tests give their own. */
   dashboard?: URL;
   /** Records the dashboard's five sign-in/read HTTP handoffs after their boundary checks (#922). */
@@ -585,12 +587,14 @@ export class Gateway {
    */
   async #dispatch(principal: Principal, family: string, input: ActionInput): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
+    if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;
-    const {actions} = this.#options;
+    const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     try {
-      return await this.#options.host.invoke(CORE_MODULE, () => actions.dispatch({
+      return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
+        ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({
         ...command, requestedBy: principal.source, ...(input.requestId === undefined ? {} : {requestId: input.requestId}),
       }));
     } catch (error) {

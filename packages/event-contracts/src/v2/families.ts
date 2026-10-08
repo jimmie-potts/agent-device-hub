@@ -117,6 +117,8 @@ export type NoticeAcknowledgeRequest = {requestId: string; consumerId: string; n
  * session record's revision the operator read. It approves or denies nothing at the agent.
  */
 export type ApprovalRecoverRequest = {requestId: string; turnId: string; expectedRevision: number};
+/** A tracked operator label change, guarded by the current session record's revision; null clears the label. */
+export type SessionLabelSetRequest = {requestId: string; label: string | null; expectedRevision: number};
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
 /**
  * `org.bunny.playback.control.requested`: one action for the presented playback source. The envelope subject is the
@@ -216,6 +218,11 @@ const checkMoment: PayloadCheck = message => routedSubject('device')(message) ??
     `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined);
 // The command goes to the session it acknowledges or recovers, whose entity ID is a SHA-256 hash.
 const checkSessionSubject: PayloadCheck = message => /^[0-9a-f]{64}$/.test(message.subject) ? undefined : 'envelope /subject not a session id';
+const checkSessionLabel: PayloadCheck = message => {
+  const {label} = message.data as SessionLabelSetRequest;
+  return checkSessionSubject(message) ?? (label !== null && /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(label)
+    ? 'payload /label not Unicode scalar values' : undefined);
+};
 
 /** Every core family, in registration order: the session schema holds definitions the other agent families use. */
 export const coreFamilies: readonly CoreFamily[] = [
@@ -235,6 +242,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),
+  define('session-label-set', 'command', 'org.bunny.session-label.set.requested', checkSessionLabel),
   define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
 ];
 

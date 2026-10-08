@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/session-label-set/2.0",
+  "description": "Tracked operator command: set a user label or clear it with null, guarded by the session record revision. The subject is the qualified session entity ID. Completion uses the profile outcome payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "label", "expectedRevision"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "label": {"type": ["string", "null"], "if": {"type": "string"}, "then": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/displayText", "maxLength": 80}},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+  }
+}
