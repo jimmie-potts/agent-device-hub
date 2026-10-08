@@ -9,8 +9,12 @@
 //   lock file exclusively while it runs, and enrollment its registry lock, so a running worker or enrollment is
 //   refused, and a worker that a hook launches meanwhile fails to take its lock instead of changing the state.
 // - Every JSON file opens read-only without following a link, as a regular file of bounded size.
-import {closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, statSync} from 'node:fs';
-import {join} from 'node:path';
+// - A lock is a POSIX lock, which closing any descriptor of its file that this process opened drops. So the lock files
+//   and `status.sqlite` open only through SQLite, which keeps its own descriptors open while a lock is held, except for
+//   one plain read of `status.sqlite`'s header before any lock on it is taken; and one process opens a source once at a
+//   time, so that read never closes a descriptor of a file whose lock another reader in the process holds.
+import {closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync} from 'node:fs';
+import {join, resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {pathToFileURL} from 'node:url';
 import {isObject, parseJson, withoutBom, type Json, type JsonObject} from '../compat.js';
@@ -40,6 +44,9 @@ const SQLITE_HEADER = 'SQLite format 3\0';
 const TASK_TABLES = ['task_info', 'activity', 'waits', 'receipts', 'shared_stale', 'shared_suppressed_waves', 'shared_evictions', 'shared_ack'] as const;
 const LEDGER_TABLES = ['controller_meta', 'controller_requests', 'controller_events', 'controller_credentials'] as const;
 const INTEGRATION_TABLES = ['integration_meta', 'integration_requests'] as const;
+
+/** The source directories this process has open, by real path: a second opener of one is refused while it is. */
+const opened = new Set<string>();
 
 /** One registered device as the bridge's registry names it. Its token stays in the source's memory. */
 export type SourceDevice = {readonly id: string; readonly kind: Kind; readonly address: string | null; readonly tokenRef: string};
@@ -215,6 +222,8 @@ export class InstalledState {
   readonly #deviceKeyed: boolean;
   readonly #shapes: ReadonlyMap<string, Shape>;
   #guards: DatabaseSync[];
+  /** This source's entry in `opened`, removed at `close`. */
+  #key = '';
 
   private constructor(fields: {
     directory: string; devices: SourceDevice[]; rows: CarriedRows; layouts: Map<string, LayoutEntry>; scenes: Map<string, Json>; sharedConfig: unknown;
@@ -238,13 +247,28 @@ export class InstalledState {
     };
   }
 
-  /** Opens the bridge's state directory `directory`, an absolute path, and holds its locks until `close`. */
+  /**
+   * Opens the bridge's state directory `directory`, an absolute path, and holds its locks until `close`. A second open
+   * of the same directory in this process is refused with `source-in-use` while this one is open.
+   */
   static open(directory: string): InstalledState {
+    let key: string;
+    try {
+      key = realpathSync(directory);
+    } catch {
+      key = resolve(directory);
+    }
+    // A second reader in this process would read the header of a file whose locks the first one holds.
+    if (opened.has(key)) throw refuse('source-in-use');
+    opened.add(key);
     const guards: DatabaseSync[] = [];
     try {
-      return InstalledState.#read(directory, guards);
+      const state = InstalledState.#read(directory, guards);
+      state.#key = key;
+      return state;
     } catch (error) {
       for (const guard of guards) guard.close();
+      opened.delete(key);
       throw error;
     }
   }
@@ -459,6 +483,7 @@ export class InstalledState {
     const guards = this.#guards;
     this.#guards = [];
     for (const guard of guards) guard.close();
+    if (guards.length > 0) opened.delete(this.#key);
   }
 }
 

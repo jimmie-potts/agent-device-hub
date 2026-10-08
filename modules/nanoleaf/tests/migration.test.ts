@@ -341,6 +341,22 @@ suite('refusals of the source', () => {
     }
   });
 
+  test('refuses a second reader of an open source, so no plain read drops the first one\'s locks', async context => {
+    const directory = temporary(context);
+    const source = await syntheticState(directory);
+    const state = InstalledState.open(source);
+    try {
+      assert.equal(refusal(() => InstalledState.open(source).close()), 'source-in-use');
+      const writer = new DatabaseSync(join(source, 'status.sqlite'), {timeout: 0});
+      assert.throws(() => { writer.exec("INSERT INTO sessions VALUES ('late','t1','working',1.0)"); }, {errcode: 5}, 'the first reader\'s lock still holds');
+      writer.close();
+    } finally {
+      state.close();
+    }
+    // Once closed, the source opens again.
+    InstalledState.open(source).close();
+  });
+
   test('refuses a database with a journal to roll back', async context => {
     const directory = temporary(context);
     const source = await syntheticState(directory);

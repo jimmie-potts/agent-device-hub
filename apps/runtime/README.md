@@ -740,7 +740,8 @@ Every path is absolute.
 - `--state-dir` is the runtime's state directory, which `migrate` creates when
   it is missing. `migrate` writes the module's `modules/nanoleaf.sqlite` and
   `modules/nanoleaf/` there, through `openModuleDatabase` and
-  `openModuleFolder`, and closes the database before it reports.
+  `openModuleFolder`, and closes the database before it reports, which folds
+  its log into the file.
 - `--secrets-dir` is a private directory (mode 700, created when missing) where
   `migrate` writes each device's token, alone and without a line break, as
   `nanoleaf-<device>-token`, mode 600.
