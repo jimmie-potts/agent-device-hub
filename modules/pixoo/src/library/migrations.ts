@@ -32,9 +32,13 @@ export function one(db:DatabaseSync,sql:string,...params:SQLInputValue[]):Record
   if(row===undefined)throw new Error(`No row from ${sql}`);
   return row;
 }
+/**
+ * Runs `action` in one transaction. A COMMIT that fails, as on a full disk, has already rolled the transaction back, so
+ * only a transaction still open is rolled back here, and the error that ended it is the one thrown (Hub #931).
+ */
 export function transaction<T>(db:DatabaseSync,action:()=>T):T {
   db.exec('BEGIN IMMEDIATE');
-  try {const result=action();db.exec('COMMIT');return result;} catch(e) {db.exec('ROLLBACK');throw e;}
+  try {const result=action();db.exec('COMMIT');return result;} catch(e) {if(db.isTransaction)db.exec('ROLLBACK');throw e;}
 }
 /** `others` names tables of a shared database that are not the catalog's, so they do not count as an unknown schema. */
 export function migrate(db:DatabaseSync,migrations:readonly {version:number;sql:string}[]=MIGRATIONS,others?:RegExp):void {
@@ -59,5 +63,5 @@ export function migrate(db:DatabaseSync,migrations:readonly {version:number;sql:
       db.prepare('INSERT INTO schema_migrations VALUES (?,?)').run(migration.version,createHash('sha256').update(migration.sql).digest('hex'));
       db.exec(`PRAGMA application_id=${APPLICATION_ID}; PRAGMA user_version=${migration.version}`);
     });
-  } catch {throw new LibraryError('migration-error');}
+  } catch(error) {throw new LibraryError('migration-error',{},{cause:error});}
 }

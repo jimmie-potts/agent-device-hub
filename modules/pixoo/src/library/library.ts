@@ -22,7 +22,7 @@ type Row = Record<string, unknown>;
 const optionsSchema = z.object({repeat:z.boolean().optional(), shuffle:z.boolean().optional()}).strict();
 const json = <T>(value:unknown):T => JSON.parse(String(value)) as T;
 /** The tables of a database the caller owns that are not the catalog's: the SDK's outbox and a module's own. */
-const CALLER_TABLES=/^(?:bunny|pixoo)_/;
+export const CALLER_TABLES=/^(?:bunny|pixoo)_/;
 const HOSTED='pixoo64-hosted-2026-10-01';
 /**
  * Where an attached library keeps each multi-frame rendition's hosted check, by rendition and profile: whether its frames
@@ -66,7 +66,7 @@ export class Library {
     } catch(error) {
       db?.close(); owner?.close();
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('storage-error');
+      throw new LibraryError('storage-error',{},{cause:error});
     }
   }
 
@@ -88,7 +88,7 @@ export class Library {
       return new Library(options.database,undefined,media,mediaDirectory,options.hostedChecks);
     } catch(error) {
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('storage-error');
+      throw new LibraryError('storage-error',{},{cause:error});
     }
   }
 
@@ -96,7 +96,7 @@ export class Library {
     if(this.closing) return Promise.reject(new LibraryError('closed'));
     const result = this.tail.then(()=>{if(signal?.aborted===true)throw new MediaError((signal.reason as {name?:unknown}|null|undefined)?.name==='TimeoutError'?'timeout':'cancelled');return action();}).catch((error:unknown)=>{
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('database-error');
+      throw new LibraryError('database-error',{},{cause:error});
     });
     this.tail = result.catch(()=>undefined);
     return result;

@@ -503,7 +503,7 @@ name or this listing, and on a file exception that no longer hides a finding.
 | --- | --- | --- | --- | --- |
 | `ignores` in `bunny/safe-errors` | Tests: `**/tests/**` and `*.test.*` | All three | Tests read errors to report failures and spell out the bodies they expect. | Permanent |
 | `bunny/safe-errors/scripts` | `apps/runtime/scripts/` | `no-console` | Scripts write their results to the terminal. | Permanent |
-| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
+| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), the Pixoo library migration's entry point (`migrate-pixoo.ts`, #931), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
 | `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
 | `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message. | [#954](https://github.com/jimmie-potts/agent-device-hub/issues/954), at its pickup |
 | `bunny/safe-errors/verification-harness` | `apps/runtime/verify/supervisor.ts` | `no-raw-error-text`, `error-body-from-registry` | The verification harness quotes a failure's message in its own refusal body, its lamp failures and its start-failure lines. | #954, at its pickup |
@@ -912,7 +912,13 @@ synthetic token prefix `tok_SYNTHETIC835`. The
 runtime's records must pass the diagnostic contract's validator (#903), as
 maintenance intake reads them, and `runtime.stopped` must count no lost record or
 span. The decision-record and tracing tests read the runtime's records and the
-spans its host adapter hands a test sink (#949). They need no device or network.
+spans its host adapter hands a test sink (#949). The Pixoo library migration's
+tool (#931) runs in process and as its entry point, against a synthetic library
+it writes with the Pixoo module's code, starts the runtime in a child process to
+show each one refusing the other's lease, and interrupts the entry point with
+SIGINT and SIGTERM. Its full-disk test mounts small private tmpfs file systems
+in a user and mount namespace (`unshare -rm`); a host that refuses one skips it
+and says why. They need no device or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
 stalled reader; the README's Memory section says how.
@@ -2430,7 +2436,12 @@ core CI job runs `test:pixoo:built` after its fresh build.
   - the module's command handling, with the three restored cancellation cases.
 - The module's own tests run with node:test from `dist/tests/module`: the
   module test kit's checks, policy A's included; its behavior on a test bus with
-  stand-in owners; and its configuration and settings conversion.
+  stand-in owners; its configuration and settings conversion; and the library
+  migration (#931) on a synthetic library of the installed schema version 3,
+  which they write with the module's own code and media child process: what it
+  carries and leaves in the backup, its refusals, the verifier's count of each
+  planted corruption, the module's start on the migrated store, and a source
+  left unchanged.
 
 No test contacts a device or the installed Pixoo service: the module runs with
 `SimulatedPixoo`. Test listeners go through

@@ -632,7 +632,7 @@ export class CoreStore implements Storage {
 }
 
 /** A held lease: the lock database's open exclusive transaction, released once. */
-type Lock = {release: () => void};
+export type Lock = {release: () => void};
 /** The lock files this process holds a lease on. */
 const held = new Set<string>();
 const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
@@ -641,9 +641,9 @@ const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(
  * Takes the store's lease, as the Hub's adapter does: an exclusive transaction held open on a lock database beside the
  * store, `<store>-owner`, private to its owner. Another holder, in another process or in this one, is waited for until
  * `signal` aborts at agent-state's deadline. The store's own file keeps the locking its opener gave it. An in-memory store,
- * which no other connection can open, has no lock file.
+ * which no other connection can open, has no lock file. Offline tools take it through `holdRuntimeLease` (Hub #931).
  */
-async function takeLock(location: string | null, signal: AbortSignal): Promise<Lock> {
+export async function takeLock(location: string | null, signal: AbortSignal): Promise<Lock> {
   if (location === null || location === '') return {release: () => {}};
   const path = `${location}-owner`;
   for (;;) {

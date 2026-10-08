@@ -617,6 +617,105 @@ calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
 `module-folder-not-private`.
 
+## Offline tools
+
+Tools that change a module's files run while the runtime is stopped, as the
+installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
+runs them at the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+
+### The runtime's lease
+
+`holdRuntimeLease(stateDir)` (`src/lease.ts`) takes the
+[core's lease](#agent-session-core), the exclusive transaction on
+`modules/core.sqlite-owner`, without waiting, and holds it until `release()`.
+It refuses with `runtime-running` while a runtime, or another tool, holds it,
+and with `lease-unavailable` when the lock file is not a regular file private
+to the user. It creates `modules/` and the lock file, owner-only, when they are
+missing, as the core does, and writes nothing to the lock file. A tool holds
+the lease for as long as it runs: a runtime that starts meanwhile waits for it
+until its core's three-second deadline, fails with `core-failed` and is
+restarted by its service manager. The Pixoo library migration takes it, and the
+Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+is to take it too.
+
+### Pixoo library migration
+
+The Pixoo library migration ([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931))
+carries the Pixoo service's library into the [Pixoo module's](../../modules/pixoo/README.md#library-migration)
+store. Run it with Node 24 from the repository root, after `npm run build`:
+
+```bash
+node apps/runtime/dist/src/migrate-pixoo.js migrate --library <PIXOO_DATA_DIR>/library --state-dir <state dir> [--min-free-bytes <bytes>]
+node apps/runtime/dist/src/migrate-pixoo.js verify --library <PIXOO_DATA_DIR>/library --state-dir <state dir>
+```
+
+Both paths are absolute. `--library` is the directory that holds the service's
+`catalog.sqlite`, which the tool only reads; `--state-dir` is the runtime's
+state directory. `migrate` writes the Pixoo module's `modules/pixoo.sqlite`
+and `modules/pixoo/` there, through `openModuleDatabase` and
+`openModuleFolder`. It runs the database's last checkpoint itself and closes
+the database before it reports, so no log is left beside the file. `verify`
+compares them with the library, as `migrate` left them, before the runtime's
+first start: the start writes the module's own tables. Each holds the
+library's owner lock and the runtime's lease while it runs. Each writes one
+JSON line to stdout, `{"schema": "pixoo-migration/1.0", "operation",
+"result", ...}`, with counts, codes and SHA-256 digests only: never a path, a
+name or a file's content.
+
+The line is the tool's own record, and its codes are the tool's own, outside
+the 2.0 error registry, as the health document `runtime-health/1.0` is the
+runtime's: no message crosses the bus while the runtime is stopped, and the
+installer (#935) reads the line and the exit code to decide whether the
+cutover goes on.
+
+A refusal creates nothing: the tool checks the library, the state directory,
+the module's files and the free space before it makes anything. Only then does
+`migrate` create the state directory and the runtime's lease file,
+`modules/core.sqlite-owner`, when they are missing, as the runtime would, and
+check the module's files again under the lease. `verify` creates nothing.
+
+`migrate` needs each file it copies and each folder it makes in whole blocks of
+the file system, the source catalog's size twice (an upper bound on the
+carried rows in the database and in its log), and the space it keeps free:
+`--min-free-bytes`, 256 MiB by default.
+
+SIGINT and SIGTERM stop the tool. Before it writes, it refuses with
+`interrupted`. While it writes, it stops every copy, removes what it wrote and
+fails with `interrupted`. While it verifies, it refuses.
+
+| Exit | `result` | Meaning |
+| --- | --- | --- |
+| 0 | `migrated`, `verified` | Done; `verified` has zero mismatches |
+| 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
+| 2 | `refused`, code `usage` | Malformed arguments |
+| 3 | `refused` | Refused before writing anything; `code` and `message` say why |
+| 4 | `failed` | `migrate` stopped after it began to write, once every copy had finished; `destination` is `removed` (the module's database, log, journal and folder are gone again) or `left` |
+
+| Code | Exit | Refusal or failure |
+| --- | --- | --- |
+| `runtime-running` | 3 | A runtime, or another tool, holds the state directory's lease |
+| `lease-unavailable` | 3 | The lease's lock file is not a regular file private to the user |
+| `disk-short` | 3, 4 | Less free space than the space it needs (3), or the file system or the database filled up while it wrote (4) |
+| `destination-not-empty` | 3 | The module already has files. Migrate into a fresh state directory, or remove every path the tool creates: `modules/pixoo.sqlite`, `modules/pixoo.sqlite-wal`, `modules/pixoo.sqlite-shm`, `modules/pixoo.sqlite-journal` and `modules/pixoo/` |
+| `destination-missing` | 3 | `verify` found no module database |
+| `module-folder-not-private` | 3 | `modules/` or `modules/pixoo/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse |
+| `state-dir-*` | 3 | The runtime's [State](#state) rules refuse the state directory |
+| `source-missing` | 3 | The library path is missing, is not a folder, or holds no `catalog.sqlite` |
+| `source-in-use` | 3 | The Pixoo service holds the library: stop it first |
+| `source-not-clean` | 3 | The catalog's log or journal holds commits the file lacks, or the library has no `owner.sqlite`: start and stop the Pixoo service once, so it folds its log in and creates the file |
+| `source-schema` | 3 | Not the installed release's schema version 3, or its tables differ from it |
+| `source-corrupt` | 3, 4 | The catalog fails SQLite's checks or names a missing, linked or oversized file (3), or a copy does not match the hash its catalog gives (4) |
+| `destination-unclean` | 4 | The module's database kept a log or journal with content after the tool closed it |
+| `interrupted` | 3, 4 | SIGINT or SIGTERM: before it wrote (3), or while it wrote (4) |
+| `module-db-not-private` | 4 | Only if the module's files change under the tool while it holds the lease: the runtime's [State](#state) rules refuse the database it creates |
+| `internal` | 3, 4 | Anything else |
+
+A refusal and a failure name no path or value. The tool never retries; a
+failed `migrate` is run again only into a fresh destination. A `migrate`
+killed with SIGKILL, or by a power loss, leaves an incomplete destination:
+`verify` counts its mismatches and `migrate` refuses it, and the operator
+removes the paths `destination-not-empty` lists.
+
 ## Failure isolation
 
 A device's errors and timeouts are not module failures. Under policy A in
