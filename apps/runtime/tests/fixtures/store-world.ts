@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import {createAgentState} from '@jimmie-potts/agent-state';
+import {createAgentState, type Storage, type StorageLease} from '@jimmie-potts/agent-state';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type LifecycleEvent, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {openModuleDatabaseFile, type Logger, type SdkError} from '@jimmie-potts/sdk';
@@ -58,6 +58,8 @@ export class World {
   readonly #wrap: (db: DatabaseSync) => DatabaseSync;
   readonly #wal: boolean;
   readonly #watch: Watch;
+  /** Stands between agent-state's owner and each lease the store gives it, when a test sets it. */
+  #lease: ((lease: StorageLease) => StorageLease) | undefined;
 
   private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db, wal = false, watch: Watch = {}) {
     this.#wrap = wrap;
@@ -83,9 +85,12 @@ export class World {
     wal?: boolean;
     /** The store's logger, in place of reporting refused publishes to `refused`, and how it measures its saves. */
     watch?: Watch;
+    /** Stands between agent-state's owner and each lease the store gives it, as a test that sees each commit does. */
+    lease?: (lease: StorageLease) => StorageLease;
   } = {}): Promise<World> {
     const file = options.file ?? join(await stateDir(context), 'core.sqlite');
     const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap, options.wal, options.watch);
+    world.#lease = options.lease;
     context.after(() => world.close());
     await world.start();
     return world;
@@ -107,9 +112,16 @@ export class World {
     });
   }
 
+  /** The storage agent-state's owner runs on: the store, behind the test's lease when it set one. */
+  #storage(): Storage {
+    const lease = this.#lease, store = this.store;
+    if (lease === undefined) return store;
+    return {acquire: async (ownerId, signal) => lease(await store.acquire(ownerId, signal))};
+  }
+
   /** Opens the owner as the core's start does: the owner, then fresh records, then what a crash kept back. */
   async start(): Promise<void> {
-    this.owner = await createAgentState({storage: this.store, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: this.clock.now});
+    this.owner = await createAgentState({storage: this.#storage(), ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: this.clock.now});
     await this.store.refresh();
     await this.store.republish();
     await flush();
@@ -178,7 +190,7 @@ export class World {
     this.store.abandonLease();
     // A pause lets another store waiting for the lock try for it, as a busy host would.
     if (pauseMs > 0) await new Promise(resolve => { setTimeout(resolve, pauseMs); });
-    this.owner = await createAgentState({storage: this.store, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: this.clock.now});
+    this.owner = await createAgentState({storage: this.#storage(), ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: this.clock.now});
   }
 }
 

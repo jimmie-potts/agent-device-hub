@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {createAgentState, recoveryJournalKey, validateExport, type DurableState} from '@jimmie-potts/agent-state';
+import {createAgentState, recoveryJournalKey, validateExport, type DurableState, type StorageLease} from '@jimmie-potts/agent-state';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type LogFields, type Logger} from '@jimmie-potts/sdk';
@@ -564,11 +564,23 @@ it('a state block past its limit is recorded once with its size, and once more w
 
 it('a save that takes longer than 100 ms is recorded once with its time, and once more when a save is quick again (Hub #976)', async context => {
   const {log, logged} = recorder();
-  // A part's rows in the save's transaction take `work` milliseconds of the store's timer, and each message's publication
-  // after the commit a second, which is no part of the save.
+  // Each save takes `work` milliseconds of the store's timer: half as the store applies agent-state's change to the whole
+  // state, which it does from the change's first read, before it serializes the state, and half in a part's rows in the
+  // save's transaction. Each message's publication after the commit takes a second, which is no part of the save.
   let now = 0, work = 0;
-  const slowPart: Deriver = () => { now += work; };
-  const world = await World.open(context, {derivers: [slowPart], watch: {log, timer: () => now}});
+  const applying = (lease: StorageLease): StorageLease => ({
+    ...lease,
+    commit: (change, signal) => {
+      let read = false;
+      return lease.commit(new Proxy(change, {get: (target, key) => {
+        if (!read) now += work / 2;
+        read = true;
+        return Reflect.get(target, key) as unknown;
+      }}), signal);
+    },
+  });
+  const slowPart: Deriver = () => { now += work / 2; };
+  const world = await World.open(context, {derivers: [slowPart], lease: applying, watch: {log, timer: () => now}});
   world.publishing = () => { now += 1000; };
   assert.deepEqual(SAVE_COST, {stateBytes: 8 * 1024 * 1024, saveMs: 100}, 'half of the 16 MiB limit, and 100 ms');
   const save = async (ms: number, ...observation: Parameters<World['observe']>): Promise<void> => {
