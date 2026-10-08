@@ -55,8 +55,9 @@ browser's session (`bunny/parts/dashboard`) through
 live changes:
 
 - **Sync.** The first sync, and every sync after a lost stream, replaces the
-  page's copy with the core's records at its revision. A refused sync, or a copy
-  that stops because a later sync failed, is tried again after 1 s, doubling to
+  page's copy with the core's records at its revision. Except when the browser
+  session has ended, a refused sync or a copy that stops because a later sync
+  failed is tried again after 1 s, doubling to
   30 s; the page keeps showing the last records it had, marked stale.
 - **No replay.** A lost stream reconnects in the SDK, and the copy syncs again.
   Occurrences the page missed, such as a turn's end, are not played back: the
