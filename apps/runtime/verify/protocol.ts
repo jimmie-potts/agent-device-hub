@@ -103,7 +103,7 @@ export type BoundaryReport = {
   simulate: boolean | null;
   /** The run's data directory. */
   dataDir: string;
-  /** The home the runtime process has, read from its environment once it was ready; empty when it could not be read. */
+  /** The current runtime child's bounded HOME observation over private IPC; empty when absent or invalid. */
   home: string;
   /** Whether anything exists at `<home>/.local/state`, under which the runtime's default state directory lies. */
   defaultState: boolean;

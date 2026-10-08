@@ -30,6 +30,7 @@ import type {Generational} from '../tests/scenarios/catalog.js';
 import {simulateMarker, simulatePlayback, writeProducer} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
+import {ChildHome} from './home.js';
 import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
 import {Journal} from './journal.js';
 import {
@@ -91,8 +92,8 @@ let runtimePort = Number(values.port ?? '0');
 let generation = 0;
 const crashes = new BurstLimit(MAX_CRASHES, CRASH_WINDOW_MS);
 let current: ChildProcess | undefined;
-/** The home the current runtime has, read from its environment once it was ready. */
-let observedHome = '';
+/** The current child's own bounded HOME observation from the preloaded guard. */
+const childHome = new ChildHome();
 let runtimeUrl = '';
 let stopping = false;
 let restarting = false;
@@ -264,11 +265,16 @@ function spawnRuntime(): Promise<string> {
     execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
   current = child;
+  childHome.reset(child, number);
   lines(child.stderr, line => {
     process.stderr.write(`${line}\n`);
     journal.take(number, line);
   });
-  child.on('message', message => { heard(child, number, message as ChildMessage); });
+  child.on('message', message => {
+    if (childHome.hear(child, number, message)) return;
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) return;
+    heard(child, number, message as ChildMessage);
+  });
   child.once('exit', () => {
     // A runtime that ended no longer waits on its shows, its speakers' calls, its bulbs' answers or its cloud's.
     for (const waiting of [shows, speakerCalls, exchanges, cloudCalls]) {
@@ -296,20 +302,10 @@ function spawnRuntime(): Promise<string> {
   });
 }
 
-/** The value of one variable in a process's environment, from /proc, or '' when it cannot be read. */
-function environmentOf(pid: number | undefined, name: string): string {
-  try {
-    const entry = readFileSync(`/proc/${String(pid)}/environ`, 'utf8').split('\0').find(line => line.startsWith(`${name}=`));
-    return entry?.slice(name.length + 1) ?? '';
-  } catch {
-    return '';
-  }
-}
-
 async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
   runtimePort = Number(new URL(runtimeUrl).port);
-  observedHome = environmentOf(current?.pid, 'HOME');
+  await childHome.settle();
   // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
   const {producer} = JSON.parse(readFileSync(partTokensOf(dataDir), 'utf8')) as {producer?: unknown};
   if (typeof producer === 'string') await writeProducer(configDirOf(dataDir), runtimePort, producer);
@@ -427,8 +423,8 @@ function report(): BoundaryReport {
     // No credentials or token file.
   }
   return {
-    runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null, dataDir, home: observedHome,
-    defaultState: observedHome !== '' && existsSync(join(observedHome, '.local/state')), stateFiles: openStateFiles(current?.pid), grantsMode,
+    runtime: fixtures ? 'fixtures' : 'shipped', simulate: typeof started === 'boolean' ? started : null, dataDir, home: childHome.value,
+    defaultState: childHome.value !== '' && existsSync(join(childHome.value, '.local/state')), stateFiles: openStateFiles(current?.pid), grantsMode,
     outbound: refusedAttempts(),
   };
 }

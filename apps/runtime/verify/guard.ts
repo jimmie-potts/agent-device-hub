@@ -15,6 +15,7 @@ import {appendFileSync} from 'node:fs';
 import net from 'node:net';
 import {isMainThread} from 'node:worker_threads';
 import type {Attempt} from './protocol.js';
+import {homeReport} from './home.js';
 
 const REPORT = process.env.BUNNY_GUARD_REPORT;
 
@@ -98,9 +99,19 @@ replace(dgram.Socket.prototype, 'connect', function guarded(this: dgram.Socket, 
 // messages, and writing fails with EPIPE, which must not become an error the runtime fails on. The runtime then stops as
 // on SIGTERM, and exits within the stop deadline anyway. Worker threads and processes it starts have no IPC channel.
 if (isMainThread && process.channel !== undefined) {
-  for (const stream of [process.stdout, process.stderr]) stream.on('error', () => {});
-  process.on('disconnect', () => {
+  let stopping = false;
+  const stop = (): void => {
+    if (stopping) return;
+    stopping = true;
     process.kill(process.pid, 'SIGTERM');
     setTimeout(() => { process.exit(0); }, 15_000).unref();
-  });
+  };
+  for (const stream of [process.stdout, process.stderr]) stream.on('error', () => {});
+  process.on('disconnect', stop);
+  // One selected field from this child; workers and descendants do not report. A closed channel ends this orphan too.
+  try {
+    process.send?.(homeReport(process.env.HOME), error => { if (error !== null) stop(); });
+  } catch {
+    stop();
+  }
 }
