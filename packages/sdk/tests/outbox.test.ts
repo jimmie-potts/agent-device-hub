@@ -275,6 +275,26 @@ it('republish follows the core\'s acknowledgments: the core\'s forgets the outco
   assert.equal(core.raw.filter(message => message.id === outcome.id).length, 1);
 });
 
+it('the acknowledgments the core sends in one turn are forgotten in one commit, each recorded once (Hub #782)', async context => {
+  const {start} = await world(context);
+  const {log, entries} = logRecorder();
+  const run = await start({log});
+  await run.outbox.republish();
+  const outcomes = await run.outbox.transaction(add => Array.from({length: 50}, (_, n) => add('bunny.event.mode.wall', modeSet(`req-${n}`))));
+  await flush();
+  const before = run.commits.length;
+  const core = run.bus.connect('bunny/core');
+  await Promise.all(outcomes.map(outcome => {
+    const {key, draft} = acknowledgmentOf(outcome);
+    return core.publish(key, draft, {parent: outcome});
+  }));
+  await flush();
+  await flush();
+  assert.deepEqual(rows(run.database), [], 'every acknowledged outcome is forgotten');
+  assert.deepEqual(run.commits.slice(before), [FULL], 'in one commit, at the connection\'s level, not one for each');
+  assert.equal(entries.filter(entry => entry.event === 'outbox.acknowledged').length, 50, 'and each is recorded');
+});
+
 it('a lost acknowledgment discards nothing: the outcome goes out at the next start, and the core\'s acknowledgment then forgets it (Hub #782)', async context => {
   const {core, start} = await world(context);
   const first = await start();

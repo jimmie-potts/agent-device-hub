@@ -65,6 +65,15 @@ export class Gadget {
     return added;
   }
 
+  /** Reports one outcome for each request ID in one outbox transaction, as a module that catches up at once might. */
+  async reportAll(requestIds: readonly string[], outcome: Reported, device = 'g1'): Promise<Message[]> {
+    const outbox = this.#outbox;
+    if (outbox === undefined) throw new Error('the gadget has not started');
+    return outbox.transaction(add => requestIds.map(requestId => add(`bunny.event.gadget-set.${device}`, {
+      kind: 'outcome', type: 'org.bunny.gadget.set.completed', subject: device, dataschema: OUTCOME_SCHEMA, data: {requestId, ...outcome},
+    }) as Message));
+  }
+
   /** Publishes `message` again, unchanged but for `data`: the same `(source, id)` with other content. */
   async forge(message: Message, data: object): Promise<void> {
     await this.#sdk?.publishMessage(`bunny.event.gadget-set.${message.subject}`, {...message, data});

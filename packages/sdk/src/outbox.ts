@@ -120,6 +120,8 @@ export class Outbox {
   #sending: Promise<unknown> = Promise.resolve();
   /** The subscription to the core's acknowledgments, once `republish` has asked for it. */
   #following: Promise<unknown> | undefined;
+  /** The core's acknowledgments heard in this turn of the event loop, which its end forgets together. */
+  #heardThisTurn: {id: string; message: Message}[] = [];
 
   constructor({sdk, database, clock, validator, onError, log, trace}: OutboxOptions) {
     this.#sdk = sdk;
@@ -199,12 +201,17 @@ export class Outbox {
     if (!this.#database.isOpen) return false;
     const forgotten = this.#acknowledge.get(id) as {published: number} | undefined;
     if (forgotten === undefined) return false;
+    this.#forgotten(id, forgotten.published);
+    return true;
+  }
+
+  /** After an acknowledged outcome is forgotten: one that went out in the batch under way records its publication now. */
+  #forgotten(id: string, published: number): void {
     const sent = this.#inFlight.get(id);
-    if (forgotten.published === 0 && sent !== undefined && !sent.recorded) {
+    if (published === 0 && sent !== undefined && !sent.recorded) {
       sent.recorded = true;
       this.#publication(sent.message, sent.stored);
     }
-    return true;
   }
 
   /** Subscribes once to the core's acknowledgments of this participant's outcomes, when the participant can subscribe. */
@@ -233,7 +240,45 @@ export class Outbox {
       }, message);
       return;
     }
-    if (this.acknowledge(heard.id)) this.#record('info', 'outbox.acknowledged', {'bunny.message.id': heard.id}, message);
+    // Forgotten at the end of this turn, with every other acknowledgment the turn brings, in one commit.
+    this.#heardThisTurn.push({id: heard.id, message});
+    if (this.#heardThisTurn.length === 1) setImmediate(() => { this.#forgetHeard(); });
+  }
+
+  /**
+   * Forgets the outcomes whose acknowledgments this turn brought, in one commit at the connection's level, so a burst of
+   * acknowledgments costs one sync to disk instead of one each, and records each as `outbox.acknowledged` once it
+   * commits. Inside a transaction someone else holds open, they join it, as `acknowledge` does. A commit that fails
+   * forgets nothing: the outcomes go out again at the next start, and the core acknowledges them again.
+   */
+  #forgetHeard(): void {
+    const heard = this.#heardThisTurn;
+    this.#heardThisTurn = [];
+    const database = this.#database;
+    if (!database.isOpen) return;
+    const own = !database.isTransaction;
+    const forgotten: {id: string; message: Message; published: number}[] = [];
+    try {
+      if (own) database.exec('BEGIN IMMEDIATE');
+      for (const {id, message} of heard) {
+        const row = this.#acknowledge.get(id) as {published: number} | undefined;
+        if (row !== undefined) forgotten.push({id, message, published: row.published});
+      }
+      if (own) database.exec('COMMIT');
+    } catch {
+      if (own && database.isTransaction) {
+        try {
+          database.exec('ROLLBACK');
+        } catch {
+          // The connection's next transaction fails in turn.
+        }
+      }
+      return;
+    }
+    for (const {id, message, published} of forgotten) {
+      this.#forgotten(id, published);
+      this.#record('info', 'outbox.acknowledged', {'bunny.message.id': id}, message);
+    }
   }
 
   /** Commits `work` and its messages; `own` receives the id of each message this transaction stored. */

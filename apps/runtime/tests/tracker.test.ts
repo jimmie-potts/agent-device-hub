@@ -424,6 +424,29 @@ it('a burst of 600 messages in one turn reaches history in a few grouped commits
   assert.ok(used <= 30, `the intake groups its commits: ${used} for 600 messages`);
 });
 
+it('a burst of outcomes is taken in grouped commits, and each is acknowledged once, after the commit that took it', async context => {
+  const witness = fixture('witness');
+  const t = await trackerRun(context, {extra: [witness]});
+  // A participant that hears each acknowledgment checks that history already holds the outcome it acknowledges.
+  const heldWhenAcknowledged: boolean[] = [];
+  await contextOf(witness).sdk.subscribe('bunny.event.outcome-recorded.gadget', message => {
+    const {source, id} = message.data as {source: string; id: string};
+    heldWhenAcknowledged.push(t.database().prepare('SELECT 1 FROM core_history WHERE source = ? AND message_id = ?').get(source, id) !== undefined);
+  });
+  const before = commits(t);
+  const outcomes = await t.gadget.reportAll(Array.from({length: 300}, (_, n) => `req-burst-${n}`), {result: 'succeeded', evidence: 'observed'});
+  const ids = new Set(outcomes.map(outcome => outcome.id));
+  await waitFor(() => t.gadget.acknowledged.filter(id => ids.has(id)).length >= 300, 15_000, 'every acknowledgment');
+  await new Promise(resolve => { setTimeout(resolve, 100); });
+  const acknowledged = t.gadget.acknowledged.filter(id => ids.has(id));
+  assert.deepEqual([acknowledged.length, new Set(acknowledged).size], [300, 300], 'one acknowledgment for each outcome');
+  assert.deepEqual([heldWhenAcknowledged.length, heldWhenAcknowledged.every(Boolean)], [300, true], 'none before its commit');
+  const rows = (t.database().prepare('SELECT COUNT(*) AS n FROM core_history WHERE kind = \'outcome\' AND source = \'bunny/modules/gadget\'').get() as {n: number}).n;
+  assert.equal(rows, 300);
+  const used = commits(t) - before;
+  assert.ok(used <= 15, `the intake groups its commits: ${used} for 300 outcomes`);
+});
+
 it('each message in a group keeps its own verdict: a copy is a duplicate, other content a conflict, and an outcome is acknowledged once', async context => {
   const sender = fixture('sender');
   const t = await trackerRun(context, {extra: [sender]});
