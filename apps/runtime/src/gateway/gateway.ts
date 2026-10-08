@@ -1,3 +1,4 @@
+import {historyFilter, type HistoryFilter, type HistoryRow} from '../core/history.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
 // modules' pages and content, the dashboard's page (#922) and browser sign-in,
@@ -103,6 +104,7 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
+  history?: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
   /** The authenticated control route alone uses this capability for tracked core operator actions. */
   operatorActions?: CoreOperatorActions;
   /** The built dashboard's folder (#922), `DASHBOARD_DIR` by default; tests give their own. */
@@ -315,6 +317,15 @@ export class Gateway {
     }
     if (method !== 'GET') throw refuse('not-found', 'no such route');
     needs('read');
+    if (path === '/api/v2/history') {
+      if (query.some(key => url.searchParams.getAll(key).length !== 1)) throw refuse('invalid-request', 'history filters appear once');
+      const values = Object.fromEntries(url.searchParams);
+      const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
+      if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
+      const rows = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
+      if (this.#options.redactions.holds(JSON.stringify(rows))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
+      return this.#dashboardRequest(request, path, () => Array.isArray(rows) ? json(200, {schema: 'history/2.0', rows}) : json(statusOf(rows.error.code), rows));
+    }
     if (path === '/api/v2/build') {
       noQuery();
       return json(200, runtimeBuild());
@@ -596,6 +607,11 @@ export class Gateway {
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;
+    if (family === 'inbox-handle') {
+      const requestId = input.requestId ?? randomUUID();
+      const result = await this.#participant(principal.source).request(command.key, command.draft, {requestId, timeoutMs: COMMAND_TIMEOUT_MS});
+      return result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
+    }
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     try {
@@ -618,7 +634,7 @@ export class Gateway {
   #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
-    if (DIRECT_COMMANDS.includes(family)) return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
+    if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
     const dataschema = `${SCHEMA_BASE}${family}/2.0`;
     const now = this.#options.clock.now();
@@ -768,7 +784,7 @@ export class Gateway {
 function templateOf(path: string): string | undefined {
   if (path === '/mcp') return '/mcp';
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
-  if (path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
+  if (path === '/api/v2/history' || path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;

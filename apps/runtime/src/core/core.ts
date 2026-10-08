@@ -17,6 +17,9 @@ import {
   type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
+import type {HistoryFilter, HistoryRow} from './history.js';
+import {inboxTool, historyTool} from './read-tools.js';
+import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
@@ -154,6 +157,7 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
 export interface CoreModule extends BunnyModule {
   readonly actions: CoreActions;
   readonly operatorActions: CoreOperatorActions;
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -163,12 +167,14 @@ export const isCoreModule = (module: BunnyModule): module is CoreModule => modul
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
   return {
-    manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions())]},
+    manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions()),
+      inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
     start: context => {
       core = new Core(context, options);
       return core.start();
     },
     stop: () => core?.stop(),
+    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
   };
@@ -182,6 +188,7 @@ class Core {
   readonly #store: CoreStore;
   readonly #tracker: Tracker;
   readonly #parts: readonly CorePart[];
+  readonly #inbox: InboxRecords;
   readonly #consumers: readonly Consumer[];
   readonly #validator = new MessageValidator();
   readonly #ready: Promise<void>;
@@ -212,7 +219,8 @@ class Core {
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), ...added];
+    this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -552,6 +560,11 @@ class Core {
       this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
+  }
+
+  inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }
+  history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
+    return this.#store.open ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */

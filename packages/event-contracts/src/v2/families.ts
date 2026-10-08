@@ -77,7 +77,8 @@ export type MomentPlayRequest = {
 export type InboxItem = {
   id: string; revision: number; createdAtMs: number; dismissedBy: string[];
   item: {
-    kind: 'operation'; requestId: string; command: string; target: string; result: 'failed' | 'uncertain';
+    kind: 'operation'; requestId: string; command: string; target: string; result: 'succeeded' | 'failed' | 'uncertain' | 'conflict';
+    outcomes?: {source: string; id: string; result: 'succeeded' | 'failed'; evidence: 'transmitted' | 'observed' | 'none'; atMs: number; error?: ErrorDetail}[];
     evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
   };
 };
@@ -232,6 +233,13 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkEntity),
+  define('inbox-item', 'state', 'org.bunny.inbox-item.updated', message => {
+    const checked = checkEntity(message);
+    const {item} = message.data as InboxItem;
+    return checked ?? (item.result === 'conflict' && !['succeeded', 'failed'].every(result => item.outcomes?.some(outcome => outcome.result === result) === true)
+      ? 'payload /item/outcomes must retain opposite definitive results' : undefined);
+  }, '2.1'),
+  define('inbox-handle', 'command', 'org.bunny.inbox.handle.requested', routedSubject('routing')),
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),

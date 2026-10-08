@@ -100,7 +100,7 @@ const nanoleafWall: Scenario = {
     expect('the reader\'s copy shows the wall available, with the power the wall reported', h =>
       wallAvailability(h, 'available') === true ? observedPower(h, true) : wallAvailability(h, 'available'), 10_000),
     act('the reader, which keeps the full copy, also syncs device alone from the Nanoleaf module', h => syncDevicesAlone(h)),
-    expect('that sync holds the wall\'s device record only, and the module runs on', async h => {
+    expect('that sync holds the wall\'s device record only, and the module runs on', h => {
       const answer = alone.get(h);
       if (answer !== 'synced device:wall') return `the sync of device alone is ${String(answer)}`;
       return running(h, ['core', 'nanoleaf']);
@@ -114,8 +114,8 @@ const nanoleafWall: Scenario = {
     act('the hook observes the turn end', h => publish(h, turnEnded)),
     expect('the wall shows the finished turn, unread', h => onTheWall(h, 'unread'), 5000),
     act('the operator sets the wall to Quiet as req-quiet', h => dispatchOnce(h, 'operator', 'quiet', wallMode('req-quiet', 'quiet'), 'req-quiet')),
-    expect('history holds req-quiet succeeded as observed: the mode is the module\'s own, and the wall follows it', h =>
-      recorded(h, 'req-quiet', 'succeeded', 'observed'), 5000),
+    expect('history holds req-quiet succeeded as observed: the mode is the module\'s own, and the wall follows it', async h =>
+      (await recorded(h, 'req-quiet', 'succeeded', 'observed')), 5000),
     expect('the reader\'s copy shows Quiet, and the Lines dim to the Quiet level', h =>
       desiredMode(h, 'quiet') === true ? theLines(h)?.brightness === 10 || `the Lines are at ${String(theLines(h)?.brightness)}` : desiredMode(h, 'quiet')),
     act('the operator sets the wall to Free as req-free', h => dispatchOnce(h, 'operator', 'free', wallMode('req-free', 'free'), 'req-free')),
@@ -139,12 +139,12 @@ const nanoleafWall: Scenario = {
       h.simulate({device: 'nanoleaf', action: 'power-on'});
       h.simulate({device: 'nanoleaf', action: 'offline'});
     }),
-    expect('the reader\'s copy shows the wall unavailable, and the module runs on', async h =>
+    expect('the reader\'s copy shows the wall unavailable, and the module runs on', h =>
       wallAvailability(h, 'unavailable') === true ? running(h, ['core', 'nanoleaf']) : wallAvailability(h, 'unavailable'), 10_000),
     act('the operator sets the wall to Quiet as req-offline while it does not answer', h =>
       dispatchOnce(h, 'operator', 'offline', wallMode('req-offline', 'quiet'), 'req-offline')),
-    expect('history holds req-offline succeeded as observed: the mode commits whether or not the wall answers', h =>
-      recorded(h, 'req-offline', 'succeeded', 'observed'), 5000),
+    expect('history holds req-offline succeeded as observed: the mode commits whether or not the wall answers', async h =>
+      (await recorded(h, 'req-offline', 'succeeded', 'observed')), 5000),
     act('the wall answers again', h => { h.simulate({device: 'nanoleaf', action: 'online'}); }),
     expect('the reader\'s copy shows the wall available', h => wallAvailability(h, 'available'), 40_000),
     expect('nothing is held, and the wall shows Quiet once it answers', h => {
@@ -163,15 +163,15 @@ const nanoleafWall: Scenario = {
     }),
     act('the wall will lose its answer to the next brightness write', h => { h.simulate({device: 'nanoleaf', action: 'lose-next-answer'}); }),
     act('the operator sets the Lines to 20% as req-lost', h => dispatchOnce(h, 'operator', 'lost', wallBrightness('req-lost', 20), 'req-lost')),
-    expect('history holds req-lost uncertain: the write may have reached the wall', h => recorded(h, 'req-lost', 'uncertain', 'none'), 10_000),
+    expect('history holds req-lost uncertain: the write may have reached the wall', async h => (await recorded(h, 'req-lost', 'uncertain', 'none')), 10_000),
     expect('the reader\'s copy shows the wall held and degraded, not unavailable, and its device record names req-lost as held', h =>
       wallHeld(h, 'req-lost', 'degraded'), 15_000),
-    expect('the hold names the tracked action: the core\'s operation for the held request ID is the uncertain one, with its inbox item (#923)', h => {
+    expect('the hold names the tracked action: the core\'s operation for the held request ID is the uncertain one, with its inbox item (#923)', async h => {
       const held = wallRecord(h)?.held?.requestId;
       if (held === undefined) return 'the wall\'s record holds nothing';
       const items = inboxOf(h, held);
-      return recorded(h, held, 'uncertain', 'none') === true && items.length === 1 && items[0]?.kind === 'operation' && items[0].result === 'uncertain' ||
-        `the held ${held}: history ${show(recorded(h, held, 'uncertain', 'none'))}, inbox ${show(items)}`;
+      return (await recorded(h, held, 'uncertain', 'none')) === true && items.length === 1 && items[0]?.kind === 'operation' && items[0].result === 'uncertain' ||
+        `the held ${held}: history ${show((await recorded(h, held, 'uncertain', 'none')))}, inbox ${show(items)}`;
     }),
     expect('the hold was logged once', h => {
       const holds = logged(h, 'nanoleaf', 'operation.failed').filter(({record}) => record.attributes['bunny.code'] === 'uncertain-result').length;
@@ -180,7 +180,7 @@ const nanoleafWall: Scenario = {
     act('the operator sets the wall to Work as req-release', h => dispatchOnce(h, 'operator', 'release', wallMode('req-release', 'work'), 'req-release')),
     expect('the mode command released the hold: the wall is available, not held, and its device record has no held', h =>
       wallHeld(h, undefined, 'available'), 10_000),
-    holds('no log record, message, health entry or reader copy carries the token', h => noToken(h), 300),
+    holds('no log record, message, health entry or reader copy carries the token', async h => noToken(h), 300),
   ],
 };
 

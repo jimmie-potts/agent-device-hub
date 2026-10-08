@@ -73,9 +73,9 @@ const lifxBulbs: Scenario = {
     expect('nor may the operator request it directly: a bulb\'s command goes through the core\'s dispatcher (#782)', async h => refusedWith(keep(h, await h.gateway(rawRequest('operator',
       lifxMode('work').key, rawCommand(h, 'bunny/parts/operator', lifxMode('work'), 'req-lifx-direct', 'msg-lifx-direct')))), 403, 'forbidden')),
     act('the operator sets pendant-1 to work as req-work, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'work', lifxMode('work'), 'req-work')),
-    expect('history holds req-work succeeded, and the reader shows pendant-1 in work', h =>
-      recorded(h, 'req-work', 'succeeded', 'transmitted') === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :
-        recorded(h, 'req-work', 'succeeded', 'transmitted')),
+    expect('history holds req-work succeeded, and the reader shows pendant-1 in work', async h =>
+      (await recorded(h, 'req-work', 'succeeded', 'transmitted')) === true ? show(lifxDevice(h, 'pendant-1')?.desired.mode) === show({status: 'known', value: 'work'}) || 'not in work' :
+        (await recorded(h, 'req-work', 'succeeded', 'transmitted'))),
     expect('pendant-1 paints idle: warm white at half brightness', h => pendantShows(h, {saturation: 0, brightness: 50, kelvin: 2700})),
     act('the hook observes a session start and a turn', async h => {
       await publish(h, sessionStarted);
@@ -90,20 +90,20 @@ const lifxBulbs: Scenario = {
     holds('the restart wrote nothing to pendant-1, which still shows attention', h =>
       (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
     act('the operator sets pendant-1 to free as req-free', h => dispatchOnce(h, 'operator', 'free', lifxMode('free'), 'req-free')),
-    expect('history holds req-free succeeded', h => recorded(h, 'req-free', 'succeeded', 'transmitted')),
+    expect('history holds req-free succeeded', async h => (await recorded(h, 'req-free', 'succeeded', 'transmitted'))),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the reader\'s session no longer waits', h => waiting(h, [])),
     holds('in free nothing paints pendant-1, which keeps its amber', h =>
       (lifxWrites(h) === 3 && pendantShows(h, {hue: STATUS_HUE.attention}) === true) || `${lifxWrites(h)} writes`, 1000),
     act('the operator sets pendant-1 to hue 120 at full saturation as req-color', h =>
       dispatchOnce(h, 'operator', 'color', bulbCommand('lifx-color-set', 'org.bunny.lifx-color.set.requested', 'pendant-1', {hue: 120, saturation: 100}), 'req-color')),
-    expect('pendant-1 shows green, and history holds req-color succeeded', h =>
-      pendantShows(h, {hue: 120, saturation: 100}) === true ? recorded(h, 'req-color', 'succeeded', 'transmitted') : pendantShows(h, {hue: 120, saturation: 100})),
+    expect('pendant-1 shows green, and history holds req-color succeeded', async h =>
+      pendantShows(h, {hue: 120, saturation: 100}) === true ? (await recorded(h, 'req-color', 'succeeded', 'transmitted')) : pendantShows(h, {hue: 120, saturation: 100})),
     act('pendant-1 is switched off at the wall', h => { h.simulate({device: 'lifx', action: 'offline', address: PENDANT_AT}); }),
     act('the operator switches pendant-1 off as req-off; the module accepts it', h =>
       dispatchOnce(h, 'operator', 'off', bulbCommand('power-set', 'org.bunny.power.set.requested', 'pendant-1', {on: false}), 'req-off')),
-    expect('history holds req-off uncertain, with no evidence it reached the bulb, and the inbox holds it', h => {
-      const rows = outcomesOf(h, 'req-off').map(entry => `${entry.result}/${entry.evidence}`);
+    expect('history holds req-off uncertain, with no evidence it reached the bulb, and the inbox holds it', async h => {
+      const rows = (await outcomesOf(h, 'req-off')).map(entry => `${entry.result}/${entry.evidence}`);
       const items = inboxOf(h, 'req-off');
       return (show(rows) === show(['uncertain/none']) && items.length === 1) || `history ${show(rows)}, inbox ${show(items)}`;
     }, 5000),

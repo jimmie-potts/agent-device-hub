@@ -40,7 +40,7 @@ import type {CoreStore, CoreTransaction} from './store.js';
  * Every other command, a device's, a moment, a mode change or a module's own family, goes through the dispatcher, so
  * nothing bypasses tracking.
  */
-export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge']);
+export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
 export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear']);
 
@@ -248,6 +248,11 @@ export class Tracker {
     return this.#work(this.#dispatch(action).catch((): ActionAnswer => errorBody('internal', {detail: 'the core could not dispatch the action'})));
   }
 
+  /** #923 only: handles the original inbox item atomically with this new sent operation. */
+  dispatchFromInbox(action: Action, handle: (tx: CoreTransaction) => ErrorBody | undefined): Promise<ActionAnswer> {
+    return this.#work(this.#dispatch(action, false, handle).catch(() => errorBody('internal', {detail: 'the core could not send the inbox command'})));
+  }
+
   /** Admits a tracked operator action; only the gateway holds this entry point. */
   dispatchOperator(action: Action): Promise<ActionAnswer> {
     return this.#work(this.#dispatch(action, true).catch((): ActionAnswer => errorBody('internal', {detail: 'the core could not dispatch the action'})));
@@ -297,7 +302,7 @@ export class Tracker {
     return work;
   }
 
-  async #dispatch(input: Action, operator = false): Promise<ActionAnswer> {
+  async #dispatch(input: Action, operator = false, handleInbox?: (tx: CoreTransaction) => ErrorBody | undefined): Promise<ActionAnswer> {
     // Capture before the first await: a caller retains its original objects while admission waits.
     const action: Action = {...input, draft: {...input.draft, data: structuredClone(input.draft.data)},
       ...(input.parent === undefined ? {} : {parent: {...input.parent}})};
@@ -339,6 +344,8 @@ export class Tracker {
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
         if (known !== undefined) return known;
+        const handled = handleInbox?.(tx);
+        if (handled !== undefined) throw new Refused(handled.error.code, handled.error.detail ?? 'inbox handling refused');
         this.#required().insert.run(requestId, sent.status, sent.deadlineAtMs, JSON.stringify(sent));
         this.#changed(tx, 'sent', {operation: sent, previous: undefined});
         return undefined;
@@ -631,7 +638,8 @@ export class Tracker {
       const result = await store.transaction(work);
       storage?.recovered();
       return result;
-    } catch {
+    } catch (error) {
+      if (error instanceof Refused) throw error;
       const full = store.takeFailure() === 'full';
       storage?.failed(full ? 'unavailable' : 'internal');
       throw full ? new Refused('unavailable', 'storage-full') : new Refused('internal', 'the core store failed');

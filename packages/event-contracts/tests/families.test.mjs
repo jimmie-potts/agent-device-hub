@@ -53,19 +53,19 @@ test('every invalid fixture fails where it says', () => {
 
 test('each family has one kind and one type, and its schema is built from the shared blocks', () => {
   const v = validator();
-  const types = new Set();
+  const types = new Map();
   const refs = schema => [...JSON.stringify(schema).matchAll(/"\$ref":"(https:[^"#]+)/g)].map(match => match[1]);
   const profile = uri => uri.endsWith('/blocks/2.0') || uri.endsWith('/kinds/2.0');
   const usesBlocks = schema => refs(schema).some(uri => uri.endsWith('/blocks/2.0') ||
     usesBlocks(coreFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
   for (const {family, kind, type, dataschema, schema} of coreFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.equal(dataschema, `https://bunny.invalid/events/${family}/2.0`);
+    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (family === 'inbox-item' && dataschema === 'https://bunny.invalid/events/inbox-item/2.1'));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);
-    assert.ok(!types.has(type), `${type} belongs to one family`);
-    types.add(type);
+    assert.ok(!types.has(type) || types.get(type) === family, `${type} belongs to one family across versions`);
+    types.set(type, family);
   }
   assert.throws(() => registerCoreFamilies(v), /already registered/);
 });
@@ -133,4 +133,19 @@ test('Desktop metadata observations use the lifecycle family without invented li
  message.data.title={value:'Desktop title',source:'provider'};assert.equal(v.validate(message).ok,true);
  message.data.identity.client='cli';assert.equal(v.validate(message).ok,false);
  message.data.identity.client='desktop';message.data.label={value:'Owner',origin:'user'};assert.equal(v.validate(message).ok,false);
+});
+
+test('inbox conflict is additive, preserves opposite evidence, and handling input is closed', () => {
+  const v = validator();
+  const conflict = structuredClone(fixtures.valid['inbox-item-conflict']);
+  assert.equal(v.validate(conflict).ok, true);
+  conflict.data.item.outcomes[1].result = 'succeeded';
+  assert.equal(v.validate(conflict).ok, false, 'two successes are no conflict');
+  delete conflict.data.item.outcomes;
+  assert.equal(v.validate(conflict).ok, false, 'conflict requires both outcomes');
+  conflict.data.item.result = 'succeeded';
+  assert.equal(v.validate(conflict).ok, true, 'late success remains an open item');
+  const handle = structuredClone(fixtures.valid['inbox-handle']);
+  handle.data.actor = 'forged';
+  assert.equal(v.validate(handle).ok, false, 'handling actor comes from authentication');
 });

@@ -107,28 +107,31 @@ void test('a crash between the lamp\'s commit and its publish restarts the runti
   assert.equal(children(run.supervisor.pid ?? 0).length, 1, 'one runtime again');
 });
 
-void test('a run serves the core\'s stand-in history and inbox families: a tracked action\'s outcome is in history, and a refusal is an inbox item', {timeout: 60_000}, async context => {
+void test('a run serves the core\'s real history API and inbox family: a tracked action\'s outcome is in history, and a refusal is an inbox item', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'command-tracked-outcome');
   const grants = await readGrants(run.dataDir);
   const read = async (family: string): Promise<{status: number; records: Record<string, unknown>[]}> => {
-    const response = await fetch(new URL(`/api/v2/families/${family}`, run.url), {headers: {authorization: `Bearer ${grants.get('bunny/parts/operator') ?? ''}`}});
-    const body = await response.json() as {records?: Record<string, unknown>[]};
-    return {status: response.status, records: body.records ?? []};
+    const response = await fetch(new URL(family === 'history' ? '/api/v2/history' : `/api/v2/families/${family}`, run.url), {headers: {authorization: `Bearer ${grants.get('bunny/parts/operator') ?? ''}`}});
+    const body = await response.json() as {records?: Record<string, unknown>[]; rows?: {kind: string; source: string; record: Record<string, unknown>}[]};
+    const records = family === 'history' ? (body.rows ?? []).flatMap(row => row.kind === 'outcome'
+      ? [{...(row.record.data as Record<string, unknown>), source: row.source}]
+      : row.kind === 'operation' && row.record.event !== 'outcome' && row.record.result !== undefined ? [{...row.record, source: 'bunny/core'}] : []) : body.records ?? [];
+    return {status: response.status, records};
   };
   assert.equal(await act(run, 'req-history'), 'accepted');
   let history: Record<string, unknown>[] = [];
   await until(async () => {
-    const answer = await read('stand-in-history');
+    const answer = await read('history');
     history = answer.records.filter(record => record.requestId === 'req-history');
     return answer.status === 200 && history.length === 1;
-  }, 'the action\'s outcome in the stand-in history');
+  }, 'the action\'s outcome in real history');
   assert.deepEqual(history.map(record => [record.source, record.result, record.evidence]), [['bunny/modules/lamp', 'succeeded', 'observed']]);
   // An action no running module answers is refused, recorded failed by the core, and becomes an inbox item.
   assert.equal(await act(run, 'req-nobody', {key: 'bunny.cmd.playback-control.living-room', draft: {
     type: 'org.bunny.playback.control.requested', subject: 'living-room', dataschema: 'https://bunny.invalid/events/playback-control/2.0', data: {action: 'pause'},
   }}), 'unavailable');
   await until(async () => (await read('inbox-item')).records.some(record => (record.item as {requestId?: unknown} | undefined)?.requestId === 'req-nobody'), 'the refused action\'s inbox item');
-  assert.deepEqual((await read('stand-in-history')).records.filter(record => record.requestId === 'req-nobody').map(record => [record.source, record.result, record.evidence]),
+  assert.deepEqual((await read('history')).records.filter(record => record.requestId === 'req-nobody').map(record => [record.source, record.result, record.evidence]),
     [['bunny/core', 'failed', 'none']]);
 });
 

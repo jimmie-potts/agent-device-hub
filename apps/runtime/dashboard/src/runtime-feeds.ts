@@ -1,10 +1,10 @@
 // Device owners, operations and playback share the dashboard's existing participant; no second connection or polling.
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {mayControl, moduleOwner, readModules, type ModuleEntry} from './modules.ts';
-export type RuntimeRecord = DeviceRecord | OperationRecord | PlaybackState;
-export type RuntimeCopy = {owner: string; family: 'device' | 'operation' | 'playback'; synced: boolean; records: readonly RuntimeRecord[]; refused?: string};
+export type RuntimeRecord = DeviceRecord | OperationRecord | PlaybackState | InboxItem;
+export type RuntimeCopy = {owner: string; family: 'device' | 'operation' | 'playback' | 'inbox-item'; synced: boolean; records: readonly RuntimeRecord[]; refused?: string};
 export type RuntimeData = {modules: readonly ModuleEntry[] | undefined; control: boolean; copies: readonly RuntimeCopy[]; catalogFailed: boolean};
 type Follow = {state: RuntimeCopy; copy?: SyncedCopy<RuntimeRecord> | undefined; epoch: number; retryMs: number; cancel: () => void};
 
@@ -26,7 +26,7 @@ export class RuntimeFeeds {
       const [modules, control] = await Promise.all([readModules(), mayControl()]);
       if (this.#closed) return;
       this.#state = {...this.#state, modules, control, catalogFailed: false};
-      this.#follows = modules.flatMap(module => module.serves.flatMap(family => family === 'device' || family === 'operation' || family === 'playback'
+      this.#follows = modules.flatMap(module => module.serves.flatMap(family => family === 'device' || family === 'operation' || family === 'playback' || family === 'inbox-item'
         ? [{state: {owner: moduleOwner(module.name), family, synced: false, records: []}, epoch: 0, retryMs: 1000, cancel: () => {}}] : []));
       this.#show();
       await Promise.all(this.#follows.map(follow => this.#sync(follow)));

@@ -11,7 +11,8 @@ import {SdkError, errorType, type CommandDraft, type DeviceAction, type Particip
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {SESSION_ID, observation, type ObservationOptions} from '../fixtures/agents.js';
 import type {ChimeDeviceState} from '../fixtures/chime.js';
-import type {HistoryEntry} from '../fixtures/core.js';
+import type {HistoryRow} from '../../src/core/history.js';
+type HistoryEntry = {source: string; requestId: string; result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'};
 import type {LampDeviceState} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, type SignDeviceState} from '../fixtures/sign.js';
 
@@ -318,21 +319,30 @@ export const waiting = (h: Harness, approvals: readonly string[]): Outcome => {
   return show(held) === show(approvals) || `the session waits for ${show(held)}`;
 };
 /**
- * What history recorded of a tracked action, as the stand-in copy shows it until #923's history read API: each outcome
- * the tracker took, and each result the action reached without one, which the core recorded.
+ * What retained history recorded of a tracked action through the core's read API: each outcome
+ * the tracker took, and each result the action reached without one.
  */
-export const historyOf = (h: Harness, requestId: string): HistoryEntry[] =>
-  h.reader.states<HistoryEntry>('stand-in-history').map(state => state.data).filter(entry => entry.requestId === requestId);
-/** The outcomes history took for a tracked action, each once. */
-export const outcomesOf = (h: Harness, requestId: string): HistoryEntry[] => historyOf(h, requestId).filter(entry => entry.source !== 'bunny/core');
-/** History took exactly one outcome for the action, with this result and evidence. */
-export const recorded = (h: Harness, requestId: string, result: HistoryEntry['result'], evidence: HistoryEntry['evidence']): Outcome => {
-  const rows = outcomesOf(h, requestId).map(entry => `${entry.result}/${entry.evidence}`);
+export const historyOf = async (h: Harness, requestId: string): Promise<HistoryEntry[]> => {
+  const answer = await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/history'});
+  if (answer.status !== 200) return [];
+  const {rows} = JSON.parse(answer.text) as {rows: HistoryRow[]};
+  return rows.filter(row => row.requestId === requestId).flatMap(row => {
+    if (row.kind === 'outcome') {
+      const data = row.record.data as Omit<HistoryEntry, 'source'>;
+      return [{...data, source: row.source}];
+    }
+    if (row.kind !== 'operation') return [];
+    const step = row.record as {event: string; result?: HistoryEntry['result']; evidence?: HistoryEntry['evidence']};
+    return step.event !== 'outcome' && step.result !== undefined ? [{source: 'bunny/core', requestId, result: step.result, evidence: step.evidence ?? 'none'}] : [];
+  });
+};
+export const outcomesOf = async (h: Harness, requestId: string): Promise<HistoryEntry[]> => (await historyOf(h, requestId)).filter(entry => entry.source !== 'bunny/core');
+export const recorded = async (h: Harness, requestId: string, result: HistoryEntry['result'], evidence: HistoryEntry['evidence']): Promise<Outcome> => {
+  const rows = (await outcomesOf(h, requestId)).map(entry => `${entry.result}/${entry.evidence}`);
   return show(rows) === show([`${result}/${evidence}`]) || `history holds ${show(rows)} for ${requestId}`;
 };
-/** The results the core recorded for an action that ended without an outcome: a refusal, an expiry or an uncertain end. */
-export const endedAs = (h: Harness, requestId: string, expected: readonly string[]): Outcome => {
-  const rows = historyOf(h, requestId).filter(entry => entry.source === 'bunny/core').map(entry => `${entry.result}/${entry.evidence}`);
+export const endedAs = async (h: Harness, requestId: string, expected: readonly string[]): Promise<Outcome> => {
+  const rows = (await historyOf(h, requestId)).filter(entry => entry.source === 'bunny/core').map(entry => `${entry.result}/${entry.evidence}`);
   return show(rows) === show(expected) || `the core recorded ${show(rows)} for ${requestId}`;
 };
 export const inboxOf = (h: Harness, requestId: string): InboxItem['item'][] =>
@@ -363,8 +373,8 @@ export function deviceState<T>(h: Harness, device: string): T {
   return state as T;
 }
 
-/** The core's families a reader keeps a copy of: its sessions, its inbox and its stand-in history. */
-export const CORE_FAMILIES = ['session', 'inbox-item', 'stand-in-history'] as const;
+/** The core's families a reader keeps a copy of; retained history is read through the gateway. */
+export const CORE_FAMILIES = ['session', 'inbox-item'] as const;
 /**
  * No log record, published message, health entry or message the reader holds carries the synthetic token, which the
  * configured modules' secret files hold. The answer names where it appears, never the token.

@@ -179,5 +179,5 @@ const factories = names.map(name => {
 });
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge and gateway still
 // know every family the scenario's parts use, from the one list the in-memory harness takes too: the fixture core's
-// stand-in history among them, so `/api/v2/families/stand-in-history` serves it.
+// the inbox among them; retained history reads use `/api/v2/history`.
 await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }});

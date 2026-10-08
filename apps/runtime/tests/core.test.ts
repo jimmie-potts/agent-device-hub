@@ -13,7 +13,7 @@ import {createCoreModule, type CoreOptions, type CorePart, type LogRecord, type 
 import {
   IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, observation, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from './fixtures/agents.js';
-import {historySchemas, standInParts} from './fixtures/core.js';
+import {standInParts} from './fixtures/core.js';
 import {fillDisk} from './fixtures/disk.js';
 import {World} from './fixtures/store-world.js';
 import {lampSchemas} from './fixtures/lamp.js';
@@ -29,14 +29,14 @@ const NO_NOTICE = 'f'.repeat(64);
 moduleConformance({
   create: () => createCoreModule(),
   // Its sessions, and its operation records (Hub #922): the kit syncs each family alone.
-  serves: ['session', 'operation'],
+  serves: ['session', 'operation', 'inbox-item'],
   // The kit's probe, `bunny/kit`, is no consumer the core records acknowledgments for: a domain refusal, at INFO.
   refused: {...acknowledge(SESSION_ID, 'kit', NO_NOTICE), code: 'invalid-request'},
 });
 
 const validator = new MessageValidator();
 registerCoreFamilies(validator);
-for (const [dataschema, schema] of Object.entries({...historySchemas, ...lampSchemas})) validator.register(dataschema, schema);
+for (const [dataschema, schema] of Object.entries({...lampSchemas})) validator.register(dataschema, schema);
 
 type CoreRun = {
   runtime: Runtime;

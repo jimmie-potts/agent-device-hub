@@ -1683,3 +1683,35 @@ Use the repository's Node and temporary-directory setup. The test creates no
 runtime, listener or service and uses only synthetic facts. It is also included
 in the core CI job's existing `test:runtime:built` file discovery. The complete
 runtime suite includes process tests and requires its own isolated execution.
+
+## Shared inbox and retained history
+
+The core derives `inbox-item/2.1` from failed (expired included), uncertain and
+conflicting operations in its tracker transaction. Late definitive evidence
+updates an open item; handling alone deletes it. Conflict opens or reopens one
+item above the prior removal revision. Other late outcomes after handling and
+refused reused message identities open none. Finished turns remain session
+notices. Gateway-only session-label-set and notice-clear metadata operations keep
+tracker/history evidence and never enter this device-operation inbox. Items and handling actors survive restart; display `dismissedBy` and
+device holds stay separate.
+
+`GET /api/v2/history` reads committed `core_history`, oldest first, with optional
+inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
+Filters combine; unknown, repeated or invalid fields are refused. Every caller
+with read scope sees the whole history and inbox. The MCP tools `core_inbox`
+and `core_history` read the same owner without triggering actions.
+
+`POST /api/v2/commands/inbox-handle` takes `{target, requestId, data:
+{expectedRevision, action}}`, where action is `dismiss` or `send-again`.
+`core_handle_inbox` takes `{id, expectedRevision, action}`. Both need control;
+the authenticated source supplies the handling actor. Dismiss commits the actor
+and a `deleted` removal atomically. Send-again commits handling with a new
+tracked sent operation using saved data and a fresh request ID, then sends once.
+A failed initial commit leaves the original open. A crash after commit never
+resends; the new tracked operation can become uncertain. Accepted handling is
+separate from device completion. There is no automatic retry, replay or expiry.
+
+The catalog's `shared-inbox-history` journey and focused core/gateway tests use
+synthetic state. One synthetic 1,000-item sync check records the largest encoded
+state/completed message and total answer bytes against the existing per-message
+256 KiB limit. Paging and timing targets remain outside this feature.

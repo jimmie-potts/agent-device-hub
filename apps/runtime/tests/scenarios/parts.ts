@@ -12,7 +12,6 @@ import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {CommandDraft, DeviceSimulation, ModuleRegistration, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {producerCredentialId, producerSource} from '../../src/hook/index.js';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, moduleSchemas, registrations, tokenDigest} from '../../src/index.js';
-import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
 import {
@@ -22,8 +21,8 @@ import {
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
 
-/** The fixture modules' and the fixture core's families: the lamp's, the sign's and the stand-in history's. */
-const FIXTURE_SCHEMAS: Readonly<Record<string, object>> = {...lampSchemas, ...signSchemas, ...historySchemas};
+/** The fixture modules' and the fixture core's families: the lamp's and the sign's. */
+const FIXTURE_SCHEMAS: Readonly<Record<string, object>> = {...lampSchemas, ...signSchemas};
 
 /**
  * Every payload schema the catalog's messages use beyond the core and device families, by `dataschema`: the fixture
