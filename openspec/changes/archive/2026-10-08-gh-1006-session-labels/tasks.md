@@ -20,8 +20,8 @@
 ## 4. Delivery validation
 
 - [x] 4.1 Run build/type/focused lint and the coordinator-approved label/operation/gateway/family/UI/catalog checks, plus applicable contract/workflow checks; record exact commands, exits, counts and specification inventory.
-- [ ] 4.2 After independent disposable Acceptance, obtain current OpenSpec status/instructions, validate, synchronize affected specifications and archive the exact change on the delivery branch; verify planning and task status.
-- [ ] 4.3 Obtain independent disposable tier 2 Acceptance evidence for the affected session-label scenario at the assigned candidate; retain its observed session/operation results and owned cleanup evidence.
+- [x] 4.2 After independent disposable Acceptance, obtain current OpenSpec status/instructions, validate and synchronize affected specifications; verify planning and task status before archiving the exact change on the delivery branch.
+- [x] 4.3 Obtain independent disposable tier 2 Acceptance evidence for the affected session-label scenario at the assigned candidate; retain its observed session/operation results and owned cleanup evidence.
 
 Final delivery gates follow implementation and archive: independent Standards and
 Specification review of the same committed base/head, qualified PR and merged-main
