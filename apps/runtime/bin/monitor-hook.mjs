@@ -10,8 +10,15 @@ const BUDGET_MS = 2900;
 /**
  * Whether a file system call is still under way. On Node 24 `process.exit` waits for one that never returns, as an open
  * on a stalled mount or a FIFO with no writer does, and nothing runs after a blocked exit, so the hook decides first.
+ * A check that cannot tell, because the call throws, counts as none, so the hook still exits 0: it stays fail-open.
  */
-const reading = () => process.getActiveResourcesInfo().some(name => name.startsWith('FSReq'));
+const reading = () => {
+  try {
+    return process.getActiveResourcesInfo().some(name => name.startsWith('FSReq'));
+  } catch {
+    return false;
+  }
+};
 /** The deadline: exit 0, or, with a file read still stuck, the only end that does not wait for it, a signal. */
 const end = () => {
   if (reading()) process.kill(process.pid, 'SIGKILL');

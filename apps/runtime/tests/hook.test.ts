@@ -29,6 +29,7 @@ import {edgeConfig, it, run} from './support.js';
 
 const HOOK = fileURLToPath(new URL('../../bin/monitor-hook.mjs', import.meta.url));
 const STALLED_READ = new URL('./fixtures/stalled-read.js', import.meta.url).href;
+const NO_RESOURCE_INFO = new URL('./fixtures/no-resource-info.js', import.meta.url).href;
 /** A producer's source configuration, as the Hub's setup writes it into `producer.json`, with its first hook's name. */
 const SOURCE = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code-hooks', hook: 'SessionStart'} as const;
 /** The Hub's `producerPrincipal` for SOURCE, computed once with apps/hub/src/setup.ts at main 8590332f. */
@@ -433,7 +434,7 @@ async function fifo(context: TestContext, name: string): Promise<string> {
   return path;
 }
 
-it('a file read stuck at the deadline ends the hook by signal within its budget; a FIFO transcript ends it at once', async context => {
+it('a file read stuck at the deadline ends the hook by signal within its budget; a FIFO transcript, or a check that cannot tell, exits 0', async context => {
   const world = await hookRuntime(context);
   const producer = await producerFile(context, world.producer, world.port, {lifecycleVersion: '1.2'});
   // The title read opens the transcript without blocking, so a FIFO there gives no title and holds nothing.
@@ -447,6 +448,10 @@ it('a file read stuck at the deadline ends the hook by signal within its budget;
   assert.deepEqual({code: stuck.code, signal: stuck.signal, output: stuck.output}, {code: null, signal: 'SIGKILL', output: ''});
   assert.ok(stuck.elapsedMs > HOOK_BUDGET_MS - 300 && stuck.elapsedMs < 3000, `ended at its deadline, after ${Math.round(stuck.elapsedMs)} ms`);
   await until(world, 'stuck-read', () => true, 'the session');
+  // A process that cannot tell whether a read is under way counts it as none, and the hook stays fail-open.
+  const unchecked = await hook([producer], payload('SessionStart', 'unchecked'), HOOK_ENV, ['--import', NO_RESOURCE_INFO]);
+  quiet(unchecked, 'a check for a pending read that throws');
+  await until(world, 'unchecked', () => true, 'the session');
 });
 
 it('the producer\'s credential publishes lifecycle observations only: a command, a read and any other key are forbidden', async context => {

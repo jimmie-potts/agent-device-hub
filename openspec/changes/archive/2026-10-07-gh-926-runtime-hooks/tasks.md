@@ -36,3 +36,4 @@
 - [x] 6.6 End the hook by `SIGKILL` only when a file read is still stuck at its deadline, since `process.exit` would wait for it; exit 0 otherwise.
 - [x] 6.7 Read the marker asynchronously in the reader, which kills itself when its channel closes, so a runtime killed during a stall leaves no reader; release every stalled FIFO at a test's end, kill each hook a test starts after 6 s, and run each mutant in a process group that is killed afterwards.
 - [x] 6.8 Show each new protection's mutant fails its named tests, and run the gate on a committed head.
+- [x] 6.9 Rebase onto main `d9d000bd` (#996's `device/2.1` held record, #991, #993), and count a pending-read check that throws as no read, so the hook stays fail-open.
