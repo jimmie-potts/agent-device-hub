@@ -82,7 +82,8 @@ gateway's action route (#782). Its
 `disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
 as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
-shows health as the step left it. There is no dashboard before #922.
+shows health as the step left it. The run's origin also serves the [dashboard](../dashboard/README.md) (#922); the steps'
+page moves to it in #922's third slice.
 
 ## Follow one request
 
@@ -437,6 +438,31 @@ curl -s -H "authorization: Bearer $reader" "$origin/api/v2/families/sign"       
 npm run -s verify:runtime -- capture <run-id> scenario-module-contributions
 npm run -s verify:runtime -- stop <run-id>
 ```
+
+### The dashboard
+
+A run serves the [dashboard](../dashboard/README.md) at its origin (#922), which signs a browser in from the trusted
+loopback page. To check it as a person would, start a run of the core alone, open the origin in a browser, and play an
+agent's hook with `apps/runtime/dashboard/tests/hook.ts`, which publishes one synthetic lifecycle observation with the
+run's own `hook` credential and never prints it:
+
+```bash
+npm run -s verify:runtime -- start --scenario dashboard-sessions     # the core alone; open <origin>/ in a browser
+origin=<the run's origin>; tokens=<runtime dir>/data/config/part-tokens.json
+hook() { node apps/runtime/dashboard/tests/hook.ts "$origin" "$tokens" "$@"; }
+hook session-started --title "Port the wall"; hook turn-started       # the session appears, Working
+hook attention-approval; hook attention-resolved                        # Waiting for approval, then Working again
+hook turn-ended                                                         # Finished · unread, and it stays so
+curl -s -X POST -H 'content-type: application/json' -d '{"source":"bunny/parts/dashboard"}' "<harness>/disconnect"  # the page resyncs
+hook turn-started --turn turn-2; hook turn-ended --turn turn-2          # the new turn clears the first; the second is unread
+hook runtime-ended --turn turn-2                                        # after Acknowledge for the dashboard, the session ends
+npm run -s verify:runtime -- capture <run-id> scenario-dashboard-sessions
+npm run -s verify:runtime -- capture <run-id> scenario-dashboard-finished-turn
+npm run -s verify:runtime -- stop <run-id>
+```
+
+A capture step seeds its run afresh, which restarts the runtime and ends the browser's session: the page then says so
+and offers **Sign in again**.
 
 A browser opens a module's page after it signs in from the run's own origin: a page there that posts `{}` to
 `/api/v2/browser/session` with `bunny-request: 1` gets the session cookie, and `/modules/sign/preview` then shows the

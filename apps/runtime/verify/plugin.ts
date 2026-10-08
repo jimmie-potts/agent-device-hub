@@ -50,6 +50,8 @@ export function artifactFiles(at = root): string[] {
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
+    // The dashboard's built page, which the gateway serves (Hub #922).
+    ...['index.html', 'dashboard.js', 'dashboard.css'].map(file => `apps/runtime/dist/dashboard/${file}`).filter(file => existsSync(join(at, file))),
     // The host adapter that records the runtime's spans (Hub #949), which the package ships as source.
     ...(existsSync(join(at, 'packages/observability/runtime')) ? readdirSync(join(at, 'packages/observability/runtime')) : [])
       .filter(file => file.endsWith('.mjs')).sort().map(file => `packages/observability/runtime/${file}`),
@@ -64,6 +66,9 @@ export const BUILD_SOURCES = [
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
   ':(glob)modules/*/src/**', ':(glob)modules/*/package.json',
+  // The dashboard's page (Hub #922), built from its sources and the Places manifest it reads.
+  ':(glob)apps/runtime/dashboard/src/**', 'apps/runtime/dashboard/build.mjs', 'docs/skins/places.json',
+
 ];
 /** The build's outputs the run serves, with the registry and each module folder's entry in the checkout at `at`. */
 export const buildOutputs = (at = root): string[] => [
@@ -72,6 +77,8 @@ export const buildOutputs = (at = root): string[] => [
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
   ...moduleFolders(at).map(folder => `modules/${folder}/dist/src/index.js`),
+  'apps/runtime/dist/dashboard/dashboard.js',
+
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */

@@ -1548,7 +1548,14 @@ The catalog holds:
   simulated marker: a top-level Desktop session reads unread while Desktop lists
   it and read once it does not, a subagent gets no read evidence, an unusable
   marker gives none, and a Codex home that stalls makes the marker unavailable,
-  logged once, while the core takes observations, until it answers again.
+  logged once, while the core takes observations, until it answers again;
+- the dashboard (#922): a browser signed in by a trusted loopback page loads its
+  page and reads the core's sessions, which appear as the hook observes them,
+  with an approval prompt raised and cleared (`dashboard-sessions`), and a
+  finished turn that the dashboard shows unread, by the shared status helper,
+  until a new turn or an acknowledgment in the record clears it, never on a
+  timer and never as an inbox item, and that leaves with its session
+  (`dashboard-finished-turn`).
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.

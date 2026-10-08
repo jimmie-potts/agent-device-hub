@@ -4,6 +4,8 @@
 // editing this file (Hub #999). Scenarios build on the framework (`framework.ts`), which every run type's harness
 // implements.
 import {readdirSync} from 'node:fs';
+import {sessionState} from '@jimmie-potts/event-contracts/v2/status';
+
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -835,10 +837,101 @@ const agentHooks: Scenario = {
 /** A module's scenario file, `modules/<module>.ts`: its scenarios, and any disposable run of its own (tier 2). */
 export type ModuleScenarios = {readonly scenarios: readonly Scenario[]; readonly runs?: Readonly<Record<string, ModuleRun>>};
 
+/**
+ * The dashboard's sessions (Hub #922): a browser signed in by a trusted loopback page reads the core's sessions on
+ * `/api/v2`, as the dashboard's page loads from the gateway, and the dashboard's chip comes from the shared status helper
+ * over the record alone. Sessions appear as the hook observes them, and an approval prompt is raised and cleared.
+ */
+const browserSessions = async (h: Harness): Promise<SessionRecord[] | string> => {
+  const answer = await h.gateway({as: 'browser', method: 'GET', path: '/api/v2/families/session'});
+  const read = bodyOf<{records?: SessionRecord[]}>(answer);
+  return answer.status === 200 && read?.records !== undefined ? read.records : `${answer.status} ${answer.text.slice(0, 200)}`;
+};
+/** What the dashboard shows of a session: its state by the shared helper, `idle` when nothing is outstanding. */
+const dashboardShows = (expected: string, id = SESSION_ID) => async (h: Harness): Promise<Outcome> => {
+  const records = await browserSessions(h);
+  if (typeof records === 'string') return records;
+  const record = records.find(item => item.id === id);
+  const shown = record === undefined ? 'absent' : sessionState(record) ?? 'idle';
+  return shown === expected || `the dashboard shows ${shown}`;
+};
+const dashboardSessions: Scenario = {
+  id: 'dashboard-sessions',
+  title: 'the dashboard shows the sessions as the hook observes them, an approval prompt raised and cleared',
+  seed: {modules: ['core'], follows: [['session']]},
+  steps: [
+    expect('the gateway serves the dashboard\'s page to a browser', answers({as: 'browser', method: 'GET', path: '/'}, answer =>
+      (answer.status === 200 && answer.headers['content-type'] === 'text/html; charset=utf-8' && answer.text.includes('/dashboard.js')) ||
+      `${answer.status} ${answer.headers['content-type'] ?? ''}`)),
+    expect('the dashboard shows no session yet', async h => {
+      const records = await browserSessions(h);
+      return (Array.isArray(records) && records.length === 0) || show(records);
+    }),
+    act('the hook observes a session start and a turn', async h => {
+      await publish(h, sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});
+      await publish(h, turnStarted);
+    }),
+    expect('the dashboard shows the session working, by its title', async h => {
+      const records = await browserSessions(h);
+      if (typeof records === 'string') return records;
+      return records.find(record => record.id === SESSION_ID)?.title?.value === 'Port the wall' || 'no titled session';
+    }),
+    expect('it is working', dashboardShows('working')),
+    act('the hook observes an approval prompt', h => publish(h, approvalPrompt('approval-1'))),
+    expect('the dashboard shows it waiting for the approval', dashboardShows('attention')),
+    act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
+    expect('the dashboard shows it working again', dashboardShows('working')),
+    expect('the reader\'s synced copy agrees', h => (session(h) !== undefined && sessionState(session(h) as SessionRecord) === 'working') || 'the copy disagrees'),
+  ],
+};
+
+/**
+ * A finished turn on the dashboard (Hub #922, ADR 0012 "Inbox and history"): unread from the session record, held there
+ * with no timer clearing it, cleared by the consumers that clear on a new turn, and by the dashboard's own
+ * acknowledgment, which the panel sends here for itself as the browser's page does for `dashboard`, and gone with the
+ * session's end. It never becomes an inbox item.
+ */
+const dashboardFinishedTurn: Scenario = {
+  id: 'dashboard-finished-turn',
+  title: 'the dashboard shows a finished turn unread until the session record clears it',
+  seed: {modules: ['core'], follows: [CORE_FAMILIES]},
+  steps: [
+    act('the hook observes a session\'s turn start and end', async h => {
+      await publish(h, sessionStarted);
+      await publish(h, turnStarted);
+      await publish(h, turnEnded);
+    }),
+    expect('the dashboard shows the finished turn unread', dashboardShows('done')),
+    holds('nothing clears it on a timer, and it is no inbox item', async h => {
+      const shown = await dashboardShows('done')(h);
+      return shown !== true ? shown : h.reader.states('inbox-item').length === 0 || 'an inbox item';
+    }, 2000),
+    act('the hook observes the next turn start', h => publish(h, turnStarted, {turn: 'turn-2'})),
+    expect('the new turn clears the finished one for the consumers that clear on one, and the session works', async h => {
+      const shown = await dashboardShows('working')(h);
+      return shown !== true ? shown : acknowledgedBy(h, ['nanoleaf', 'pixoo']);
+    }),
+    act('the hook observes that turn end', h => publish(h, turnEnded, {turn: 'turn-2'})),
+    expect('the dashboard shows it unread again', dashboardShows('done')),
+    act('the panel acknowledges the newest notice for itself', h => sendOnce(h, 'panel', 'acknowledge', {
+      key: `bunny.cmd.notice-acknowledge.${SESSION_ID}`,
+      draft: {
+        type: 'org.bunny.notice.acknowledge.requested', subject: SESSION_ID, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0',
+        data: {consumerId: 'panel', noticeId: session(h)?.notices.find(notice => notice.acknowledgedBy.length === 0)?.id ?? ''},
+      },
+    }, 'req-dashboard-acknowledge')),
+    expect('an acknowledgment in the record clears it', dashboardShows('idle')),
+    act('the hook observes the session\'s runtime end', h => publish(h, runtimeEnded, {turn: 'turn-2'})),
+    expect('the session leaves the dashboard', dashboardShows('absent')),
+  ],
+};
+
 /** The core's and the fixture modules' scenarios, in the order a reader meets them. */
 const CORE_SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, deviceOwners, gatewayReads, grantsAndDuplicates, approvalRecovery, moduleContributions, agentHooks,
+  dashboardSessions, dashboardFinishedTurn,
+
 ];
 
 /** Every module scenario file in `folder`, by its name without `.js`, in name order. */
