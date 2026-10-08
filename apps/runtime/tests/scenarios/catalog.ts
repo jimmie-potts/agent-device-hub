@@ -1804,6 +1804,13 @@ const nanoleafWall: Scenario = {
     expect('history holds req-lost uncertain: the write may have reached the wall', h => recorded(h, 'req-lost', 'uncertain', 'none'), 10_000),
     expect('the reader\'s copy shows the wall held and degraded, not unavailable, and its device record names req-lost as held', h =>
       wallHeld(h, 'req-lost', 'degraded'), 15_000),
+    expect('the hold names the tracked action: the core\'s operation for the held request ID is the uncertain one, with its inbox item (#923)', h => {
+      const held = wallRecord(h)?.held?.requestId;
+      if (held === undefined) return 'the wall\'s record holds nothing';
+      const items = inboxOf(h, held);
+      return recorded(h, held, 'uncertain', 'none') === true && items.length === 1 && items[0]?.kind === 'operation' && items[0].result === 'uncertain' ||
+        `the held ${held}: history ${show(recorded(h, held, 'uncertain', 'none'))}, inbox ${show(items)}`;
+    }),
     expect('the hold was logged once', h => {
       const holds = logged(h, 'nanoleaf', 'operation.failed').filter(({record}) => record.attributes['bunny.code'] === 'uncertain-result').length;
       return holds === 1 || `${holds} hold records`;
