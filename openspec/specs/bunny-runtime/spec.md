@@ -838,7 +838,7 @@ The gateway SHALL continue authenticated, owned and validated context for the da
 
 #### Scenario: A page that loads its preview by reference
 - **WHEN** a reader opens the sign's page and its preview, its settings and the links
-- **THEN** the page refers to `content/preview.png` under a policy with `default-src 'none'`, `frame-ancestors 'none'` and `form-action 'none'`, the preview is a PNG, the settings show the greeting and signs without the token, and the links hold the sign's editor link and the place links
+- **THEN** the page refers to `content/preview.png` under a policy with `default-src 'none'`, `frame-ancestors 'self'` and `form-action 'none'`; only module page HTML permits same-origin shell framing, with `SAMEORIGIN`, while content responses retain their original framing policy, the preview is a PNG, the settings show the greeting and signs without the token, and the links hold the sign's editor link and the place links
 
 #### Scenario: A stalled reader
 - **WHEN** a reader subscribes to large state messages and stops reading until its socket fills, and the stall limit passes
@@ -851,6 +851,10 @@ The gateway SHALL continue authenticated, owned and validated context for the da
 #### Scenario: The dashboard's authenticated HTTP context
 - **WHEN** browser session creation, launch exchange, logout, authority or Places reads carry W3C context, including malformed context and requests that fail their boundary checks
 - **THEN** the gateway continues a valid parent only after authentication, ownership and input validation, records a bounded server span for each accepted call and keeps post-admission failures in that trace; absent or malformed context starts a root, untrusted context grants no authority, and an unauthenticated logout stays harmless without adopting its parent
+
+#### Scenario: Running build identity is authenticated
+- **WHEN** an authenticated reader requests `/api/v2/build`, an anonymous caller requests it and a caller attempts to post to it
+- **THEN** the reader gets only the frozen build version, revision, dirty flag and timestamp, the anonymous caller is refused, and the write is not found; the route performs no Git operation
 
 ### Requirement: Edge credentials and their reload
 

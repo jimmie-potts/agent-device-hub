@@ -10,7 +10,7 @@
 
 ## 2. Independent Acceptance
 
-- [ ] Independent Acceptance runs the bounded disposable journey and reports its actual limits.
+- [x] Independent Acceptance ran the bounded disposable journey at `2079865c` (`runtime-20261008T154658Z-baf5f0`) and returned satisfied. Its report records timing/fault and in-frame accessibility limits; no installation or physical acceptance was attempted.
 
 After Acceptance, the coordinator synchronizes affected specifications and archives
 this exact change. Final independent Standards and Specification reviews then inspect
