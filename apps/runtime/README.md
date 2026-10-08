@@ -43,8 +43,8 @@ runtime's process tests, the maintenance journal test and the memory script's
 
 ## Adding a module
 
-A module registers itself from its own folder (#999), so a module story edits
-no file the other module stories share:
+A module registers itself from its own folder (#999), so adding runtime and
+harness registration needs no shared module list:
 
 1. Put the module in `modules/<name>/`, a workspace package that imports only
    the SDK and the contracts packages, with the module's name as its manifest
@@ -60,8 +60,11 @@ no file the other module stories share:
    fields each takes (`admits`), the in-memory harness's half (`memory`) and a
    disposable run's (`run`), whose module in the runtime's process reaches the
    supervisor's simulated device over a link.
-3. Put its scenarios in `tests/scenarios/modules/<name>.ts`, exporting
-   `scenarios` and, for a disposable run of its own, `runs`.
+3. Put its scenarios in `apps/runtime/tests/scenarios/modules/<name>.ts`,
+   exporting `scenarios` and, for a disposable run of its own, `runs`.
+4. Add its workspace and build, typecheck and test commands to the existing
+   root scripts and CI. Registration collection does not yet collect those
+   commands; follow [development checks](../../docs/development.md).
 
 The build writes `dist/src/registry.js`, one static import of each folder's
 `registration`, after it compiles the runtime; `src/registry.d.ts` types it.

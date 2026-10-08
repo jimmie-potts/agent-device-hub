@@ -14,4 +14,4 @@
 
 - [x] 3.1 Add the shared-file check with its negative control (`scripts/check-module-names.cjs`, `tests/workflow_checks.cjs`).
 - [x] 3.2 Say how to add a module in the runtime README; update the verify README.
-- [x] 3.3 Run the gate, show the negative controls fail, and synchronize and archive the change.
+- [ ] 3.3 Run the gate, show the negative controls fail, and synchronize and archive the change.
