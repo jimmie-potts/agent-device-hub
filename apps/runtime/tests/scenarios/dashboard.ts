@@ -206,7 +206,7 @@ const dashboardNoticeClear: Scenario = {
   id: 'notice-clear', title: 'one operator override clears the current notice in the dashboard, Nanoleaf and Pixoo records',
   seed: {modules: ['core', 'playback', 'nanoleaf', 'pixoo'], follows: [['session', 'operation'],
     {owner: 'bunny/modules/nanoleaf', families: [NANOLEAF_FAMILIES.wall.family]}, {owner: 'bunny/modules/pixoo', families: [PIXOO.display]}],
-    config: {playback: PLAYBACK_SECTION, nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION}},
+     config: {playback: PLAYBACK_SECTION, nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION.config}},
   steps: [
     act('the operator selects Pixoo Monitor', h => dispatchOnce(h, 'operator', 'notice-monitor', {key: 'bunny.cmd.device-mode-set.pixoo-1',
       draft: {type: 'org.bunny.device-mode.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}}, 'req-notice-monitor')),
