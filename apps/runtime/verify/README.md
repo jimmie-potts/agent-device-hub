@@ -25,7 +25,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, have the simulated Codex Desktop marker list threads as unread, turn unusable, stall or answer again, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart, optionally holding the runtime stopped for up to 10 s first (`{"holdMs": n}`, #926). A simulation that names an unknown device, action or field is refused with 400 and changes nothing. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, have the simulated Codex Desktop marker list threads as unread, turn unusable, stall or answer again, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart, optionally holding the runtime stopped for up to 10 s first (`{"holdMs": n}`, #926). A simulation that names an unknown device, action or field, a restart with any field but a whole `holdMs` from 0 to 10 000, and a body that is not JSON or is over 4 KiB are refused with 400 and a registry body, and change nothing. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -307,12 +307,15 @@ port. Leave out the two Claude Code variables a shell inside an agent session ca
 producer=<runtime dir>/data/config/producer/producer.json
 hook() { env -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_HOST_SESSION_ID node apps/runtime/bin/monitor-hook.mjs "$producer"; }
 echo '{"hook_event_name":"SessionStart","session_id":"by-hand-1","cwd":"/home/owner/projects/demo"}' | hook; echo "exit $?"   # exit 0, nothing printed
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"by-hand-1","prompt_id":"p1"}' | hook
 reader=$(node -p "require('<runtime dir>/data/config/part-tokens.json').reader")
-curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, its project demo
+curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, its project demo, active in turn p1
 curl -s -X POST -H 'content-type: application/json' -d '{"holdMs":8000}' "<harness endpoint>api/harness/v1/restart" &   # the runtime stops for 8 s
 sleep 2; curl -s "<origin>/api/runtime/v1/health" || echo "the runtime is stopped"
-time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1"}' | hook); echo "exit $?"   # exit 0 at once, nothing printed
-wait
+time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook); echo "exit $?"   # exit 0 at once, nothing printed
+wait   # the restarted runtime: the Stop above was lost, so by-hand-1 is still active
+echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook
+curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # by-hand-1 idle, with its turn-ended notice
 npm run -s verify:runtime -- stop <run-id>
 ```
 

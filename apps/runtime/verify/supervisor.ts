@@ -443,13 +443,29 @@ const answer = (response: ServerResponse, status: number, body: object): void =>
 };
 const refusal = (code: string, detail: string): object => ({error: {code, detail}});
 
+/** A request body the harness refuses with 400: over 4 KiB, or not JSON. */
+class BodyRefusal extends Error {}
+
 async function body(request: IncomingMessage): Promise<unknown> {
   let text = '';
   for await (const chunk of request) {
     text += String(chunk);
-    if (text.length > 4096) throw new Error('the body is too large');
+    if (text.length > 4096) throw new BodyRefusal('the body is over 4096 bytes');
   }
-  return text === '' ? {} : JSON.parse(text);
+  if (text === '') return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new BodyRefusal('the body is not JSON');
+  }
+}
+
+/** How long a restart request holds the runtime stopped: 0 without `holdMs`, or undefined for any other field or value. */
+function holdOf(value: unknown): number | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const {holdMs = 0, ...rest} = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0 || typeof holdMs !== 'number' || !Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > MAX_HOLD_MS) return undefined;
+  return holdMs;
 }
 
 /** The actions the harness accepts for each device: every action a `SimulateRequest` names, as `Unlisted` checks. */
@@ -578,7 +594,8 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       return answer(response, 200, {status: 'applied'});
     case 'POST /disconnect': {
       if (!fixtures) return answer(response, 409, refusal('invalid-state', 'this run has no fixture modules'));
-      const {source} = await body(request) as Partial<DisconnectRequest>;
+      const asked = await body(request);
+      const source = asked !== null && typeof asked === 'object' ? (asked as Partial<DisconnectRequest>).source : undefined;
       if (typeof source !== 'string' || !PART_SOURCE.test(source)) {
         return answer(response, 400, refusal('invalid-request', 'only a part\'s stream, bunny/parts/<role>, can be dropped'));
       }
@@ -586,9 +603,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       return answer(response, 200, {status: 'applied'});
     }
     case 'POST /restart': {
-      const {holdMs = 0} = await body(request) as {holdMs?: unknown};
-      if (typeof holdMs !== 'number' || !Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > MAX_HOLD_MS) {
-        return answer(response, 400, refusal('invalid-request', `holdMs is a whole number of milliseconds from 0 to ${MAX_HOLD_MS}`));
+      const holdMs = holdOf(await body(request));
+      if (holdMs === undefined) {
+        return answer(response, 400, refusal('invalid-request', `a restart takes only holdMs, a whole number of milliseconds from 0 to ${MAX_HOLD_MS}`));
       }
       await restart(holdMs);
       return answer(response, 200, {status: 'restarted', generation});
@@ -599,7 +616,10 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 }
 
 const server = createServer((request, response) => {
-  handle(request, response).catch((error: unknown) => { answer(response, 500, refusal('internal', error instanceof Error ? error.message : 'failed')); });
+  handle(request, response).catch((error: unknown) => {
+    if (error instanceof BodyRefusal) answer(response, 400, refusal('invalid-request', error.message));
+    else answer(response, 500, refusal('internal', error instanceof Error ? error.message : 'failed'));
+  });
 });
 
 async function shutdown(code: number): Promise<void> {

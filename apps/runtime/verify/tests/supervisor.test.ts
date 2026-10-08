@@ -34,8 +34,10 @@ const follow = async (run: Started, query: string): Promise<{status: number; bod
   const response = await fetch(new URL(`${HARNESS_PATH}/follow?${query}`, run.harness));
   return {status: response.status, body: await response.json() as Followed};
 };
-const post = (run: Started, route: string, body: object = {}): Promise<Response> =>
-  fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+const post = (run: Started, route: string, body: unknown = {}): Promise<Response> =>
+  fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: typeof body === 'string' ? body : JSON.stringify(body)});
+/** The registry code of a refusal's body. */
+const codeOf = async (response: Response): Promise<unknown> => (await response.json() as {error?: {code?: unknown}}).error?.code;
 
 /**
  * Switches lamp-1 on as the run's operator, through the core's dispatcher on the gateway's action route (Hub #782), and
@@ -163,6 +165,19 @@ void test('the harness refuses a simulation it does not know with 400, and the P
     {device: 'codex-desktop', action: 'list'}, {device: 'codex-desktop', action: 'list', sessions: ['two words']}, {device: 'pixoo', action: 'online', sessions: []}]) {
     assert.equal((await post(run, 'simulate', body)).status, 400, JSON.stringify(body));
   }
+  // The simulated Codex Desktop marker lists at most 64 threads.
+  const threads = (count: number): string[] => Array.from({length: count}, (_, index) => `thread-${index}`);
+  assert.equal((await post(run, 'simulate', {device: 'codex-desktop', action: 'list', sessions: threads(65)})).status, 400, '65 threads');
+  assert.equal((await post(run, 'simulate', {device: 'codex-desktop', action: 'list', sessions: threads(64)})).status, 200, '64 threads');
+  assert.equal((await state(run)).devices.codexDesktop.unread?.length, 64);
+  // A restart takes only `holdMs`, a whole number of milliseconds up to 10 s. Anything else is refused with a registry
+  // body, as a simulation is, and restarts nothing.
+  for (const body of [null, [], 7, {holdMs: -1}, {holdMs: 1.5}, {holdMs: 10_001}, {holdMs: '5'}, {holdMs: null}, {hold: 5}, {holdMs: 5, extra: true}, '{"holdMs":']) {
+    const refused = await post(run, 'restart', body);
+    assert.deepEqual([refused.status, await codeOf(refused)], [400, 'invalid-request'], JSON.stringify(body));
+  }
+  assert.equal((await post(run, 'simulate', 'not JSON')).status, 400, 'a simulation that is not JSON');
+  assert.equal((await state(run)).generation, 1, 'a refused restart restarts nothing');
   assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');
   // The operator sets the Pixoo's brightness on the action route, as a person would (#782); the simulated panel shows it.
   assert.equal(await act(run, 'req-pixoo-30', {key: 'bunny.cmd.brightness-set.pixoo-1', draft: {
