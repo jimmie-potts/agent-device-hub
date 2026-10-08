@@ -42,7 +42,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/presentation` | Monitor presentation over `session/2.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` and the pixel font |
 | `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
-| `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration and the library migration |
+| `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration, its store on a full database and the library migration |
 
 ## The module
 
@@ -92,7 +92,9 @@ The module keeps only state it owns, in its SQLite file and its private folder:
   hosted profile's GIF, by rendition and profile;
 - the SDK's outbox.
 
-Each statement the module's store runs is prepared once.
+Each statement the module's store runs is prepared once. A settings save that
+cannot commit, as on a full disk, throws SQLite's own error and leaves the saved
+settings and the configuration revision as they were.
 
 Its copies of the core's `session/2.0` records and of the `playback/2.0` record
 come from sync and are never stored. A copy that has not synced is tried again
