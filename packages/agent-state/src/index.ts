@@ -322,7 +322,7 @@ export async function createAgentState(options:Options) {
       return queue(async()=>{
         const old=get(selected);
         if(!old||old.parent.status==='known'||observedAtMs<(old.metadataObservedAtMs??0))return {ok:true,revision:data.revision,outcome:'stale'};
-        if(old.title?.value===value.value&&old.title.source===value.source)return {ok:true,revision:data.revision,outcome:'duplicate'};
+        if(old.title?.value===value.value&&old.title.source===value.source&&old.metadataObservedAtMs===observedAtMs)return {ok:true,revision:data.revision,outcome:'duplicate'};
         const next=structuredClone(old);next.title=value;next.metadataObservedAtMs=observedAtMs;
         return commit(next,undefined);
       });

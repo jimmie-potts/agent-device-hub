@@ -73,3 +73,29 @@ test('Desktop metadata title preserves lifecycle evidence, labels and restart un
   assert.equal(validateExport(await owner.exportState()).ok,true,'title commits keep the current durable schema');
  }finally{await owner.shutdown();}
 });
+
+
+test('newer same-title metadata persists its watermark and refuses older titles without refreshing evidence',async()=>{
+ const storage=new MemoryStorage();let owner=await createAgentState(options(storage));
+ await owner.ingest(event(100,'A'));await owner.setLabel(identity,'Owner label');await owner.shutdown();
+ owner=await createAgentState(options(storage));
+ try{
+  const before=owner.snapshot('1.2').sessions[0];
+  const confirmed=await owner.setTitle(identity,{value:'A',source:'provider'},200);
+  assert.equal(confirmed.outcome,'applied');
+  const after=owner.snapshot('1.2').sessions[0];
+  for(const field of ['title','label','labelOrigin','project','activity','turn','read','ordering','notices','lastEvidenceAtMs','observedAtMs','restartUncertain','freshness','observationAgeMs'])assert.deepEqual(after[field],before[field],field);
+  assert.equal((await owner.setTitle(identity,{value:'B',source:'provider'},150)).outcome,'stale');
+  assert.deepEqual(await owner.setTitle(identity,{value:'A',source:'provider'},200),{ok:true,revision:confirmed.revision,outcome:'duplicate'});
+  assert.equal(owner.snapshot('1.2').sessions[0].title.value,'A');
+  const saved=await owner.exportState();assert.equal(validateExport(saved).ok,true);
+  assert.equal(saved.sessions[0].metadataObservedAtMs,200);
+ }finally{await owner.shutdown();}
+ owner=await createAgentState(options(storage));
+ try{
+  assert.equal((await owner.setTitle(identity,{value:'B',source:'provider'},150)).outcome,'stale');
+  await owner.ingest(event(150,'Hook B'));
+  assert.equal(owner.snapshot('1.2').sessions[0].title.value,'A','the watermark also excludes older lifecycle-carried titles');
+  assert.equal((await owner.exportState()).sessions[0].metadataObservedAtMs,200,'the watermark survives reopening storage');
+ }finally{await owner.shutdown();}
+});
