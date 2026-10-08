@@ -161,3 +161,8 @@ source follows the runtime's [strict profile](../../../docs/development.md#stric
 tests included; `src/` type-checks for the browser and `tests/` for Node, which
 runs the tests' TypeScript as it is. See
 [Runtime dashboard checks](../../../docs/development.md#runtime-dashboard-checks).
+
+The focused label/reload journey runs with
+`node apps/runtime/dashboard/tests/session-label.browser.ts` after a build.
+It shares its label assertions with the full `browser.ts` suite and checks
+conflict drafts, explicit retry, Clear, keyboard focus and desktop/phone axe.

@@ -13,9 +13,9 @@
 
 ## 3. Dashboard and catalog
 
-- [ ] 3.1 Add session-row label/clear controls and command/record evidence; verify keyboard use, drafts, conflicts, stale state, no-op confirmation and no resend in dashboard unit tests.
+- [x] 3.1 Add session-row label/clear controls and command/record evidence; verify keyboard use, drafts, conflicts, stale state, no-op confirmation and no resend in dashboard unit tests.
 - [x] 3.2 Add the catalog label/clear scenario and verify it over both in-process and remote transports in the assigned host slot.
-- [ ] 3.3 Verify row submission, synced label, clear, reload and accessibility in the browser suite; provide disposable tier 2 instructions for the independent Acceptance reviewer.
+- [x] 3.3 Verify row submission, synced label, clear, reload and accessibility in the browser suite; provide disposable tier 2 instructions for the independent Acceptance reviewer.
 
 ## 4. Delivery validation
 

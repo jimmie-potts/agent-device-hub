@@ -18,13 +18,17 @@ export function LabelEditor({row, live}: {row: SessionRow; live: boolean}): Reac
   const [answer, setAnswer] = useState<ActionReply>();
   const trigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const returnFocus = useRef(false);
   const alive = useRef(true);
   const id = useId();
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
+  useEffect(() => {
+    if (editing) input.current?.focus();
+    else if (returnFocus.current) { returnFocus.current = false; trigger.current?.focus(); }
+  }, [editing]);
   const pending = attempt !== undefined && answer === undefined;
   const evidence = attempt === undefined ? undefined : labelEvidence(attempt, row, live, answer);
-  const close = (): void => { setEditing(false); trigger.current?.focus(); };
+  const close = (): void => { returnFocus.current = true; setEditing(false); };
   const open = (): void => {
     setDraft(row.label?.value ?? ''); setRevision(row.revision); setAttempt(undefined); setAnswer(undefined); setEditing(true);
   };
