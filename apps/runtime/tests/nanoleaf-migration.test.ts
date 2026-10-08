@@ -121,6 +121,16 @@ it('migrates and verifies, each with one JSON line of counts and hashes and exit
   assert.deepEqual(section.secrets, {'wall-token': join(p.secrets, 'nanoleaf-wall-token'), 'panels-token': join(p.secrets, 'nanoleaf-panels-token')});
 });
 
+it('a second migration of one source into other folders gives the same line', async context => {
+  const p = await paths(context);
+  const first = await tool(args('migrate', p));
+  const q = {...p, state: join(p.root, 'state-2'), secrets: join(p.root, 'secrets-2'), section: join(p.root, 'out-2', 'section.json')};
+  const second = await tool(args('migrate', q));
+  assert.equal(second.exit, EXIT.ok);
+  // The configuration digest names each secret by its file's name, so it does not follow the secrets directory.
+  assert.equal(second.text, first.text);
+});
+
 it('keeps every token, address, path and name out of its lines, the section and the module\'s store', async context => {
   const p = await paths(context);
   const lines = [await tool(args('migrate', p)), await tool(args('verify', p)), await tool(args('migrate', p))].map(result => result.text);
@@ -230,7 +240,7 @@ it('refuses a destination that already has files, and a verify with nothing to v
 it('refuses a source it cannot carry, naming the code, and writes nothing', async context => {
   const empty = await paths(context);
   const {exit, line} = await tool(['migrate', '--source', empty.root, ...args('migrate', empty).slice(3)]);
-  assert.deepEqual([exit, line.code, line.message], [EXIT.refused, 'source-missing', 'The source directory holds no status.sqlite or no config.json.']);
+  assert.deepEqual([exit, line.code, line.message], [EXIT.refused, 'source-missing', 'The source directory, its status.sqlite or its config.json is missing.']);
   assert.ok(await nothingCreated(empty), 'a source refusal creates no folder and takes no lease');
   const unconfigured = await paths(context, false);
   const refused = await tool(args('migrate', unconfigured));

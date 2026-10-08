@@ -755,7 +755,35 @@ with the source. It reads each secret through the runtime's own secret reader.
 Both operations hold the runtime's lease and write one JSON line to stdout,
 `{"schema": "nanoleaf-migration/1.0", "operation", "result", ...}`, with counts,
 codes and SHA-256 digests only: never a token, an address, a path, a name or a
-file's content.
+file's content. Its fields:
+
+- `counts`: what the source holds for the registered devices. `devices`;
+  `projects`; `palette` (the colors chosen); `elements` (each element's project
+  and halves); `mapSettings`; `pendingEdits`; `favorites`; `deviceState` (the
+  carried `meta` values: each device's mode, its two revisions and its native
+  overrides); `layouts` and `scenes` (files' entries); `qualifiedSources`;
+  `codexMetadata` (0 or 1); `secrets`.
+- `leftInBackup`: what stays only in the backup. `sessions`; `taskRows` (task
+  details, activity, waits, receipts and the shared-input task tables);
+  `reservations`; `comets`; `locates`; `displayCaches`; `controllerLedger`
+  (every device's); `integrationRequests`; `legacyBackup` (1 when the
+  shared-input row holds the legacy task backup); `bindings`; `otherMeta`
+  (the `meta` values that start fresh: epochs, receipts, caches, holds,
+  failures); `unregistered` (the rows, `meta` values, layout entries and scene
+  files of devices the registry no longer names).
+- `mismatches` (`verify`): `database` (the file is missing, not private,
+  unclean, not the module's schema or fails SQLite's check); one count per
+  carried kind, `projects` to `deviceState`, for each row missing, extra or
+  different by its key; `startFresh` (a row in any table that is not carried, a
+  `meta` value that is neither carried nor the schema's, or a `shared_input`
+  row other than the fresh one); `layout` and `scenes`; `unexpected` (anything
+  else in the module's folder, or a folder that is not private);
+  `configuration` (each section member, and each device, that differs);
+  `secrets`; and `total`.
+- `digest`: SHA-256 over the carried rows (`store`), the written files
+  (`files`) and the section (`configuration`), with each secret named by its
+  file's name, so two migrations of one source into other folders give the
+  same line.
 
 | Exit | `result` | Meaning |
 | --- | --- | --- |
@@ -765,6 +793,11 @@ file's content.
 | 3 | `refused` | Refused before writing any of the module's data, secrets or section; a refusal before the lease creates nothing. `code` and `message` say why |
 | 4 | `failed` | `migrate` stopped after it began to write, on a failure or a signal; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
 
+A signal that arrives before the tool installs its handler, in its first few
+hundred milliseconds and before it creates anything, or after it has written
+its line, ends the process by that signal, with no line. Any exit but 0 is a
+no-go.
+
 | Code | Refusal or failure |
 | --- | --- |
 | `runtime-running` | A runtime, or another tool, holds the state directory's lease |
@@ -773,14 +806,14 @@ file's content.
 | `destination-missing` | `verify` found no module database |
 | `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
 | `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
-| `source-missing` | The source directory holds no `status.sqlite` or no `config.json` |
+| `source-missing` | The source directory, its `status.sqlite` or its `config.json` is missing |
 | `source-in-use` | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
 | `source-not-clean` | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
 | `source-schema` | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
 | `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
 | `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
 | `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
-| `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows |
+| `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
 | `disk-short` | The disk filled while `migrate` wrote, its final checkpoint included |
 | `destination-not-clean` | A log or journal with content was left beside the module's database after `migrate` closed it |
 | `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |

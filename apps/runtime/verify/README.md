@@ -301,7 +301,7 @@ node $tool verify --source $data/nanoleaf-bridge --state-dir $data/state --secre
 mkdir -p ~/.cache/agent-device-hub && t=$(mktemp -d ~/.cache/agent-device-hub/nl-XXXX)        # a private folder outside every checkout
 to() { echo --source $data/nanoleaf-bridge --state-dir $t/$1 --secrets-dir $t/$1-secrets --section $t/$1-out/section.json; }
 node $tool migrate $(to a); echo $?      # migrated, 0: the run's digests
-node $tool migrate $(to b); echo $?      # the same line again
+node $tool migrate $(to b); echo $?      # the same line again: the digests name each secret by its file's name
 node $tool migrate $(to a); echo $?      # destination-not-empty, 3
 node $tool verify $(to a); echo $?       # verified, 0
 printf x >> $t/a-secrets/nanoleaf-wall-token

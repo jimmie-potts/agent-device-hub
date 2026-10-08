@@ -21,7 +21,7 @@ export type MigrationCode =
   | 'source-not-configured';
 
 const TEXT: Readonly<Record<MigrationCode, string>> = {
-  'source-missing': 'The source directory holds no status.sqlite or no config.json.',
+  'source-missing': 'The source directory, its status.sqlite or its config.json is missing.',
   'source-in-use': 'A Nanoleaf bridge process holds the source state: stop the bridge, its workers and the wall server first.',
   'source-not-clean': 'The source status.sqlite was not closed cleanly: it has a journal to roll back.',
   'source-schema': 'The source status.sqlite is not the installed bridge\'s model version 4, or a table the migration reads lacks a column.',

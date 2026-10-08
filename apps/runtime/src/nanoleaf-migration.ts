@@ -13,7 +13,7 @@
 // SHA-256 digests only, never a token, an address, a path or a name, and exits with one of `EXIT`.
 import {timingSafeEqual} from 'node:crypto';
 import {lstat, readdir, rm} from 'node:fs/promises';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {parseArgs} from 'node:util';
 import {
@@ -164,8 +164,17 @@ async function outputDirectory(path: string, code: string, check: (dir: string) 
 
 /** The section's text: the conversion's section as JSON, which the installer puts under `modules.nanoleaf`. */
 const sectionText = (section: NanoleafSection): string => `${JSON.stringify(section, null, 2)}\n`;
-/** The configuration digest: the section's canonical JSON, which holds the secrets' paths and never a token. */
-const configurationDigest = (section: unknown): string => sha256(dumps(section));
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The configuration digest: the section's canonical JSON, with each secret named by its file's name rather than its
+ * path, so two migrations of one source into other folders give the same digest. It never holds a token.
+ */
+const configurationDigest = (section: unknown): string => {
+  if (!isRecord(section) || !isRecord(section.secrets)) return sha256(dumps(section));
+  const secrets = Object.fromEntries(Object.entries(section.secrets).map(([name, path]) => [name, typeof path === 'string' ? basename(path) : path]));
+  return sha256(dumps({...section, secrets}));
+};
 
 /**
  * Runs `migrate` or `verify` as `argv` says, writing one JSON line through `options.write`, and returns the exit code.
@@ -326,8 +335,6 @@ async function readSection(path: string): Promise<unknown> {
     return undefined;
   }
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** How many of the section's members differ from the conversion's, each device counted on its own by ID. */
 function sectionDifferences(expected: NanoleafSection, actual: unknown): number {
