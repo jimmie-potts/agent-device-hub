@@ -60,7 +60,8 @@ void test('build-current watches every source the run loads, and the served cand
   const entryPoints = ['apps/runtime/src/main.ts', 'apps/runtime/verify/supervisor.ts', 'apps/runtime/verify/child.ts', 'apps/runtime/verify/plugin.ts'];
   // The shipped list loads the module registry that the build writes from the module folders (Hub #999); only its typing is a source.
   const registry = {name: 'registry', setup: (bundler: PluginBuild): void => {
-    bundler.onResolve({filter: /^\.\/registry\.js$/}, () => ({path: join(root, 'apps/runtime/dist/src/registry.js')}));
+    bundler.onResolve({filter: /^\.\/registry\.js$/}, args => args.importer === join(root, 'apps/runtime/src/modules.ts')
+      ? {path: join(root, 'apps/runtime/dist/src/registry.js')} : undefined);
   }};
   const bundled = await build({
     absWorkingDir: root, entryPoints, bundle: true, platform: 'node', format: 'esm', target: 'es2022', outdir: 'unused', write: false,
