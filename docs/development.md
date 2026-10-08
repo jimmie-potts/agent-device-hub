@@ -958,6 +958,14 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 isolation and the event-loop lag check. It follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 
+For the module frontend contract (Hub #932), the existing SDK manifest/kit
+checks and runtime `gateway.test.ts` cover API 1.3 declarations, trusted asset
+authentication and response policy, passive-page compatibility, read-only
+command refusal and reads without device effects. After the root build, run
+`node --test apps/runtime/dist/tests/gateway.test.js` for the gateway boundary.
+These tests are already discovered by the core CI SDK/runtime commands below;
+they do not replace the browser interaction or disposable Acceptance checks.
+
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
 `test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The core

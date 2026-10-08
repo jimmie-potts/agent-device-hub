@@ -1,7 +1,7 @@
 ## 1. Define the shared contract
 
-- [ ] 1.1 Add module API 1.3 page presentations and finite trusted asset declarations; use focused red/green SDK and module-kit checks for valid shapes, retained passive behavior and refusals.
-- [ ] 1.2 Add authenticated presentation/asset handling to the gateway and update its consumer contract; verify declared assets, passive/trusted policies, read-only refusal, safe errors and no effects from reads in focused gateway checks.
+- [x] 1.1 Add module API 1.3 page presentations and finite trusted asset declarations; use focused red/green SDK and module-kit checks for valid shapes, retained passive behavior and refusals.
+- [x] 1.2 Add authenticated presentation/asset handling to the gateway and update its consumer contract; verify declared assets, passive/trusted policies, read-only refusal, safe errors and no effects from reads in focused gateway checks.
 - [ ] 1.3 Record the accepted frontend ownership and interfaces in architecture, SDK/runtime guides and development checks; inspect their agreement with these deltas and the existing build/CI commands before consumer implementation.
 
 ## 2. Integrate browser contributions

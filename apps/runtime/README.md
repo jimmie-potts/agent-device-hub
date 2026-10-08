@@ -611,24 +611,43 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as an operator checks a producer's credential with its token (#926). |
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
 | `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family whose schema the runtime does not know `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, such as 503 `unavailable` for a known family that no running module answers, which is tracked and recorded failed, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
-| `GET /modules/<name>/<page>` | `read` | A module's page (module API 1.2): its HTML in a document whose policy allows no script, frame, form or base, and only images and styles from the runtime itself. |
+| `GET /modules/<name>/<page>` | `read` | A declared page. Passive HTML keeps its restrictive policy. API 1.3 React pages redirect to their shared-shell route; trusted editors load their declared bundles under the policy below. |
 | `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference, such as the preview its page shows: an image, plain text or JSON of at most 16 MiB. |
+| `GET /modules/<name>/assets/<asset>` | `read` | A finite declared API 1.3 build asset: JavaScript, CSS or a supported static image, at most 16 MiB. No caller-selected path or user upload becomes an executable asset. |
 | `GET /`, `/dashboard.js`, `/dashboard.css` | none | The [dashboard](dashboard/README.md) (#922), the old Hub's paths, built into `dist/dashboard/`. It holds no secret and loads without a session, so the page can sign in: from this origin's own pages, a bookmark or the launcher, and `/` also from a link on another local app's page with the same host name, a same-site top-level navigation to a document (Hub #561). Another site's `Origin` or fetch metadata, a frame or fetch from another local app, and any of them for the assets are `forbidden`; another method `not-found`, a query `invalid-request`, and a runtime whose dashboard is not built answers `not-found`. Each answer refuses framing, sends `Cross-Origin-Opener-Policy: same-origin`, and a policy that runs only the page's own script and style and connects only to this origin. |
 | `/mcp` | client credentials | [MCP](#mcp). |
 | `/api/sdk/v1/*` | per call | The SDK edge, above. |
 
-A module's pages, content, settings and tools are every reader's. A module is
+A module's pages, assets, content, settings and tools are every reader's. A module is
 called only while it runs (otherwise `unavailable`), within 5 s (otherwise
 `unavailable`). A contribution that throws
 fails its module, as a handler that throws does, and answers `internal`. A page,
-settings, content of any type, image bytes included, or tool answer that holds
+settings, content or asset of any type, image bytes included, or tool answer that holds
 a secret a module read is never served: `internal`. A tool's refusal is checked too, its detail
 included.
 
-The `/api/v2` documents have no published JSON schemas yet; #922, their first
-consumer, adds them to the contracts package, and shows a family read's
-`unavailable` owners, such as a device module that is down, as such rather than
-as devices that do not exist.
+The authenticated module catalog gives every page its `id`, `title`, exact
+same-origin `path` and `presentation`: `passive`, `react` or `trusted-editor`.
+New feature UI source belongs to its module and is compiled into the shared
+React shell, which owns navigation, common UI/style, connection handling and
+authenticated API access. Its browser entry never imports the Node module
+registration. A component URL redirects to `/#/module/<name>/<page>` only while
+the module runs; the shell also requires a matching built component.
+
+Reviewed existing editors may use declared bundles. The gateway wraps their
+markup with declared module scripts and styles. Their policy allows same-origin
+scripts, styles, images and authenticated reads, plus inline styles for existing
+renderers; it forbids external scripts, eval, inline script handlers, forms,
+base URLs and nested frames. Only the shared origin may frame a module page.
+Such a scripted frame is trusted application code, not an untrusted extension
+sandbox. Passive pages still cannot run scripts. Assets require authentication,
+have `no-store` and `nosniff`, and resolve only by declared identity. Uploaded
+media stays on the separate non-executable content route. Reads run no commands;
+every edit still needs the command boundary's control permission and tracking.
+
+The `/api/v2` documents have no published JSON schemas yet. The dashboard
+validates the catalog and shows a family read's `unavailable` owners, such as a
+device module that is down, rather than treating their devices as absent.
 
 A module counts as a family's owner only once it has served the family. This is
 a known limit: a module that never served, refused at admission or failed in its

@@ -31,12 +31,13 @@ const token = (): string => `${MARKER}_${randomBytes(24).toString('base64url')}`
 type Answer = {status: number; headers: Headers; text: string; body: unknown};
 
 /** One HTTP call to the runtime's listener. */
-async function call(url: string, path: string, init: {method?: string; token?: string; headers?: Record<string, string>; body?: unknown} = {}): Promise<Answer> {
+async function call(url: string, path: string, init: {method?: string; token?: string; headers?: Record<string, string>; body?: unknown; redirect?: RequestRedirect} = {}): Promise<Answer> {
   const headers: Record<string, string> = {...init.headers};
   if (init.token !== undefined) headers.authorization = `Bearer ${init.token}`;
   if (init.body !== undefined) headers['content-type'] ??= 'application/json';
   const response = await fetch(new URL(path, url), {
-    method: init.method ?? 'GET', headers, ...(init.body === undefined ? {} : {body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body)}),
+    method: init.method ?? 'GET', headers, ...(init.redirect === undefined ? {} : {redirect: init.redirect}),
+    ...(init.body === undefined ? {} : {body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body)}),
   });
   const text = await response.text();
   let body: unknown;
@@ -94,6 +95,93 @@ function assertNoToken(g: Gateway): void {
 const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read']});
 const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
+
+it('trusted frontend pages and assets require read authority and cause no device change', async context => {
+  const reader = READER();
+  const transport = new SimulatedSigns({online: true});
+  const sign = createSignModule({transport});
+  let renders = 0;
+  let assetReads = 0;
+  const script = 'document.querySelector("#editor").textContent = "Ready";';
+  const module: BunnyModule = {...sign, manifest: {...sign.manifest, apiVersion: '1.3', pages: [
+    ...(sign.manifest.pages ?? []),
+    {id: 'library', title: 'Library', presentation: 'react'},
+    {id: 'editor', title: 'Editor', presentation: 'trusted-editor', scripts: ['editor.js'], styles: ['editor.css'],
+      render: () => { renders += 1; return '<div id="editor">Loading</div>'; }},
+  ], assets: [
+    {id: 'editor.js', type: 'text/javascript; charset=utf-8', read: () => { assetReads += 1; return Buffer.from(script); }},
+    {id: 'editor.css', type: 'text/css; charset=utf-8', read: () => Buffer.from('#editor { color: green; }')},
+  ]}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), module], browserAccess: 'trusted-loopback'});
+  await waitFor(() => transport.state().attempts === 1, 5000, 'the fixture finished its initial render');
+  const before = transport.state();
+  const pagePath = '/modules/sign/editor';
+  const assetPath = '/modules/sign/assets/editor.js';
+  for (const path of [pagePath, assetPath]) {
+    assert.equal((await g.ask(g.url, path)).status, 401, 'anonymous callers cannot load the editor');
+    assert.equal((await g.ask(g.url, path, {token: reader.token, headers: {origin: 'http://other.invalid'}})).status, 403);
+  }
+  assert.deepEqual([renders, assetReads], [0, 0], 'admission precedes the contribution');
+  const catalog = await g.ask(g.url, '/api/v2/modules', {token: reader.token});
+  const pages = (catalog.body as {modules: {name: string; pages: {id: string; presentation: string}[]}[]}).modules.find(item => item.name === 'sign')?.pages;
+  assert.deepEqual(pages?.map(page => [page.id, page.presentation]), [['preview', 'passive'], ['library', 'react'], ['editor', 'trusted-editor']]);
+  const component = await g.ask(g.url, '/modules/sign/library', {token: reader.token, redirect: 'manual'});
+  assert.equal(component.status, 303);
+  assert.equal(component.headers.get('location'), '/#/module/sign/library');
+  assert.equal(renders, 0, 'a component URL invokes no renderer');
+  const editor = await g.ask(g.url, pagePath, {token: reader.token});
+  assert.equal(editor.status, 200);
+  assert.ok(editor.text.includes('<script type="module" src="/modules/sign/assets/editor.js"></script>'));
+  assert.ok(editor.text.includes('<link rel="stylesheet" href="/modules/sign/assets/editor.css">'));
+  assert.equal(editor.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const policy = editor.headers.get('content-security-policy') ?? '';
+  for (const directive of ["default-src 'none'", "script-src 'self'", "connect-src 'self'", "frame-ancestors 'self'", "form-action 'none'", "base-uri 'none'"]) {
+    assert.ok(policy.includes(directive), directive);
+  }
+  assert.equal(policy.includes('unsafe-eval'), false);
+  const passive = await g.ask(g.url, '/modules/sign/preview', {token: reader.token});
+  assert.equal((passive.headers.get('content-security-policy') ?? '').includes('script-src'), false, 'passive scripts still inherit default-src none');
+  const asset = await g.ask(g.url, assetPath, {token: reader.token});
+  assert.equal(asset.status, 200);
+  assert.equal(asset.text, script);
+  assert.equal(asset.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.equal(asset.headers.get('cache-control'), 'no-store');
+  assert.equal(asset.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal((await g.ask(g.url, '/modules/sign/assets/other.js', {token: reader.token})).status, 404);
+  const edit = await g.ask(g.url, '/api/v2/commands/sign-show', {token: reader.token, method: 'POST', body: {}});
+  assert.deepEqual([edit.status, codeOf(edit)], [403, 'forbidden'], 'reading executable assets grants no control');
+  const signed = await g.ask(g.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: g.url, 'bunny-request': '1'}});
+  const cookie = (signed.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  assert.equal((await g.ask(g.url, assetPath, {headers: {cookie, 'sec-fetch-site': 'same-origin'}})).status, 200);
+  await g.ask(g.url, '/api/v2/browser/logout', {method: 'POST', body: {}, headers: {cookie, origin: g.url, 'bunny-request': '1'}});
+  assert.equal((await g.ask(g.url, assetPath, {headers: {cookie}})).status, 401, 'ended sessions cannot keep reading the bundle');
+  assert.deepEqual(transport.state(), before, 'page, asset and catalog reads never command a device');
+  assertNoToken(g);
+});
+
+it('trusted assets keep secret, size, reader failure and running-module boundaries', async context => {
+  const reader = READER();
+  const sign = createSignModule({transport: new SimulatedSigns({online: true})});
+  const module: BunnyModule = {...sign, manifest: {...sign.manifest, apiVersion: '1.3', pages: [
+    {id: 'library', title: 'Library', presentation: 'react'},
+  ], assets: [
+    {id: 'secret.js', type: 'text/javascript; charset=utf-8', read: () => Buffer.from(SYNTHETIC_TOKEN)},
+    {id: 'wrong.js', type: 'text/javascript; charset=utf-8', read: () => 'not bytes' as unknown as Uint8Array},
+    {id: 'large.css', type: 'text/css; charset=utf-8', read: () => Buffer.alloc(16 * 1024 * 1024 + 1)},
+    {id: 'throw.js', type: 'text/javascript; charset=utf-8', read: () => { throw new Error('private editor path'); }},
+  ]}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), module]});
+  for (const id of ['secret.js', 'wrong.js', 'large.css', 'throw.js']) {
+    const answer = await g.ask(g.url, `/modules/sign/assets/${id}`, {token: reader.token});
+    assert.deepEqual([answer.status, codeOf(answer)], [500, 'internal'], id);
+    assert.equal(answer.text.includes('private editor path'), false);
+  }
+  for (const path of ['/modules/sign/assets/secret.js', '/modules/sign/library']) {
+    const answer = await g.ask(g.url, path, {token: reader.token, redirect: 'manual'});
+    assert.deepEqual([answer.status, codeOf(answer)], [503, 'unavailable'], 'a failed module has no active frontend');
+  }
+  assertNoToken(g);
+});
 
 it('every refusal is the shared error body with a registry code: a malformed request, a made-up token, a scope or key outside the grant', async context => {
   const reader = READER(), operator = OPERATOR(), hook = HOOK();
@@ -593,7 +681,7 @@ it('no grant limits a reader to some devices: it reads every device\'s records a
   const links = await call(url, '/api/v2/links', {token: reader.token});
   assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'});
   const listed = ((await call(url, '/api/v2/modules', {token: reader.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
-  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status', presentation: 'passive'}], tools: ['gadget_list'], settings: true});
   for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
     assert.equal((await call(url, path, {token: reader.token})).status, 200, path);
   }

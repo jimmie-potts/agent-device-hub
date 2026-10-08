@@ -417,7 +417,7 @@ export const sign: BunnyModule<SignConfig> = {
   SQLite file, its private folder, its section of the runtime's configuration
   file and its log records. `apiVersion` is the module API version the module
   was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current one,
-  `1.2`. The runtime refuses a module with another major version or a newer
+  `1.3`. The runtime refuses a module with another major version or a newer
   minor one. Write the version as a literal, so a later major version refuses
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
@@ -450,8 +450,10 @@ export const sign: BunnyModule<SignConfig> = {
     serves `render()`'s HTML at `/modules/<name>/<id>`, in a document whose
     policy allows no script, frame, form or base, to a browser session or a
     credential with `read`. An ID is lowercase letters and digits with single
-    hyphens, at most 64 characters, distinct, and never `content`
-    (`CONTENT_PATH`).
+    hyphens, at most 64 characters, distinct, and never `content` or `assets`
+    (`CONTENT_PATH` and `ASSETS_PATH`). Omitted `presentation` means passive
+    HTML; `presentation: 'passive'` is equivalent. API 1.3 adds the two
+    interactive shapes below.
   - `content(ref)`: content by reference, `{type, bytes}` or undefined, served
     at `/modules/<name>/content/<ref>`, such as the preview a page shows with
     `<img src="content/preview.png">`. The gateway serves images, plain text and
@@ -477,6 +479,36 @@ export const sign: BunnyModule<SignConfig> = {
   settings or tool answer that holds a secret the module read is never served.
   `checkContributions(manifest)`, within `checkManifest`, returns the runtime's
   own reason for refusing them.
+- **Trusted frontends (1.3, Hub #932).** New interfaces use module-owned React
+  and TypeScript compiled into the shared dashboard. Declare a page as
+  `{id, title, presentation: 'react'}`, with no `render`, `scripts` or `styles`.
+  The shell matches its identity to a shipped browser contribution; the page's
+  direct URL redirects to `/#/module/<name>/<id>` without running a renderer.
+  Backend storage, permissions and device ownership remain independent of React.
+
+  An existing editor may instead declare `{id, title,
+  presentation: 'trusted-editor', render, scripts, styles}`. `render()` supplies
+  markup; the gateway adds module script tags and stylesheet links from the
+  named assets. `scripts` and `styles` are distinct IDs in the manifest's
+  `assets` list, with the corresponding JavaScript or CSS type. No inline script
+  or event handler runs. Same-origin scripted frames are trusted application
+  code, not an isolation boundary for untrusted extensions.
+
+  `assets` holds at most `MAX_ASSETS` (64) declarations, each `{id, type, read}`.
+  An ID starts with a letter or digit and contains only letters, digits, dots,
+  underscores or hyphens, at most 128 characters. The closed type list is
+  `text/javascript; charset=utf-8`, `text/css; charset=utf-8`, `image/png`,
+  `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml`.
+  `read()` returns bytes without effects. Each declared asset is served at
+  `/modules/<name>/assets/<id>`, requires `read`, must fit `MAX_ASSET_BYTES`
+  (16 MiB) and cannot hold a module secret. Asset declarations name reviewed
+  build inputs; user uploads remain non-executable content references. The
+  gateway never resolves a caller's filesystem path. Malformed declarations,
+  mismatched asset references and interactive declarations before API 1.3 are
+  refused before the module starts.
+
+  Page access adds no command permission. Editors use the authenticated tracked
+  command path, and opening or drafting on a page changes no device or library.
 - **`start(context)`** subscribes, responds and opens local resources: its
   database, its private folder and its secrets. A throw, a rejection or a start
   that outlasts the runtime's start deadline fails the module.

@@ -12,7 +12,7 @@ import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {
-  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
+  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
   type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
@@ -80,6 +80,8 @@ const PAGE_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
   'content-security-policy': 'default-src \'none\'; img-src \'self\'; style-src \'self\' \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'; frame-ancestors \'none\'',
 };
+/** Reviewed same-origin application code; passive pages and user content retain PAGE_HEADERS. */
+const EDITOR_POLICY = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
 
 export type GatewayOptions = {
@@ -350,6 +352,11 @@ export class Gateway {
       noQuery();
       return this.#settings(settings);
     }
+    const asset = /^\/modules\/([^/]+)\/assets\/([^/]+)$/.exec(path);
+    if (asset !== null) {
+      noQuery();
+      return this.#asset(asset[1] ?? '', asset[2] ?? '');
+    }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
       noQuery();
@@ -373,7 +380,7 @@ export class Gateway {
     const serves = this.#options.bus.served(sourceOf(name));
     return {
       name, apiVersion: manifest.apiVersion, state, ...(serves.length === 0 ? {} : {serves}),
-      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
+      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`, presentation: page.presentation ?? 'passive'})) : [],
       tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,
     };
@@ -514,15 +521,39 @@ export class Gateway {
   async #page(name: string, id: string): Promise<Answer> {
     const module = this.#module(name);
     const page = (module.manifest.pages ?? []).find(candidate => candidate.id === id);
-    if (page === undefined || id === CONTENT_PATH) throw refuse('not-found', 'no such page');
+    if (page === undefined || id === CONTENT_PATH || id === ASSETS_PATH) throw refuse('not-found', 'no such page');
+    if (page.presentation === 'react') {
+      // Enforce the same running-module boundary without calling feature code.
+      await this.#call(name, () => undefined);
+      return {status: 303, body: '', headers: {...PAGE_HEADERS, location: `/#/module/${name}/${id}`}};
+    }
     const html = await this.#call(name, () => page.render());
     if (typeof html !== 'string') throw refuse('internal', 'the module\'s page is not HTML text');
     if (this.#options.redactions.holds(html)) throw refuse('internal', 'the module\'s page holds a secret, which the gateway never serves');
+    const trusted = page.presentation === 'trusted-editor';
+    const assets = trusted
+      ? page.styles.map(asset => `<link rel="stylesheet" href="/modules/${name}/assets/${asset}">`).join('')
+        + page.scripts.map(asset => `<script type="module" src="/modules/${name}/assets/${asset}"></script>`).join('')
+      : '';
     const document = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
-      + `<title>${escapeHtml(page.title)}</title></head><body>\n${html}\n</body></html>\n`;
+      + `<title>${escapeHtml(page.title)}</title>${assets}</head><body>\n${html}\n</body></html>\n`;
+    if (trusted && Buffer.byteLength(document) > MAX_ASSET_BYTES) throw refuse('internal', 'the module\'s editor page exceeds 16 MiB');
     return {status: 200, body: document, headers: {'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS,
-      'x-frame-options': 'SAMEORIGIN', 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
+      'x-frame-options': 'SAMEORIGIN', 'content-security-policy': trusted ? EDITOR_POLICY : PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
     }};
+  }
+
+  /** A reviewed build asset resolved only from its finite declaration, never a caller's filesystem path. */
+  async #asset(name: string, id: string): Promise<Answer> {
+    const module = this.#module(name);
+    const asset = module.manifest.assets?.find(candidate => candidate.id === id);
+    if (asset === undefined) throw refuse('not-found', 'no such asset');
+    const bytes = await this.#call(name, () => asset.read());
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_ASSET_BYTES) {
+      throw refuse('internal', 'the module\'s asset is not bytes of at most 16 MiB');
+    }
+    if (this.#options.redactions.holdsBytes(bytes)) throw refuse('internal', 'the module\'s asset holds a secret, which the gateway never serves');
+    return {status: 200, body: bytes, headers: {'content-type': asset.type, ...PAGE_HEADERS}};
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
@@ -811,6 +842,7 @@ function templateOf(path: string): string | undefined {
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
   if (/^\/api\/v2\/modules\/[^/]+\/settings$/.test(path)) return '/api/v2/modules/{module}/settings';
   if (/^\/modules\/[^/]+\/content\/[^/]+$/.test(path)) return '/modules/{module}/content/{ref}';
+  if (/^\/modules\/[^/]+\/assets\/[^/]+$/.test(path)) return '/modules/{module}/assets/{asset}';
   if (/^\/modules\/[^/]+\/[^/]+$/.test(path)) return '/modules/{module}/{page}';
   return undefined;
 }
