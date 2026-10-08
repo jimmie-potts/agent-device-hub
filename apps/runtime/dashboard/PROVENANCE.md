@@ -38,7 +38,7 @@ leaves out what other slices and stories bring back.
 | `src/main.tsx` | The shell, Places, sessions and sign-in, rewritten from the 1.x snapshot, polling and bearer tokens onto the SDK's sync and the gateway's cookie session. The device views, music, Wispr page, moments, Pixoo media, device art and the running Hub's build are left out: the second slice brings the devices and music back, #927 the Wispr page, #925 the moments and #932 and #934 the module pages. Slice 3 restores the running build identity on Connections. The session row has no acknowledge button by owner decision; #1009 owns the operator clear-everywhere tool on Connections. |
 | `src/routes.ts` | Strict TypeScript; the Wispr route waits for #927. |
 | `src/widgets.ts` | Widgets name the families they sync; the home follows the approved mockup, with the Hub mode (#924) and inbox (#923) slots. |
-| `src/style.css` | The home's two columns, and the session dot, chip and notice status. |
+| `src/style.css` | The home's two columns, and the session dot, chip and notice status. Approval/input use the blocked token; continuing questions use the question token. |
 | `src/skins/neon-geometry-wars.css` | Unchanged. |
 | `tests/routes.test.ts`, `tests/widgets.test.ts`, `tests/style.test.ts`, `tests/layout.ts` | Strict TypeScript that Node runs as it is, for the converted modules. |
 | `tests/browser.ts`, `tests/trusted.ts`, `tests/smoke.ts` | Rewritten against the built runtime with the core and a synthetic hook, in place of the old Hub's fixture. |
@@ -48,5 +48,5 @@ and the sessions copy), `src/sessions.ts` (what each session row shows),
 `src/signin.ts` (the gateway's sign-in), `src/ui.tsx` (badges, facts, the tip
 adapted from `apps/dashboard/src/controls.tsx` and
 `main.tsx`), `build.mjs`, both `tsconfig.json` files, `tests/harness.ts`,
-`tests/sessions.test.ts`, `tests/connection.test.ts` and `tests/hook.ts`
+`tests/sessions.test.ts`, `tests/connection.test.ts`, `tests/signin.test.ts` (HTTP trace context) and `tests/hook.ts`
 (synthetic lifecycle observations for acceptance runs).

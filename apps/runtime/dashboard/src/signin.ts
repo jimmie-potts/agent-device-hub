@@ -1,7 +1,7 @@
 // Browser sign-in on the runtime's gateway (Hub #835, #922). A session is an `HttpOnly` cookie that every tab of this
 // origin shares, so a page never holds a token, and a reload or a second tab uses the live session instead of opening
 // another. Every change carries `bunny-request: 1` and the page's own `Origin`, which the browser sets.
-import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
+import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
 
 /** The launcher's one-time code, in the page's address fragment: `#launch=<code>`. */
 const CODE = /^[A-Za-z0-9_-]{43}$/;
@@ -9,7 +9,7 @@ const CODE = /^[A-Za-z0-9_-]{43}$/;
 async function post(path: string, body: object): Promise<number> {
   const response = await fetch(path, {
     method: 'POST', cache: 'no-store', redirect: 'error', credentials: 'same-origin',
-    headers: {'content-type': 'application/json', [REQUEST_HEADER]: '1'}, body: JSON.stringify(body),
+    headers: {'content-type': 'application/json', [REQUEST_HEADER]: '1', ...childOf(undefined)}, body: JSON.stringify(body),
   });
   await response.body?.cancel();
   return response.status;
@@ -21,7 +21,7 @@ async function post(path: string, body: object): Promise<number> {
  */
 export async function currentSession(): Promise<'live' | 'none' | 'unreachable'> {
   try {
-    const response = await fetch('/api/v2/authority?scope=read', {cache: 'no-store', redirect: 'error', credentials: 'same-origin'});
+    const response = await fetch('/api/v2/authority?scope=read', {cache: 'no-store', redirect: 'error', credentials: 'same-origin', headers: childOf(undefined)});
     await response.body?.cancel();
     if (response.status === 200) return 'live';
     return response.status === 401 ? 'none' : 'unreachable';
@@ -72,7 +72,7 @@ export async function signOut(): Promise<void> {
 /** The places the runtime names for this run, when it is a verification preview (Hub #495), or undefined. */
 export async function previewPlaces(): Promise<Readonly<Record<string, string>> | undefined> {
   try {
-    const response = await fetch('/api/v2/links', {cache: 'no-store', redirect: 'error', credentials: 'same-origin'});
+    const response = await fetch('/api/v2/links', {cache: 'no-store', redirect: 'error', credentials: 'same-origin', headers: childOf(undefined)});
     if (response.status !== 200) {
       await response.body?.cancel();
       return undefined;

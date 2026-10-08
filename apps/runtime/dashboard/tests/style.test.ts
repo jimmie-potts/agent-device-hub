@@ -72,6 +72,22 @@ void test('every token style.css consumes is defined in the skin file', async ()
   assert.deepEqual(undefinedTokens(style, skin), []);
 });
 
+void test('approval and input use blocked colors, while a continuing question keeps the question color', async () => {
+  const style = stripComments(await readFile(join(SRC, 'style.css'), 'utf8'));
+  for (const [state, token] of [['approval', '--chip-blocked'], ['input', '--chip-blocked'], ['question', '--chip-question']]) {
+    for (const [element, properties] of [['session-dot', ['background']], ['chip', ['color', 'border-color']]] as const) {
+      const selector = `.${element}[data-chip=${state}]`;
+      const declarations = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+        .filter(match => (match[1] ?? '').split(',').some(part => part.trim() === selector))
+        .flatMap(match => (match[2] ?? '').split(';'))
+        .map(declaration => declaration.split(':').map(part => part.trim()));
+      const values = new Map<string, string>();
+      for (const [name, value] of declarations) if (name !== undefined && value !== undefined) values.set(name, value);
+      for (const property of properties) assert.equal(values.get(property), `var(${token})`, `${selector} ${property}`);
+    }
+  }
+});
+
 void test('the check fails on a raw color added to style.css', () => {
   assert.deepEqual(colorLiterals('.example{color:#ff00aa}'), [[1, '#ff00aa']]);
   assert.deepEqual(colorLiterals('.example{background:rgba(255,0,0,.5)}'), [[1, 'rgba(255,0,0,.5)']]);

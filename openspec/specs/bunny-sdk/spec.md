@@ -1003,9 +1003,15 @@ The SDK SHALL export `ModuleRegistration`, which each runtime module exports as 
 
 The SDK SHALL offer the remote client alone at `@jimmie-potts/sdk/remote`, whose module graph imports no Node built-in and reads no file, so a browser page such as the dashboard (Hub #922) can bundle it; its message, request and trace IDs SHALL come from Web Crypto, which Node and a browser both have, and the error body, `MAX_DETAIL` and `SCHEMA_BASE` SHALL come from the event contracts' `v2/errors` module, which the `v2` entry exports unchanged. `connectRemote({browser: true})` SHALL send no `authorization` header, so the browser's session cookie and its own `Origin` stand for the page, and SHALL mark every call with `bunny-request: 1`. A browser has no async context, so there a handler's close of its own subscription SHALL be detected only in the handler's synchronous part. When the edge refuses a reconnect with `unauthenticated` or `forbidden`, the client SHALL keep trying with its backoff and SHALL report `remote.refused` with the code at WARN once per code until it reconnects, so a page can offer to sign in again; the runtime SHALL write no record of it, as of the client's other decisions.
 
+The browser entry SHALL expose the existing `childOf` helper for other HTTP calls, with the same W3C validation and parent semantics as the main SDK entry.
+
 #### Scenario: The client bundles for a browser
 - **WHEN** a test bundles `@jimmie-potts/sdk/remote`, and the package's main entry, for a browser
 - **THEN** the remote entry bundles with the client and no Node built-in, validator or file read, and the main entry fails to bundle
+
+#### Scenario: Context for other browser HTTP calls
+- **WHEN** a page imports the existing childOf helper from the remote entry to send an HTTP call outside the SDK edge
+- **THEN** the helper bundles for a browser and supplies valid W3C context, continuing a valid explicit parent or starting a root without one, with no tracestate or baggage
 
 #### Scenario: A browser session's calls
 - **WHEN** a part connects with `{browser: true}` to an edge whose host admits a call that carries no token and the page's mark, syncs a family and sends a command

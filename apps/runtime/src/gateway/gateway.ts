@@ -11,8 +11,9 @@ import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {
-  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, statusOf, type Cancel, type Clock, type Diagnostic, type EdgeRoute,
-  type InProcessBus, type ModulePage, type OnDiagnostic, type Participant, type Scheduler, type SyncedCopy,
+  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
+  type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
+  type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS, type ActionAnswer, type CoreActions} from '../core/tracker.js';
 import type {EdgeCredential, Scope} from '../credentials.js';
@@ -104,6 +105,8 @@ export type GatewayOptions = {
   actions?: CoreActions;
   /** The built dashboard's folder (#922), `DASHBOARD_DIR` by default; tests give their own. */
   dashboard?: URL;
+  /** Records the dashboard's five sign-in/read HTTP handoffs after their boundary checks (#922). */
+  trace?: SpanRecorder;
 };
 
 /** One repeated refusal: its record, the repeats since, and its window. */
@@ -116,6 +119,8 @@ export class Gateway {
   readonly #log: RuntimeLogger;
   /** The principal each SDK request was admitted as, which the edge's `authenticate` reads. */
   readonly #admitted = new WeakMap<IncomingMessage, Principal>();
+  /** Only validated dashboard handoffs receive a context; a later refusal keeps that request's trace. */
+  readonly #dashboardTraces = new WeakMap<IncomingMessage, TraceContext>();
   readonly #participants = new Map<string, Participant>();
   readonly #copies = new Map<string, Promise<SyncedCopy<Record<string, unknown>>>>();
   readonly #repeats = new Map<string, Repeats>();
@@ -245,7 +250,7 @@ export class Gateway {
         'bunny.route': 'other', 'http.request.method': methodOf(method), 'bunny.code': code,
         ...(route !== undefined ? {'http.route': route} : retired !== undefined ? {'http.route': retired.path} : {}),
         ...(principal === undefined ? {} : {'bunny.participant': principal.source}),
-      }, code === 'internal' ? 'error' : levelOf(code));
+      }, code === 'internal' ? 'error' : levelOf(code), this.#dashboardTraces.get(request));
       this.#write(response, json(statusOf(code), body));
     }
   }
@@ -289,7 +294,7 @@ export class Gateway {
       const scope = url.searchParams.get('scope');
       if (query.length !== 1 || scope === null || !['read', 'control', 'ingest', 'admin'].includes(scope)) throw refuse('invalid-request', 'name one scope: read, control, ingest or admin');
       needs(scope as Scope);
-      return json(200, {schema: 'authority/2.0', scope});
+      return this.#dashboardRequest(request, path, () => json(200, {schema: 'authority/2.0', scope}));
     }
     if (method === 'POST' && path === '/api/v2/commands/approval-recover') {
       noQuery();
@@ -315,7 +320,7 @@ export class Gateway {
     if (path === '/api/v2/links') {
       noQuery();
       const {editorLinks, placeLinks} = this.#options.edge;
-      return json(200, {schema: 'links/2.0', editors: editorLinks, places: placeLinks});
+      return this.#dashboardRequest(request, path, () => json(200, {schema: 'links/2.0', editors: editorLinks, places: placeLinks}));
     }
     if (path === '/api/v2/snapshot') return this.#snapshot(url);
     const family = /^\/api\/v2\/families\/([^/]+)$/.exec(path)?.[1];
@@ -665,17 +670,38 @@ export class Gateway {
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
       if (Object.keys(input).length !== 1 || typeof code !== 'string' || !this.access.takeLaunch(code)) throw refuse('unauthenticated', 'the launch code is not good');
-      closed();
-      return replace();
+      return this.#dashboardRequest(request, '/api/v2/browser/launch', () => { closed(); return replace(); });
     }
     if (Object.keys(input).length > 0) throw refuse('invalid-request', 'the body is an empty object');
     if (action === 'session') {
-      closed();
-      return replace();
+      return this.#dashboardRequest(request, '/api/v2/browser/session', () => { closed(); return replace(); });
     }
-    const ended = this.access.endSession(request);
-    if (ended !== undefined) this.edge.disconnectPrincipal(ended);
-    return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+    // Logout remains harmless without a live cookie, but that caller cannot supply an authenticated parent.
+    const admission = this.access.admit(request, origin);
+    return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
+      const ended = this.access.endSession(request);
+      if (ended !== undefined) this.edge.disconnectPrincipal(ended);
+      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+    }, 'principal' in admission && admission.principal.kind === 'browser');
+  }
+
+  /** Runs only after the route's authentication, ownership and input checks; no incoming context grants authority. */
+  #dashboardRequest(request: IncomingMessage, route: string, handle: () => Answer, authenticated = true): Answer {
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = authenticated && candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, request.method === 'GET' ? 'bunny.feed.read' : 'bunny.command.request', {
+      parent, kind: 'server', attributes: {'http.route': route, 'http.request.method': methodOf(request.method ?? 'GET')},
+    });
+    this.#dashboardTraces.set(request, span.context);
+    try {
+      return handle();
+    } catch (error) {
+      span.end(error instanceof Refused ? 'unset' : 'error');
+      throw error;
+    } finally {
+      span.end();
+    }
   }
 
   #write(response: ServerResponse, answer: Answer): void {
@@ -687,7 +713,7 @@ export class Gateway {
    * Records a refusal by the repetition rule (ADR 0012, "Repetition"): the first of a run at once, then its repeats as
    * one summary a minute with their count, until a quiet minute. A record never holds what the caller sent.
    */
-  #refused(fields: Record<string, string | number>, level: 'debug' | 'info' | 'warn' | 'error'): void {
+  #refused(fields: Record<string, string | number>, level: 'debug' | 'info' | 'warn' | 'error', trace?: TraceContext): void {
     const severity = level === 'debug' ? 'info' : level;
     const key = JSON.stringify(fields);
     const open = this.#repeats.get(key);
@@ -698,7 +724,7 @@ export class Gateway {
     const code = fields['bunny.code'] as ErrorCode;
     const reason = REGISTRY_REASONS[code];
     const record = {...fields, ...(reason === undefined ? {} : {'bunny.reason': reason})};
-    this.#log[severity]('runtime.edge.refused', record);
+    this.#log[severity]('runtime.edge.refused', record, trace);
     if (this.#closed) return;
     const repeats: Repeats = {fields: record, level: severity, count: 0, cancel: () => {}};
     this.#repeats.set(key, repeats);

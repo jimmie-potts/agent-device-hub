@@ -27,3 +27,9 @@
 - [x] 5.1 Prove the two-tab Disconnect regression fails at the original PR head and passes with shared sign-in and session replacement.
 - [x] 5.2 Verify positive read evidence and any consumer acknowledgment clear unread without a page command; update catalog, provenance and acceptance steps.
 - [x] 5.3 Gate the candidate, synchronize all three affected specs and rearchive. Evidence: runtime verification passes 67/67 with zero skips; both browser drivers and both dashboard smoke checks pass; every delta requirement matches its main spec.
+
+## 6. Standards correction
+
+- [x] 6.1 Carry W3C context on all five sign-in/read calls and through their authenticated gateway handoffs; retain pure red/green and invalid-parent/ownership checks.
+- [x] 6.2 Map approval/input chips and dots to the blocked token, keeping continuing questions separate; retain the mapping regression's red/green results.
+- [ ] 6.3 Rebase on the coordinator's final base, run the remaining runtime/browser gates, then synchronize and rearchive before final review.

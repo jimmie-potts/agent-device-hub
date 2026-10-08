@@ -814,6 +814,8 @@ The gateway SHALL serve the dashboard's page and its two assets (Hub #922) on th
 
 `/mcp` SHALL serve MCP through `packages/mcp`, unchanged, only when the edge section sets `mcp` true, as the old Hub served it only with its `mcp` set, and SHALL otherwise answer `not-found`. It SHALL serve client credentials only, telling a browser session so with `forbidden` before anything else: each module's read tools, as `<module>_<tool>`, to a credential with `read`, and `core_recover_approval` and `core_send_command` (see "Action routes") to one with `control`. A tool's result SHALL be `{result}` and a refusal the shared error body, both under the package's `extension` data. The refusals `packages/mcp` makes itself before a tool runs SHALL keep its released 1.x `gateway-error` result, with the registry's code and no detail: an exception to the shared error body, since the package is reused unchanged. MCP protocol errors SHALL keep the MCP specification.
 
+The gateway SHALL continue authenticated, owned and validated context for the dashboard's five sign-in/read handoffs only, with bounded server spans through the runtime recorder. It SHALL ignore malformed or untrusted parents and SHALL never record a cookie, launch code, request body or exception text in those spans.
+
 #### Scenario: MCP by scope
 - **WHEN** an operator, a reader and a hook list MCP tools, the reader calls `core_recover_approval`, and the operator calls `sign_status` and `core_recover_approval` for an unknown session, an unknown tool, and with an `Origin`
 - **THEN** the operator sees `core_recover_approval`, `core_send_command`, `core_sessions` and `sign_status`, the reader the two read tools, the hook none; the reader's recovery never reaches the core; `sign_status` answers its result, the recovery the core's `not-found` in the shared error body, the unknown tool an MCP protocol error, and the request with an `Origin` `forbidden`
@@ -845,6 +847,10 @@ The gateway SHALL serve the dashboard's page and its two assets (Hub #922) on th
 #### Scenario: The dashboard's page
 - **WHEN** a bookmark, the launcher, this origin's page and a page on the other loopback name load `/` and its assets, another local app's link, frame and fetch reach `/`, that link asks for an asset, another site's page or a link with an `Origin` asks for `/`, `/` is posted to or carries a query, and a runtime whose dashboard is not built is asked
 - **THEN** the loads and the link are served without a cookie under the page's policy; the frame, the fetch, the asset, the other site and the `Origin` are `forbidden`, the post `not-found` and the query `invalid-request`, logged by route without the query; and the unbuilt runtime answers `not-found` on all three paths
+
+#### Scenario: The dashboard's authenticated HTTP context
+- **WHEN** browser session creation, launch exchange, logout, authority or Places reads carry W3C context, including malformed context and requests that fail their boundary checks
+- **THEN** the gateway continues a valid parent only after authentication, ownership and input validation, records a bounded server span for each accepted call and keeps post-admission failures in that trace; absent or malformed context starts a root, untrusted context grants no authority, and an unauthenticated logout stays harmless without adopting its parent
 
 ### Requirement: Edge credentials and their reload
 

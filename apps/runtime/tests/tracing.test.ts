@@ -52,6 +52,36 @@ const children = (spans: readonly Recorded[], parent: Recorded, name: string): R
   spans.filter(span => span.name === name && span.traceId === parent.traceId && span.parentSpanId === parent.spanId);
 const lasted = (span: Recorded | undefined): boolean => span !== undefined && BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano);
 
+it('the dashboard HTTP handoffs reach the runtime recorder in the caller trace', async context => {
+  const {config} = await edgeConfig(context, [], {browserAccess: 'trusted-loopback'});
+  const lines: string[] = [];
+  const {runtime} = await run(context, {modules: [], configFile: config, edge: {schemas: {}}, spans: line => { lines.push(line); }});
+  let cookie = '';
+  const post = async (path: string, body: object): Promise<void> => {
+    const response = await fetch(new URL(path, runtime.url), {
+      method: 'POST', headers: {...PARENT, origin: runtime.url, cookie, 'bunny-request': '1', 'content-type': 'application/json'}, body: JSON.stringify(body),
+    });
+    await response.body?.cancel();
+    assert.equal(response.status, 200);
+    cookie = (response.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  };
+  await post('/api/v2/browser/session', {});
+  await post('/api/v2/browser/launch', {code: runtime.gateway()?.access.issueLaunch()});
+  for (const path of ['/api/v2/authority?scope=read', '/api/v2/links']) {
+    const response = await fetch(new URL(path, runtime.url), {headers: {...PARENT, cookie, origin: runtime.url}});
+    await response.body?.cancel();
+    assert.equal(response.status, 200);
+  }
+  await post('/api/v2/browser/logout', {});
+  await runtime.stop();
+  const spans = parse(lines).filter(span => attribute(span, 'http.route') !== undefined);
+  assert.deepEqual(spans.map(span => attribute(span, 'http.route')).sort(), [
+    '/api/v2/authority', '/api/v2/browser/launch', '/api/v2/browser/logout', '/api/v2/browser/session', '/api/v2/links',
+  ]);
+  assert.ok(spans.every(span => span.traceId === traceFields(PARENT)?.traceId && span.parentSpanId === traceFields(PARENT)?.spanId
+    && span.scope === RUNTIME_SCOPE && lasted(span)), 'the actual host adapter preserves and completes every handoff');
+});
+
 /** A module that answers mode commands with `answer` after a device call in its own span. */
 function wall(answer: (command: Command<{mode: string}>) => Reply | Promise<Reply>, commands: Command<{mode: string}>[] = [], key = KEY): ReturnType<typeof fixture> {
   return fixture('wall', async ({sdk, trace}) => {

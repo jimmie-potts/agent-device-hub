@@ -7,6 +7,7 @@
 - **A copy of the dashboard in the runtime.** `apps/runtime/dashboard` copies the shell, routes, widget catalog, Neon skin and their tests from `apps/dashboard` at main 5abbae9, with provenance notes, and converts them to the strict profile. The old dashboard is untouched.
 - **The gateway serves it.** `GET /`, `/dashboard.js` and `/dashboard.css` come back on the old Hub's paths, without a session, with the old Hub's page checks (Hub #561).
 - **Sign-in.** The page uses the browser's live session, else a trusted loopback session or the launcher's code, marks every change with `bunny-request: 1`, and offers one Sign in again when its session ends.
+- **HTTP context and attention colors.** The five sign-in/read calls carry W3C context through their authenticated gateway handoffs. Approval/input use the blocked chip token, distinct from continuing questions.
 - **Sessions through SDK sync.** One remote participant syncs the core's `session` family and follows it; a lost stream resyncs with nothing replayed. Each row comes from its record alone, and a finished turn stays unread until the record clears it.
 - **The SDK in a browser.** `@jimmie-potts/sdk/remote` is the client alone, with no Node built-in in its graph; `connectRemote({browser: true})` sends no token and marks every call; `remote.refused` says once that the edge refuses a reconnect. The contracts' error body moves to a `v2/errors` module that reads no file.
 - **The approved home**, with slots for the Hub mode (#924) and the inbox (#923).
@@ -26,7 +27,7 @@
 ## Impact
 
 - **Code:** `apps/runtime/dashboard/` (new); `apps/runtime/src/gateway/dashboard.ts` (new), `gateway.ts`, `runtime.ts` and `diagnostics.ts`; `packages/sdk/src/` (`remote.ts` new, `remote-client.ts`, `remote-protocol.ts`, `diagnostics.ts`, `envelope.ts`, `trace.ts`, `sync.ts`, `queue.ts`, `refusal.ts`, `index.ts`) and its `package.json` exports; `packages/event-contracts/src/v2/errors.ts`, `index.ts` and its `package.json` exports; `apps/runtime/verify/plugin.ts` (build sources and the candidate); `eslint.config.mjs` (the copy's browser globals, page drivers and hook rules).
-- **Tests:** the dashboard's unit, smoke and browser suites; `packages/sdk/tests/browser.test.ts`; `apps/runtime/tests/dashboard-page.test.ts`; the route-map test in `gateway.test.ts`; two catalog scenarios.
+- **Tests:** the dashboard's unit, smoke and browser suites, including `signin.test.ts` and the fixed-color assertion; `packages/sdk/tests/browser.test.ts`; `apps/runtime/tests/dashboard-page.test.ts`, `dashboard-trace.test.ts` and the recorded HTTP handoffs in `tracing.test.ts`; the route-map test in `gateway.test.ts`; two catalog scenarios.
 - **Coordinator-owned files:** root `package.json` (the build and type-check steps and four `test:runtime-dashboard` scripts), `.github/workflows/checks.yml` (two steps), `tests/workflow_checks.cjs` and `docs/development.md`.
 - **Unchanged:** `apps/dashboard` and its tests, the old Hub, the core's records and commands, the released 1.x contracts.
 - **Delivery:** source-only, verified in disposable runs; installation is at the cutover (#840).

@@ -8,7 +8,7 @@ Define the B.U.N.N.Y. dashboard that the runtime serves (Hub #922), copied from 
 
 ### Requirement: The dashboard on the runtime
 
-The runtime SHALL serve a copy of the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub keeps serving `apps/dashboard` until the retirement story (#839). The copy SHALL keep the shell, its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, the Places navigation and the Neon skin, whose role and private tokens are the only colors its styles use. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing.
+The runtime SHALL serve a copy of the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub keeps serving `apps/dashboard` until the retirement story (#839). The copy SHALL keep the shell, its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, the Places navigation and the Neon skin, whose role and private tokens are the only colors its styles use. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing. Approval and input attention SHALL use the fixed blocked chip token; a continuing question SHALL use the separate question token.
 
 #### Scenario: Routes and the shell
 - **WHEN** a signed-in page follows the Connections link, goes back, and opens an address that names no page
@@ -18,13 +18,23 @@ The runtime SHALL serve a copy of the B.U.N.N.Y. dashboard (`apps/runtime/dashbo
 - **WHEN** the home is checked at 1,440 and 390 px, and the launcher's page on its own
 - **THEN** axe finds no WCAG 2.1 A or AA violation, no text overlaps on the desktop home, and the phone width has no horizontal overflow
 
+#### Scenario: Fixed attention colors
+- **WHEN** a session needs approval or input, or reports a continuing question
+- **THEN** approval/input dots and chips use the fixed blocked token, and the continuing question uses the separate question token
+
 ### Requirement: Sign-in on the runtime's gateway
 
 The dashboard SHALL sign in only through the gateway's browser routes, with `bunny-request: 1` and its own `Origin` on every change, and SHALL hold no token. On load and on a sign-in click it SHALL use the browser's live session when one exists, so a reload or a second tab opens no new session; without one it SHALL ask for a trusted loopback session, and when the runtime does not offer one it SHALL show the launcher's page. A `#launch=<code>` fragment SHALL leave the address before the page exchanges the code once. A sign-in that fails SHALL show an alert with the launcher's text. **Disconnect** SHALL end the browser's session, in every tab of the origin, and offer **Sign in**. When the runtime refuses the browser's session, as after a logout elsewhere, an eviction, its expiry or a runtime restart, the page SHALL say the session ended, keep its last records and offer **Sign in again**, and SHALL NOT sign in by itself. A link on another local app's page with the same host name SHALL open the page signed in; a frame from another local app and another host name's link SHALL be refused.
 
+The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHALL each carry valid W3C trace context without changing their authentication protections. With no parent operation, each call SHALL start its own trace.
+
 #### Scenario: Bookmark, reload and second tab
 - **WHEN** a fresh browser opens the bookmark on a runtime with trusted loopback sign-in, reloads it, opens a second tab at `#/connections`, and another browser opens it on `localhost`
 - **THEN** each page shows the dashboard without a sign-in form, the second tab keeps its address, the first browser holds one session and the other its own
+
+#### Scenario: Context on sign-in and read calls
+- **WHEN** the page signs in, exchanges a launch code, signs out, checks its authority or reads Places
+- **THEN** every call carries a valid W3C traceparent without a bearer token, tracestate or baggage; independent calls start their own traces and retain the existing cookie, Origin and request-header protections
 
 #### Scenario: The launcher's code
 - **WHEN** a runtime without trusted loopback sign-in is opened directly, then the launcher's code opens a tab, and the same code and a malformed one are tried in other browsers

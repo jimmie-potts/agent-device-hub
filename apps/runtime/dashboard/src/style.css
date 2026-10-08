@@ -188,11 +188,13 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 /* A session's state: a dot and a chip in the fixed-meaning chip colors (style guide section 4.2), with its words. */
 .session-dot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:var(--space-xs);background:var(--muted-dense)}
 .session-dot[data-chip=working]{background:var(--chip-working)}
-.session-dot[data-chip=approval],.session-dot[data-chip=input],.session-dot[data-chip=question]{background:var(--chip-question)}
+.session-dot[data-chip=approval],.session-dot[data-chip=input]{background:var(--chip-blocked)}
+.session-dot[data-chip=question]{background:var(--chip-question)}
 .session-dot[data-chip=finished]{background:var(--chip-unread)}
 .chip{flex-shrink:0;font-size:var(--type-label);letter-spacing:.04em;padding:var(--space-xxs) var(--space-s);border:1px solid var(--edge-dense);border-radius:var(--radius);background:var(--inset);color:var(--muted-dense);white-space:nowrap}
 .chip[data-chip=working]{border-color:var(--chip-working);color:var(--chip-working)}
-.chip[data-chip=approval],.chip[data-chip=input],.chip[data-chip=question]{border-color:var(--chip-question);color:var(--chip-question)}
+.chip[data-chip=approval],.chip[data-chip=input]{border-color:var(--chip-blocked);color:var(--chip-blocked)}
+.chip[data-chip=question]{border-color:var(--chip-question);color:var(--chip-question)}
 .chip[data-chip=finished]{border-color:var(--chip-unread);color:var(--chip-unread)}
 .session-head .session-id{flex:1 1 200px}
 .quick-controls [role=status]:empty{min-height:0}

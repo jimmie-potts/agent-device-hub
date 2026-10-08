@@ -1010,7 +1010,9 @@ HTTP status that fits its code.
   `authorization` header and marks every call with `bunny-request: 1`
   (`REQUEST_HEADER`), which the runtime's gateway requires of a page's change.
   Message and request IDs come from Web Crypto, which Node and a browser both
-  have. A browser has no async context, so a page's handler that closes its own
+  have. The same entry exports `childOf(parent)` for a page's other HTTP calls:
+  put its `traceparent` in the request headers, with `undefined` for a new root.
+  A browser has no async context, so a page's handler that closes its own
   subscription does so before its first await, or does not await the close.
   When the edge refuses a reconnect with `unauthenticated` or `forbidden`, as
   after a session ended, the client keeps trying with its backoff and reports

@@ -90,6 +90,12 @@ device is the operator tool on Connections owned by #1009.
 
 ## Sign-in
 
+Sign-in, launch exchange, logout, authority reads and Places reads each carry a
+fresh W3C `traceparent` from the SDK's browser-safe trace helper. The gateway
+continues it only after authentication, ownership and input checks. Missing or
+invalid context starts a root; context never grants authority. The five calls
+have bounded server spans, with no cookie, launch code or request body recorded.
+
 The gateway serves the page at `/` without a session, and every route after
 that needs one. A browser session is an `HttpOnly`, `SameSite=Strict` cookie that
 all tabs of the origin share, so the page never holds a token. On load the page
