@@ -133,7 +133,10 @@ the wall pages (#934) apply that rule.
   checks (content in Free only, animations on the Lines only, one waiting animation, 32
   waiting native commands, `validFavoriteEdit`, the effect rules) and `commandSupported`,
   and refuses a stale `expectedConfigurationRevision` or `expectedGeneration` with
-  `revision-conflict`. A refusal, or a store failure, rolls back and is the reply.
+  `revision-conflict`. A refusal, or a store failure, rolls back and is the reply. A
+  store that is full (`SQLITE_FULL` or `ENOSPC`, told by their codes) is `capacity`,
+  which the bus records at WARN; any other store failure is `internal`, logged once at
+  ERROR with its type. Neither record carries the error's text (#1001).
 - **Outcomes.** An accepted command commits its journal row before the `accepted` reply
   and ends with one outcome through the outbox, in the command's trace, with the
   registry's error detail. The worker's writes end native commands and animations; edits
@@ -181,6 +184,14 @@ the Lines, one waiting at a time:
 2. A queued machine edit fails with `revision-conflict`, without overwriting the newer
    choice, when a later wall, mode or association edit lands first (`processMachineEdits`).
 3. A machine edit waits while the device's comet runs, then applies, or fails `expired`.
+
+A machine edit's check at admission (`checkEdit`) and a queued machine edit's application
+(`processMachineEdits`) each run under a savepoint inside the caller's transaction. A
+failure that leaves the transaction open rolls back to the savepoint, keeping the caller's
+work. On a full disk SQLite ends the whole transaction, and the edit throws the full
+disk's error rather than the failed savepoint rollback's (#1001): a command whose
+admission meets a full disk is refused `capacity`, with nothing changed, and a queued edit
+waits until the store takes it.
 
 ## Sessions
 

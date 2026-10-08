@@ -33,7 +33,7 @@ import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, ty
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {presented} from '../shared-input.js';
-import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
+import {execute, first, fullDisk, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
 import {HttpError, type LightRequest} from '../transport.js';
 import {superviseWorker, type SupervisorEnd} from '../worker.js';
@@ -701,7 +701,9 @@ export class NanoleafRuntime {
 
   /**
    * Runs one admission in the outbox's transaction. A refusal rolls everything back, so the command had no effect and
-   * its reply carries the refusal; so does a store failure, which the transaction rolled back. Accepted, it runs `after`.
+   * its reply carries the refusal; so does a store failure, which the transaction rolled back. A full disk is the
+   * registry's `capacity`, which the bus records at WARN; any other store failure is `internal`, logged once at ERROR
+   * with its type. Neither record carries the error's text. Accepted, it runs `after`.
    */
   async #admit(command: Command<{requestId: string}>, work: (report: Report, add: AddMessage) => void, after: () => void = () => {}): Promise<Reply> {
     const {requestId} = command.data;
@@ -711,6 +713,7 @@ export class NanoleafRuntime {
       if (error instanceof CommandRefused) return errorBody(error.code, {requestId, detail: error.detail});
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: PORT_REFUSALS[error.code] ?? OTHER_REFUSAL});
       if (error instanceof Failure) return errorBody(error.code, {requestId, detail: FAVORITE_REFUSALS[error.code]});
+      if (fullDisk(error)) return errorBody('capacity', {requestId, detail: 'the module\'s store is full; nothing changed'});
       this.#context.log.error('command.rejected', {'bunny.request.id': requestId, 'bunny.code': 'internal', 'error.type': errorType(error)}, command);
       return errorBody('internal', {requestId, detail: 'the module could not take the command; nothing changed'});
     }

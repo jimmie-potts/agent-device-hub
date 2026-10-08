@@ -123,6 +123,23 @@ export function privateDatabase(path: string, options: {timeout: number}): Datab
   return new DatabaseSync(path, options);
 }
 
+/** SQLite's result code for a full database, from a node:sqlite error's `errcode`. */
+const SQLITE_FULL = 13;
+
+/**
+ * Whether an error, or one it was caused by, is a full disk: `SQLITE_FULL` from SQLite or `ENOSPC` from the file
+ * system. It reads only each error's `errcode` and `code`, never its text, and follows at most eight causes.
+ */
+export function fullDisk(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 8 && typeof current === 'object' && current !== null; depth += 1) {
+    if ('errcode' in current && typeof current.errcode === 'number' && (current.errcode & 0xff) === SQLITE_FULL) return true;
+    if ('code' in current && current.code === 'ENOSPC') return true;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
+}
+
 /** The file's own status, never a link's target's, or undefined when nothing is there. */
 function statOf(path: string): Stats | undefined {
   try {

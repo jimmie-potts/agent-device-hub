@@ -13,7 +13,7 @@ import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type CommandDraft, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {InProcessBus, type CommandDraft, type Diagnostic, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord, type RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {createNanoleafModule, LINES_ADDRESS, lockFile, nanoleafSchemas, SimulatedNanoleaf, SYNTHETIC_TOKEN, type SimulatedKind} from '../src/index.js';
 
@@ -188,6 +188,8 @@ export class ModuleWorld {
   readonly errors: unknown[] = [];
   /** The sources whose sync copy an overflow restarted, once per restart. */
   readonly syncRestarts: string[] = [];
+  /** The bus's decision records, such as each command's reply with its code and level. */
+  readonly diagnostics: Diagnostic[] = [];
   readonly harnesses: ModuleHarness[] = [];
   harness: ModuleHarness;
   operator!: Participant;
@@ -208,7 +210,7 @@ export class ModuleWorld {
     registerDeviceFamilies(this.#validator);
     for (const [dataschema, schema] of Object.entries(nanoleafSchemas)) this.#validator.register(dataschema, schema);
     this.bus = new InProcessBus({now: this.clock.now, scheduler: this.clock.scheduler, onError: error => { this.errors.push(error); },
-      onSyncRestart: scope => { this.syncRestarts.push(scope.source); }, ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued})});
+      onSyncRestart: scope => { this.syncRestarts.push(scope.source); }, onDiagnostic: diagnostic => { this.diagnostics.push(diagnostic); }, ...(options.maxQueued === undefined ? {} : {maxQueued: options.maxQueued})});
     this.core = new StandInCore(this.clock);
     this.harness = this.#fresh();
   }
