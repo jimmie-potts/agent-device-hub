@@ -287,6 +287,7 @@ node apps/runtime/dist/src/migrate-pixoo.js migrate --library $data/pixoo-librar
 printf x >> "$(ls -d $t/a/modules/pixoo/media/originals/* | head -1)"
 node apps/runtime/dist/src/migrate-pixoo.js verify --library $data/pixoo-library --state-dir $t/a; echo $?         # mismatch with files 1, 1
 rm -rf $t
+npm run -s verify:runtime -- stop <run-id>
 ```
 
 To try the agent hooks (#926) as a client would, start the `agent-hooks` scenario. Its capture step runs the 2.0 hook
