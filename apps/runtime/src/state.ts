@@ -2,7 +2,7 @@
 // it reads: its configuration file and the modules' secret files (Hub #919). Runtime state stays outside every Git
 // checkout and off Windows mounts, private to its owner, as the Hub's stores are (AGENTS.md, ADR 0011).
 import {closeSync, constants, lstatSync, mkdirSync, openSync, type Stats} from 'node:fs';
-import {lstat, mkdir, open, readlink, realpath} from 'node:fs/promises';
+import {lstat, mkdir, open, readdir, readlink, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
@@ -151,6 +151,12 @@ function statOf(file: string): Stats | undefined {
   }
 }
 
+/** Whether a directory's own status, never a link's target's, is a directory of this user's that no one else may open. */
+const privateDirectory = (info: Stats): boolean => info.isDirectory() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0;
+
+const folderNotPrivate = (dir: string): RuntimeError =>
+  new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner, with no permissions for group or others, not a link`);
+
 /**
  * Creates a module's private folder, `modules/<name>/` in the state directory beside its SQLite file, with mode 700, and
  * returns its absolute path. Refuses, with `module-folder-not-private`, a `modules` directory or a folder that is a link,
@@ -160,10 +166,7 @@ export function openModuleFolder(stateDir: string, name: string): string {
   const parent = join(stateDir, 'modules');
   const folder = join(parent, name);
   const check = (dir: string): void => {
-    const info = lstatSync(dir);
-    if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) {
-      throw new RuntimeError('module-folder-not-private', `${dir} must be a directory private to its owner, with no permissions for group or others, not a link`);
-    }
+    if (!privateDirectory(lstatSync(dir))) throw folderNotPrivate(dir);
   };
   // Each level is checked before anything is created inside it, so nothing is ever created through a link.
   mkdirSync(parent, {recursive: true, mode: 0o700});
@@ -175,6 +178,35 @@ export function openModuleFolder(stateDir: string, name: string): string {
   }
   check(folder);
   return folder;
+}
+
+/** A path's own status, never a link's target's, or undefined when nothing is there. */
+async function lstatOf(path: string): Promise<Stats | undefined> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if (missing(error)) return undefined;
+    throw error;
+  }
+}
+
+/**
+ * Whether a module has nothing yet in the state directory: no `modules/<name>.sqlite`, log or journal, and no folder or
+ * an empty one. It creates nothing, so an offline tool checks the module before it creates anything and again under the
+ * lease (Hub #1003). Like `openModuleFolder`, it refuses with `module-folder-not-private` a `modules` directory or module
+ * folder that is a link, is not a directory, belongs to another user or has any permission for group or others.
+ */
+export async function freshModule(stateDir: string, name: string): Promise<boolean> {
+  const parent = join(stateDir, 'modules');
+  const modules = await lstatOf(parent);
+  if (modules === undefined) return true;
+  if (!privateDirectory(modules)) throw folderNotPrivate(parent);
+  for (const suffix of ['', '-wal', '-shm', '-journal']) if (await lstatOf(join(parent, `${name}.sqlite${suffix}`)) !== undefined) return false;
+  const folder = join(parent, name);
+  const info = await lstatOf(folder);
+  if (info === undefined) return true;
+  if (!privateDirectory(info)) throw folderNotPrivate(folder);
+  return (await readdir(folder)).length === 0;
 }
 
 /** Why the runtime refuses a private file: the configuration file or a module's secret file. */

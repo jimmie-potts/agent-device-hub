@@ -818,6 +818,17 @@ restarted by its service manager. The Pixoo library migration and the Nanoleaf
 migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
 take it.
 
+### A fresh module
+
+`freshModule(stateDir, name)` (`src/state.ts`) says whether a module has
+nothing in the state directory yet: no `modules/<name>.sqlite`, log or journal,
+and no folder or an empty one. It creates nothing. Like `openModuleFolder`, it
+refuses with `module-folder-not-private` a `modules/` or module folder that is
+a link, belongs to another user or that others may open. Both migrations call
+it before they create anything and again under the lease, so each refuses such
+a folder with exit 3 and nothing written
+([#1003](https://github.com/jimmie-potts/agent-device-hub/issues/1003)).
+
 ### Pixoo library migration
 
 The Pixoo library migration ([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931))
@@ -859,9 +870,11 @@ the file system, the source catalog's size twice (an upper bound on the
 carried rows in the database and in its log), and the space it keeps free:
 `--min-free-bytes`, 256 MiB by default.
 
-SIGINT and SIGTERM stop the tool. Before it writes, it refuses with
+A first SIGINT or SIGTERM stops the tool. Before it writes, it refuses with
 `interrupted`. While it writes, it stops every copy, removes what it wrote and
-fails with `interrupted`. While it verifies, it refuses.
+fails with `interrupted`. While it verifies, it refuses. A second signal stops
+it at once. A signal that arrives after the tool has written its line changes
+nothing: the process exits with the code the line reports.
 
 | Exit | `result` | Meaning |
 | --- | --- | --- |
@@ -873,19 +886,20 @@ fails with `interrupted`. While it verifies, it refuses.
 
 | Code | Exit | Refusal or failure |
 | --- | --- | --- |
+| `usage` | 2 | Malformed arguments |
 | `runtime-running` | 3 | A runtime, or another tool, holds the state directory's lease |
 | `lease-unavailable` | 3 | The lease's lock file is not a regular file private to the user |
 | `disk-short` | 3, 4 | Less free space than the space it needs (3), or the file system or the database filled up while it wrote (4) |
 | `destination-not-empty` | 3 | The module already has files. Migrate into a fresh state directory, or remove every path the tool creates: `modules/pixoo.sqlite`, `modules/pixoo.sqlite-wal`, `modules/pixoo.sqlite-shm`, `modules/pixoo.sqlite-journal` and `modules/pixoo/` |
 | `destination-missing` | 3 | `verify` found no module database |
-| `module-folder-not-private` | 3 | `modules/` or `modules/pixoo/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse |
+| `module-folder-not-private` | 3, 4 | `modules/` or `modules/pixoo/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse (3); or, only if the module's folders change under the tool while it holds the lease, `openModuleFolder` refuses them as it writes (4) |
 | `state-dir-*` | 3 | The runtime's [State](#state) rules refuse the state directory |
 | `source-missing` | 3 | The library path is missing, is not a folder, or holds no `catalog.sqlite` |
 | `source-in-use` | 3 | The Pixoo service holds the library: stop it first |
 | `source-not-clean` | 3 | The catalog's log or journal holds commits the file lacks, or the library has no `owner.sqlite`: start and stop the Pixoo service once, so it folds its log in and creates the file |
 | `source-schema` | 3 | Not the installed release's schema version 3, or its tables differ from it |
 | `source-corrupt` | 3, 4 | The catalog fails SQLite's checks or names a missing, linked or oversized file (3), or a copy does not match the hash its catalog gives (4) |
-| `destination-unclean` | 4 | The module's database kept a log or journal with content after the tool closed it |
+| `destination-not-clean` | 4 | The module's database kept a log or journal with content after the tool closed it |
 | `interrupted` | 3, 4 | SIGINT or SIGTERM: before it wrote (3), or while it wrote (4) |
 | `module-db-not-private` | 4 | Only if the module's files change under the tool while it holds the lease: the runtime's [State](#state) rules refuse the database it creates |
 | `internal` | 3, 4 | Anything else |
@@ -975,38 +989,43 @@ file's content. Its fields:
 | 4 | `failed` | `migrate` stopped after it began to write, on a failure or a signal; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
 
 A signal that arrives before the tool installs its handler, in its first few
-hundred milliseconds and before it creates anything, or after it has written
-its line, ends the process by that signal, with no line. Any exit but 0 is a
-no-go.
+hundred milliseconds and before it creates anything, ends the process by that
+signal, with no line. A signal that arrives after the tool has written its
+line changes nothing: the process exits with the code the line reports. Any
+exit but 0 is a no-go.
 
-| Code | Refusal or failure |
-| --- | --- |
-| `runtime-running` | A runtime, or another tool, holds the state directory's lease |
-| `lease-unavailable` | The lease's lock file is not a regular file private to the user |
-| `destination-not-empty` | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
-| `destination-missing` | `verify` found no module database |
-| `paths-overlap` | The state directory, the secrets directory or the section's folder lies inside the source directory, or the source inside one of them |
-| `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
-| `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
-| `source-missing` | The source directory, its `status.sqlite` or its `config.json` is missing |
-| `source-in-use` | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
-| `source-not-clean` | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
-| `source-schema` | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
-| `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
-| `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
-| `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
-| `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
-| `disk-short` | The disk filled while `migrate` wrote, its final checkpoint included |
-| `destination-not-clean` | A log or journal with content was left beside the module's database after `migrate` closed it |
-| `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
-| `internal` | Anything else |
+| Code | Exit | Refusal or failure |
+| --- | --- | --- |
+| `usage` | 2 | Malformed arguments |
+| `runtime-running` | 3 | A runtime, or another tool, holds the state directory's lease |
+| `lease-unavailable` | 3 | The lease's lock file is not a regular file private to the user |
+| `destination-not-empty` | 3 | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
+| `destination-missing` | 3 | `verify` found no module database |
+| `paths-overlap` | 3 | The state directory, the secrets directory or the section's folder lies inside the source directory, or the source inside one of them |
+| `secrets-dir-refused`, `section-dir-refused` | 3 | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
+| `state-dir-*` | 3 | The runtime's [State](#state) rules refuse the state directory |
+| `module-folder-not-private` | 3, 4 | `modules/` or `modules/nanoleaf/` is a link, belongs to another user or others may open it, as the runtime's [State](#state) rules refuse (3); or, only if the module's folders change under the tool while it holds the lease, `openModuleFolder` refuses them as it writes (4) |
+| `module-db-not-private` | 4 | Only if the module's files change under the tool while it holds the lease: the runtime's [State](#state) rules refuse the database it creates |
+| `source-missing` | 3 | The source directory, its `status.sqlite` or its `config.json` is missing |
+| `source-in-use` | 3 | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
+| `source-not-clean` | 3 | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
+| `source-schema` | 3 | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
+| `source-corrupt` | 3 | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
+| `source-config` | 3 | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
+| `source-device-id` | 3 | A registered device ID is not a routing ID, which the configuration requires |
+| `source-not-configured` | 3 | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
+| `disk-short` | 3, 4 | The disk filled while `migrate` wrote, its final checkpoint included |
+| `destination-not-clean` | 4 | A log or journal with content was left beside the module's database after `migrate` closed it |
+| `interrupted` | 3, 4 | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
+| `internal` | 3, 4 | Anything else |
 
-`migrate` checks its arguments, the three output paths, the destination and
-the source before it creates anything, so every refusal but the lease's
-creates nothing. Then it takes the lease, which creates the state directory,
-`modules/` and the lease's empty lock file as a runtime's start does, and
-checks the destination again under it. A failure after that leaves those and
-the secrets and section folders, empty.
+`migrate` checks its arguments, the three output paths, the destination with
+its `modules/` and `modules/nanoleaf/` folders, and the source before it
+creates anything, so every refusal but the lease's creates nothing. Then it
+takes the lease, which creates the state directory, `modules/` and the lease's
+empty lock file as a runtime's start does, and checks the destination and its
+folders again under it. A failure after that leaves those and the secrets and
+section folders, empty.
 
 `migrate` checkpoints the module's log into the file before it closes it,
 because the close's own checkpoint keeps the log on a full disk without an

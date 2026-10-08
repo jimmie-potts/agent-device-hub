@@ -3,7 +3,8 @@
 // until a signal comes, writing `paused <stage>` to stderr so the test sends the signal then. Its stdout is the tool's
 // one line, and its exit code the tool's.
 //   node nanoleaf-interrupt.js <stage> <tool arguments...>
-import {abortOnSignals, runNanoleafMigration, type Stage} from '../../src/nanoleaf-migration.js';
+import {runNanoleafMigration, type Stage} from '../../src/nanoleaf-migration.js';
+import {abortOnSignals} from '../../src/signals.js';
 
 const [pauseAt, ...argv] = process.argv.slice(2);
 const signal = abortOnSignals();

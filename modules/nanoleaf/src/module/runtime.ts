@@ -22,7 +22,7 @@ import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-con
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, errorType, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
+  DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange,
 } from '@jimmie-potts/sdk';
 import {admitCommand, Refused as PortRefused} from '../controls.js';
@@ -33,7 +33,7 @@ import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, ty
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {presented} from '../shared-input.js';
-import {execute, first, fullDisk, rows, text, type Db, type Synchronous} from '../sqlite.js';
+import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
 import {HttpError, type LightRequest} from '../transport.js';
 import {superviseWorker, type SupervisorEnd} from '../worker.js';
@@ -702,8 +702,9 @@ export class NanoleafRuntime {
   /**
    * Runs one admission in the outbox's transaction. A refusal rolls everything back, so the command had no effect and
    * its reply carries the refusal; so does a store failure, which the transaction rolled back. A full disk is the
-   * registry's `capacity`, which the bus records at WARN; any other store failure is `internal`, logged once at ERROR
-   * with its type. Neither record carries the error's text. Accepted, it runs `after`.
+   * registry's `capacity`, which the bus records at WARN; any other store failure is `internal`, which the bus records at
+   * ERROR and the module logs once more, at ERROR with the error's type. No record carries the error's text. Accepted, it
+   * runs `after`.
    */
   async #admit(command: Command<{requestId: string}>, work: (report: Report, add: AddMessage) => void, after: () => void = () => {}): Promise<Reply> {
     const {requestId} = command.data;

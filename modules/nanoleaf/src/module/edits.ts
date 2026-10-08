@@ -127,9 +127,10 @@ export function applyEdit(db: Db, copy: SharedCopy, layout: DeviceProjection | u
 }
 
 /**
- * Rolls back to a savepoint and releases it, while the caller's transaction is still open. SQLite ends the whole
- * transaction on some errors, such as a full disk, and the savepoint with it; rolling back to it then would fail with
- * "no such savepoint" and hide the error that ended it (Hub #1001).
+ * Rolls back to a savepoint and releases it, while the caller's transaction is still open. On some errors, such as a
+ * full disk, SQLite undoes the failing statement and, depending on where the error comes, may end the whole transaction
+ * and the savepoint with it; rolling back to it then would fail with "no such savepoint" and hide the error that ended
+ * it (Hub #1001).
  */
 function undo(db: Db, savepoint: string): void {
   if (!db.isTransaction) return;

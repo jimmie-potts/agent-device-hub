@@ -7,7 +7,7 @@ export {
   noSpans, startSpan, type Span, type SpanAttributes, type SpanKind, type SpanName, type SpanOptions, type SpanRecorder, type SpanStatus,
 } from './spans.js';
 export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
-export {openModuleDatabaseFile} from './database.js';
+export {fullDisk, openModuleDatabaseFile} from './database.js';
 export {
   CORE_SOURCE, OUTCOME_RECORDED_SCHEMA, OUTCOME_RECORDED_TYPE, acknowledgment, acknowledgmentOf, edgeValidator, outcomeRecordedKey, type OutcomeRecorded,
 } from './acknowledgment.js';

@@ -11,6 +11,6 @@ export {DashboardPager} from './presentation/agent-dashboard.js';
 export {monitorView} from './presentation/sources.js';
 export {nowPlayingView, renderNowPlaying} from './presentation/now-playing.js';
 export {
-  INSTALLED_LIBRARY, InstalledLibrary, MIGRATION_SCHEMA, MigrationError, fullDisk, migrateLibrary, verifyMigration, writeSyntheticLibrary, type Destination, type MigratedStore,
+  INSTALLED_LIBRARY, InstalledLibrary, MIGRATION_SCHEMA, MigrationError, migrateLibrary, verifyMigration, writeSyntheticLibrary, type Destination, type MigratedStore,
   type MigrationCode, type MigrationReport, type Mismatches, type SyntheticLibrary, type VerificationReport,
 } from './migration/index.js';
