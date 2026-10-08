@@ -39,6 +39,7 @@ export const workspaceScopes = ['@jimmie-potts/'];
 const browser = [
   'apps/dashboard/src/**',
   'apps/runtime/dashboard/src/**',
+  'modules/*/src/frontend/**',
   'apps/chompi-bridge/verify/page/**',
   'docs/system-design/assets/**',
   'docs/work-guide/browser/renderer.mjs',
@@ -200,7 +201,7 @@ export default defineConfig(
   },
   {
     name: 'bunny/react-hooks',
-    files: ['apps/dashboard/**/*.{ts,tsx}', 'apps/runtime/dashboard/**/*.{ts,tsx}'],
+    files: ['apps/dashboard/**/*.{ts,tsx}', 'apps/runtime/dashboard/**/*.{ts,tsx}', 'modules/*/src/frontend/**/*.{ts,tsx}'],
     plugins: {'react-hooks': reactHooks},
     rules: {'react-hooks/rules-of-hooks': 'error', 'react-hooks/exhaustive-deps': 'error'},
   },

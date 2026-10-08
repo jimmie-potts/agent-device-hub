@@ -16,6 +16,9 @@ import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
+import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
+import {playbackFactory} from '@jimmie-potts/playback';
+import {editorFixture} from './editor-fixture.ts';
 
 /** The synthetic marker of the hook's token: no record, answer or page may carry it (Hub #835). */
 export const TOKEN_MARKER = 'tok_SYNTHETIC835';
@@ -24,6 +27,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** The real Pixoo module with a fresh library and an in-memory device. */
+  pixooPages?: boolean;
   /** Qualified scripted Nanoleaf/Pixoo native responders; Nanoleaf fails and Pixoo succeeds independently. */
   modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
@@ -43,6 +48,10 @@ export type World = {
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
   runtime(): Runtime;
+  pixooState(): SimulatedPixooState;
+  pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
+  createPlaylist(name: string): Promise<void>;
+  readonlyPlaylistCommand(data: object): Promise<number>;
   /** Publishes one hook observation of `event` now, and resolves once the edge took it. */
   observe(event: LifecycleEvent, options?: ObservationOptions): Promise<void>;
   /** How many browser sessions the runtime holds. */
@@ -75,9 +84,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   await chmod(root, 0o700);
   const token = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const credentials = join(configDir, 'edge-credentials.json');
   await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']},
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
+    {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
   ]}));
   const bulbs = new SimulatedLifx();
   const gadget = new Gadget();
@@ -94,6 +105,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const signToken = join(configDir, 'sign-token');
   if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
   const moduleConfig = {...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
+    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config, playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
@@ -104,9 +116,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let core = createCoreModule();
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
+  const panel = new SimulatedPixoo();
+  const editor = options.pixooPages === true ? await editorFixture() : undefined;
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor])],
+    port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -115,6 +130,30 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
+    pixooState: () => panel.state(),
+    pixooPlaylists: async () => {
+      const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
+      try {
+        const result = await reader.sync<PlaylistRecord>(['pixoo-playlist'], () => {}, {owner: 'bunny/modules/pixoo', timeoutMs: 5000});
+        assert.equal(result.status, 'synced');
+        return result.copy.states().map(message => message.data);
+      } finally {await reader.close();}
+    },
+    createPlaylist: async name => {
+      const answer = await core.actions.dispatch({key: `bunny.cmd.pixoo-playlist-change.${PIXOO_SECTION.config.device.id}`,
+        draft: {type: 'org.bunny.pixoo-playlist.change.requested', subject: PIXOO_SECTION.config.device.id,
+          dataschema: 'https://bunny.invalid/events/pixoo-playlist-change/2.0', data: {change: {operation: 'create', name}}},
+        requestId: `setup-${randomBytes(8).toString('hex')}`, requestedBy: 'bunny/parts/operator'});
+      assert.equal('status' in answer ? answer.status : 'rejected', 'accepted');
+    },
+    readonlyPlaylistCommand: async data => {
+      const response = await fetch(`${runtime.url}/api/v2/commands/pixoo-playlist-change`, {
+        method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'},
+        body: JSON.stringify({target: PIXOO_SECTION.config.device.id, data, requestId: 'readonly-denied'}),
+      });
+      await response.arrayBuffer();
+      return response.status;
+    },
     observe: async (event, observed = {}) => {
       const {key, draft} = observation(event, Date.now(), observed);
       await (await connected()).publish(key, draft);

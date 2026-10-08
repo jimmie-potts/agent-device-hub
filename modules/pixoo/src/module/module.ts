@@ -93,7 +93,10 @@ const requestField = (requestId: string): LogFields => /^[A-Za-z0-9][A-Za-z0-9._
 export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfig> {
   let running: PixooRuntime | undefined;
   return {
-    manifest: {name: PIXOO_MODULE, apiVersion: '1.1', configure: section => configurePixoo(section, {simulated: options.transport.simulated})},
+    manifest: {
+      name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
+      pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}],
+    },
     async start(context) {
       // The runtime starts a module that declares `configure` only with what `configure` accepted.
       const {config} = context;

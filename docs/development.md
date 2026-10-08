@@ -1155,6 +1155,7 @@ npm run test:runtime-dashboard:browser   # the full browser suite, local only
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
+node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
@@ -1191,6 +1192,13 @@ keyboard selection, the saved choice and each device's result, same-mode
 reapply, a lost reply, read-only controls and reconnect/reload/restart without
 replay. It runs axe on the changed panel and writes a screenshot to its optional
 private evidence directory. It contacts no physical device.
+
+The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
+fresh synthetic library and simulated display. It checks a revision-bound name
+save through the shared shell, owner-confirmed state, read-only refusal,
+reload without resend, no display write and accessibility. It also executes a
+separately bundled trusted editor fixture while retaining passive-page script
+refusal. The full local browser command includes this journey.
 
 ## Agent lifecycle contract checks
 

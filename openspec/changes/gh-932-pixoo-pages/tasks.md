@@ -7,8 +7,8 @@
 ## 2. Integrate browser contributions
 
 - [x] 2.1 Compile explicit module browser entries with the existing build and provide the small browser-safe shared context; verify the real browser bundle and a rejected Node-entry control without importing server registrations.
-- [ ] 2.2 Render matching declared React contributions and trusted editor frames through the existing navigation and connection; verify unavailable/undeclared pages, passive frame behavior and cleanup with focused shell tests.
-- [ ] 2.3 Port the real Pixoo playlist name interaction through the existing tracked command path; verify no change on open/draft, one explicit save, owner-confirmed result, read-only refusal and no resend after reload. Exercise a trusted fixture bundle under the same asset/frame contract. Keep dependent editor integration held until this contract has the story's required review evidence.
+- [x] 2.2 Render matching declared React contributions and trusted editor frames through the existing navigation and connection; verify unavailable/undeclared pages, passive frame behavior and cleanup with focused shell tests.
+- [x] 2.3 Port the real Pixoo playlist name interaction through the existing tracked command path; verify no change on open/draft, one explicit save, owner-confirmed result, read-only refusal and no resend after reload. Exercise a trusted fixture bundle under the same asset/frame contract. Keep dependent editor integration held until this contract has the story's required review evidence.
 
 ## 3. Complete the Pixoo views
 

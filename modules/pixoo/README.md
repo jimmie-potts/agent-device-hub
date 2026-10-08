@@ -7,7 +7,7 @@ the Pixoo's library, player and presentation from divoom-app-upgrade, which
 arrived as a snapshot for
 [#25](https://github.com/jimmie-potts/agent-device-hub/issues/25). It follows
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) and the
-[module API](../../packages/sdk/README.md#modules) 1.1.
+[module API](../../packages/sdk/README.md#modules) 1.3.
 
 The runtime ships it through `src/module/registration.ts`, which wraps
 `pixooFactory` and declares its place after playback, but
@@ -35,6 +35,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | Path | Contents |
 | --- | --- |
 | `src/module` | The runtime module: `module.ts` (`createPixooModule`, `pixooFactory`), `control.ts` (command handling, `PixooControl`), `configuration.ts` (`configurePixoo`, `convertPixooSettings`), `transport.ts` (the HTTP transport and `SimulatedPixoo`), `schemas.ts` (its 2.0 families), `store.ts` (its own rows) and `render-worker.ts` |
+| `src/frontend` | The browser-only `./frontend` contribution: the first Playlists page in the shared dashboard (#932) |
 | `src/core` | Shared schemas for requests, presentation settings, Monitor filters and Now Playing |
 | `src/device` | The fake (simulator) adapter, the HTTP adapter and its transport, hosted GIF files, and the device qualification functions |
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
@@ -44,6 +45,27 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
 | `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration, its store on a full database and the library migration |
+
+## Frontend
+
+The explicit `./frontend` entry exports the module's `frontend` contribution.
+The dashboard's build collects it separately from the Node registration. Its
+Playlists page follows this module's `device` and `pixoo-playlist` records through
+the shell's existing connection and uses the shell's shared UI and command
+attempt component.
+
+Selecting a playlist and editing its draft name change only local form state.
+Save sends one `pixoo-playlist-change` with the draft's captured playlist
+revision. The saved owner name and revision stay separate from acceptance and
+the tracked command result. Invalid, unchanged, stale or locked drafts cannot
+save; read-only callers get no editing controls. Reload and reconnect send no
+commands. The first slice edits saved names; full library, media preview,
+creation and playback views remain under #932.
+
+This page reuses the playlist-selection and saved-owner-detail pattern from
+`apps/dashboard/src/pixoo-media.tsx` at `bf11587c`, plus this module's existing
+playlist schema and revision-checked command behavior. Its form is new for the
+runtime's tracked command boundary; it does not use the legacy controller API.
 
 ## The module
 
