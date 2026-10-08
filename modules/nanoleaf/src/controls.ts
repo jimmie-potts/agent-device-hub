@@ -242,14 +242,15 @@ export function controlPayload(db: Db, device: string, command: unknown): [strin
  * Journal each device write of one command for one worker pass (controller_state.Execution). Each write is refused once
  * a hold or a mode command has overtaken the pass. With a command, the attempt is recorded before the write and its
  * result after: a write without an answer ends the command uncertain and holds the device, since it may have reached
- * the device. A device that answers with an HTTP error heard the write and refused it: the command fails with that
- * evidence and the mapped code, nothing holds, and the pass starts again without it (`Cancelled`).
+ * the device, naming the command and `nowMs()` as the hold's start. A device that answers with an HTTP error heard the
+ * write and refused it: the command fails with that evidence and the mapped code, nothing holds, and the pass starts
+ * again without it (`Cancelled`).
  */
 export class Execution {
   #count = 0;
 
   constructor(private readonly db: Db, readonly revision: number, readonly id: string | null, readonly device: string,
-    private readonly transact: Transact) {}
+    private readonly transact: Transact, private readonly nowMs: () => number) {}
 
   async call<T>(send: () => Promise<T> | T): Promise<T> {
     const db = this.db;
@@ -276,7 +277,7 @@ export class Execution {
           return;
         }
         finish(db, row, {kind: 'uncertain'}, report);
-        hold(db, this.device, row.revision);
+        hold(db, this.device, row.revision, {requestId: row.id, heldAtMs: this.nowMs()});
       });
       if (answered !== undefined) throw new Cancelled('The device refused the write.', {cause: error});
       throw error;

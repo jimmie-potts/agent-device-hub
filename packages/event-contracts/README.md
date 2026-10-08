@@ -247,7 +247,7 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 
 | Kind | Family | Type |
 | --- | --- | --- |
-| state | `device` | `org.bunny.device.updated` |
+| state | `device` (2.0, and 2.1 with `held`) | `org.bunny.device.updated` |
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
 A `device` record is the full record of one device, published by the module
@@ -287,6 +287,35 @@ external-control reading or transmission after the envelope `time`, pending
 kinds that disagree with the pending count, and a general command whose
 `subject` is not a device ID.
 
+#### Held devices (`device/2.1`)
+
+A module holds a device after a write that may have reached it but went
+unanswered. ADR 0012 never retries that write, and the module sends the device
+no other write until the hold is released
+([Hub #975](https://github.com/jimmie-potts/agent-device-hub/issues/975)).
+`device/2.1` is `device/2.0` with one more optional member, `held`, which shows
+the hold:
+- **What it means.** `held` is present exactly while the hold lasts and absent
+  otherwise. `requestId` names the operation whose uncertain write holds the
+  device. That operation's outcome is `uncertain` with `uncertain-result`, and
+  the tracker and the operation's one inbox item carry the same request ID.
+  `heldAtMs` is when the hold began.
+- **How it clears.** The module releases the hold after a person's next
+  command to the device, or once a later definitive outcome settles the held
+  operation. Its next record has no `held`. Each module's README names the
+  commands that release a hold; no command family exists only for that.
+- **Availability.** A held device is never `available`: it is `degraded` while
+  it answers, `unavailable` while it does not, and `unknown` before it has
+  answered. The checks refuse a held `available` record and a hold that begins
+  after the envelope `time`.
+- **Versions.** `deviceFamilies` and `registerDeviceFamilies` carry both
+  versions, so every validator accepts both. A 2.0 record stays valid, and a
+  2.0 record that carries `held` is refused. Each producer chooses one version.
+  The Nanoleaf module publishes 2.1; LIFX, playback, Pixoo and Tidbyt hold no
+  device and publish 2.0. A consumer keys on the family, not the version.
+  `schemas/v2/families/device.2.1.schema.json` is the 2.0 schema plus `held`,
+  and a test keeps the two equal apart from `held`, `$id` and the description.
+
 Each general command maps one kind of controller v1's closed command union,
 and its verb is the family's last word. Each carries a `requestId` and the
 optional `expectedConfigurationRevision` and `expectedGeneration` guards. The
@@ -322,13 +351,15 @@ per-device overrides belong to #695. The table maps one way only. A device's
 native mode is never stored as the Hub's mode: Pixoo's `monitor` serves both
 `work` and `quiet`, and the `mode` family refuses `monitor` and `media`.
 
-`fixtures/v2/devices.json` has a valid message for every device family, with a
-reply and an outcome for each command family. Its invalid cases name their
+`fixtures/v2/devices.json` has a valid message for every device family, a held
+`device/2.1` record among them, with a reply and an outcome for each command
+family. Its invalid cases name their
 registry code and where each fails. `tests/devices.test.mjs` runs them, checks
 each command against its target device's capabilities, checks that every
 command family, `moment-play` and `playback-control` included, refuses a
-subject that is not a routing ID, and checks the Hub-mode table for each
-participating device kind.
+subject that is not a routing ID, checks the Hub-mode table for each
+participating device kind, and checks that `device/2.1` is `device/2.0` plus
+`held`, with every 2.0 record valid under both versions.
 
 ### Agent status helper
 

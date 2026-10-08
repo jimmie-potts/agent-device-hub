@@ -1,5 +1,5 @@
-// The 2.0 device families (Hub #918): the device record, the general commands, the capability rule and the Hub-mode
-// table, against the shared fixtures.
+// The 2.0 device families (Hub #918): the device record, with its 2.1 version's `held` member (Hub #975), the general
+// commands, the capability rule and the Hub-mode table, against the shared fixtures.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
@@ -69,20 +69,22 @@ test('each device family has one kind and one type, named after the family, and 
   const known = uri => deviceFamilies.some(family => family.dataschema === uri) || uri.endsWith('/session/2.0');
   const usesBlocks = schema => refs(schema).some(uri => uri.endsWith('/blocks/2.0') ||
     usesBlocks(deviceFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
-  const types = new Set();
+  const types = new Map();
   for (const {family, kind, type, dataschema, schema} of deviceFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.equal(dataschema, `https://bunny.invalid/events/${family}/2.0`);
+    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[01]$`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || known(uri), `${family}: ${uri}`);
     // org.bunny.<entity>.<verb>.requested: the family's last hyphenated word is the verb, as for mode-set and moment-play.
     const expected = kind === 'state' ? `org.bunny.${family}.updated` : `org.bunny.${family.replace(/-([a-z]+)$/, '.$1')}.requested`;
     assert.equal(type, expected, family);
-    assert.ok(!types.has(type), `${type} belongs to one family`);
-    types.add(type);
+    // Each version of a family keeps its one type; no other family uses it.
+    assert.ok((types.get(type) ?? family) === family, `${type} belongs to one family`);
+    types.set(type, family);
   }
-  assert.deepEqual(deviceFamilies.map(({family}) => family),
-    ['device', 'power-set', 'brightness-set', 'scene-activate', 'zone-power-set', 'media-start', 'media-control', 'device-mode-set']);
+  assert.deepEqual(deviceFamilies.map(({dataschema}) => dataschema.replace('https://bunny.invalid/events/', '')),
+    ['device/2.0', 'device/2.1', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
+      'media-control/2.0', 'device-mode-set/2.0']);
   assert.throws(() => registerDeviceFamilies(v), /already registered/);
   assert.throws(() => registerDeviceFamilies(new MessageValidator()), /session\/2\.0/, 'the device label uses the session display text');
 });
@@ -222,5 +224,49 @@ test('the last transmission and the pending kinds stay apart from observations a
   for (const record of devices()) {
     assert.equal(record.pendingKinds.length > 0, record.pending > 0, record.id);
     assert.ok(record.pendingKinds.length <= record.pending, record.id);
+  }
+});
+
+// Hub #975: device/2.1 is device/2.0 plus the optional `held` member, so every 2.0 record stays valid under either version.
+const schemaOf = version => deviceFamilies.find(({dataschema}) => dataschema === `https://bunny.invalid/events/device/${version}`)?.schema;
+
+test('device/2.1 is device/2.0 plus the optional held member, and nothing else', () => {
+  const [older, newer] = [schemaOf('2.0'), schemaOf('2.1')];
+  assert.ok(older && newer, 'both versions are device families');
+  const {held, ...properties} = newer.properties;
+  assert.ok(held, '2.1 defines held');
+  assert.equal(newer.required.includes('held'), false, 'held is optional');
+  assert.deepEqual(held.required, ['requestId', 'heldAtMs']);
+  assert.equal(held.additionalProperties, false);
+  const without = schema => ({...schema, $id: undefined, description: undefined});
+  assert.deepEqual(without({...newer, properties}), without(older));
+  assert.equal(Object.hasOwn(older.properties, 'held'), false, '2.0 stays as released');
+});
+
+test('every 2.0 device record stays valid under 2.0 and under 2.1, and only 2.1 carries a hold', () => {
+  const v = validator();
+  const older = Object.values(fixtures.valid).filter(message => message.dataschema.endsWith('/device/2.0'));
+  assert.equal(older.length, 3);
+  for (const message of older) {
+    assert.equal(v.validate(message).ok, true, `${message.subject} as 2.0`);
+    const relabelled = {...structuredClone(message), dataschema: 'https://bunny.invalid/events/device/2.1'};
+    assert.equal(v.validate(relabelled).ok, true, `${message.subject} as 2.1 without held`);
+  }
+  const held = fixtures.valid['device-nanoleaf-held'];
+  assert.equal(v.validate(held).ok, true);
+  assert.deepEqual(v.validate({...structuredClone(held), dataschema: 'https://bunny.invalid/events/device/2.0'}).error,
+    {code: 'invalid-message', retryable: false, detail: 'payload / additionalProperties held'});
+});
+
+test('a held record names the operation whose uncertain write holds it, and is not available', () => {
+  const {data} = fixtures.valid['device-nanoleaf-held'];
+  assert.equal(data.availability, 'degraded');
+  assert.equal(data.held.requestId, data.lastOutcome.outcome.requestId, 'the tracker and the inbox item find it by its request');
+  assert.deepEqual([data.lastOutcome.outcome.result, data.lastOutcome.outcome.error.code], ['uncertain', 'uncertain-result']);
+  assert.ok(data.held.heldAtMs <= Date.parse(fixtures.valid['device-nanoleaf-held'].time));
+  // A held device that stops answering is unavailable, and one not yet reached is unknown; both keep the hold.
+  const v = validator();
+  for (const availability of ['degraded', 'unavailable', 'unknown']) {
+    assert.equal(v.validate(patched('device-nanoleaf-held', {'/data/availability': availability})).ok, true, availability);
   }
 });

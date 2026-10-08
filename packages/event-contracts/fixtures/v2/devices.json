@@ -1,5 +1,5 @@
 {
- "description": "The 2.0 device families (Hub #918): the `device` state family and the general command families mapped from controller contract v1. `valid` holds one message for every device family, a removal, and a reply and an outcome for each command family. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails, and `expect` is its registry code. tests/devices.test.mjs runs them, and checks each command against its target device's capabilities.",
+ "description": "The 2.0 device families (Hub #918): the `device` state family, with its 2.1 version's `held` member (Hub #975), and the general command families mapped from controller contract v1. `valid` holds one message for every device family, a removal, and a reply and an outcome for each command family. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails, and `expect` is its registry code. tests/devices.test.mjs runs them, and checks each command against its target device's capabilities.",
  "valid": {
   "device-nanoleaf": {
    "specversion": "1.0",
@@ -329,6 +329,126 @@
      "status": "known",
      "owner": "external",
      "observedAtMs": 1791287100000
+    }
+   }
+  },
+  "device-nanoleaf-held": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-wall-held",
+   "source": "bunny/modules/nanoleaf",
+   "type": "org.bunny.device.updated",
+   "subject": "wall",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.1",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "wall",
+    "revision": 42,
+    "kind": "nanoleaf",
+    "label": "Office wall",
+    "availability": "degraded",
+    "held": {
+     "requestId": "req-wall-7",
+     "heldAtMs": 1791287999000
+    },
+    "configurationRevision": 7,
+    "generation": {
+     "epoch": "generation-3",
+     "sequence": 12
+    },
+    "capabilities": {
+     "power": {
+      "supported": true
+     },
+     "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+     },
+     "modes": {
+      "supported": true,
+      "values": [
+       "work",
+       "quiet",
+       "free"
+      ]
+     },
+     "moments": {
+      "supported": false
+     },
+     "media": {
+      "supported": false
+     },
+     "scenes": {
+      "supported": true,
+      "sceneIds": [
+       "scene-sunrise",
+       "scene-forest"
+      ]
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": false
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "known",
+      "value": 20
+     },
+     "mode": {
+      "status": "known",
+      "value": "work"
+     }
+    },
+    "observed": {
+     "status": "known",
+     "observedAtMs": 1791287998000,
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "known",
+      "value": 45
+     }
+    },
+    "pending": 0,
+    "pendingKinds": [],
+    "lastOutcome": {
+     "status": "known",
+     "outcome": {
+      "requestId": "req-wall-7",
+      "result": "uncertain",
+      "evidence": "none",
+      "error": {
+       "code": "uncertain-result",
+       "retryable": false,
+       "requestId": "req-wall-7"
+      }
+     }
+    },
+    "lastTransmission": {
+     "status": "known",
+     "requestId": "req-wall-6",
+     "transmittedAtMs": 1791287997500,
+     "operationIds": [
+      "brightness"
+     ]
+    },
+    "externalControl": {
+     "status": "known",
+     "owner": "module",
+     "observedAtMs": 1791287998000
     }
    }
   },
@@ -1127,10 +1247,91 @@
    "name": "a device record at an unregistered version",
    "base": "device-nanoleaf",
    "set": {
-    "/dataschema": "https://bunny.invalid/events/device/2.1"
+    "/dataschema": "https://bunny.invalid/events/device/2.2"
    },
    "expect": "unsupported-version",
-   "detail": "https://bunny.invalid/events/device/2.1"
+   "detail": "https://bunny.invalid/events/device/2.2"
+  },
+  {
+   "name": "a hold without its request",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/requestId": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held required requestId"
+  },
+  {
+   "name": "a hold without its start",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/heldAtMs": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held required heldAtMs"
+  },
+  {
+   "name": "a hold that names the command family",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/family": "brightness-set"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held additionalProperties family"
+  },
+  {
+   "name": "a hold whose request is not an identifier",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/requestId": "req wall 7"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held/requestId pattern"
+  },
+  {
+   "name": "a hold written as the wall view's boolean",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held": true
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held type"
+  },
+  {
+   "name": "a hold that starts before the epoch",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/heldAtMs": -1
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held/heldAtMs minimum"
+  },
+  {
+   "name": "a hold that begins after the message time",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/held/heldAtMs": 1791288000001
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held/heldAtMs after time"
+  },
+  {
+   "name": "a held device shown as available",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/data/availability": "available"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /held on an available device"
+  },
+  {
+   "name": "a hold in a device/2.0 record",
+   "base": "device-nanoleaf-held",
+   "set": {
+    "/dataschema": "https://bunny.invalid/events/device/2.0"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties held"
   },
   {
    "name": "a device-specific command that no shared family defines",

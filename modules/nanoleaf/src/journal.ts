@@ -4,13 +4,23 @@
 // synchronous transaction; none waits or contacts a device. A row is deleted when its command ends: its outcome then
 // lives in the runtime's outbox until the core acknowledges it. Only an uncertain write holds a device (ADR 0012): a
 // command that ends without reaching it proves no effect, so Python's hold after an unsent command's expiry is not
-// ported (Hub #844 review).
+// ported (Hub #844 review). A hold also records the operation it waits on, which the device record's `held` names
+// (Hub #975); Python's hold had none.
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 
 /** The meta key, per device, that holds the mode revision an uncertain or unsent command held (controller_state.HOLD). */
 export const HOLD = 'controller_hold_revision';
+/**
+ * The operation a hold waits on (Hub #975): the request whose write may have reached the device but went unanswered, and
+ * when the hold began on the runtime's clock. The port keeps it in `control_holds`, beside the `meta` row that Python's
+ * recorded cases compare.
+ */
+export interface HeldOperation {
+  requestId: string;
+  heldAtMs: number;
+}
 /** One-shot native controls, journaled with their device's mode revision (controller_state.CONTROLS). */
 export const CONTROLS = ['power.set', 'brightness.set', 'scene.activate'] as const;
 export const ANIMATION = 'animation.play';
@@ -95,6 +105,7 @@ export function initJournal(db: Db): void {
     command TEXT NOT NULL, mode_revision INTEGER NOT NULL, phase TEXT NOT NULL CHECK (phase IN ('queued', 'attempting')),
     completed INTEGER NOT NULL DEFAULT 0, uncertain INTEGER NOT NULL DEFAULT 0, accepted REAL NOT NULL, expires REAL NOT NULL)`);
   db.exec('CREATE TABLE IF NOT EXISTS control_scenes (device TEXT PRIMARY KEY, scene_key TEXT NOT NULL, names TEXT NOT NULL)');
+  db.exec('CREATE TABLE IF NOT EXISTS control_holds (device TEXT PRIMARY KEY, request_id TEXT NOT NULL, held_at_ms INTEGER NOT NULL)');
 }
 
 const COLUMNS = 'seq,id,device,kind,command,mode_revision,phase,completed,uncertain,expires';
@@ -116,17 +127,33 @@ export function journalRow(db: Db, id: string): JournalRow | undefined {
   return row === undefined ? undefined : rowOf(row);
 }
 
-export function hold(db: Db, device: string, revision: number): void {
+/**
+ * Holds the device at this mode revision after `operation`'s write may have reached it, recording the operation in the
+ * same transaction, so `holdOf` names it whenever `held` is true. A hold already in place at this revision keeps the
+ * operation it began with.
+ */
+export function hold(db: Db, device: string, revision: number, operation: HeldOperation): void {
+  if (held(db, revision, device)) return;
   execute(db, 'INSERT OR REPLACE INTO meta VALUES (?, ?)', metaKey(HOLD, device), String(revision));
+  execute(db, 'INSERT OR REPLACE INTO control_holds VALUES (?, ?, ?)', device, operation.requestId, operation.heldAtMs);
 }
 
+/** Ends the device's hold and forgets the operation it waited on. */
 export function release(db: Db, device: string): void {
   execute(db, 'DELETE FROM meta WHERE key=?', metaKey(HOLD, device));
+  execute(db, 'DELETE FROM control_holds WHERE device=?', device);
 }
 
 /** Whether a hold stops the device's writes at this mode revision. */
 export function held(db: Db, revision: number, device: string = DEFAULT): boolean {
   return first(db, 'SELECT value FROM meta WHERE key=?', metaKey(HOLD, device))?.[0] === String(revision);
+}
+
+/** The operation the device's hold waits on, while a hold stops its writes at this mode revision. */
+export function holdOf(db: Db, revision: number, device: string = DEFAULT): HeldOperation | undefined {
+  if (!held(db, revision, device)) return undefined;
+  const row = first(db, 'SELECT request_id,held_at_ms FROM control_holds WHERE device=?', device);
+  return row === undefined ? undefined : {requestId: text(row, 0), heldAtMs: number(row, 1)};
 }
 
 /**
@@ -192,13 +219,13 @@ export function retireQueued(db: Db, device: string, report: Report): void {
 
 /**
  * At a worker's start, an attempt that has no result may have reached the device. A native control holds the device
- * at its revision until an explicit choice; an animation does not (controller_state.recover with attempts,
- * integration_api.recover_attempts).
+ * at its revision until an explicit choice, from `nowMs`; an animation does not (controller_state.recover with
+ * attempts, integration_api.recover_attempts).
  */
-export function recoverAttempts(db: Db, device: string, report: Report): void {
+export function recoverAttempts(db: Db, device: string, report: Report, nowMs: number): void {
   for (const row of journal(db, device, "AND phase='attempting'")) {
     finish(db, row, {kind: 'uncertain'}, report);
-    if (row.kind !== ANIMATION) hold(db, device, row.revision);
+    if (row.kind !== ANIMATION) hold(db, device, row.revision, {requestId: row.id, heldAtMs: nowMs});
   }
 }
 

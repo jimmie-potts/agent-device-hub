@@ -258,6 +258,8 @@ The profile SHALL define `device`, a state family registered under `https://bunn
 
 A module SHALL set `lastTransmission` for every transmitted send, including paints it makes itself, which never reach the tracker. A known desired mode SHALL be one the device advertises. An observation, external-control reading or transmission after the envelope `time` SHALL be refused, and so SHALL pending kinds that are empty while commands are pending or outnumber them. No device record SHALL carry an address, credential, private path or the Hub's mode. Missing evidence SHALL be a tagged unknown, never `false` or off, and a transport acknowledgment SHALL NOT be reported as an observation.
 
+The family's minor version 2.1 (Hub #975), registered under `https://bunny.invalid/events/device/2.1` beside 2.0 and sent with the same type, SHALL be the 2.0 record with one more optional member, `held`, and SHALL keep every 2.0 rule. `held` SHALL be present exactly while the module holds the device after a write that may have reached it but went unanswered, which ADR 0012 never retries. It SHALL carry the `requestId` of the operation whose uncertain write holds the device, and `heldAtMs`, when the hold began, and nothing else. The module SHALL omit it once it releases the hold, after a person's later command to the device or a later definitive outcome for that operation. A hold that begins after the envelope `time` SHALL be refused, and so SHALL a held device that is `available`. `device/2.0` SHALL stay registered and unchanged, so a record without `held` stays valid under either version, and a `device/2.0` record that carries `held` SHALL be refused. Each producer SHALL choose one version for its records.
+
 #### Scenario: Valid device records
 - **WHEN** an available Nanoleaf wall, a degraded Pixoo and an unreachable LIFX device with an old observation are validated
 - **THEN** each is accepted, the unreachable device keeps its last observation with its evidence time, and its later transmission, a paint with no request, stays apart from that observation
@@ -265,6 +267,18 @@ A module SHALL set `lastTransmission` for every transmitted send, including pain
 #### Scenario: Device record rules
 - **WHEN** a record has an `id` with a dot, an uppercase letter, an underscore or more than 128 characters, omits any one of the eight capabilities, gives an unsupported capability constraints or brightness another range than 0 to 100, lacks the core moods for supported moments, desires a mode it does not advertise, carries an observation without its evidence time or after the message time, a transmission after the message time or with an observed value, pending kinds that disagree with the pending count, a pending count over 1,024, a label over 80 characters, an address or a token, uses 1.x service health or controller ownership, or is sent under another subject, kind or type
 - **THEN** it is refused with `invalid-message` and a detail naming where
+
+#### Scenario: A held device record
+- **WHEN** a degraded Nanoleaf wall whose `held` names the request of a lost brightness write and the time the hold began is validated as `device/2.1`, and the 2.0 fixtures are validated as `device/2.1` without `held`
+- **THEN** each is accepted, the 2.0 fixtures stay valid as `device/2.0`, and a record at a version the profile does not register, such as `device/2.2`, is refused with `unsupported-version`
+
+#### Scenario: Held record rules
+- **WHEN** a `device/2.1` record's `held` lacks its `requestId` or `heldAtMs`, carries another member, a request ID that is not an identifier or a boolean in place of the object, begins after the message time, or belongs to an `available` device, or a `device/2.0` record carries `held`
+- **THEN** it is refused with `invalid-message` and a detail naming where
+
+#### Scenario: Version 2.1 is 2.0 plus `held`
+- **WHEN** the 2.1 schema is compared with the 2.0 schema without `held`, its `$id` and its description
+- **THEN** they are equal, and both versions register through `registerDeviceFamilies`
 
 ### Requirement: General device commands
 
@@ -361,6 +375,7 @@ The registry's `duplicate-conflict` SHALL mean a message that reuses `(source, i
 #### Scenario: The registry's meaning
 - **WHEN** the registry file is read
 - **THEN** `duplicate-conflict` is not retryable and its meaning names both a reused `(source, id)` and a command sent again
+
 ### Requirement: A message's subject is its key's routing ID
 
 ADR 0012's routing keys, `bunny.<state|event|cmd>.<family>.<id>`, end in the routing ID of the entity they are about, and an entity's routing ID is its `id`, so a command's envelope `subject`, the entity it is for, SHALL be the last token of its routing key. A state or removal SHALL meet the same rule wherever it is published, and an occurrence or outcome that a remote part publishes SHALL too. The SDK SHALL refuse a command, state or removal that breaks it, on every transport, and a remote edge a publish that breaks it, with `invalid-message` before any responder or subscriber has the message, so that a grant of a key covers exactly the entity its responder acts on (Hub #835). A device command's subject is the device's ID, a `playback-control` command's the `playback` record's `id`, and a core command's the session's.

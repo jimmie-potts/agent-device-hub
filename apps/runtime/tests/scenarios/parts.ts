@@ -202,10 +202,13 @@ export class Reader implements ReaderView {
     return [...new Set(this.groups.flatMap(group => group.families))];
   }
 
-  /** The current states of `family` in the copies that hold it, or only in the copy from `owner` when one is named. */
+  /**
+   * The current states of `family`, at any version of it, such as `device/2.0` and `device/2.1` (Hub #975), in the copies
+   * that hold it, or only in the copy from `owner` when one is named.
+   */
   states<T>(family: string, owner?: string): Message<T>[] {
     return this.#holding(family, owner).flatMap(index => this.copies[index]?.states() ?? [])
-      .filter(state => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) as Message<T>[];
+      .filter(state => state.dataschema.startsWith(`${SCHEMA_BASE}${family}/`)) as Message<T>[];
   }
 
   syncs(family: string, owner?: string): number {

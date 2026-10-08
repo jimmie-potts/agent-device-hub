@@ -1,5 +1,5 @@
 // What the Nanoleaf module publishes, built from saved state and what its links observed, never from a device read
-// (Hub #844): each controller's `device/2.0` record, its wall map view and the Lines' animation options. Building them
+// (Hub #844): each controller's `device/2.1` record (Hub #975), its wall map view and the Lines' animation options. Building them
 // only reads: no row is written, so serving a sync never changes the store. No view holds an address or a credential;
 // the device record and the wall view hold no favorite or preset name, which only the animation options list. The saved
 // layout, its geometry and the remembered scene are read again only when their file changed, since the views are built
@@ -14,7 +14,7 @@ import {DEFAULTS, DIRECTIONS, MAX_BYTES, MAX_COLORS, MAX_FAVORITES, MAX_FRAMES, 
 import {ValueError} from '../errors.js';
 import {favorites} from '../favorites.js';
 import {geometry, triangleGeometry, type Point} from '../geometry.js';
-import {ANIMATION, journal} from '../journal.js';
+import {ANIMATION, journal, type HeldOperation} from '../journal.js';
 import {fallbackTitle, owners, palette, pending, settings, taskProjects} from '../project-map.js';
 import {evictionToken, presented, selected, state as sharedState, visibleTasks, type SharedCopy} from '../shared-input.js';
 import {first, rows, type Db, type SqlValue} from '../sqlite.js';
@@ -107,21 +107,24 @@ function pendingCommands(db: Db, device: string): {count: number; kinds: string[
   return {count: families.length, kinds: [...new Set(families)]};
 }
 
-/** Whether the module presents the device now: its worker runs, and no hold stops its writes. */
-export type Presence = {held: boolean; workerDown: boolean};
+/**
+ * Whether the module presents the device now: its worker runs, and no hold stops its writes. `hold` is the operation a
+ * hold after an uncertain write waits on, while one stops them.
+ */
+export type Presence = {hold: HeldOperation | undefined; workerDown: boolean};
 
 /**
  * The device's availability: `unavailable` while it does not answer; `degraded` while it answers and the module does
  * not present it, because it refuses the module's token, its last pass failed, a hold after an uncertain write stops its
- * writes (until #975 adds a `held` member to `device`) or no worker runs for it; `available` otherwise once it
- * answered; and `unknown` before it has.
+ * writes, which the record's `held` also names, or no worker runs for it; `available` otherwise once it answered; and
+ * `unknown` before it has. A held device is never `available`.
  */
 export function availabilityOf(db: Db, link: DeviceLink, presence: Presence): DeviceRecord['availability'] {
   if (link.status === 'failing') return 'unavailable';
   if (link.status === 'unknown') return 'unknown';
   const error = controlState(db, link.device).error;
   const passFailed = error !== null && error !== '';
-  return link.status === 'refusing' || passFailed || presence.held || presence.workerDown ? 'degraded' : 'available';
+  return link.status === 'refusing' || passFailed || presence.hold !== undefined || presence.workerDown ? 'degraded' : 'available';
 }
 
 /** The device's last outcome as saved. */
@@ -159,8 +162,10 @@ export function nextTransmission(shown: ShownTransmission | undefined, latest: T
 }
 
 /**
- * The device's `device/2.0` record without its revision, from saved state, what its link observed and the last
- * transmission the module chose to show (the module coalesces its own paints).
+ * The device's `device/2.1` record without its revision, from saved state, what its link observed and the last
+ * transmission the module chose to show (the module coalesces its own paints). While a hold after an uncertain write
+ * stops the device's writes, `held` names the write's request and when the hold began (Hub #975); the record after
+ * the hold's release has none.
  */
 export function deviceRecord(db: Db, link: DeviceLink, epoch: string, presence: Presence, transmission: Transmission | undefined): Omit<DeviceRecord, 'revision'> {
   const device = link.device;
@@ -171,7 +176,9 @@ export function deviceRecord(db: Db, link: DeviceLink, epoch: string, presence: 
   const outcome = lastOutcome(db, device);
   const observation = link.observation;
   return {
-    id: device, kind: 'nanoleaf', availability, configurationRevision: configurationRevision(db, device),
+    id: device, kind: 'nanoleaf', availability,
+    ...(presence.hold === undefined ? {} : {held: {requestId: presence.hold.requestId, heldAtMs: presence.hold.heldAtMs}}),
+    configurationRevision: configurationRevision(db, device),
     generation: {epoch, sequence: control.revision}, capabilities: capabilities(db, device),
     desired: {power: tagged(desired.power), brightness: tagged(desired.brightness), mode: {status: 'known', value: control.mode}},
     observed: observation === undefined ? {status: 'unknown'}
@@ -230,7 +237,7 @@ export function wallView(db: Db, copy: SharedCopy, directory: string, device: st
   return {
     id: device, configurationRevision: configurationRevision(db, device), kind, mode: control.mode, modePending: control.revision !== control.applied,
     // Failing while the last pass failed or no worker runs; held while a hold after an uncertain write stops its writes.
-    failing: (control.error !== null && control.error !== '') || presence.workerDown, held: presence.held,
+    failing: (control.error !== null && control.error !== '') || presence.workerDown, held: presence.hold !== undefined,
     source: shared ? 'shared' : 'paused', layout: layout === undefined ? 'missing' : 'saved',
     settings: {style: map.style, coverage: map.coverage, rotation: map.rotation, flipX: map.flip_x, flipY: map.flip_y}, palette: palette(db),
     pendingEdit: pending(db, device) !== null,
@@ -312,7 +319,7 @@ export function animationsView(db: Db, directory: string): Record<string, unknow
 
 /** The state messages' types and schemas, by family. */
 export const STATE_TYPES = {
-  device: {type: 'org.bunny.device.updated', dataschema: 'https://bunny.invalid/events/device/2.0'},
+  device: {type: 'org.bunny.device.updated', dataschema: 'https://bunny.invalid/events/device/2.1'},
   [NANOLEAF_FAMILIES.wall.family]: {type: NANOLEAF_FAMILIES.wall.type, dataschema: 'https://bunny.invalid/events/nanoleaf-wall/2.0'},
   [NANOLEAF_FAMILIES.animations.family]: {type: NANOLEAF_FAMILIES.animations.type, dataschema: 'https://bunny.invalid/events/nanoleaf-animations/2.0'},
 } as const;

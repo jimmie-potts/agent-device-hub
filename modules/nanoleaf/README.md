@@ -64,7 +64,7 @@ the wall pages (#934) apply that rule.
 
 | Family | Kind | What it does |
 | --- | --- | --- |
-| `device` | state | Each controller's `device/2.0` record |
+| `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | The Lines' animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
@@ -105,10 +105,12 @@ the wall pages (#934) apply that rule.
   brightness with it, unless another command of its kind still waits.
 - **Holds.** Only a write that may have reached the device holds it: one whose answer did
   not come, or an attempt a restart found without a result. The hold lasts until an
-  explicit mode command or a fresh control, and the write is never retried. The device
-  record shows a held device as `degraded`, until #975 adds a `held` member to `device`;
-  the wall view shows it as `held`, and the module logs the hold once as it begins and once
-  as it is released.
+  explicit mode command or a fresh control (power, brightness, a scene or an animation),
+  and the write is never retried. While it lasts, the device record is `degraded` and its
+  `held` names the held write's request ID and the time the hold began (`device/2.1`,
+  #975), the wall view shows `held`, and the module logs the hold once as it begins and
+  once as it is released. The record after the release has no `held`. The journal keeps
+  the held operation with the hold (`control_holds`), so a restart shows the same `held`.
 - **Restarts.** Each command accepted before a restart with no outcome ends at the start
   and never runs. An attempt without a result is uncertain, and so is an acknowledgment
   whose request may have reached the core. A queued command fails `cancelled`, and so does
@@ -165,7 +167,7 @@ copy in memory only (`SessionFeed`, `SharedCopy`).
 
 ## State and availability
 
-The `device/2.0` record is published only when it changed (ADR 0012: a poll that changed
+The `device/2.1` record is published only when it changed (ADR 0012: a poll that changed
 nothing publishes nothing). Its observation is the power and brightness the device
 reported to `GET /state`, with `observedAtMs` the time of the reading that first showed
 them; consumers judge freshness by `availability`, as for the playback and LIFX records.
@@ -184,8 +186,8 @@ the device answers; once it stops answering, the poll shows it as it times out, 
 
 - `unavailable` while the device does not answer;
 - `degraded` while it answers and the module does not present it: it refuses the module's
-  token (401 or 403), its last pass failed, a hold stops its writes (until #975 adds a
-  `held` member to `device`), or no worker runs;
+  token (401 or 403), its last pass failed, a hold stops its writes, which `held` names,
+  or no worker runs;
 - `available` otherwise, once it has answered; `unknown` before.
 
 ## Failures and logs

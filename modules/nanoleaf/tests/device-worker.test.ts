@@ -595,7 +595,7 @@ suite('supervisor checks the port adds', () => {
     }
     run.completeHook(() => {
       const db = run.database();
-      transaction(db, () => hold(db, 'panels', controlState(db, 'panels').revision));
+      transaction(db, () => hold(db, 'panels', controlState(db, 'panels').revision, {requestId: 'held-directly', heldAtMs: 0}));
       writeFileSync(join(run.directory, 'config.json'), '{');
     });
     const failed: string[] = [];

@@ -170,6 +170,9 @@ export type WorldOptions = {
   spans?: RecordedSpans;
 };
 
+/** The schema the module publishes a state family's records under: `device/2.1`, which carries `held` (Hub #975), or 2.0. */
+export const publishedSchema = (family: string): string => `https://bunny.invalid/events/${family}/${family === 'device' ? '2.1' : '2.0'}`;
+
 /** One module world. `restart` stops the module and starts a new instance on the same state directory and device. */
 export class ModuleWorld {
   readonly clock = new TestClock();
@@ -286,10 +289,10 @@ export class ModuleWorld {
     return answered as RequestResult;
   }
 
-  /** The newest published state of one entity of the module's. */
+  /** The newest published state of one entity of the module's, at the version the module publishes it. */
   state<T>(family: string, id: string): T | undefined {
     const message = [...this.seen].reverse().find(item => item.kind === 'state' && item.source === 'bunny/modules/nanoleaf'
-      && item.dataschema === `https://bunny.invalid/events/${family}/2.0` && (item.data as {id?: unknown}).id === id);
+      && item.dataschema === publishedSchema(family) && (item.data as {id?: unknown}).id === id);
     return message?.data as T | undefined;
   }
 

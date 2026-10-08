@@ -1,6 +1,7 @@
 // The 2.0 device families (Hub #918): one device's full record, the general commands mapped from controller contract
-// v1's closed command union, v1 admission's capability rule and the fixed Hub-mode table. Device-specific families,
-// such as LIFX color or Pixoo media, belong to each module. `MAPPING.md` shows where each v1 field lands.
+// v1's closed command union, v1 admission's capability rule and the fixed Hub-mode table. The record's minor version 2.1
+// adds the optional `held` member (Hub #975). Device-specific families, such as LIFX color or Pixoo media, belong to each
+// module. `MAPPING.md` shows where each v1 field lands.
 import type {ErrorDetail, Known, Message, MessageValidator, PayloadCheck, Ticket, Unknown} from './index.js';
 import type {Mode, MomentPlayRequest} from './families.js';
 import {defineFamily, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
@@ -26,6 +27,12 @@ export type CompletedOutcome = {
   requestId: string; result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
 };
 /**
+ * A hold after an uncertain write (`device/2.1`, Hub #975): the operation whose write may have reached the device but
+ * went unanswered, which is never retried, and when the hold began. The module sends the device no other write until it
+ * releases the hold, after a person's later command to the device or a later definitive outcome for that operation.
+ */
+export type DeviceHold = {requestId: string; heldAtMs: number};
+/**
  * `org.bunny.device.updated`: the full record of one device, published by the module that controls it. `unavailable`
  * means the module cannot reach the device. Desired and observed values stay separate, and only a reading from the
  * device is an observation, with its own evidence time.
@@ -33,6 +40,8 @@ export type CompletedOutcome = {
 export type DeviceRecord = {
   id: string; revision: number; kind: string; label?: string;
   availability: 'unknown' | 'available' | 'degraded' | 'unavailable';
+  /** `device/2.1` only: present exactly while a hold after an uncertain write stops the device's writes. Never `available`. */
+  held?: DeviceHold;
   configurationRevision: number; generation: Ticket;
   capabilities: Capabilities;
   desired: {power: Tagged<boolean>; brightness: Tagged<number>; mode: Tagged<string>};
@@ -122,6 +131,11 @@ const checkDevice: PayloadCheck = message => {
   if (record.lastTransmission.status === 'known' && after(message, record.lastTransmission.transmittedAtMs)) {
     return 'payload /lastTransmission/transmittedAtMs after time';
   }
+  // A hold begins no later than the message that reports it, and a held device is not presented as available.
+  if (record.held !== undefined) {
+    if (after(message, record.held.heldAtMs)) return 'payload /held/heldAtMs after time';
+    if (record.availability === 'available') return 'payload /held on an available device';
+  }
   // Each pending command has a family, and the kinds list each family once.
   if (record.pending > 0 && record.pendingKinds.length === 0) return 'payload /pendingKinds missing for pending commands';
   return record.pendingKinds.length > record.pending ? 'payload /pendingKinds more kinds than pending commands' : undefined;
@@ -129,11 +143,13 @@ const checkDevice: PayloadCheck = message => {
 
 export type {PayloadFamily} from './registry.js';
 /**
- * Every device family, in registration order. Each command type is `org.bunny.<entity>.<verb>.requested`, whose verb
- * is the family's last word. Replies, outcomes and removals use the payloads the profile owns.
+ * Every device family, in registration order, each version of `device` on its own: 2.0, and 2.1 with `held`, which a
+ * module that holds devices publishes. Each command type is `org.bunny.<entity>.<verb>.requested`, whose verb is the
+ * family's last word. Replies, outcomes and removals use the payloads the profile owns.
  */
 export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.1'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
   defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),
