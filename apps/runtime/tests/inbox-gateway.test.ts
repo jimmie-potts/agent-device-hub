@@ -95,3 +95,36 @@ it('authenticated HTTP inbox handling continues its trace through removal and ex
     assert.ok(spans.some(span => span.traceId === traceId && span.kind === 3 && span.name === 'bunny.command.request' && span.parentSpanId === server.spanId), 'the SDK request is a child of the HTTP server span');
   }
 });
+
+it('HTTP send-again accepts committed handling when the fresh device command refuses', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const gadget = new Gadget(), files = await edgeConfig(context, [operator]);
+  const {runtime} = await run(context, {modules: [core, gadget.module()], configFile: files.config, edge: {schemas: gadgetSchemas}});
+  assert.ok(handle);
+  const items = async () => {
+    const response = await fetch(new URL('/api/v2/families/inbox-item', runtime.url), {headers: {authorization: `Bearer ${operator.token}`}});
+    return (await response.json() as {records: {id: string; revision: number; item: {requestId: string; result: string}}[]}).records;
+  };
+  gadget.script({reply: 'unavailable'}, {reply: 'unavailable'});
+  await core.actions.dispatch({...setGadget(37), requestedBy: operator.source, requestId: 'refused-original'});
+  await waitFor(async () => (await items()).length === 1);
+  const original = (await items())[0]; assert.ok(original);
+  const response = await fetch(new URL('/api/v2/commands/inbox-handle', runtime.url), {
+    method: 'POST', headers: {authorization: `Bearer ${operator.token}`, 'content-type': 'application/json'},
+    body: JSON.stringify({target: original.id, requestId: 'refused-resend-handle', data: {action: 'send-again', expectedRevision: original.revision}}),
+  });
+  assert.equal(response.status, 200, 'handling committed even though the new device command refused');
+  assert.equal((await response.json() as {status: string}).status, 'accepted');
+  assert.equal(gadget.commands.length, 2, 'only one explicit new command was sent');
+  const resent = gadget.commands[1]; assert.ok(resent);
+  assert.notEqual(resent.data.requestId, 'refused-original');
+  assert.equal(resent.data.level, 37, 'resend keeps the saved command data');
+  assert.equal(handle.operation(resent.data.requestId)?.result, 'failed', 'device refusal stays on the fresh operation');
+  assert.equal(handle.operation(resent.data.requestId)?.error?.code, 'unavailable');
+  await waitFor(async () => (await items()).some(item => item.item.requestId === resent.data.requestId));
+  const current = await items();
+  assert.equal(current.length, 1);
+  assert.equal(current[0]?.item.result, 'failed');
+  assert.ok(current.every(item => item.id !== original.id), 'the handled original is removed');
+});

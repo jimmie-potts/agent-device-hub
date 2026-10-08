@@ -1709,7 +1709,9 @@ and a `deleted` removal atomically. Send-again commits handling with a new
 tracked sent operation using saved data and a fresh request ID, then sends once.
 A failed initial commit leaves the original open. A crash after commit never
 resends; the new tracked operation can become uncertain. Accepted handling is
-separate from device completion. There is no automatic retry, replay or expiry.
+separate from device completion: a later device refusal or uncertainty stays on
+the new operation and does not reject committed handling. There is no automatic
+retry, replay or expiry.
 
 The catalog's `shared-inbox-history` journey and focused core/gateway tests use
 synthetic state. One synthetic 1,000-item sync check records the largest encoded

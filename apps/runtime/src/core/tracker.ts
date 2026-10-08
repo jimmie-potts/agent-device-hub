@@ -59,6 +59,8 @@ export type Action = {
 };
 /** The dispatcher's answer: the owner's `accepted`, or a refusal or uncertain result in the shared error body. */
 export type ActionAnswer = {status: 'accepted'; requestId: string} | ErrorBody;
+/** Inbox handling joins the initial transaction and learns when that transaction has committed. */
+type InboxDispatch = {handle: (tx: CoreTransaction) => ErrorBody | undefined; committed: (requestId: string) => void};
 
 /** The dispatcher, as the runtime gives it to the gateway's action routes (Hub #782). */
 export interface CoreActions {
@@ -248,9 +250,12 @@ export class Tracker {
     return this.#work(this.#dispatch(action).catch((): ActionAnswer => errorBody('internal', {detail: 'the core could not dispatch the action'})));
   }
 
-  /** #923 only: handles the original inbox item atomically with this new sent operation. */
+  /** #923 only: answers for committed handling, separately from the fresh device operation's result. */
   dispatchFromInbox(action: Action, handle: (tx: CoreTransaction) => ErrorBody | undefined): Promise<ActionAnswer> {
-    return this.#work(this.#dispatch(action, false, handle).catch(() => errorBody('internal', {detail: 'the core could not send the inbox command'})));
+    let committed: {status: 'accepted'; requestId: string} | undefined;
+    const work = this.#dispatch(action, false, {handle, committed: requestId => { committed = {status: 'accepted', requestId}; }});
+    return this.#work(work.then(answer => committed ?? answer,
+      () => committed ?? errorBody('internal', {detail: 'the core could not send the inbox command'})));
   }
 
   /** Admits a tracked operator action; only the gateway holds this entry point. */
@@ -302,7 +307,7 @@ export class Tracker {
     return work;
   }
 
-  async #dispatch(input: Action, operator = false, handleInbox?: (tx: CoreTransaction) => ErrorBody | undefined): Promise<ActionAnswer> {
+  async #dispatch(input: Action, operator = false, inbox?: InboxDispatch): Promise<ActionAnswer> {
     // Capture before the first await: a caller retains its original objects while admission waits.
     const action: Action = {...input, draft: {...input.draft, data: structuredClone(input.draft.data)},
       ...(input.parent === undefined ? {} : {parent: {...input.parent}})};
@@ -344,7 +349,7 @@ export class Tracker {
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
         if (known !== undefined) return known;
-        const handled = handleInbox?.(tx);
+        const handled = inbox?.handle(tx);
         if (handled !== undefined) throw new Refused(handled.error.code, handled.error.detail ?? 'inbox handling refused');
         this.#required().insert.run(requestId, sent.status, sent.deadlineAtMs, JSON.stringify(sent));
         this.#changed(tx, 'sent', {operation: sent, previous: undefined});
@@ -359,6 +364,8 @@ export class Tracker {
       served.end();
       return this.#again(earlier, action, data);
     }
+    // A device refusal or uncertainty from here belongs to the new operation; it cannot reject committed handling.
+    inbox?.committed(requestId);
     const admission: Admission | undefined = operator ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
     if (admission !== undefined) this.#admitted.set(requestId, admission);
     this.#schedule();
