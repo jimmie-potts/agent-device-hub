@@ -451,11 +451,13 @@ class Memory implements MemoryHarness {
     if (edge === undefined) throw new StepFailure('the harness has no edge');
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
-    const actions = modules.find(isCoreModule)?.actions;
+    const core = modules.find(isCoreModule);
+    const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({
       bus: host.bus, host, validator: this.#validator, families: readableFamilies(this.#schemas), edge: edge.config, credentials: edge.credentials,
       log: logs.logger(RUNTIME_SCOPE), redactions: logs.redactions, clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir,
       onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); }, ...(actions === undefined ? {} : {actions}),
+      ...(operatorActions === undefined ? {} : {operatorActions}),
     });
     await gateway.start(this.url ?? '', [new URL(this.url ?? 'http://127.0.0.1').host]);
     this.#generations.push({host, gateway, watcher, logs, databases});

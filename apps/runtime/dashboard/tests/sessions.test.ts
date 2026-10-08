@@ -23,6 +23,8 @@ void test('a session is named by its label, then its title, then its native ID, 
   assert.equal(sessionName(record({label: {value: 'Port the wall', origin: 'user'}, title: {value: 'A title', source: 'provider'}})), 'Port the wall');
   assert.equal(sessionName(record({title: {value: 'A title', source: 'provider'}})), 'A title');
   assert.equal(sessionName(record()), 'session-sim-1', 'the neutral fallback');
+  assert.deepEqual(sessionRow(record({label: {value: 'Explicit', origin: 'user'}, title: {value: 'Provider title', source: 'provider'}})).label, {value: 'Explicit', origin: 'user'});
+  assert.equal(sessionRow(record({title: {value: 'Provider title', source: 'provider'}})).label, undefined, 'editing the label never prefills a title');
   assert.equal(sessionRow(record({project: 'agent-device-hub'})).where, 'agent-device-hub · Claude Code');
   assert.equal(sessionRow(record()).where, 'Claude Code');
   assert.deepEqual([clientName({...record().identity, provider: 'codex', client: 'cli'}), clientName({...record().identity, provider: 'codex', client: 'desktop'})],

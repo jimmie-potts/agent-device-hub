@@ -26,6 +26,24 @@ const sessions = (messages: readonly Message[]): SessionRecord[] =>
   messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
 const types = (messages: readonly Message[]): string[] => messages.map(message => message.type);
 
+it('only a matching owner save invokes its transaction completion, including a save with no published state change', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  assert.ok(world.owner);
+  const command = {...lifecycleMessage(lifecycleOf(sessionStarted, START), START), kind: 'command' as const,
+    type: 'org.bunny.session-label.set.requested', dataschema: 'https://bunny.invalid/events/session-label-set/2.0',
+    data: {requestId: 'req-store-label', label: 'Label', expectedRevision: 1}};
+  const cause = {message: command, kind: 'label', entity: SESSION_ID};
+  const changes: number[] = [];
+  const complete = (change: {messages: readonly Message[]}): void => { changes.push(change.messages.length); };
+  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.setLabel(IDENTITY, 'Label'); }, complete);
+  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.setLabel(IDENTITY, 'Label'); }, complete);
+  assert.deepEqual(changes, [1, 0], 'completion is part of the save even when the session record is unchanged');
+  world.clock.advance(86_400_001);
+  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.maintain(); }, complete);
+  assert.deepEqual(changes, [1, 0], 'unmatched owner maintenance cannot complete the label action');
+});
+
 const wrappedEnospc = (): Error => new Error('database operation failed', {cause: Object.assign(new Error('filesystem is full'), {code: 'ENOSPC'})});
 
 function failStoreExec(database: DatabaseSync, shouldFail: (sql: string) => boolean, error: () => Error): DatabaseSync {

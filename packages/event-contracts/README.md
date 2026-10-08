@@ -162,6 +162,7 @@ carries a device-specific payload: modules define those.
 | command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
 | command | `notice-acknowledge`, `playback-control` | `org.bunny.notice.acknowledge.requested`, `org.bunny.playback.control.requested` |
 | command | `approval-recover` | `org.bunny.approval.recover.requested` |
+| command | `session-label-set` | `org.bunny.session-label.set.requested` |
 
 The rules:
 - A state event carries the full record of one entity, and its `subject` is the
@@ -183,6 +184,13 @@ The rules:
   without an attention ID that the session holds on `turnId`, only while the
   session's evidence is uncertain, and publishes `attention-cleared` with cause
   `recovered`. It approves or denies nothing at the agent.
+- `session-label-set` (Hub #1006) is a tracked operator command with
+  `{requestId, label, expectedRevision}` and the qualified session ID as its
+  subject. A string sets a user label; null clears it. Labels admit 1–80 Unicode
+  scalar values under the existing display-text and credential-exclusion rules.
+  The core refuses a stale session revision with `revision-conflict` and an
+  unknown session with `not-found`. Its completed outcome uses `outcome/2.0`;
+  observed evidence means the metadata committed, with no physical observation.
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the

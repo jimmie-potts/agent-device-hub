@@ -24,6 +24,8 @@ export type SessionRow = {
   /** The record's own generation: a new one is another run under the same identity. */
   generation: number;
   revision: number;
+  /** The explicit label slot, separate from the title and neutral display fallback. */
+  label: SessionRecord['label'];
   /** The label, then the title, then the neutral fallback, the native session ID. */
   name: string;
   /** The project, then the client, such as `agent-device-hub · Claude Code`. */
@@ -91,7 +93,7 @@ export function sessionRow(record: SessionRecord): SessionRow {
   const chip = chipOf(record);
   const {identity} = record;
   return {
-    id: record.id, generation: record.generation, revision: record.revision, name: sessionName(record),
+    id: record.id, generation: record.generation, revision: record.revision, label: record.label, name: sessionName(record),
     where: [record.project, clientName(identity)].filter((part): part is string => part !== undefined).join(' · '),
     chip, chipText: CHIP_TEXT[chip], uncertain: record.freshness !== 'current' || record.restartUncertain,
     attention: record.attention.map(attentionLine),

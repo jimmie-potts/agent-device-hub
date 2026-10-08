@@ -1,7 +1,8 @@
 // The agent-session core (Hub #831, ADR 0012): the one owner of agent sessions in the runtime, as the source `bunny/core`.
 // It runs agent-state's owner on the core store, takes hooks' 2.0 `lifecycle` observations into the reducer, publishes
 // each committed change as `session` state, removal and occurrence messages, serves `session` through sync and answers
-// `notice-acknowledge`. It is first in the runtime's module list and registers everything on the bus before its first
+// `notice-acknowledge` and tracked operator labels. It is first in the runtime's module list and registers everything
+// on the bus before its first
 // await, so a module that starts after it syncs from it, or republishes to it, finds it listening (#882). Its action
 // dispatcher, tracker and outcome intake (#782, tracker.ts) and its history (history.ts) are its own; parts that later
 // stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
@@ -10,7 +11,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionRecord,
+  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
   type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
@@ -18,7 +19,7 @@ import {
 } from '@jimmie-potts/sdk';
 import {OperationRecords} from './operation-records.js';
 import type {Operation} from './operations.js';
-import {Tracker, type Action, type ActionAnswer, type CoreActions, type Tracked} from './tracker.js';
+import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
@@ -152,6 +153,7 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
 /** The core as the runtime hosts it: a module, with its dispatcher for the gateway's action routes (#782). */
 export interface CoreModule extends BunnyModule {
   readonly actions: CoreActions;
+  readonly operatorActions: CoreOperatorActions;
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -168,6 +170,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
   };
 }
 
@@ -254,6 +257,7 @@ class Core {
       this.#sdk.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => this.#observe(message)),
       this.#sdk.respond<NoticeAcknowledgeRequest>('bunny.cmd.notice-acknowledge.*', command => this.#acknowledge(command)),
       this.#sdk.respond<ApprovalRecoverRequest>('bunny.cmd.approval-recover.*', command => this.#recover(command)),
+      this.#sdk.respond<SessionLabelSetRequest>('bunny.cmd.session-label-set.*', command => this.#label(command)),
       ...this.#tracker.start(),
       ...this.#parts.flatMap(part => part.start?.(handle) ?? []),
     ];
@@ -345,7 +349,7 @@ class Core {
   }
 
   /** Calls the owner, mapping a refusal to the registry's terms, and opens a faulted owner again. */
-  async #call(work: (owner: AgentState) => Promise<Outcome>): Promise<Extract<Outcome, {ok: true}> | {ok: false; refusal: Refusal}> {
+  async #call(work: (owner: AgentState) => Promise<Outcome>, saveRefusal?: () => Refusal | undefined): Promise<Extract<Outcome, {ok: true}> | {ok: false; refusal: Refusal}> {
     if (this.#stopped) return {ok: false, refusal: {code: 'unavailable', detail: 'the core is stopping'}};
     const owner = await this.#ensureOwner();
     if (!('ingest' in owner)) return {ok: false, refusal: owner};
@@ -354,9 +358,11 @@ class Core {
       if (result.outcome === 'applied' || result.outcome === 'ambiguous') this.#recovered();
       return result;
     }
-    const refusal = this.#refusal(result);
+    const guarded = saveRefusal?.();
+    const refusal = guarded ?? this.#refusal(result);
+    if (guarded !== undefined) this.#store.takeFailure();
     if ((result.code === 'storage-failed' || result.code === 'unavailable') && !this.#stopped) {
-      if (result.code === 'storage-failed') this.#degraded(refusal.code);
+      if (result.code === 'storage-failed' && guarded === undefined) this.#degraded(refusal.code);
       // The faulted owner lets go of its lease only: the store keeps its lock, so no other runtime can take it.
       this.#owner = undefined;
       await owner.shutdown().catch(() => {});
@@ -520,6 +526,64 @@ class Core {
   dispatch(action: Action): Promise<ActionAnswer> {
     if (this.#stopped) return Promise.resolve(errorBody('unavailable', {detail: 'the core is stopping'}));
     return this.#tracker.dispatch(action);
+  }
+
+  /** The gateway's dedicated entry point; dispatch never holds the queue its responder must enter. */
+  dispatchOperator(action: Action): Promise<ActionAnswer> {
+    if (this.#stopped) return Promise.resolve(errorBody('unavailable', {detail: 'the core is stopping'}));
+    return this.#tracker.dispatchOperator(action);
+  }
+
+  /** Sets or clears one user label and completes the tracked action in that same owner transaction. */
+  async #label(command: Command<SessionLabelSetRequest>): Promise<Reply> {
+    if (!this.#tracker.admitOperator(command)) return errorBody('forbidden', {detail: 'this command has no operator admission'});
+    // Keep the admitted command facts stable while its queued owner work waits.
+    command = {...command, data: structuredClone(command.data)};
+    try {
+      await this.#ready;
+      if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
+      return await this.#run(async () => {
+        const owner = await this.#ensureOwner();
+        if (!('ingest' in owner)) return errorBody(owner.code, {detail: owner.detail});
+        const {label, expectedRevision} = command.data;
+        const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
+        const guard = (): Refusal | undefined => current() === undefined ? {code: 'not-found', detail: 'no such session'} :
+          current()?.revision !== expectedRevision ? {code: 'revision-conflict', detail: 'the session changed since it was read; read it again'} : undefined;
+        const refusal = guard();
+        if (refusal !== undefined) return errorBody(refusal.code, {detail: refusal.detail});
+        const record = current();
+        if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
+        let committed: (() => void) | undefined;
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        if ((label === null && record.label === undefined) || (record.label?.origin === 'user' && record.label.value === label)) {
+          try {
+            await this.#store.transaction(complete);
+          } catch {
+            return errorBody(this.#store.takeFailure() === 'full' ? 'capacity' : 'internal', {detail: 'the core could not complete the label action'});
+          }
+        } else {
+          let intervened: Refusal | undefined;
+          const result = await this.#store.during({message: command, kind: 'label', entity: record.id},
+            () => this.#call(selected => selected.setLabel(record.identity, label, 'user'), () => intervened),
+            (_change, tx) => {
+              // Owner maintenance has its own queue. Compare the prior committed record inside this save's transaction.
+              intervened = guard();
+              if (intervened !== undefined) throw new Error('label-revision-conflict');
+              complete(tx);
+            });
+          if (!result.ok) {
+            const failed = intervened ?? result.refusal;
+            return errorBody(failed.code, {detail: failed.detail});
+          }
+          if (committed === undefined) return errorBody('internal', {detail: 'the label save did not complete its action'});
+        }
+        committed?.();
+        this.#schedule();
+        return {status: 'accepted'};
+      });
+    } finally {
+      this.#tracker.endOperator(command);
+    }
   }
 
   /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */

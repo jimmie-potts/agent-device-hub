@@ -23,9 +23,10 @@
 // - Every step is logged once, in the action's trace, and `message.received` carries the incoming message's trace.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  acknowledgmentOf, levelOf, startSpan, type Cancel, type Clock, type CommandDraft, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
+  acknowledgmentOf, levelOf, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing,
 } from '@jimmie-potts/sdk';
 import {REGISTRY_REASONS} from '../diagnostics.js';
@@ -40,6 +41,8 @@ import type {CoreStore, CoreTransaction} from './store.js';
  * nothing bypasses tracking.
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge']);
+/** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set']);
 
 /** One action for the dispatcher: a command, as `request` takes it, and who asks for it. */
 export type Action = {
@@ -64,6 +67,10 @@ export interface CoreActions {
    * `uncertain-result` when its fate is unknown. It never rejects. Nothing is ever sent again: a request ID already
    * used for the same action answers what that action got, and one used for another action is `duplicate-conflict`.
    */
+  dispatch(action: Action): Promise<ActionAnswer>;
+}
+/** A capability kept by runtime composition and the gateway, absent from ordinary module/core handles. */
+export interface CoreOperatorActions {
   dispatch(action: Action): Promise<ActionAnswer>;
 }
 
@@ -165,6 +172,9 @@ class Refused extends Error {
 type Statements = {read: StatementSync; insert: StatementSync; update: StatementSync; due: StatementSync; next: StatementSync};
 /** What one message of an intake group records once its group's transaction commits, or is refused with `refusal`. */
 type Settle = (refusal: Refused | undefined) => void | Promise<void>;
+type Admission = {readonly facts: string; readonly data: string; commandId?: string};
+const factsOf = ({requestId, kind, key, family, command, dataschema, target, data, requestedBy, sentAtMs, deadlineAtMs, traceparent}: Operation): string =>
+  canonical({requestId, kind, key, family, command, dataschema, target, data, requestedBy, sentAtMs, deadlineAtMs, traceparent});
 
 export class Tracker {
   readonly #options: TrackerOptions;
@@ -174,6 +184,8 @@ export class Tracker {
   #retry = SWEEP_RETRY_MS;
   /** The dispatches and the intake's drain under way, which a stop lets finish. */
   readonly #working = new Set<Promise<unknown>>();
+  readonly #admitted = new Map<string, Admission>();
+  readonly #validator = new MessageValidator();
   /** Messages the bus delivered that wait for the intake's next group, in delivery order. */
   #waiting: Message<unknown>[] = [];
   /** The intake's drain, while it runs. */
@@ -183,6 +195,7 @@ export class Tracker {
 
   constructor(options: TrackerOptions) {
     this.#options = options;
+    registerCoreFamilies(this.#validator);
   }
 
   /** Creates the tracker's table in the core store, once the core holds it. */
@@ -235,13 +248,59 @@ export class Tracker {
     return this.#work(this.#dispatch(action).catch((): ActionAnswer => errorBody('internal', {detail: 'the core could not dispatch the action'})));
   }
 
+  /** Admits a tracked operator action; only the gateway holds this entry point. */
+  dispatchOperator(action: Action): Promise<ActionAnswer> {
+    return this.#work(this.#dispatch(action, true).catch((): ActionAnswer => errorBody('internal', {detail: 'the core could not dispatch the action'})));
+  }
+
+  /** Consumes one admission before the responder waits on the core queue, binding its actual command ID. */
+  admitOperator(command: Command<object>): boolean {
+    const requestId = (command.data as {requestId?: unknown}).requestId;
+    if (typeof requestId !== 'string' || command.source !== this.#options.sdk.source || !this.#validator.validate(command).ok) return false;
+    const admission = this.#admitted.get(requestId), operation = this.operation(requestId);
+    if (admission === undefined || admission.commandId !== undefined || operation === undefined || factsOf(operation) !== admission.facts ||
+      command.type !== operation.command || command.subject !== operation.target || command.dataschema !== operation.dataschema ||
+      canonical(command.data) !== admission.data) return false;
+    admission.commandId = command.id;
+    return true;
+  }
+
+  /** Ends only the admission bound to this responder; a duplicate cannot retire another command's context. */
+  endOperator(command: Command<{requestId: string}>): void {
+    if (this.#admitted.get(command.data.requestId)?.commandId === command.id) this.#admitted.delete(command.data.requestId);
+  }
+
+  /** Adds the core's validated outcome, operation and tracked hooks inside the owner save transaction. */
+  completeCore(tx: CoreTransaction, command: Command<{requestId: string}>, result: Omit<CompletedOutcome, 'requestId'>): () => void {
+    const {requestId} = command.data;
+    const admission = this.#admitted.get(requestId), operation = this.#read(requestId);
+    if (admission?.commandId !== command.id || operation === undefined || factsOf(operation) !== admission.facts) throw new Error('operator-admission');
+    const outcome = tx.add(`bunny.event.${operation.family}.${operation.target}`, {
+      kind: 'outcome', type: operation.command.replace(/\.requested$/, '.completed'), subject: operation.target,
+      dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {...result, requestId},
+    }, {parent: command}) as Message<CompletedOutcome>;
+    const checked = this.#validator.validate(outcome);
+    if (!checked.ok) throw new Error('invalid-core-outcome');
+    const next = advance({...operation, responder: this.#options.sdk.source}, {type: 'outcome', outcome: {
+      source: outcome.source, id: outcome.id, result: outcome.data.result, evidence: outcome.data.evidence, atMs: tx.atMs,
+      ...(outcome.data.error === undefined ? {} : {error: outcome.data.error}),
+    }});
+    if (next === undefined) throw new Error('operator-completion');
+    this.#write(next);
+    this.#changed(tx, 'outcome', {operation: next, previous: operation, outcome}, {source: outcome.source, id: outcome.id});
+    return () => { this.#completed(next, outcome.data); this.#schedule(); };
+  }
+
   #work<T>(work: Promise<T>): Promise<T> {
     this.#working.add(work);
     void work.finally(() => { this.#working.delete(work); }).catch(() => {});
     return work;
   }
 
-  async #dispatch(action: Action): Promise<ActionAnswer> {
+  async #dispatch(input: Action, operator = false): Promise<ActionAnswer> {
+    // Capture before the first await: a caller retains its original objects while admission waits.
+    const action: Action = {...input, draft: {...input.draft, data: structuredClone(input.draft.data)},
+      ...(input.parent === undefined ? {} : {parent: {...input.parent}})};
     const {sdk, clock, store, ready} = this.#options;
     const requestId = action.requestId ?? randomUUID();
     const refuse = (code: ErrorCode, detail: string): ErrorBody => {
@@ -254,6 +313,7 @@ export class Tracker {
     const {draft} = action;
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
+    if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {
@@ -292,9 +352,17 @@ export class Tracker {
       served.end();
       return this.#again(earlier, action, data);
     }
+    const admission: Admission | undefined = operator ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
+    if (admission !== undefined) this.#admitted.set(requestId, admission);
     this.#schedule();
     this.#record('info', 'command.queued', {...fields, 'bunny.outcome': 'queued'}, span);
-    const result = await sdk.request(action.key, {...draft, data}, {timeoutMs: DEADLINES[kind].replyMs, requestId, parent: span});
+    let result: RequestResult;
+    try {
+      result = await sdk.request(action.key, {...draft, data}, {timeoutMs: DEADLINES[kind].replyMs, requestId, parent: span});
+    } finally {
+      // A running responder owns cleanup even after the SDK deadline; a waiting command can no longer be admitted.
+      if (admission !== undefined && admission.commandId === undefined && this.#admitted.get(requestId) === admission) this.#admitted.delete(requestId);
+    }
     served.end(result.status === 'uncertain' ? 'error' : 'unset');
     const replied = await this.#apply(requestId, replyEvent(result, clock.now()));
     const answer: ActionAnswer = result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
@@ -660,4 +728,3 @@ function replyEvent(result: RequestResult, atMs: number): OperationEvent {
       return {type: 'reply', status: 'uncertain', error: result.error.error, atMs};
   }
 }
-

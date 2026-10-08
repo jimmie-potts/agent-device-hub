@@ -10,6 +10,7 @@ import {chromium, type Page} from 'playwright';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {controlReach, textOverlaps} from './layout.ts';
+import {labelJourney} from './label-journey.ts';
 
 const DESKTOP = {...OTHER, provider: 'codex', client: 'desktop', sourceId: 'codex-desktop'} as const;
 const PAIRED = 'http://127.0.0.1:47123/';
@@ -113,6 +114,7 @@ try {
     await chip('Plan wave three', 'Working');
     assert.equal(await row('Review the inbox').count(), 0, 'new membership waits for the replacement snapshot');
     assert.deepEqual(sent, [], 'holding a replacement sync sends no command');
+    assert.equal(await row('Plan wave three').getByRole('button', {name: 'Edit label for Plan wave three', exact: true}).isDisabled(), true, 'a stale retained row cannot edit');
     await shot(page, 'reconnect-snapshot-pending');
   } finally {
     releaseSync();
@@ -201,7 +203,9 @@ try {
   assert.equal(world.browserSessions(), 1);
   checks.push('Disconnect and Sign in');
 
-  assert.deepEqual(sent, [], 'the page sent no command');
+  assert.deepEqual(sent, [], 'the page sent no command before explicit label controls');
+
+  checks.push(await labelJourney(page, world, sent, axe));
   assert.deepEqual(errors, []);
   process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);
 } catch (error) {

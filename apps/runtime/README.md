@@ -205,6 +205,16 @@ and exits 1, and the service manager restarts it whole.
   `DEFAULT_CONSUMERS` (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
   store and refuses a store whose list differs, so changing it needs a
   migration.
+- **Session labels** (#1006). The authenticated control action route and
+  `core_send_command` accept `session-label-set`, targeting the qualified
+  session ID with `{label, expectedRevision}`; null clears the label. The
+  gateway uses a dedicated core capability; ordinary module dispatch and raw
+  SDK grants cannot admit this family. The core checks the session revision
+  at its owner save boundary and commits the user label, tracked completion,
+  history and outcome together. A same user label or already-clear request
+  completes without changing the session revision. A successful reply follows
+  the commit; sync supplies record evidence. Pending outbox publication survives
+  restart with the same message IDs, and the command is never sent again.
 - **Action dispatcher and tracker** (#782, `src/core/tracker.ts`). Every device
   command, moment and mode change goes through one dispatcher: the gateway's
   [action routes](#routes) and MCP's `core_send_command`, and later automation,
@@ -617,7 +627,7 @@ as `<module>_<tool>`, and the core contributes `core_sessions`; a credential wit
 `read` lists and calls those of every module. With `control` it also gets
 `core_recover_approval`, which sends `approval-recover` to the core as the
 credential's source, and `core_send_command` (#782), `{family, target, data,
-requestId?}`, which sends a device's command through the core's dispatcher, as
+requestId?}`, which sends a device's command or tracked session label through the core's dispatcher, as
 the action route does. A
 tool's result is `{kind: "extension", data: {result}}`, and a refusal
 `{kind: "extension", data: {error}}` with the shared error body and

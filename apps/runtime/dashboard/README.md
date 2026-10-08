@@ -121,6 +121,20 @@ B.U.N.N.Y. link, opens the page signed in. Another site's page, a frame and a
 fetch from another local app are refused, and the page's opener policy keeps a
 page that opened it from driving it again (Hub #561).
 
+## Session labels
+
+Each current session row offers **Edit label**, **Save label**, **Clear label**
+and **Cancel**. The editor starts with the explicit label; a provider title is
+only the displayed fallback. Save and clear use the authenticated generic
+command route with a fresh request ID and the synced session revision. Clear
+restores the provider title or native session ID and acknowledges no notice.
+
+Requested, accepted and confirmed by the synced record are distinct. Stale
+copies disable writes; a conflict keeps the draft for another explicit attempt.
+The page never retries or resends a write after a lost reply, reconnect or reload.
+A replaced session generation retires the old editor. Labels survive runtime
+restart through the existing core owner storage.
+
 ## Places
 
 The Places navigation reads `docs/skins/places.json`. Public places link to the
@@ -147,3 +161,8 @@ source follows the runtime's [strict profile](../../../docs/development.md#stric
 tests included; `src/` type-checks for the browser and `tests/` for Node, which
 runs the tests' TypeScript as it is. See
 [Runtime dashboard checks](../../../docs/development.md#runtime-dashboard-checks).
+
+The focused label/reload journey runs with
+`node apps/runtime/dashboard/tests/session-label.browser.ts` after a build.
+It shares its label assertions with the full `browser.ts` suite and checks
+conflict drafts, explicit retry, Clear, keyboard focus and desktop/phone axe.

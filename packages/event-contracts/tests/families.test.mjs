@@ -70,6 +70,20 @@ test('each family has one kind and one type, and its schema is built from the sh
   assert.throws(() => registerCoreFamilies(v), /already registered/);
 });
 
+test('session labels admit 80 Unicode scalars and clear, and refuse invalid scalars, controls and recognizable credentials', () => {
+  const v = validator();
+  for (const label of ['🐰'.repeat(80), null]) {
+    const message = structuredClone(fixtures.valid['session-label-set']);
+    message.data.label = label;
+    assert.equal(v.validate(message).ok, true);
+  }
+  for (const label of ['🐰'.repeat(81), '\ud800', '\udc00', 'line\nline', 'password=synthetic-secret', 'sk-' + 'x'.repeat(20)]) {
+    const message = structuredClone(fixtures.valid['session-label-set']);
+    message.data.label = label;
+    assert.equal(v.validate(message).ok, false, JSON.stringify(label));
+  }
+});
+
 test('the session ID is the SHA-256 of the identity, whatever its key order', () => {
   const {identity, id} = fixtures.valid.session.data;
   assert.equal(sessionEntityId(identity), id);
