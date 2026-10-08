@@ -11,6 +11,7 @@ Preserve actual-child evidence, including for the shipped entry, without reading
 - The guard sends one `runtime.home` IPC report only from its main thread with an IPC channel. It selects HOME directly and never constructs an environment object. The payload contains only its discriminator and one absolute, normalized HOME string of at most 4096 UTF-8 bytes, without NUL or line breaks; an unusable value becomes missing evidence.
 - A small observer binds evidence to the exact child object and generation. Every spawn resets it. The supervisor consumes HOME messages separately from device simulation messages, validates exact keys, and ignores old children or generations. Malformed reports cannot establish a path; an outside-run path remains visible to the existing boundary check and fails it.
 - IPC and stdout have separate delivery order. After the runtime's ready line, wait at most one second for that generation's HOME report. A malformed report ends the wait with missing evidence; timeout does too. Neither creates an inferred path or passes a boundary. This is a bounded startup observation, with no resend.
+- Install disconnect handling before sending the report. A synchronous send error or failed callback takes the same silent, bounded stop path as a disconnected supervisor, without publishing exception text or resending.
 - Preserve the existing open-file check and process identity/cleanup. Assigning the parent's intended home at spawn was rejected because it proves configuration intent, not the child's observation.
 
 ## Risks / Trade-offs
