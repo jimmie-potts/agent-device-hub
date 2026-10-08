@@ -252,7 +252,7 @@ none of the rest of the runtime.
   added by hand: `grantCredential` with that ID and source, its token's digest
   and `ingest`, then SIGHUP, then `GET /api/v2/authority?scope=ingest` with
   its token, which answers 200.
-- **Bounded and fail-open.** Every path exits 0 and writes nothing: no output
+- **Bounded and fail-open.** Every path writes nothing and exits 0: no output
   protocol, permission decision, retry, device or child process. A 2.9 s
   deadline, armed before anything loads, ends the process inside the clients'
   3 s hook timeout whatever the runtime does, and the publication gets what is
@@ -260,6 +260,19 @@ none of the rest of the runtime.
   an unusable producer file or input the normalizers do not map end the hook
   quietly. The observation is then lost, as hooks fail open, and the session's
   freshness shows the gap. Input over 8 MiB is dropped.
+- **A stalled file read.** For lifecycle 1.1 and 1.2, `enrichHook` reads the
+  session's title from its transcript or Codex's `session_index.jsonl` and stops
+  waiting after 100 ms, but an open on a stalled mount never returns, and on
+  Node 24 `process.exit` waits for it. So the hook exits once no file read is
+  under way, and if one still is at the deadline, it ends by `SIGKILL` instead.
+  That is the only path that does not exit 0; the clients treat a non-zero exit
+  as a non-blocking error. Its observation was published first, unless the
+  stall left no time for it.
+- **Concurrency.** Each hook is a new Node process, and many at once share the
+  CPU. In the failure-isolation review (2026-10-07), 5 sessions sending 20 hooks
+  at once all landed, at 0.95 to 1.4 s at the median; 10 sessions sending 20 at
+  once lost 21 of 200 at the deadline. The deadline leaves about 0.1 s before the
+  clients' 3 s timeout.
 - **Outcomes.** `publishOnce` says what may have happened: `published`;
   `rejected` with the edge's registry code, or `unavailable` when the edge was
   never reached, so nothing was published; or `uncertain-result` when the call

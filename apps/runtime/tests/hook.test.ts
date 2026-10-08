@@ -4,10 +4,11 @@
 // observations only. Every token, identity and payload here is synthetic; no test runs a real client's hook or reaches
 // an installed service.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {once} from 'node:events';
-import {chmod, link, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
+import {constants} from 'node:fs';
+import {chmod, link, mkdir, mkdtemp, open, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
@@ -18,7 +19,7 @@ import {fileURLToPath} from 'node:url';
 import type {Envelope} from '@jimmie-potts/agent-state';
 import {MessageValidator, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage} from '@jimmie-potts/sdk';
+import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {toEnvelope} from '../src/core/mapping.js';
 import {
   HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, observationOf, producerCredentialId, producerSource, readProducer, runHook,
@@ -27,6 +28,7 @@ import {convertHubEdge, createCoreModule, tokenDigest, type LogRecord, type Runt
 import {edgeConfig, it, run} from './support.js';
 
 const HOOK = fileURLToPath(new URL('../../bin/monitor-hook.mjs', import.meta.url));
+const STALLED_READ = new URL('./fixtures/stalled-read.js', import.meta.url).href;
 /** A producer's source configuration, as the Hub's setup writes it into `producer.json`, with its first hook's name. */
 const SOURCE = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code-hooks', hook: 'SessionStart'} as const;
 /** The Hub's `producerPrincipal` for SOURCE, computed once with apps/hub/src/setup.ts at main 8590332f. */
@@ -69,6 +71,8 @@ type Shape = {
   receipt?: 'none' | 'installed' | 'applying' | 'other-token' | 'not-private';
   /** Changes the producer file's members before it is written. */
   edit?: (value: Record<string, unknown>) => Record<string, unknown>;
+  /** Changes the receipt's members before it is written. */
+  editReceipt?: (receipt: {version: number; input: Record<string, unknown>}) => Record<string, unknown>;
   port?: number;
 };
 
@@ -85,9 +89,10 @@ async function producerFile(context: TestContext, token: string, port: number, s
   const receipt = shape.receipt ?? 'installed';
   if (receipt !== 'none') {
     const input = {directory: dir, target: '/home/owner/.claude/settings.json', source: SOURCE, endpoint, node: '/usr/bin/node', hook: '/opt/hub/bin/monitor-hook.mjs', owner: 'owner', qualified: true, ...version};
-    await writePrivate(join(dir, 'receipt.json'), JSON.stringify({
+    const written = {
       version: 1, state: receipt === 'applying' ? 'applying' : 'installed', input, id: HUB_ID, token: receipt === 'other-token' ? producerToken() : token, entries: [], before: '{}', after: '{}',
-    }), receipt === 'not-private' ? 0o644 : 0o600);
+    };
+    await writePrivate(join(dir, 'receipt.json'), JSON.stringify(shape.editReceipt?.(written) ?? written), receipt === 'not-private' ? 0o644 : 0o600);
   }
   return path;
 }
@@ -103,10 +108,17 @@ const HOOK_ENV: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.en
 /** Stdin left open, as by a client that never closes it. */
 const OPEN = Symbol('open');
 
-/** Runs the hook as a client's hook command does: `node monitor-hook.mjs <args>`, with `input` on stdin, or stdin left open. */
-async function hook(args: readonly string[], input: string | Buffer | typeof OPEN, env: NodeJS.ProcessEnv = HOOK_ENV): Promise<Ran> {
+/** How long a test lets a hook run before it kills it, so a hook that never ends fails its test instead of outliving it. */
+const KILL_AFTER_MS = 6000;
+
+/**
+ * Runs the hook as a client's hook command does: `node monitor-hook.mjs <args>`, with `input` on stdin, or stdin left
+ * open, and Node's own `options` before the script.
+ */
+async function hook(args: readonly string[], input: string | Buffer | typeof OPEN, env: NodeJS.ProcessEnv = HOOK_ENV, options: readonly string[] = []): Promise<Ran> {
   const started = performance.now();
-  const child = spawn(process.execPath, [HOOK, ...args], {stdio: ['pipe', 'pipe', 'pipe'], env});
+  const child = spawn(process.execPath, [...options, HOOK, ...args], {stdio: ['pipe', 'pipe', 'pipe'], env});
+  const killer = setTimeout(() => { child.kill('SIGKILL'); }, KILL_AFTER_MS);
   let output = '';
   child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
@@ -114,6 +126,7 @@ async function hook(args: readonly string[], input: string | Buffer | typeof OPE
   child.stdin.on('error', () => {});
   if (input !== OPEN) child.stdin.end(input);
   const [code, signal] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
+  clearTimeout(killer);
   child.stdin.destroy();
   return {code, signal, output, elapsedMs: performance.now() - started};
 }
@@ -152,36 +165,104 @@ async function until(world: World, sessionId: string, ready: (record: SessionRec
 
 const received = (logs: readonly LogRecord[]): LogRecord[] => logs.filter(record => record.event_name === 'message.received');
 
-it('an unchanged 1.x producer file drives the 2.0 hook, and each accepted observation commits the session', async context => {
+it('an unchanged 1.x producer file drives the 2.0 hook at each lifecycle version, and each accepted observation commits the session', async context => {
   const world = await hookRuntime(context);
-  const producer = await producerFile(context, world.producer, world.port, {lifecycleVersion: '1.2'});
-  const files = [producer, join(producer, '..', 'receipt.json')];
-  const before = await Promise.all(files.map(file => stat(file)));
-  const send = async (name: string, extra: Record<string, unknown> = {}): Promise<void> => { quiet(await hook([producer], payload(name, 'session-1', extra)), name); };
+  const versions = [['1.0', {}], ['1.1', {lifecycleVersion: '1.1'}], ['1.2', {lifecycleVersion: '1.2'}]] as const;
+  for (const [version, shape] of versions) {
+    const sessionId = `session-${version.replace('.', '-')}`;
+    const producer = await producerFile(context, world.producer, world.port, shape);
+    const files = [producer, join(producer, '..', 'receipt.json')];
+    const before = await Promise.all(files.map(file => stat(file)));
+    const send = async (name: string, extra: Record<string, unknown> = {}): Promise<void> => { quiet(await hook([producer], payload(name, sessionId, extra)), `${version} ${name}`); };
 
-  await send('SessionStart');
-  const started = await until(world, 'session-1', () => true, 'the session');
-  assert.deepEqual({activity: started.activity, project: started.project, identity: started.identity}, {activity: 'active', project: 'demo', identity: identityOf('session-1')});
-  await send('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: CANARY});
-  await until(world, 'session-1', record => record.turn.status === 'known' && record.turn.id === 'prompt-1', 'the turn');
-  await send('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: CANARY}});
-  const asking = await until(world, 'session-1', record => record.attention.length === 1, 'the approval prompt');
-  assert.deepEqual(asking.attention, [{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}]);
-  await send('PostToolUse', {prompt_id: 'prompt-1', tool_use_id: 'tool-1', tool_response: {output: CANARY}});
-  await until(world, 'session-1', record => record.attention.length === 0, 'the approval prompt cleared');
-  await send('Stop', {prompt_id: 'prompt-1'});
-  const ended = await until(world, 'session-1', record => record.activity === 'idle' && record.notices.length === 1, 'the finished turn');
-  assert.equal(ended.notices[0]?.kind, 'turn-ended');
+    await send('SessionStart');
+    const started = await until(world, sessionId, () => true, `${version}: the session`);
+    // Lifecycle 1.0 carries no project.
+    assert.deepEqual({activity: started.activity, project: started.project, identity: started.identity},
+      {activity: 'active', project: version === '1.0' ? undefined : 'demo', identity: identityOf(sessionId)}, version);
+    await send('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: CANARY});
+    await until(world, sessionId, record => record.turn.status === 'known' && record.turn.id === 'prompt-1', `${version}: the turn`);
+    await send('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: CANARY}});
+    const asking = await until(world, sessionId, record => record.attention.length === 1, `${version}: the approval prompt`);
+    assert.deepEqual(asking.attention, [{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}], version);
+    await send('PostToolUse', {prompt_id: 'prompt-1', tool_use_id: 'tool-1', tool_response: {output: CANARY}});
+    await until(world, sessionId, record => record.attention.length === 0, `${version}: the approval prompt cleared`);
+    await send('Stop', {prompt_id: 'prompt-1'});
+    const ended = await until(world, sessionId, record => record.activity === 'idle' && record.notices.length === 1, `${version}: the finished turn`);
+    assert.equal(ended.notices[0]?.kind, 'turn-ended', version);
+    // The hook only reads its producer file and receipt.
+    const after = await Promise.all(files.map(file => stat(file)));
+    assert.deepEqual(after.map(info => [info.mtimeMs, info.size, info.mode]), before.map(info => [info.mtimeMs, info.size, info.mode]), version);
+  }
 
   // The core took each observation from the producer's source, once.
   const intake = received(world.logs).filter(record => record.attributes['bunny.operation'] === 'lifecycle');
-  assert.deepEqual(intake.map(record => [record.attributes['bunny.participant'], record.attributes['bunny.outcome']]), Array(5).fill([producerSource(SOURCE), 'accepted']));
+  assert.deepEqual(intake.map(record => [record.attributes['bunny.participant'], record.attributes['bunny.outcome']]), Array(15).fill([producerSource(SOURCE), 'accepted']));
   // What the allowlist drops never reached the runtime, and no token reached a record or a session.
   const evidence = JSON.stringify({logs: world.logs, sessions: await sessions(world)});
   for (const secret of [CANARY, world.producer, world.reader, MARKER]) assert.equal(evidence.includes(secret), false, 'a dropped field or a token reached the runtime');
-  // The hook only reads its producer file and receipt.
-  const after = await Promise.all(files.map(file => stat(file)));
-  assert.deepEqual(after.map(info => [info.mtimeMs, info.size, info.mode]), before.map(info => [info.mtimeMs, info.size, info.mode]));
+});
+
+it('a subagent\'s start and stop reach the core as a child of its session, and a parent in another source is refused', async context => {
+  const world = await hookRuntime(context);
+  const producer = await producerFile(context, world.producer, world.port, {lifecycleVersion: '1.2'});
+  const send = async (name: string, sessionId: string, extra: Record<string, unknown> = {}): Promise<void> => {
+    quiet(await hook([producer], payload(name, sessionId, extra)), `${name} ${sessionId} ${JSON.stringify(extra)}`);
+  };
+  // A subagent of a session the core holds, which counts its running child. Claude Code's hooks never say a session is
+  // top-level, so the lead's own parent stays unknown.
+  await send('SessionStart', 'lead');
+  await send('UserPromptSubmit', 'lead', {prompt_id: 'prompt-1'});
+  await until(world, 'lead', record => record.turn.status === 'known', 'the lead\'s turn');
+  await send('SubagentStart', 'lead', {agent_id: 'helper-1', agent_type: 'Explore', prompt_id: 'prompt-1'});
+  const child = await until(world, 'helper-1', () => true, 'the subagent');
+  assert.deepEqual({parent: child.parent, turn: child.turn, activity: child.activity, project: child.project, hostSessionId: child.hostSessionId},
+    {parent: {status: 'known', identity: identityOf('lead')}, turn: {status: 'unknown'}, activity: 'active', project: undefined, hostSessionId: undefined});
+  const lead = await until(world, 'lead', record => record.children.active === 1, 'the lead counting its subagent');
+  assert.deepEqual(lead.parent, {status: 'unknown'});
+  await send('SubagentStop', 'lead', {agent_id: 'helper-1', prompt_id: 'prompt-1'});
+  await until(world, 'helper-1', record => record.activity !== 'active', 'the subagent\'s end');
+  await until(world, 'lead', record => record.children.active === 0, 'the lead with no running subagent');
+  // A subagent of a session the core has not seen keeps its known parent.
+  await send('SubagentStart', 'unseen-lead', {agent_id: 'helper-2'});
+  const orphan = await until(world, 'helper-2', () => true, 'the second subagent');
+  assert.deepEqual(orphan.parent, {status: 'known', identity: identityOf('unseen-lead')});
+  // A subagent that names its own session is no subagent: the normalizers drop it, and nothing is sent.
+  const count = received(world.logs).length;
+  await send('SubagentStart', 'lead', {agent_id: 'lead'});
+  await send('SubagentStop', 'lead', {});
+  assert.equal(received(world.logs).length, count, 'nothing reached the core');
+
+  // The 2.0 profile's parentage rule, at the edge: a known parent is in the child's own source, with another session.
+  const source = producerSource(SOURCE);
+  const options = {url: world.url, source, token: world.producer, timeoutMs: 2000};
+  const started = observationOf(envelopeOf({kind: 'session.started'}, {identity: identityOf('helper-3'), parent: {status: 'known', identity: identityOf('lead')}, observedAtMs: Date.now()}));
+  assert.ok(started, 'a subagent\'s observation');
+  const parents: [string, Identity][] = [
+    ['a parent in another source', {...identityOf('lead'), sourceId: 'other-hooks'}],
+    ['a parent on another host', {...identityOf('lead'), hostId: 'host-other'}],
+    ['the child\'s own session', identityOf('helper-3')],
+  ];
+  for (const [name, parent] of parents) {
+    const {key, draft} = lifecycleMessage({...started, parent: {status: 'known', identity: parent}});
+    const result = await publishOnce(options, key, prepareMessage(source, draft));
+    assert.deepEqual(result.status === 'rejected' ? [result.status, result.error.error.code] : [result.status], ['rejected', 'invalid-message'], name);
+  }
+  assert.equal(received(world.logs).length, count, 'no refused parentage reached the core');
+  // The same observation with its own source's parent is taken.
+  const {key, draft} = lifecycleMessage(started);
+  assert.deepEqual(await publishOnce(options, key, prepareMessage(source, draft)), {status: 'published'});
+  await until(world, 'helper-3', record => record.parent.status === 'known', 'the third subagent');
+  // A session its producer says is top-level, as the profile allows, and a subagent of it through the hook.
+  const topLevel = observationOf(envelopeOf({kind: 'session.started'}, {identity: identityOf('root'), parent: {status: 'top-level'}, observedAtMs: Date.now()}));
+  assert.ok(topLevel, 'a top-level session\'s observation');
+  const root = lifecycleMessage(topLevel);
+  assert.deepEqual(await publishOnce(options, root.key, prepareMessage(source, root.draft)), {status: 'published'});
+  assert.deepEqual((await until(world, 'root', () => true, 'the top-level session')).parent, {status: 'top-level'});
+  await send('SubagentStart', 'root', {agent_id: 'helper-4'});
+  assert.deepEqual((await until(world, 'helper-4', () => true, 'its subagent')).parent, {status: 'known', identity: identityOf('root')});
+  const counted = await until(world, 'root', record => record.children.active === 1, 'the top-level session counting its subagent');
+  assert.deepEqual(counted.parent, {status: 'top-level'}, 'a child does not change its parent\'s parentage');
 });
 
 it('each lifecycle version a producer selected reaches the core as 2.0, with or without a receipt', async context => {
@@ -256,13 +337,25 @@ it('a producer file the hook may not use, or a receipt that does not let it emit
     ['a receipt still applying', [await shaped({receipt: 'applying'})]],
     ['a receipt for another token', [await shaped({receipt: 'other-token'})]],
     ['a receipt others can read', [await shaped({receipt: 'not-private'})]],
+    // A receipt that does not describe this producer file: setup installed another one there.
+    ['a receipt for another source', [await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, source: {...SOURCE, sourceId: 'other-hooks'}}})})]],
+    ['a receipt for another endpoint', [await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, endpoint: `http://127.0.0.1:${world.port + 1}/api/monitor/v1/events`}})})]],
+    ['a receipt for another directory', [await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, directory: dir}})})]],
+    ['a receipt for another lifecycle version', [await shaped({lifecycleVersion: '1.1', editReceipt: receipt => ({...receipt, input: {...receipt.input, lifecycleVersion: '1.2'}})})]],
+    ['a receipt with a lifecycle version the file has not', [await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, lifecycleVersion: '1.1'}})})]],
+    ['a receipt for an unqualified producer', [await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, qualified: false}})})]],
+    ['a receipt of another version', [await shaped({editReceipt: receipt => ({...receipt, version: 2})})]],
   ];
   await each(cases, 4, async ([name, args]) => { quiet(await hook(args, payload('SessionStart', 'refused')), name); });
   assert.deepEqual(await sessions(world), [], 'nothing reached the core');
   assert.deepEqual(received(world.logs), []);
-  // The valid producer file still works, so each case failed on its own fault.
+  // The valid producer file still works, so each case failed on its own fault, and so does a receipt that lists the
+  // source's members in another order: setup compares them as canonical JSON.
   quiet(await hook([valid], payload('SessionStart', 'accepted')), 'the valid producer');
   await until(world, 'accepted', () => true, 'the session');
+  const reordered = await shaped({editReceipt: receipt => ({...receipt, input: {...receipt.input, source: Object.fromEntries(Object.entries(SOURCE).reverse())}})});
+  quiet(await hook([reordered], payload('SessionStart', 'reordered')), 'a receipt with the source\'s members in another order');
+  await until(world, 'reordered', () => true, 'the session');
 });
 
 it('input the normalizers do not map ends the hook quietly and sends nothing', async context => {
@@ -321,6 +414,39 @@ it('a runtime that is stopped, refuses the credential or never answers never del
     assert.ok(ran.elapsedMs > HOOK_BUDGET_MS - 300, `${what}: waited for its budget, ${Math.round(ran.elapsedMs)} ms`);
   }
   assert.deepEqual(await sessions(world), []);
+});
+
+/** A FIFO with no writer in a new private directory. A writer's open at the test's end releases any read still waiting on it. */
+async function fifo(context: TestContext, name: string): Promise<string> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-fifo-')));
+  const path = join(dir, name);
+  execFileSync('mkfifo', ['-m', '600', path]);
+  context.after(async () => {
+    try {
+      const writer = await open(path, constants.O_WRONLY | constants.O_NONBLOCK);
+      await writer.close();
+    } catch {
+      // No read waits on it.
+    }
+    await rm(dir, {recursive: true, force: true});
+  });
+  return path;
+}
+
+it('a file read stuck at the deadline ends the hook by signal within its budget; a FIFO transcript ends it at once', async context => {
+  const world = await hookRuntime(context);
+  const producer = await producerFile(context, world.producer, world.port, {lifecycleVersion: '1.2'});
+  // The title read opens the transcript without blocking, so a FIFO there gives no title and holds nothing.
+  const transcript = await fifo(context, 'transcript.jsonl');
+  quiet(await hook([producer], payload('SessionStart', 'fifo-transcript', {transcript_path: transcript})), 'a FIFO transcript');
+  await until(world, 'fifo-transcript', () => true, 'the session');
+  // A file read stuck in a file system call, as on a stalled mount: `process.exit` would wait for it, so the hook ends
+  // by signal at its deadline, nothing printed, once its observation is published.
+  const stalled = await fifo(context, 'stalled.jsonl');
+  const stuck = await hook([producer], payload('SessionStart', 'stuck-read'), {...HOOK_ENV, BUNNY_STALLED_READ: stalled}, ['--import', STALLED_READ]);
+  assert.deepEqual({code: stuck.code, signal: stuck.signal, output: stuck.output}, {code: null, signal: 'SIGKILL', output: ''});
+  assert.ok(stuck.elapsedMs > HOOK_BUDGET_MS - 300 && stuck.elapsedMs < 3000, `ended at its deadline, after ${Math.round(stuck.elapsedMs)} ms`);
+  await until(world, 'stuck-read', () => true, 'the session');
 });
 
 it('the producer\'s credential publishes lifecycle observations only: a command, a read and any other key are forbidden', async context => {

@@ -18,7 +18,8 @@ Producer grant and revoke operations wait until a new client or machine needs on
 - **The 2.0 agent hook.** `apps/runtime/bin/monitor-hook.mjs` reads an unchanged 1.x producer file with the old hook's
   checks, normalizes the hook with agent-state's normalizers, maps the envelope to the 2.0 `lifecycle` observation and
   publishes it as the producer's converted credential, whose source it derives as the Hub's setup named the
-  credential. Every path exits 0 within 2.9 s and writes nothing. `scripts/measure-hook.mjs` measures it end to end.
+  credential. Every path ends within 2.9 s and writes nothing, and exits 0 unless a file read is stuck at its
+  deadline. `scripts/measure-hook.mjs` measures it end to end.
 - **A Codex Desktop module.** `modules/codex-desktop` ports the Hub's reader: the same marker parser and read rules,
   published as `read-observed` observations, read in a child process of its own so a stalled Windows mount never holds
   a runtime thread, with a read deadline, the marker's availability logged once per outage, capped backoff and a stop
