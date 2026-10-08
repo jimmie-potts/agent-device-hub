@@ -7,8 +7,8 @@
 
 - [x] 2.1 Add the core responder and optional store completion seam; verify set/clear, provenance, not-found, expected revision and deterministic intervening owner maintenance through focused red/green tests.
 - [x] 2.2 Verify same-user-label and already-clear completion without a new session revision, and state/tracker/history/outcome rollback when a tracked hook, validation, owner save or SQLite capacity fails.
-- [ ] 2.3 Verify immutable payload capture, late completion, commit-before-publication and restart without command resend; run adjacent approved core-store/tracker files and retain red/green and negative-control evidence.
-- [ ] 2.4 Return the coherent backend commit and actual diff size to the coordinator with the remaining UI and whole-story obligations recorded.
+- [x] 2.3 Verify immutable payload capture, late completion, commit-before-publication and restart without command resend; run adjacent approved core-store/tracker files and retain red/green and negative-control evidence.
+- [x] 2.4 Return the coherent backend commit and actual diff size to the coordinator with the remaining UI and whole-story obligations recorded.
 
 ## 3. Dashboard and catalog
 

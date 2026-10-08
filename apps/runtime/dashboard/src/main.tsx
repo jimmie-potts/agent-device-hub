@@ -8,6 +8,7 @@ import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
 import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
+import {LabelEditor} from './label-editor.tsx';
 import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, trustedSignIn} from './signin.ts';
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {homeLayout, widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
@@ -119,6 +120,7 @@ function SessionRowView({row, live, now}: {row: SessionRow; live: boolean; now: 
         Activity: {row.facts.activity}. Last evidence: {age(elapsed)} ago. {stale ? 'Freshness is uncertain.' : 'Current observation; not a completion estimate.'}
       </InfoTip>
     </div>
+    <LabelEditor row={row} live={live}/>
     {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
     {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
     <details className="details session-details"><summary>Details</summary><Facts className="strip" items={[

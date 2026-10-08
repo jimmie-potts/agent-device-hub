@@ -110,4 +110,37 @@ const dashboardFinishedTurn: Scenario = {
   ],
 };
 
-export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn];
+/** Guarded user labels through the browser action route, with synced metadata as the completion evidence. */
+const browserLabel = (label: string | null, requestId: string, stale = false) => async (h: Harness): Promise<Outcome> => {
+  const records = await browserSessions(h);
+  if (typeof records === 'string') return records;
+  const record = records.find(item => item.id === SESSION_ID);
+  if (record === undefined) return 'the browser holds no session';
+  const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/session-label-set',
+    body: {target: record.id, requestId, data: {label, expectedRevision: record.revision - (stale ? 1 : 0)}}});
+  const result = bodyOf<{status?: string; error?: {code: string}}>(answer);
+  return (stale ? answer.status === 409 && result?.error?.code === 'revision-conflict' : answer.status === 200 && result?.status === 'accepted') || show(result);
+};
+const dashboardLabels: Scenario = {
+  id: 'session-label', title: 'the browser labels and clears a session through tracked guarded actions',
+  seed: {modules: ['core'], follows: [['session']]},
+  steps: [
+    act('the hook starts a titled session', h => publish(h, sessionStarted, {title: {value: 'Provider title', source: 'provider'}})),
+    expect('the browser reads the title', async h => {
+      const records = await browserSessions(h);
+      return Array.isArray(records) && records.some(record => record.title?.value === 'Provider title') || show(records);
+    }),
+    act('the browser submits a guarded user label once', browserLabel('Review label', 'req-dashboard-label')),
+    expect('the synced record confirms the user label', h => session(h)?.label?.origin === 'user' && session(h)?.label?.value === 'Review label' || show(session(h))),
+    act('a stale attempt is refused', browserLabel('Stale label', 'req-dashboard-label-stale', true)),
+    expect('the stale attempt leaves the label unchanged', h => session(h)?.label?.value === 'Review label' || show(session(h))),
+    act('the browser clears the explicit label', browserLabel(null, 'req-dashboard-label-clear')),
+    expect('the record retains its provider title with no explicit label', h => session(h)?.label === undefined && session(h)?.title?.value === 'Provider title' || show(session(h))),
+    expect('the core publishes two observed metadata outcomes, with no stale completion', h => {
+      const outcomes = h.published().map(item => item.message).filter(message => message.kind === 'outcome' && message.type === 'org.bunny.session-label.set.completed');
+      return outcomes.length === 2 && outcomes.every(message => (message.data as {evidence?: unknown}).evidence === 'observed') || show(outcomes);
+    }),
+  ],
+};
+
+export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn, dashboardLabels];
