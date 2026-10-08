@@ -928,6 +928,13 @@ kit (`@jimmie-potts/sdk/testing`). Its
 [README](../packages/sdk/README.md) documents the API. The package follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 
+The internal cutover preparation model has a pure focused check after the root
+build: `node --test apps/runtime/dist/tests/cutover-plan.test.js`. It checks
+declared inventory coverage, migration ordering, per-volume capacity and digest
+binding with synthetic facts; it starts no runtime or service. The existing core
+CI `test:runtime:built` discovery includes this file. The focused check does not
+qualify installed discovery, backup execution, receipts or the cutover.
+
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:sdk` from the worktree root. `test:sdk` builds, then runs
 `test:sdk:built`: the compiled tests in `packages/sdk/dist/tests/`. The core CI

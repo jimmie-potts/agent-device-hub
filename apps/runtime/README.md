@@ -1604,3 +1604,23 @@ message it sees against profile 2.0.
 ## Checks
 
 See [Runtime checks](../../docs/development.md#runtime-checks).
+
+### Cutover preparation
+
+The internal planner in `src/install/planner.ts` prepares an ordered cutover
+from explicit synthetic or privately collected facts. It reads no installed
+state and performs no operation. A preparation digest binds the supplied facts;
+it grants no execution authority. Missing converters and insufficient space are
+reported before any writer could stop. Installed discovery, receipts, migration
+execution and activation belong to the later installer adapter.
+
+After the root build, run the pure tests directly:
+
+```sh
+node --test apps/runtime/dist/tests/cutover-plan.test.js
+```
+
+Use the repository's Node and temporary-directory setup. The test creates no
+runtime, listener or service and uses only synthetic facts. It is also included
+in the core CI job's existing `test:runtime:built` file discovery. The complete
+runtime suite includes process tests and requires its own isolated execution.
