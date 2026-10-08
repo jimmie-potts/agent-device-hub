@@ -81,6 +81,20 @@ void test('backs up fresh-state sources once and permits several conversions to 
   const plan = prepareCutover(shared);
   assert.deepEqual(plan.steps.find(step => step.kind === 'backup'), {kind: 'backup', stores: ['history', 'library', 'wall']});
   assert.equal(plan.steps.filter(step => step.kind === 'convert' && step.inputs.includes('library')).length, 2);
+  assert.deepEqual(plan.space, [{volume: 'disk', requiredBytes: 476, availableBytes: 1000}], '315 backup + 51 converted + 100 release + 10 reserve');
+  assert.equal(prepareCutover({...shared, volumes: [{id: 'disk', availableBytes: 476, reserveBytes: 10}]}).status, 'prepared', 'a shared source is charged once at the capacity boundary');
+});
+
+void test('orders all selected converter groups by the accepted cutover sequence', () => {
+  const expected = ['nanoleaf', 'pixoo-library', 'pixoo-configuration', 'lifx', 'tidbyt', 'playback', 'hub-edge', 'codex-desktop', 'automation', 'wispr-configuration'] as const;
+  const migrations: MigrationFact[] = [...expected].reverse().map(group => ({
+    group, selection: 'convert', inputs: [group === 'nanoleaf' ? 'wall' : 'library'], bytes: 1,
+    converter: `${group}.convert`, verifier: `${group}.verify`,
+  }));
+  const plan = prepareCutover({...facts(), migrations});
+  assert.equal(plan.status, 'prepared');
+  assert.deepEqual(plan.steps.filter(step => step.kind === 'convert').map(step => step.group), expected);
+  assert.deepEqual(plan.steps.find(step => step.kind === 'verify-conversions'), {kind: 'verify-conversions', groups: expected});
 });
 
 void test('blocks missing converters and verifiers without representing their operations as completed', () => {
