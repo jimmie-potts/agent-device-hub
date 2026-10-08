@@ -50,3 +50,14 @@ adapted from `apps/dashboard/src/controls.tsx` and
 `main.tsx`), `build.mjs`, both `tsconfig.json` files, `tests/harness.ts`,
 `tests/sessions.test.ts`, `tests/connection.test.ts`, `tests/signin.test.ts` (HTTP trace context) and `tests/hook.ts`
 (synthetic lifecycle observations for acceptance runs).
+
+## General controls and navigation
+
+`src/device-controls.tsx` adapts the existing `PowerCard`, `ModeCard`,
+`BrightnessCard`, `MediaCard`, `SceneCard`, zone and manual-moment patterns from
+`apps/dashboard/src/controls.tsx` and `moments.tsx` to the runtime device and
+operation records. It reuses the copied card CSS and Neon tokens; the old Hub
+files are unchanged. `src/devices.ts` replaces controller-v1 admission with the
+2.0 capabilities and guards. The generic `sendAction` helper from #1006 remains
+the write transport. Module navigation uses the existing hash router and
+gateway manifest paths; build identity uses the existing build step.

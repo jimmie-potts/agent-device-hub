@@ -10,6 +10,7 @@ import {
   type SyncCompleted, type SyncedCopy, type SyncResult,
 } from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {RuntimeFeeds, type RuntimeData} from './runtime-feeds.ts';
 
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
@@ -40,7 +41,7 @@ export type SessionsCopy = {
   refused: ErrorCode | undefined;
 };
 
-export type DashboardState = {feed: Feed; sessions: SessionsCopy};
+export type DashboardState = {feed: Feed; sessions: SessionsCopy; runtime: RuntimeData};
 
 export type ConnectionOptions = {
   /** The page's own origin. */
@@ -65,8 +66,9 @@ export class DashboardConnection {
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #listeners = new Set<() => void>();
-  #state: DashboardState = {feed: 'connecting', sessions: {synced: false, records: [], revision: undefined, syncs: 0, changedAtMs: undefined, refused: undefined}};
+  #state: DashboardState = {runtime: {modules: undefined, control: false, copies: [], catalogFailed: false}, feed: 'connecting', sessions: {synced: false, records: [], revision: undefined, syncs: 0, changedAtMs: undefined, refused: undefined}};
   #participant: RemoteParticipant | undefined;
+  readonly #runtime: RuntimeFeeds;
   #copy: SyncedCopy<SessionRecord> | undefined;
   #closed = false;
   /** The `sync.completed` last counted. */
@@ -78,6 +80,7 @@ export class DashboardConnection {
     this.#options = options;
     this.#now = options.now ?? (() => Date.now());
     this.#scheduler = options.scheduler ?? timers;
+    this.#runtime = new RuntimeFeeds(this.#scheduler, runtime => { this.#update({runtime}); }, () => { this.#end(); });
   }
 
   /** For React's `useSyncExternalStore`: the listener hears every change of the state. */
@@ -114,17 +117,21 @@ export class DashboardConnection {
     this.#retryMs = FIRST_RETRY_MS;
     this.#update({feed: 'connected'});
     await this.#follow();
+    if (!this.#closed && this.#participant !== undefined) void this.#runtime.start(this.#participant);
   }
 
   /** Stops following and ends the stream; a page that signs out or unmounts calls it. */
   async close(): Promise<void> {
     this.#closed = true;
     this.#cancelRetry();
+    this.#runtime.close();
     const participant = this.#participant;
     this.#participant = undefined;
     this.#copy = undefined;
     await participant?.close();
   }
+
+  readonly refreshDevices = async (): Promise<void> => { await this.#runtime.refresh(); };
 
   /** Syncs the core's sessions, and syncs again with the capped backoff while the core refuses or a copy fails. */
   async #follow(): Promise<void> {
@@ -200,10 +207,11 @@ export class DashboardConnection {
 
   /** Stream recovery restores transport only; the replacement snapshot restores the copy's freshness. */
   #heard(diagnostic: Diagnostic): void {
+    this.#runtime.hear(diagnostic);
     const {event, code} = diagnostic;
     if (event === 'remote.disconnected' && this.#state.feed === 'connected') this.#update({feed: 'reconnecting', sessions: {...this.#state.sessions, synced: false}});
     else if (event === 'remote.reconnected' && this.#state.feed === 'reconnecting') this.#update({feed: 'connected'});
-    else if (event === 'sync.restarted') this.#update({sessions: {...this.#state.sessions, synced: false}});
+    else if (event === 'sync.restarted' && (diagnostic.pattern === undefined || diagnostic.pattern === 'sync session')) this.#update({sessions: {...this.#state.sessions, synced: false}});
     else if (event === 'remote.refused' && ended(code)) this.#end();
   }
 

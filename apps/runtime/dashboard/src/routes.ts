@@ -8,6 +8,7 @@ export type Route =
   | {kind: 'home'}
   | {kind: 'component'; id: string}
   | {kind: 'playback'; sourceId: string}
+  | {kind: 'module'; module: string; page: string}
   | {kind: 'connections'}
   | {kind: 'missing'; hash: string};
 
@@ -30,7 +31,8 @@ export function parseRoute(hash: string): Route {
   if (path === '' || path === '/' || path === '/home' || path === '/activity') return homeRoute;
   if (!path.startsWith('/')) return {kind: 'missing', hash};
   const parts = path.slice(1).split('/').map(decode);
-  const [first, second] = parts;
+  const [first, second, third] = parts;
+  if (parts.length === 3 && first === 'module' && second !== undefined && third !== undefined && second !== '' && third !== '') return {kind: 'module', module: second, page: third};
   if (parts.length === 1 && first === 'connections') return {kind: 'connections'};
   if (parts.length === 2 && first === 'component' && second !== undefined && second !== '') return {kind: 'component', id: second};
   if (parts.length === 2 && first === 'music' && second !== undefined && second !== '') return {kind: 'playback', sourceId: second};
@@ -42,6 +44,8 @@ export function routeHash(route: Route): string {
   switch (route.kind) {
     case 'home':
       return '#/';
+    case 'module':
+      return `#/module/${encodeURIComponent(route.module)}/${encodeURIComponent(route.page)}`;
     case 'connections':
       return '#/connections';
     case 'component':

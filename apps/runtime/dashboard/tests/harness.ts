@@ -8,6 +8,8 @@ import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
+import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
 import {connectRemote, type RemoteParticipant} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
@@ -20,6 +22,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** Adds only simulated bulbs and the configured sign for the controls journey. */
+  devices?: boolean;
   /** Lets a trusted loopback page sign a browser in without a code (Hub #276). On by default. */
   trusted?: boolean;
   /** Serves the launcher's socket in the state directory. Off by default. */
@@ -44,6 +48,8 @@ export type World = {
   dropDashboardStreams(): void;
   /** Stops the runtime cleanly and starts it again on the same state directory and port; every browser session ends. */
   restart(): Promise<void>;
+  holdDeviceWrites(hold: boolean): void;
+  loseDeviceReply(): void;
   close(): Promise<void>;
 };
 
@@ -65,14 +71,29 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']},
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
   ]}));
+  const bulbs = new SimulatedLifx();
+  let releaseWrite: (() => void) | undefined;
+  let heldWrite: Promise<void> | undefined;
+  let loseWriteReplies = false;
+  const network = {connect: (address: string) => ({
+    exchange: async (packet: number, payload: Uint8Array, expected: number, signal: AbortSignal): Promise<Buffer> => {
+      if (packet !== PACKET.lightGet && heldWrite !== undefined) await heldWrite;
+      if (packet !== PACKET.lightGet && loseWriteReplies) bulbs.loseNextAcknowledgment(address);
+      return bulbs.exchange(address, packet, payload, expected, signal);
+    }, close: () => {},
+  })};
+  const signToken = join(configDir, 'sign-token');
+  if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
+  const moduleConfig = options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {};
   const config = join(configDir, 'runtime-config.json');
-  await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, edge: {
+  await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
     credentials, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
   }}));
   const logs: LogRecord[] = [];
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [createCoreModule()], port, stateDir, configFile: config, edge: {schemas: {}}, log: record => { logs.push(record); }, environment: 'test',
+    modules: [createCoreModule(), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : [])],
+    port, stateDir, configFile: config, edge: {schemas: options.devices === true ? {...lifxSchemas, ...signSchemas} : {}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -104,6 +125,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
         await consumer.close();
       }
     },
+    holdDeviceWrites: hold => {
+      if (hold) heldWrite = new Promise(resolve => { releaseWrite = resolve; });
+      else { releaseWrite?.(); releaseWrite = undefined; heldWrite = undefined; }
+    },
+    loseDeviceReply: () => { loseWriteReplies = true; },
     browserSessions: () => runtime.gateway()?.access.counts().sessions ?? 0,
     dropDashboardStreams: () => { runtime.gateway()?.edge.disconnect('bunny/parts/dashboard'); },
     restart: async () => {
@@ -113,6 +139,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       runtime = await start(port);
     },
     close: async () => {
+      releaseWrite?.();
       await hook?.close();
       await runtime.stop();
       await rm(root, {recursive: true, force: true});
