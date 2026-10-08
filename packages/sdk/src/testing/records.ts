@@ -1,5 +1,5 @@
 // The kit's check of a module's log records (Hub #903). The runtime writes each record a module logs as a
-// diagnostic-contract record, profile 1.3, under the one `bunny.module` scope with the module's name in the
+// diagnostic-contract record, profile 1.5, under the one `bunny.module` scope with the module's name in the
 // `bunny.module` attribute. It drops a record whose event the catalog does not register for modules and leaves out
 // attributes the catalog does not register, so the kit fails a module that relies on either. A request ID that the
 // attribute's 1.x pattern refuses is left out too, and the record is kept (Hub #949). A new event or attribute goes
@@ -34,7 +34,7 @@ export function checkModuleRecord(module: string, entry: HarnessRecord): string 
   // As the runtime does, a request ID that the pattern refuses is left out; a value of another type is no ID and fails.
   const fields = typeof requestId === 'string' && !REQUEST_ID.test(requestId) ? rest : entry.fields;
   const checked = validateRecord({
-    schema_version: '1.3', timestamp: new Date().toISOString(), severity_number: severities[text], severity_text: text,
+    schema_version: '1.5', timestamp: new Date().toISOString(), severity_number: severities[text], severity_text: text,
     event_name: entry.event, body: events[entry.event], resource: RESOURCE, scope: {name: 'bunny.module', version: '1.0.0'},
     attributes: {...fields, 'bunny.module': module, 'bunny.provenance': 'source'},
     ...(ids === undefined ? {} : {trace_id: ids.traceId, span_id: ids.spanId, trace_flags: ids.flags}),

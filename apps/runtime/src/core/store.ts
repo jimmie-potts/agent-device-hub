@@ -17,6 +17,7 @@
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
 //   keeps every message the core publishes, a state as a compact change event, and what a part records.
+// - Each save of the state block is measured, and a costly one is recorded (Hub #976; see `SAVE_COST`).
 import {constants} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {DatabaseSync, type StatementSync} from 'node:sqlite';
@@ -26,7 +27,9 @@ import {
   registerCoreFamilies, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {Outbox, SdkError, type AddMessage, type Clock, type Draft, type Logger, type OutboxOptions, type Sdk, type SpanRecorder} from '@jimmie-potts/sdk';
+import {
+  Outbox, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
+} from '@jimmie-potts/sdk';
 import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
   REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
@@ -81,7 +84,7 @@ export type StoreOptions = {
   clock: Clock;
   /**
    * The core's logger and tracing, which its outbox records with (Hub #949): a refused publish, committed and awaiting
-   * publication, as `outbox.deferred`, once per run of refusals.
+   * publication, as `outbox.deferred`, once per run of refusals. The store records a costly save with it (Hub #976).
    */
   log?: Logger;
   trace?: SpanRecorder;
@@ -93,7 +96,14 @@ export type StoreOptions = {
   open?: readonly ((database: DatabaseSync) => void)[];
   /** Runs right after each commit that has messages to publish, before any goes out. A crash test kills the process here. */
   beforePublish?: () => void;
+  /** When a save is costly: `SAVE_COST` by default. */
+  saveCost?: SaveCost;
+  /** Monotonic milliseconds that saves are timed with: `performance.now` by default. */
+  timer?: () => number;
 };
+
+/** When a save of the state block is costly: past `stateBytes` of state, or past `saveMs` of work. */
+export type SaveCost = {readonly stateBytes: number; readonly saveMs: number};
 
 /** Why the last commit failed: the disk was full, or something else. */
 export type StoreFailure = 'full' | 'failed';
@@ -112,6 +122,16 @@ type Plan = {
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const MAX_STATE_BYTES = 16 * 1024 * 1024;
+/**
+ * A save is costly (Hub #976) once the state block passes half of `MAX_STATE_BYTES`, which refuses it whole, or once
+ * one save takes longer than 100 ms of the event loop, which every module and the gateway share. A save is agent-state's
+ * commit through the lease: it applies the change to the whole last committed state, which clones, validates and
+ * serializes it, plans the messages, and commits the one transaction, the parts' rows, history and outbox included.
+ * Publication follows the commit and is not part of it.
+ */
+export const SAVE_COST: SaveCost = Object.freeze({stateBytes: MAX_STATE_BYTES / 2, saveMs: 100});
+/** A record's durations are bounded to one day, as the diagnostic contract bounds them. */
+const MAX_DURATION_MS = 86_400_000;
 const JOURNAL_ROWS = 10_000;
 // SQLite's result codes, from a node:sqlite error's `errcode`.
 const SQLITE_BUSY = 5;
@@ -179,10 +199,15 @@ export class CoreStore implements Storage {
   #failure: StoreFailure | undefined;
   /** Publications still going out, so a stop can let them finish. */
   readonly #sending = new Set<Promise<unknown>>();
+  readonly #timer: () => number;
+  /** Whether the last save's state block was past its limit, and whether the save took too long: each is recorded once a run. */
+  #large = false;
+  #slow = false;
 
   constructor(options: StoreOptions) {
     this.#db = options.database;
     this.#options = options;
+    this.#timer = options.timer ?? (() => performance.now());
     registerCoreFamilies(this.#validator);
   }
 
@@ -432,27 +457,56 @@ export class CoreStore implements Storage {
     return loaded === undefined ? null : structuredClone(loaded);
   }
 
+  /** One save: agent-state's commit through the lease, measured from applying the change to its commit (`SAVE_COST`). */
   async #commitChange(change: Commit, ownerId: string): Promise<void> {
+    const began = this.#timer();
     const next = apply(this.#durable, change, ownerId);
     const payload = JSON.stringify(next);
-    if (Buffer.byteLength(payload) > MAX_STATE_BYTES) throw new Error('state-capacity');
+    const bytes = Buffer.byteLength(payload);
+    if (bytes > MAX_STATE_BYTES) throw new Error('state-capacity');
     const atMs = this.#options.clock.now();
     const plan = this.#plan({change, next}, atMs);
     const statements = this.#statements();
-    await this.#commit(plan, atMs, () => {
+    const committedAt = await this.#commit(plan, atMs, () => {
       const stored = statements.stateRevision.get() as {revision: number} | undefined;
       if ((stored?.revision ?? null) !== change.expectedRevision) throw new Error('revision-conflict');
       statements.writeState.run(next.revision, payload);
     });
+    this.#saved(bytes, committedAt - began);
+  }
+
+  /**
+   * What a committed save cost (Hub #976): a WARN once the state block passes its limit, or one save its time, once per
+   * run of the condition, and an INFO once a save is back within it. Each record carries the size in bytes or the time,
+   * never the state's content. A logger that throws loses its record, and the save stands.
+   */
+  #saved(bytes: number, ms: number): void {
+    const limits = this.#options.saveCost ?? SAVE_COST;
+    this.#large = this.#cost(this.#large, bytes > limits.stateBytes, {'bunny.state.bytes': bytes});
+    // Whole milliseconds rounded up, so a recorded time is past the limit exactly when the save was.
+    this.#slow = this.#cost(this.#slow, ms > limits.saveMs, {'bunny.save.duration_ms': Math.min(MAX_DURATION_MS, Math.ceil(Math.max(0, ms)))});
+  }
+
+  /** Records one condition's change, a WARN as it starts and an INFO as it ends, and returns whether it holds now. */
+  #cost(held: boolean, holds: boolean, fields: LogFields): boolean {
+    if (holds === held) return holds;
+    const log = this.#options.log;
+    try {
+      if (holds) log?.warn('storage.cost.high', {'bunny.operation': 'storage', ...fields});
+      else log?.info('storage.cost.normal', {'bunny.operation': 'storage', ...fields});
+    } catch {
+      // Telemetry never changes a save that committed.
+    }
+    return holds;
   }
 
   /**
    * Commits the plan and `extra` work in one transaction, then publishes its messages through the outbox. Resolves once
-   * the transaction has committed, without waiting for the publication: committed is not published, and a refused
-   * publish is reported once, as `outbox.deferred`, and goes out later, unchanged. Rejects, with nothing changed, when the
-   * transaction does not commit.
+   * the transaction has committed, with the store's timer at the commit, without waiting for the publication: committed
+   * is not published, and a refused publish is reported once, as `outbox.deferred`, and goes out later, unchanged.
+   * Rejects, with nothing changed, when the transaction does not commit.
    */
-  async #commit(plan: Plan, atMs: number, extra: (tx: CoreTransaction) => void): Promise<void> {
+  async #commit(plan: Plan, atMs: number, extra: (tx: CoreTransaction) => void): Promise<number> {
     const statements = this.#statements();
     const outbox = this.#outbox();
     const {history} = this;
@@ -513,6 +567,8 @@ export class CoreStore implements Storage {
       this.#frozen = undefined;
       addTo = () => { throw new Error('add a message only inside the transaction'); };
     }
+    // The outbox has committed or rolled back by now; its sends start only once this synchronous work has returned.
+    const committedAt = this.#timer();
     // A database that closed under the store, as a crash closes it, committed nothing; the outbox's refusal is taken
     // here, so it is never left unhandled.
     if (!this.#db.isOpen) {
@@ -553,6 +609,7 @@ export class CoreStore implements Storage {
     const sending = sent.catch(() => {});
     this.#sending.add(sending);
     void sending.finally(() => { this.#sending.delete(sending); });
+    return committedAt;
   }
 
   /** What a commit, or a refresh when `committed` is undefined, changes and publishes at `atMs`. */

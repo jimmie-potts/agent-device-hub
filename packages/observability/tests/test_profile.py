@@ -1,4 +1,4 @@
-"""Profiles 1.2 (Hub #903), 1.3 (Hub #949) and 1.4 (Hub #835): Python construction keeps only the attributes the record's own profile registers."""
+"""Profiles 1.2 (Hub #903), 1.3 (Hub #949), 1.4 (Hub #835) and 1.5 (Hub #976): Python construction keeps only the attributes the record's own profile registers."""
 import json
 import sys
 import unittest
@@ -22,7 +22,8 @@ class Profiles(unittest.TestCase):
             self.assertEqual([name for name in _profile_span_names(catalog, version) if name in later], [], version)
         self.assertEqual(_profile_span_names(catalog, '1.3'), catalog['span_names'])
         self.assertEqual(_profile_span_names(catalog, '1.4'), catalog['span_names'], 'profile 1.4 adds no span name')
-        self.assertEqual(_profile_span_names(catalog, '1.5'), [])
+        self.assertEqual(_profile_span_names(catalog, '1.5'), catalog['span_names'], 'profile 1.5 adds no span name')
+        self.assertEqual(_profile_span_names(catalog, '1.6'), [])
 
     def test_default_profile_leaves_out_later_attributes(self):
         record = hub_record()
@@ -41,8 +42,24 @@ class Profiles(unittest.TestCase):
         newest = create_record({**record, 'schema_version': '1.2'})
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
+    def test_profile_1_5_attributes_stay_in_profile_1_5(self):
+        self.assertEqual(ARTIFACT_VERSION, '1.5.0')
+        record = hub_record()
+        record['attributes'].update({'bunny.state.bytes': 8388609, 'bunny.save.duration_ms': 150, 'error.type': 'TypeError'})
+        earlier = create_record({**record, 'schema_version': '1.4'})
+        self.assertEqual(earlier['value']['attributes'], {'bunny.provenance': 'source', 'error.type': 'TypeError'})
+        latest = create_record({**record, 'schema_version': '1.5'})
+        self.assertEqual(latest['value']['attributes'], record['attributes'])
+
+    def test_profile_1_5_records_validate(self):
+        cases = json.loads((ROOT / 'fixtures/records.json').read_text())['cases']
+        costs = [case for case in cases if case['record'].get('schema_version') == '1.5']
+        self.assertEqual(sorted(case['name'] for case in costs if case['valid']), ['core-save-slow', 'core-state-large', 'core-state-normal'])
+        for case in costs:
+            with self.subTest(case=case['name']):
+                self.assertEqual(validate_record(case['record'])['ok'], case['valid'])
+
     def test_profile_1_4_attributes_stay_in_profile_1_4(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.4.0')
         record = hub_record()
         record['attributes'].update({'http.route': '/api/v2/families/{family}', 'http.request.method': 'GET', 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.3'})

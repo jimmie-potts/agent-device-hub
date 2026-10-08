@@ -1,6 +1,7 @@
 // Profile 1.2 (Hub #903) registers the B.U.N.N.Y. runtime: its service, its two scopes, its events and attributes.
 // Profile 1.3 (Hub #949) adds the runtime's decision records, the outbox's and a device's records, and two span names.
 // Profile 1.4 (Hub #835) adds the gateway's route and method to the edge's refusal records, and the credentials reload.
+// Profile 1.5 (Hub #976) adds a store's costly saves: the state block's size and one save's time.
 // Each profile's additions are closed to the earlier profiles, and producers still default to profile 1.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,14 +77,16 @@ const examples = {
   'bunny.attempt_count': 12,
   'http.route': '/api/v2/families/{family}',
   'http.request.method': 'GET',
+  'bunny.state.bytes': 8_388_609,
+  'bunny.save.duration_ms': 150,
 };
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.4.0 adds profile 1.4, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.4.0');
-  assert.equal(catalog.artifact_version, '1.4.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4']);
+test('artifact 1.5.0 adds profile 1.5, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.5.0');
+  assert.equal(catalog.artifact_version, '1.5.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -181,7 +184,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.5').ok, false);
+  assert.equal(projectRecord(hub, '1.6').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -224,6 +227,29 @@ test('profile 1.4 names a gateway route by its template and method, never a path
     attributes: {'bunny.provenance': 'source', 'bunny.outcome': 'succeeded', 'bunny.grant_count': 2}};
   assert.equal(valid(reloaded), true);
   assert.equal(valid(at(reloaded, '1.3')), false);
+});
+
+test('profile 1.5 records a costly save with only the state block\'s size or the save\'s time', () => {
+  const costly = {...module, schema_version: '1.5', event_name: 'storage.cost.high', body: catalog.events['storage.cost.high'], severity_text: 'WARN',
+    severity_number: 13, attributes: {'bunny.provenance': 'source', 'bunny.module': 'core', 'bunny.operation': 'storage', 'bunny.state.bytes': 8_388_609}};
+  const check = (attributes, record = costly) => valid({...record, attributes: {...record.attributes, ...attributes}});
+  assert.equal(valid(costly), true);
+  assert.equal(check({'bunny.state.bytes': 16_777_216}), true);
+  assert.equal(check({'bunny.state.bytes': 1.5}), false, 'a size is whole bytes');
+  assert.equal(check({'bunny.state.bytes': -1}), false);
+  assert.equal(check({'bunny.state.bytes': '{"sessions":[]}'}), false, 'never the state itself');
+  const slow = {...costly, attributes: {'bunny.provenance': 'source', 'bunny.module': 'core', 'bunny.operation': 'storage', 'bunny.save.duration_ms': 150}};
+  assert.equal(valid(slow), true);
+  assert.equal(check({'bunny.save.duration_ms': 86_400_001}, slow), false, 'at most a day');
+  assert.equal(check({'bunny.save.duration_ms': -1}, slow), false);
+  const normal = {...slow, event_name: 'storage.cost.normal', body: catalog.events['storage.cost.normal'], severity_text: 'INFO', severity_number: 9};
+  assert.equal(valid(normal), true);
+  assert.equal(valid({...normal, scope: runtime.scope}), false, 'a module\'s record, never the runtime\'s own');
+  for (const record of [costly, slow, normal]) {
+    assert.equal(valid(at(record, '1.4')), false, `${record.event_name} labeled 1.4`);
+    assert.equal(projectRecord(record, '1.4').ok, false, 'the save\'s cost is profile 1.5 vocabulary');
+  }
+  assert.equal(projectRecord(at(module, '1.4'), '1.5').value.schema_version, '1.5', 'a 1.4 record projects to 1.5');
 });
 
 test('construction keeps only the attributes the record\'s own profile registers', () => {

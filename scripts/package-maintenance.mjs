@@ -38,7 +38,7 @@ try{
  for(const path of metas.flatMap(meta=>Object.keys(meta.metafile.inputs))){
   const match=path.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//);if(match){const name=match[1],entry=lock.packages['node_modules/'+name];if(entry?.version)dependencies[name]=entry.version;}
  }
- dependencies['@jimmie-potts/bunny-observability']='1.4.0';dependencies['@jimmie-potts/device-contracts']='1.2.0';
+ dependencies['@jimmie-potts/bunny-observability']='1.5.0';dependencies['@jimmie-potts/device-contracts']='1.2.0';
  await writeFile(join(stage,'manifest.json'),JSON.stringify({schemaVersion:1,artifact:'@jimmie-potts/bunny-maintenance',version:'0.1.0',node:'24',dependencyClosure:dependencies,files},null,2)+'\n');
  const npm=args=>run(process.execPath,[process.env.npm_execpath,...args],stage);
  const packs=[];for(const name of ['one','two']){const path=join(scratch,name);await mkdir(path);const result=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',path]));packs.push(join(path,result[0].filename));}

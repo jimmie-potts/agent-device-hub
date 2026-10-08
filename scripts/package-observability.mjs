@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const name='@jimmie-potts/bunny-observability',version='1.4.0';
+const name='@jimmie-potts/bunny-observability',version='1.5.0';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 function run(command,args,cwd){
  const result=spawnSync(command,args,{cwd,encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:8*1024*1024});
@@ -51,7 +51,7 @@ try{
  assert.equal(metadata.name,name);assert.equal(metadata.version,version);
  assert.equal(metadata.dependencies.pino,'10.3.1');assert.equal(metadata.dependencies.ajv,'8.20.0');
  const hashes={};for(const path of await files(stage))hashes[path]=hash(await readFile(join(stage,path)));
- await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:name,version,schemaVersions:['1.0','1.1','1.2','1.3','1.4'],semanticConventions:'1.44.0',fixtureFormat:1,files:hashes},null,2)+'\n');
+ await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:name,version,schemaVersions:['1.0','1.1','1.2','1.3','1.4','1.5'],semanticConventions:'1.44.0',fixtureFormat:1,files:hashes},null,2)+'\n');
  async function pack(label){
   const destination=join(scratch,label);await mkdir(destination);
   const report=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',destination],stage));
@@ -69,7 +69,7 @@ try{
   npm(['install','--ignore-scripts','--no-audit','--no-fund',archive],consumer);
   const installed=join(consumer,'node_modules/@jimmie-potts/bunny-observability');
   const manifest=await verify(installed);
-  assert.deepEqual(manifest.schemaVersions,['1.0','1.1','1.2','1.3','1.4']);
+  assert.deepEqual(manifest.schemaVersions,['1.0','1.1','1.2','1.3','1.4','1.5']);
   const tests=(await readdir(join(installed,'tests'))).filter(file=>file.endsWith('.test.mjs')).sort().map(file=>join(installed,'tests',file));
   assert.match(run(process.execPath,['--test',...tests],consumer),/fail 0/u);
   run(process.env.PYTHON??'python3',['-m','unittest','discover','-s',join(installed,'tests'),'-p','test_*.py'],consumer);

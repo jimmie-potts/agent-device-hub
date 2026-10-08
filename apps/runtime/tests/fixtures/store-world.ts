@@ -7,9 +7,9 @@ import type {TestContext} from 'node:test';
 import {createAgentState} from '@jimmie-potts/agent-state';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type LifecycleEvent, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
-import {openModuleDatabaseFile, type SdkError} from '@jimmie-potts/sdk';
+import {openModuleDatabaseFile, type Logger, type SdkError} from '@jimmie-potts/sdk';
 import {reducedKind, toEnvelope} from '../../src/core/mapping.js';
-import {CoreStore, type Deriver} from '../../src/core/store.js';
+import {CoreStore, type Deriver, type SaveCost} from '../../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../../src/index.js';
 import {flush, manualClock, stateDir} from '../support.js';
 import {lifecycleOf, type ObservationOptions} from './agents.js';
@@ -31,6 +31,9 @@ export function lifecycleMessage(data: LifecycleObservation, atMs: number, id = 
   };
 }
 
+/** What a world's store records with and measures its saves by (Hub #976), when a test sets them. */
+export type Watch = {log?: Logger; saveCost?: SaveCost; timer?: () => number};
+
 /** The core store on a database file, with an owner, a recording participant and a manual clock. */
 export class World {
   readonly published: Published[] = [];
@@ -49,13 +52,17 @@ export class World {
    * died after its sends and before their bookkeeping committed.
    */
   hangAfter: number | undefined;
+  /** When set, runs as each message goes out, as a publication that takes time does. */
+  publishing: (() => void) | undefined;
 
   readonly #wrap: (db: DatabaseSync) => DatabaseSync;
   readonly #wal: boolean;
+  readonly #watch: Watch;
 
-  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db, wal = false) {
+  private constructor(file: string, clock: ReturnType<typeof manualClock>, derivers: readonly Deriver[], wrap: (db: DatabaseSync) => DatabaseSync = db => db, wal = false, watch: Watch = {}) {
     this.#wrap = wrap;
     this.#wal = wal;
+    this.#watch = watch;
     this.file = file;
     this.clock = clock;
     this.db = this.#connect();
@@ -74,9 +81,11 @@ export class World {
     wrap?: (db: DatabaseSync) => DatabaseSync;
     /** Opens the store's file as the runtime does: exclusive locking, WAL and `synchronous = FULL`. */
     wal?: boolean;
+    /** The store's logger, in place of reporting refused publishes to `refused`, and how it measures its saves. */
+    watch?: Watch;
   } = {}): Promise<World> {
     const file = options.file ?? join(await stateDir(context), 'core.sqlite');
-    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap, options.wal);
+    const world = new World(file, options.clock ?? manualClock(), options.derivers ?? [], options.wrap, options.wal, options.watch);
     context.after(() => world.close());
     await world.start();
     return world;
@@ -88,11 +97,13 @@ export class World {
       sdk: {source: 'bunny/core', publishMessage: <T extends object>(key: string, message: Message<T>): Promise<Message<T>> => {
         if (this.dead) return new Promise(() => {});
         if (this.refuse !== undefined) return Promise.reject(this.refuse);
+        this.publishing?.();
         this.published.push({key, message: message as Message});
         if (this.published.length === this.hangAfter) return new Promise(() => {});
         return Promise.resolve(message);
       }},
       onError: error => { this.refused.push(error); },
+      ...this.#watch,
     });
   }
 

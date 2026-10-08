@@ -48,7 +48,7 @@ it('a module\'s accepted request makes one admission and one reply record, contr
   await runtime.stop();
   const records = logs.filter(record => record.event_name.startsWith('runtime.command.'));
   assert.deepEqual(records.map(record => [record.event_name, record.severity_text, record.scope.name, record.schema_version]), [
-    ['runtime.command.admitted', 'INFO', 'bunny.runtime', '1.4'], ['runtime.command.replied', 'INFO', 'bunny.runtime', '1.4'],
+    ['runtime.command.admitted', 'INFO', 'bunny.runtime', '1.5'], ['runtime.command.replied', 'INFO', 'bunny.runtime', '1.5'],
   ]);
   const [command] = commands;
   assert.ok(command);

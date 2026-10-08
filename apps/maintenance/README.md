@@ -38,8 +38,8 @@ preserves parked/completed items, and records queue admission independently.
 The first source and repository are fixed to Hub. The command accepts only the
 configured user units, canonical `hub` records and bounded query window. It uses
 `journalctl --user --output=json --all` with explicit fields and fixed argument
-arrays. Every accepted message passes the validator of observability 1.4.0,
-whose profiles 1.2, 1.3 and 1.4 also register the runtime's records (#903, #949, #835);
+arrays. Every accepted message passes the validator of observability 1.5.0,
+whose profiles 1.2 to 1.5 also register the runtime's records (#903, #949, #835, #976);
 intake does not widen it. Grouping uses registered diagnostic dimensions, excluding
 instance/device IDs, paths, raw messages and journal cursors from the planner.
 Missing, rotated, rejected, capped or interrupted input is partial/unavailable

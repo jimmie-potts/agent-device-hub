@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@jimmie-potts/agent-state": "3.6.0",
-    "@jimmie-potts/bunny-observability": "1.4.0",
+    "@jimmie-potts/bunny-observability": "1.5.0",
     "@jimmie-potts/codex-desktop": "0.1.0",
     "@jimmie-potts/device-mcp": "1.0.1",
     "@jimmie-potts/event-contracts": "1.0.0",

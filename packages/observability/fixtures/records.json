@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.5",
+      "name": "unsupported-1.6",
       "valid": false,
       "record": {
-        "schema_version": "1.5",
+        "schema_version": "1.6",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -4575,6 +4575,209 @@
           "http.request.method": "TRACE",
           "bunny.code": "not-found",
           "bunny.reason": "invalid-input"
+        }
+      }
+    },
+    {
+      "name": "core-state-large",
+      "valid": true,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.state.bytes": 8388609
+        }
+      }
+    },
+    {
+      "name": "core-save-slow",
+      "valid": true,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.save.duration_ms": 150
+        }
+      }
+    },
+    {
+      "name": "core-state-normal",
+      "valid": true,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "storage.cost.normal",
+        "body": "Storage cost normal",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.state.bytes": 1078
+        }
+      }
+    },
+    {
+      "name": "core-state-large-labeled-1.4",
+      "valid": false,
+      "record": {
+        "schema_version": "1.4",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.state.bytes": 8388609
+        }
+      }
+    },
+    {
+      "name": "core-state-bytes-fractional",
+      "valid": false,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.state.bytes": 8388609.5
+        }
+      }
+    },
+    {
+      "name": "core-state-bytes-as-content",
+      "valid": false,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.state.bytes": "{\"formatVersion\":\"2.1\",\"sessions\":[]}"
+        }
+      }
+    },
+    {
+      "name": "core-save-over-a-day",
+      "valid": false,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-07T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "storage.cost.high",
+        "body": "Storage cost high",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "core",
+          "bunny.operation": "storage",
+          "bunny.save.duration_ms": 86400001
         }
       }
     }

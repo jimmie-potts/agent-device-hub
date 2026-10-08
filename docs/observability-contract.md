@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.4.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.5.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3 and 1.4 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4 and 1.5 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -20,9 +20,12 @@ registers its decision records and span names
 [Decision records and spans](#decision-records-and-spans-profile-13). Profile 1.4
 registers the runtime gateway's route and method on the edge's refusals and its
 credentials reload ([#835](https://github.com/jimmie-potts/agent-device-hub/issues/835));
-see [The gateway's records](#the-gateways-records-profile-14). The default
-producer profile stays 1.1: existing producers keep it, and a producer selects
-1.2, 1.3 or 1.4 explicitly.
+see [The gateway's records](#the-gateways-records-profile-14). Profile 1.5
+registers a store's costly saves
+([#976](https://github.com/jimmie-potts/agent-device-hub/issues/976)); see
+[Costly saves](#costly-saves-profile-15). The default producer profile stays
+1.1: existing producers keep it, and a producer selects 1.2, 1.3, 1.4 or 1.5
+explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -41,7 +44,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3` or `1.4` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4` or `1.5` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -167,7 +170,7 @@ A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
 checks. Building a record keeps only the attributes its own profile registers,
 so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
-validate and convert profile 1.2, 1.3 and 1.4 records from the schema and catalog; they
+validate and convert profile 1.2 to 1.5 records from the schema and catalog; they
 produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
 producers stay on 1.1.
 
@@ -227,7 +230,25 @@ earlier profile rejects each addition. The additions:
   INFO with `bunny.outcome` `succeeded` and `bunny.grant_count`, or ERROR with
   `failed`, `error.type` and the refusal's `error.code`, once per reload.
 
-The runtime writes all its records and spans at profile 1.4.
+## Costly saves (profile 1.5)
+
+Profile 1.5 is profile 1.4 plus a store's warning that its saves are getting
+costly ([#976](https://github.com/jimmie-potts/agent-device-hub/issues/976)).
+Every earlier profile rejects each addition. The additions:
+
+- **Module events:** `storage.cost.high`, at WARN, as a store's state block
+  passes its size limit or one save passes its time limit, once per run of the
+  condition, and `storage.cost.normal`, at INFO, once a save is back within it.
+- **Attributes:** `bunny.state.bytes`, the size in bytes of the state a save
+  wrote, a nonnegative safe integer, and `bunny.save.duration_ms`, the time
+  one save took, in milliseconds, bounded to one day like the other durations.
+  A record carries one of them, and never the state's content.
+
+Profile 1.5 adds no span name. The runtime's core is the one producer: its
+store records these with `bunny.operation` `storage` (see the runtime's
+[Agent-session core](../apps/runtime/README.md#agent-session-core)).
+
+The runtime writes all its records and spans at profile 1.5.
 
 ## Traces and context
 
@@ -344,7 +365,7 @@ records for one request ID or trace, validates each against this contract before
 it shows any, and reports a missing record as missing, never as proof that nothing
 happened (#950). Its answer, its limits and every gap it names are in
 [Follow one request](../apps/runtime/verify/README.md#follow-one-request). Profile 1.4 adds its gateway's route and
-credentials reload (#835). The runtime and its journal intake are
+credentials reload (#835), and profile 1.5 its core's costly saves (#976). The runtime and its journal intake are
 installed at the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
 export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).
