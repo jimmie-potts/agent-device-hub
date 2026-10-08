@@ -33,8 +33,9 @@ try {
     const axe = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
     assert.deepEqual(axe.map(item => item.id), []);
     await confirm.press('Enter');
-    await page.getByText('Accepted. The synced record supplies the result.', {exact: true}).waitFor();
-    await page.getByText(/Every configured consumer acknowledged this notice in the synced session record: dashboard, nanoleaf, pixoo/).waitFor();
+    await page.getByText('Accepted. Completion and acknowledgments are shown separately.', {exact: true}).waitFor();
+    await page.getByText('Completion: completed.', {exact: true}).waitFor();
+    await page.getByText('Synced session acknowledgments: dashboard, nanoleaf, pixoo.', {exact: true}).waitFor();
     assert.equal(clears(), 1);
     await page.getByRole('button', {name: 'Close', exact: true}).click();
     await page.getByRole('link', {name: /^Home/}).click();
@@ -44,7 +45,7 @@ try {
     await page.reload(); await feed(page, 'connected');
     assert.equal(clears(), 1, 'reconnect and reload do not replay the override');
 
-    // A lost reply changes local uncertainty; the operation and session copies can independently confirm the save.
+    // A lost reply stays uncertain; the copies independently show completion and current acknowledgments.
     await world.observe(turnStarted, {turn: 'turn-second'}); await world.observe(turnEnded, {turn: 'turn-second'});
     await page.locator('article.session .chip', {hasText: 'Finished'}).waitFor();
     await page.getByRole('link', {name: 'Connections', exact: true}).click();
@@ -52,7 +53,8 @@ try {
     await page.route('**/api/v2/commands/notice-clear', async route => {await route.fetch(); await route.abort('failed');}, {times: 1});
     await clear.click(); await confirm.click();
     await page.getByText('The reply is uncertain. The action was not sent again.', {exact: true}).waitFor();
-    await page.getByText(/Every configured consumer acknowledged this notice in the synced session record/).waitFor();
+    await page.getByText('Completion: completed.', {exact: true}).waitFor();
+    await page.getByText('Synced session acknowledgments: dashboard, nanoleaf, pixoo.', {exact: true}).waitFor();
     assert.equal(clears(), 2);
     await page.reload(); await feed(page, 'connected'); assert.equal(clears(), 2);
 

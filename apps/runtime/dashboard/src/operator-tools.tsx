@@ -27,8 +27,8 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
   const unchanged = selected !== undefined && confirmation !== undefined && selected.generation === confirmation.generation &&
     selected.revision === confirmation.revision && current?.id === confirmation.noticeId;
   const pending = attempt !== undefined && answer === undefined;
-  const evidence = attempt === undefined ? undefined : noticeEvidence(attempt, selected, available, sessions.revision, operations, operationsSynced, answer);
-  const acknowledgments = selected?.notices.find(notice => notice.id === attempt?.noticeId)?.acknowledgedBy.join(', ') ?? '';
+  const evidence = attempt === undefined ? undefined : noticeEvidence(attempt, selected, available, operations, operationsSynced, answer);
+  const acknowledgments = evidence?.acknowledgedBy?.join(', ') ?? '';
   const close = (): void => {if (inFlight.current) return; returnFocus.current = true; setConfirmation(undefined);};
   const open = (): void => {
     if (!available || selected === undefined || current === undefined || inFlight.current) return;
@@ -61,13 +61,13 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
       {!unchanged && attempt === undefined && <p className="warning">The session or notice changed. Cancel and select the current notice.</p>}
       <div role="status">
         {evidence?.reply === 'requested' && <p>Requested. Waiting for a reply.</p>}
-        {evidence?.reply === 'accepted' && <p>Accepted. The synced record supplies the result.</p>}
+        {evidence?.reply === 'accepted' && <p>Accepted. Completion and acknowledgments are shown separately.</p>}
         {evidence?.reply === 'uncertain' && <p>The reply is uncertain. The action was not sent again.</p>}
         {evidence?.reply === 'refused' && <p>The override was refused. Code: {answer !== undefined && 'error' in answer ? answer.error.code : ''}.</p>}
         {evidence !== undefined && <p>Completion: {evidence.completion}.</p>}
-        {evidence !== undefined && !evidence.retired && <p>Recorded acknowledgments: {acknowledgments.length > 0 ? acknowledgments : 'None observed'}.</p>}
+        {evidence?.acknowledgedBy !== undefined && <p>Synced session acknowledgments: {acknowledgments.length > 0 ? acknowledgments : 'None observed'}.</p>}
+        {evidence !== undefined && !evidence.retired && evidence.acknowledgedBy === undefined && <p>Current session acknowledgment evidence is unavailable.</p>}
         {evidence?.retired === true && <p>This session was replaced; the attempt is retired.</p>}
-        {evidence?.observed === true && <p data-tone="accepted">Every configured consumer acknowledged this notice in the synced session record: {acknowledgments}.</p>}
       </div>
     </form>}
   </div>;
