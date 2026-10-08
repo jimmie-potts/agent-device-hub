@@ -17,7 +17,9 @@
 //   commit per message nor delays other work for long ("a slow consumer lags only itself"). Each message keeps its own
 //   verdict within its group.
 // - Deadlines: one timer for the earliest pending action. A restart loads every pending action and lets its deadline
-//   pass: it ends uncertain, and a late outcome still completes it.
+//   pass: it ends uncertain, and a late outcome still completes it. A clean stop closes the core's participant first,
+//   which settles the dispatcher's own requests: one the owner's handler has with no reply ends uncertain at once
+//   ("the requester closed before the reply"), and one still queued is cancelled, failed.
 // - Every step is logged once, in the action's trace, and `message.received` carries the incoming message's trace.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';

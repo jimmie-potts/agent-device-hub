@@ -16,7 +16,7 @@ import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createTidbytModule, type CloudFetch} from '@jimmie-potts/tidbyt';
 import {runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
-import {createCoreModule} from '../tests/fixtures/core.js';
+import {createCoreModule, historySchemas} from '../tests/fixtures/core.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
@@ -313,8 +313,9 @@ const factories = names.map(name => {
   if (factory === undefined) throw new Error(`no fixture module ${name}`);
   return factory;
 });
-// A run with no module hosts none, not even the harness module, so its health lists none. Its edge still knows the
-// fixture families the scenario's parts use, as the in-memory harness's does.
+// A run with no module hosts none, not even the harness module, so its health lists none. Its edge and gateway still
+// know the fixture families the scenario's parts use, as the in-memory harness's do: the fixture core's stand-in
+// history among them, so `/api/v2/families/stand-in-history` serves it.
 await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {
-  schemas: {...lampSchemas, ...signSchemas, ...pixooOwnSchemas, ...nanoleafSchemas}, onEdge: served => { edge = served; },
+  schemas: {...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas}, onEdge: served => { edge = served; },
 });
