@@ -196,7 +196,9 @@ The rules:
   in its consumer ID with `forbidden`. It commits the acknowledgment before it
   replies `accepted`, and no outcome follows ([MAPPING.md](MAPPING.md)).
 - `operation` (Hub #922) is the latest state of one action the core tracks
-  (#782): a device command, a moment or a mode change. The core publishes it
+  (#782), including tracked core-local metadata changes. Its `kind` is the
+  tracker's existing category and deadline class (`device`, `moment` or `mode`),
+  not proof of a physical target; `family` and `target` identify the action. The core publishes it
   from the tracker's change, in the same transaction, and serves it through
   sync, so a display shows an action requested (`sent`), `accepted` and
   `completed` without reading the tracker, whose row stays the authority. Its
@@ -204,10 +206,12 @@ The rules:
   request ID, and its `command` is its family's type; the validator refuses
   either otherwise. `result` is absent while the action is `sent` or `accepted`
   and present after; a failed one carries its error, and a succeeded one
-  `transmitted` or `observed` evidence. An accepted reply is never evidence
+  `transmitted` or `observed` evidence of the action's effect. An accepted reply is never evidence
   that anything was done. The record carries no command payload. The core
   keeps the latest records only, removing the oldest settled one with reason
-  `retired`, never a pending one. The inbox (#923) points at an operation by
+  `retired` after each tracked change, never a pending one. Pending records may
+  exceed the limit until settlement permits pruning; tracker/history rows remain.
+  The inbox (#923) points at an operation by
   its request ID.
 - `playback-control` asks the owner of the `playback` record (#929) for play,
   pause, next or previous. The owner sends it once, to the source presented at

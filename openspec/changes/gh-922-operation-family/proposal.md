@@ -5,7 +5,7 @@
 ## What Changes
 
 - **The `operation` family.** A core state family: the latest state of each tracked action, keyed by `operationEntityId(requestId)`, with its status, result, evidence, error and reply, and no command payload.
-- **The core publishes it.** A core part saves and publishes each action's record from the tracker's change, in the same transaction, and the core serves the family through its sync. The family keeps the latest 256 records, removing the oldest settled one as `retired` and never a pending one.
+- **The core publishes it.** A core part saves and publishes each action's record from the tracker's change, in the same transaction, and the core serves the family through its sync. Every tracked change prunes the oldest settled projections as `retired` towards a 256-record limit. Pending rows survive even above the limit; tracker/history rows remain.
 - **`serves` in `/api/v2/modules`.** Each module's families as health lists them.
 - **Checks.** A runtime test of the records, the core's conformance run over `operation`, contract fixtures and a tier 1 scenario.
 

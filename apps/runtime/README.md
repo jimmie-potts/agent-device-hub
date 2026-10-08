@@ -246,12 +246,18 @@ and exits 1, and the service manager restarts it whole.
   published from the tracker's change, in that change's transaction, at the
   core's revision, and the core serves the family through its sync. A record is
   the tracker row's copy without the command's payload; the row stays the
-  authority. The family keeps the latest `MAX_OPERATION_RECORDS` (256) records:
-  a new action that takes it past the bound removes the oldest settled ones, in
-  its own transaction, with reason `retired`, and a pending action is never
-  removed, so a sync stays bounded. The records outlive a restart, and a
-  pending one turns uncertain at its deadline as the tracker's row does. The
-  inbox (#923) points at an operation by its request ID.
+  authority. `kind` is the tracker's existing category and deadline class, not
+  proof of a physical target; `family` and `target` identify the action, including
+  tracked core-local metadata changes. Evidence describes the action's transmitted
+  or observed effect. After each tracked change, the family removes the oldest settled
+  projections with reason `retired` until at most `MAX_OPERATION_RECORDS` (256)
+  remain, or all remaining actions are pending. Pending records survive even
+  above the limit; settlement and late outcomes restore the bound as they permit.
+  The tracker and history are never pruned by this projection. Records outlive
+  a restart, and a pending one turns uncertain at its deadline as the tracker's
+  row does. State and removal messages retain the causal outcome trace, or the
+  stored action trace when no outcome caused the change. The inbox (#923) points at
+  an operation by its request ID.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
   occurrence and outcome another participant publishes. It drops a duplicate
   by `(source, id)` durably, since history keeps each whole message once, and
@@ -1445,6 +1451,7 @@ scenarios, and collects each registered module's from its own file under
 `tests/scenarios/modules/`, after the core's, in file-name order (#999).
 The dashboard's two core scenarios live in `tests/scenarios/dashboard.ts`,
 with their own fixture identities and unread-policy assertions (#922).
+The core operation-record scenario lives in `tests/scenarios/operations.ts`.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built with its simulated transport, a registered module through its

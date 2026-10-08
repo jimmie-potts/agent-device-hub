@@ -1,9 +1,9 @@
 // The core's operation-record scenario (Hub #922), shared by the in-memory harness and disposable runs.
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {switchLamp} from '../fixtures/lamp.js';
-import {act, answered, dispatchOnce, expect, holds, show, type Harness, type Scenario} from './framework.js';
+import {act, answered, dispatchOnce, expect, holds, show, type Harness, type Outcome, type Scenario} from './framework.js';
 
-const lampPower = (h: Harness, power: 'on' | 'off'): boolean | string =>
+const lampPower = (h: Harness, power: 'on' | 'off'): Outcome =>
   h.devices().lamp.power['lamp-1'] === power || `lamp-1 is ${String(h.devices().lamp.power['lamp-1'])}`;
 
 /** The core's `operation` records for a request, in the order the core published them (Hub #922). */

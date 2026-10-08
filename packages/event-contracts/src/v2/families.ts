@@ -84,7 +84,9 @@ export type InboxItem = {
  * `org.bunny.operation.updated`: the latest state of one action the core tracks (Hub #922, #782), a copy of the tracker's
  * row that the core publishes from the tracker's change, in the same transaction, and serves through sync. Its `id` is
  * `operationEntityId(requestId)`. `result` is absent while the action is `sent` or `accepted`. An accepted reply is never
- * evidence of an effect; `evidence` says what reached the device. The core keeps the latest records only, removing the
+ * evidence of an effect; `evidence` describes the action's transmitted or observed effect. `kind` is the tracker's
+ * existing category and deadline class, not proof of a physical target; `family` and `target` identify the action,
+ * including tracked core-local metadata changes. The core keeps the latest records only, removing the
  * oldest settled one with reason `retired`; the inbox (#923) points at an operation by its request ID.
  */
 export type OperationRecord = {

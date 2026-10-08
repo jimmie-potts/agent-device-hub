@@ -1,10 +1,10 @@
-// The core's `operation` family (Hub #922): the latest state of each action the tracker follows (#782), a device command,
-// a moment or a mode change, so a display such as the dashboard can show it requested, accepted and completed by
+// The core's `operation` family (Hub #922): the latest state of each action the tracker follows (#782), including
+// tracked core-local metadata changes, so a display can show it requested, accepted and completed by
 // syncing one family. It is a core part (`CorePart`): each record is written and published from the tracker's own
 // change, in that change's transaction, and the core serves the family through its sync at its revision. The tracker's
 // row stays the authority; a record is its copy, never a command and never sent again. The family keeps the latest
-// records only: once more than `MAX_OPERATION_RECORDS` exist, the oldest settled one is removed with reason `retired`, in
-// the transaction that added the newest, so a sync stays bounded; a pending action is never removed. The inbox (#923)
+// records only: each tracked change removes the oldest settled records with reason `retired` while the family exceeds
+// `MAX_OPERATION_RECORDS`. Pending actions are preserved even above the limit; settlement restores the bound. The inbox (#923)
 // points at an operation by its request ID.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {operationEntityId, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -67,15 +67,15 @@ export class OperationRecords {
 
   /**
    * One tracked change, in its own transaction: the action's record at the transaction's revision, published after the
-   * commit, and, for a new action, the oldest settled records removed while more than the bound exist.
+   * commit, with the oldest settled records removed while more than the bound exist. Pending records always stay.
    */
-  readonly tracked = ({operation, previous}: OperationChange, tx: CoreTransaction): void => {
+  readonly tracked = ({operation, outcome}: OperationChange, tx: CoreTransaction): void => {
     const statements = this.#statements;
     if (statements === undefined) return;
     const record = operationRecord(operation, tx.revision());
+    const parent = outcome ?? {traceparent: operation.traceparent};
     statements.save.run(record.id, record.sentAtMs, pending(operation) ? 1 : 0, JSON.stringify(record));
-    tx.add(key(record.id), {kind: 'state', ...draftOf(record)});
-    if (previous !== undefined) return;
+    tx.add(key(record.id), {kind: 'state', ...draftOf(record)}, {parent});
     const {count} = statements.count.get() as {count: number};
     if (count <= this.#limit) return;
     for (const {id} of statements.oldest.all(count - this.#limit) as {id: string}[]) {
@@ -83,7 +83,7 @@ export class OperationRecords {
       tx.add(key(id), {
         kind: 'removal', type: 'org.bunny.operation.removed', subject: id, dataschema: REMOVAL_SCHEMA,
         data: {entity: {family: OPERATION_FAMILY, id}, revision: tx.revision(), reason: 'retired'},
-      });
+      }, {parent});
     }
   };
 }

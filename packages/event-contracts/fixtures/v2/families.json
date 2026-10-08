@@ -2455,6 +2455,15 @@
    },
    "expect": "invalid-message",
    "detail": "payload /evidence enum"
+  },
+  {
+   "name": "a succeeded operation missing its evidence",
+   "base": "operation-completed",
+   "set": {
+    "/data/evidence": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required evidence"
   }
  ],
  "scenarios": [
