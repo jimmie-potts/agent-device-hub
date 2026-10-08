@@ -1430,6 +1430,8 @@ type has one execution adapter that runs the same definitions unchanged:
 `verify/adapter.ts`. The catalog holds the core's and the fixture modules'
 scenarios, and collects each registered module's from its own file under
 `tests/scenarios/modules/`, after the core's, in file-name order (#999).
+The dashboard's two core scenarios live in `tests/scenarios/dashboard.ts`,
+with their own fixture identities and unread-policy assertions (#922).
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built with its simulated transport, a registered module through its
