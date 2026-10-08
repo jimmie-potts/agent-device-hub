@@ -106,7 +106,7 @@ void test('a HOME report meeting a closed IPC channel stops silently, whether se
     let output = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
-    const [, signal] = await once(child, 'close');
+    const [, signal] = await once(child, 'close') as [number | null, NodeJS.Signals | null];
     assert.equal(signal, 'SIGTERM', mode);
     assert.equal(output, '', `${mode}: the failure never reaches stdout or stderr`);
   }
