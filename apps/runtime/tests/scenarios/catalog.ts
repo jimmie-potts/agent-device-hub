@@ -845,7 +845,7 @@ export type ModuleScenarios = {readonly scenarios: readonly Scenario[]; readonly
 const browserSessions = async (h: Harness): Promise<SessionRecord[] | string> => {
   const answer = await h.gateway({as: 'browser', method: 'GET', path: '/api/v2/families/session'});
   const read = bodyOf<{records?: SessionRecord[]}>(answer);
-  return answer.status === 200 && read?.records !== undefined ? read.records : `${answer.status} ${answer.text.slice(0, 200)}`;
+  return answer.status === 200 && read?.records !== undefined ? read.records : `the session read answered ${answer.status}`;
 };
 /** What the dashboard shows of a session: its state by the shared helper, `idle` when nothing is outstanding. */
 const dashboardShows = (expected: string, id = SESSION_ID) => async (h: Harness): Promise<Outcome> => {
