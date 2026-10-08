@@ -66,7 +66,7 @@ export class Library {
     } catch(error) {
       db?.close(); owner?.close();
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('storage-error');
+      throw new LibraryError('storage-error',{},{cause:error});
     }
   }
 
@@ -88,7 +88,7 @@ export class Library {
       return new Library(options.database,undefined,media,mediaDirectory,options.hostedChecks);
     } catch(error) {
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('storage-error');
+      throw new LibraryError('storage-error',{},{cause:error});
     }
   }
 
@@ -96,7 +96,7 @@ export class Library {
     if(this.closing) return Promise.reject(new LibraryError('closed'));
     const result = this.tail.then(()=>{if(signal?.aborted===true)throw new MediaError((signal.reason as {name?:unknown}|null|undefined)?.name==='TimeoutError'?'timeout':'cancelled');return action();}).catch((error:unknown)=>{
       if(error instanceof LibraryError || error instanceof MediaError) throw error;
-      throw new LibraryError('database-error');
+      throw new LibraryError('database-error',{},{cause:error});
     });
     this.tail = result.catch(()=>undefined);
     return result;

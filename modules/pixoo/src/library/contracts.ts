@@ -11,8 +11,9 @@ const messages:Record<LibraryErrorCode,string>={
   'checkpoint-owned':'Clear or replace the playback checkpoint before releasing its session.',
   'catalog-corrupt':'Stored metadata and immutable media disagree; preserve the files for inspection.',
 };
+/** `cause` keeps the error a wrapped one came from, so a caller can tell a full disk by its code (Hub #931); it is never shown. */
 export class LibraryError extends Error {
-  constructor(readonly code:LibraryErrorCode,readonly details:Record<string,unknown>={}) {super(messages[code]);this.name='LibraryError';}
+  constructor(readonly code:LibraryErrorCode,readonly details:Record<string,unknown>={},options?:{cause?:unknown}) {super(messages[code],options);this.name='LibraryError';}
 }
 export const idSchema=z.uuid();
 export const hashSchema=z.string().regex(/^[a-f0-9]{64}$/);

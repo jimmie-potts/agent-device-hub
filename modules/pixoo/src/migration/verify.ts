@@ -9,7 +9,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {CALLER_TABLES} from '../library/library.js';
 import {APPLICATION_ID, MIGRATIONS, one} from '../library/migrations.js';
 import {
-  CARRIED_TABLES, LEFT_IN_BACKUP, MIGRATION_SCHEMA, catalogDigest, filesDigest, sha256, type CatalogRows, type Mismatches, type Row,
+  CARRIED_TABLES, LEFT_IN_BACKUP, MIGRATION_SCHEMA, MigrationError, catalogDigest, filesDigest, sha256, type CatalogRows, type Mismatches, type Row,
   type VerificationReport,
 } from './contracts.js';
 import {openImmutable, readRows, referenceShape, shapeOf, sound, type InstalledLibrary, type MediaFile} from './installed.js';
@@ -24,14 +24,16 @@ const uid = (): number | undefined => process.getuid?.();
 const owned = (info: {uid: number; mode: number}): boolean => info.uid === uid() && (info.mode & 0o077) === 0;
 
 /**
- * Compares the module's store with the installed library and reports what differs, counted by kind. It never throws for
- * what it finds: a missing or damaged destination is a mismatch. `source` must have been opened for this check.
+ * Compares the module's store with the installed library and reports what differs, counted by kind. It checks the store
+ * as the migration left it, before the runtime's first start: the start writes the module's own tables. It never throws
+ * for what it finds: a missing or damaged destination is a mismatch. It throws `MigrationError` `interrupted` once
+ * `signal` aborts, between files. `source` must have been opened for this check.
  */
-export async function verifyMigration(source: InstalledLibrary, store: MigratedStore): Promise<VerificationReport> {
+export async function verifyMigration(source: InstalledLibrary, store: MigratedStore, {signal}: {signal?: AbortSignal} = {}): Promise<VerificationReport> {
   const mismatches: Omit<Mismatches, 'total'> = {database: 0, assets: 0, renditions: 0, playlists: 0, items: 0, leftInBackup: 0, files: 0, unexpected: 0};
   const rows = await readDestination(store.databaseFile, mismatches);
   for (const table of CARRIED_TABLES) mismatches[table] += differences(source.rows[table], rows?.[table]);
-  const files = await compareFiles(source, store.folder, mismatches);
+  const files = await compareFiles(source, store.folder, mismatches, signal);
   mismatches.unexpected += await unexpectedEntries(source.files, store.folder);
   const total = Object.values(mismatches).reduce((sum, count) => sum + count, 0);
   return {
@@ -43,9 +45,10 @@ export async function verifyMigration(source: InstalledLibrary, store: MigratedS
 
 /**
  * Reads the carried rows from the module's SQLite file, counting a `database` mismatch for a file that is missing, not
- * private, unclean, not at the library's current schema with exactly its tables beside the module's own, or failing
- * SQLite's checks, and a `leftInBackup` mismatch for each row in a table that starts fresh. Returns undefined when the
- * file cannot be read at all.
+ * private, unclean, not at the library's current schema with exactly its tables beside the module's own, at a catalog
+ * revision other than the migration's 0, or failing SQLite's checks, and a `leftInBackup` mismatch for each row in a
+ * table that starts fresh: the library's sessions, checkpoint and cleanups, and the module's and the SDK's own tables.
+ * Returns undefined when the file cannot be read at all.
  */
 async function readDestination(file: string, mismatches: Omit<Mismatches, 'total'>): Promise<Partial<CatalogRows> | undefined> {
   try {
@@ -71,9 +74,15 @@ async function readDestination(file: string, mismatches: Omit<Mismatches, 'total
   }
   try {
     if (!current(db)) mismatches.database += 1;
-    for (const table of LEFT_IN_BACKUP) {
+    try {
+      if (one(db, 'SELECT revision FROM catalog_revision WHERE slot = 1').revision !== 0) mismatches.database += 1;
+    } catch {
+      mismatches.database += 1;
+    }
+    const own = db.prepare('SELECT name FROM sqlite_master WHERE type = \'table\' ORDER BY name').all().map(row => String(row.name)).filter(name => CALLER_TABLES.test(name));
+    for (const table of [...LEFT_IN_BACKUP, ...own]) {
       try {
-        mismatches.leftInBackup += Number(one(db, `SELECT count(*) AS n FROM ${table}`).n);
+        mismatches.leftInBackup += Number(one(db, `SELECT count(*) AS n FROM "${table}"`).n);
       } catch {
         mismatches.leftInBackup += 1;
       }
@@ -119,9 +128,10 @@ function differences(expected: readonly Row[], actual: readonly Row[] | undefine
  * Compares each file the source catalog names with its copy: the copy must be a private regular file with one link and
  * the same SHA-256 as the source file, which must still match its catalog. Returns each copy's path and SHA-256.
  */
-async function compareFiles(source: InstalledLibrary, folder: string, mismatches: Omit<Mismatches, 'total'>): Promise<{path: string; sha256: string}[]> {
+async function compareFiles(source: InstalledLibrary, folder: string, mismatches: Omit<Mismatches, 'total'>, signal: AbortSignal | undefined): Promise<{path: string; sha256: string}[]> {
   const found: {path: string; sha256: string}[] = [];
   for (const file of source.files) {
+    if (signal?.aborted === true) throw new MigrationError('interrupted');
     const copy = await readCopy(join(folder, 'media', file.path), file.limit);
     if (copy !== undefined) found.push({path: `media/${file.path}`, sha256: copy});
     let original: string | undefined;

@@ -21,13 +21,18 @@ export const INSTALLED_LIBRARY = {
   ],
 } as const;
 
-/** Why the migration refused a source library or gave up on one. */
-export type MigrationCode = 'source-missing' | 'source-in-use' | 'source-not-clean' | 'source-schema' | 'source-corrupt';
+/**
+ * Why the migration refused a source library or gave up on one: the source's codes, a file system that filled up while
+ * it wrote (`disk-short`), or an abort, such as the operator's interrupt (`interrupted`).
+ */
+export type MigrationCode = 'source-missing' | 'source-in-use' | 'source-not-clean' | 'source-schema' | 'source-corrupt' | 'disk-short' | 'interrupted';
 
 const TEXT: Readonly<Record<MigrationCode, string>> = {
   'source-missing': 'The library directory holds no catalog file.',
   'source-in-use': 'The Pixoo service holds the library: stop it first.',
-  'source-not-clean': 'The library was not closed cleanly: its catalog has a log or journal with commits the file lacks.',
+  'source-not-clean': 'The library was not closed cleanly: its catalog has a log or journal with commits the file lacks, or it has no owner lock file. Start and stop the Pixoo service once.',
+  'disk-short': 'The state directory\'s file system filled up during the migration.',
+  'interrupted': 'The migration was interrupted.',
   'source-schema': 'The library is not the installed release\'s schema version 3, or its tables differ from it.',
   'source-corrupt': 'The library\'s catalog or a media file it names is damaged, missing or not a regular file.',
 };
@@ -76,8 +81,12 @@ export type MigrationCounts = {
   bytes: number;
 };
 
-/** Rows the migration leaves in the backup: the sessions, the player's checkpoint and pending cleanups. */
-export type LeftInBackup = {sessions: number; checkpoints: number; cleanupJobs: number};
+/**
+ * What the migration leaves in the backup, which keeps the whole library: the sessions (each with the renditions it
+ * retains, `session_refs`, which go with it), the player's checkpoint and pending cleanups, which start fresh, and the
+ * files under `media/` that no catalog entry names, such as a deleted asset's original and an upload left in staging.
+ */
+export type LeftInBackup = {sessions: number; checkpoints: number; cleanupJobs: number; files: number};
 
 /**
  * SHA-256 digests of what the destination holds: `catalog` over the carried rows in table and ID order, `files` over each
@@ -114,6 +123,23 @@ export type VerificationReport = {
 };
 
 export const sha256 = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
+
+/** SQLite's result code for a full database, from a node:sqlite error's `errcode`. */
+const SQLITE_FULL = 13;
+
+/**
+ * Whether an error, or one it was caused by, is a full disk: `ENOSPC` from the file system or `SQLITE_FULL` from SQLite.
+ * It reads only each error's `code` and `errcode`, never its text, and follows at most eight causes.
+ */
+export function fullDisk(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 8 && typeof current === 'object' && current !== null; depth += 1) {
+    if ('code' in current && current.code === 'ENOSPC') return true;
+    if ('errcode' in current && typeof current.errcode === 'number' && (current.errcode & 0xff) === SQLITE_FULL) return true;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
+}
 
 /** The digest of the carried rows, each table's rows in ID order. */
 export function catalogDigest(rows: CatalogRows): string {

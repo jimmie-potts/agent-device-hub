@@ -7,6 +7,7 @@ import {appendFile, chmod, cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, sta
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
 import {acquireOwner} from '../../src/library/files.js';
 import {MIGRATIONS, migrate} from '../../src/library/migrations.js';
 import {
@@ -43,10 +44,9 @@ async function snapshot(dir: string): Promise<Map<string, string>> {
 async function destination(): Promise<{databaseFile: string; folder: string; database: DatabaseSync}> {
   const dir = await mkdtemp(join(root, 'dest-'));
   const databaseFile = join(dir, 'pixoo.sqlite');
-  // Private to its owner, as the runtime's `openModuleDatabase` creates it.
+  // Private to its owner, and opened as the runtime's `openModuleDatabase` opens it: WAL with exclusive locking (#972).
   await writeFile(databaseFile, '', {mode: 0o600, flag: 'wx'});
-  const database = new DatabaseSync(databaseFile);
-  database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL');
+  const database = openModuleDatabaseFile(databaseFile);
   const folder = join(dir, 'pixoo');
   await mkdir(folder, {mode: 0o700});
   return {databaseFile, folder, database};
@@ -91,6 +91,31 @@ const rowsOf = (file: string, sql: string): unknown[] => {
   }
 };
 
+const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
+
+/** How many files the folder holds, at any depth. */
+async function filesIn(folder: string): Promise<number> {
+  return (await readdir(folder, {recursive: true, withFileTypes: true})).filter(entry => entry.isFile()).length;
+}
+
+/**
+ * The installed library with each read slowed down, so several copies are under way at once, and `onRead` told the
+ * read's number before it reads; it may throw to fail that read.
+ */
+async function slowLibrary(onRead: (count: number) => void): Promise<InstalledLibrary> {
+  const installed = await InstalledLibrary.open(library);
+  const read = installed.read.bind(installed);
+  let reads = 0;
+  installed.read = async file => {
+    reads += 1;
+    const count = reads;
+    await sleep(15);
+    onRead(count);
+    return read(file);
+  };
+  return installed;
+}
+
 const zero: Mismatches = {total: 0, database: 0, assets: 0, renditions: 0, playlists: 0, items: 0, leftInBackup: 0, files: 0, unexpected: 0};
 
 void before(async () => {
@@ -115,7 +140,8 @@ void describe('the Pixoo library migration', () => {
       assets: synthetic.assets, renditions: synthetic.renditions, playlists: synthetic.playlists, items: synthetic.items, originals: synthetic.assets,
       renditionFiles: report.counts.renditionFiles, bytes: report.counts.bytes,
     });
-    assert.deepEqual(report.leftInBackup, {sessions: 1, checkpoints: 1, cleanupJobs: 1});
+    // The deleted asset's original and the upload left in staging are the two files no catalog entry names.
+    assert.deepEqual(report.leftInBackup, {sessions: 1, checkpoints: 1, cleanupJobs: 1, files: 2});
     assert.equal(report.largeGifOriginals, synthetic.largeGifOriginals);
 
     // The rows, as SQLite holds them, are the source's own.
@@ -203,6 +229,62 @@ void describe('the Pixoo library migration', () => {
     }
   });
 
+  void test('a failed read stops every copy before the migration fails, so nothing is written after it', async () => {
+    const installed = await slowLibrary(count => { if (count === 9) throw new MigrationError('source-corrupt'); });
+    const {database, folder} = await destination();
+    try {
+      await assert.rejects(migrateLibrary(installed, {database, folder}), {name: 'MigrationError', code: 'source-corrupt'});
+      const atFailure = await filesIn(folder);
+      await sleep(300);
+      assert.equal(await filesIn(folder), atFailure, 'no copy was still being written once the migration failed');
+      assert.ok(atFailure < installed.files.length, 'the failure stopped the copy');
+    } finally {
+      database.close();
+      installed.close();
+    }
+  });
+
+  void test('an abort stops every copy, and the migration fails as interrupted', async () => {
+    const controller = new AbortController();
+    const installed = await slowLibrary(count => { if (count === 9) controller.abort(); });
+    const {database, folder} = await destination();
+    try {
+      await assert.rejects(migrateLibrary(installed, {database, folder}, {signal: controller.signal}), {name: 'MigrationError', code: 'interrupted'});
+      const atFailure = await filesIn(folder);
+      await sleep(300);
+      assert.equal(await filesIn(folder), atFailure, 'no copy was still being written once the migration stopped');
+      assert.ok(atFailure < installed.files.length, 'the abort stopped the copy');
+    } finally {
+      database.close();
+      installed.close();
+    }
+  });
+
+  void test('a full database at any step fails as disk-short: the installed schema, the rows and the forward migration', async () => {
+    const steps = new Map<string, number>();
+    for (let pages = 1; pages <= 40; pages += 1) {
+      const installed = await InstalledLibrary.open(library);
+      const {database, folder} = await destination();
+      // SQLite's own full-disk path, as tests/fixtures/disk.ts takes it: no more pages than this.
+      database.exec(`PRAGMA max_page_count = ${pages}`);
+      try {
+        await migrateLibrary(installed, {database, folder});
+        steps.set('migrated', (steps.get('migrated') ?? 0) + 1);
+      } catch (error) {
+        assert.ok(error instanceof MigrationError, `${pages} pages: a MigrationError`);
+        assert.equal(error.code, 'disk-short', `${pages} pages`);
+        const version = Number((database.prepare('PRAGMA user_version').get() as {user_version: number}).user_version);
+        const rows = version < INSTALLED_LIBRARY.version ? 0 : Number((database.prepare('SELECT count(*) AS n FROM assets').get() as {n: number}).n);
+        const step = version < INSTALLED_LIBRARY.version ? 'installed schema' : rows === 0 ? 'rows' : 'forward migration';
+        steps.set(step, (steps.get(step) ?? 0) + 1);
+      } finally {
+        database.close();
+        installed.close();
+      }
+    }
+    for (const step of ['installed schema', 'rows', 'forward migration', 'migrated']) assert.ok((steps.get(step) ?? 0) > 0, `${step}: ${JSON.stringify([...steps])}`);
+  });
+
   void describe('refuses a source it cannot carry safely, before writing anything', () => {
     const refused = async (path: string): Promise<string> => {
       try {
@@ -215,8 +297,10 @@ void describe('the Pixoo library migration', () => {
       return 'opened';
     };
 
-    void test('a directory without a catalog', async () => {
+    void test('a directory without a catalog, a missing directory, and a file where the library\'s folder should be', async () => {
       assert.equal(await refused(await mkdtemp(join(root, 'empty-'))), 'source-missing');
+      assert.equal(await refused(join(root, 'no-such-library')), 'source-missing');
+      assert.equal(await refused(join(library, 'catalog.sqlite')), 'source-missing');
     });
 
     void test('a library the Pixoo service holds', async () => {
@@ -226,6 +310,12 @@ void describe('the Pixoo library migration', () => {
       } finally {
         owner.close();
       }
+    });
+
+    void test('a library without its owner lock file, so nothing can show that the Pixoo service is stopped', async () => {
+      const copy = await copyOfLibrary();
+      await rm(join(copy, 'owner.sqlite'));
+      assert.equal(await refused(copy), 'source-not-clean');
     });
 
     void test('a running migration keeps the Pixoo service from opening the library', async () => {
@@ -346,17 +436,18 @@ void describe('the Pixoo library migration', () => {
 
     void test('a changed playlist, a reordered playlist, an extra asset and a carried session', async () => {
       const [morning] = synthetic.order;
+      // A change to a catalog table also raises the catalog's revision, which the migration leaves at 0.
       assert.deepEqual(await plant(({databaseFile}) => { sql(databaseFile, `UPDATE playlists SET name = 'Renamed' WHERE id = '${morning?.id ?? ''}'`); }),
-        {...zero, total: 1, playlists: 1});
+        {...zero, total: 2, playlists: 1, database: 1});
       assert.deepEqual(await plant(({databaseFile}) => {
         // Swaps the first two items, through a free position, as UNIQUE(playlist_id, position) requires.
         const where = `playlist_id = '${morning?.id ?? ''}' AND position`;
         sql(databaseFile, `UPDATE items SET position = 100 WHERE ${where} = 0; UPDATE items SET position = 0 WHERE ${where} = 1;
           UPDATE items SET position = 1 WHERE ${where} = 100`);
-      }), {...zero, total: 2, items: 2});
+      }), {...zero, total: 3, items: 2, database: 1});
       assert.deepEqual(await plant(({databaseFile}) => {
         sql(databaseFile, 'INSERT INTO assets VALUES (\'00000000-0000-4000-8000-0000000000ff\', \'' + 'a'.repeat(64) + '\', \'Extra\', \'{}\', \'2026-09-01T00:00:00.000Z\')');
-      }), {...zero, total: 1, assets: 1});
+      }), {...zero, total: 2, assets: 1, database: 1});
       assert.deepEqual(await plant(({databaseFile}) => { sql(databaseFile, 'INSERT INTO sessions VALUES (\'00000000-0000-4000-8000-0000000000fe\', \'2026-09-01T00:00:00.000Z\')'); }),
         {...zero, total: 1, leftInBackup: 1});
     });
@@ -364,6 +455,16 @@ void describe('the Pixoo library migration', () => {
     void test('a database with commits only in its log, or not at the library\'s current schema', async () => {
       assert.deepEqual(await plant(async ({databaseFile}) => { await appendFile(`${databaseFile}-wal`, 'synthetic log'); }), {...zero, total: 1, database: 1});
       assert.deepEqual(await plant(({databaseFile}) => { sql(databaseFile, 'CREATE TABLE extra (id INTEGER)'); }), {...zero, total: 1, database: 1});
+    });
+
+    void test('a changed catalog revision, and rows in the module\'s own tables, which start fresh', async () => {
+      assert.deepEqual(await plant(({databaseFile}) => { sql(databaseFile, 'UPDATE catalog_revision SET revision = 3'); }), {...zero, total: 1, database: 1});
+      assert.deepEqual(await plant(({databaseFile}) => {
+        sql(databaseFile, 'CREATE TABLE pixoo_state (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT; INSERT INTO pixoo_state VALUES (\'revision\', \'7\')');
+      }), {...zero, total: 1, leftInBackup: 1});
+      assert.deepEqual(await plant(({databaseFile}) => {
+        sql(databaseFile, 'CREATE TABLE bunny_outbox (id TEXT PRIMARY KEY); INSERT INTO bunny_outbox VALUES (\'m1\'), (\'m2\')');
+      }), {...zero, total: 2, leftInBackup: 2});
     });
 
     void test('a missing database counts every row as missing', async () => {

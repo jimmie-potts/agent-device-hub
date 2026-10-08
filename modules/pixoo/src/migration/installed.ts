@@ -5,11 +5,11 @@
 //   of a WAL catalog would leave `-wal` and `-shm` files behind.
 // - The owner lock opens read-only in its rollback journal mode, which writes nothing, and keeps a shared lock until
 //   `close`. The Pixoo service holds that file's exclusive lock while it runs, so a running service is refused, and a
-//   service started meanwhile fails to open the library instead of changing it.
+//   service started meanwhile fails to open the library instead of changing it. A library without the file is refused.
 // - Every media file opens read-only without following a link, and every directory on its way is checked to be a real
 //   directory.
 import {constants} from 'node:fs';
-import {lstat, open} from 'node:fs/promises';
+import {lstat, open, readdir} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
 import {DatabaseSync, type SQLOutputValue} from 'node:sqlite';
 import {pathToFileURL} from 'node:url';
@@ -103,10 +103,10 @@ async function directory(path: string): Promise<void> {
 }
 
 /** Whether a file exists, never followed through a link. Throws for anything but a missing file. */
-async function present(path: string): Promise<{size: number; file: boolean} | undefined> {
+async function present(path: string): Promise<{size: number; file: boolean; directory: boolean} | undefined> {
   try {
     const info = await lstat(path);
-    return {size: info.size, file: info.isFile()};
+    return {size: info.size, file: info.isFile(), directory: info.isDirectory()};
   } catch (error) {
     if (errno(error) === 'ENOENT') return undefined;
     throw error;
@@ -170,7 +170,7 @@ function largeGif(text: string): boolean {
  * The installed library, open for reading until `close`: its carried rows, the files they name with their sizes and
  * expected hashes, and what stays in the backup. `open` refuses, with a `MigrationError`, a directory without a catalog
  * (`source-missing`), a library the Pixoo service holds (`source-in-use`), a catalog with a log or journal that holds
- * commits (`source-not-clean`), another schema than the installed release's version 3 or tables that differ from it
+ * commits, or a library without its owner lock file (`source-not-clean`), another schema than the installed release's version 3 or tables that differ from it
  * (`source-schema`), and a catalog that fails SQLite's checks or names a file that is missing, too large or not a
  * regular file (`source-corrupt`).
  */
@@ -186,7 +186,7 @@ export class InstalledLibrary {
   #owner: DatabaseSync | undefined;
 
   private constructor(fields: {
-    rows: CatalogRows; files: MediaFile[]; leftInBackup: LeftInBackup; largeGifOriginals: number; catalogBytes: number; media: string; owner: DatabaseSync | undefined;
+    rows: CatalogRows; files: MediaFile[]; leftInBackup: LeftInBackup; largeGifOriginals: number; catalogBytes: number; media: string; owner: DatabaseSync;
   }) {
     this.rows = fields.rows;
     this.files = fields.files;
@@ -204,6 +204,9 @@ export class InstalledLibrary {
 
   static async open(directoryPath: string): Promise<InstalledLibrary> {
     if (!isAbsolute(directoryPath)) throw new MigrationError('source-missing');
+    const root = await present(directoryPath).catch((error: unknown) => { throw corrupt(error); });
+    // A file where the library's folder should be is no library at all.
+    if (root === undefined || !root.directory) throw new MigrationError('source-missing');
     const catalogFile = join(directoryPath, 'catalog.sqlite');
     const catalog = await present(catalogFile).catch((error: unknown) => { throw corrupt(error); });
     if (catalog === undefined) throw new MigrationError('source-missing');
@@ -225,7 +228,8 @@ export class InstalledLibrary {
         const read = readCatalog(db);
         const media = join(directoryPath, 'media');
         const files = await listFiles(media, read.rows);
-        return new InstalledLibrary({...read, files, catalogBytes: catalog.size, media, owner});
+        const leftInBackup = {...read.leftInBackup, files: await unreferenced(media, files)};
+        return new InstalledLibrary({...read, leftInBackup, files, catalogBytes: catalog.size, media, owner});
       } finally {
         db.close();
       }
@@ -250,11 +254,12 @@ export class InstalledLibrary {
 /**
  * Takes a shared lock on the library's owner file, which the Pixoo service holds exclusively while it runs. The file
  * keeps a rollback journal, so a read-only connection writes nothing beside it; a file in any other mode is not opened.
- * A missing owner file has no holder.
+ * The service creates the file when it opens the library and never removes it, so a library without one cannot show
+ * that no service holds it, and is refused `source-not-clean`: starting and stopping the service once creates it.
  */
-async function holdOwner(file: string): Promise<DatabaseSync | undefined> {
+async function holdOwner(file: string): Promise<DatabaseSync> {
   const info = await present(file).catch((error: unknown) => { throw corrupt(error); });
-  if (info === undefined) return undefined;
+  if (info === undefined) throw new MigrationError('source-not-clean');
   if (!info.file) throw corrupt();
   if (info.size > 0) {
     // Bytes 18 and 19 of a SQLite file are its write and read versions: 1 for a rollback journal, 2 for WAL.
@@ -319,7 +324,29 @@ function checkSchema(db: DatabaseSync): void {
   if (!sound(db)) throw corrupt();
 }
 
-function readCatalog(db: DatabaseSync): {rows: CatalogRows; leftInBackup: LeftInBackup; largeGifOriginals: number} {
+/**
+ * How many entries under `media/` that are not folders no catalog entry names: a deleted asset's original or renditions
+ * that a pending cleanup would remove, and an upload left in `staging/`. They are not copied; the backup keeps them.
+ */
+async function unreferenced(media: string, files: readonly MediaFile[]): Promise<number> {
+  const named = new Set(files.map(file => file.path));
+  let count = 0;
+  const walk = async (relative: string): Promise<void> => {
+    for (const entry of await readdir(join(media, relative), {withFileTypes: true})) {
+      const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isDirectory()) await walk(path);
+      else if (!named.has(path)) count += 1;
+    }
+  };
+  try {
+    await walk('');
+  } catch (error) {
+    throw corrupt(error);
+  }
+  return count;
+}
+
+function readCatalog(db: DatabaseSync): {rows: CatalogRows; leftInBackup: Omit<LeftInBackup, 'files'>; largeGifOriginals: number} {
   try {
     const rows: CatalogRows = {assets: readRows(db, 'assets'), renditions: readRows(db, 'renditions'), playlists: readRows(db, 'playlists'), items: readRows(db, 'items')};
     const count = (table: string): number => Number(one(db, `SELECT count(*) AS n FROM ${table}`).n);
