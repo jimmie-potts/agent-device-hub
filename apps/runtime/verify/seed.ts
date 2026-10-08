@@ -1,11 +1,13 @@
 // The seeds of a disposable runtime run (Hub #920): which modules the runtime starts and the parts' run-generated
 // credentials (Hub #835). Each catalog scenario seeds its own modules; `fixtures` starts the core with its stand-in parts, the lamp and the chime for
-// exploring, and `pixoo-migrated` the shipped list on a migrated Pixoo library (Hub #931). Names starting with
-// `control-` cross a boundary on purpose, so their start fails a boundary check.
-import {chmod, mkdir, writeFile} from 'node:fs/promises';
+// exploring, `pixoo-migrated` the shipped list on a migrated Pixoo library (Hub #931), and `nanoleaf-migrated` the
+// shipped list on a migrated Nanoleaf bridge state (Hub #933). Names starting with `control-` cross a boundary on
+// purpose, so their start fails a boundary check.
+import {chmod, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {SIMULATED_SECTION, writeSyntheticNanoleafState} from '@jimmie-potts/nanoleaf';
 import {writeSyntheticLibrary} from '@jimmie-potts/pixoo';
-import {runPixooMigration, shippedModules, type ModuleFactory} from '../src/index.js';
+import {runNanoleafMigration, runPixooMigration, shippedModules, type ModuleFactory} from '../src/index.js';
 import {simulatedSections} from '../tests/fixtures/simulated.js';
 import {SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, writeConfiguration} from '../tests/scenarios/parts.js';
@@ -47,7 +49,10 @@ export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDi
 
 /** Where the `pixoo-migrated` run keeps its synthetic Pixoo library, `<data>/pixoo-library` (Hub #931). */
 export const pixooLibraryOf = (dataDir: string): string => join(dataDir, 'pixoo-library');
-/** Where it keeps the migration's JSON lines, `<data>/migration/{migrate,verify}.json`. */
+/**
+ * Where a migrated run keeps its migration's JSON lines, `<data>/migration/`: `{migrate,verify}.json` for the Pixoo
+ * library, and `nanoleaf-{migrate,verify}.json` with the section it wrote for the Nanoleaf bridge state.
+ */
 export const migrationOf = (dataDir: string): string => join(dataDir, 'migration');
 
 /**
@@ -66,6 +71,40 @@ async function migratePixoo(dataDir: string): Promise<void> {
   }
 }
 
+/** Where the `nanoleaf-migrated` run keeps its synthetic Nanoleaf bridge state, `<data>/nanoleaf-bridge` (Hub #933). */
+export const nanoleafBridgeOf = (dataDir: string): string => join(dataDir, 'nanoleaf-bridge');
+/** The secrets directory the migration writes each Nanoleaf token into: the run's own, `<data>/config/secrets`. */
+export const migratedSecretsOf = (dataDir: string): string => join(configDirOf(dataDir), 'secrets');
+
+/** The migration tool's arguments for the run: the bridge's state into the run's state directory, secrets and section. */
+export const nanoleafMigrationArgs = (operation: 'migrate' | 'verify', dataDir: string, section = join(migrationOf(dataDir), 'nanoleaf-section.json')): string[] =>
+  [operation, '--source', nanoleafBridgeOf(dataDir), '--state-dir', stateDirOf(dataDir), '--secrets-dir', migratedSecretsOf(dataDir), '--section', section];
+
+/**
+ * Writes a synthetic Nanoleaf bridge state of the installed shape, with the simulated controllers' addresses and token
+ * and the run's synthetic Claude Code hook as its qualified source, and runs the migration tool's `migrate` into the run's
+ * state directory, as the installer will before the runtime's first start at the cutover (#840). Puts the section it
+ * wrote into the run's configuration file in place of the simulated one, then runs `verify` against that file, as the
+ * cutover's go. Keeps each line, and fails the seed unless both exit 0.
+ */
+async function migrateNanoleaf(dataDir: string): Promise<void> {
+  await mkdir(nanoleafBridgeOf(dataDir), {mode: 0o700});
+  await writeSyntheticNanoleafState(nanoleafBridgeOf(dataDir), {qualifiedSources: SIMULATED_SECTION.qualifiedSources});
+  await mkdir(migrationOf(dataDir), {mode: 0o700});
+  const run = async (operation: 'migrate' | 'verify', section?: string): Promise<void> => {
+    let line = '';
+    const exit = await runNanoleafMigration(nanoleafMigrationArgs(operation, dataDir, section), {write: text => { line += text; }});
+    await writeFile(join(migrationOf(dataDir), `nanoleaf-${operation}.json`), line, {mode: 0o600});
+    if (exit !== 0) throw new Error(`the Nanoleaf migration's ${operation} exited ${exit}`);
+  };
+  await run('migrate');
+  const {config} = JSON.parse(await readFile(join(dataDir, RUN_FILE), 'utf8')) as RunFile;
+  const file = JSON.parse(await readFile(config, 'utf8')) as {modules: Record<string, unknown>};
+  file.modules.nanoleaf = JSON.parse(await readFile(join(migrationOf(dataDir), 'nanoleaf-section.json'), 'utf8')) as unknown;
+  await writeFile(config, `${JSON.stringify(file, null, 2)}\n`, {mode: 0o600});
+  await run('verify', config);
+}
+
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
   shipped: {
@@ -76,6 +115,11 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   'pixoo-migrated': {
     description: 'The shipped runtime on a Pixoo library migrated from a synthetic library of the installed schema version 3, as the installer migrates it before the runtime starts (Hub #931)',
     runtime: 'shipped', modules: [], simulated: shippedModules, prepare: migratePixoo,
+  },
+  'nanoleaf-migrated': {
+    description: 'The shipped runtime with the Nanoleaf module on a bridge state migrated from a synthetic one of the installed shape, the Lines and NL22 Light Panels, '
+      + 'as the installer migrates it before the runtime starts (Hub #933)',
+    runtime: 'shipped', modules: [], simulated: shippedModules, prepare: migrateNanoleaf,
   },
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
@@ -103,7 +147,8 @@ export const START_ONLY: readonly string[] = Object.keys(RUN_SCENARIOS).filter(n
  * private configuration file: the scenario's module sections, with a token file per configured module holding only the
  * synthetic token, and the edge's section (Hub #835), whose credentials file grants each part, as the catalog's `GRANTS`
  * say, under a run-generated token's digest. The parts' tokens go to a private file of their own for the adapter, and
- * are never printed. Then the scenario's `prepare` runs, such as `pixoo-migrated`'s library migration.
+ * are never printed. Then the scenario's `prepare` runs, such as `pixoo-migrated`'s library migration or
+ * `nanoleaf-migrated`'s migration.
  */
 export async function seedRun(dataDir: string, name: string): Promise<void> {
   const scenario = RUN_SCENARIOS[name];

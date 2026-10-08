@@ -56,11 +56,41 @@ async function nearestExisting(path: string): Promise<{path: string; info: Stats
 const linked = (): RuntimeError => new RuntimeError('state-dir-link', 'the state directory must not be reached through a link');
 
 /**
+ * Checks a state directory as `prepareStateDirectory` does, creating nothing, and returns its absolute path: an offline
+ * tool checks every directory it will create before it creates any (Hub #933). An existing directory must already be
+ * private; a missing one passes when the part of its path that exists does.
+ */
+export async function checkStateDirectory(dir: string): Promise<string> {
+  const path = await checkStatePath(dir);
+  const info = await lstat(path).catch((error: unknown) => {
+    if (missing(error)) return undefined;
+    throw error;
+  });
+  if (info !== undefined && (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0)) {
+    throw new RuntimeError('state-dir-not-private', 'the state directory must be a directory private to its owner (mode 700)');
+  }
+  return path;
+}
+
+/**
  * Creates the state directory, owner-only, when it is missing, and returns its absolute path. Refuses a relative path, a
  * path under /mnt, inside a Git checkout or reached through a link anywhere along it, a file, and a directory that
  * others can open. Every check on the path runs before anything is created, so a refused path creates nothing.
  */
 export async function prepareStateDirectory(dir: string): Promise<string> {
+  const path = await checkStatePath(dir);
+  const uid = process.getuid?.();
+  await mkdir(path, {recursive: true, mode: 0o700});
+  if (await realpath(path) !== path) throw linked();
+  const info = await lstat(path);
+  if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o077) !== 0) {
+    throw new RuntimeError('state-dir-not-private', 'the state directory must be a directory private to its owner (mode 700)');
+  }
+  return path;
+}
+
+/** Every check on a state directory's path before anything is created; returns the absolute path. */
+async function checkStatePath(dir: string): Promise<string> {
   if (!isAbsolute(dir)) throw new RuntimeError('state-dir-relative', 'the state directory must be an absolute path');
   const path = resolve(dir);
   if (onWindowsMount(path)) throw new RuntimeError('state-dir-mount', 'the state directory must not be on a Windows mount');
@@ -74,12 +104,6 @@ export async function prepareStateDirectory(dir: string): Promise<string> {
   // The part that exists must be its own real path: a link anywhere above it would put what is created elsewhere.
   if (await realpath(existing.path) !== existing.path) throw linked();
   await outsideCheckouts(path);
-  await mkdir(path, {recursive: true, mode: 0o700});
-  if (await realpath(path) !== path) throw linked();
-  const info = await lstat(path);
-  if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o077) !== 0) {
-    throw new RuntimeError('state-dir-not-private', 'the state directory must be a directory private to its owner (mode 700)');
-  }
   return path;
 }
 

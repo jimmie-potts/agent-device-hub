@@ -699,9 +699,9 @@ to the user. It creates `modules/` and the lock file, owner-only, when they are
 missing, as the core does, and writes nothing to the lock file. A tool holds
 the lease for as long as it runs: a runtime that starts meanwhile waits for it
 until its core's three-second deadline, fails with `core-failed` and is
-restarted by its service manager. The Pixoo library migration takes it, and the
-Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
-is to take it too.
+restarted by its service manager. The Pixoo library migration and the Nanoleaf
+migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+take it.
 
 ### Pixoo library migration
 
@@ -780,6 +780,127 @@ failed `migrate` is run again only into a fresh destination. A `migrate`
 killed with SIGKILL, or by a power loss, leaves an incomplete destination:
 `verify` counts its mismatches and `migrate` refuses it, and the operator
 removes the paths `destination-not-empty` lists.
+
+### Nanoleaf migration
+
+The Nanoleaf migration ([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933))
+carries the Nanoleaf bridge's preferences into the
+[Nanoleaf module's](../../modules/nanoleaf/README.md#migration) store and
+folder. It also turns the bridge's registry into the module's section of the
+[configuration file](#configuration), with each device's token in a secret
+file. Run it with Node 24 from the repository root, after `npm run build`:
+
+```bash
+node apps/runtime/dist/src/migrate-nanoleaf.js migrate --source <bridge state dir> --state-dir <state dir> --secrets-dir <secrets dir> --section <section file>
+node apps/runtime/dist/src/migrate-nanoleaf.js verify --source <bridge state dir> --state-dir <state dir> --secrets-dir <secrets dir> --section <section or configuration file>
+```
+
+Every path is absolute.
+
+- `--source` is the bridge's private state directory, with its
+  `status.sqlite`, `config.json`, `layout.json` and scene files. The tool only
+  reads it, and holds a read lock on `status.sqlite` and on the bridge's
+  worker, registry and layout locks while it runs, so no bridge process
+  changes it meanwhile.
+- `--state-dir` is the runtime's state directory, which `migrate` creates when
+  it is missing. `migrate` writes the module's `modules/nanoleaf.sqlite` and
+  `modules/nanoleaf/` there, through `openModuleDatabase` and
+  `openModuleFolder`, and closes the database before it reports, which folds
+  its log into the file.
+- `--secrets-dir` is a private directory (mode 700, created when missing) where
+  `migrate` writes each device's token, alone and without a line break, as
+  `nanoleaf-<device>-token`, mode 600.
+- `--section` is the private file where `migrate` writes the module's section,
+  which names those files. The installer puts it under `modules.nanoleaf` in
+  the configuration file. Its directory must be private too. `verify` also
+  takes the configuration file itself and reads the section there.
+
+`verify` compares the store, the folder, the section and every secret file
+with the source. It reads each secret through the runtime's own secret reader.
+Both operations hold the runtime's lease and write one JSON line to stdout,
+`{"schema": "nanoleaf-migration/1.0", "operation", "result", ...}`, with counts,
+codes and SHA-256 digests only: never a token, an address, a path, a name or a
+file's content. Its fields:
+
+- `counts`: what the source holds for the registered devices. `devices`;
+  `projects`; `palette` (the colors chosen); `elements` (each element's project
+  and halves); `mapSettings`; `pendingEdits`; `favorites`; `deviceState` (the
+  carried `meta` values: each device's mode, its two revisions and its native
+  overrides); `layouts` and `scenes` (files' entries); `qualifiedSources`;
+  `codexMetadata` (0 or 1); `secrets`.
+- `leftInBackup`: what stays only in the backup. `sessions`; `taskRows` (task
+  details, activity, waits, receipts and the shared-input task tables);
+  `reservations`; `comets`; `locates`; `displayCaches`; `controllerLedger`
+  (every device's); `integrationRequests`; `legacyBackup` (1 when the
+  shared-input row holds the legacy task backup); `bindings`; `otherMeta`
+  (the `meta` values that start fresh: epochs, receipts, caches, holds,
+  failures); `unregistered` (the rows, `meta` values, layout entries and scene
+  files of devices the registry no longer names).
+- `mismatches` (`verify`): `database` (the file is missing, not private,
+  unclean, not the module's schema or fails SQLite's check); one count per
+  carried kind, `projects` to `deviceState`, for each row missing, extra or
+  different by its key; `startFresh` (a row in any table that is not carried, a
+  `meta` value that is neither carried nor the schema's, or a `shared_input`
+  row other than the fresh one); `layout` and `scenes`; `unexpected` (anything
+  else in the module's folder, or a folder that is not private);
+  `configuration` (each section member, and each device, that differs, and
+  each device listed twice); `secrets` (a file the runtime's reader refuses,
+  or whose own bytes are not the token alone); and `total`.
+- `digest`: SHA-256 over the carried rows (`store`), the written files
+  (`files`) and the section (`configuration`), with each secret named by its
+  file's name, so two migrations of one source into other folders give the
+  same line.
+
+| Exit | `result` | Meaning |
+| --- | --- | --- |
+| 0 | `migrated`, `verified` | Done; `verified` has zero mismatches |
+| 1 | `mismatch` | `verify` found mismatches: `mismatches` counts them by kind |
+| 2 | `refused`, code `usage` | Malformed arguments |
+| 3 | `refused` | Refused before writing any of the module's data, secrets or section; a refusal before the lease creates nothing. `code` and `message` say why |
+| 4 | `failed` | `migrate` stopped after it began to write, on a failure or a signal; `destination` is `removed` (the module's database and folder and the files it wrote are gone again) or `left` |
+
+A signal that arrives before the tool installs its handler, in its first few
+hundred milliseconds and before it creates anything, or after it has written
+its line, ends the process by that signal, with no line. Any exit but 0 is a
+no-go.
+
+| Code | Refusal or failure |
+| --- | --- |
+| `runtime-running` | A runtime, or another tool, holds the state directory's lease |
+| `lease-unavailable` | The lease's lock file is not a regular file private to the user |
+| `destination-not-empty` | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
+| `destination-missing` | `verify` found no module database |
+| `paths-overlap` | The state directory, the secrets directory or the section's folder lies inside the source directory, or the source inside one of them |
+| `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
+| `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
+| `source-missing` | The source directory, its `status.sqlite` or its `config.json` is missing |
+| `source-in-use` | A bridge worker, enrollment or another writer holds the source: stop the bridge's services and workers first |
+| `source-not-clean` | `status.sqlite` has a journal to roll back: start and stop the bridge once, so it rolls it back |
+| `source-schema` | `status.sqlite` is not model version 4 in rollback journal mode, or a table the migration reads has another column |
+| `source-corrupt` | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
+| `source-config` | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
+| `source-device-id` | A registered device ID is not a routing ID, which the configuration requires |
+| `source-not-configured` | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
+| `disk-short` | The disk filled while `migrate` wrote, its final checkpoint included |
+| `destination-not-clean` | A log or journal with content was left beside the module's database after `migrate` closed it |
+| `interrupted` | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
+| `internal` | Anything else |
+
+`migrate` checks its arguments, the three output paths, the destination and
+the source before it creates anything, so every refusal but the lease's
+creates nothing. Then it takes the lease, which creates the state directory,
+`modules/` and the lease's empty lock file as a runtime's start does, and
+checks the destination again under it. A failure after that leaves those and
+the secrets and section folders, empty.
+
+`migrate` checkpoints the module's log into the file before it closes it,
+because the close's own checkpoint keeps the log on a full disk without an
+error. Its writes run one after another, so none is still running when a
+failure removes what was written. A refusal and a failure name no path or
+value. The tool never retries; a failed or killed `migrate` is run again only
+into fresh destinations. Run
+`verify` before the runtime's first start: the module writes its own rows when
+it starts, which `verify` would count.
 
 ## Failure isolation
 
