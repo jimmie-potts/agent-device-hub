@@ -1,5 +1,5 @@
 {
- "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12, and `inbox-item-turn-ended`, which #782 removes, names the finished turn's notice at a revision before the turn ends.",
+ "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
   "session": {
    "specversion": "1.0",
@@ -323,43 +323,6 @@
     "revision": 4,
     "mode": "quiet",
     "selectedAtMs": 1791287940000
-   }
-  },
-  "inbox-item-turn-ended": {
-   "specversion": "1.0",
-   "bunnyprofile": "2.0",
-   "id": "msg-inbox-1",
-   "source": "bunny/core",
-   "type": "org.bunny.inbox-item.updated",
-   "subject": "inbox-1",
-   "time": "2026-10-06T12:00:00.000Z",
-   "kind": "state",
-   "datacontenttype": "application/json",
-   "dataschema": "https://bunny.invalid/events/inbox-item/2.0",
-   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
-   "data": {
-    "id": "inbox-1",
-    "revision": 5,
-    "createdAtMs": 1791287997000,
-    "dismissedBy": [
-     "pixoo"
-    ],
-    "item": {
-     "kind": "turn-ended",
-     "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
-     "identity": {
-      "provider": "codex",
-      "client": "desktop",
-      "hostId": "host-a",
-      "sourceId": "codex-desktop",
-      "sessionId": "session-root"
-     },
-     "turn": {
-      "status": "known",
-      "id": "turn-7"
-     },
-     "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
-    }
    }
   },
   "inbox-item-failed": {
@@ -911,6 +874,23 @@
     "endedAtMs": 1791287999900
    }
   },
+  "outcome-recorded": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-ack-1",
+   "source": "bunny/core",
+   "type": "org.bunny.outcome.recorded",
+   "subject": "msg-mode-1-completed",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome-recorded/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "source": "bunny/modules/pixoo",
+    "id": "msg-mode-1-completed"
+   }
+  },
   "mode-set": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -1257,10 +1237,10 @@
   "inbox-item-deleted": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
-   "id": "msg-inbox-1-deleted",
+   "id": "msg-inbox-3-deleted",
    "source": "bunny/core",
    "type": "org.bunny.inbox-item.removed",
-   "subject": "inbox-1",
+   "subject": "inbox-3",
    "time": "2026-10-06T12:00:00.000Z",
    "kind": "removal",
    "datacontenttype": "application/json",
@@ -1269,7 +1249,7 @@
    "data": {
     "entity": {
      "family": "inbox-item",
-     "id": "inbox-1"
+     "id": "inbox-3"
     },
     "revision": 8,
     "reason": "deleted"
@@ -1952,17 +1932,44 @@
    "detail": "payload /ending enum"
   },
   {
+   "name": "an outcome acknowledged by a participant other than the core",
+   "base": "outcome-recorded",
+   "set": {
+    "/source": "bunny/modules/pixoo"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /source not the core"
+  },
+  {
+   "name": "an acknowledgment whose subject is not the outcome",
+   "base": "outcome-recorded",
+   "set": {
+    "/subject": "msg-mode-2-completed"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the outcome id"
+  },
+  {
+   "name": "an acknowledgment that names no outcome",
+   "base": "outcome-recorded",
+   "set": {
+    "/data/id": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required id"
+  },
+  {
    "name": "a failed operation without its error",
    "base": "inbox-item-failed",
    "set": {
     "/data/item/error": null
    },
    "expect": "invalid-message",
-   "detail": "payload /item oneOf"
+   "detail": "payload /item required error"
   },
   {
    "name": "a dismissal list with a repeated display",
-   "base": "inbox-item-turn-ended",
+   "base": "inbox-item-failed",
    "set": {
     "/data/dismissedBy": [
      "pixoo",
@@ -2031,7 +2038,7 @@
   },
   {
    "name": "an inbox item under another subject",
-   "base": "inbox-item-turn-ended",
+   "base": "inbox-item-failed",
    "set": {
     "/subject": "inbox-9"
    },
@@ -2048,13 +2055,28 @@
    "detail": "envelope /subject not the entity"
   },
   {
-   "name": "an inbox item for another session",
-   "base": "inbox-item-turn-ended",
+   "name": "a turn-ended inbox item, which Hub #782 removed",
+   "base": "inbox-item-failed",
    "set": {
-    "/data/item/session": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad"
+    "/data/item": {
+     "kind": "turn-ended",
+     "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     },
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     },
+     "noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
+    }
    },
    "expect": "invalid-message",
-   "detail": "payload /item/session not the identity key"
+   "detail": "payload /item required error"
   },
   {
    "name": "an operation evidence outside the profile",
@@ -2063,7 +2085,7 @@
     "/data/item/evidence": "possible"
    },
    "expect": "invalid-message",
-   "detail": "payload /item oneOf"
+   "detail": "payload /item/evidence enum"
   },
   {
    "name": "a generation after the revision",
@@ -2330,8 +2352,8 @@
   {
    "name": "a deleted inbox item is removed",
    "steps": [
-    "inbox-item-turn-ended",
     "inbox-item-failed",
+    "inbox-item-uncertain",
     "inbox-item-deleted"
    ],
    "expect": [

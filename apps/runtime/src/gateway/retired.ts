@@ -19,6 +19,8 @@ export type RetiredRoute = {
 };
 
 const SDK = 'the SDK over /api/sdk/v1';
+/** The core dispatcher's action route (#782), which tracks every device command, moment and mode change. */
+const ACTION = 'POST /api/v2/commands/';
 
 export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   {method: 'GET', path: '/', status: 'kept', replacement: 'the dashboard on the runtime', owner: '#922'},
@@ -58,16 +60,22 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   },
   {
     method: 'POST', path: '/api/playback/v1/commands', status: 'replaced',
-    replacement: `${SDK}: request bunny.cmd.playback-control.<id>, which the playback module (runtime-playback) answers for a caller with control`, owner: '#929',
+    replacement: `${ACTION}playback-control with {target: <id>, data: {action}}, which the playback module (runtime-playback) answers`, owner: '#929',
   },
   {method: 'GET', path: '/api/controllers/v1/{device}/snapshot', status: 'replaced', replacement: `${SDK}: sync the device's family`},
-  {method: 'POST', path: '/api/controllers/v1/{device}/commands', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
+  {method: 'POST', path: '/api/controllers/v1/{device}/commands', status: 'replaced', replacement: `${ACTION}<family> with {target: <device>, data}`, owner: '#782'},
   {method: 'POST', path: '/api/controllers/v1/{device}/moment', status: 'replaced', replacement: 'moments on the runtime bus', owner: '#925'},
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/snapshot', status: 'replaced', replacement: `${SDK}: sync the device module's families`},
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/geometry', status: 'replaced', replacement: `${SDK}: sync the device module's families`, owner: '#844'},
-  {method: 'POST', path: '/api/controllers/v1/{device}/integration/commands', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
-  {method: 'GET', path: '/api/controllers/v1/{device}/integration/receipt', status: 'replaced', replacement: 'the command\'s outcome and history', owner: '#782'},
-  {method: 'POST', path: '/api/controllers/v1/{device}/integration/cancel', status: 'replaced', replacement: 'the action routes and their dispatcher', owner: '#782'},
+  {method: 'POST', path: '/api/controllers/v1/{device}/integration/commands', status: 'replaced', replacement: `${ACTION}<family> with {target: <device>, data}`, owner: '#782'},
+  {
+    method: 'GET', path: '/api/controllers/v1/{device}/integration/receipt', status: 'replaced',
+    replacement: 'the device record\'s lastOutcome, and the tracked action in history, whose read API is the inbox and history story\'s', owner: '#923',
+  },
+  {
+    method: 'POST', path: '/api/controllers/v1/{device}/integration/cancel', status: 'dropped',
+    replacement: `a new command, ${ACTION}<family>: a command is live-only and never queued, so nothing waits to be cancelled`, owner: '#782',
+  },
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/catalog/*', status: 'replaced', replacement: 'the Pixoo module\'s pages and content by reference', owner: '#843'},
   {method: 'GET', path: '/api/controllers/v1/{device}/integration/renditions/*', status: 'replaced', replacement: 'the Pixoo module\'s content by reference', owner: '#843'},
   {
@@ -76,7 +84,7 @@ export const RETIRED_ROUTES: readonly RetiredRoute[] = [
   },
   {
     method: 'POST', path: '/api/controllers/v1/{device}/lighting/commands', status: 'replaced',
-    replacement: `${SDK}: request bunny.cmd.<power-set, brightness-set, device-mode-set, lifx-color-set or lifx-temperature-set>.<bulb>, which the LIFX module (lifx-module) answers for a caller with control; HTTP action routes come with #782's dispatcher`,
+    replacement: `${ACTION}<power-set, brightness-set, device-mode-set, lifx-color-set or lifx-temperature-set> with {target: <bulb>, data}, which the LIFX module (lifx-module) answers`,
     owner: '#928',
   },
   {method: 'ANY', path: '/__app-verify/proof/*', status: 'dropped', replacement: 'disposable runs serve their own proof (npm run -s verify:runtime)'},

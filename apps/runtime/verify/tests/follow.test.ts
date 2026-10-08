@@ -57,10 +57,14 @@ void test('a command that succeeded: its decisions, its module\'s records and it
   const followed = follow(await evidence(), {request: 'req-gap'});
   assert.equal(followed.result, 'found');
   assert.equal(followed.schema, 'runtime-follow/1.0');
-  assert.deepEqual(events(followed), ['runtime.command.admitted', 'command.executing', 'outcome.published', 'command.completed', 'runtime.command.replied', 'message.received']);
+  // The core's dispatcher (#782) tracks the action: queued, admitted and completed, with the outcome's intake.
+  assert.deepEqual(events(followed).sort(), [
+    'command.admitted', 'command.completed', 'command.completed', 'command.executing', 'command.queued', 'message.received', 'outcome.published',
+    'runtime.command.admitted', 'runtime.command.replied',
+  ]);
   assert.deepEqual(followed.decision, {admitted: 1, unended: 0, ended: true, endings: [{generation: 1, event: 'replied', level: 'INFO'}]});
   assert.deepEqual(followed.names, {
-    'bunny.command.execute': 1, 'bunny.command.queue': 1, 'bunny.command.request': 1, 'bunny.device.call': 1, 'bunny.outcome.publish': 1,
+    'bunny.command.execute': 1, 'bunny.command.queue': 1, 'bunny.command.request': 2, 'bunny.device.call': 1, 'bunny.outcome.publish': 1,
   });
   assert.equal(followed.traces.length, 1, 'the command, its module and its outcome share one trace');
   assert.ok(followed.records.every(entry => entry.attributes['bunny.request.id'] === 'req-gap'));
@@ -70,18 +74,33 @@ void test('a command that succeeded: its decisions, its module\'s records and it
     assert.ok(span.durationMs >= 0 && span.startedAt.endsWith('Z'), `${span.name} has a start and a duration`);
     assert.notEqual(span.parent?.state, 'missing', `${span.name} has its parent`);
   }
-  const request = followed.spans.find(span => span.name === 'bunny.command.request');
+  // The dispatcher serves the operator's HTTP action as a server request span, a root since the call carried no context;
+  // the bus's client request span for the command continues it, and the command's queue continues that.
+  const served = followed.spans.find(span => span.name === 'bunny.command.request' && span.kind === 'server');
+  const request = followed.spans.find(span => span.name === 'bunny.command.request' && span.kind === 'client');
   const queue = followed.spans.find(span => span.name === 'bunny.command.queue');
-  assert.equal(request?.kind, 'server');
-  assert.deepEqual(request?.parent?.state, 'caller', 'a remote command\'s request span continues its caller\'s context, which the run does not record');
+  assert.equal(served?.parent, undefined);
+  assert.deepEqual(request?.parent, {spanId: served?.spanId, state: 'span'});
   assert.deepEqual(queue?.parent, {spanId: request?.spanId, state: 'span'});
   assert.ok(followed.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), 'the crashed generation 1 still shows');
+});
+
+void test('a trace query finds the core\'s intake of the outcome, which carries the outcome\'s own trace and span (#950, #782)', {timeout: 60_000}, async () => {
+  const byRequest = follow(await evidence(), {request: 'req-gap'});
+  const received = byRequest.records.find(entry => entry.event === 'message.received');
+  assert.ok(received?.traceId !== undefined && received.spanId !== undefined, 'the intake record carries a trace and a span');
+  assert.equal(received.attributes['bunny.module'], 'core');
+  const byTrace = follow(await evidence(), {trace: received.traceId});
+  assert.ok(byTrace.records.some(entry => entry.event === 'message.received' && entry.attributes['bunny.request.id'] === 'req-gap' && entry.spanId === received.spanId),
+    'the trace query finds it, as it finds the request\'s other records');
+  const published = byTrace.records.find(entry => entry.event === 'outcome.published' && entry.attributes['bunny.request.id'] === 'req-gap');
+  assert.equal(published?.traceId, received.traceId, 'in the outcome\'s trace');
 });
 
 void test('a command refused at its deadline: one WARN refusal, the spans it had, and no span for the work it never reached', {timeout: 60_000}, async () => {
   const followed = follow(await evidence(), {request: 'req-queued'});
   assert.deepEqual(followed.decision, {admitted: 1, unended: 0, ended: true, endings: [{generation: 1, event: 'refused', level: 'WARN', code: 'expired'}]});
-  assert.equal(followed.names['bunny.command.request'], 1);
+  assert.equal(followed.names['bunny.command.request'], 2, 'the dispatcher\'s and the bus\'s');
   assert.equal(followed.names['bunny.command.queue'], 1);
   assert.equal(followed.names['bunny.command.execute'], undefined, 'it never started, so the query reports no execute span');
   assert.equal(followed.names['bunny.device.call'], undefined);
@@ -204,10 +223,11 @@ void test('a span whose parent is not kept says so, and a span that is not kept 
     return {name: span?.name ?? '', spanId: span?.spanId ?? '', requestId: span?.attributes.find(item => item.key === 'bunny.request.id')?.value.stringValue};
   };
   const mine = spans.filter(line => parsed(line).requestId === 'req-gap');
-  const requestLine = mine.find(line => parsed(line).name === 'bunny.command.request');
+  // The bus's request span, the client one; the dispatcher's server span stays.
+  const requestLine = mine.find(line => parsed(line).name === 'bunny.command.request' && line.includes('"kind":3'));
   assert.ok(requestLine !== undefined);
   const withoutRequest = follow(await evidence({spans: present(spans.filter(line => line !== requestLine))}), {request: 'req-gap'});
-  assert.equal(withoutRequest.names['bunny.command.request'], undefined, 'it is not reported present');
+  assert.equal(withoutRequest.names['bunny.command.request'], 1, 'it is not reported present: only the dispatcher\'s is');
   // The device span continued the remote caller's context, which only the request span names, so it is unexplained too.
   assert.deepEqual(withoutRequest.spans.filter(span => span.parent?.state === 'missing').map(span => span.name).sort(),
     ['bunny.command.execute', 'bunny.command.queue', 'bunny.device.call']);

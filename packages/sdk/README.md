@@ -459,8 +459,8 @@ export const sign: BunnyModule<SignConfig> = {
     schemas do not compile as strict JSON Schema 2020-12 or whose arguments take
     a name the gateway keeps (`deviceId`, `controllerId`, `url`, `ip`, `path`,
     `credential`, `authorization`). `read(args)` returns the result or a refusal
-    from `errorBody`, and changes nothing; action tools come with #782's
-    dispatcher.
+    from `errorBody`, and changes nothing. A device's command goes through the
+    core's dispatcher, as MCP's `core_send_command` (#782), so it is tracked.
   - `settings`: `{schema, show}`. A module has one configuration path: its
     settings are what `configure` accepted from its section, so a module that
     declares settings declares `configure`. The gateway shows
@@ -597,9 +597,9 @@ import {Outbox} from '@jimmie-potts/sdk';
 
 async start({sdk, database, clock, log, trace}) {
   const outbox = new Outbox({sdk, database: database(), clock, log, trace});
-  // Follow the core's acknowledgments first (Hub #782), then send what is still stored.
+  // Follows the core's acknowledgments first (Hub #782), then sends what is still stored.
   await outbox.republish();
-  await sdk.respond('bunny.cmd.lamp.*', async command => {
+  await sdk.respond('bunny.cmd.lamp-switch.*', async command => {
     await outbox.transaction(add => {
       lamps.switch(command.subject, command.data.power);
       add(`bunny.event.lamp.${command.subject}`, outcomeOf(command), {parent: command});
@@ -635,8 +635,10 @@ async start({sdk, database, clock, log, trace}) {
   to its caller is not reported.
 - The `validator` option checks each message as `add` stores it, so a message
   it refuses throws `SdkError` with the validator's code and rolls the
-  transaction back. A remote part passes the validator its edge uses, with the
-  same schemas, so a message the edge would refuse never waits in the outbox.
+  transaction back. A remote part passes the validator its edge uses,
+  `edgeValidator(schemas)` (profile 2.0, the core and device families and the
+  modules' schemas), so a message the edge would refuse never waits in the
+  outbox and never holds back the outcomes behind it (#782).
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One
@@ -662,14 +664,30 @@ async start({sdk, database, clock, log, trace}) {
   `internal`: as `outbox.deferred` with every row still waiting, or to
   `onError` with the fixed detail `committed, awaiting publication`. Here the
   messages went out and wait to be marked, and the next send sends them again.
-- An outcome is kept until `acknowledge(id)` deletes it, and goes out again at
-  every start until then. The consumer, the core, drops the duplicates by
-  `(source, id)`. `acknowledge` returns false when the outbox no longer holds
-  that outcome.
-- `republish()` sends again, in order, everything still stored, and resolves
-  with how many messages went out, or rejects with a refusal. Call it once in
-  the module's start, after the module follows the core's acknowledgments, so
-  that it hears an acknowledgment of a resent outcome.
+- An outcome is kept until the core acknowledges it, and goes out again at
+  every start until then. The core drops the duplicates by `(source, id)`.
+  `acknowledge(id)` forgets it; it returns false when the outbox no longer
+  holds that outcome.
+- The outbox follows the core's acknowledgments itself (#782): when its
+  participant can `subscribe`, as a module's own can, `republish()` first
+  subscribes to `bunny.event.outcome-recorded.<module>`, and each
+  `outcome-recorded` occurrence that names one of the participant's outcomes
+  forgets it, but only when its sender, the envelope's `source` that the bus or
+  edge sets from the authenticated participant, is the core (`bunny/core`). One
+  from any other sender is ignored, recorded as `message.received` at WARN with
+  `forbidden`, and the outcome kept, so a lost or forged acknowledgment never
+  discards an outcome. A participant without `subscribe`, such as a wrapper
+  that passes `publishMessage` alone, never hears one: pass `subscribe` through.
+  The acknowledgments one turn of the event loop brings are forgotten together
+  at its end, in one commit, so a burst costs one sync to disk rather than one
+  each, and each is then recorded. One that arrives as the module stops, before
+  its turn ends, forgets nothing: the outcome goes out again at the next start
+  and is acknowledged again. `acknowledgmentOf(outcome)` builds the core's
+  acknowledgment, for a core and for tests.
+- `republish()` follows the acknowledgments, then sends again, in order,
+  everything still stored, and resolves with how many messages went out, or
+  rejects with a refusal. Call it once in the module's start, so that it hears
+  an acknowledgment of a resent outcome.
 - With the module's `log` and `trace` (#949), the outbox records an outcome's
   first publication at most once, as `outcome.published`: INFO for a succeeded
   outcome and WARN for a failed or uncertain one, in the outcome's own trace.
@@ -686,14 +704,11 @@ async start({sdk, database, clock, log, trace}) {
   `bunny.outcome.publish` span: the stored context's child when the same
   transaction stored it, and otherwise, after a restart or a deferral, a new
   root linked to that context, never its child. The kit fails a module whose
-  outbox records nothing.
+  outbox records nothing. Each outcome the core's acknowledgment forgets is
+  recorded as `outbox.acknowledged` (INFO), in the acknowledgment's trace.
 
 One outbox serves one database connection, and a module keeps one: two
 outboxes on one database would send each other's rows.
-
-The core's acknowledgment belongs to Hub #782. Until it exists, the kit's
-[stand-in acknowledgment](#module-test-kit) lets tests exercise `acknowledge`,
-and a module's outcome rows grow until the core acknowledges them.
 
 Known limits:
 - A consumer whose full queue drops a state or occurrence never gets it again;
@@ -758,8 +773,8 @@ start does not finish within `offline.startWithinMs` (1000 ms by default),
 because start opens only local resources and the module reaches its device
 later, or when the module never publishes a state that `offline.unavailable`
 recognizes as the device's `unavailable` report. Every message the check sees
-must follow profile 2.0, with the core families, the stand-in acknowledgment and
-`spec.schemas` registered. Every record the module logs must be one the runtime
+must follow profile 2.0, with the core families, the core's acknowledgment among
+them, and `spec.schemas` registered. Every record the module logs must be one the runtime
 writes whole as a [diagnostic-contract](../../docs/observability-contract.md)
 record (#903): an event the catalog registers for the `bunny.module` scope, and
 only registered attributes with values of their registered types. No message,
@@ -788,6 +803,7 @@ A module that reaches a device gives `offline`. The checks:
 | `accepts a command and replies` | with `accepted` | The accepted command comes back `accepted`. The bus records one `command.admitted` and one `command.replied` in the command's trace, and its request span has one queue and one execute span as children, all ended without an error; the reply carries the execute span's context. |
 | `refuses a command with the shared error body` | with `refused` | The refused command comes back `rejected` in the module's own reply, with `refused.code`, with the same records and spans. |
 | `keeps the outcome in its outbox and sends it again after a restart` | with `accepted` | The accepted command's outcome is published, and after a restart on the same database, with no acknowledgment, it is published again, unchanged. Its publication is recorded once, in the command's trace, and the replay's publish span links to the stored context without being its child. |
+| `forgets the outcome on the core's acknowledgment, and only the core's` | with `accepted` | An acknowledgment of the outcome from another participant than the core changes nothing: a restart sends the outcome again. Once `bunny/core` acknowledges it, the module records `outbox.acknowledged`, and the next restart sends it no more (#782). |
 
 Every check also fails when a span the bus or the module recorded has a lost
 parent: one that is neither a recorded span nor the span of a message the check
@@ -827,11 +843,9 @@ The participant close and `stop()` each have a deadline, `stopTimeoutMs`, 5 s
 by default as in the runtime. A step that throws or outlasts it is recorded in
 `failures`, and the stop goes on.
 
-Until Hub #782 defines the core's acknowledgment of an outcome, the kit offers a
-stand-in. `standInAck(outcome)` builds the stand-in core's occurrence, published
-on `bunny.event.stand-in-ack.<module>`, and `followStandInAcks(sdk, outbox)`
-makes a module's outbox forget each outcome it names. Modules use them only in
-tests.
+The core's acknowledgment of an outcome is the `outcome-recorded` core family
+(#782), which the kit's checks validate with the other core families; a test's
+stand-in core publishes `acknowledgmentOf(outcome)` as `bunny/core`.
 
 ## Trace context
 
@@ -1057,7 +1071,8 @@ HTTP status that fits its code.
 - **Sync answers.** A sync answer whose `sync.completed` or a state is over
   256 KiB is refused at the edge with `too-large` and reported. A first sync
   resolves `rejected` with that code, and a later one ends the copy with
-  `failed`. Paging is #782.
+  `failed`. Paging waits for any family's snapshot nearing the cap (#923's
+  deferral).
 
 The deadline answers are the same on both transports, as ADR 0012 states:
 

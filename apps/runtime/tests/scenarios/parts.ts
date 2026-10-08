@@ -10,8 +10,7 @@ import {registerLifxFamilies} from '@jimmie-potts/lifx';
 import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
 import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
 import type {SimulatedSpeakers} from '@jimmie-potts/playback';
-import type {Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
-import {standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import type {CommandDraft, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, tokenDigest} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
@@ -22,9 +21,7 @@ import {GRANTS, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type Gatew
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
 
 /** Every fixture family's payload schema, and the Pixoo's and the Nanoleaf module's own, that the catalog's messages use, by `dataschema`. */
-export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {
-  ...standInAckSchemas, ...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas,
-};
+export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas};
 
 /** Profile 2.0 with the core and device families, and every module and fixture family the catalog's messages use. */
 export function scenarioValidator(): MessageValidator {
@@ -175,6 +172,25 @@ export class GatewayClient {
 
 /** A request's answer as the catalog reads it: `accepted`, or the refusal's or uncertain result's error code. */
 export const answerOf = (result: RequestResult): string => result.status === 'accepted' ? 'accepted' : result.error.error.code;
+
+/**
+ * The gateway call that sends `command` through the core's dispatcher as `role` (#782): `POST /api/v2/commands/<family>`
+ * with its target and payload, named by its key `bunny.cmd.<family>.<target>`.
+ */
+export function actionCall(role: Role, {key, draft}: {key: string; draft: CommandDraft<object>}, requestId: string): GatewayCall {
+  const [, , family, target] = key.split('.');
+  return {as: role, method: 'POST', path: `/api/v2/commands/${family ?? ''}`, body: {target, data: draft.data, requestId}};
+}
+
+/** An action's answer as the catalog reads it: `accepted`, or the error body's code. */
+export function actionAnswerOf(answer: GatewayAnswer): string {
+  if (answer.status === 200) return 'accepted';
+  try {
+    return String((JSON.parse(answer.text) as {error?: {code?: unknown}}).error?.code);
+  } catch {
+    return `answered ${answer.status}`;
+  }
+}
 
 export const describe = (error: unknown): string => error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 

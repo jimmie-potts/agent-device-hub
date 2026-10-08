@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/outcome-recorded/2.0",
+  "description": "Occurrence: the outcome acknowledgment (ADR 0012, \"Acknowledging outcomes\", Hub #782). The core, and only the core (`bunny/core`), tells a module that it recorded one of its outcomes, after it committed the outcome and its `(source, id)`, and again for each exact duplicate. It travels on `bunny.event.outcome-recorded.<module>`, where `<module>` is the last segment of the outcome's source, and its envelope subject is the outcome's message `id` (validator). A module's outbox forgets the outcome only when the sender is the core and `source` is the module's own; a lost acknowledgment is recovered when the module sends the outcome again at its next start.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "id"],
+  "properties": {
+    "source": {"type": "string", "pattern": "^bunny(/[a-z0-9][a-z0-9-]*)+$", "maxLength": 256},
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+  }
+}

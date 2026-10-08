@@ -15,8 +15,8 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  InProcessBus, Outbox, SdkError, openModuleDatabaseFile, type AddMessage, type Draft, type ErrorScope, type Logger, type OutboxOptions, type Participant,
-  type SendOptions,
+  InProcessBus, Outbox, SdkError, acknowledgmentOf, edgeValidator, openModuleDatabaseFile, type AddMessage, type Draft, type ErrorScope, type Logger,
+  type OutboxOptions, type Participant, type SendOptions,
 } from '../src/index.js';
 import {RecordedSpans, countCommits} from '../src/testing/index.js';
 import {checked, flush, it, logRecorder, modeSet, session, trace, turnEnded, validator, type LogEntry as Entry} from './support.js';
@@ -62,6 +62,8 @@ type StartOptions = {
   wrap?: (module: Participant) => Participant;
   /** False when the core has failed and listens to nothing in this run. */
   core?: boolean;
+  /** The module's participant does not check what it receives against profile 2.0, as when a test forges a message. */
+  unchecked?: boolean;
   /** The outbox's own options. */
   outbox?: Pick<OutboxOptions, 'onError' | 'validator'>;
   /** The module's log and span recorder, which the outbox records through. */
@@ -75,10 +77,11 @@ async function world(context: TestContext): Promise<{core: Core; start: (options
   const file = join(dir, 'lamp.sqlite');
   const core = new Core();
   // Each start is a new process: a new bus, clock and connection, on the same database file.
-  const start = async ({wrap = module => module, core: coreUp = true, outbox: extra = {}, log, spans, wal = false}: StartOptions = {}): Promise<Run> => {
+  const start = async ({wrap = module => module, core: coreUp = true, unchecked = false, outbox: extra = {}, log, spans, wal = false}: StartOptions = {}): Promise<Run> => {
     const bus = new InProcessBus();
     if (coreUp) await core.attach(bus);
-    const module = checked(bus.connect('bunny/modules/lamp'));
+    const connected = bus.connect('bunny/modules/lamp');
+    const module = unchecked ? connected : checked(connected);
     let opened: DatabaseSync;
     if (wal) opened = openModuleDatabaseFile(file);
     else {
@@ -239,6 +242,104 @@ it('an outcome acknowledged before its first publish is never published', async 
   assert.equal(await restarted.outbox.republish(), 2);
   await flush();
   assert.deepEqual(core.raw.map(message => message.kind), ['state', 'occurrence']);
+});
+
+it('republish follows the core\'s acknowledgments: the core\'s forgets the outcome, and any other sender\'s is ignored (Hub #782)', async context => {
+  const {core, start} = await world(context);
+  const {log, entries} = logRecorder();
+  // The forged acknowledgment below is one profile 2.0 refuses, so the module's participant does not check it.
+  const run = await start({log, unchecked: true});
+  assert.equal(await run.outbox.republish(), 0, 'nothing is stored yet, and the outbox now follows the acknowledgments');
+  const [, , outcome] = await run.outbox.transaction(add => switchOn(add, run.database));
+  assert.ok(outcome);
+  await flush();
+  const {key, draft} = acknowledgmentOf(outcome);
+  assert.equal(key, 'bunny.event.outcome-recorded.lamp');
+  // A forged acknowledgment names the outcome in its payload, but its sender is not the core; the core's acknowledgment
+  // of another module's outcome with the same id is not this module's.
+  await run.bus.connect('bunny/modules/forger').publish(key, draft);
+  await run.bus.connect('bunny/core').publish(key, {...draft, data: {source: 'bunny/modules/other', id: outcome.id}});
+  await flush();
+  assert.deepEqual(rows(run.database), [{id: outcome.id, published: 1}], 'the outcome is kept');
+  assert.deepEqual(entries.filter(entry => entry.event === 'message.received').map(entry => [entry.level, entry.fields['bunny.participant'], entry.fields['bunny.code']]),
+    [['warn', 'bunny/modules/forger', 'forbidden']], 'the forged acknowledgment is recorded once, as a refusal a correct participant never gets');
+  await run.bus.connect('bunny/core').publish(key, draft, {parent: outcome});
+  await flush();
+  assert.deepEqual(rows(run.database), [], 'the core\'s acknowledgment made the outbox forget it');
+  const acknowledged = entries.filter(entry => entry.event === 'outbox.acknowledged');
+  assert.deepEqual(acknowledged.map(entry => [entry.level, entry.fields['bunny.message.id']]), [['info', outcome.id]]);
+  assert.equal(acknowledged[0]?.trace?.traceparent.split('-')[1], outcome.traceparent.split('-')[1], 'in the outcome\'s trace');
+  const restarted = await start();
+  assert.equal(await restarted.outbox.republish(), 0, 'the outcome is never sent again');
+  await flush();
+  assert.equal(core.raw.filter(message => message.id === outcome.id).length, 1);
+});
+
+it('the acknowledgments the core sends in one turn are forgotten in one commit, each recorded once (Hub #782)', async context => {
+  const {start} = await world(context);
+  const {log, entries} = logRecorder();
+  const run = await start({log});
+  await run.outbox.republish();
+  const outcomes = await run.outbox.transaction(add => Array.from({length: 50}, (_, n) => add('bunny.event.mode.wall', modeSet(`req-${n}`))));
+  await flush();
+  const before = run.commits.length;
+  const core = run.bus.connect('bunny/core');
+  await Promise.all(outcomes.map(outcome => {
+    const {key, draft} = acknowledgmentOf(outcome);
+    return core.publish(key, draft, {parent: outcome});
+  }));
+  await flush();
+  await flush();
+  assert.deepEqual(rows(run.database), [], 'every acknowledged outcome is forgotten');
+  assert.deepEqual(run.commits.slice(before), [FULL], 'in one commit, at the connection\'s level, not one for each');
+  assert.equal(entries.filter(entry => entry.event === 'outbox.acknowledged').length, 50, 'and each is recorded');
+});
+
+it('a lost acknowledgment discards nothing: the outcome goes out at the next start, and the core\'s acknowledgment then forgets it (Hub #782)', async context => {
+  const {core, start} = await world(context);
+  const first = await start();
+  await first.outbox.republish();
+  const [, , outcome] = await first.outbox.transaction(add => switchOn(add, first.database));
+  assert.ok(outcome);
+  await flush();
+  // The core's acknowledgment never arrives: the module stops first.
+  first.database.close();
+  const restarted = await start();
+  const acknowledging = restarted.bus.connect('bunny/core');
+  // As the core does, it acknowledges again each time the outcome arrives, even as a duplicate.
+  await restarted.bus.connect('bunny/core-watch').subscribe('bunny.event.mode.*', async message => {
+    if (message.kind === 'outcome') {
+      const {key, draft} = acknowledgmentOf(message);
+      await acknowledging.publish(key, draft, {parent: message});
+    }
+  });
+  assert.equal(await restarted.outbox.republish(), 1, 'the unacknowledged outcome goes out again');
+  await flush();
+  assert.deepEqual(rows(restarted.database), [], 'and its acknowledgment made the outbox forget it');
+  assert.equal(core.ids().filter(id => id === outcome.id).length, 1, 'the core takes it once');
+});
+
+it('a remote outbox with the edge\'s validator never holds an outcome behind a message the edge would refuse (Hub #782, #948)', async context => {
+  const {core, start} = await world(context);
+  const edge = edgeValidator();
+  // The participant refuses what the edge's validator refuses, as a remote edge does.
+  const remote = (module: Participant): Participant => ({...module, publishMessage: (key, message) => {
+    const result = edge.validate(message);
+    return result.ok ? module.publishMessage(key, message) : Promise.reject(new SdkError({error: result.error}));
+  }});
+  const unknown = {...turnEnded('s1'), dataschema: 'https://bunny.invalid/events/not-registered/2.0'};
+  // Without it, the refused message waits in the outbox, and the outcome behind it with it.
+  const plain = await start({wrap: remote});
+  await plain.outbox.transaction(add => [add('bunny.event.session.s1', unknown), add('bunny.event.mode.wall', modeSet('req-1'))]);
+  await flush();
+  assert.equal(core.raw.length, 0, 'the outcome waits behind the refused message');
+  plain.database.exec('DELETE FROM bunny_outbox');
+  // With it, the message is refused when it is stored, and the outcome goes out.
+  const validated = await start({wrap: remote, outbox: {validator: edge}});
+  await assert.rejects(validated.outbox.transaction(add => add('bunny.event.session.s1', unknown)), refused('unknown-schema'));
+  const [outcome] = await validated.outbox.transaction(add => [add('bunny.event.mode.wall', modeSet('req-2'))]);
+  await flush();
+  assert.deepEqual(core.raw.map(message => message.id), [outcome?.id]);
 });
 
 it('within one run, each message goes out once, in commit order across transactions', async context => {

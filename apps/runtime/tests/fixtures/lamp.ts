@@ -3,12 +3,14 @@
 // a simulated lamp and no hardware is touched. It passes the module test kit. It serves its lamps through sync, with
 // their `device/2.0` records, as every device module serves its own (Hub #918, #967). It follows the core's mode and
 // sessions, and switches a lamp on command, in a device span whose context never reaches the device. It reports the
-// change, an occurrence and the outcome through its outbox, which records the outcome's publication. Quiet mode keeps
-// the lamps off, and its indicator shows when an agent session waits for a person.
+// change, an occurrence and the outcome through its outbox, which records the outcome's publication and forgets the
+// outcome once the core acknowledges it (#782). Quiet mode keeps the lamps off, and its indicator shows when an agent
+// session waits for a person. Its command family is `lamp-switch`, on `bunny.cmd.lamp-switch.<lamp>`, named as ADR 0012
+// names commands, so the core's action route reaches it as any device's.
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';
-import {followStandInAcks, type ConformanceSpec} from '@jimmie-potts/sdk/testing';
+import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
 import {DEVICE_FAMILY, deviceRecord, deviceSchemas, deviceState} from './device.js';
 
 const BASE = 'https://bunny.invalid/events/';
@@ -116,7 +118,7 @@ export type LampOptions = {
 
 /** A command that switches one lamp. */
 export const switchLamp = (lamp: string, to: Power): {key: string; draft: CommandDraft<{power: Power}>} => ({
-  key: `bunny.cmd.lamp.${lamp}`,
+  key: `bunny.cmd.lamp-switch.${lamp}`,
   draft: {type: 'org.bunny.lamp.switch.requested', subject: lamp, dataschema: LAMP_SWITCH_SCHEMA, data: {power: to}},
 });
 
@@ -139,16 +141,19 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       const handle = db.prepare('INSERT INTO handled (source, request_id) VALUES (?, ?)');
 
       const outbox = new Outbox({
-        sdk: {source: sdk.source, publishMessage: (key, message) => {
-          beforePublish?.();
-          return sdk.publishMessage(key, message);
-        }},
+        sdk: {
+          source: sdk.source,
+          publishMessage: (key, message) => {
+            beforePublish?.();
+            return sdk.publishMessage(key, message);
+          },
+          // The outbox follows the core's acknowledgments on its own; a test can lose one on its way.
+          subscribe: (pattern, handler, options) => sdk.subscribe(pattern, message => onAcknowledgment?.() === 'lose' ? undefined : handler(message as never), options),
+        },
         database: db, clock, log, trace,
       });
-      // Until Hub #782 defines the core's acknowledgment, the core's stand-in history's lets the outbox forget a recorded outcome.
-      const acknowledgments = {acknowledge: (id: string): boolean => onAcknowledgment?.() !== 'lose' && outbox.acknowledge(id)};
-      await followStandInAcks(sdk, acknowledgments, id => { log.info('outbox.acknowledged', {'bunny.message.id': id}); });
-      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again.
+      // What a crash kept from going out, and every outcome the core has not acknowledged, go out again, once the outbox
+      // follows the core's acknowledgments.
       const count = await outbox.republish();
       log.info('outbox.republished', {'bunny.outbox.republished_count': count});
 
@@ -178,7 +183,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
         const devices = rows.map(({id}) => deviceState(deviceRecord(id, 0, 'lamp', 'unknown')));
         return {revision: revision(), states: [...families.includes('lamp') ? rows.map(lampState) : [], ...families.includes(DEVICE_FAMILY) ? devices : []]};
       });
-      await sdk.respond<{power: Power}>('bunny.cmd.lamp.*', async (command: Command<{power: Power}>): Promise<{status: 'accepted'} | ErrorBody> => {
+      await sdk.respond<{power: Power}>('bunny.cmd.lamp-switch.*', async (command: Command<{power: Power}>): Promise<{status: 'accepted'} | ErrorBody> => {
         const {requestId, power: wanted} = command.data;
         log.info('command.executing', {'bunny.device.id': command.subject, 'bunny.operation': 'power', 'bunny.request.id': requestId}, command);
         const found = lamps().find(row => row.id === command.subject);

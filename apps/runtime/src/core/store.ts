@@ -15,7 +15,8 @@
 //   commit takes a new lease on the store it never let go of.
 // - The Hub's fence and automation tables are the old Hub's own and are not copied.
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
-//   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox.
+//   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
+//   keeps every message the core publishes, a state as a compact change event, and what a part records.
 import {constants} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {DatabaseSync, type StatementSync} from 'node:sqlite';
@@ -26,6 +27,7 @@ import {
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {Outbox, SdkError, type AddMessage, type Clock, type Draft, type Logger, type OutboxOptions, type Sdk, type SpanRecorder} from '@jimmie-potts/sdk';
+import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
   REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
@@ -55,12 +57,17 @@ export interface CoreTransaction {
   readonly atMs: number;
   /** The revision this transaction's changes carry: the core's next revision, the same for every call. */
   revision(): number;
-  /** Stores a message in the core's outbox, in this transaction. It goes out after the commit, in order. */
+  /**
+   * Stores a message in the core's outbox, in this transaction. It goes out after the commit, in order, and history
+   * keeps it (#782): a state as a compact change event, anything else whole.
+   */
   readonly add: AddMessage;
   /** Records `message` as taken by its `(source, id)`, kept for `keepForMs` or for good, so a later copy is a duplicate. */
   take(message: Message<unknown>, keepForMs?: number): void;
-  /** Keeps `message` in the core's history. */
-  history(message: Message<unknown>): void;
+  /** Keeps another participant's message in the core's history, as `add` keeps the core's own. */
+  record(message: Message<unknown>): void;
+  /** Keeps one step of a tracked action in the core's history. */
+  step(step: OperationStep): void;
 }
 
 /** Rows a part derives from a committed core change, in the change's own transaction. */
@@ -99,7 +106,7 @@ type Plan = {
   removed: string[];
   restarted: Set<string>;
   hostSessions: Map<string, string>;
-  messages: {key: string; draft: Draft<object>; history: boolean}[];
+  messages: {key: string; draft: Draft<object>}[];
   cause: Cause | undefined;
 };
 
@@ -148,7 +155,7 @@ export class CoreStore implements Storage {
   readonly #db: DatabaseSync;
   readonly #options: StoreOptions;
   readonly #validator = new MessageValidator();
-  #opened: {outbox: Outbox; statements: Statements} | undefined;
+  #opened: {outbox: Outbox; statements: Statements; history: History} | undefined;
   #leased = false;
   /** The store's lock, held from the first lease until `close`. */
   #lock: Lock | undefined;
@@ -189,9 +196,15 @@ export class CoreStore implements Storage {
     return [...this.#records.values()];
   }
 
-  /** Whether the store is open, so parts may use it. */
+  /** Whether the store is open, so parts may use it: not before it opens, and not once its database closed, as a crash closes it. */
   get open(): boolean {
-    return this.#opened !== undefined;
+    return this.#opened !== undefined && this.#db.isOpen;
+  }
+
+  /** The core's history (#782), once the store is open. */
+  get history(): History {
+    if (this.#opened === undefined) throw new SdkError(errorBody('unavailable', {detail: 'the core store is not open'}));
+    return this.#opened.history;
   }
 
   /** How a message with this `(source, id)` was taken before: `new`, an exact `duplicate`, or a `conflict`. */
@@ -358,11 +371,10 @@ export class CoreStore implements Storage {
       CREATE TABLE IF NOT EXISTS core_revision (only INTEGER PRIMARY KEY CHECK (only = 1), value INTEGER NOT NULL, commits INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS core_records (family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, record TEXT NOT NULL,
         PRIMARY KEY (family, id)) STRICT;
-      CREATE TABLE IF NOT EXISTS core_history (seq INTEGER PRIMARY KEY AUTOINCREMENT, revision INTEGER NOT NULL, at_ms INTEGER NOT NULL,
-        message_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, type TEXT NOT NULL, subject TEXT NOT NULL, message TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS core_taken (source TEXT NOT NULL, id TEXT NOT NULL, message TEXT NOT NULL, expires_at_ms INTEGER,
         PRIMARY KEY (source, id)) STRICT;
       CREATE INDEX IF NOT EXISTS core_taken_expiry ON core_taken (expires_at_ms) WHERE expires_at_ms IS NOT NULL`);
+    const history = new History(db);
     for (const open of this.#options.open ?? []) open(db);
     const statements = prepare(db);
     const outbox = new Outbox({
@@ -373,7 +385,7 @@ export class CoreStore implements Storage {
       // Every message of one transaction carries the instant its freshness was computed at.
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
-    this.#opened = {outbox, statements};
+    this.#opened = {outbox, statements, history};
   }
 
   /** The revision, commit count and published records as the file holds them. */
@@ -443,6 +455,9 @@ export class CoreStore implements Storage {
   async #commit(plan: Plan, atMs: number, extra: (tx: CoreTransaction) => void): Promise<void> {
     const statements = this.#statements();
     const outbox = this.#outbox();
+    const {history} = this;
+    // What history keeps of this transaction, in the order it happened, written at its end with its revision.
+    const entries: HistoryEntry[] = [];
     let revision = plan.revision;
     const commits = this.#commits + 1;
     // A failure names only the commit it came from.
@@ -458,12 +473,13 @@ export class CoreStore implements Storage {
       },
       add: (key, draft, options) => {
         adds += 1;
-        return addTo(key, draft, options);
+        const message = addTo(key, draft, options);
+        entries.push({kind: 'message', message});
+        return message;
       },
       take: (message, keepForMs) => { statements.take.run(message.source, message.id, JSON.stringify(message), keepForMs === undefined ? null : atMs + keepForMs); },
-      history: message => {
-        statements.history.run(revision ?? this.#revision, atMs, message.id, message.kind, message.type, message.subject, JSON.stringify(message));
-      },
+      record: message => { entries.push({kind: 'message', message}); },
+      step: step => { entries.push({kind: 'operation', step}); },
     };
     this.#frozen = atMs;
     let sent: Promise<void>;
@@ -471,13 +487,12 @@ export class CoreStore implements Storage {
       sent = outbox.transaction(add => {
         addTo = add;
         extra(tx);
-        for (const {key, draft, history} of plan.messages) {
+        for (const {key, draft} of plan.messages) {
           const message = tx.add(key, draft, plan.cause === undefined ? {} : {parent: plan.cause.message}) as Message;
           // A message the profile refuses rolls the whole change back: the core never commits what it cannot publish.
           const checked = this.#validator.validate(message);
           if (!checked.ok) throw new SdkError({error: checked.error});
           added.push(message);
-          if (history) tx.history(message);
         }
         for (const record of plan.records) statements.writeRecord.run('session', record.id, record.revision, JSON.stringify(record));
         for (const id of plan.removed) statements.deleteRecord.run('session', id);
@@ -491,11 +506,19 @@ export class CoreStore implements Storage {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
+        history.write(entries, atMs, revision ?? this.#revision);
         statements.writeRevision.run(revision ?? this.#revision, commits);
       });
     } finally {
       this.#frozen = undefined;
       addTo = () => { throw new Error('add a message only inside the transaction'); };
+    }
+    // A database that closed under the store, as a crash closes it, committed nothing; the outbox's refusal is taken
+    // here, so it is never left unhandled.
+    if (!this.#db.isOpen) {
+      await sent.catch(() => {});
+      this.#failure = 'failed';
+      throw new Error('the core store\'s database is closed');
     }
     // The outbox commits before it returns, or returns a rejection with the transaction rolled back, and it resolves
     // only once the publication ends. The commit counter tells the two apart at once, so the publication is not awaited.
@@ -597,7 +620,7 @@ export class CoreStore implements Storage {
     const removals = removed.map(id => {
       const retired = (next?.retirements ?? []).some(item => entityOf(item) === id && item.atMs === change?.atMs);
       return {
-        key: sessionKey(id), history: true,
+        key: sessionKey(id),
         draft: {kind: 'removal', type: 'org.bunny.session.removed', subject: id, dataschema: REMOVAL_SCHEMA,
           data: {entity: {family: 'session', id}, revision, reason: retired ? 'retired' : 'expired'}} satisfies Draft<object>,
       };
@@ -608,10 +631,10 @@ export class CoreStore implements Storage {
     return {
       durable: committed?.next, revision: publishes ? revision : undefined, records, removed, restarted, hostSessions, cause,
       messages: [
-        ...ended.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft, history: true})),
+        ...ended.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft})),
         ...removals,
-        ...records.map(record => ({key: sessionKey(record.id), history: false, draft: stateDraft(record)})),
-        ...occurrences.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft, history: true})),
+        ...records.map(record => ({key: sessionKey(record.id), draft: stateDraft(record)})),
+        ...occurrences.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft})),
       ],
     };
   }
@@ -693,7 +716,7 @@ const TAKEN_LIFECYCLE_MS = 86_400_000;
 
 type Statements = {
   state: StatementSync; stateRevision: StatementSync; writeState: StatementSync; revision: StatementSync; writeRevision: StatementSync;
-  records: StatementSync; writeRecord: StatementSync; deleteRecord: StatementSync; history: StatementSync;
+  records: StatementSync; writeRecord: StatementSync; deleteRecord: StatementSync;
   taken: StatementSync; take: StatementSync; prune: StatementSync;
 };
 
@@ -708,7 +731,6 @@ function prepare(db: DatabaseSync): Statements {
     records: db.prepare('SELECT record FROM core_records WHERE family = \'session\' ORDER BY id'),
     writeRecord: db.prepare('INSERT INTO core_records VALUES (?, ?, ?, ?) ON CONFLICT (family, id) DO UPDATE SET revision = excluded.revision, record = excluded.record'),
     deleteRecord: db.prepare('DELETE FROM core_records WHERE family = ? AND id = ?'),
-    history: db.prepare('INSERT INTO core_history (revision, at_ms, message_id, kind, type, subject, message) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     taken: db.prepare('SELECT message FROM core_taken WHERE source = ? AND id = ?'),
     take: db.prepare('INSERT INTO core_taken VALUES (?, ?, ?, ?)'),
     prune: db.prepare('DELETE FROM core_taken WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= ?'),

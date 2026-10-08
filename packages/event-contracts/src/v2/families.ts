@@ -69,15 +69,27 @@ export type MomentPlayRequest = {
   requestId: string; momentId: string; mood: string; palette?: string[]; durationMs: number; priorityClass: 'event' | 'flourish';
   coversStatus: boolean; startAtMs: number; toleranceMs: number;
 };
+/**
+ * `org.bunny.inbox-item.updated`: one failed or uncertain operation in the core's shared inbox. A finished turn is never
+ * an inbox item: its unread state stays on the session record (Hub #782 removed the turn-ended item).
+ */
 export type InboxItem = {
   id: string; revision: number; createdAtMs: number; dismissedBy: string[];
-  item:
-    | {kind: 'turn-ended'; session: string; identity: Identity; turn: KnownId; noticeId: string}
-    | {
-      kind: 'operation'; requestId: string; command: string; target: string; result: 'failed' | 'uncertain';
-      evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
-    };
+  item: {
+    kind: 'operation'; requestId: string; command: string; target: string; result: 'failed' | 'uncertain';
+    evidence?: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail;
+  };
 };
+/**
+ * `org.bunny.outcome.recorded`: the outcome acknowledgment (ADR 0012, "Acknowledging outcomes", Hub #782). The core,
+ * and only the core, tells the module whose `source` it names that it recorded the outcome with message `id`. It goes
+ * out on `outcomeRecordedKey(source)` once the outcome commits, and again for each exact duplicate. Its subject is `id`.
+ */
+export type OutcomeRecorded = {source: string; id: string};
+/** The only sender of an outcome acknowledgment: the core. */
+export const CORE_SOURCE = 'bunny/core';
+/** The key an acknowledgment of `source`'s outcomes travels on: `bunny.event.outcome-recorded.<its last segment>`. */
+export const outcomeRecordedKey = (source: string): string => `bunny.event.outcome-recorded.${source.slice(source.lastIndexOf('/') + 1)}`;
 /**
  * `org.bunny.notice.acknowledge.requested`: a consumer acknowledges one turn-ended notice for its own consumer ID. The
  * envelope subject is the session's `id`. The acknowledgment is recorded for that consumer, and each consumer's policy
@@ -166,10 +178,10 @@ const checkRaised: PayloadCheck = message => {
   return checkOccurrence(message) ?? (sameId(raised.attention.turn, raised.turn) ? undefined : 'payload /attention/turn not the observed turn');
 };
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
-const checkInbox: PayloadCheck = message => {
-  const {item} = message.data as InboxItem;
-  return entity(message, message.data.id) ??
-    (item.kind === 'turn-ended' && item.session !== sessionEntityId(item.identity) ? 'payload /item/session not the identity key' : undefined);
+// Only the core acknowledges an outcome, and the acknowledgment's subject is the outcome's message ID.
+const checkRecorded: PayloadCheck = message => {
+  if (message.source !== CORE_SOURCE) return 'envelope /source not the core';
+  return message.subject === (message.data as OutcomeRecorded).id ? undefined : 'envelope /subject not the outcome id';
 };
 // A moment goes to one device, named by its subject.
 const checkMoment: PayloadCheck = message => routedSubject('device')(message) ??
@@ -182,7 +194,7 @@ const checkSessionSubject: PayloadCheck = message => /^[0-9a-f]{64}$/.test(messa
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
-  define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkInbox),
+  define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkEntity),
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
@@ -190,6 +202,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence),
   define('session-ended', 'occurrence', 'org.bunny.session.ended', checkOccurrence),
   define('moment-ended', 'occurrence', 'org.bunny.moment.ended'),
+  define('outcome-recorded', 'occurrence', 'org.bunny.outcome.recorded', checkRecorded),
   define('mode-set', 'command', 'org.bunny.mode.set.requested'),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),

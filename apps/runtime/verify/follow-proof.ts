@@ -1,5 +1,6 @@
 // The proof of Hub #950, as one capture step: a run follows one request through its diagnostics in each case that ADR
-// 0012's "Following one request" names, with the fixture modules, the simulated lamp and a remote part:
+// 0012's "Following one request" names, with the fixture modules, the simulated lamp and a remote part, whose every
+// command goes through the core's dispatcher on the gateway's action route (#782):
 //
 //   - a success,
 //   - a refusal, which the lamp makes of a lamp it does not have,
@@ -58,11 +59,11 @@ async function keep(t: CaptureContext, file: string, label: string, followed: Fo
 export async function followProof(t: CaptureContext, harness: string): Promise<void> {
   const run: RunHarness = await connectRun({url: t.url, harness, dataDir: t.dataDir, seed: FOLLOW_SEED});
   try {
-    const send = (label: string, requestId: string, lamp: string, timeoutMs: number): Promise<string> =>
-      run.send('operator', label, switchLamp(lamp, 'on'), {timeoutMs, requestId});
+    // Each command is a tracked action, with the device kind's 5 s reply deadline.
+    const send = (label: string, requestId: string, lamp: string): Promise<string> => run.dispatch('operator', label, switchLamp(lamp, 'on'), requestId);
 
     // A success
-    let answer = await send('ok', 'follow-ok', 'lamp-1', 5000);
+    let answer = await send('ok', 'follow-ok', 'lamp-1');
     const success = await until(harness, 'request=follow-ok', followed => count(followed, 'outcome.published') > 0 && followed.names['bunny.outcome.publish'] !== undefined);
     await keep(t, 'success', 'a success', success);
     await t.expect('a success: the lamp accepted it, and the run follows it from its admission to its outcome in one trace, with no span\'s parent missing', () => {
@@ -77,7 +78,7 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
     });
 
     // A refusal: the lamp is not one the module has, so the owner refuses it, which is a domain refusal at INFO.
-    answer = await send('refused', 'follow-refused', 'lamp-9', 5000);
+    answer = await send('refused', 'follow-refused', 'lamp-9');
     const refusal = await until(harness, 'request=follow-refused', followed => followed.decision.endings.length > 0);
     await keep(t, 'refusal', 'a refusal', refusal);
     await t.expect('a refusal: the owner refused it with not-found at INFO, and the run shows no device call and no published outcome for it', () => {
@@ -89,7 +90,7 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
 
     // An uncertain effect: the device holds the switch past the command's deadline, so the requester cannot know its fate.
     run.simulate({device: 'lamp', action: 'hold'});
-    answer = await send('held', 'follow-held', 'lamp-1', 1500);
+    answer = await send('held', 'follow-held', 'lamp-1');
     const uncertain = await until(harness, 'request=follow-held', followed => followed.decision.endings.length > 0);
     run.simulate({device: 'lamp', action: 'release'});
     const released = await until(harness, 'request=follow-held', followed => count(followed, 'outcome.published') > 0);
@@ -103,7 +104,7 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
 
     // A replayed outcome: the core's acknowledgment is lost, and the next runtime sends the outcome again.
     run.loseAcknowledgment();
-    answer = await send('replayed', 'follow-replayed', 'lamp-1', 5000);
+    answer = await send('replayed', 'follow-replayed', 'lamp-1');
     await until(harness, 'request=follow-replayed', followed => count(followed, 'message.received') > 0);
     await run.restart();
     const replayed = await until(harness, 'request=follow-replayed', followed => followed.names['bunny.outcome.publish'] === 2 && count(followed, 'message.received') > 1);
@@ -123,12 +124,13 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
 
     // Evidence that is missing: the runtime is killed between the lamp's commit and its publish.
     run.armCrash();
-    answer = await send('crash', 'follow-crash', 'lamp-1', 3000);
+    answer = await send('crash', 'follow-crash', 'lamp-1');
     await until(harness, 'request=follow-crash', followed => count(followed, 'outcome.published') > 0 && gapKinds(followed).includes('generation-ended-without-stop'), 20_000);
     const crashed = await until(harness, 'request=follow-crash', followed => followed.names['bunny.outcome.publish'] !== undefined);
     await keep(t, 'crash', 'a runtime killed before its command finished', crashed);
     await t.expect('missing evidence: the killed runtime recorded no ending, so the answer says none is recorded, names the runtime that ended without its stop record, and reports no span that never ended', () => {
-      must(answer === 'uncertain-result', `the answer was ${answer}`);
+      // The action's HTTP call lost its connection when the runtime was killed: its fate is the tracker's to know.
+      must(answer === 'lost', `the answer was ${answer}`);
       must(crashed.decision.admitted === 1 && crashed.decision.unended === 1 && !crashed.decision.ended && crashed.decision.endings.length === 0, `its decision was ${JSON.stringify(crashed.decision)}`);
       must(crashed.gaps.some(gap => gap.kind === 'generation-ended-without-stop' && gap.generation === 2), `its gaps were ${gapKinds(crashed).join()}`);
       must(crashed.names['bunny.command.request'] === undefined && crashed.names['bunny.command.execute'] === undefined, 'a span that never ended is reported');

@@ -238,7 +238,7 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --config, --environment test and the run\'s state directory'},
     {id: 'gateway', kind: 'actual', note: 'the runtime\'s gateway on its listener: the SDK edge, /api/v2, MCP, module pages and browser sign-in; each part has a run-generated credential in the run\'s configuration'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and sign, the shipped playback, LIFX and Tidbyt modules, and a harness module that reports what the bus publishes'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, the shipped playback, LIFX and Tidbyt modules, and a harness module that reports what the bus publishes'},
     {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns, SimulatedSpeakers, SimulatedLifx and the Tidbyt module\'s SimulatedCloud in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
     {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step'},
   ],

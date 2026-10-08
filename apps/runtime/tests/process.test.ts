@@ -172,6 +172,18 @@ it('a busy spell shorter than the lag limit does not restart the runtime', async
   assert.equal(runtime.records().some(record => record.event_name === 'runtime.stuck'), false);
 });
 
+it('a burst of 600 module messages at the default lag limit reaches history while the runtime stays up', async context => {
+  const runtime = await launch(context, FIXTURE, ['burst', '--port', '0', '--state-dir', await stateDir(context)]);
+  const taken = (): number => runtime.records().filter(record => record.event_name === 'message.received' && record.attributes['bunny.module'] === 'core' &&
+    record.attributes['bunny.participant'] === 'bunny/modules/burster' && record.attributes['bunny.outcome'] === 'accepted').length;
+  const died = runtime.exited.then(exit => assert.fail(`the runtime exited during the burst: ${JSON.stringify(exit)}`));
+  await Promise.race([waitFor(() => taken() === 600, 60_000, 'all 600 in history'), died]);
+  assert.equal(recorded(runtime, 'runtime.stuck'), false);
+  assert.equal((await health(runtime.url)).status, 200, 'and it still serves');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+});
+
 it('the entry point imports only the launcher, so its signal handlers come before the rest of the runtime loads', async () => {
   const source = await readFile(MAIN, 'utf8');
   const imports = [...source.matchAll(/^import\s.*?from\s+'([^']+)';/gm)].map(match => match[1]);

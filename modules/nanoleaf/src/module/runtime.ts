@@ -220,8 +220,8 @@ export class NanoleafRuntime {
 
   async #begin(): Promise<void> {
     const {sdk, log} = this.#context;
-    // What a crash kept from going out, and every outcome the core has not acknowledged, goes out again. The core's
-    // acknowledgment is Hub #782; until it exists, outcomes stay stored and go out again at each start.
+    // What a crash kept from going out, and every outcome the core has not acknowledged, goes out again. The outbox
+    // follows the core's acknowledgments first (Hub #782), so it forgets each outcome the core recorded.
     try {
       const count = await this.#outbox.republish();
       log.info('outbox.republished', {'bunny.outbox.republished_count': count});

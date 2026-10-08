@@ -11,7 +11,7 @@ import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type CommandDraft, type Participant, type RequestResult, type StateDraft, type Subscription} from '@jimmie-potts/sdk';
-import {ModuleHarness, RecordedSpans, followStandInAcks, standInAckSchemas} from '@jimmie-potts/sdk/testing';
+import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
 import {DEVICE_SCHEMA, FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
@@ -50,7 +50,7 @@ export function validator(): MessageValidator {
   const checker = new MessageValidator();
   registerCoreFamilies(checker);
   registerDeviceFamilies(checker);
-  for (const [dataschema, schema] of Object.entries({...standInAckSchemas, ...pixooOwnSchemas})) checker.register(dataschema, schema);
+  for (const [dataschema, schema] of Object.entries(pixooOwnSchemas)) checker.register(dataschema, schema);
   return checker;
 }
 
@@ -128,7 +128,7 @@ export class World {
   static async open({mode = 'online', options = {}, section = SECTION, playback = true}: {
     mode?: SimulatedMode; options?: Omit<PixooOptions, 'transport'>; section?: unknown; playback?: boolean;
   } = {}): Promise<World> {
-    const world = new World(await mkdtemp(join(tmpdir(), 'pixoo-module-')), mode, {timing: FAST, acknowledgments: followStandInAcks, ...options}, section);
+    const world = new World(await mkdtemp(join(tmpdir(), 'pixoo-module-')), mode, {timing: FAST, ...options}, section);
     world.#subscriptions.push(await world.probe.subscribe('bunny.*.*.*', message => {
       const checked = world.#validator.validate(message);
       if (!checked.ok) world.invalid.push(`${message.type}: ${checked.error.code} ${checked.error.detail ?? ''}`);

@@ -6,9 +6,9 @@ import {execFileSync} from 'node:child_process';
 import {stat} from 'node:fs/promises';
 import {request} from 'node:http';
 import {join} from 'node:path';
-import {test, type TestContext} from 'node:test';
+import {test} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
-import {connectRemote} from '@jimmie-potts/sdk';
+import {connectRemote, type CommandDraft} from '@jimmie-potts/sdk';
 import {HEALTH_PATH} from '../../src/index.js';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {readGrants} from '../adapter.js';
@@ -37,6 +37,22 @@ const follow = async (run: Started, query: string): Promise<{status: number; bod
 const post = (run: Started, route: string, body: object = {}): Promise<Response> =>
   fetch(new URL(`${HARNESS_PATH}/${route}`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
 
+/**
+ * Switches lamp-1 on as the run's operator, through the core's dispatcher on the gateway's action route (Hub #782), and
+ * answers `accepted`, the refusal's code, or `lost` when the call loses its connection with the runtime.
+ */
+async function act(run: Started, requestId: string, {key, draft}: {key: string; draft: CommandDraft<object>} = switchLamp('lamp-1', 'on')): Promise<string> {
+  const grants = await readGrants(run.dataDir);
+  const [, , family = '', target = ''] = key.split('.');
+  const response = await fetch(new URL(`/api/v2/commands/${family}`, run.url), {
+    method: 'POST', headers: {authorization: `Bearer ${grants.get('bunny/parts/operator') ?? ''}`, 'content-type': 'application/json'},
+    body: JSON.stringify({target, data: draft.data, requestId}),
+  }).catch(() => undefined);
+  if (response === undefined) return 'lost';
+  const body = await response.json().catch(() => undefined) as {status?: string; error?: {code?: string}} | undefined;
+  return body?.status ?? body?.error?.code ?? `answered ${response.status}`;
+}
+
 void test('stopping a run ends its runtime and both listeners, and leaves no process behind', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'fixtures');
   const pid = run.supervisor.pid ?? 0;
@@ -62,12 +78,7 @@ void test('a crash between the lamp\'s commit and its publish restarts the runti
   const before = children(run.supervisor.pid ?? 0);
   const armed = await fetch(new URL(`${HARNESS_PATH}/arm-crash`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: '{}'});
   assert.equal(armed.status, 200);
-  const grants = await readGrants(run.dataDir);
-  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
-  context.after(() => operator.close());
-  const {key, draft} = switchLamp('lamp-1', 'on');
-  const result = await operator.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
-  assert.equal(result.status === 'uncertain' && result.error.error.code, 'uncertain-result', 'the remote requester cannot know the fate');
+  assert.equal(await act(run, 'req-crash'), 'lost', 'the operator\'s call loses its connection with the runtime; the action\'s fate is the tracker\'s to know');
   await until(async () => (await state(run)).generation === 2, 'the second runtime');
   await until(async () => (await fetch(new URL('/api/runtime/v1/health', run.url)).catch(() => undefined))?.ok === true, 'health on the same port');
   const now = await state(run);
@@ -135,15 +146,13 @@ void test('the harness drops a part\'s stream at the edge, and the same remote p
   const run = await startRun(context, await base(context), 'command-tracked-outcome');
   const grants = await readGrants(run.dataDir);
   const reader = await connectRemote({url: run.url, source: 'bunny/parts/reader', token: grants.get('bunny/parts/reader') ?? '', reconnectDelayMs: 50});
-  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? ''});
-  context.after(async () => { await reader.close(); await operator.close(); });
+  context.after(() => reader.close());
   let gaps = 0;
   const heard: string[] = [];
   await reader.subscribe('bunny.event.*.*', message => { heard.push(message.type); }, {onOverflow: () => { gaps += 1; }});
   assert.equal((await post(run, 'disconnect', {source: 'bunny/parts/reader'})).status, 200);
   await until(() => gaps === 1, 'the gap notice on the same subscription');
-  const {key, draft} = switchLamp('lamp-1', 'on');
-  assert.equal((await operator.request(key, draft, {timeoutMs: 5000})).status, 'accepted');
+  assert.equal(await act(run, 'req-gap'), 'accepted');
   await until(() => heard.includes('org.bunny.lamp.switch.completed'), 'the outcome on the reconnected subscription');
   assert.equal((await post(run, 'disconnect', {source: 'bunny/modules/lamp'})).status, 400, 'only a part\'s source can be dropped');
 });
@@ -154,14 +163,10 @@ void test('the harness refuses a simulation it does not know with 400, and the P
     assert.equal((await post(run, 'simulate', body)).status, 400, JSON.stringify(body));
   }
   assert.equal((await state(run)).devices.pixoo.mode, 'online', 'a refused simulation changes nothing');
-  // The operator sets the Pixoo's brightness, as a person would; the simulated panel shows it.
-  const grants = await readGrants(run.dataDir);
-  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
-  context.after(() => operator.close());
-  const result = await operator.request('bunny.cmd.brightness-set.pixoo-1', {
+  // The operator sets the Pixoo's brightness on the action route, as a person would (#782); the simulated panel shows it.
+  assert.equal(await act(run, 'req-pixoo-30', {key: 'bunny.cmd.brightness-set.pixoo-1', draft: {
     type: 'org.bunny.brightness.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/brightness-set/2.0', data: {percent: 30},
-  }, {timeoutMs: 5000});
-  assert.equal(result.status, 'accepted');
+  }}), 'accepted');
   await until(async () => (await state(run)).devices.pixoo.brightness === 30, 'the panel at 30 percent');
   const before = (await state(run)).devices.pixoo;
   assert.equal((await post(run, 'restart')).status, 200);
@@ -182,20 +187,9 @@ void test('a burst limit allows its count within a window, and allows again once
   assert.equal(limit.allow(), true, 'the first fell out of the window');
 });
 
-/** Sends one lamp command from the run's operator part and waits for its answer. */
-async function send(context: TestContext, run: Started, requestId: string, timeoutMs = 5000): Promise<string> {
-  const grants = await readGrants(run.dataDir);
-  const operator = await connectRemote({url: run.url, source: 'bunny/parts/operator', token: grants.get('bunny/parts/operator') ?? '', reconnectDelayMs: 50});
-  context.after(() => operator.close());
-  const {key, draft} = switchLamp('lamp-1', 'on');
-  const result = await operator.request(key, draft, {timeoutMs, requestId});
-  await operator.close();
-  return result.status === 'accepted' ? 'accepted' : result.error.error.code;
-}
-
 void test('a run follows one request: its decisions, its module\'s records and its spans, from the journal and the span file', {timeout: 60_000}, async context => {
   const run = await startRun(context, await base(context), 'command-tracked-outcome');
-  assert.equal(await send(context, run, 'req-follow'), 'accepted');
+  assert.equal(await act(run, 'req-follow'), 'accepted');
   await until(async () => (await follow(run, 'request=req-follow')).body.records.some(entry => entry.event === 'outcome.published'), 'the lamp\'s outcome');
   const {status, body} = await follow(run, 'request=req-follow');
   assert.equal(status, 200);
@@ -238,20 +232,20 @@ void test('a follow query that names no selector, two, or a malformed one is ref
 
 void test('after a clean restart the first runtime has its stop record, and after a crash it shows as ended without one, with its spans kept', {timeout: 90_000}, async context => {
   const run = await startRun(context, await base(context), 'command-tracked-outcome');
-  assert.equal(await send(context, run, 'req-before'), 'accepted');
+  assert.equal(await act(run, 'req-before'), 'accepted');
   for (let restarts = 0; restarts < 3; restarts += 1) assert.equal((await post(run, 'restart')).status, 200);
   const restarted = (await follow(run, 'request=req-before')).body;
   assert.equal(restarted.searched.generations, 4);
   assert.deepEqual(restarted.gaps.map(gap => gap.kind), ['losses-uncounted'], 'every earlier runtime stopped cleanly, and its stop record is in the journal; only the live one is a gap');
 
   assert.equal((await post(run, 'arm-crash')).status, 200);
-  assert.equal(await send(context, run, 'req-crash'), 'uncertain-result', 'the remote requester cannot know the fate');
+  assert.equal(await act(run, 'req-crash'), 'lost', 'the operator\'s call loses its connection with the runtime');
   await until(async () => (await state(run)).generation === 5, 'the runtime after the crash');
   await until(async () => (await fetch(new URL(HEALTH_PATH, run.url)).catch(() => undefined))?.ok === true, 'health on the same port');
   await until(async () => (await follow(run, 'request=req-crash')).body.records.some(entry => entry.event === 'outcome.published'), 'the replayed outcome');
   const crashed = (await follow(run, 'request=req-crash')).body;
-  // The kill came before the request settled, so the request and execute spans never ended; the queue and device spans did,
-  // and the query names each of them as continuing a parent that is not kept.
+  // The kill came before the request settled, so the dispatcher's and the bus's request spans and the execute span never
+  // ended; the queue and device spans did, and the query names each of them as continuing a parent that is not kept.
   assert.deepEqual(crashed.gaps.map(({meaning: _meaning, ...gap}) => gap),
     [{kind: 'generation-ended-without-stop', generation: 4}, {kind: 'losses-uncounted', generation: 5}, {kind: 'parent-missing', spans: 2}],
     'the killed runtime lacks its stop record, the live one has not stopped, and two spans lack parents');

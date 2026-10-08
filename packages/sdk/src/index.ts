@@ -9,6 +9,9 @@ export {
 export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
 export {openModuleDatabaseFile} from './database.js';
 export {
+  CORE_SOURCE, OUTCOME_RECORDED_SCHEMA, OUTCOME_RECORDED_TYPE, acknowledgment, acknowledgmentOf, edgeValidator, outcomeRecordedKey, type OutcomeRecorded,
+} from './acknowledgment.js';
+export {
   MAX_TIMEOUT_MS, SdkError, type AcceptedReply, type Cancel, type Clock, type Command, type CommandDraft, type Draft, type Handler, type Overflow,
   type Participant, type PublishedKind, type RejectedReply, type Reply, type RequestOptions, type RequestResult, type Responder,
   type Scheduler, type Sdk, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,

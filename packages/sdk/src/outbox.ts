@@ -4,7 +4,9 @@
 // the work standing and its messages stored, the refusal is reported as committed and awaiting publication, and the
 // next transaction or start sends them. A message that a crash kept from going out goes out at the next start. An
 // outcome is kept until the core acknowledges it and goes out again at every start until then; the core drops
-// duplicates by `(source, id)`, so a crash or a failed core never loses an outcome. A command never goes in.
+// duplicates by `(source, id)`, so a crash or a failed core never loses an outcome. The outbox follows the core's
+// acknowledgments itself (Hub #782): it forgets an outcome only when the core, as the sender, says it recorded it, so a
+// lost or forged acknowledgment never discards one. A command never goes in.
 //
 // What went out is forgotten, or for an outcome marked published, in one commit per publication batch once its sends
 // settle (Hub #972), at the connection's own `synchronous` level, so a power loss never undoes it: each commit is a sync
@@ -17,6 +19,7 @@
 // connection.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MAX_DETAIL, errorBody, type ErrorCode, type Message, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {acknowledgment, outcomeRecordedKey} from './acknowledgment.js';
 import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import type {LogFields, Logger} from './module.js';
@@ -26,8 +29,12 @@ import {noSpans, startSpan, type SpanRecorder} from './spans.js';
 import {childOf} from './trace.js';
 
 export type OutboxOptions = {
-  /** The module's participant. The outbox sends with `publishMessage`, so a message keeps its stored `id` and `time`. */
-  sdk: Pick<Sdk, 'source' | 'publishMessage'>;
+  /**
+   * The module's participant. The outbox sends with `publishMessage`, so a message keeps its stored `id` and `time`.
+   * With `subscribe`, as a module's own participant has, `republish` first follows the core's acknowledgments of the
+   * module's outcomes on `bunny.event.outcome-recorded.<module>` and forgets each outcome the core recorded (Hub #782).
+   */
+  sdk: Pick<Sdk, 'source' | 'publishMessage'> & Partial<Pick<Sdk, 'subscribe'>>;
   /** The module's own SQLite database. The outbox keeps its messages in the table `bunny_outbox`. */
   database: DatabaseSync;
   /** The clock for each message's `time`: the module's. */
@@ -35,7 +42,9 @@ export type OutboxOptions = {
   /**
    * Checks each message as `add` stores it, for example with the validator of the remote edge the participant sends
    * through. A message it refuses throws `SdkError` with the validator's code and rolls the transaction back, so a
-   * message the edge would always refuse never waits in the outbox. Without it, `add` checks only the kind and key.
+   * message the edge would always refuse never waits in the outbox. Without it, `add` checks only the kind and key. A
+   * remote part's outbox passes `edgeValidator(schemas)`, the edge's own checks, so a refused message never holds back
+   * the outcomes behind it (Hub #782).
    */
   validator?: Pick<MessageValidator, 'validate'>;
   /**
@@ -50,7 +59,8 @@ export type OutboxOptions = {
    * The module's logger (Hub #949). With it, the outbox records an outcome's first publication once, as
    * `outcome.published` (INFO, or WARN for a failed or uncertain one), and a refused publish once per run of refusals,
    * as `outbox.deferred` (WARN) with the refusal's code and `bunny.outbox.waiting_count`, in place of `onError`. A replay
-   * records nothing.
+   * records nothing. It also records each outcome the core's acknowledgment made it forget, as `outbox.acknowledged`
+   * (INFO), and an acknowledgment from any other sender, which it ignores, as `message.received` (WARN, `forbidden`).
    */
   log?: Logger;
   /**
@@ -70,6 +80,7 @@ type Row = {seq: number; routing_key: string; message: string; kind: string; pub
 type Sent = {row: Row; message: Message; stored: TraceContext; recorded: boolean};
 type Level = 'info' | 'warn';
 const OUTCOMES: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
+const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 const AWAITING = 'committed, awaiting publication';
 
 const refusal = (code: ErrorCode, detail: string): SdkError => new SdkError(errorBody(code, {detail: detail.slice(0, MAX_DETAIL)}));
@@ -84,7 +95,7 @@ const isThenable = (value: unknown): value is PromiseLike<unknown> =>
   (typeof value === 'object' || typeof value === 'function') && value !== null && 'then' in value && typeof value.then === 'function';
 
 export class Outbox {
-  readonly #sdk: Pick<Sdk, 'source' | 'publishMessage'>;
+  readonly #sdk: OutboxOptions['sdk'];
   readonly #database: DatabaseSync;
   readonly #clock: Clock;
   readonly #validator: Pick<MessageValidator, 'validate'> | undefined;
@@ -107,6 +118,10 @@ export class Outbox {
   readonly #inFlight = new Map<string, Sent>();
   /** Sends run one at a time, so a message never goes out twice in one run or out of order. */
   #sending: Promise<unknown> = Promise.resolve();
+  /** The subscription to the core's acknowledgments, once `republish` has asked for it. */
+  #following: Promise<unknown> | undefined;
+  /** The core's acknowledgments heard in this turn of the event loop, which its end forgets together. */
+  #heardThisTurn: {id: string; message: Message}[] = [];
 
   constructor({sdk, database, clock, validator, onError, log, trace}: OutboxOptions) {
     this.#sdk = sdk;
@@ -166,11 +181,13 @@ export class Outbox {
 
   /**
    * Publishes again, in order, everything still stored: messages a crash kept from going out, and every outcome the
-   * core has not acknowledged. Call it once in the module's start, after following the core's acknowledgments.
-   * Resolves with how many messages went out, or rejects with a refusal, which it passes on to the caller rather than
-   * report.
+   * core has not acknowledged. Call it once in the module's start. When the participant can subscribe, it first
+   * follows the core's acknowledgments (Hub #782), so that the acknowledgment of an outcome it sends again is heard;
+   * each one forgets that outcome, as `acknowledge` does, but only when its sender is the core. Resolves with how many
+   * messages went out, or rejects with a refusal, which it passes on to the caller rather than report.
    */
-  republish(): Promise<number> {
+  async republish(): Promise<number> {
+    await this.#follow();
     return this.#send(this.#stored);
   }
 
@@ -184,12 +201,85 @@ export class Outbox {
     if (!this.#database.isOpen) return false;
     const forgotten = this.#acknowledge.get(id) as {published: number} | undefined;
     if (forgotten === undefined) return false;
+    this.#forgotten(id, forgotten.published);
+    return true;
+  }
+
+  /** After an acknowledged outcome is forgotten: one that went out in the batch under way records its publication now. */
+  #forgotten(id: string, published: number): void {
     const sent = this.#inFlight.get(id);
-    if (forgotten.published === 0 && sent !== undefined && !sent.recorded) {
+    if (published === 0 && sent !== undefined && !sent.recorded) {
       sent.recorded = true;
       this.#publication(sent.message, sent.stored);
     }
-    return true;
+  }
+
+  /** Subscribes once to the core's acknowledgments of this participant's outcomes, when the participant can subscribe. */
+  #follow(): Promise<unknown> {
+    const sdk = this.#sdk;
+    if (sdk.subscribe === undefined) return Promise.resolve();
+    const following = this.#following ?? sdk.subscribe(outcomeRecordedKey(sdk.source), message => { this.#heard(message); }).catch((error: unknown) => {
+      this.#following = undefined;
+      throw error;
+    });
+    this.#following = following;
+    return following;
+  }
+
+  /**
+   * One message on the acknowledgment key. Only the core's acknowledgment of one of this participant's outcomes forgets
+   * it, checked on the sender rather than the payload; any other sender's is ignored and the outcome kept.
+   */
+  #heard(message: Message): void {
+    const heard = acknowledgment(message, this.#sdk.source);
+    if (heard === undefined) return;
+    if (heard === 'forged') {
+      this.#record('warn', 'message.received', {
+        ...SOURCE.test(message.source) && message.source.length <= 256 ? {'bunny.participant': message.source} : {}, 'bunny.message.id': message.id,
+        'bunny.message.kind': 'occurrence', 'bunny.outcome': 'rejected', 'bunny.code': 'forbidden', 'bunny.reason': 'unauthorized',
+      }, message);
+      return;
+    }
+    // Forgotten at the end of this turn, with every other acknowledgment the turn brings, in one commit.
+    this.#heardThisTurn.push({id: heard.id, message});
+    if (this.#heardThisTurn.length === 1) setImmediate(() => { this.#forgetHeard(); });
+  }
+
+  /**
+   * Forgets the outcomes whose acknowledgments this turn brought, in one commit at the connection's level, so a burst of
+   * acknowledgments costs one sync to disk instead of one each, and records each as `outbox.acknowledged` once it
+   * commits. Inside a transaction someone else holds open, they join it, as `acknowledge` does. A commit that fails,
+   * or a database that closed before the turn ended, as when the module stopped, forgets nothing: the outcomes go out
+   * again at the next start, and the core acknowledges them again.
+   */
+  #forgetHeard(): void {
+    const heard = this.#heardThisTurn;
+    this.#heardThisTurn = [];
+    const database = this.#database;
+    if (!database.isOpen) return;
+    const own = !database.isTransaction;
+    const forgotten: {id: string; message: Message; published: number}[] = [];
+    try {
+      if (own) database.exec('BEGIN IMMEDIATE');
+      for (const {id, message} of heard) {
+        const row = this.#acknowledge.get(id) as {published: number} | undefined;
+        if (row !== undefined) forgotten.push({id, message, published: row.published});
+      }
+      if (own) database.exec('COMMIT');
+    } catch {
+      if (own && database.isTransaction) {
+        try {
+          database.exec('ROLLBACK');
+        } catch {
+          // The connection's next transaction fails in turn.
+        }
+      }
+      return;
+    }
+    for (const {id, message, published} of forgotten) {
+      this.#forgotten(id, published);
+      this.#record('info', 'outbox.acknowledged', {'bunny.message.id': id}, message);
+    }
   }
 
   /** Commits `work` and its messages; `own` receives the id of each message this transaction stored. */

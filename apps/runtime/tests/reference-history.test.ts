@@ -109,7 +109,7 @@ it('#842\'s root session fixtures are what the real owner published in one refer
   }
   // Every fixture that names the finished turn's notice names the one the owner gave it.
   const notice = String(named.get('turn-ended')?.data.noticeId);
-  for (const name of ['session', 'session-root-later', 'notice-acknowledge', 'inbox-item-turn-ended']) {
+  for (const name of ['session', 'session-root-later', 'notice-acknowledge']) {
     assert.ok(JSON.stringify(fixtures.valid[name]).includes(notice), `${name} names the owner's notice`);
   }
 });

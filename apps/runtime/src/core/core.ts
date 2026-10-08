@@ -2,8 +2,9 @@
 // It runs agent-state's owner on the core store, takes hooks' 2.0 `lifecycle` observations into the reducer, publishes
 // each committed change as `session` state, removal and occurrence messages, serves `session` through sync and answers
 // `notice-acknowledge`. It is first in the runtime's module list and registers everything on the bus before its first
-// await, so a module that starts after it syncs from it, or republishes to it, finds it listening (#882). Parts of the
-// core that later stories add (#782's tracker and history, #923's inbox) join through `CorePart`.
+// await, so a module that starts after it syncs from it, or republishes to it, finds it listening (#882). Its action
+// dispatcher, tracker and outcome intake (#782, tracker.ts) and its history (history.ts) are its own; parts that later
+// stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
 import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -14,7 +15,10 @@ import {
   type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
+import type {Operation} from './operations.js';
+import {Tracker, type Action, type ActionAnswer, type CoreActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
+import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
 
@@ -53,11 +57,16 @@ export interface CoreHandle {
   received(message: Message<unknown>): 'new' | 'duplicate' | 'conflict';
   /** Runs `work` in one transaction of the core store, once it is open; its messages go out after the commit. */
   transaction<R>(work: (tx: CoreTransaction) => R): Promise<R>;
+  /** Sends one tracked action through the core's dispatcher (#782), as automation, moments and the Hub mode do. */
+  dispatch(action: Action): Promise<ActionAnswer>;
+  /** The tracked action with this request ID, if any. */
+  operation(requestId: string): Operation | undefined;
 }
 
 /**
- * A part of the core with rows of its own in the core store: the extension point for Hub #782's tracker and history and
- * #923's inbox. Its changes commit in the core store's transactions and go out through the core's outbox.
+ * A part of the core with rows of its own in the core store: the extension point for #923's inbox and later core
+ * stories. Its changes commit in the core store's transactions and go out through the core's outbox, and history keeps
+ * what it publishes.
  */
 export interface CorePart {
   /** The families it serves through the core's sync. Their records use the core's revision. */
@@ -68,6 +77,11 @@ export interface CorePart {
   states?(families: readonly string[]): StateDraft[];
   /** Rows it derives from each committed core change, in that change's transaction. */
   readonly derive?: Deriver;
+  /**
+   * Rows it derives from each change of a tracked action (#782), in that change's transaction: #923 turns failed,
+   * expired, uncertain and conflicting results into inbox items.
+   */
+  readonly tracked?: Tracked;
   /** Starts its own intake on the core's participant. The core calls it before its first await. */
   start?(core: CoreHandle): Promise<unknown>;
 }
@@ -105,45 +119,6 @@ const messageFields = (message: Message<unknown>): LogFields => ({
   ...(typeof message.kind === 'string' && KINDS.includes(message.kind) ? {'bunny.message.kind': message.kind} : {}),
 });
 
-/** A capped, doubling wait between attempts. A first wait of 0 would retry at once, every time. */
-class Backoff {
-  readonly #first: number;
-  readonly #max: number;
-  #delay = 0;
-  #next = 0;
-  #pending = false;
-
-  constructor(first: number, max: number) {
-    this.#first = first;
-    this.#max = max;
-  }
-
-  /** Whether an attempt failed and the next one waits. */
-  get pending(): boolean {
-    return this.#pending;
-  }
-
-  /** When the next attempt is due. */
-  get next(): number {
-    return this.#next;
-  }
-
-  failed(now: number): void {
-    this.#delay = this.#pending ? Math.min(this.#max, this.#delay * 2) : this.#first;
-    this.#next = now + this.#delay;
-    this.#pending = true;
-  }
-
-  ready(now: number): boolean {
-    return !this.#pending || now >= this.#next;
-  }
-
-  reset(): void {
-    this.#pending = false;
-    this.#delay = 0;
-  }
-}
-
 /** The longest text a `sessions` call may search for. */
 const MAX_QUERY = 120;
 
@@ -170,8 +145,16 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
   };
 }
 
+/** The core as the runtime hosts it: a module, with its dispatcher for the gateway's action routes (#782). */
+export interface CoreModule extends BunnyModule {
+  readonly actions: CoreActions;
+}
+
+/** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
+export const isCoreModule = (module: BunnyModule): module is CoreModule => module.manifest.name === CORE_MODULE && 'actions' in module;
+
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
-export function createCoreModule(options: CoreOptions = {}): BunnyModule {
+export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
   return {
     manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions())]},
@@ -180,6 +163,7 @@ export function createCoreModule(options: CoreOptions = {}): BunnyModule {
       return core.start();
     },
     stop: () => core?.stop(),
+    actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
   };
 }
 
@@ -189,6 +173,7 @@ class Core {
   readonly #clock: Clock;
   readonly #scheduler: ModuleScheduler;
   readonly #store: CoreStore;
+  readonly #tracker: Tracker;
   readonly #parts: readonly CorePart[];
   readonly #consumers: readonly Consumer[];
   readonly #validator = new MessageValidator();
@@ -229,11 +214,19 @@ class Core {
     this.#store = new CoreStore({
       database: context.database(), sdk: context.sdk, clock: context.clock,
       derivers: parts.flatMap(part => part.derive ?? []),
-      open: parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
+      open: [
+        (database: DatabaseSync) => { this.#tracker.open(database); },
+        ...parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
+      ],
       ...(beforePublish === undefined ? {} : {beforePublish}),
       // Committed is not published (ADR 0012): the change stands, its messages go out at the next commit or start, and
       // the outbox records the refusal as `outbox.deferred`, once per run of refusals.
       log: context.log, trace: context.trace,
+    });
+    this.#tracker = new Tracker({
+      store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
+      tracked: parts.flatMap(part => part.tracked ?? []), ready: this.#ready,
+      storage: {failed: code => { this.#degraded(code); }, recovered: () => { this.#recovered(); }},
     });
   }
 
@@ -246,6 +239,8 @@ class Core {
         await this.#ready;
         return this.#store.transaction(work);
       },
+      dispatch: action => this.dispatch(action),
+      operation: requestId => this.#tracker.operation(requestId),
     };
     const families = ['session', ...this.#parts.flatMap(part => part.families ?? [])];
     const registered: Promise<unknown>[] = [
@@ -253,6 +248,7 @@ class Core {
       this.#sdk.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => this.#observe(message)),
       this.#sdk.respond<NoticeAcknowledgeRequest>('bunny.cmd.notice-acknowledge.*', command => this.#acknowledge(command)),
       this.#sdk.respond<ApprovalRecoverRequest>('bunny.cmd.approval-recover.*', command => this.#recover(command)),
+      ...this.#tracker.start(),
       ...this.#parts.flatMap(part => part.start?.(handle) ?? []),
     ];
     this.#starting = (async () => {
@@ -280,6 +276,8 @@ class Core {
         });
         this.#opened();
         this.#schedule();
+        // Every action still pending after a restart waits for its deadline, never to be sent again.
+        this.#tracker.resume();
       } catch (error) {
         this.#failed(error);
         throw error;
@@ -294,6 +292,7 @@ class Core {
     await this.#starting?.catch(() => {});
     this.#timer?.();
     await this.#queue;
+    await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
     await owner?.shutdown().catch(() => {});
@@ -509,6 +508,12 @@ class Core {
       this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
+  }
+
+  /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */
+  dispatch(action: Action): Promise<ActionAnswer> {
+    if (this.#stopped) return Promise.resolve(errorBody('unavailable', {detail: 'the core is stopping'}));
+    return this.#tracker.dispatch(action);
   }
 
   /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */

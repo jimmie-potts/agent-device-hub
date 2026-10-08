@@ -165,8 +165,8 @@ export type ModuleContent = {readonly type: string; readonly bytes: Uint8Array};
 /**
  * A read tool the module contributes to MCP (module API 1.2, Hub #835). The gateway publishes it as
  * `<module>_<name>` to a credential with the `read` scope, checks its arguments against `input`, and returns what
- * `read` returns as `{result}`, or a refusal as the shared error body. It changes nothing; action tools come with Hub
- * #782's dispatcher.
+ * `read` returns as `{result}`, or a refusal as the shared error body. It changes nothing: a device's command goes
+ * through the core's dispatcher, as MCP's `core_send_command` (Hub #782), so it is tracked.
  */
 export type ModuleTool = {
   /** A lowercase letter, then lowercase letters, digits and underscores, at most 48 characters. */

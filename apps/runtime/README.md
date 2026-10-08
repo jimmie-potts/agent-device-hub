@@ -142,11 +142,70 @@ and exits 1, and the service manager restarts it whole.
   `DEFAULT_CONSUMERS` (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
   store and refuses a store whose list differs, so changing it needs a
   migration.
-- **Extension point.** A `CorePart` (Hub #782's tracker and history, #923's
-  inbox) creates its own tables in the core store, serves its families through
-  the core's sync at the core's revision, derives rows from each committed core
-  change in that change's transaction, and runs its own intake through the
-  core's transactions and outbox.
+- **Action dispatcher and tracker** (#782, `src/core/tracker.ts`). Every device
+  command, moment and mode change goes through one dispatcher: the gateway's
+  [action routes](#routes) and MCP's `core_send_command`, and later automation,
+  moments and the Hub mode, through `CoreHandle.dispatch`. It records the action
+  as `sent` in the core store before it sends anything, so a full disk refuses
+  it with `unavailable` and detail `storage-full` before any reply could say
+  accepted. It sends the command once, as `bunny/core`, with its kind's reply
+  deadline as its expiry, records the reply, and waits for the outcome until
+  the kind's outcome deadline:
+
+  | Kind | Families | Reply | Outcome |
+  | --- | --- | --- | --- |
+  | device | every command to one device, such as `power-set` or `playback-control` | 5 s | 30 s |
+  | moment | `moment-play` | 5 s | 150 s: 60 s of lead and 60 s of tolerance at most |
+  | mode | `mode-set` | 5 s | 60 s |
+
+  The state machine is `src/core/operations.ts`: `sent`, then `accepted`, then
+  `completed` with the outcome's result; or `rejected` (failed, with evidence
+  `none`: a refusal proves no effect), `expired` (failed: still queued at its
+  reply deadline) or `uncertain` (the handler had it at its reply deadline, or
+  no outcome by the outcome deadline). A late outcome completes the record: a
+  definitive one replaces `uncertain`, and history keeps both. A `succeeded`
+  and a `failed` outcome for one action, in either order, keep both and leave
+  it in `conflict` for a person. A request ID names one action, ever: the same
+  caller asking for the same action again gets what it got, and anything else
+  under that ID is `duplicate-conflict`. Nothing is ever sent again: not a
+  timed-out command, not after a restart, which lets each pending action end
+  `uncertain` at its deadline. Every step is logged once, in the action's trace:
+  `command.queued`, `command.admitted`, `command.rejected` and
+  `command.completed`. The tracker's rows, with every failed, expired, uncertain
+  and conflicting result, are what #923 turns into inbox items.
+- **Outcome intake and acknowledgment.** The core takes every state, removal,
+  occurrence and outcome another participant publishes. It drops a duplicate
+  by `(source, id)` durably, since history keeps each whole message once, and
+  refuses the same `(source, id)` with other content as `duplicate-conflict`,
+  keeping it apart for diagnosis (the latest 1,000) with no change and no
+  acknowledgment. An outcome advances the action whose request ID, target and
+  command it matches. Once the outcome commits, the core acknowledges it with
+  an `outcome-recorded` occurrence to its module, and acknowledges an exact
+  duplicate again, so a lost acknowledgment recovers at the module's next start;
+  a refused commit sends none, so the module keeps the outcome. Each intake's
+  `message.received` record carries the incoming message's trace and span: INFO
+  for an outcome, occurrence or removal taken, and for a duplicate outcome,
+  which recovers an acknowledgment; a refusal at its code's level, so a full
+  disk's `unavailable` is WARN. The intake commits in groups, at most 100
+  messages or about 50 ms of its own work each, with a turn of the event loop
+  between groups, so a burst never holds the runtime for a commit per message.
+  Each message keeps its own verdict in its group, and a full disk refuses the
+  group. A full intake queue loses what the bus drops, logged as
+  `operation.failed` with `capacity`: an outcome comes again from its module's
+  outbox, but an occurrence or removal is gone.
+- **History** (`src/core/history.ts`). Private rows in the core store, with no
+  time limit, written in the transaction that commits what they record: every
+  removal, occurrence and outcome whole; each state change, the core's own and
+  every module's, as a compact change event (what changed since the record
+  history held, never a snapshot); and each step of a tracked action. A hook's
+  raw observation and the acknowledgments are not kept: the session changes
+  they cause are. The read API with filters and the timeline are #923's.
+- **Extension point.** A `CorePart` (#923's inbox) creates its own tables in the
+  core store, serves its families through the core's sync at the core's
+  revision, derives rows from each committed core change and from each tracked
+  action's change (`tracked`) in that change's transaction, and runs its own
+  intake through the core's transactions and outbox. History keeps what a part
+  publishes too.
 
 ## Run
 
@@ -274,7 +333,7 @@ and hands the edge the permissions its scopes give (`edgePermissions`):
 | --- | --- | --- |
 | `read` | `subscribe`, `sync` | every state and event key, `bunny.state.*.*` and `bunny.event.*.*` |
 | `ingest` | `publish` | lifecycle observations only: the `lifecycle` family on `bunny.event.lifecycle.*` |
-| `control` | `request` | every command, `bunny.cmd.*.*`: the core's operator commands, `approval-recover` and `notice-acknowledge`, and every device's commands |
+| `control` | `request` | the core's operator commands only, `bunny.cmd.approval-recover.*` and `bunny.cmd.notice-acknowledge.*`; every other command goes through the [action routes](#routes) |
 | `admin` | none | none: the old Hub's `quiesce` is dropped with the supervised migration |
 
 So a hook's credential, with `ingest` only, can publish lifecycle observations
@@ -292,8 +351,11 @@ command whose subject names it, and a record never reaches a reader of another
 entity's key.
 
 No scope lets a remote part respond to commands or serve a family yet; a remote
-owner's grant comes with its own story, and #782 decides which device commands a
-remote part may still request directly once its dispatcher lands. The edge also:
+owner's grant comes with its own story. The core's dispatcher decides what a
+remote grant may request directly (#782, `DIRECT_COMMANDS`): the core's own
+operator commands. A device's command, a moment, a mode change and a module's
+own family, module-internal ones included, are `forbidden` at the edge, so no
+action bypasses tracking. The edge also:
 
 - refuses a token used under another declared source (the SDK client sends
   `bunny-source`) with `forbidden` at connect;
@@ -333,6 +395,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the devices and the place links, from the edge section. |
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as a producer's setup checks its credential (#926). |
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
+| `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family no module answers `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
 | `GET /modules/<name>/<page>` | `read` | A module's page (module API 1.2): its HTML in a document whose policy allows no script, frame, form or base, and only images and styles from the runtime itself. |
 | `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference, such as the preview its page shows: an image, plain text or JSON of at most 16 MiB. |
 | `/mcp` | client credentials | [MCP](#mcp). |
@@ -369,7 +432,9 @@ before MCP sees the request. Each module's read tools come from its manifest,
 as `<module>_<tool>`, and the core contributes `core_sessions`; a credential with
 `read` lists and calls those of every module. With `control` it also gets
 `core_recover_approval`, which sends `approval-recover` to the core as the
-credential's source. Action tools for devices come with #782's dispatcher. A
+credential's source, and `core_send_command` (#782), `{family, target, data,
+requestId?}`, which sends a device's command through the core's dispatcher, as
+the action route does. A
 tool's result is `{kind: "extension", data: {result}}`, and a refusal
 `{kind: "extension", data: {error}}` with the shared error body and
 `isError: true`. The refusals the MCP package makes itself, before a tool runs,
@@ -979,17 +1044,18 @@ next one fail. The lamp passes the
   `device` for its own devices (#918, #967);
 - it copies the core's `mode` and `session`, keeps the lamps off in quiet mode,
   and shows on its indicator whether a session waits for a person;
-- it switches a lamp on `bunny.cmd.lamp.<id>`, refusing an unknown lamp with
-  `not-found`;
+- it switches a lamp on `bunny.cmd.lamp-switch.<id>`, its family named as ADR
+  0012 names commands, so the core's action route reaches it, refusing an
+  unknown lamp with `not-found`;
 - it accepts a command whose `requestId` it already handled from the same
   source, a duplicate, and changes nothing;
 - it switches the device in a `bunny.device.call` span, the command's child,
   and gives the device no trace context;
 - it reports each switch through its [outbox](../../packages/sdk/README.md#outbox),
-  which records the outcome's publication: the lamp's new state, the
-  `org.bunny.lamp.switched` occurrence and the outcome. When the lamp cannot be
-  reached, the outcome is `failed`, with evidence `none` and the `unavailable`
-  error.
+  which records the outcome's publication and forgets the outcome once the core
+  acknowledges it: the lamp's new state, the `org.bunny.lamp.switched`
+  occurrence and the outcome. When the lamp cannot be reached, the outcome is
+  `failed`, with evidence `none` and the `unavailable` error.
 
 `lampSchemas` holds its payload schemas, and `lampSpec()` its kit description.
 `tests/fixtures/chime.ts` holds a consume-only module,
@@ -1021,22 +1087,26 @@ content, a 1-pixel PNG; the read tool `status`, each sign's availability; and it
 settings, the greeting and the signs that `configureSign` accepted, never the
 token.
 
-`tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with
-stand-in parts through its extension point. Each part goes when its owner
-lands:
-- as history, until Hub #782, it records each outcome as a `stand-in-history`
-  entry, then acknowledges the outcome with the kit's stand-in acknowledgment,
-  which the lamp follows;
+`tests/fixtures/core.ts` hosts the real core, as `createCoreModule()`, with its
+real tracker, history and outcome acknowledgment (#782), and stand-in parts
+through its extension point. Each part derives its rows from the tracker's
+changes, in the tracker's own transactions, and goes when its owner lands:
+- a readable copy of what history recorded of each tracked action, until #923's
+  history read API: a `stand-in-history` entry for each outcome the tracker took,
+  by its source, and for each result an action reached without one (a refusal,
+  an expiry or an uncertain end), by the core;
 - as the inbox, until Hub #923 turns failed and uncertain results into inbox
-  items, it records each failed or uncertain outcome as an `inbox-item`
-  operation;
-- it owns the mode, until #695.
+  items, it records each failed or uncertain action as one `inbox-item`
+  operation, which a later result never removes;
+- it owns the mode, until #924.
 
-The parts take every occurrence and outcome other than a hook's lifecycle
-observation once by `(source, id)`, keeping what they took in the core store
-across restarts. Their changes go out through the core's outbox after they
-commit, and the core serves their families through its sync with `session`. The
-fixture core's consumers add the catalog's panel to the shipped ones.
+Their changes go out through the core's outbox after they commit, and the core
+serves their families through its sync with `session`. The fixture core's
+consumers add the catalog's panel to the shipped ones.
+
+`tests/fixtures/gadget.ts` holds a scripted device module for the tracker's
+tests: it answers `gadget-set` as each test scripts the command, holds it, or
+reports more outcomes later, through its own outbox.
 
 A process test kills the runtime between the lamp's commit and its publish,
 then restarts it twice. At the first restart the lamp sends its state,
@@ -1065,10 +1135,12 @@ scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
 and a reader) first join the host's bus, then reach it through the runtime's
 [gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle
-observations, the reader may only read, and the operator and the panel read and
-command their devices. The gateway's HTTP routes serve both runs, through the
+observations, the reader may only read, and the operator and the panel read,
+request the core's operator commands and send device commands through the
+core's dispatcher. The gateway's HTTP routes serve both runs, through the
 harness's `gateway` call, as a part, a browser signed in by a trusted loopback
-page, a stranger with a made-up token or a caller with none. A crash between the lamp's commit
+page, a stranger with a made-up token or a caller with none, and its `dispatch`
+call sends an action on the action route (#782). A crash between the lamp's commit
 and its publish abandons the runtime and starts a new one on the same state
 directory behind the same port, as the service manager would restart it.
 Simulated devices keep their state across the crash. The harness can also lose
@@ -1077,7 +1149,8 @@ outcome again at its next start.
 
 The catalog holds:
 - an approval prompt reaching every module;
-- a command with a tracked outcome, and a failed one in the inbox;
+- a command with a tracked outcome, sent through the core's dispatcher, and a
+  failed one in the inbox;
 - a module failing while the others continue;
 - a part reconnecting and syncing, with nothing replayed;
 - the runtime starting with zero modules;
@@ -1086,11 +1159,12 @@ The catalog holds:
   inbox item, a notice acknowledged by a consumer for itself only, a runtime
   end, and a restart that leaves the sessions uncertain until fresh evidence;
 - the early end-to-end path: a hook observation, the committed session, the
-  simulated device's update, a command, its outcome, history and inbox rows,
-  then sync and read. It adds a duplicate command, a failed command whose inbox
-  row the reader reads, the deadline answers, a disconnect, a crash-restart and
-  a lost acknowledgment, which the core takes as a duplicate and acknowledges
-  again;
+  simulated device's update, a tracked action, its outcome, history and inbox
+  rows, then sync and read. It adds the same action sent again, which the core
+  answers itself without sending it, a failed command whose inbox row the
+  reader reads, the deadline answers with a late outcome that completes an
+  uncertain record, a disconnect, a crash-restart and a lost acknowledgment,
+  which the core takes as a duplicate and acknowledges again;
 - a configured module, the sign, starting while its sign is offline, reporting
   it unavailable and showing its greeting once it is online;
 - a module whose configuration is invalid refused while the core runs on;
@@ -1100,8 +1174,8 @@ The catalog holds:
   record turns stale with its song kept and a command is refused `unavailable`,
   with one degradation and one recovery logged; and a command the Move never
   answers, `uncertain` in history and the inbox and never sent again. A part
-  whose grant may only read may not command them, and a command for another
-  speaker on their key is `invalid-message`. Time
+  whose grant may only read may not command them, and neither may the
+  operator directly: every command goes through the dispatcher. Time
   is real in a disposable run, so the step to `unavailable` at 30 s is left to
   the module's own tests;
 - the LIFX module (#928) with a simulated pendant and Beam: the pendant follows the
@@ -1109,9 +1183,8 @@ The catalog holds:
   it, Free never paints it, a color command reaches it, and once it is switched
   off at the wall it shows unavailable and a command to it ends uncertain in the
   inbox; the Beam has no controls and gets no packet, and no address leaves the
-  module. A part whose grant may only read may not command them, every reader
-  reads both bulbs, and a command for the Beam on the pendant's key is
-  `invalid-message`;
+  module. A part whose grant may only read may not command them, nor the
+  operator directly, and every reader reads both bulbs;
 - the [Tidbyt module](../../modules/tidbyt/README.md) (#930) on a simulated
   cloud: an idle start writes nothing; the status tile follows the core's
   sessions, and a burst of changes inside the 15-second gate makes one later
@@ -1128,12 +1201,12 @@ The catalog holds:
   registry code: a malformed or unknown family, a made-up or missing token, a
   credential or browser session used from another site, a hook reading, and a
   route of the old Hub, logged with its route;
-- a token outside its grant refused (a hook's command and a reader's), a
-  command whose subject
-  names another lamp than its key refused as `invalid-message`, a hook's message
-  of another family on a lifecycle key refused and heard by nobody, and a
-  command a raw HTTP client sends again refused as `duplicate-conflict`, with the
-  lamp running it once;
+- a token outside its grant refused (a hook's command, a reader's, and the
+  operator's lamp command, which goes through the dispatcher), a recovery whose
+  subject names another session than its key refused as `invalid-message`, a
+  hook's message of another family on a lifecycle key refused and heard by
+  nobody, and a notice acknowledgment a raw HTTP client sends again refused as
+  `duplicate-conflict`, with the core running it once;
 - an operator recovering an approval that a restart left uncertain, through
   `POST /api/v2/commands/approval-recover`, after a stale revision is refused;
 - a module's page, the preview it loads by reference, its settings and its MCP
@@ -1171,24 +1244,22 @@ parts' credentials, and starts the runtime with it.
 Both configured scenarios check that the token appears in no log record,
 message, health entry or reader copy.
 
-The deadline answers per transport:
+The deadline answers of an action, on both transports, since the core's
+dispatcher sends every device command with the device kind's 5 s reply deadline:
 
-| Case | In process | Remote |
-| --- | --- | --- |
-| A command its handler holds at the deadline | `uncertain-result` | `uncertain-result` |
-| A command still queued at the deadline | `expired` | `expired` |
-| A requester that closes while its command is queued | `cancelled` | `uncertain-result` |
-| A requester whose command is in flight when the runtime crashes | dies with the runtime | `uncertain-result` |
+| Case | Answer |
+| --- | --- |
+| A command its handler holds at the deadline | `uncertain-result`, and the tracker records it `uncertain` until its late outcome completes it |
+| A command still queued at the deadline | `expired`, and the tracker records it failed |
+| An action whose HTTP call is in flight when the runtime crashes | `lost`, the harness's label for a call that lost its connection; the tracker knows its fate |
 
 Rows 1 and 2 follow the SDK's "Request and respond with expiry" requirement,
 which the [remote transport](../../packages/sdk/README.md#remote-transport)
-keeps. The SDK's "One conformance suite for every transport" requirement fixes
-rows 2 and 3 per transport. Row 4's remote answer comes from the remote client:
-a call whose connection drops settles as `uncertain-result`, because the
-command's fate is unknown, by the command's deadline plus `REQUESTER_GRACE_MS`
-at the latest. Its in-process cell only describes what happens: the requester dies
-with the runtime, and the harness labels its request `lost`. That label is the
-harness's own, not an answer the SDK gives.
+keeps. A requester that closes while its command is queued is the SDK's case:
+its "One conformance suite for every transport" requirement fixes it per
+transport, `cancelled` in process and `uncertain-result` remotely. The catalog
+no longer plays it, since a part's action goes through the dispatcher, which a
+caller that goes away does not cancel.
 
 The scenarios assert the runtime's records on both transports: each deadline
 answer's admission and ending at its level, the refusal of a command with no

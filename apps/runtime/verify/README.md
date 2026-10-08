@@ -14,7 +14,7 @@ A run serves the runtime from the checkout on the WSL host, with synthetic data 
 | Runtime | actual | The runtime through its own entry (`runMain`) with `--simulate`, `--edge`, `--config`, `--environment test`, `--log-level info`, `--record-spans` and the run's state directory: the shipped module list, or the fixture modules |
 | Gateway | actual | The runtime's gateway on its listener (#835): the SDK edge, `/api/v2`, MCP, module pages and browser sign-in. Each part has a run-generated client credential with its catalog grant |
 | Configuration | synthetic | `<data>/config/runtime-config.json`, owner-only: each configured module's section (#919), with one token file per module under `<data>/config/secrets/` holding the synthetic token `tok_SYNTHETIC919`, or for the shipped run each shipped module's simulated section (#929), and the edge's section (#835), which names `<data>/config/edge-credentials.json`, lets a trusted loopback page sign a browser in, turns MCP on and turns the launcher off, since a run's state directory is too deep for its socket. The parts' tokens, `tok_SYNTHETIC835_<random>`, are in `<data>/config/part-tokens.json` for the adapter; the runtime holds only their digests |
-| Fixture modules | simulated | The core (#831), with stand-in parts for history and the inbox until #782 and #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), the shipped Nanoleaf module (#844) with a simulated Lines controller, and a harness module that reports what the bus publishes |
+| Fixture modules | simulated | The core (#831), with its action tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and configured sign, the shipped playback module (#929), the shipped LIFX module (#928) with simulated bulbs, the shipped Tidbyt module (#930) with a simulated cloud, the shipped Pixoo module (#843), the shipped Nanoleaf module (#844) with a simulated Lines controller, and a harness module that reports what the bus publishes |
 | Devices | simulated | `SimulatedLamps`, `SimulatedChime`, `SimulatedSigns`, the playback module's `SimulatedSpeakers`, the LIFX module's `SimulatedLifx`, the Tidbyt module's `SimulatedCloud` and the Nanoleaf module's `SimulatedNanoleaf`, held by the supervisor and reached over the runtime child's IPC channel, so they outlive a runtime crash as real devices would. The simulated Pixoo lives in the runtime child, beside the module that reaches it: the child reports what the Pixoo shows, and the supervisor starts each new child's Pixoo with the mode last set and the panel the last one showed |
 | Parts | simulated | The scenario's hook, operator, panel and reader: remote parts that the capture step connects to the edge |
 
@@ -53,7 +53,8 @@ requests that name its listener, as the runtime's health does. Ending a stream t
 The run adapter implements the catalog's `Harness` in real time. Its parts are remote, so the per-transport
 expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its `gateway`
 call reaches the runtime's gateway over HTTP, as a part with its token, a browser signed in by a trusted loopback page,
-a stranger or a caller with neither. Its
+a stranger or a caller with neither, and its `dispatch` sends a device's command through the core's dispatcher on the
+gateway's action route (#782). Its
 `disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
 as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
@@ -105,11 +106,14 @@ text reaches it, and a record or span the contract refuses is counted in `search
 | `capped` | The query's limits left out records, spans or endings, or trace IDs past the 16 it names |
 
 The `follow-one-request` step runs the cases against a freshly seeded run and attaches each answer as
-`follow-<case>.json` in its capture directory: `success` (one trace, no span's parent missing, and no gap but the live runtime's `losses-uncounted`), `refusal` (the lamp
+`follow-<case>.json` in its capture directory. Each command is an action the operator sends through the core's
+dispatcher on `POST /api/v2/commands/lamp-switch` (#782), so its records include the core's tracker steps and its spans
+start with the dispatcher's server span. The cases: `success` (one trace, no span's parent missing, and no gap but the live runtime's `losses-uncounted`), `refusal` (the lamp
 refused `lamp-9` with `not-found` at INFO, and no device call), `uncertain` (the device held the switch past the deadline:
 `uncertain-result` at WARN, and the late outcome), `replayed` (a lost acknowledgment and a restart: one publication record,
-two publish spans, the second a new root that links to the stored context, and the core's duplicate), `crash` (the
-runtime was killed between the lamp's commit and its publish: no ending recorded, the runtime named, the spans that never
+two publish spans, the second a new root that links to the stored context, and the core's duplicate, which it
+acknowledged again), `crash` (the operator's call lost its connection with the runtime, which was killed between the
+lamp's commit and its publish: no ending recorded, the runtime named, the spans that never
 ended not reported, and the two that ended with their parents missing), `missing` (a request nothing carries), `capped`
 (a query limited to two records and one span) and `trace` (the success by its trace ID). A reviewer can read one answer to
 follow one command end to end, or run `scenario-end-to-end` and query any of its request IDs, such as `req-held`. The host

@@ -17,11 +17,10 @@ import {SimulatedPixoo, createPixooModule} from '@jimmie-potts/pixoo';
 import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
 import {connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
 import {SimulatedCloud, createTidbytModule} from '@jimmie-potts/tidbyt';
-import {followStandInAcks} from '@jimmie-potts/sdk/testing';
 import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
-import type {LogRecord, ModuleHealth} from '../../src/index.js';
+import {isCoreModule, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
 import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
 import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from '../../src/state.js';
@@ -36,7 +35,8 @@ import {
   type TransportName,
 } from './catalog.js';
 import {
-  GatewayClient, Reader, SCENARIO_SCHEMAS, answerOf, describe, follow, partTokens, scenarioValidator, simulatePlayback, sourceOf, writeConfiguration,
+  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, describe, follow, partTokens, scenarioValidator, simulatePlayback, sourceOf,
+  writeConfiguration,
 } from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
@@ -206,6 +206,18 @@ class Memory implements MemoryHarness {
       });
     };
     // A request starts at once, so it keeps its place in the order a scenario sends them.
+    return this.#pending.size === 0 ? start() : this.#settled().then(start);
+  }
+
+  dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
+    const start = (): Promise<string> => {
+      this.#answers.set(label, 'pending');
+      // An action's HTTP call whose connection the runtime's crash ended is `lost`: its fate is the tracker's to know.
+      return this.#client.call(actionCall(role, command, requestId)).then(actionAnswerOf, () => 'lost').then(answer => {
+        this.#answers.set(label, answer);
+        return answer;
+      });
+    };
     return this.#pending.size === 0 ? start() : this.#settled().then(start);
   }
 
@@ -400,10 +412,12 @@ class Memory implements MemoryHarness {
     const edge = this.#edge;
     if (edge === undefined) throw new Error('the harness has no edge');
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
+    // Its action routes call the core's dispatcher (#782), when the seed has the core.
+    const actions = modules.find(isCoreModule)?.actions;
     const gateway = new Gateway({
       bus: host.bus, host, validator: this.#validator, families: readableFamilies(SCENARIO_SCHEMAS), edge: edge.config, credentials: edge.credentials,
       log: logs.logger(RUNTIME_SCOPE), redactions: logs.redactions, clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir,
-      onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); },
+      onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); }, ...(actions === undefined ? {} : {actions}),
     });
     await gateway.start(this.url ?? '', [new URL(this.url ?? 'http://127.0.0.1').host]);
     this.#generations.push({host, gateway, watcher, logs, databases});
@@ -429,14 +443,14 @@ class Memory implements MemoryHarness {
         // Freshness follows the harness's manual clock, so a silent speaker ages in virtual time.
         return createPlaybackModule({transport: this.#speakers, monotonic: this.#clock.now});
       case 'lifx':
-        // The module follows the stand-in core's acknowledgments until #782's, so its outbox forgets what the core took.
-        return createLifxModule({transport: this.#lifx, acknowledgments: followStandInAcks});
+        // Its outbox follows the core's acknowledgments, so it forgets what the core took.
+        return createLifxModule({transport: this.#lifx});
       case 'tidbyt':
         // A render's worker answers in real time while virtual time runs ahead, so renders get a deadline no step reaches.
         return createTidbytModule({transport: this.#cloud.fetch, renderTimeoutMs: 3_600_000});
       case 'pixoo':
-        // The fixture core's stand-in history acknowledges each outcome, until Hub #782.
-        return createPixooModule({transport: this.#pixoo, acknowledgments: followStandInAcks});
+        // Its outbox follows the core's acknowledgments, so it forgets what the core took.
+        return createPixooModule({transport: this.#pixoo});
       case 'nanoleaf':
         return createNanoleafModule({transport: this.#nanoleaf.request});
     }

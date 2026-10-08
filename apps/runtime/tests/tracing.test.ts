@@ -15,6 +15,11 @@ import {startTracing} from '../src/tracing.js';
 import {contextOf, deferred, edgeConfig, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
+/** A consumer's notice acknowledgment, one of the core's operator commands that a remote grant may request directly. */
+const ACKNOWLEDGE = {
+  key: `bunny.cmd.notice-acknowledge.${'5'.repeat(64)}`,
+  draft: {type: 'org.bunny.notice.acknowledge.requested', subject: '5'.repeat(64), dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0', data: {consumerId: 'panel', noticeId: 'a'.repeat(64)}},
+};
 const MODE_SCHEMA = 'https://bunny.invalid/events/test-mode/2.0';
 const block = (name: string): object => ({$ref: `https://bunny.invalid/events/blocks/2.0#/$defs/${name}`});
 const modeSchema = {type: 'object', additionalProperties: false, required: ['requestId', 'mode'], properties: {requestId: block('requestId'), mode: {type: 'string'}}};
@@ -48,9 +53,9 @@ const children = (spans: readonly Recorded[], parent: Recorded, name: string): R
 const lasted = (span: Recorded | undefined): boolean => span !== undefined && BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano);
 
 /** A module that answers mode commands with `answer` after a device call in its own span. */
-function wall(answer: (command: Command<{mode: string}>) => Reply | Promise<Reply>, commands: Command<{mode: string}>[] = []): ReturnType<typeof fixture> {
+function wall(answer: (command: Command<{mode: string}>) => Reply | Promise<Reply>, commands: Command<{mode: string}>[] = [], key = KEY): ReturnType<typeof fixture> {
   return fixture('wall', async ({sdk, trace}) => {
-    await sdk.respond<{mode: string}>(KEY, async command => {
+    await sdk.respond<{mode: string}>(key, async command => {
       commands.push(command);
       const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: {'bunny.device.id': 'wall-1', 'bunny.operation': 'mode'}});
       const reply = await answer(command);
@@ -155,11 +160,12 @@ it('a remote part\'s command gets a server span that continues its authenticated
   const {config} = await edgeConfig(context, [operator]);
   const lines: string[] = [];
   const commands: Command<{mode: string}>[] = [];
-  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'}), commands)], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
+  // A remote grant requests only the core's operator commands directly (#782); a stand-in answers one here.
+  const {runtime} = await run(context, {modules: [wall(() => ({status: 'accepted'}), commands, ACKNOWLEDGE.key)], configFile: config, edge: {schemas: {[MODE_SCHEMA]: modeSchema}},
     spans: line => { lines.push(line); }});
   const remote = await connectRemote({url: runtime.url, source: operator.source, token: operator.token});
   context.after(() => remote.close());
-  assert.equal((await remote.request(KEY, setMode, {timeoutMs: 2000, parent: PARENT})).status, 'accepted');
+  assert.equal((await remote.request(ACKNOWLEDGE.key, ACKNOWLEDGE.draft, {timeoutMs: 2000, parent: PARENT})).status, 'accepted');
   await remote.close();
   await runtime.stop();
   const spans = parse(lines);

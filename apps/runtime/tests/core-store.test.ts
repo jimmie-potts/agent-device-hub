@@ -48,8 +48,19 @@ it('a committed observation publishes its session state and occurrence after the
   assert.equal(state?.revision, 2);
   assert.equal(validateExport(JSON.parse(state?.payload ?? '')).ok, true, 'the agent-state 2.1 format the old Hub keeps');
   assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 2}]);
-  assert.deepEqual((world.rows('SELECT type, message_id FROM core_history') as {type: string; message_id: string}[]).map(row => [row.type, row.message_id]),
-    [['org.bunny.attention.raised', raised?.id]]);
+  // History (#782) keeps each state as a compact change event, what changed since the record it held, and the
+  // occurrence whole, all in the change's own transaction.
+  const history = world.rows('SELECT kind, revision, type, message_id, record FROM core_history ORDER BY seq') as {kind: string; revision: number; type: string; message_id: string; record: string}[];
+  assert.deepEqual(history.map(row => [row.kind, row.revision, row.type, row.message_id]), [
+    ['change', 1, 'org.bunny.session.updated', created?.id], ['change', 2, 'org.bunny.session.updated', waiting?.id], ['occurrence', 2, 'org.bunny.attention.raised', raised?.id],
+  ]);
+  const [first, second] = history.map(row => JSON.parse(row.record) as {family: string; id: string; revision: number; previous: number | null; changed: Record<string, unknown>; removed: string[]});
+  assert.deepEqual([first?.family, first?.id, first?.revision, first?.previous], ['session', SESSION_ID, 1, null], 'a new entity changes from nothing');
+  assert.ok(first !== undefined && 'identity' in first.changed && !('id' in first.changed) && !('revision' in first.changed));
+  assert.deepEqual([second?.revision, second?.previous, second?.removed], [2, 1, []]);
+  assert.deepEqual(second?.changed.attention, (waiting?.data as SessionRecord).attention, 'only what changed, with its new value');
+  assert.equal('identity' in (second?.changed ?? {}), false, 'not a snapshot: what stayed the same is left out');
+  assert.deepEqual(JSON.parse(history[2]?.record ?? '{}'), raised, 'an occurrence is kept whole');
   assert.equal(world.rows('SELECT * FROM core_taken').length, 2, 'both observations, by (source, id)');
   assert.deepEqual(world.rows('SELECT * FROM bunny_outbox'), [], 'published, so the outbox let them go');
 });
@@ -464,6 +475,21 @@ it('a failure names only the commit it came from: a later commit clears it', asy
   world.db.exec('PRAGMA max_page_count = 1073741823');
   await world.store.refresh();
   assert.equal(world.store.takeFailure(), undefined, 'the full disk is no longer named');
+});
+
+it('a database that closed under the store, as a crash closes it, ends the store\'s use: a transaction is refused, and nothing is left unhandled', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  assert.equal(world.store.open, true);
+  const unhandled: unknown[] = [];
+  const heard = (reason: unknown): void => { unhandled.push(reason); };
+  process.on('unhandledRejection', heard);
+  context.after(() => { process.off('unhandledRejection', heard); });
+  world.db.close();
+  assert.equal(world.store.open, false, 'the store is no longer open, so the tracker takes nothing more');
+  await assert.rejects(world.store.transaction(() => {}));
+  await new Promise(resolve => { setImmediate(resolve); });
+  assert.deepEqual(unhandled, [], 'the outbox\'s refusal is taken');
 });
 
 it('a store that holds another owner\'s state is refused before anything is written to it', async context => {
