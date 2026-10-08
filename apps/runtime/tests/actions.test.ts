@@ -98,7 +98,7 @@ it('the action route refuses invalid input with a registry code, and nothing is 
     ['a request ID inside the payload', await post('/api/v2/commands/lamp-switch', {...valid, data: {power: 'on', requestId: 'req-x'}}), 400, 'invalid-request'],
     ['a malformed request ID', await post('/api/v2/commands/lamp-switch', {...valid, requestId: 'two words'}), 400, 'invalid-request'],
     ['a payload outside its family\'s schema', await post('/api/v2/commands/lamp-switch', {...valid, data: {power: 'dim'}}), 400, 'invalid-request'],
-    ['a family no module answers', await post('/api/v2/commands/kettle-boil', valid), 404, 'not-found'],
+    ['a family whose schema the runtime does not know', await post('/api/v2/commands/kettle-boil', valid), 404, 'not-found'],
     ['a family that is no command', await post('/api/v2/commands/session', valid), 400, 'invalid-request'],
     ['a state family', await post('/api/v2/commands/inbox-item', valid), 400, 'invalid-request'],
     ['the core\'s own operator command', await post('/api/v2/commands/notice-acknowledge', {target: 'a'.repeat(64), data: {consumerId: 'pixoo', noticeId: 'b'.repeat(64)}}), 400, 'invalid-request'],
@@ -108,9 +108,22 @@ it('the action route refuses invalid input with a registry code, and nothing is 
     ['no token', await a.ask(a.url, '/api/v2/commands/lamp-switch', {method: 'POST', body: valid}), 401, 'unauthenticated'],
   ];
   for (const [what, answer, status, code] of cases) assert.deepEqual([answer.status, codeOf(answer)], [status, code], what);
+  const unknown = cases.find(([what]) => what.startsWith('a family whose schema'))?.[1];
+  assert.equal((unknown?.body as {error?: {detail?: unknown}} | undefined)?.error?.detail, 'this runtime knows no schema for this command family');
   assert.equal(a.lamps.state().calls.length, 0, 'nothing reached the lamp');
   const refused = a.logs.filter(record => record.event_name === 'runtime.edge.refused' && record.attributes['http.route'] === '/api/v2/commands/{family}');
   assert.ok(refused.length > 0 && refused.every(record => !JSON.stringify(record).includes('kettle')), 'logged by route template, never what the caller sent');
+  await a.runtime.stop();
+  assertNoToken(a);
+});
+
+it('a known command family that no running module answers is tracked, and refused with unavailable', async context => {
+  const operator = OPERATOR();
+  const a = await actions(context, [operator]);
+  const answer = await a.ask(a.url, '/api/v2/commands/playback-control', {method: 'POST', token: operator.token, body: {target: 'living-room', data: {action: 'pause'}, requestId: 'req-nobody'}});
+  assert.deepEqual([answer.status, codeOf(answer)], [503, 'unavailable'], 'the schema is known, so it is no not-found');
+  const operation = a.handle()?.operation('req-nobody');
+  assert.deepEqual([operation?.status, operation?.result, operation?.evidence, operation?.error?.code], ['rejected', 'failed', 'none', 'unavailable'], 'tracked, and failed');
   await a.runtime.stop();
   assertNoToken(a);
 });

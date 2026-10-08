@@ -179,6 +179,28 @@ it('a restart while an action is pending: it ends uncertain at its deadline, and
   assert.equal(gadget.commands.length, 1);
 });
 
+it('a clean stop ends an action the owner\'s handler holds uncertain at once, not at its deadline, cancels one still queued, and the restart sends neither', async context => {
+  const dir = await stateDir(context);
+  const gadget = new Gadget();
+  gadget.script({reply: 'hold', outcome: 'none'}, {outcome: 'none'});
+  const first = await trackerRun(context, {gadget, dir});
+  const held = first.dispatch('req-held-stop');
+  await waitFor(() => gadget.commands.length === 1, 5000, 'the gadget\'s handler has the command');
+  const queued = first.dispatch('req-queued-stop');
+  await flush();
+  // The stop closes the core's participant, which settles its requests: the requester closed before the reply.
+  await first.runtime.stop();
+  assert.deepEqual([await held, await queued].map(answer => 'error' in answer ? [answer.error.code, answer.error.detail] : answer),
+    [['uncertain-result', 'the requester closed before the reply'], ['cancelled', 'the requester closed']]);
+  const second = await trackerRun(context, {gadget, dir, manual: true});
+  assert.deepEqual(shape(second.operation('req-held-stop')), ['uncertain', 'uncertain', 'none', 'uncertain-result'], 'uncertain at the stop');
+  assert.deepEqual(shape(second.operation('req-queued-stop')), ['rejected', 'failed', 'none', 'cancelled'], 'failed: it never ran');
+  assert.deepEqual([steps(second, 'req-held-stop'), steps(second, 'req-queued-stop')], [['sent sent', 'reply uncertain'], ['sent sent', 'reply rejected']]);
+  await advance(second, DEADLINES.device.outcomeMs);
+  assert.deepEqual(steps(second, 'req-held-stop'), ['sent sent', 'reply uncertain'], 'its deadline adds nothing');
+  assert.equal(gadget.commands.length, 1, 'the queued command never reached the gadget, and the restart sends neither');
+});
+
 it('a module that crashed between saving its outcome and reporting it reports it at its next start; history takes it once, and nothing is sent again', async context => {
   const dir = await stateDir(context);
   const gadget = new Gadget();

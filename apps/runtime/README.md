@@ -169,7 +169,10 @@ and exits 1, and the service manager restarts it whole.
   caller asking for the same action again gets what it got, and anything else
   under that ID is `duplicate-conflict`. Nothing is ever sent again: not a
   timed-out command, not after a restart, which lets each pending action end
-  `uncertain` at its deadline. Every step is logged once, in the action's trace:
+  `uncertain` at its deadline. A clean stop settles the dispatcher's own
+  requests first: an action whose owner's handler has it with no reply ends
+  `uncertain` at once ("the requester closed before the reply"), and one still
+  queued ends failed with `cancelled`. Every step is logged once, in the action's trace:
   `command.queued`, `command.admitted`, `command.rejected` and
   `command.completed`. The tracker's rows, with every failed, expired, uncertain
   and conflicting result, are what #923 turns into inbox items.
@@ -395,7 +398,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the devices and the place links, from the edge section. |
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as a producer's setup checks its credential (#926). |
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
-| `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family no module answers `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
+| `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family whose schema the runtime does not know `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, such as 503 `unavailable` for a known family that no running module answers, which is tracked and recorded failed, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
 | `GET /modules/<name>/<page>` | `read` | A module's page (module API 1.2): its HTML in a document whose policy allows no script, frame, form or base, and only images and styles from the runtime itself. |
 | `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference, such as the preview its page shows: an image, plain text or JSON of at most 16 MiB. |
 | `/mcp` | client credentials | [MCP](#mcp). |

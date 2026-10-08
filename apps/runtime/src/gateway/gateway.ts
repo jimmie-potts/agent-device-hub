@@ -587,7 +587,9 @@ export class Gateway {
 
   /**
    * The command an action names: its key, and a draft whose type, `org.bunny.<entity>.<verb>.requested`, and schema,
-   * `<family>/2.0`, follow from the family (ADR 0012's command naming), checked against the family's schema.
+   * `<family>/2.0`, follow from the family (ADR 0012's command naming), checked against the family's schema. A family
+   * whose schema the runtime does not know is `not-found`. A known family that no running module answers passes here: the
+   * dispatcher tracks it, and the bus refuses it with `unavailable`.
    */
   #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
     const verb = family.lastIndexOf('-');
@@ -603,7 +605,7 @@ export class Gateway {
     }, {nowMs: now});
     if (!checked.ok) {
       return checked.error.code === 'unknown-schema'
-        ? errorBody('not-found', {detail: 'no module in this runtime answers this command family'})
+        ? errorBody('not-found', {detail: 'this runtime knows no schema for this command family'})
         : errorBody('invalid-request', {detail: 'the command does not fit its family\'s schema'});
     }
     return {key: `bunny.cmd.${family}.${target}`, draft: {type, subject: target, dataschema, data}};
