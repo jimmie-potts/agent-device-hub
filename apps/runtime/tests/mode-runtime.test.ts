@@ -1,7 +1,7 @@
 // Real core store, dispatcher, native responders and operation projection, on one owned port-0 runtime at a time.
 import assert from 'node:assert/strict';
 import type {InboxItem, Mode, ModeState} from '@jimmie-potts/event-contracts/v2/families';
-import {createCoreModule} from '../src/core/core.js';
+import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {modeChildRequestId} from '../src/core/mode-participants.js';
 import {ModeDevice} from './fixtures/mode-devices.js';
@@ -9,6 +9,45 @@ import {contextOf, edgeConfig, fixture, it, run, waitFor, manualClock, stateDir}
 
 const action = (mode: Mode, requestId: string, expectedRevision?: number): Action => ({key: 'bunny.cmd.mode-set.hub', requestedBy: 'bunny/parts/operator', requestId,
   draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode, ...(expectedRevision === undefined ? {} : {expectedRevision})}}});
+
+it('browser mode selection carries its authenticated trace through the tracker and native commands', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  const nano = new ModeDevice('nanoleaf', 'wall'), pixoo = new ModeDevice('pixoo', 'pixoo-1');
+  const files = await edgeConfig(context, [], {modules: {nanoleaf: {}, pixoo: {}}, browserAccess: 'trusted-loopback'});
+  const lines: string[] = [];
+  const {runtime} = await run(context, {modules: [core, nano.module(), pixoo.module()], configFile: files.config,
+    edge: {schemas: {}}, spans: line => {lines.push(line);}});
+  const headers = {origin: runtime.url, 'bunny-request': '1', 'content-type': 'application/json'};
+  const signed = await fetch(new URL('/api/v2/browser/session', runtime.url), {method: 'POST', headers, body: '{}'});
+  assert.equal(signed.status, 200);
+  const cookie = signed.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie !== undefined && cookie !== '');
+  const traceId = '0af7651916cd43dd8448eb211c80319c', parentSpanId = 'b7ad6b7169203331';
+  const traceparent = `00-${traceId}-${parentSpanId}-01`;
+  const submit = (requestId: string, parent: string, authenticated = true, mode = 'work') => fetch(new URL('/api/v2/commands/mode-set', runtime.url), {
+    method: 'POST', headers: {...headers, traceparent: parent, ...(authenticated ? {cookie} : {})},
+    body: JSON.stringify({target: 'hub', requestId, data: {mode}}),
+  });
+  assert.equal((await submit('mode-trace-untrusted', traceparent, false)).status, 401);
+  assert.equal((await submit('mode-trace-invalid', traceparent, true, 'invalid')).status, 400);
+  assert.equal(handle?.operation('mode-trace-untrusted'), undefined);
+  assert.equal(handle?.operation('mode-trace-invalid'), undefined);
+  assert.equal(nano.commands.length + pixoo.commands.length, 0);
+  assert.equal((await submit('mode-trace-browser', traceparent)).status, 200);
+  await waitFor(() => nano.commands.length === 1 && pixoo.commands.length === 1);
+  assert.equal(handle?.operation('mode-trace-browser')?.traceparent.slice(3, 35), traceId, 'the tracked mode selection continues the browser trace');
+  assert.equal(nano.commands[0]?.traceparent.slice(3, 35), traceId);
+  assert.equal(pixoo.commands[0]?.traceparent.slice(3, 35), traceId);
+  assert.equal((await submit('mode-trace-malformed', 'not-a-trace')).status, 200);
+  await waitFor(() => nano.commands.length === 2 && pixoo.commands.length === 2);
+  const malformed = handle?.operation('mode-trace-malformed'); assert.ok(malformed);
+  assert.match(malformed.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/);
+  assert.notEqual(malformed.traceparent.slice(3, 35), traceId, 'invalid context starts a new trace without refusing the mode');
+  await runtime.stop();
+  const spans = lines.flatMap(line => (JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string; traceId: string; parentSpanId?: string; kind: number}[]}[]}[]}).resourceSpans.flatMap(group => group.scopeSpans.flatMap(scope => scope.spans)));
+  assert.equal(spans.filter(span => span.name === 'bunny.command.request' && span.kind === 2 && span.traceId === traceId && span.parentSpanId === parentSpanId).length, 1,
+    'only the authenticated, valid selection adopts the browser parent');
+});
 
 it('real mode admission saves once, maps independent outcomes and never replays on sync or restart', async context => {
   let failSave = false;
