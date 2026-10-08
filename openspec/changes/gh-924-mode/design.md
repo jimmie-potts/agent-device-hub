@@ -1,6 +1,6 @@
 ## Context
 
-Hub #924 fills the existing home slot. The core already owns a SQLite store, transaction outbox, dispatcher, outcome tracker and operation projection. Nanoleaf and Pixoo own their native device writers. The coordinator owns shared integration while #923 adds the real inbox.
+Hub #924 fills the existing home slot. The core already owns a SQLite store, transaction outbox, dispatcher, outcome tracker and operation projection. Nanoleaf and Pixoo own their native device writers. The core and runtime callsites provide the integration; #923 supplies the real inbox.
 
 ## Goals / Non-Goals
 
@@ -22,7 +22,7 @@ Hub #924 fills the existing home slot. The core already owns a SQLite store, tra
 - A crash after saving but before sending leaves the selection saved with absent device evidence. This is deliberate: restart does not reconstruct or replay commands, and absent evidence never becomes success.
 - The mode contract has no application request ID. The panel shows a recent completed selection request and its deterministic child IDs separately from the current saved choice. It does not infer that old operation evidence describes the current selection or what a device currently shows.
 - Fixed targets include stopped modules. Their commands may fail or become uncertain; other targets proceed and the inbox records each problem.
-- Shared integrations and runtime/browser evidence wait for #923 and the coordinator's host-slot assignment. Unit checks alone do not claim integrated, installed or physical acceptance.
+- Final real-inbox integration and independent disposable Acceptance wait for accepted #923. Focused source and browser checks do not claim installed or physical acceptance.
 
 ## Migration Plan
 

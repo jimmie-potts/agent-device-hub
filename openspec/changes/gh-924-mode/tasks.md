@@ -14,5 +14,5 @@
 ## 3. Delivery verification
 
 - [ ] 3.1 Verify mixed outcomes in the real #923 inbox and restart/no replay in a disposable runtime during independently owned Acceptance.
-- [ ] 3.2 Complete applicable shared build/type/lint/contract/workflow checks and focused browser evidence at the frozen source revision.
+- [x] 3.2 Complete applicable shared build/type/lint/contract/workflow checks and focused browser evidence at the frozen source revision.
 - [ ] 3.3 Obtain independent Standards/Specification/Acceptance evidence, then have the coordinator sync affected specifications and archive this change before final review.
