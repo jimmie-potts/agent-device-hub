@@ -1050,20 +1050,38 @@ capture steps and boundary checks. After `npm run build`, with Node 24 from the
 worktree root:
 
 ```bash
-npm run test:runtime:verify:built   # capture steps, boundary checks, the supervisor, and real runs where a user manager exists
 npm run -s verify:runtime -- help
+npm run test:runtime:verify:built   # full suite, when the local scope below requires it
 ```
 
-Run `test:runtime:verify:built` locally only when a change touches the runtime
-host or the verification files: source or test files under `apps/runtime/src/`,
-`apps/runtime/bin/`, `apps/runtime/verify/`, `apps/runtime/tests/scenarios/`,
-`apps/runtime/tests/fixtures/` or `packages/app-verify/`, or the wrapper
-`scripts/verify-runtime.mjs`. A README-only edit there does not need it. Run it
-alone, because it starts real runs. For other
-changes, such as a module, the SDK or the event contracts, leave it to the App
-verification CI job, which runs it on every PR that runs the Checks workflow
-(owner decision, 2026-10-07). A module's own suite and
-`test:runtime:scenarios:built` still run locally for those changes.
+Choose local verification by the behavior changed, including its direct
+consumers, rather than by file paths (owner decision, 2026-10-08):
+
+- For a feature, fixture or catalog change, run focused tests for the changed
+  behavior and its direct consumers, then exercise the affected catalog
+  scenario or scenarios in a disposable run. Reuse those scenarios for the
+  independent Acceptance review where it applies. Editing runtime source or a
+  scenario file alone does not require the full local verification suite.
+- Run `test:runtime:verify:built` locally when the change alters shared
+  supervisor, isolation, lifecycle or run-adapter behavior across scenarios.
+  This includes shared boundary guards and build-freshness checks. Run it alone,
+  because it starts real runs; do not overlap it with another verification or
+  Acceptance run.
+- Documentation-only changes need no product run. Keep the applicable workflow
+  and specification checks.
+
+Build once from the candidate before its local `:built` checks and disposable
+runs. Record the candidate revision, selected tests and scenarios, why they
+cover the affected behavior, their results and any skips or evidence limits.
+Required checks must pass. The [Acceptance review policy](sdlc.md#acceptance-review)
+still requires an independent reviewer and at most one run at a time on this
+host. All runs keep synthetic data, simulated devices and an outside-checkout
+`TMPDIR`; they grant no installed-system or physical-device authority.
+
+The App verification CI job still runs the full `test:runtime:verify:built`
+suite on every PR that runs the Checks workflow. Focused local verification
+does not waive an applicable failed or missing CI job, contract check, browser
+or accessibility check, or independent review.
 
 `test:runtime:verify:built` starts runs without a user manager and judges every
 capture step through `runCaptureStep`: one per catalog scenario, so the same
@@ -2573,12 +2591,11 @@ from the packages and presentation imported for #25. Its
 [README](../modules/pixoo/README.md) describes the module and records the
 source commit, the edits and every file left in divoom-app-upgrade. Use Node 24
 and run `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:js` and
-`npm run test:pixoo` from the worktree root, plus the runtime's checks
-(`test:runtime:built` and `test:runtime:scenarios:built`, and
-`test:runtime:verify:built`, on its own, when the change touches the runtime host
-or verification files, as [Runtime verification runs](#runtime-verification-runs)
-says),
-`test:maintenance:built`, `check:workflow` and `test:workflow`. The build compiles the module and its tests
+`npm run test:pixoo` from the worktree root, plus `test:runtime:built`,
+`test:runtime:scenarios:built`, `test:maintenance:built`, `check:workflow` and
+`test:workflow`. Select local disposable scenarios or the full verification
+suite under [Runtime verification runs](#runtime-verification-runs).
+The build compiles the module and its tests
 (`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
 core CI job runs `test:pixoo:built` after its fresh build.
 

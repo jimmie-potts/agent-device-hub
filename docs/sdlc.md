@@ -110,6 +110,13 @@ state owner and one writer per device, correct targets, bounded queued work, no
 unsafe replay, accurate freshness and completion, manual control, and user data
 integrity.
 
+Select local tests for the changed behavior and its direct consumers. For
+runtime work, use the affected disposable scenarios and the full-suite triggers
+in [Runtime verification runs](development.md#runtime-verification-runs).
+Keep existing hosted CI coverage and the applicable independent reviews. Add a pilot,
+benchmark, soak or wider failure matrix only for an accepted requirement or a
+demonstrated problem.
+
 Basic credential hygiene and the existing authorization and origin checks apply
 to local use too. Reassess before remote or public exposure, an additional
 operator or writer, expanded compatibility, or recurring failures. A change that
