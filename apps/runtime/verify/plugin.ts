@@ -10,6 +10,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
+import {moduleFolders} from '../build/registry.js';
 import {HEALTH_PATH, type RuntimeHealth} from '../src/index.js';
 import {SCENARIOS, expect, runScenario, type Scenario, type ScenarioResult} from '../tests/scenarios/catalog.js';
 import {sourceOf} from '../tests/scenarios/parts.js';
@@ -25,9 +26,10 @@ const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
 const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json'), 'utf8')) as {version: string}).version;
 
 /**
- * The served candidate: the built runtime, its verification run and fixtures, the SDK, the profile, the agent-state
- * owner the core runs with its lifecycle contracts (#831), the shipped device modules (the playback module, #929,
- * LIFX, #928, and the Pixoo, #843) and the agent hook script (#926), in a stable order.
+ * The served candidate: the built runtime with its module registry, its verification run and fixtures, the SDK, the
+ * profile, the agent-state owner the core runs with its lifecycle contracts (#831), every module folder's build (Hub
+ * #999), with any worker or child process a module loads by file, and the agent
+ * hook script (#926), in a stable order.
  */
 export function artifactFiles(at = root): string[] {
   const built = (dir: string, keep: (file: string) => boolean = () => true): string[] => {
@@ -41,12 +43,8 @@ export function artifactFiles(at = root): string[] {
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
     // MCP on the gateway (Hub #835): the reused MCP package and the device contracts it validates with.
     ...built('packages/mcp/dist'), ...built('packages/contracts/dist'),
-    ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'), ...built('modules/playback/dist/src'), ...built('modules/lifx/dist/src'),
-    ...built('modules/tidbyt/dist/src'),
-    // The Pixoo module, with its render worker and media child process, which the runtime loads by file.
-    ...built('modules/pixoo/dist/src'),
-    ...built('modules/nanoleaf/dist/src'),
-    ...built('modules/codex-desktop/dist/src'),
+    ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'),
+    ...moduleFolders(at).flatMap(folder => built(`modules/${folder}/dist/src`)),
     // The 2.0 agent hook script (Hub #926), which a capture step runs as a client's hook command does; it is not built.
     ...['apps/runtime/bin/monitor-hook.mjs'].filter(file => existsSync(join(at, file))),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
@@ -58,21 +56,22 @@ export function artifactFiles(at = root): string[] {
   ];
 }
 
+/** Every module folder's sources, and its package file, from which the build writes the runtime's module registry (Hub #999). */
 export const BUILD_SOURCES = [
-  ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**', ':(glob)apps/runtime/tests/scenarios/**',
+  ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/build/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**',
+  ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
-  ':(glob)modules/playback/src/**', ':(glob)modules/lifx/src/**', ':(glob)modules/tidbyt/src/**', ':(glob)modules/pixoo/src/**', ':(glob)modules/nanoleaf/src/**',
-  ':(glob)modules/codex-desktop/src/**',
+  ':(glob)modules/*/src/**', ':(glob)modules/*/package.json',
 ];
-export const BUILD_OUTPUTS = [
-  'apps/runtime/dist/src/main.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
+/** The build's outputs the run serves, with the registry and each module folder's entry in the checkout at `at`. */
+export const buildOutputs = (at = root): string[] => [
+  'apps/runtime/dist/src/main.js', 'apps/runtime/dist/src/registry.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
-  'modules/playback/dist/src/index.js', 'modules/lifx/dist/src/index.js', 'modules/tidbyt/dist/src/index.js', 'modules/pixoo/dist/src/index.js',
-  'modules/nanoleaf/dist/src/index.js', 'modules/codex-desktop/dist/src/index.js',
+  ...moduleFolders(at).map(folder => `modules/${folder}/dist/src/index.js`),
 ];
 
 /** The newest tracked source must be older than the oldest build output the run serves. */
@@ -86,7 +85,7 @@ export async function buildCurrent(at = root): Promise<CheckOutcome> {
     if (time > newest) [newest, newestFile] = [time, file];
   }
   let oldest = Number.POSITIVE_INFINITY;
-  for (const file of BUILD_OUTPUTS) {
+  for (const file of buildOutputs(at)) {
     const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
     if (time === undefined) return {outcome: 'failed', reason: `${file} is missing; run npm run build`};
     oldest = Math.min(oldest, time);
@@ -255,8 +254,8 @@ export default definePlugin({
   components: [
     {id: 'runtime', kind: 'actual', note: 'the runtime from this checkout through its own entry (runMain), with --simulate, --edge, --config, --environment test and the run\'s state directory'},
     {id: 'gateway', kind: 'actual', note: 'the runtime\'s gateway on its listener: the SDK edge, /api/v2, MCP, module pages and browser sign-in; each part has a run-generated credential in the run\'s configuration'},
-    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, the shipped playback, LIFX, Tidbyt and Codex Desktop modules, and a harness module that reports what the bus publishes'},
-    {id: 'devices', kind: 'simulated', note: 'SimulatedLamps, SimulatedChime, SimulatedSigns, SimulatedSpeakers, SimulatedLifx, the Tidbyt module\'s SimulatedCloud and the Codex Desktop module\'s SimulatedMarker in the supervisor, reached over the child\'s IPC channel; they outlive a runtime crash'},
+    {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, every registered module the scenario seeds, built through its registration (Hub #999), and a harness module that reports what the bus publishes'},
+    {id: 'devices', kind: 'simulated', note: 'the fixture modules\' SimulatedLamps, SimulatedChime and SimulatedSigns, and each registered module\'s simulated device as its registration holds it, in the supervisor, reached over the child\'s IPC channel, so they outlive a runtime crash; a device that lives beside its module is handed what the last runtime left'},
     {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step, and the 2.0 agent hook script with a synthetic 1.x producer file'},
   ],
   checks: [

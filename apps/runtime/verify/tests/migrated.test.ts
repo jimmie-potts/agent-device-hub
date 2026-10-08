@@ -9,7 +9,8 @@ import {test} from 'node:test';
 import {pathToFileURL} from 'node:url';
 import type {PlaylistRecord, RenditionRecord} from '@jimmie-potts/pixoo';
 import {PIXOO_MIGRATION_EXIT, runPixooMigration} from '../../src/index.js';
-import {migrationOf, partTokensOf, pixooLibraryOf, stateDirOf} from '../seed.js';
+import {pixooLibraryOf} from '../../tests/scenarios/modules/pixoo.js';
+import {migrationOf, partTokensOf, stateDirOf} from '../seed.js';
 import {base, startRun} from './support.js';
 
 type Line = {result: string; code?: string; counts?: {renditions: number; playlists: number}; mismatches?: {total: number}; digest?: unknown};

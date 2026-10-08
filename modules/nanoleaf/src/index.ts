@@ -27,5 +27,7 @@ export * from './transport.js';
 export * from './worker.js';
 // The runtime module (Hub #844): its factory, configuration, families and simulated controllers.
 export * from './module/index.js';
+// Its registration with the runtime and the scenario harnesses (Hub #999).
+export * from './module/registration.js';
 // The migration of the bridge's state into the module's store, folder and section (Hub #933).
 export * from './migration/index.js';

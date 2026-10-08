@@ -6,39 +6,58 @@ import {once} from 'node:events';
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import type {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {registerLifxFamilies} from '@jimmie-potts/lifx';
-import {nanoleafSchemas} from '@jimmie-potts/nanoleaf';
-import {pixooOwnSchemas} from '@jimmie-potts/pixoo';
-import type {SimulatedSpeakers} from '@jimmie-potts/playback';
-import type {CommandDraft, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
+import type {CommandDraft, DeviceSimulation, ModuleRegistration, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
 import {producerCredentialId, producerSource} from '../../src/hook/index.js';
-import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, tokenDigest} from '../../src/index.js';
+import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, moduleSchemas, registrations, tokenDigest} from '../../src/index.js';
 import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
 import {
   GRANTS, PRODUCER, ROLES, StepFailure, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
-  type Simulation,
-} from './catalog.js';
+} from './framework.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
 export const sourceOf = (role: Role): string => `bunny/parts/${role}`;
 
-/** Every fixture family's payload schema, and the Pixoo's and the Nanoleaf module's own, that the catalog's messages use, by `dataschema`. */
-export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = {...lampSchemas, ...signSchemas, ...historySchemas, ...pixooOwnSchemas, ...nanoleafSchemas};
+/** The fixture modules' and the fixture core's families: the lamp's, the sign's and the stand-in history's. */
+const FIXTURE_SCHEMAS: Readonly<Record<string, object>> = {...lampSchemas, ...signSchemas, ...historySchemas};
 
-/** Profile 2.0 with the core and device families, and every module and fixture family the catalog's messages use. */
-export function scenarioValidator(): MessageValidator {
+/**
+ * Every payload schema the catalog's messages use beyond the core and device families, by `dataschema`: the fixture
+ * families' and every registered module's own (Hub #999). The in-memory harness's gateway and a disposable run's child
+ * both take this one list.
+ */
+export const scenarioSchemas = (modules: readonly ModuleRegistration[] = registrations): Readonly<Record<string, object>> =>
+  ({...FIXTURE_SCHEMAS, ...moduleSchemas(modules)});
+export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = scenarioSchemas();
+
+/**
+ * Profile 2.0 with the core and device families, the fixture families, and each registered module's families, with the
+ * checks its registration adds beyond their schemas.
+ */
+export function scenarioValidator(modules: readonly ModuleRegistration[] = registrations): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);
-  for (const [dataschema, schema] of Object.entries(SCENARIO_SCHEMAS)) validator.register(dataschema, schema);
-  registerLifxFamilies(validator);
+  for (const [dataschema, schema] of Object.entries(FIXTURE_SCHEMAS)) validator.register(dataschema, schema);
+  for (const {registerFamilies, schemas = {}} of modules) {
+    if (registerFamilies !== undefined) registerFamilies(validator);
+    else for (const [dataschema, schema] of Object.entries(schemas)) validator.register(dataschema, schema);
+  }
   return validator;
+}
+
+/**
+ * Whether a registered module's simulation takes `request`: one of its actions, with only the fields beyond `device` and
+ * `action` that its `admits` takes, so a typo changes nothing in either harness.
+ */
+export function admitted(simulation: DeviceSimulation, request: Readonly<Record<string, unknown>>): boolean {
+  const {device, action, ...fields} = request;
+  if (typeof device !== 'string' || typeof action !== 'string' || !simulation.actions.includes(action)) return false;
+  return simulation.admits === undefined ? Object.keys(fields).length === 0 : simulation.admits(action, fields);
 }
 
 /** A run-generated token for each part, with the synthetic prefix that every token scan looks for (Hub #835). */
@@ -123,57 +142,6 @@ export async function runHookScript(producer: string, payload: HookPayload): Pro
   child.stdin.end(JSON.stringify(payload));
   const [code, signal] = await once(child, 'exit') as [number | null, string | null];
   return {code, signal, output, elapsedMs: performance.now() - started};
-}
-
-/** Makes the simulated Codex Desktop marker do what a scenario asks (Hub #926), in either harness. */
-export function simulateMarker(marker: SimulatedMarker, simulation: Extract<Simulation, {device: 'codex-desktop'}>): void {
-  switch (simulation.action) {
-    case 'list':
-      marker.list(simulation.sessions);
-      return;
-    case 'unusable':
-      marker.unusable();
-      return;
-    case 'stall':
-      marker.stall();
-      return;
-    case 'answer':
-      marker.answer();
-      return;
-  }
-}
-
-/** Makes the playback module's simulated speakers do what a scenario asks (Hub #929), in either harness. */
-export function simulatePlayback(speakers: SimulatedSpeakers, {speaker, action, title}: Extract<Simulation, {device: 'playback'}>): void {
-  switch (action) {
-    case 'play':
-      speakers.play(speaker, title === undefined ? undefined : {title});
-      return;
-    case 'pause':
-      speakers.pause(speaker);
-      return;
-    case 'stop':
-      speakers.stop(speaker);
-      return;
-    case 'other-input':
-      speakers.otherInput(speaker);
-      return;
-    case 'silent':
-      speakers.silent(speaker);
-      return;
-    case 'slow':
-      speakers.slow(speaker);
-      return;
-    case 'answer':
-      speakers.answer(speaker);
-      return;
-    case 'refuse-next':
-      speakers.nextCommand(speaker, 'refuse');
-      return;
-    case 'hang-next':
-      speakers.nextCommand(speaker, 'hang');
-      return;
-  }
 }
 
 /**

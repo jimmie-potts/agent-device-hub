@@ -9,7 +9,8 @@ arrived as a snapshot for
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) and the
 [module API](../../packages/sdk/README.md#modules) 1.1.
 
-The runtime ships it (`pixooFactory` in `apps/runtime/src/modules.ts`), but
+The runtime ships it through `src/module/registration.ts`, which wraps
+`pixooFactory` and declares its place after playback, but
 nothing installs it yet. The installed Pixoo service keeps running, unchanged,
 from divoom-app-upgrade until the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), which

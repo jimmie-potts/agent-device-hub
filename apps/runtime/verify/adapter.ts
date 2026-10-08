@@ -8,17 +8,13 @@
 // What it reports goes into a capture's proof, so a failure is named by its registry code, its type or the adapter's own
 // fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
-import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {SimulatedPixoo} from '@jimmie-potts/pixoo';
-import {SimulatedSpeakers} from '@jimmie-potts/playback';
-import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
-} from '../tests/scenarios/catalog.js';
+} from '../tests/scenarios/framework.js';
 import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
@@ -107,11 +103,10 @@ class Run implements RunHarness {
   readonly #held: Part[] = [];
   /** The runtime's origin: the run's URL names its health page. */
   readonly #origin: string;
+  /** The run's state, which `open` reads before any step: until then, the fixture modules' devices only, as they start. */
   #state: HarnessState = {
     generation: 0, devices: {
       lamp: {power: {}, indicator: 'idle', held: false, calls: []}, chime: {rings: []}, sign: {online: false, shown: {}, attempts: 0, refused: 0},
-      playback: new SimulatedSpeakers().state(), lifx: {bulbs: {}, packets: []}, tidbyt: new SimulatedCloud().state(), pixoo: new SimulatedPixoo().state(),
-      nanoleaf: {online: false, held: 0, devices: {}}, codexDesktop: new SimulatedMarker().state(),
     },
     logs: [], published: [],
   };

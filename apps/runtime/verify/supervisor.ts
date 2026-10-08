@@ -5,7 +5,9 @@
 // A child that dies on its own is started again on the same port and state directory, as the service manager would
 // restart the runtime, within a burst limit. Starts and restarts run one after another. A loopback harness API lets a
 // run adapter drive the devices and the run's controls and read what the run did. Its ready line names the runtime's
-// health page, which the preview card links, and the harness as an extra endpoint.
+// health page, which the preview card links, and the harness as an extra endpoint. Each registered module's simulated
+// device is held and driven through its registration (link.ts), so only the fixture modules' devices are named here
+// (Hub #999).
 import {fork, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {existsSync, readFileSync, readdirSync, readlinkSync, statSync} from 'node:fs';
@@ -15,26 +17,22 @@ import {join, resolve} from 'node:path';
 import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {SimulatedLifx} from '@jimmie-potts/lifx';
-import {SimulatedCloud} from '@jimmie-potts/tidbyt';
-import {SimulatedPixoo, type SimulatedPixooState} from '@jimmie-potts/pixoo';
-import {HttpError, SimulatedNanoleaf} from '@jimmie-potts/nanoleaf';
-import {SimulatedSpeakers} from '@jimmie-potts/playback';
-import {HEALTH_PATH, readSpanFile, type LogRecord} from '../src/index.js';
+import type {DeviceAction, Scheduler} from '@jimmie-potts/sdk';
+import {HEALTH_PATH, readSpanFile, registrations, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
-import type {Generational} from '../tests/scenarios/catalog.js';
-import {simulateMarker, simulatePlayback, writeProducer} from '../tests/scenarios/parts.js';
+import type {Generational} from '../tests/scenarios/framework.js';
+import {writeProducer} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {ChildHome} from './home.js';
 import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from './follow.js';
 import {Journal} from './journal.js';
+import {SupervisorDevices} from './link.js';
 import {
-  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type HarnessState,
+  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type FixtureSimulation, type HarnessState,
   type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {BurstLimit} from './restarts.js';
@@ -64,22 +62,15 @@ const fixtures = run.runtime === 'fixtures';
 const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
-const speakers = new SimulatedSpeakers();
-const lifx = new SimulatedLifx();
-const cloud = new SimulatedCloud();
-/** The Codex Desktop module's simulated marker (Hub #926); a read waits while its folder stalls, whichever runtime asked. */
-const marker = new SimulatedMarker();
-/** Each request the Tidbyt cloud still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
-const cloudCalls = new Map<string, AbortController>();
-/** Each LIFX packet a bulb still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
-const exchanges = new Map<string, AbortController>();
-/** What the child's simulated Pixoo shows, as it last reported, and the mode each new runtime's Pixoo starts in (Hub #843). */
-let pixoo: SimulatedPixooState = new SimulatedPixoo().state();
-const nanoleaf = new SimulatedNanoleaf();
+/** A scheduler on real timers, which the registered modules' simulated devices wait on. */
+const timers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
+/** Every registered module's simulated device, which outlives the runtime as a real one would (Hub #999). */
+const devices = new SupervisorDevices(registrations, {now: Date.now, scheduler: timers});
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
-/** Each call a speaker still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
-const speakerCalls = new Map<string, AbortController>();
 const journal = new Journal();
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
@@ -161,12 +152,6 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       );
       return;
     }
-    case 'nanoleaf.request':
-      nanoleaf.request({ip: message.address, token: message.token}, message.method, message.endpoint, message.payload).then(
-        reply => { tell(child, {type: 'nanoleaf.replied', id: message.id, reply}); },
-        (error: unknown) => { tell(child, {type: 'nanoleaf.failed', id: message.id, ...(error instanceof HttpError ? {status: error.status} : {})}); },
-      );
-      return;
     case 'sign.abandon': {
       const key = `${number} ${message.id}`;
       const controller = shows.get(key);
@@ -174,71 +159,14 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       controller?.abort();
       return;
     }
-    case 'speaker.sony':
-    case 'speaker.sonos': {
-      const key = `${number} ${message.id}`;
-      const controller = new AbortController();
-      speakerCalls.set(key, controller);
-      const call = message.type === 'speaker.sony' ? speakers.sony('', message.method, message.version, controller.signal) :
-        speakers.sonos('', message.action, message.args, controller.signal);
-      call.then(
-        reply => { if (speakerCalls.delete(key)) tell(child, {type: 'speaker.replied', id: message.id, reply}); },
-        () => { if (speakerCalls.delete(key)) tell(child, {type: 'speaker.failed', id: message.id}); },
-      );
+    case 'device.call':
+      devices.serve(number, number === generation, message, reply => { tell(child, reply); });
       return;
-    }
-    case 'speaker.abandon': {
-      const key = `${number} ${message.id}`;
-      const controller = speakerCalls.get(key);
-      speakerCalls.delete(key);
-      controller?.abort();
-      return;
-    }
-    case 'lifx.exchange': {
-      const key = `${number} ${message.id}`;
-      const controller = new AbortController();
-      exchanges.set(key, controller);
-      lifx.exchange(message.address, message.packet, Buffer.from(message.payload, 'base64'), message.expected, controller.signal).then(
-        payload => { exchanges.delete(key); tell(child, {type: 'lifx.answered', id: message.id, payload: payload.toString('base64')}); },
-        () => { if (exchanges.delete(key)) tell(child, {type: 'lifx.failed', id: message.id}); },
-      );
-      return;
-    }
-    case 'lifx.abandon': {
-      const key = `${number} ${message.id}`;
-      const controller = exchanges.get(key);
-      exchanges.delete(key);
-      controller?.abort();
-      return;
-    }
-    case 'cloud.call': {
-      const key = `${number} ${message.id}`;
-      const controller = new AbortController();
-      cloudCalls.set(key, controller);
-      const headers: Record<string, string> = {authorization: message.authorization, ...(message.body === undefined ? {} : {'content-type': 'application/json'})};
-      cloud.fetch(message.url, {method: message.method, redirect: 'error', signal: controller.signal, headers, ...(message.body === undefined ? {} : {body: message.body})})
-        .then(async answer => {
-          const body = await answer.text();
-          if (cloudCalls.delete(key)) tell(child, {type: 'cloud.answered', id: message.id, status: answer.status, headers: Object.fromEntries(answer.headers), body});
-        }, (error: unknown) => { if (cloudCalls.delete(key)) tell(child, {type: 'cloud.failed', id: message.id, refused: error instanceof TypeError}); });
-      return;
-    }
-    case 'cloud.abandon': {
-      const key = `${number} ${message.id}`;
-      const controller = cloudCalls.get(key);
-      cloudCalls.delete(key);
-      controller?.abort();
-      return;
-    }
-    case 'marker.read':
-      // A runtime that ended meanwhile no longer hears the answer: `tell` sends only to a connected child.
-      marker.read('', message.stamp).then(read => { tell(child, {type: 'marker.answered', id: message.id, read}); }, () => { tell(child, {type: 'marker.failed', id: message.id}); });
+    case 'device.abandon':
+      devices.abandon(number, message.id);
       return;
     case 'published':
       published.push({generation: number, message: message.message});
-      return;
-    case 'pixoo.state':
-      if (number === generation) pixoo = message.state;
       return;
     case 'applied':
     case 'flushed':
@@ -258,9 +186,9 @@ class StartFailed extends Error {}
 function spawnRuntime(): Promise<string> {
   generation += 1;
   const number = generation;
-  // The new runtime's simulated Pixoo starts with the mode and the panel the last one had.
-  const panel = Buffer.from(JSON.stringify(pixoo)).toString('base64url');
-  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', panel, '--', ...runtimeArgs()] : runtimeArgs();
+  // The new runtime's registered modules start with what the last one left, such as what a device beside its module showed.
+  const handovers = Buffer.from(JSON.stringify(devices.handovers())).toString('base64url');
+  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', handovers, '--', ...runtimeArgs()] : runtimeArgs();
   const child = fork(fixtures ? CHILD : MAIN, args, {
     execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
@@ -276,14 +204,13 @@ function spawnRuntime(): Promise<string> {
     heard(child, number, message as ChildMessage);
   });
   child.once('exit', () => {
-    // A runtime that ended no longer waits on its shows, its speakers' calls, its bulbs' answers or its cloud's.
-    for (const waiting of [shows, speakerCalls, exchanges, cloudCalls]) {
-      for (const [key, controller] of waiting) {
-        if (!key.startsWith(`${number} `)) continue;
-        waiting.delete(key);
-        controller.abort();
-      }
+    // A runtime that ended no longer waits on its shows or its registered modules' calls.
+    for (const [key, controller] of shows) {
+      if (!key.startsWith(`${number} `)) continue;
+      shows.delete(key);
+      controller.abort();
     }
+    devices.ended(number);
     died(number);
   });
   return new Promise((ready, failed) => {
@@ -481,78 +408,59 @@ function holdOf(value: unknown): number | undefined {
   return holdMs;
 }
 
-/** The actions the harness accepts for each device: every action a `SimulateRequest` names, as `Unlisted` checks. */
-const ACTIONS = {
-  lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline'],
-  playback: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'], lifx: ['online', 'offline'],
-  tidbyt: ['online', 'offline'], pixoo: ['online', 'offline', 'silent'], nanoleaf: ['online', 'offline', 'power-on', 'power-off', 'lose-next-answer'],
-  'codex-desktop': ['list', 'unusable', 'stall', 'answer'],
-} as const satisfies {readonly [D in SimulateRequest['device']]: readonly Extract<SimulateRequest, {device: D}>['action'][]};
-/** An action a `SimulateRequest` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
-type Unlisted = {[D in SimulateRequest['device']]: Exclude<Extract<SimulateRequest, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[SimulateRequest['device']];
+/** The actions the harness accepts for each fixture module's device: every action a `FixtureSimulation` names, as `Unlisted` checks. */
+const ACTIONS = {lamp: ['hold', 'release', 'fail-next'], chime: ['fault-next'], sign: ['online', 'offline']} as const satisfies {
+  readonly [D in FixtureSimulation['device']]: readonly Extract<FixtureSimulation, {device: D}>['action'][]
+};
+/** An action a `FixtureSimulation` names that `ACTIONS` leaves out, which the harness would refuse: none, or the build fails. */
+type Unlisted = {[D in FixtureSimulation['device']]: Exclude<Extract<FixtureSimulation, {device: D}>['action'], (typeof ACTIONS)[D][number]>}[FixtureSimulation['device']];
 export const EVERY_ACTION_LISTED: [Unlisted] extends [never] ? true : never = true;
-const SPEAKERS: readonly string[] = ['sony', 'sonos'];
-/** The threads the simulated Codex Desktop marker may list (Hub #926): at most 64 thread IDs. */
-const THREAD = /^[A-Za-z0-9_.-]{1,128}$/;
-const threadsOf = (value: unknown): boolean => Array.isArray(value) && value.length <= 64 && value.every(id => typeof id === 'string' && THREAD.test(id));
-/** The simulation a request names, or undefined when its device, action or other field is unknown, so a typo changes nothing. */
+/**
+ * The simulation a request names, or undefined when its device, action or another field is unknown, so a typo changes
+ * nothing: a fixture module's action takes no other field, and a registered module's device admits what its
+ * registration says (Hub #999).
+ */
 function simulationOf(value: unknown): SimulateRequest | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const {device, action, speaker, title, address, sessions, ...rest} = value as Record<string, unknown>;
-  if (Object.keys(rest).length > 0 || typeof device !== 'string' || !Object.hasOwn(ACTIONS, device) || typeof action !== 'string') return undefined;
-  if (!(ACTIONS[device as SimulateRequest['device']] as readonly string[]).includes(action)) return undefined;
-  if (device === 'playback') {
-    if (typeof speaker !== 'string' || !SPEAKERS.includes(speaker) || address !== undefined) return undefined;
-    if (title !== undefined && (typeof title !== 'string' || title.length > 200)) return undefined;
-  } else if (speaker !== undefined || title !== undefined) return undefined;
-  if (device === 'lifx' ? typeof address !== 'string' || address.length > 64 : address !== undefined) return undefined;
-  if (device === 'codex-desktop' && action === 'list' ? !threadsOf(sessions) : sessions !== undefined) return undefined;
-  return value as SimulateRequest;
+  const request = value as Record<string, unknown>;
+  const {device, action, ...rest} = request;
+  if (typeof device === 'string' && Object.hasOwn(ACTIONS, device)) {
+    const listed = ACTIONS[device as FixtureSimulation['device']] as readonly string[];
+    return typeof action === 'string' && listed.includes(action) && Object.keys(rest).length === 0 ? request as FixtureSimulation : undefined;
+  }
+  return devices.admits(request) ? request : undefined;
 }
 
-async function simulate(request: SimulateRequest): Promise<boolean> {
+/** Hands a registered module's simulation to the current runtime's links, and waits for them to hear it. */
+const push = (device: string) => (simulation: DeviceAction): Promise<void> => ask(id => ({type: 'device.push', id, device, simulation}));
+
+async function simulate(request: SimulateRequest): Promise<void> {
   switch (request.device) {
-    case 'pixoo':
-      await ask(id => ({type: 'simulate', id, simulation: request}));
-      pixoo = {...pixoo, mode: request.action};
-      return true;
     case 'chime':
       await control('chime-fault');
-      return true;
+      return;
     case 'sign':
       if (request.action === 'online') signs.online();
       else signs.offline();
-      return true;
-    case 'playback':
-      simulatePlayback(speakers, request);
-      return true;
-    case 'lifx':
-      if (request.action === 'online') lifx.online(request.address);
-      else lifx.offline(request.address);
-      return true;
-    case 'tidbyt':
-      if (request.action === 'online') cloud.online();
-      else cloud.offline();
-      return true;
-    case 'nanoleaf':
-      nanoleaf.act(request.action);
-      return true;
-    case 'codex-desktop':
-      simulateMarker(marker, request);
-      return true;
+      return;
     case 'lamp':
-      break;
+      simulateLamp(request.action);
+      return;
   }
-  switch (request.action) {
+  await devices.act(request, push(request.device));
+}
+
+function simulateLamp(action: string): void {
+  switch (action) {
     case 'hold':
       lamps.hold();
-      return true;
+      return;
     case 'release':
       lamps.release();
-      return true;
+      return;
     case 'fail-next':
       lamps.failNext();
-      return true;
+      return;
   }
 }
 
@@ -571,10 +479,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     case 'GET /state': {
       await flush();
       const state: HarnessState = {
-        generation, devices: {
-          lamp: lamps.state(), chime: chime.state(), sign: signs.state(), playback: speakers.state(), lifx: lifx.state(), tidbyt: cloud.state(), pixoo,
-          nanoleaf: nanoleaf.state(), codexDesktop: marker.state(),
-        },
+        generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), ...devices.states()},
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };
       return answer(response, 200, state);

@@ -5,6 +5,7 @@ export {
   createPlaybackModule, playbackFactory,
   playbackKey, type PlaybackModuleOptions,
 } from './module.js';
+export {playbackSimulation, registration} from './registration.js';
 export {
   configurePlayback, convertHostPlayback, routingIdOf, type ConvertedPlayback, type PlaybackConfig, type PlaybackSection,
 } from './configuration.js';

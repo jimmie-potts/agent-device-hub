@@ -2,26 +2,24 @@
 // runtime's own module host, in this process, on a manual clock and scheduler, with simulated devices that outlive a
 // runtime crash as real ones would. The scenario's parts join the host's bus directly (in process), or reach it through
 // the runtime's gateway (#835) on 127.0.0.1, whose SDK edge checks each part's credential and grant (remote). The
-// gateway's HTTP routes serve both transports. Its state lives in a private temporary directory outside every Git
-// checkout, which `close` removes. Nothing reaches an installed service, port, personal state or device.
+// gateway's HTTP routes serve both transports. Each registered module is built on its simulated devices through its
+// registration (Hub #999), so this file names only the core and the fixture modules. Its state lives in a private
+// temporary directory outside every Git checkout, which `close` removes. Nothing reaches an installed service, port,
+// personal state or device.
 import {mkdtemp, realpath, rm} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
-import {SimulatedMarker, createCodexDesktopModule} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {SimulatedLifx, createLifxModule} from '@jimmie-potts/lifx';
-import {SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
-import {SimulatedPixoo, createPixooModule} from '@jimmie-potts/pixoo';
-import {SimulatedSpeakers, createPlaybackModule} from '@jimmie-potts/playback';
-import {connectRemote, type BunnyModule, type CommandDraft, type Diagnostic, type Participant} from '@jimmie-potts/sdk';
-import {SimulatedCloud, createTidbytModule} from '@jimmie-potts/tidbyt';
+import {
+  connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
+} from '@jimmie-potts/sdk';
 import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
-import {isCoreModule, type LogRecord, type ModuleHealth} from '../../src/index.js';
+import {isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
 import {RUNTIME_SCOPE, runtimeResource} from '../../src/record.js';
 import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from '../../src/state.js';
@@ -34,10 +32,10 @@ import {manualClock} from '../support.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
   type Seed, type Simulation, type TransportName,
-} from './catalog.js';
+} from './framework.js';
 import {
-  GatewayClient, Reader, SCENARIO_SCHEMAS, actionAnswerOf, actionCall, answerOf, follow, partTokens, producerToken, runHookScript, scenarioValidator,
-  simulateMarker, simulatePlayback, sourceOf, writeConfiguration, writeProducer,
+  GatewayClient, Reader, actionAnswerOf, actionCall, admitted, answerOf, follow, partTokens, producerToken, runHookScript, scenarioSchemas, scenarioValidator,
+  sourceOf, writeConfiguration, writeProducer,
 } from './parts.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
@@ -92,6 +90,8 @@ export async function listenLoopback(server: Server, refused: (port: number) => 
 /** One runtime's life, with the module databases it opened, which its crash closes at once. */
 type Generation = {host: ModuleHost; gateway: Gateway; watcher: Participant; logs: LogWriter; databases: Set<DatabaseSync>};
 type Part = {role: Role; source: string; token: string; participant: Participant | undefined; closed: boolean};
+/** A registered module's simulation and its simulated device, which outlives the runtime's restarts and crashes. */
+type Simulated = {simulation: DeviceSimulation; device: unknown};
 
 /** The module, keeping each database it opens in `databases`, so a crash can close them as a process's end would. */
 function holding(module: BunnyModule, databases: Set<DatabaseSync>): BunnyModule {
@@ -110,19 +110,15 @@ class Memory implements MemoryHarness {
   url: string | undefined;
   readonly #seed: Seed;
   readonly #clock = manualClock();
-  readonly #validator = scenarioValidator();
+  /** Every registered module, by name: the runtime's, and any a test adds. */
+  readonly #registrations: ReadonlyMap<string, ModuleRegistration>;
+  readonly #validator: ReturnType<typeof scenarioValidator>;
+  readonly #schemas: Readonly<Record<string, object>>;
   readonly #lamps = new SimulatedLamps(['lamp-1']);
   readonly #chime = new SimulatedChime();
   readonly #signs = new SimulatedSigns();
-  /** The simulated speakers, a slow one waiting on the harness's virtual time. */
-  readonly #speakers = new SimulatedSpeakers({}, {scheduler: this.#clock.scheduler});
-  readonly #lifx = new SimulatedLifx();
-  /** The simulated Tidbyt cloud, which stamps each push with the harness's virtual time. */
-  readonly #cloud = new SimulatedCloud({now: () => this.#clock.now()});
-  readonly #pixoo = new SimulatedPixoo();
-  readonly #nanoleaf = new SimulatedNanoleaf({now: () => this.#clock.now()});
-  /** The simulated Codex Desktop marker (Hub #926). */
-  readonly #marker = new SimulatedMarker();
+  /** Each registered module's simulated device, on the harness's virtual clock and scheduler. */
+  readonly #simulated: ReadonlyMap<string, Simulated>;
   readonly #parts: ReadonlyMap<Role, Part>;
   readonly #tokens = partTokens();
   /** The agent hooks' producer token and file (Hub #926), written once the gateway's port is known. */
@@ -153,8 +149,14 @@ class Memory implements MemoryHarness {
   #loseAcknowledgment = false;
   #closing: Promise<void> | undefined;
 
-  constructor(seed: Seed, transport: TransportName, stateDir: string) {
+  constructor(seed: Seed, transport: TransportName, stateDir: string, registrations: readonly ModuleRegistration[]) {
     this.#seed = seed;
+    this.#registrations = new Map(registrations.map(registration => [registration.name, registration]));
+    this.#validator = scenarioValidator(registrations);
+    this.#schemas = scenarioSchemas(registrations);
+    const options = {now: this.#clock.now, scheduler: this.#clock.scheduler};
+    this.#simulated = new Map(registrations.flatMap(({name, simulation}) =>
+      simulation === undefined ? [] : [[name, {simulation, device: simulation.memory.create(options)}] as const]));
     this.transport = transport;
     this.stateDir = stateDir;
     this.reader = new Reader(seed.follows);
@@ -237,9 +239,8 @@ class Memory implements MemoryHarness {
 
   devices(): DeviceStates {
     return {
-      lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(), playback: this.#speakers.state(), lifx: this.#lifx.state(), tidbyt: this.#cloud.state(),
-      pixoo: this.#pixoo.state(), nanoleaf: this.#nanoleaf.state(),
-      codexDesktop: this.#marker.state(),
+      lamp: this.#lamps.state(), chime: this.#chime.state(), sign: this.#signs.state(),
+      ...Object.fromEntries([...this.#simulated].map(([name, {simulation, device}]) => [name, simulation.memory.state(device)])),
     };
   }
 
@@ -252,30 +253,18 @@ class Memory implements MemoryHarness {
         if (simulation.action === 'online') this.#signs.online();
         else this.#signs.offline();
         return;
-      case 'playback':
-        simulatePlayback(this.#speakers, simulation);
-        return;
-      case 'pixoo':
-        this.#pixoo.set(simulation.action);
-        return;
-      case 'lifx':
-        if (simulation.action === 'online') this.#lifx.online(simulation.address);
-        else this.#lifx.offline(simulation.address);
-        return;
-      case 'tidbyt':
-        if (simulation.action === 'online') this.#cloud.online();
-        else this.#cloud.offline();
-        return;
-      case 'nanoleaf':
-        this.#nanoleaf.act(simulation.action);
-        return;
-      case 'codex-desktop':
-        simulateMarker(this.#marker, simulation);
-        return;
       case 'lamp':
-        break;
+        this.#simulateLamp(simulation.action);
+        return;
     }
-    switch (simulation.action) {
+    // A registered module's device, through its registration (Hub #999).
+    const simulated = this.#simulated.get(simulation.device);
+    if (simulated === undefined || !admitted(simulated.simulation, simulation)) throw new StepFailure('the simulation names an unknown device, action or field');
+    simulated.simulation.memory.act(simulated.device, simulation);
+  }
+
+  #simulateLamp(action: string): void {
+    switch (action) {
       case 'hold':
         this.#lamps.hold();
         return;
@@ -286,6 +275,7 @@ class Memory implements MemoryHarness {
         this.#lamps.failNext();
         return;
     }
+    throw new StepFailure('the simulation names an unknown device, action or field');
   }
 
   async health(): Promise<readonly ModuleHealth[]> {
@@ -463,7 +453,7 @@ class Memory implements MemoryHarness {
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
     const actions = modules.find(isCoreModule)?.actions;
     const gateway = new Gateway({
-      bus: host.bus, host, validator: this.#validator, families: readableFamilies(SCENARIO_SCHEMAS), edge: edge.config, credentials: edge.credentials,
+      bus: host.bus, host, validator: this.#validator, families: readableFamilies(this.#schemas), edge: edge.config, credentials: edge.credentials,
       log: logs.logger(RUNTIME_SCOPE), redactions: logs.redactions, clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir,
       onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); }, ...(actions === undefined ? {} : {actions}),
     });
@@ -472,7 +462,7 @@ class Memory implements MemoryHarness {
     this.#gatewayReady(gateway);
   }
 
-  /** Each module from its factory, with its simulated transport. */
+  /** Each module with its simulated transport: the core and the fixture modules here, every other one through its registration. */
   #build(name: ModuleName): BunnyModule {
     switch (name) {
       case 'core':
@@ -487,23 +477,13 @@ class Memory implements MemoryHarness {
         return createChimeModule({transport: this.#chime});
       case 'sign':
         return createSignModule({transport: this.#signs});
-      case 'playback':
-        // Freshness follows the harness's manual clock, so a silent speaker ages in virtual time.
-        return createPlaybackModule({transport: this.#speakers, monotonic: this.#clock.now});
-      case 'lifx':
-        // Its outbox follows the core's acknowledgments, so it forgets what the core took.
-        return createLifxModule({transport: this.#lifx});
-      case 'tidbyt':
-        // A render's worker answers in real time while virtual time runs ahead, so renders get a deadline no step reaches.
-        return createTidbytModule({transport: this.#cloud.fetch, renderTimeoutMs: 3_600_000});
-      case 'pixoo':
-        // Its outbox follows the core's acknowledgments, so it forgets what the core took.
-        return createPixooModule({transport: this.#pixoo});
-      case 'nanoleaf':
-        return createNanoleafModule({transport: this.#nanoleaf.request});
-      case 'codex-desktop':
-        return createCodexDesktopModule({transport: this.#marker});
     }
+    const simulated = this.#simulated.get(name);
+    if (simulated === undefined) {
+      if (!this.#registrations.has(name)) throw new Error(`no module ${name}`);
+      throw new Error(`the module ${name} registers no simulation`);
+    }
+    return simulated.simulation.memory.build(simulated.device, {now: this.#clock.now, scheduler: this.#clock.scheduler});
   }
 
   /**
@@ -610,10 +590,13 @@ class Memory implements MemoryHarness {
 /**
  * Starts the runtime with the seed's modules, connects the scenario's parts over `transport` and syncs the reader's
  * copies. `root` holds the state directory; it defaults to the system temporary directory, which must lie outside every
- * Git checkout, as the runtime requires.
+ * Git checkout, as the runtime requires. `registrations` are the modules a seed may name beside the core and the
+ * fixture modules: by default every module the runtime's build collected.
  */
-export async function startMemoryHarness(seed: Seed, transport: TransportName, {root = tmpdir()}: {root?: string} = {}): Promise<MemoryHarness> {
-  const harness = new Memory(seed, transport, await realpath(await mkdtemp(join(root, 'bunny-scenario-'))));
+export async function startMemoryHarness(seed: Seed, transport: TransportName, {root = tmpdir(), registrations = REGISTERED}: {
+  root?: string; registrations?: readonly ModuleRegistration[];
+} = {}): Promise<MemoryHarness> {
+  const harness = new Memory(seed, transport, await realpath(await mkdtemp(join(root, 'bunny-scenario-'))), registrations);
   try {
     await harness.open();
   } catch (error) {

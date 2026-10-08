@@ -6,15 +6,16 @@ hosts a fixed list of modules on the SDK's in-process bus and serves health,
 and with `--edge` its [gateway](#gateway) for remote parts, browsers and MCP
 clients, on a loopback port. The
 shipped list in `src/modules.ts` holds the [agent-session core](#agent-session-core)
-and, after it, the device modules: the
+and, after it, every device module that [registers itself](#adding-a-module)
+from its folder under `modules/` (#999): the
 [playback module](../../modules/playback/README.md) (#929), the
 [LIFX module](../../modules/lifx/README.md) (#928), the
 [Tidbyt module](../../modules/tidbyt/README.md) (#930), the
 [Pixoo module](../../modules/pixoo/README.md) (#843), the
 [Nanoleaf module](../../modules/nanoleaf/README.md) (#844) and the
 [Codex Desktop module](../../modules/codex-desktop/README.md) (#926) so far.
-Module stories add theirs after the core, and the runtime also runs with no
-module at all. The [agent hooks](#agent-hooks) reach the core through the
+A module story adds its module in its own folder, and the runtime also runs with
+no module at all. The [agent hooks](#agent-hooks) reach the core through the
 gateway, with `bin/monitor-hook.mjs`.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
@@ -23,8 +24,9 @@ installs it yet; the cutover (#840) does.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable
-subscription: adding or removing a module is a code change in `src/modules.ts`.
-Each entry there is the module's factory, which creates it with its real device
+subscription: adding or removing a module is a code change in its own folder,
+which the build collects (see [Adding a module](#adding-a-module)). Each entry in
+the shipped list is the module's factory, which creates it with its real device
 transport, or with its simulated one under `--simulate`. Each module's settings
 and secrets come from one private [configuration file](#configuration).
 
@@ -38,6 +40,46 @@ names `token`, its API key's file, and the Nanoleaf module names `token`. One he
 name, and writes the configuration file. The `shipped` disposable run, the
 runtime's process tests, the maintenance journal test and the memory script's
 `simulated` variant configure the shipped modules with it.
+
+## Adding a module
+
+A module registers itself from its own folder (#999), so adding runtime and
+harness registration needs no shared module list:
+
+1. Put the module in `modules/<name>/`, a workspace package that imports only
+   the SDK and the contracts packages, with the module's name as its manifest
+   name.
+2. Export `registration`, a `ModuleRegistration` from `@jimmie-potts/sdk`, from
+   the package's entry. It holds the module's factory (`name`, `create`,
+   `simulate`, `schemas` and `simulatedSection`), `shipped`, and where the
+   module starts: `order`, a number, lower first, and `after`, the modules that
+   must start before it, such as one whose records it follows from its start.
+   `registerFamilies` registers its families on a validator when they need
+   checks beyond their schemas. `simulation` says how the scenario harnesses
+   simulate its devices: the `actions` a scenario may ask for, which other
+   fields each takes (`admits`), the in-memory harness's half (`memory`) and a
+   disposable run's (`run`), whose module in the runtime's process reaches the
+   supervisor's simulated device over a link.
+3. Put its scenarios in `apps/runtime/tests/scenarios/modules/<name>.ts`,
+   exporting `scenarios` and, for a disposable run of its own, `runs`.
+4. Add its workspace and build, typecheck and test commands to the existing
+   root scripts and CI. Registration collection does not yet collect those
+   commands; follow [development checks](../../docs/development.md).
+
+The build writes `dist/src/registry.js`, one static import of each folder's
+`registration`, after it compiles the runtime; `src/registry.d.ts` types it.
+Nothing loads at run time: the shipped set is fixed when the runtime is built.
+The shipped list holds the core first, by construction, then each shipped
+registration, after the modules its `after` names, and otherwise by `order`,
+then by name. The list does not assemble when a registration is named `core`,
+two share a name, an `after` names a module that does not ship, or modules wait
+on each other. The current modules use the orders 100 to 600 in steps of 100;
+a new module takes a free number.
+
+The in-memory harness, the disposable run's supervisor and child, and the run's
+seeds and plug-in collect the registrations and the scenario files, so they name
+only the core and the fixture modules. `npm run test:workflow` fails when one of
+those shared files names a device module (`scripts/check-module-names.cjs`).
 
 ## Agent-session core
 
@@ -1382,11 +1424,13 @@ to hold. A failed step names what it observed and stops the scenario. Each run
 type has one execution adapter that runs the same definitions unchanged:
 `tests/scenarios/memory.ts`, the in-memory harness (tier 1, in CI), and the
 [disposable runs](verify/README.md) of #920 (tier 2), whose run adapter is
-`verify/adapter.ts`. Every runtime story adds its scenarios to the catalog.
+`verify/adapter.ts`. The catalog holds the core's and the fixture modules'
+scenarios, and collects each registered module's from its own file under
+`tests/scenarios/modules/`, after the core's, in file-name order (#999).
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
-each built by its factory with its simulated transport, on a manual clock and
-scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
+each built with its simulated transport, a registered module through its
+registration's `simulation`, on a manual clock and scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
 and a reader) first join the host's bus, then reach it through the runtime's
 [gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle

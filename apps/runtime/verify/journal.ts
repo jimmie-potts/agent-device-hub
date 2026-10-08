@@ -3,7 +3,7 @@
 // query does, against the diagnostic contract. Any other line with something in it, such as a usage line or a stack trace,
 // is counted, so that the query can say the journal held lines that were not records.
 import type {LogRecord} from '../src/index.js';
-import type {Generational} from '../tests/scenarios/catalog.js';
+import type {Generational} from '../tests/scenarios/framework.js';
 
 export class Journal {
   readonly entries: Generational<{record: LogRecord}>[] = [];
