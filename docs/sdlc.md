@@ -358,6 +358,10 @@ permission to replace an owner.
      coverage of the issue's fault cases, and whether each exception to a rule
      is honest, stated and justified.
 
+   [ADR 0012 rules and their checks](development.md#adr-0012-rules-and-their-checks)
+   shows which rules a test, kit check or lint rule already enforces, and
+   which ones the reviewer checks.
+
    Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
    `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
    owns the issue, the OpenSpec specs and the contract documents. For a change
