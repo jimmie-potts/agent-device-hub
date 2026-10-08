@@ -325,8 +325,8 @@ it('the dispatcher refuses what is no tracked action before anything is recorded
   });
   assert.equal('error' in moment && moment.error.code, 'unavailable');
   const mode = await t.core.actions.dispatch({
-    key: 'bunny.cmd.mode-set.hub', requestedBy: OPERATOR, requestId: 'req-mode',
-    draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode: 'quiet'}},
+    key: 'bunny.cmd.mode-set.fixture-hub', requestedBy: OPERATOR, requestId: 'req-mode',
+    draft: {type: 'org.bunny.mode.set.requested', subject: 'fixture-hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode: 'quiet'}},
   });
   assert.equal('error' in mode && mode.error.code, 'unavailable');
   for (const [requestId, kind] of [['req-moment', 'moment'], ['req-mode', 'mode']] as const) {

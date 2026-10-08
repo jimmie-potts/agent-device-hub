@@ -332,8 +332,9 @@ modes in controller snapshots, and their modules keep them as native modes in
 `device /desired/mode` and `/capabilities/modes`. The Hub-mode table in the
 [README](README.md#hub-mode-table) maps the Hub's mode to each participating
 device kind's native mode, one way only. `mode/2.0` is the
-Hub's own selection, which [#695](https://github.com/jimmie-potts/agent-device-hub/issues/695)
-owns, and `mode-set/2.0` requests it. Profile 1.0's unused
+Hub's own selection, which [#924](https://github.com/jimmie-potts/agent-device-hub/issues/924)
+owns, and `mode-set/2.0` requests it. [#695](https://github.com/jimmie-potts/agent-device-hub/issues/695)
+adds per-device overrides later. Profile 1.0's unused
 `org.bunny.selection.committed` (`mode` `Work`, `Free` or `Quiet`) maps to
 `mode /mode` in lowercase.
 

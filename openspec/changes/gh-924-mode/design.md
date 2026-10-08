@@ -20,7 +20,7 @@ Hub #924 fills the existing home slot. The core already owns a SQLite store, tra
 ## Risks / Trade-offs
 
 - A crash after saving but before sending leaves the selection saved with absent device evidence. This is deliberate: restart does not reconstruct or replay commands, and absent evidence never becomes success.
-- The mode contract has no application request ID. The panel associates the latest successful mode-set operation with deterministic child IDs, and retires that association when a newer saved selection is not covered by the available operation evidence.
+- The mode contract has no application request ID. The panel shows a recent completed selection request and its deterministic child IDs separately from the current saved choice. It does not infer that old operation evidence describes the current selection or what a device currently shows.
 - Fixed targets include stopped modules. Their commands may fail or become uncertain; other targets proceed and the inbox records each problem.
 - Shared integrations and runtime/browser evidence wait for #923 and the coordinator's host-slot assignment. Unit checks alone do not claim integrated, installed or physical acceptance.
 

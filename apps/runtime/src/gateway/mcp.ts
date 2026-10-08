@@ -15,6 +15,7 @@ import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import type {ActionAnswer} from '../core/tracker.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
 import type {Access} from './access.js';
+import {modeTool} from './mode-tool.js';
 
 /** How long a module's read tool may take before the call is answered `unavailable`. */
 export const TOOL_TIMEOUT_MS = 5000;
@@ -186,6 +187,7 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
     if (module.name === 'core') {
       extensions.recover_approval = recoverTool(host);
       extensions.send_command = commandTool(host);
+      extensions.set_mode = modeTool(host, resultSchema);
     }
     if (Object.keys(extensions).length === 0) continue;
     registrations.push({controllerId: CONTROLLER, deviceId: module.name, extensions});

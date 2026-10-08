@@ -25,7 +25,10 @@ it('under the runtime, the lamp switches on command and the core takes its outco
 
 it('under the runtime, the lamp copies the core\'s mode and stays off in quiet mode', async context => {
   const requester = fixture('requester');
-  await run(context, {modules: [createCoreModule({mode: 'quiet'}), createLampModule({transport: new SimulatedLamps()}), requester]});
+  const core = createCoreModule();
+  await run(context, {modules: [core, createLampModule({transport: new SimulatedLamps()}), requester]});
+  assert.equal('status' in await core.actions.dispatch({key: 'bunny.cmd.mode-set.hub', requestedBy: 'bunny/parts/operator', requestId: 'req-quiet-lamp',
+    draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0', data: {mode: 'quiet'}}}), true);
   const {key, draft} = switchLamp('lamp-1', 'on');
   const result = await contextOf(requester).sdk.request(key, draft, {timeoutMs: 5000});
   assert.equal(result.status, 'rejected');

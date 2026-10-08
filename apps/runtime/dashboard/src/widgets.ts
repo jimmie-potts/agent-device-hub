@@ -19,8 +19,8 @@ export type WidgetDefinition = {
   /** true when the widget offers explicit command actions; a read-only widget has none. */
   commands: boolean;
   /**
-   * A panel the owner-approved layout places now and another story fills (mockup "Recommended (d)"): the Hub mode
-   * selector (#924) and the inbox (#923). It shows its heading and says it is not shown here yet; it reads nothing.
+   * A panel the owner-approved layout places now and another story fills (mockup "Recommended (d)"): the inbox (#923).
+   * It shows its heading and says it is not shown here yet; it reads nothing.
    */
   slot?: {story: string};
 };
@@ -28,7 +28,7 @@ export type WidgetDefinition = {
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
     id: 'hub-mode', name: 'Hub mode', description: 'The Hub mode and the result of each device\'s mode command.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode']}, commands: false, slot: {story: '#924'},
+    sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
   },
   {
     id: 'sessions', name: 'Agent sessions',

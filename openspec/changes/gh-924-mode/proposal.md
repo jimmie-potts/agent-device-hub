@@ -19,6 +19,7 @@
 ### Modified Capabilities
 
 - `runtime-dashboard`: fill the existing Hub-mode panel with explicit controls and separate per-device results.
+- `bunny-message-profile`: require a routing identifier for the mode owner, matching its state and command addresses.
 
 ## Impact
 

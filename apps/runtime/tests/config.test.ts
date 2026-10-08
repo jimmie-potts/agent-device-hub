@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type BunnyModule, type ModuleContext} from '@jimmie-potts/sdk';
-import {CONFIG_SCHEMA, RuntimeError, startRuntime, type LogRecord, type RuntimeHealth} from '../src/index.js';
+import {CONFIG_SCHEMA, RuntimeError, createCoreModule, startRuntime, type LogRecord, type RuntimeHealth} from '../src/index.js';
 import {LogWriter, Redactions} from '../src/log.js';
 import {PrivateFileError, readPrivateFile} from '../src/state.js';
 import {contextOf, entry, fixture, health, it, manualClock, run, stateDir, waitFor, type Fixture} from './support.js';
@@ -441,12 +441,13 @@ it('a module failure whose error code holds the module\'s secret is still record
 
 it('a core the configuration refuses ends the runtime as a failed core does, and the core needs no section', async context => {
   let failures = 0;
-  const core = fixture('core');
+  const core = createCoreModule();
   const file = await configFile(context, {core: {secrets: 'not-a-map'}});
   const {runtime} = await run(context, {modules: [core], configFile: file, onCoreFailure: () => { failures += 1; }});
   assert.equal(entry(runtime.health(), 'core').reason?.code, 'invalid-request');
   assert.equal(failures, 1, 'the runtime hears that its core is gone');
-  const plain = fixture('core');
+  await runtime.stop();
+  const plain = createCoreModule();
   let none = 0;
   const {runtime: fine} = await run(context, {modules: [plain], configFile: await configFile(context, {}), onCoreFailure: () => { none += 1; }});
   assert.equal(entry(fine.health(), 'core').state, 'running', 'a core with no section starts');

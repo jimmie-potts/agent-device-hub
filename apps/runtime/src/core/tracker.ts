@@ -352,7 +352,7 @@ export class Tracker {
       served.end();
       return this.#again(earlier, action, data);
     }
-    const admission: Admission | undefined = operator ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
+    const admission: Admission | undefined = operator || family === 'mode-set' ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
     if (admission !== undefined) this.#admitted.set(requestId, admission);
     this.#schedule();
     this.#record('info', 'command.queued', {...fields, 'bunny.outcome': 'queued'}, span);

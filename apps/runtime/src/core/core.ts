@@ -18,6 +18,8 @@ import {
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {OperationRecords} from './operation-records.js';
+import {ModePart} from './mode.js';
+import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
@@ -154,6 +156,8 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
 export interface CoreModule extends BunnyModule {
   readonly actions: CoreActions;
   readonly operatorActions: CoreOperatorActions;
+  /** Internal qualified host admission bridge; assignment sends nothing. */
+  setModeParticipants(participants: readonly ModeParticipant[]): void;
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -171,10 +175,15 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     stop: () => core?.stop(),
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    setModeParticipants: participants => {
+      if (core === undefined) throw new Error('core-not-started');
+      core.setModeParticipants(participants);
+    },
   };
 }
 
 class Core {
+  readonly #mode: ModePart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
   readonly #clock: Clock;
@@ -212,7 +221,12 @@ class Core {
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), ...added];
+    this.#mode = new ModePart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    });
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#mode, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -552,6 +566,11 @@ class Core {
       this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
+  }
+
+  /** Assigns qualified mode participants once, without sending a command. */
+  setModeParticipants(participants: readonly ModeParticipant[]): void {
+    this.#mode.setParticipants(participants);
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */

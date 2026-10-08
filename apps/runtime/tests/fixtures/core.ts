@@ -6,14 +6,12 @@
 //   each outcome the tracker took for an action, and for each result an action reached without one (a refusal, an
 //   expiry or an uncertain end), so a reader in another process can see what history recorded;
 // - the inbox, until #923: a failed or uncertain action as one `inbox-item` operation;
-// - the mode's owner, until #924.
 // The core serves their families through its sync, and their changes go out through the core's outbox.
 import {createHash} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import type {InboxItem, Mode} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import type {StateDraft} from '@jimmie-potts/sdk';
 import {DEFAULT_CONSUMERS, createCoreModule as createRealCore, type CoreModule, type CoreOptions, type CorePart} from '../../src/index.js';
-import {modeState} from './lamp.js';
 
 const BASE = 'https://bunny.invalid/events/';
 export const HISTORY_SCHEMA = `${BASE}stand-in-history/2.0`;
@@ -59,14 +57,11 @@ const draftOf = (family: Family, record: Entity): StateDraft =>
 /** An entity ID that is also a routing key token, whatever the source and ID it names. */
 const keyed = (...parts: string[]): string => createHash('sha256').update(parts.join(' '), 'utf8').digest('hex').slice(0, 32);
 
-/** The stand-in parts: history, the inbox's operation items and the mode, in the core store. */
-export function standInParts(mode: Mode = 'work'): CorePart {
+/** The remaining stand-in parts: history and inbox operation items, in the core store. */
+export function standInParts(): CorePart {
   let statements: {write: StatementSync; records: StatementSync} | undefined;
-  // The mode never changes here, so its record carries revision 0, which every sync's revision covers.
-  const draft = modeState(mode);
-  const modeRecord: StateDraft = {...draft, data: {...draft.data, revision: 0}};
   return {
-    families: ['mode', ...Object.keys(FAMILIES)],
+    families: Object.keys(FAMILIES),
     open(database: DatabaseSync) {
       database.exec('CREATE TABLE IF NOT EXISTS stand_in_records (family TEXT NOT NULL, id TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY (family, id)) STRICT');
       statements = {
@@ -75,7 +70,7 @@ export function standInParts(mode: Mode = 'work'): CorePart {
       };
     },
     states(families) {
-      const states: StateDraft[] = families.includes('mode') ? [modeRecord] : [];
+      const states: StateDraft[] = [];
       for (const row of (statements?.records.all() ?? []) as {family: string; record: string}[]) {
         if (isFamily(row.family) && families.includes(row.family)) states.push(draftOf(row.family, JSON.parse(row.record) as Entity));
       }
@@ -107,12 +102,9 @@ export function standInParts(mode: Mode = 'work'): CorePart {
   };
 }
 
-export type FixtureCoreOptions = Pick<CoreOptions, 'beforePublish'> & {
-  /** The mode the stand-in serves. Defaults to `work`. */
-  mode?: Mode;
-};
+export type FixtureCoreOptions = Pick<CoreOptions, 'beforePublish'>;
 
 /** The real core with the stand-in parts and the fixture consumers. */
-export function createCoreModule({mode = 'work', beforePublish}: FixtureCoreOptions = {}): CoreModule {
-  return createRealCore({parts: [standInParts(mode)], consumers: FIXTURE_CONSUMERS, ...(beforePublish === undefined ? {} : {beforePublish})});
+export function createCoreModule({beforePublish}: FixtureCoreOptions = {}): CoreModule {
+  return createRealCore({parts: [standInParts()], consumers: FIXTURE_CONSUMERS, ...(beforePublish === undefined ? {} : {beforePublish})});
 }

@@ -40,7 +40,7 @@ try {
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
   assert.deepEqual(await page.locator('.home-wide>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions']);
   assert.deepEqual(await page.locator('.home-narrow>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['inbox', 'attention']);
-  assert.equal(await page.locator('[data-widget=hub-mode] button, [data-widget=hub-mode] select').count(), 0, 'the Hub mode panel sends nothing yet');
+  assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
   await page.getByText('No attention needed.', {exact: true}).waitFor();
   checks.push('the home follows the mockup: Hub mode and sessions wide, the inbox and attention narrow');
 

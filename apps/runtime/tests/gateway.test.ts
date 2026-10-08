@@ -295,7 +295,7 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     const listed = await ask(url, '/mcp', {method: 'POST', token: part.token, headers: await session(part), body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
-  assert.deepEqual(await tools(operator), ['core_recover_approval', 'core_send_command', 'core_sessions', 'sign_status']);
+  assert.deepEqual(await tools(operator), ['core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_mode', 'sign_status']);
   assert.deepEqual(await tools(reader), ['core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
   // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
@@ -315,6 +315,14 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
   assert.deepEqual(recovery.structuredContent.kind, 'extension');
   assert.equal(((recovery.structuredContent.data as {error: {code: string}}).error.code), 'not-found', 'the core\'s refusal, in the shared error body');
   const unknown = await ask(url, '/mcp', {method: 'POST', token: operator.token, headers, body: {jsonrpc: '2.0', id: 4, method: 'tools/call', params: {name: 'no_such_tool', arguments: {}}}});
+  const selected = await tool('core_set_mode', {mode: 'quiet', expectedRevision: 0, requestId: 'req-mcp-mode'});
+  assert.equal(selected.isError, false);
+  assert.deepEqual(selected.structuredContent, {kind: 'extension', data: {result: {status: 'accepted', requestId: 'req-mcp-mode'}}});
+  const saved = await ask(url, '/api/v2/families/mode', {token: reader.token});
+  assert.equal((saved.body as {records: {mode: string}[]}).records[0]?.mode, 'quiet', 'MCP saved the choice through ordinary dispatch');
+  const readMode = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 10, method: 'tools/call',
+    params: {name: 'core_set_mode', arguments: {mode: 'work'}}}});
+  assert.notEqual((readMode.body as {result?: {structuredContent?: {kind?: string}}}).result?.structuredContent?.kind, 'extension', 'a reader cannot reach the mode action');
   assert.equal(typeof (unknown.body as {error?: {code?: unknown}}).error?.code, 'number', 'an unknown tool is an MCP protocol error, as the MCP specification has it');
   const withOrigin = await ask(url, '/mcp', {method: 'POST', token: operator.token, headers: {...headers, origin: url}, body: {jsonrpc: '2.0', id: 5, method: 'tools/list'}});
   assert.deepEqual([withOrigin.status, codeOf(withOrigin)], [403, 'forbidden']);
@@ -912,4 +920,26 @@ it('running build identity is read-only and authenticated; module framing keeps 
   const content = await g.ask(g.url, '/modules/sign/content/preview.png', {token: reader.token});
   assert.equal(content.headers.get('x-frame-options'), 'DENY', 'content response policy is unchanged');
   assertNoToken(g);
+});
+
+it('Hub mode HTTP control refuses invalid/read-only/stale choices and deduplicates an explicit selection', async context => {
+  const reader = READER(), operator = OPERATOR(); const g = await gateway(context, [reader, operator]);
+  const selected = async (): Promise<{mode: string; revision: number}> => {
+    const read = await g.ask(g.url, '/api/v2/families/mode', {token: reader.token}); assert.equal(read.status, 200);
+    const record = (read.body as {records: {mode: string; revision: number}[]}).records[0]; assert.ok(record); return record;
+  };
+  const initial = await selected(); assert.equal(initial.mode, 'free');
+  const submit = (token: string, mode: string, requestId: string, expectedRevision = initial.revision) => g.ask(g.url, '/api/v2/commands/mode-set', {
+    method: 'POST', token, body: {target: 'hub', requestId, data: {mode, expectedRevision}},
+  });
+  assert.equal(codeOf(await submit(reader.token, 'quiet', 'req-read-mode')), 'forbidden');
+  assert.equal(codeOf(await submit(operator.token, 'bad', 'req-invalid-mode')), 'invalid-request');
+  assert.deepEqual(await selected(), initial);
+  assert.equal((await submit(operator.token, 'work', 'req-http-mode')).status, 200);
+  const saved = await selected(); assert.equal(saved.mode, 'work');
+  assert.equal((await submit(operator.token, 'work', 'req-http-mode')).status, 200); assert.deepEqual(await selected(), saved);
+  assert.equal(codeOf(await submit(operator.token, 'quiet', 'req-http-mode')), 'duplicate-conflict');
+  assert.equal(codeOf(await submit(operator.token, 'quiet', 'req-stale-mode')), 'revision-conflict');
+  assert.deepEqual(await selected(), saved);
+  await g.runtime.stop(); assertNoToken(g);
 });

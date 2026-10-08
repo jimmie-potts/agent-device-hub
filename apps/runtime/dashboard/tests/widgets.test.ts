@@ -25,8 +25,9 @@ void test('the home follows the mockup: Hub mode and sessions wide, the inbox an
   assert.deepEqual(wide.map(placement => placement.widget), ['hub-mode', 'sessions']);
   assert.deepEqual(narrow.map(placement => placement.widget), ['inbox', 'attention']);
   assert.deepEqual(invalidPlacements([...wide, ...narrow]), []);
-  // The two panels other stories fill are slots: placed now, reading nothing yet.
-  assert.deepEqual(widgetCatalog.filter(widget => widget.slot !== undefined).map(widget => [widget.id, widget.slot?.story]), [['hub-mode', '#924'], ['inbox', '#923']]);
+  assert.equal(widgetDefinition('hub-mode')?.commands, true);
+  assert.deepEqual(widgetDefinition('hub-mode')?.source.families, ['mode', 'operation']);
+  assert.deepEqual(widgetCatalog.filter(widget => widget.slot !== undefined).map(widget => [widget.id, widget.slot?.story]), [['inbox', '#923']]);
 });
 
 void test('a placement outside the catalog or at an undeclared size is reported', () => {
