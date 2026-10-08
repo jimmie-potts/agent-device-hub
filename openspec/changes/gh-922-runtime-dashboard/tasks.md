@@ -32,4 +32,4 @@
 
 - [x] 6.1 Carry W3C context on all five sign-in/read calls and through their authenticated gateway handoffs; retain pure red/green and invalid-parent/ownership checks.
 - [x] 6.2 Map approval/input chips and dots to the blocked token, keeping continuing questions separate; retain the mapping regression's red/green results.
-- [ ] 6.3 Rebase on the coordinator's final base, run the remaining runtime/browser gates, then synchronize and rearchive before final review.
+- [ ] 6.3 Rebase on the coordinator's final base, run the remaining runtime/browser gates, then synchronize and rearchive before final review. Preserve all module and dashboard catalog assertions after their ownership split.
