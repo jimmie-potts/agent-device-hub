@@ -778,8 +778,9 @@ file's content. Its fields:
   `meta` value that is neither carried nor the schema's, or a `shared_input`
   row other than the fresh one); `layout` and `scenes`; `unexpected` (anything
   else in the module's folder, or a folder that is not private);
-  `configuration` (each section member, and each device, that differs);
-  `secrets`; and `total`.
+  `configuration` (each section member, and each device, that differs, and
+  each device listed twice); `secrets` (a file the runtime's reader refuses,
+  or whose own bytes are not the token alone); and `total`.
 - `digest`: SHA-256 over the carried rows (`store`), the written files
   (`files`) and the section (`configuration`), with each secret named by its
   file's name, so two migrations of one source into other folders give the
@@ -804,6 +805,7 @@ no-go.
 | `lease-unavailable` | The lease's lock file is not a regular file private to the user |
 | `destination-not-empty` | Something the tool writes is already there: `modules/nanoleaf.sqlite` or its `-wal`, `-shm` or `-journal` file, or a non-empty `modules/nanoleaf/`, in the state directory; a `nanoleaf-<device>-token` file in the secrets directory; or the section file. Remove them, or migrate into fresh ones |
 | `destination-missing` | `verify` found no module database |
+| `paths-overlap` | The state directory, the secrets directory or the section's folder lies inside the source directory, or the source inside one of them |
 | `secrets-dir-refused`, `section-dir-refused` | The secrets directory, or the section file's directory, is not private, or is inside a Git checkout, on `/mnt` or reached through a link |
 | `module-db-not-private`, `module-folder-not-private`, `state-dir-*` | The runtime's [State](#state) rules refuse the path |
 | `source-missing` | The source directory, its `status.sqlite` or its `config.json` is missing |

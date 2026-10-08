@@ -12,8 +12,9 @@
 // configuration file that holds the section. Each prints one JSON line (`nanoleaf-migration/1.0`) with counts, codes and
 // SHA-256 digests only, never a token, an address, a path or a name, and exits with one of `EXIT`.
 import {timingSafeEqual} from 'node:crypto';
+import {realpathSync} from 'node:fs';
 import {lstat, readdir, rm} from 'node:fs/promises';
-import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, resolve, sep} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {parseArgs} from 'node:util';
 import {
@@ -23,7 +24,7 @@ import {
 import {loadSecret} from './host.js';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
 import {
-  CONFIG_SCHEMA, MAX_CONFIG_BYTES, RuntimeError, checkStateDirectory, openModuleDatabase, openModuleFolder, prepareStateDirectory, readPrivateFile,
+  CONFIG_SCHEMA, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, checkStateDirectory, openModuleDatabase, openModuleFolder, prepareStateDirectory, readPrivateFile,
 } from './state.js';
 
 export const NANOLEAF_MIGRATION_USAGE = 'usage: migrate-nanoleaf.js migrate|verify --source <dir> --state-dir <dir> --secrets-dir <dir> --section <file>; '
@@ -88,6 +89,8 @@ const TEXT: Readonly<Record<string, string>> = {
   'disk-short': 'The file system ran out of space while the tool wrote.',
   'destination-not-clean': 'The module\'s database kept a log after the tool closed it, so its file lacks commits: nothing was migrated.',
   interrupted: 'A signal stopped the tool before it finished.',
+  'paths-overlap': 'The state directory, the secrets directory or the section\'s folder lies inside the source directory, or the source inside one of '
+    + 'them: keep the bridge\'s state and the runtime\'s apart.',
   internal: 'The tool failed unexpectedly.',
 };
 const STATE_DIR = 'The state directory is refused: it must be absolute, private, outside every Git checkout and off /mnt, with no link along it.';
@@ -140,6 +143,24 @@ async function exists(path: string): Promise<boolean> {
     if (errno(error) === 'ENOENT') return false;
     throw error;
   }
+}
+
+/** Whether a path is `parent` or lies inside it. */
+const within = (path: string, parent: string): boolean => path === parent || path.startsWith(parent.endsWith(sep) ? parent : `${parent}${sep}`);
+
+/** The source's real path when it exists; the destinations are refused when reached through a link, so theirs are real. */
+function realOrResolved(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/** Whether a destination lies inside the source, or the source inside a destination. */
+function overlap(input: Input): boolean {
+  const source = realOrResolved(input.source);
+  return [input.stateDir, input.secretsDir, dirname(input.section)].some(destination => within(destination, source) || within(source, destination));
 }
 
 /** Whether the module has no database, log or journal yet, and no folder or an empty one that is not a link. */
@@ -199,6 +220,7 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
   try {
     if (stopped()) throw new Refusal('interrupted');
     // Every refusal but the lease's comes before anything is created: the paths, the destination and the source.
+    if (overlap(input)) throw new Refusal('paths-overlap');
     if (operation === 'verify' && !await exists(input.stateDir)) throw new Refusal('destination-missing');
     const stateDir = await checkStateDirectory(input.stateDir);
     const database = join(stateDir, 'modules', `${MODULE}.sqlite`);
@@ -206,6 +228,7 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
     if (operation === 'verify') {
       if (!await exists(database)) throw new Refusal('destination-missing');
       source = InstalledState.open(input.source);
+      if (stopped()) throw new Refusal('interrupted');
       lease = await holdRuntimeLease(stateDir);
       return await verify(source, input, database, folder, emit, options.signal);
     }
@@ -215,6 +238,8 @@ export async function runNanoleafMigration(argv: readonly string[], options: Nan
     source = InstalledState.open(input.source);
     const converted = convertNanoleafState(source, secretsDir);
     for (const path of Object.values(converted.section.secrets)) if (await exists(path)) throw new Refusal('destination-not-empty');
+    // A signal while the source was read stops the tool here, before anything is created.
+    if (stopped()) throw new Refusal('interrupted');
     // The lease creates the state directory, `modules/` and its empty lock file, as a runtime's start does. Under it the
     // destination is checked again, since a runtime that started meanwhile may have made it; then the output folders.
     lease = await holdRuntimeLease(await prepareStateDirectory(stateDir));
@@ -255,6 +280,9 @@ async function migrateInto(source: InstalledState, converted: ConvertedNanoleaf,
     foldLog(db);
     db.close();
     db = undefined;
+    // The new database and folder are entries of `modules/`, which the lease may also have made in the state directory.
+    syncDirectory(join(targets.stateDir, 'modules'));
+    syncDirectory(targets.stateDir);
     await stage('closed');
     if (await logLeft(targets.database)) throw new Refusal('destination-not-clean');
     await stage('secrets');
@@ -352,6 +380,8 @@ function sectionDifferences(expected: NanoleafSection, actual: unknown): number 
     }
     const listed = actual.devices as unknown[];
     const byId = new Map(listed.map(device => [isRecord(device) ? device.id : undefined, device]));
+    // A device listed twice is one entry too many.
+    count += listed.length - byId.size;
     for (const device of expected.devices) if (!sameValue(byId.get(device.id), device)) count += 1;
     count += listed.filter(device => !expected.devices.some(known => isRecord(device) && known.id === device.id)).length;
   }
@@ -372,12 +402,16 @@ async function verify(source: InstalledState, input: Input, database: string, fo
   for (const [name, token] of expected.tokens) {
     const path = expected.section.secrets[name];
     let text: string | undefined;
+    let raw: string | undefined;
     try {
+      // The runtime's own reader must take the file, and the file must hold the token alone: that reader strips
+      // trailing line breaks, so the file's own bytes are compared too.
       text = path === undefined ? undefined : await loadSecret(name, path);
+      raw = path === undefined ? undefined : new TextDecoder('utf-8', {fatal: true}).decode(await readPrivateFile(path, MAX_SECRET_BYTES));
     } catch {
       text = undefined;
     }
-    if (text === undefined || !sameSecret(text, token)) secrets += 1;
+    if (text === undefined || raw === undefined || !sameSecret(text, token) || !sameSecret(raw, token)) secrets += 1;
   }
   if (signal?.aborted === true) throw new Refusal('interrupted');
   const mismatches = {...store.mismatches, configuration, secrets};

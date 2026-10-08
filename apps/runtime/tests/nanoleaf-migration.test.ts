@@ -239,7 +239,9 @@ it('refuses a destination that already has files, and a verify with nothing to v
 
 it('refuses a source it cannot carry, naming the code, and writes nothing', async context => {
   const empty = await paths(context);
-  const {exit, line} = await tool(['migrate', '--source', empty.root, ...args('migrate', empty).slice(3)]);
+  const nothing = join(empty.root, 'nothing');
+  await mkdir(nothing, {mode: 0o700});
+  const {exit, line} = await tool(['migrate', '--source', nothing, ...args('migrate', empty).slice(3)]);
   assert.deepEqual([exit, line.code, line.message], [EXIT.refused, 'source-missing', 'The source directory, its status.sqlite or its config.json is missing.']);
   assert.ok(await nothingCreated(empty), 'a source refusal creates no folder and takes no lease');
   const unconfigured = await paths(context, false);
@@ -338,6 +340,45 @@ it('a real SIGINT or SIGTERM mid-run removes the database with its log, the fold
     for (const suffix of ['', '-wal', '-shm', '-journal']) assert.ok(await absent(join(p.state, 'modules', `nanoleaf.sqlite${suffix}`)), `${signal} ${suffix}`);
     assert.ok(await untouched(p), signal);
   }
+});
+
+it('a signal during the source read stops the tool before it takes the lease, and creates nothing', async context => {
+  const p = await paths(context);
+  // A signal that comes after the first check: the next check, before the lease, sees it.
+  let reads = 0;
+  const signal = {get aborted() { reads += 1; return reads > 1; }} as unknown as AbortSignal;
+  const {exit, line} = await tool(args('migrate', p), {signal});
+  assert.deepEqual([exit, line.result, line.code], [EXIT.refused, 'refused', 'interrupted']);
+  assert.ok(await nothingCreated(p), 'no state directory, lease file or secrets directory');
+});
+
+it('refuses a destination inside the source, and the source inside a destination, creating nothing', async context => {
+  const p = await paths(context);
+  const before = await readdir(p.source);
+  for (const inside of [{state: join(p.source, 'state')}, {secrets: join(p.source, 'secrets')}, {section: join(p.source, 'out', 'section.json')},
+    {state: p.root}, {secrets: p.root}, {section: join(p.root, 'section.json')}]) {
+    const q = {...p, ...inside};
+    const {exit, line} = await tool(args('migrate', q));
+    assert.deepEqual([exit, line.code], [EXIT.refused, 'paths-overlap'], JSON.stringify(inside));
+    const verify = await tool(args('verify', q));
+    assert.equal(verify.line.code, 'paths-overlap', JSON.stringify(inside));
+  }
+  assert.deepEqual(await readdir(p.source), before, 'nothing was made in the source');
+  assert.ok(await nothingCreated(p));
+});
+
+it('verify counts a secret file with a line break after its token, and a device the section lists twice', async context => {
+  const p = await paths(context);
+  assert.equal((await tool(args('migrate', p))).exit, EXIT.ok);
+  // The runtime's reader strips trailing line breaks, so only the file's own bytes show one.
+  await writeFile(join(p.secrets, 'nanoleaf-wall-token'), `${SYNTHETIC_TOKEN}\n`, {mode: 0o600});
+  const newline = await tool(args('verify', p));
+  assert.deepEqual([newline.exit, newline.line.mismatches?.secrets, newline.line.mismatches?.total], [EXIT.mismatch, 1, 1]);
+  await writeFile(join(p.secrets, 'nanoleaf-wall-token'), SYNTHETIC_TOKEN, {mode: 0o600});
+  const section = JSON.parse(await readFile(p.section, 'utf8')) as {devices: unknown[]};
+  await writeFile(p.section, JSON.stringify({...section, devices: [...section.devices, section.devices[0]]}), {mode: 0o600});
+  const twice = await tool(args('verify', p));
+  assert.deepEqual([twice.exit, twice.line.mismatches?.configuration, twice.line.mismatches?.total], [EXIT.mismatch, 1, 1]);
 });
 
 it('verify exits 1 and counts a changed secret, a changed address and a changed store', async context => {
