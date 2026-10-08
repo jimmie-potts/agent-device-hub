@@ -4,7 +4,7 @@
 // body and recorded with the route's template. The dashboard's own browser suites drive the real bundle.
 import assert from 'node:assert/strict';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
-import {request as httpRequest} from 'node:http';
+import {request as httpRequest, type IncomingMessage} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
@@ -26,15 +26,15 @@ async function built(context: TestContext, files = true): Promise<URL> {
   return pathToFileURL(`${dir}/`);
 }
 
-async function gateway(context: TestContext, files = true): Promise<{url: string; logs: () => readonly LogRecord[]}> {
+async function gateway(context: TestContext, files = true): Promise<{url: string; logs: () => readonly LogRecord[]; sessions: () => number}> {
   const {config} = await edgeConfig(context, [], {browserAccess: 'trusted-loopback'});
   const {runtime, logs} = await run(context, {modules: [], configFile: config, edge: {schemas: {}, dashboard: await built(context, files)}});
-  return {url: runtime.url, logs: () => logs};
+  return {url: runtime.url, logs: () => logs, sessions: () => runtime.gateway()?.access.counts().sessions ?? 0};
 }
 
 type Answer = {status: number; headers: Headers; text: string; code?: unknown};
 /** One raw request, so the fetch metadata is what a browser would send: fetch would set its own `sec-fetch-mode`. */
-function get(url: string, path: string, headers: Record<string, string> = {}, method = 'GET'): Promise<Answer> {
+function get(url: string, path: string, headers: Record<string, string> = {}, method = 'GET', body?: string): Promise<Answer> {
   return new Promise((resolve, reject) => {
     const sent = httpRequest(new URL(path, url), {method, headers}, response => {
       const chunks: Buffer[] = [];
@@ -42,7 +42,7 @@ function get(url: string, path: string, headers: Record<string, string> = {}, me
       response.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         const answered = new Headers();
-        for (const [name, value] of Object.entries(response.headers)) if (typeof value === 'string') answered.set(name, value);
+        for (const [name, value] of Object.entries(response.headers)) if (value !== undefined) answered.set(name, typeof value === 'string' ? value : value.join(', '));
         let code: unknown;
         try {
           code = (JSON.parse(text) as {error?: {code?: unknown}}).error?.code;
@@ -54,7 +54,7 @@ function get(url: string, path: string, headers: Record<string, string> = {}, me
       response.on('error', reject);
     });
     sent.on('error', reject);
-    sent.end();
+    sent.end(body);
   });
 }
 
@@ -81,6 +81,10 @@ it('the page and its assets load without a session from a bookmark, the launcher
   // A bookmark on the other loopback name loads the same page (Hub #276).
   const localhost = url.replace('127.0.0.1', 'localhost');
   assert.equal((await get(localhost, '/', {'sec-fetch-site': 'same-origin', origin: localhost})).status, 200);
+  // Only the three paths are the dashboard's: nothing else in its built folder, or beside it, is served.
+  for (const path of ['/index.html', '/dashboard.js.map', '/../package.json', '/dashboard.css/', '/dashboard']) {
+    assert.notEqual((await get(url, path)).status, 200, path);
+  }
 });
 
 it('the page alone opens from another local app\'s link; other sites, frames, fetches, other methods and queries are refused', async context => {
@@ -117,6 +121,36 @@ it('a runtime whose dashboard is not built answers not-found on its paths, and e
     assert.deepEqual([answer.status, answer.code], [404, 'not-found'], path);
     assert.match(answer.text, /the dashboard is not built/);
   }
-  // Only the three paths are the dashboard's: nothing else in its folder, or beside it, is served.
-  for (const path of ['/index.html', '/dashboard.js.map', '/../package.json']) assert.equal((await get(url, path)).status === 200, false, path);
+});
+
+/** A trusted loopback sign-in from this origin's page, with the browser's cookie if it has one; its new cookie. */
+async function signIn(url: string, cookie?: string): Promise<string> {
+  const origin = url;
+  const answer = await get(url, '/api/v2/browser/session', {
+    origin, 'sec-fetch-site': 'same-origin', 'bunny-request': '1', 'content-type': 'application/json', 'content-length': '2',
+    ...(cookie === undefined ? {} : {cookie}),
+  }, 'POST', '{}');
+  assert.equal(answer.status, 200);
+  return (answer.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+}
+const authority = async (url: string, cookie: string): Promise<number> => (await get(url, '/api/v2/authority?scope=read', {cookie, 'sec-fetch-site': 'same-origin'})).status;
+
+it('a new sign-in ends the session the browser\'s cookie names, with its streams, so no session outlives every cookie', async context => {
+  const {url, sessions} = await gateway(context);
+  const first = await signIn(url);
+  // The first session holds an SDK stream, as a dashboard tab does.
+  const stream = await new Promise<IncomingMessage>((resolve, reject) => {
+    const sent = httpRequest(new URL('/api/sdk/v1/stream', url), {headers: {cookie: first, 'sec-fetch-site': 'same-origin', 'bunny-source': 'bunny/parts/dashboard'}}, resolve);
+    sent.on('error', reject);
+    sent.end();
+  });
+  assert.equal(stream.statusCode, 200);
+  const ended = new Promise<void>(resolve => { stream.on('close', () => { resolve(); }); stream.resume(); });
+  // Another tab signs in again with the same cookie: the session the cookie named ends, and its stream with it.
+  const second = await signIn(url, first);
+  await ended;
+  assert.deepEqual([await authority(url, first), await authority(url, second), sessions()], [401, 200, 1]);
+  // A cookie that names no live session is no obstacle: the sign-in opens a new one.
+  const third = await signIn(url, 'bunny-session=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+  assert.deepEqual([await authority(url, second), await authority(url, third), sessions()], [200, 200, 2]);
 });

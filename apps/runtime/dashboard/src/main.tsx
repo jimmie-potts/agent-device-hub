@@ -9,7 +9,7 @@ import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
 import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
 import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, trustedSignIn} from './signin.ts';
-import {Badge, Facts, InfoTip, Select, useCommand} from './ui.tsx';
+import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {homeLayout, widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
 import './style.css';
 
@@ -94,27 +94,20 @@ function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
 }
 
-/** One retained notice of a finished turn, and the dashboard's own explicit acknowledgment of it. */
-function Notice({session, notice, revision, live, connection}: {
-  session: string; notice: NoticeRow; revision: number; live: boolean; connection: DashboardConnection;
-}): React.JSX.Element {
-  const command = useCommand(revision);
+/**
+ * One retained notice of a finished turn and who acknowledged it. The row offers no acknowledgment of its own (owner
+ * decision, 2026-10-08): the record clears a finished turn, and clearing one on every device is #1009's.
+ */
+function Notice({notice}: {notice: NoticeRow}): React.JSX.Element {
   const by = notice.acknowledgedBy.length === 0 ? 'none' : notice.acknowledgedBy.join(', ');
-  const reason = !live ? 'Not connected' : undefined;
   return <div className="notice">
     <p>Turn {notice.turn} ended</p>
     <p className="hint">Acknowledged by: {by}. This does not establish success or readership.</p>
-    {!notice.byDashboard && <div className="actions">
-      <button type="button" className="secondary" disabled={reason !== undefined || command.busy || command.locked}
-        onClick={() => { command.run(() => connection.acknowledge(session, notice.id), 'Acknowledged for the dashboard.'); }}>Acknowledge for the dashboard</button>
-      {reason !== undefined && <span className="hint">{reason}</span>}
-    </div>}
-    <p role="status" data-tone={command.status.state}>{command.status.text}</p>
   </div>;
 }
 
 /** The name, state and attention stay visible; the evidence and the rare facts sit behind Details. */
-function SessionRowView({row, live, now, connection}: {row: SessionRow; live: boolean; now: number; connection: DashboardConnection}): React.JSX.Element {
+function SessionRowView({row, live, now}: {row: SessionRow; live: boolean; now: number}): React.JSX.Element {
   const stale = row.uncertain || !live;
   const elapsed = Math.max(0, now - row.lastEvidenceAtMs);
   return <article className="session" data-session={row.id} data-chip={row.chip}>
@@ -127,8 +120,7 @@ function SessionRowView({row, live, now, connection}: {row: SessionRow; live: bo
       </InfoTip>
     </div>
     {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
-    {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice =>
-      <Notice key={notice.id} session={row.id} notice={notice} revision={row.revision} live={live} connection={connection}/>)}</>}
+    {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
     <details className="details session-details"><summary>Details</summary><Facts className="strip" items={[
       ['Source', row.facts.source], ['Session ID', row.facts.sessionId], ['Activity', row.facts.activity], ['Last evidence', `${age(elapsed)} ago`],
       ['Read evidence', row.facts.read], ['Parent', row.facts.parent], ['Attributable children', row.facts.children],
@@ -136,8 +128,8 @@ function SessionRowView({row, live, now, connection}: {row: SessionRow; live: bo
   </article>;
 }
 
-function SessionsWidget({state, rows, live, now, connection, size}: {
-  state: DashboardState; rows: readonly SessionRow[]; live: boolean; now: number; connection: DashboardConnection; size: WidgetSize;
+function SessionsWidget({state, rows, live, now, size}: {
+  state: DashboardState; rows: readonly SessionRow[]; live: boolean; now: number; size: WidgetSize;
 }): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('');
@@ -145,7 +137,7 @@ function SessionsWidget({state, rows, live, now, connection, size}: {
   const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
   const filtering = query !== '' || provider !== '';
   return <Widget id="sessions" size={size}>
-    <p className="hint">Current state, synced from the core. A finished turn stays unread until the session record says otherwise.</p>
+    <p className="hint">Current state, synced from the core. A finished turn stays unread until the next turn starts, the session record shows it read, or a device acknowledges it.</p>
     <div className="filters">
       <label>Find a session<input type="search" maxLength={120} value={query} onChange={event => { setQuery(event.target.value); }} placeholder="Label, title, project or session ID"/></label>
       <Select label="Provider" value={provider} onChange={setProvider} options={[{value: '', label: 'All providers'}, {value: 'codex', label: 'codex'}, {value: 'claude', label: 'claude'}]}/>
@@ -153,7 +145,7 @@ function SessionsWidget({state, rows, live, now, connection, size}: {
     {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : state.sessions.synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
       <p>{filtering ? 'Change the filters to see other sessions.' : 'The page shows sessions as soon as the core reports them.'}</p></div>}
     <div className="sessions">{rows.map(row => <div key={`${row.id}:${row.generation}`} hidden={!shown.has(row.id)}>
-      <SessionRowView row={row} live={live} now={now} connection={connection}/>
+      <SessionRowView row={row} live={live} now={now}/>
     </div>)}</div>
   </Widget>;
 }
@@ -187,7 +179,7 @@ function liveNotice(state: DashboardState): string | undefined {
     case 'ended':
       return 'Your session ended. Sign in again to follow live changes; these are the last records the page had.';
     case 'reconnecting':
-      return 'Reconnecting. These are the last records the page had; acknowledgments wait until it is back.';
+      return 'Reconnecting. These are the last records the page had.';
     case 'connecting':
       return undefined;
     case 'connected':
@@ -229,7 +221,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const known = route.kind === 'home' || route.kind === 'connections';
   const place = (placement: Placement): React.ReactNode => {
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
-    if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} connection={connection} size={placement.size}/>;
+    if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} size={placement.size}/>;
     if (placement.widget === 'attention') return <AttentionWidget key="attention" rows={rows} size={placement.size}/>;
     return null;
   };
@@ -291,10 +283,18 @@ function App(): React.JSX.Element {
     void next.start();
     void previewPlaces().then(found => { if (mine === attempt.current) setLinks(found ?? {}); });
   };
-  /** Signs in by trusted loopback, after a person's click or on load; never again by itself. */
+  /**
+   * Signs in after a person's click or on load, never again by itself. A live session that the browser already holds,
+   * as another tab opened, is used as it is, so no session outlives the cookie that names it.
+   */
   const signIn = async (): Promise<void> => {
     const mine = ++attempt.current;
     setPhase({kind: 'starting'});
+    if (await currentSession() === 'live') {
+      open(mine);
+      return;
+    }
+    if (mine !== attempt.current) return;
     const result = await trustedSignIn();
     if (mine !== attempt.current) return;
     if (result === 'signed-in') open(mine);

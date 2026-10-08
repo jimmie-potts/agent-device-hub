@@ -323,11 +323,12 @@ class RemoteClient {
         this.#delayMs = Math.min(this.#delayMs * 2, MAX_RECONNECT_DELAY_MS);
         // A credential revoked or a browser session ended keeps the edge refusing until the part is granted again. The
         // client keeps trying with its backoff, and says so once, so a page can offer to sign in again.
+        // A network failure between two refusals changes nothing: the part is still refused, and hears of it once.
         const code = error instanceof SdkError ? error.body.error.code : undefined;
-        if ((code === 'unauthenticated' || code === 'forbidden') && code !== refused) {
-          this.#diagnose({event: 'remote.refused', level: levelOf(code), source: this.#source, code, attempts});
+        if (code === 'unauthenticated' || code === 'forbidden') {
+          if (code !== refused) this.#diagnose({event: 'remote.refused', level: levelOf(code), source: this.#source, code, attempts});
+          refused = code;
         }
-        refused = code;
       }
     }
   }

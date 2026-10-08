@@ -1,10 +1,10 @@
 // What the dashboard shows of each agent session (Hub #922), from the session record alone: the name's precedence, the
-// chip's state as the shared status helper ranks it, a finished turn unread until an acknowledgment or the session's
-// end clears it in the record, and the attention lines and facts the old dashboard showed.
+// chip's state, a finished turn unread until a consumer's acknowledgment, the next turn or positive read evidence on the
+// record clears it (owner decision, 2026-10-08), and the attention lines and facts the old dashboard showed.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {CHIP_TEXT, age, chipOf, clientName, matches, sessionName, sessionRow} from '../src/sessions.ts';
+import {CHIP_TEXT, age, chipOf, clientName, finishedUnread, matches, sessionName, sessionRow} from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
 /** A synthetic, current, idle Claude Code session. */
@@ -44,18 +44,29 @@ void test('the chip ranks attention over work over a finished turn, and names th
   assert.equal(CHIP_TEXT.finished, 'Finished · unread');
 });
 
-void test('a finished turn stays unread until the record holds an acknowledgment, and the dashboard\'s own is told apart', () => {
+void test('a finished turn stays unread until the record holds evidence that clears it, never inferred from missing evidence', () => {
   const unread = sessionRow(record({notices: finished()}));
-  assert.deepEqual([unread.chip, unread.finished], ['finished', true]);
-  assert.deepEqual(unread.notices, [{id: NOTICE, turn: 'turn-1', acknowledgedBy: [], byDashboard: false}]);
-  // Read evidence is a separate fact: it never clears the finished turn, as the shared helper decides.
-  assert.deepEqual([sessionRow(record({notices: finished(), read: 'read', identity: {...record().identity, provider: 'codex', client: 'desktop'}})).chip], ['finished']);
-  // Any consumer's acknowledgment clears it, as LIFX and Tidbyt see it: a Pixoo dismissal, or a new turn for the
-  // consumers that clear on one.
-  for (const consumer of ['pixoo', 'nanoleaf', 'dashboard']) {
-    const row = sessionRow(record({notices: finished([consumer])}));
-    assert.deepEqual([row.chip, row.finished, row.notices[0]?.byDashboard], ['idle', false, consumer === 'dashboard'], consumer);
+  assert.equal(unread.chip, 'finished');
+  assert.deepEqual(unread.notices, [{id: NOTICE, turn: 'turn-1', acknowledgedBy: []}]);
+  assert.equal(finishedUnread(record({notices: finished(), read: 'unread'})), true, 'unread evidence keeps it');
+  assert.equal(finishedUnread(record({notices: finished(), read: 'unknown'})), true, 'no read evidence is not read');
+  // Any consumer's acknowledgment on the record clears it, as on LIFX and Tidbyt, #1009's operator clear among them.
+  for (const consumer of ['pixoo', 'nanoleaf', 'dashboard', 'operator']) {
+    assert.deepEqual([sessionRow(record({notices: finished([consumer])})).chip, finishedUnread(record({notices: finished([consumer])}))], ['idle', false], consumer);
   }
+});
+
+void test('positive read evidence on the record clears a finished turn', () => {
+  const desktop = {...record().identity, provider: 'codex', client: 'desktop'} as const;
+  assert.equal(sessionRow(record({identity: desktop, notices: finished(), read: 'unread'})).chip, 'finished');
+  assert.equal(sessionRow(record({identity: desktop, notices: finished(), read: 'read'})).chip, 'idle', 'Codex Desktop\'s read marker clears it');
+});
+
+void test('the session\'s next turn clears the earlier finished turn, while an unknown turn proves nothing', () => {
+  assert.equal(chipOf(record({turn: {status: 'known', id: 'turn-2'}, notices: finished()})), 'idle', 'turn-2 started after turn-1 ended');
+  assert.equal(chipOf(record({turn: {status: 'unknown'}, notices: finished()})), 'finished', 'an unknown current turn is no evidence of a next one');
+  const unknownNotice: SessionRecord['notices'] = [{id: NOTICE, kind: 'turn-ended', turn: {status: 'unknown'}, acknowledgedBy: []}];
+  assert.equal(chipOf(record({turn: {status: 'known', id: 'turn-2'}, notices: unknownNotice})), 'finished', 'a notice on an unknown turn stays');
 });
 
 void test('a record whose evidence is uncertain says so, and its facts are the old Details', () => {

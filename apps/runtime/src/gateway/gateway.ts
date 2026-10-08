@@ -653,16 +653,25 @@ export class Gateway {
     }
     const input = await readBody(request);
     const closed = (): void => { if (this.#closed) throw refuse('unavailable', 'the runtime is stopping'); };
+    /**
+     * A new session replaces the one the browser's cookie names, which ends with its streams (#922): every tab of the
+     * origin shares one cookie, so a session no cookie names any more would outlive every logout until its expiry.
+     */
+    const replace = (): Answer => {
+      const previous = this.access.endSession(request);
+      if (previous !== undefined) this.edge.disconnectPrincipal(previous);
+      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+    };
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
       if (Object.keys(input).length !== 1 || typeof code !== 'string' || !this.access.takeLaunch(code)) throw refuse('unauthenticated', 'the launch code is not good');
       closed();
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return replace();
     }
     if (Object.keys(input).length > 0) throw refuse('invalid-request', 'the body is an empty object');
     if (action === 'session') {
       closed();
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return replace();
     }
     const ended = this.access.endSession(request);
     if (ended !== undefined) this.edge.disconnectPrincipal(ended);

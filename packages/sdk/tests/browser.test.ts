@@ -89,3 +89,35 @@ it('a reconnect the edge refuses is reported once as remote.refused, and the par
     await edge.close();
   }
 });
+
+it('a reconnect refused, then unreachable, then refused again is reported refused once', async () => {
+  let attempt = 0;
+  // Stream attempts after the first connection: refused, unreachable (the runtime restarting), refused, then admitted.
+  const plan = ['refused', 'unreachable', 'refused', 'admitted'];
+  const step = (): string => plan[Math.min(attempt, plan.length - 1)] ?? 'admitted';
+  let connected = false;
+  const edge = await startEdge({
+    refuse: route => route === 'stream' && connected && step() === 'unreachable' && (attempt += 1) > 0,
+    authenticate: request => {
+      if (!connected || request.url?.endsWith('/stream') !== true) return {source: 'bunny/wall', id: 'browser-1'};
+      const now = step();
+      if (now === 'admitted') return {source: 'bunny/wall', id: 'browser-1'};
+      attempt += 1;
+      return undefined;
+    },
+  });
+  const heard: Diagnostic[] = [];
+  let page: Participant | undefined;
+  try {
+    page = await connectRemote({url: edge.url, source: 'bunny/wall', browser: true, reconnectDelayMs: 10, onDiagnostic: diagnostic => { heard.push(diagnostic); }});
+    await page.subscribe(`bunny.state.${SESSION_FAMILY}.*`, () => {});
+    connected = true;
+    edge.edge.disconnectPrincipal('browser-1');
+    await until(() => heard.some(diagnostic => diagnostic.event === 'remote.reconnected'), 'the reconnect');
+    assert.equal(attempt, 3, 'refused, unreachable and refused before it was admitted');
+    assert.deepEqual(heard.map(diagnostic => diagnostic.event), ['remote.disconnected', 'remote.refused', 'remote.reconnected'], 'refused once');
+  } finally {
+    await page?.close();
+    await edge.close();
+  }
+});

@@ -1,8 +1,7 @@
-// The dashboard's shared pieces (Hub #922): badges, fact lists, the informational tip and the command status, adapted
-// from `apps/dashboard/src/controls.tsx` and `main.tsx` at main 5abbae9. The command status follows ADR 0012: a refusal
-// says nothing changed, an uncertain answer says the change may have happened and is never sent again by the page.
+// The dashboard's shared pieces (Hub #922): badges, fact lists, the informational tip and the filter select, adapted
+// from `apps/dashboard/src/controls.tsx` and `main.tsx` at main 5abbae9. The command status joins them with the device
+// controls, in the story's second slice.
 import React, {useEffect, useId, useLayoutEffect, useRef, useState} from 'react';
-import type {CommandEnd} from './connection.ts';
 
 export function Badge({children, warning = false}: {children: React.ReactNode; warning?: boolean}): React.JSX.Element {
   return <span className={warning ? 'badge warning' : 'badge'}>{children}</span>;
@@ -58,41 +57,4 @@ export function Select({label, value, onChange, options}: {
   return <label>{label}<select value={value} onChange={event => { onChange(event.target.value); }}>
     {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
   </select></label>;
-}
-
-/**
- * One command a person sends, and what the page says of it: sending, accepted, refused with nothing changed, or
- * uncertain. An uncertain command stays locked, so the page never sends it again, until the evidence it may have
- * changed arrives: `evidence` is a value that changes when it does, such as the record's revision.
- */
-export type CommandStatus = {state: 'idle' | 'sending' | 'accepted' | 'rejected' | 'uncertain'; text: string};
-
-export function useCommand(evidence: unknown): {status: CommandStatus; busy: boolean; locked: boolean; run: (send: () => Promise<CommandEnd>, done: string) => void} {
-  const [status, setStatus] = useState<CommandStatus>({state: 'idle', text: ''});
-  const running = useRef(false);
-  // The evidence when an uncertain answer came. Once the evidence moves, the record says what happened, and the lock lifts.
-  const [lockedOn, setLockedOn] = useState<{evidence: unknown} | undefined>(undefined);
-  const locked = lockedOn !== undefined && Object.is(lockedOn.evidence, evidence);
-  const run = (send: () => Promise<CommandEnd>, done: string): void => {
-    // A second activation while one runs sends nothing.
-    if (running.current || locked) return;
-    running.current = true;
-    const sentWith = evidence;
-    setStatus({state: 'sending', text: 'Sending…'});
-    void send().then(end => {
-      switch (end.status) {
-        case 'accepted':
-          setStatus({state: 'accepted', text: done});
-          return;
-        case 'rejected':
-          setStatus({state: 'rejected', text: `Not sent: ${end.error.error.code}. Nothing changed.`});
-          return;
-        case 'uncertain':
-          setLockedOn({evidence: sentWith});
-          setStatus({state: 'uncertain', text: 'Result unknown: this may have taken effect. It is not sent again; the session record will show it.'});
-          return;
-      }
-    }).finally(() => { running.current = false; });
-  };
-  return {status, busy: status.state === 'sending', locked, run};
 }

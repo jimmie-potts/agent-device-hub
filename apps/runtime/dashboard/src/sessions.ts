@@ -1,12 +1,9 @@
 // What the dashboard shows of each agent session (Hub #922), derived only from the session record the core publishes
 // and the page syncs (ADR 0012, "Inbox and history"; Hub #831). The page never clears a finished turn itself or on a
-// timer: a finished turn shows unread until the record says otherwise. The state ranking is the shared status helper's,
-// so the page and the devices agree.
-import type {Attention, AttentionKind, Identity, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionState} from '@jimmie-potts/event-contracts/v2/status';
-
-/** The dashboard's consumer ID in the core: it may acknowledge a notice for itself only (Hub #918). */
-export const DASHBOARD_CONSUMER = 'dashboard';
+// timer, and never infers readership from missing evidence: a finished turn shows unread until the record holds the
+// evidence that clears it on the devices too (owner decision, 2026-10-08). That rule is the dashboard's own, here; the
+// shared status helper, which other consumers use, is unchanged.
+import type {Attention, AttentionKind, Identity, KnownId, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 /**
  * The state a session's chip shows, most pressing first: a question, an input or an approval to answer, work running,
@@ -20,7 +17,7 @@ export const CHIP_TEXT: Readonly<Record<SessionChip, string>> = {
 };
 
 /** One retained turn-ended notice, and who has acknowledged it. */
-export type NoticeRow = {id: string; turn: string; acknowledgedBy: readonly string[]; byDashboard: boolean};
+export type NoticeRow = {id: string; turn: string; acknowledgedBy: readonly string[]};
 
 export type SessionRow = {
   id: string;
@@ -37,8 +34,6 @@ export type SessionRow = {
   uncertain: boolean;
   /** One line per attention item, in the record's order. */
   attention: string[];
-  /** A turn-ended notice that no consumer has acknowledged: the finished turn is unread. */
-  finished: boolean;
   notices: NoticeRow[];
   lastEvidenceAtMs: number;
   facts: {source: string; sessionId: string; activity: string; read: string; parent: string; children: string};
@@ -54,19 +49,30 @@ export const sessionName = (record: SessionRecord): string => record.label?.valu
 const ATTENTION_RANK: readonly AttentionKind[] = ['approval', 'input', 'question'];
 const attentionLine = ({kind}: Attention): string => kind === 'question' ? 'Question · continuing' : `${kind[0]?.toUpperCase() ?? ''}${kind.slice(1)} · blocked attention`;
 
-/** The chip for one session: the shared helper's state, with the attention kind named and the activity otherwise. */
+const sameTurn = (a: KnownId, b: KnownId): boolean => a.status === 'known' && b.status === 'known' && a.id === b.id;
+/** A known turn other than the notice's has started since: the session moved on to its next turn. */
+const nextTurnStarted = (record: SessionRecord, turn: KnownId): boolean => turn.status === 'known' && record.turn.status === 'known' && !sameTurn(record.turn, turn);
+
+/**
+ * Whether the session holds a finished turn that is still unread, by the evidence that clears it on the devices too: a
+ * consumer's acknowledgment of its notice (#1009's operator clear among them), the session's next turn, or positive
+ * read evidence on the record, such as Codex Desktop's read marker. Missing evidence never counts as read: an unknown
+ * turn or read state leaves the turn unread.
+ */
+export function finishedUnread(record: SessionRecord): boolean {
+  if (record.read === 'read') return false;
+  return record.notices.some(notice => notice.acknowledgedBy.length === 0 && !nextTurnStarted(record, notice.turn));
+}
+
+/**
+ * The chip for one session, most pressing first: the attention, named by kind; work, its own or an active child's; a
+ * finished turn still unread; and otherwise its activity.
+ */
 export function chipOf(record: SessionRecord): SessionChip {
-  const state = sessionState(record);
-  switch (state) {
-    case 'attention':
-      return ATTENTION_RANK.find(kind => record.attention.some(item => item.kind === kind)) ?? 'question';
-    case 'working':
-      return 'working';
-    case 'done':
-      return 'finished';
-    case undefined:
-      return record.activity === 'active' ? 'working' : record.activity;
-  }
+  if (record.attention.length > 0) return ATTENTION_RANK.find(kind => record.attention.some(item => item.kind === kind)) ?? 'question';
+  if (record.activity === 'active' || record.children.active > 0) return 'working';
+  if (finishedUnread(record)) return 'finished';
+  return record.activity;
 }
 
 const parentText = (record: SessionRecord): string => {
@@ -89,11 +95,7 @@ export function sessionRow(record: SessionRecord): SessionRow {
     where: [record.project, clientName(identity)].filter((part): part is string => part !== undefined).join(' · '),
     chip, chipText: CHIP_TEXT[chip], uncertain: record.freshness !== 'current' || record.restartUncertain,
     attention: record.attention.map(attentionLine),
-    finished: record.notices.some(notice => notice.acknowledgedBy.length === 0),
-    notices: record.notices.map(notice => ({
-      id: notice.id, turn: notice.turn.status === 'known' ? notice.turn.id : 'unknown turn', acknowledgedBy: notice.acknowledgedBy,
-      byDashboard: notice.acknowledgedBy.includes(DASHBOARD_CONSUMER),
-    })),
+    notices: record.notices.map(notice => ({id: notice.id, turn: notice.turn.status === 'known' ? notice.turn.id : 'unknown turn', acknowledgedBy: notice.acknowledgedBy})),
     lastEvidenceAtMs: record.lastEvidenceAtMs,
     facts: {
       source: `${identity.hostId} / ${identity.sourceId}`, sessionId: identity.sessionId, activity: record.activity, read: record.read,

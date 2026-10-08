@@ -1,12 +1,12 @@
 // The dashboard's link to the runtime (Hub #922, ADR 0012 "Consumers and recovery"): one remote participant, acting as
 // the browser's session (`bunny/parts/dashboard`), that keeps a synced copy of the core's `session` family and follows
 // its live changes. There is no polling and no replay: a lost stream reconnects, the copy syncs again and shows the
-// core's current state, and nothing the page missed is played back. The page sends a command only when a person acts,
-// and never sends one again by itself.
-import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
-import type {NoticeAcknowledgeRequest, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+// core's current state, and nothing the page missed is played back. Any answer that says the runtime no longer takes
+// this browser's session, `unauthenticated` or `forbidden`, ends the page's link, which then offers one sign-in.
+import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  SdkError, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type RequestResult, type Scheduler, type SyncChange,
+  SdkError, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type Scheduler, type SyncChange,
   type SyncCompleted, type SyncedCopy, type SyncResult,
 } from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -14,7 +14,6 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
 const SYNC_TIMEOUT_MS = 5000;
-const COMMAND_TIMEOUT_MS = 5000;
 /** A refused connect or sync is tried again after a second, doubling to half a minute: one retry loop, capped. */
 const FIRST_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30_000;
@@ -42,9 +41,6 @@ export type SessionsCopy = {
 };
 
 export type DashboardState = {feed: Feed; sessions: SessionsCopy};
-
-/** How a command a person sent ended: accepted, refused before it had any effect, or uncertain. */
-export type CommandEnd = {status: 'accepted'} | {status: 'rejected' | 'uncertain'; error: ErrorBody};
 
 export type ConnectionOptions = {
   /** The page's own origin. */
@@ -130,29 +126,6 @@ export class DashboardConnection {
     await participant?.close();
   }
 
-  /**
-   * Acknowledges one turn-ended notice of a session for the dashboard, the only consumer this page may acknowledge for
-   * (Hub #918). The core commits it before it answers, and the session's next record is its evidence. Sent once: an
-   * uncertain answer is never sent again.
-   */
-  async acknowledge(session: string, noticeId: string): Promise<CommandEnd> {
-    const participant = this.#participant;
-    if (participant === undefined || this.#state.feed !== 'connected') {
-      return {status: 'rejected', error: errorBody('unavailable', {detail: 'the dashboard is not connected; nothing was sent'})};
-    }
-    let result: RequestResult;
-    try {
-      result = await participant.request<Omit<NoticeAcknowledgeRequest, 'requestId'>>(`bunny.cmd.notice-acknowledge.${session}`, {
-        type: 'org.bunny.notice.acknowledge.requested', subject: session, dataschema: `${SCHEMA_BASE}notice-acknowledge/2.0`,
-        data: {consumerId: 'dashboard', noticeId},
-      }, {timeoutMs: COMMAND_TIMEOUT_MS});
-    } catch (error) {
-      // The SDK refused the call before sending it, as on a participant that closed meanwhile: nothing was sent.
-      return {status: 'rejected', error: errorBody(codeOf(error) ?? 'invalid-state', {detail: 'the dashboard could not send it; nothing was sent'})};
-    }
-    return result.status === 'accepted' ? {status: 'accepted'} : {status: result.status, error: result.error};
-  }
-
   /** Syncs the core's sessions, and syncs again with the capped backoff while the core refuses or a copy fails. */
   async #follow(): Promise<void> {
     const participant = this.#participant;
@@ -164,7 +137,12 @@ export class DashboardConnection {
       synced = {status: 'rejected', requestId: 'not-sent', error: errorBody(codeOf(error) ?? 'unavailable', {detail: 'the sync could not be sent'})};
     }
     if (synced.status === 'rejected') {
-      this.#update({sessions: {...this.#state.sessions, synced: false, refused: synced.error.error.code}});
+      const {code} = synced.error.error;
+      if (ended(code)) {
+        this.#end();
+        return;
+      }
+      this.#update({sessions: {...this.#state.sessions, synced: false, refused: code}});
       this.#later(() => this.#follow());
       return;
     }
@@ -192,7 +170,12 @@ export class DashboardConnection {
         const copy = this.#copy;
         this.#copy = undefined;
         void copy?.close();
-        this.#update({sessions: {...this.#state.sessions, synced: false, refused: change.error.error.code}});
+        const {code} = change.error.error;
+        if (ended(code)) {
+          this.#end();
+          return;
+        }
+        this.#update({sessions: {...this.#state.sessions, synced: false, refused: code}});
         this.#later(() => this.#follow());
         return;
       }
@@ -220,11 +203,14 @@ export class DashboardConnection {
     const {event, code} = diagnostic;
     if (event === 'remote.disconnected' && this.#state.feed === 'connected') this.#update({feed: 'reconnecting'});
     else if (event === 'remote.reconnected' && this.#state.feed === 'reconnecting') this.#update({feed: 'connected'});
-    else if (event === 'remote.refused' && ended(code)) {
-      // The session ended. The page offers one explicit sign-in and never signs in by itself.
-      this.#update({feed: 'ended', sessions: {...this.#state.sessions, synced: false}});
-      void this.close();
-    }
+    else if (event === 'remote.refused' && ended(code)) this.#end();
+  }
+
+  /** The runtime no longer takes this browser's session: the page stops, keeps its last records and offers one sign-in. */
+  #end(): void {
+    if (this.#closed) return;
+    this.#update({feed: 'ended', sessions: {...this.#state.sessions, synced: false}});
+    void this.close();
   }
 
   #later(retry: () => Promise<void>): void {

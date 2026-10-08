@@ -195,10 +195,6 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 .chip[data-chip=approval],.chip[data-chip=input],.chip[data-chip=question]{border-color:var(--chip-question);color:var(--chip-question)}
 .chip[data-chip=finished]{border-color:var(--chip-unread);color:var(--chip-unread)}
 .session-head .session-id{flex:1 1 200px}
-.notice [role=status]{font-size:var(--type-small);line-height:1.45;color:var(--pending-text);margin:0}
-.notice [role=status]:empty{display:none}
-.notice [role=status][data-tone=accepted]{color:var(--text)}
-.notice .actions{align-items:center}
 .quick-controls [role=status]:empty{min-height:0}
 .attention-summary{margin:0;padding:var(--space-xs) var(--space-m);font-size:var(--type-small);color:var(--muted-dense)}
 @media(max-width:380px){.widget .quick-controls{grid-template-columns:1fr}}
