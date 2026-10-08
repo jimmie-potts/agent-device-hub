@@ -966,6 +966,17 @@ npm run test:runtime:verify:built   # capture steps, boundary checks, the superv
 npm run -s verify:runtime -- help
 ```
 
+Run `test:runtime:verify:built` locally only when a change touches the runtime
+host or the verification files: source or test files under `apps/runtime/src/`,
+`apps/runtime/bin/`, `apps/runtime/verify/`, `apps/runtime/tests/scenarios/`,
+`apps/runtime/tests/fixtures/` or `packages/app-verify/`, or the wrapper
+`scripts/verify-runtime.mjs`. A README-only edit there does not need it. Run it
+alone, because it starts real runs. For other
+changes, such as a module, the SDK or the event contracts, leave it to the App
+verification CI job, which runs it on every PR that runs the Checks workflow
+(owner decision, 2026-10-07). A module's own suite and
+`test:runtime:scenarios:built` still run locally for those changes.
+
 `test:runtime:verify:built` starts runs without a user manager and judges every
 capture step through `runCaptureStep`: one per catalog scenario, so the same
 scenarios pass in the in-memory harness and in a run. It also starts each
@@ -2398,9 +2409,11 @@ from the packages and presentation imported for #25. Its
 source commit, the edits and every file left in divoom-app-upgrade. Use Node 24
 and run `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:pixoo` from the worktree root, plus the runtime's checks
-(`test:runtime:built`, `test:runtime:scenarios:built`, and
-`test:runtime:verify:built` alone), `test:maintenance:built`, `check:workflow`
-and `test:workflow`. The build compiles the module and its tests
+(`test:runtime:built` and `test:runtime:scenarios:built`, and
+`test:runtime:verify:built`, on its own, when the change touches the runtime host
+or verification files, as [Runtime verification runs](#runtime-verification-runs)
+says),
+`test:maintenance:built`, `check:workflow` and `test:workflow`. The build compiles the module and its tests
 (`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
 core CI job runs `test:pixoo:built` after its fresh build.
 
