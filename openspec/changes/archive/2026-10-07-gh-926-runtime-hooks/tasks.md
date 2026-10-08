@@ -25,3 +25,14 @@
 - [x] 5.1 Document the hook, the helper, the module and the runs in the runtime, SDK, module and verify READMEs and `docs/development.md`; run `test:codex-desktop:built` in the core CI job, with `tests/workflow_checks.cjs`.
 - [x] 5.2 Show each protection's mutant fails its named tests.
 - [x] 5.3 Run the gate on a committed head, synchronize the affected specifications and archive the change.
+
+## 6. Fix round 1 (PR #992 review)
+
+- [x] 6.1 Assert that a call whose connection the edge ends or resets after reading it is uncertain, and name that loss for what it is (`packages/sdk/tests/remote-publish.test.ts`).
+- [x] 6.2 Refuse quietly a receipt that names another source, endpoint, directory, lifecycle version, qualification or receipt version, and take one that lists the source's members in another order (`apps/runtime/tests/hook.test.ts`).
+- [x] 6.3 Send read evidence again while the core leaves its record unchanged, as after a refusal: 4 s after it went out, then after a wait that doubles to a minute (`modules/codex-desktop/tests/module.test.ts`).
+- [x] 6.4 Run the hook's attention, turn, approval and tool flow at lifecycle 1.0, 1.1 and 1.2, and subagents of a known, an unseen and a top-level session through the script, with the 2.0 parentage check at the edge.
+- [x] 6.5 Refuse a restart body that is not an object of `holdMs` alone, or not JSON, with 400 and a registry body, and test the marker's 64-thread bound (`apps/runtime/verify/tests/supervisor.test.ts`).
+- [x] 6.6 End the hook by `SIGKILL` only when a file read is still stuck at its deadline, since `process.exit` would wait for it; exit 0 otherwise.
+- [x] 6.7 Read the marker asynchronously in the reader, which kills itself when its channel closes, so a runtime killed during a stall leaves no reader; release every stalled FIFO at a test's end, kill each hook a test starts after 6 s, and run each mutant in a process group that is killed afterwards.
+- [x] 6.8 Show each new protection's mutant fails its named tests, and run the gate on a committed head.
