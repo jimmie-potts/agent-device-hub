@@ -10,6 +10,7 @@ import {sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/
 import type {CommandDraft} from '@jimmie-potts/sdk';
 import {DEADLINES, type LogRecord} from '../../src/index.js';
 import {dashboardScenarios} from './dashboard.js';
+import {operationScenarios} from './operations.js';
 import {
   OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted, unknownApproval,
 } from '../fixtures/agents.js';
@@ -840,7 +841,7 @@ export type ModuleScenarios = {readonly scenarios: readonly Scenario[]; readonly
 const CORE_SCENARIOS: readonly Scenario[] = [
   approvalReachesEveryModule, commandWithTrackedOutcome, moduleFailsOthersContinue, remotePartReconnects, zeroModules, agentSessions, endToEnd,
   configuredModule, misconfiguredModule, deviceOwners, gatewayReads, grantsAndDuplicates, approvalRecovery, moduleContributions, agentHooks,
-  ...dashboardScenarios,
+  ...dashboardScenarios, ...operationScenarios,
 ];
 
 /** Every module scenario file in `folder`, by its name without `.js`, in name order. */

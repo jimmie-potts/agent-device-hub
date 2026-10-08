@@ -239,6 +239,19 @@ and exits 1, and the service manager restarts it whole.
   `command.queued`, `command.admitted`, `command.rejected` and
   `command.completed`. The tracker's rows, with every failed, expired, uncertain
   and conflicting result, are what #923 turns into inbox items.
+- **Operation records** (Hub #922, `src/core/operation-records.ts`). The core's
+  `operation` family is each tracked action's latest state, so a display such as
+  the dashboard shows it requested, accepted and completed by syncing one
+  family. It is the core's own first part (`CorePart`): each record is saved and
+  published from the tracker's change, in that change's transaction, at the
+  core's revision, and the core serves the family through its sync. A record is
+  the tracker row's copy without the command's payload; the row stays the
+  authority. The family keeps the latest `MAX_OPERATION_RECORDS` (256) records:
+  a new action that takes it past the bound removes the oldest settled ones, in
+  its own transaction, with reason `retired`, and a pending action is never
+  removed, so a sync stays bounded. The records outlive a restart, and a
+  pending one turns uncertain at its deadline as the tracker's row does. The
+  inbox (#923) points at an operation by its request ID.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
   occurrence and outcome another participant publishes. It drops a duplicate
   by `(source, id)` durably, since history keeps each whole message once, and
@@ -549,7 +562,7 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | --- | --- | --- |
 | `GET /api/v2/families/<family>` | `read` | `{"schema": "family-read/2.0", family, records}`: every record of a core, device or module state family. A family that several modules serve, as every device module serves `device` (#967), reads as one answer of each owner's records, in the order the owners started. Each comes from the gateway's copy of that owner's records, which it syncs on the first read and keeps following (at most 32 copies). An owner that is down, or whose copy cannot be read, never fails the others: `unavailable` names each such owner by its source, always present and empty when every owner answered, so a reader never takes its records for absent. A family whose every owner is down or unreadable is `unavailable`, and one whose only owner refused answers that owner's code. Never polled: the owner publishes each change. A malformed name is `invalid-request`, an unknown family `not-found`, a family no module in this runtime serves or served `not-found` too, which a retry does not change, one whose module has failed or stopped `unavailable`, and an owner's refusal its code with fixed text for that code, never the owner's detail. |
 | `GET /api/v2/snapshot?families=<a>,<b>[&owner=<source>]` | `read` | The snapshot read API (ADR 0012, "Portability"): `{"schema": "snapshot-read/2.0", families, revision, records: {<family>: [...]}}`, one owner's families at its revision, from one sync, with no copy kept. `&owner=<source>`, such as `bunny/modules/lifx`, names the owner, as a family that several modules serve needs; a named owner that does not serve every named family is `not-found`, and one that is down `unavailable`. Families of more than one owner are `invalid-request`, which says to name families of one module. It is the gateway's one-off sync, the second implementation of the read API that the ADR asks for, for a caller of this one process. A record belongs to the family its schema names, at any version. |
-| `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, and, once it is admitted, its pages, MCP tools and whether it shows settings. |
+| `GET /api/v2/modules` | `read` | `{"schema": "module-list/2.0", moduleApiVersion, modules}`: each module's state, `serves`, the families it serves through sync now, as health lists them (#922), since a browser cannot read health, and, once it is admitted, its pages, MCP tools and whether it shows settings. |
 | `GET /api/v2/modules/<name>/settings` | `read` | `{"schema": "module-settings/2.0", module, settings, describedBy}`: what the module's `settings.show` picks from the configuration `configure` accepted, never a secret. |
 | `GET /api/v2/links` | `read` | `{"schema": "links/2.0", editors, places}`: the editor links of the devices and the place links, from the edge section. |
 | `GET /api/v2/authority?scope=<scope>` | any | `{"schema": "authority/2.0", scope}` when the caller holds the scope, else `forbidden`, as an operator checks a producer's credential with its token (#926). |
@@ -1558,7 +1571,11 @@ The catalog holds:
   until a new turn, positive read evidence or any consumer acknowledgment in
   the record clears it, never on a
   timer and never as an inbox item, and that leaves with its session
-  (`dashboard-finished-turn`).
+  (`dashboard-finished-turn`);
+- the core's `operation` records (#922): a lamp switch the lamp holds stays
+  `sent`, completes with the lamp's observation once released, a failed one
+  says nothing reached the lamp, and the reader's copy holds each latest record
+  (`operation-records`).
 
 The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.
