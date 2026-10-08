@@ -188,3 +188,10 @@ The module SHALL provide `SimulatedCloud`, the transport tests and disposable ru
 #### Scenario: Calls answered as the cloud does
 - **WHEN** a connection pushes, lists and removes on the simulated cloud, with the right key, another key and another device
 - **THEN** it shows what each installation was sent, lists and removes it, answers 401 for the other key and 404 for the other device, and records each call
+
+### Requirement: Tidbyt storage uses SDK full-disk classification
+The Tidbyt module SHALL classify storage errors with the SDK full-disk helper while preserving explicit `SdkError` codes. A wrapped SQLite `SQLITE_FULL` or filesystem `ENOSPC` SHALL retain the existing storage-capacity diagnostic and recovery behavior.
+
+#### Scenario: Wrapped ENOSPC while persisting a tile
+- **WHEN** tile persistence fails with an error caused by `ENOSPC`
+- **THEN** the module records the existing WARN capacity diagnostic and recovers through its existing storage path

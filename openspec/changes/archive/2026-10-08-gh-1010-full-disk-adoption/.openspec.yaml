@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-10-08
+goal: Classify wrapped SQLITE_FULL and ENOSPC consistently in each storage
+  consumer while preserving existing error precedence, admission and recovery
+  behavior.

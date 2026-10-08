@@ -7,7 +7,7 @@ import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contra
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
+  DeviceAvailability, fullDisk, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
   type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
@@ -72,14 +72,14 @@ function recordOf(id: string, revision: number, {availability, observedAtMs, obs
   return {id, revision, availability, ...(observedAtMs === undefined ? {} : {observedAtMs}), playback};
 }
 // SQLite's result codes, from a node:sqlite error's `errcode`.
-const SQLITE_BUSY = 5, SQLITE_LOCKED = 6, SQLITE_FULL = 13;
+const SQLITE_BUSY = 5, SQLITE_LOCKED = 6;
 const errcode = (error: unknown): number | undefined =>
   typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode : undefined;
 /** A database refusal's registry code: `capacity` for a full disk, `unavailable` for a database another writer holds. */
 function storageCode(error: unknown): ErrorCode {
   if (error instanceof SdkError) return error.body.error.code;
   const code = errcode(error);
-  return code === SQLITE_FULL ? 'capacity' : code === SQLITE_BUSY || code === SQLITE_LOCKED ? 'unavailable' : 'internal';
+  return fullDisk(error) ? 'capacity' : code === SQLITE_BUSY || code === SQLITE_LOCKED ? 'unavailable' : 'internal';
 }
 
 type Handled = {body: string; result: string | null};

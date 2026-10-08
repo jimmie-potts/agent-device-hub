@@ -256,6 +256,9 @@ the Tidbyt's routing ID. It never logs the cloud's device ID, the key or a frame
 | `operation.failed` | WARN | The writer lease was refused at start: `bunny.operation` `startup`, `bunny.reason` `busy`, `unauthorized` or `unavailable` |
 | `outbox.republished` | INFO | Each start |
 
+The SDK's `fullDisk(error)` classifier recognizes a wrapped filesystem
+`ENOSPC` as a storage capacity failure, just like SQLite `SQLITE_FULL`.
+
 Each cloud call that goes out has a `bunny.device.call` span, the child of the
 message that asked for the tile's evaluation; a call a hold kept back has none.
 No trace context reaches the cloud.

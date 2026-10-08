@@ -208,3 +208,10 @@ The module SHALL log only events and attributes the diagnostic contract register
 #### Scenario: Tier 2
 - **WHEN** a reviewer starts a disposable run with `--scenario lifx-bulbs` and captures `scenario-lifx-bulbs`
 - **THEN** the capture passes every step and the run's boundary checks
+
+### Requirement: LIFX storage uses SDK full-disk classification
+The LIFX module SHALL classify storage errors with the SDK full-disk helper. A wrapped SQLite `SQLITE_FULL` or filesystem `ENOSPC` SHALL retain the existing `capacity` refusal and diagnostic behavior, including refusal before any bulb effect.
+
+#### Scenario: Wrapped ENOSPC refuses command admission
+- **WHEN** persisting a command fails with an error caused by `ENOSPC`
+- **THEN** the module replies with `capacity`, records no accepted command or outcome, and sends no packet

@@ -11,12 +11,13 @@ import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {DatabaseSync} from 'node:sqlite';
 import {
-  InProcessBus, type BusOptions, type CommandDraft, type Draft, type Handler, type Participant, type RequestOptions, type RequestResult, type Responder, type Scheduler,
+  InProcessBus, type BunnyModule, type BusOptions, type CommandDraft, type Draft, type Handler, type Participant, type RequestOptions, type RequestResult, type Responder, type Scheduler,
   type SendOptions, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
 } from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord} from '@jimmie-potts/sdk/testing';
 import {CONTROL_PATH} from '../src/sonos.js';
 import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule, type PlaybackModuleOptions} from '../src/module.js';
+import type {PlaybackConfig} from '../src/configuration.js';
 import type {PlaybackAction} from '../src/playback.js';
 import type {Deadline} from '../src/sources.js';
 import type {SimulatedSpeakers} from '../src/simulated.js';
@@ -57,6 +58,39 @@ export function manualClock(start = START_MS): {now: () => number; scheduler: Sc
 /** Lets promises and I/O that are already due run. */
 export async function flush(): Promise<void> {
   for (let turn = 0; turn < 8; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+}
+
+/** Wraps prepared writes with a one-shot error callback at the module's real database boundary. */
+export function withWriteFailure(database: DatabaseSync, takeFailure: () => Error | undefined): DatabaseSync {
+  return new Proxy(database, {
+    get(target, property) {
+      if (property === 'prepare') return (sql: string) => {
+        const statement = target.prepare(sql);
+        const run = statement.run.bind(statement);
+        return new Proxy(statement, {
+          get(inner, key) {
+            if (key === 'run') return (...parameters: Parameters<typeof run>) => {
+              const failure = takeFailure();
+              if (failure !== undefined) throw failure;
+              return run(...parameters);
+            };
+            const value: unknown = Reflect.get(inner, key, inner);
+            if (typeof value !== 'function') return value;
+            return (...args: unknown[]): unknown => {
+              const result: unknown = Reflect.apply(value, inner, args);
+              return result;
+            };
+          },
+        });
+      };
+      const value: unknown = Reflect.get(target, property, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]): unknown => {
+        const result: unknown = Reflect.apply(value, target, args);
+        return result;
+      };
+    },
+  });
 }
 
 /** A deadline on real time, for a source called outside the module. */
@@ -307,6 +341,8 @@ export class HeldBus extends InProcessBus {
 
 type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {
   section?: unknown; transport?: SpeakerTransport;
+  /** Wraps the module's database for focused storage-error tests. */
+  wrapDatabase?: (database: DatabaseSync) => DatabaseSync;
   /** The manual clock to host on, when the speakers wait on it too; a new one by default. */
   clock?: ReturnType<typeof manualClock>;
   /** Builds the bus from the options the host gives it, such as a `HeldBus`. */
@@ -314,7 +350,9 @@ type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {
 };
 
 export async function host(context: TestContext, speakers: SimulatedSpeakers, options: HostOptions = {}): Promise<Hosted> {
-  const {section = SECTION, clock = manualClock(), bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), ...moduleOptions} = options;
+  const {
+    section = SECTION, clock = manualClock(), bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), wrapDatabase, ...moduleOptions
+  } = options;
   const thrown: unknown[] = [];
   // The bus stamps `expiresat` and runs request deadlines on the module's manual clock, as the runtime's does.
   const bus = buildBus({
@@ -328,9 +366,18 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   await watcher.subscribe('bunny.*.*.*', message => { published.push(message); });
-  const build = (): ModuleHarness => new ModuleHarness(createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions}), {
-    bus, stateDir, clock: {now: clock.now}, scheduler: clock.scheduler, section,
-  });
+  const build = (): ModuleHarness => {
+    const inner = createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions});
+    const module: BunnyModule<PlaybackConfig> = {
+      manifest: inner.manifest,
+      start: context => inner.start({...context, database: () => {
+        const database = context.database();
+        return wrapDatabase?.(database) ?? database;
+      }}),
+      stop: () => inner.stop(),
+    };
+    return new ModuleHarness(module, {bus, stateDir, clock: {now: clock.now}, scheduler: clock.scheduler, section});
+  };
   const first = build();
   const hosted: Hosted & {instances: ModuleHarness[]} = {
     harness: first, instances: [first], clock, requester, published, stateDir,

@@ -130,6 +130,8 @@ and exits 1, and the service manager restarts it whole.
 - **Failures.** A full disk refuses the change before anything reports it
   accepted: nothing commits, nothing is published, and the intake is logged
   `rejected` with `capacity` (an acknowledgment is refused with `capacity`).
+  The store uses the SDK's `fullDisk(error)` classifier, which also recognizes
+  a filesystem `ENOSPC` wrapped as a cause.
   The core then opens agent-state's faulted owner again on what committed,
   keeping its lease. The core never fails on a full disk:
   - if opening the owner fails, as when maintenance falls due, the core refuses

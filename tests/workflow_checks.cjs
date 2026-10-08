@@ -44,6 +44,10 @@ function writeArchive(directory, completed) {
   fs.writeFileSync(path.join(folder, 'tasks.md'), `## 1. Queue\n- [${completed ? 'x' : ' '}] 1.1 Deduplicate completion events; verify one queue entry.\n`);
 }
 
+function hasLocalFullDiskCheck(source) {
+  return /\bSQLITE_FULL\s*=\s*13\b|===?\s*SQLITE_FULL\b|\bSQLITE_FULL\s*===?|errcode[^\n]{0,100}===?\s*13\b|===?\s*13\b[^\n]{0,100}errcode/.test(source);
+}
+
 function run(file, directory, args = [], env = {}) {
   const result = spawnSync(process.execPath, [file, ...args], {
     cwd: directory,
@@ -721,4 +725,20 @@ test('no shared file names a device module, and a shared file that does fails th
   // The core and a fixture module are not device modules, and a longer word that holds a name is not the name.
   fs.writeFileSync(path.join(scratch, file), `${original}\n// core lamp chime sign ${modules[0]}s x${modules[0]}\n`);
   assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), []);
+});
+
+test('runtime storage consumers delegate full-disk classification to the SDK', () => {
+  const consumers = ['apps/runtime/src', 'modules'].flatMap(directory =>
+    fs.readdirSync(path.join(root, directory), {recursive: true}).map(String)
+      .filter(file => file.endsWith('.ts') && (directory === 'apps/runtime/src' || file.includes(`${path.sep}src${path.sep}`)))
+      .map(file => path.join(directory, file)));
+  assert.ok(consumers.length > 0, 'runtime and module sources were inventoried');
+  assert.equal(hasLocalFullDiskCheck('if (errcode(error) === SQLITE_FULL) return true;'), true, 'negative control detects a local SQLITE_FULL check');
+  assert.equal(hasLocalFullDiskCheck("return code === SQLITE_FULL ? 'capacity' : 'internal';"), true, 'negative control detects a local full-disk comparison after code extraction');
+  assert.equal(hasLocalFullDiskCheck('const code = error.errcode & 0xff;'), false, 'low-byte normalization alone is not a full-disk check');
+  assert.equal(hasLocalFullDiskCheck('if (fullDisk(error)) return true;'), false, 'SDK helper use is allowed');
+  for (const file of consumers) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.equal(hasLocalFullDiskCheck(source), false, `${file} must use the SDK helper`);
+  }
 });
