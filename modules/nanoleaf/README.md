@@ -130,6 +130,14 @@ the Lines, one waiting at a time:
    choice, when a later wall, mode or association edit lands first (`processMachineEdits`).
 3. A machine edit waits while the device's comet runs, then applies, or fails `expired`.
 
+A machine edit's check at admission (`checkEdit`) and a queued machine edit's application
+(`processMachineEdits`) each run under a savepoint inside the caller's transaction. A
+failure that leaves the transaction open rolls back to the savepoint, keeping the caller's
+work. On a full disk SQLite ends the whole transaction, and the edit throws the full
+disk's error rather than the failed savepoint rollback's (#1001); the module answers a
+command whose admission the store refuses with `internal` and nothing changed, as for any
+store failure, and a queued edit waits until the store takes it.
+
 ## Sessions
 
 The module follows the core's `session/2.0` records through the SDK's sync and keeps its

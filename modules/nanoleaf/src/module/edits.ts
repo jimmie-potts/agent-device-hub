@@ -126,6 +126,17 @@ export function applyEdit(db: Db, copy: SharedCopy, layout: DeviceProjection | u
   }
 }
 
+/**
+ * Rolls back to a savepoint and releases it, while the caller's transaction is still open. SQLite ends the whole
+ * transaction on some errors, such as a full disk, and the savepoint with it; rolling back to it then would fail with
+ * "no such savepoint" and hide the error that ended it (Hub #1001).
+ */
+function undo(db: Db, savepoint: string): void {
+  if (!db.isTransaction) return;
+  db.exec(`ROLLBACK TO ${savepoint}`);
+  db.exec(`RELEASE ${savepoint}`);
+}
+
 /** Checks a machine edit as it would apply now, inside the caller's transaction, and leaves nothing changed. */
 export function checkEdit(db: Db, copy: SharedCopy, layout: DeviceProjection | undefined, device: string, edit: MapEdit,
   devices: readonly string[]): void {
@@ -133,8 +144,7 @@ export function checkEdit(db: Db, copy: SharedCopy, layout: DeviceProjection | u
   try {
     applyEdit(db, copy, layout, device, edit, devices);
   } finally {
-    db.exec('ROLLBACK TO nanoleaf_check');
-    db.exec('RELEASE nanoleaf_check');
+    undo(db, 'nanoleaf_check');
   }
 }
 
@@ -174,8 +184,7 @@ export function processMachineEdits(db: Db, copy: SharedCopy, layout: DeviceProj
           bumpRevision(db, applyEdit(db, copy, layout, device, queued.edit, devices));
           db.exec('RELEASE nanoleaf_edit');
         } catch (error) {
-          db.exec('ROLLBACK TO nanoleaf_edit');
-          db.exec('RELEASE nanoleaf_edit');
+          undo(db, 'nanoleaf_edit');
           throw error;
         }
         end = {edit: queued, result: 'applied'};
