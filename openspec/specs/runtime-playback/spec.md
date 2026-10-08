@@ -212,3 +212,10 @@ A `playback-control` command that reaches its admission before every configured 
 #### Scenario: A command that expires while the first reads run
 - **WHEN** a pause with a 1-second deadline arrives right after a start, while the Move takes 3 seconds over its first read
 - **THEN** the SDK answers it `uncertain-result` at its deadline, no speaker hears it, and its outcome is `failed` with evidence `none` and `expired`
+
+### Requirement: Playback storage uses SDK full-disk classification
+The playback module SHALL classify storage errors with the SDK full-disk helper while preserving explicit `SdkError` codes. A wrapped SQLite `SQLITE_FULL` or filesystem `ENOSPC` SHALL retain the existing capacity response and no-command-before-durable-intent behavior. SQLite `BUSY` and `LOCKED` SHALL remain unavailable.
+
+#### Scenario: Wrapped ENOSPC refuses command intent
+- **WHEN** recording a command intent fails with an error caused by `ENOSPC`
+- **THEN** the command receives the existing capacity response and the speaker receives no command

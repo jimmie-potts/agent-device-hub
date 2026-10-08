@@ -45,7 +45,7 @@ function writeArchive(directory, completed) {
 }
 
 function hasLocalFullDiskCheck(source) {
-  return /(?:SQLITE_FULL|errcode)[^\n]{0,100}(?:===?\s*(?:13|SQLITE_FULL)|&\s*0xff)|(?:===?\s*(?:13|SQLITE_FULL))[^\n]{0,100}errcode/.test(source);
+  return /\bSQLITE_FULL\s*=\s*13\b|===?\s*SQLITE_FULL\b|\bSQLITE_FULL\s*===?|errcode[^\n]{0,100}===?\s*13\b|===?\s*13\b[^\n]{0,100}errcode/.test(source);
 }
 
 function run(file, directory, args = [], env = {}) {
@@ -734,6 +734,8 @@ test('runtime storage consumers delegate full-disk classification to the SDK', (
       .map(file => path.join(directory, file)));
   assert.ok(consumers.length > 0, 'runtime and module sources were inventoried');
   assert.equal(hasLocalFullDiskCheck('if (errcode(error) === SQLITE_FULL) return true;'), true, 'negative control detects a local SQLITE_FULL check');
+  assert.equal(hasLocalFullDiskCheck("return code === SQLITE_FULL ? 'capacity' : 'internal';"), true, 'negative control detects a local full-disk comparison after code extraction');
+  assert.equal(hasLocalFullDiskCheck('const code = error.errcode & 0xff;'), false, 'low-byte normalization alone is not a full-disk check');
   assert.equal(hasLocalFullDiskCheck('if (fullDisk(error)) return true;'), false, 'SDK helper use is allowed');
   for (const file of consumers) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');

@@ -1119,3 +1119,14 @@ The in-memory harness and a disposable run SHALL build and simulate each registe
 #### Scenario: A shared file names a module
 - **WHEN** a module's name, in any letter case and with its hyphens as hyphens, spaces or nothing, is added to a shared file
 - **THEN** `npm run test:workflow` fails, naming the file, the line and the module, while the core's and a fixture module's names pass
+
+### Requirement: Core storage classifies wrapped full-disk errors
+The core store SHALL use the SDK full-disk classifier for errors raised while opening its tables and committing a transaction. A wrapped SQLite `SQLITE_FULL` or filesystem `ENOSPC` SHALL follow the existing full-disk path, preserving durable admission, no-publication-before-commit, and recovery behavior. The core's separate lease `SQLITE_BUSY` retry SHALL remain unchanged.
+
+#### Scenario: Wrapped ENOSPC while opening the core store
+- **WHEN** creating the core store tables fails with an error caused by `ENOSPC`
+- **THEN** startup reports storage unavailable and the core records the existing full-disk failure state
+
+#### Scenario: Wrapped ENOSPC during a core transaction
+- **WHEN** a core transaction fails with an error caused by `ENOSPC`
+- **THEN** the change is refused as full, no observation is published or committed, and the core retains its existing recovery behavior
