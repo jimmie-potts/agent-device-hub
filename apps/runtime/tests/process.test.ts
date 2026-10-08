@@ -65,7 +65,7 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session']}, ...UNCONFIGURED]);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation']}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));

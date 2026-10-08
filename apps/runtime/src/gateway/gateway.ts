@@ -346,11 +346,16 @@ export class Gateway {
     throw refuse('not-found', 'no such route');
   }
 
-  /** A module as `/api/v2/modules` lists it: its state and what it contributes, which is nothing until it is admitted. */
+  /**
+   * A module as `/api/v2/modules` lists it: its state, the families it serves through sync now (`serves`, as health lists
+   * them, for a browser, which cannot read health: Hub #922), and what it contributes, which is nothing until it is
+   * admitted.
+   */
   #describe(module: HostedModule): object {
     const {name, manifest, state, admitted} = module;
+    const serves = this.#options.bus.served(sourceOf(name));
     return {
-      name, apiVersion: manifest.apiVersion, state,
+      name, apiVersion: manifest.apiVersion, state, ...(serves.length === 0 ? {} : {serves}),
       pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
       tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,

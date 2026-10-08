@@ -584,7 +584,7 @@ it('no grant limits a reader to some devices: it reads every device\'s records a
   const links = await call(url, '/api/v2/links', {token: reader.token});
   assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'});
   const listed = ((await call(url, '/api/v2/modules', {token: reader.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
-  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
   for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
     assert.equal((await call(url, path, {token: reader.token})).status, 200, path);
   }
@@ -821,3 +821,17 @@ async function rawStream(url: string, bearer: string | undefined, headers: Recor
     request.end();
   });
 }
+
+it('the module list names the families each module serves now, as health does, for a browser that cannot read health', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader]);
+  const answer = await g.ask(g.url, '/api/v2/modules', {token: reader.token});
+  const modules = (answer.body as {modules: {name: string; state: string; serves?: string[]}[]}).modules;
+  const health = g.runtime.health().modules;
+  assert.ok(modules.length > 1);
+  for (const module of modules) assert.deepEqual(module.serves, health.find(entry => entry.name === module.name)?.serves, module.name);
+  assert.deepEqual(modules.find(module => module.name === 'core')?.serves?.includes('operation'), true, 'the core serves its operation records (#922)');
+  assert.deepEqual(modules.find(module => module.name === 'sign')?.serves?.includes('device'), true, 'a device module serves device');
+  await g.runtime.stop();
+  assertNoToken(g);
+});

@@ -28,7 +28,8 @@ const NO_NOTICE = 'f'.repeat(64);
 
 moduleConformance({
   create: () => createCoreModule(),
-  serves: ['session'],
+  // Its sessions, and its operation records (Hub #922): the kit syncs each family alone.
+  serves: ['session', 'operation'],
   // The kit's probe, `bunny/kit`, is no consumer the core records acknowledgments for: a domain refusal, at INFO.
   refused: {...acknowledge(SESSION_ID, 'kit', NO_NOTICE), code: 'invalid-request'},
 });
