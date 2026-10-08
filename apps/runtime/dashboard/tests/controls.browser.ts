@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {checkControlProjections} from './control-projections.ts';
 
 const world = await startWorld({devices: true});
 let browser: Browser | undefined;
@@ -14,6 +15,7 @@ try {
   try {
     const errors: string[] = [];
     context.on('weberror', error => { errors.push(error.error().name); });
+    await checkControlProjections(context);
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     const sent = changes(page);
     const receipts = process.env.DASHBOARD_RECEIPTS;

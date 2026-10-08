@@ -62,7 +62,9 @@ function useAttempt(target: string, operations: readonly OperationRecord[], oper
         ? {text: reply.error.code === 'uncertain-result' ? 'Uncertain result. The command may have taken effect; it was not sent again.'
           : `Refused (${reply.error.code}) without changing state.`, locked: reply.error.code === 'uncertain-result'}
         : {text: 'Accepted. Waiting for completion.', locked: true};
-      setAttempt({...next, ...result});
+      // A streamed definitive result can arrive before this HTTP reply. Keep it for this request,
+      // including after projection retirement; copy it so clearing the sending guard also rerenders.
+      setAttempt(previous => previous?.requestId === next.requestId && !previous.locked ? {...previous} : {...next, ...result});
     },
   };
 }
@@ -125,7 +127,7 @@ export function DeviceCard({record, owner, live, control, operations, operations
             onPointerUp={event => { pointer.current = false; sendBrightness(event.currentTarget.value); }}
             onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) sendBrightness(event.currentTarget.value); }}
             onBlur={event => { if (brightness !== undefined && !pointer.current) sendBrightness(event.currentTarget.value); }}/></label>
-          <output>{brightness ?? (record.desired.brightness.status === 'known' ? String(record.desired.brightness.value) : 'Unknown')}%</output>
+          <output>{brightness !== undefined ? `${brightness}%` : record.desired.brightness.status === 'known' ? `${record.desired.brightness.value}%` : 'Unknown'}</output>
         </fieldset></div>}
         {cap.scenes.supported && <div className="edit"><h3>Scenes</h3><fieldset disabled={disabled || contentReason !== undefined}>
           <Select label="Scene" value={scene} options={choices(cap.scenes.sceneIds)} onChange={setScene}/><button type="button" disabled={scene === ''} onClick={() => { run({family: 'scene-activate', data: {sceneId: scene}}); }}>Activate scene</button>
@@ -168,7 +170,8 @@ export function PlaybackCard({record, live, control, operations, operationsLive}
   const action = useAttempt(record.id, operations, operationsLive);
   const playback = record.playback;
   return <article className="widget" aria-label={`Music ${record.id}`}><header className="widget-head"><h2>Music</h2></header>
-    <p>{!live || record.availability !== 'available' ? 'Playback unavailable' : playback.status === 'known' ? playback.title ?? playback.player : 'Playback unknown'}</p>
+    <p>{!live || record.availability !== 'available' ? 'Playback unavailable' : playback.status === 'known' ? playback.title ?? 'No track title' : 'Playback unknown'}</p>
+    <Facts items={[['Observed status', !live || record.availability !== 'available' ? 'Unavailable' : playback.status === 'known' ? title(playback.player) : 'Unknown']]}/>
     {playback.status === 'known' && <p className="hint">{[playback.artist, playback.album].filter(Boolean).join(' · ')}</p>}
     {control && playback.status === 'known' && <fieldset disabled={!live || record.availability !== 'available' || action.locked || !operationsLive}>
       {playback.controls.map(value => <button type="button" key={value} onClick={() => { void action.run({family: 'playback-control', target: record.id, requestId: crypto.randomUUID(), data: {action: value, expectedRevision: record.revision}}); }}>{title(value)}</button>)}
