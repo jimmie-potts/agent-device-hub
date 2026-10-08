@@ -1136,7 +1136,13 @@ device acknowledgment clearing rows without a page command, routes,
 Places, axe at 1,440 and 390 px, a session that ends with a restart, Disconnect,
 the launcher's code, the bookmark on either loopback name, a reload and a
 second tab, and another local app's link, frame and hostile re-navigation
-(Hub #561). Run it when a change touches `apps/runtime/dashboard`, the gateway's
+(Hub #561). The focused `controls.browser.ts` journey adds a simulated LIFX
+control that shows accepted before completion, an uncertain write locked across
+reload and read-only refresh without replay, a manifest-declared sign page in the
+shell, Connections build identity, keyboard activation and desktop/phone axe.
+It also runs directly with `node apps/runtime/dashboard/tests/controls.browser.ts`
+after a build when the accepted local scope calls for only that changed journey.
+Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
 page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
 

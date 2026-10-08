@@ -24,7 +24,7 @@ import type {EdgeConfig} from '../state.js';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
 } from './access.js';
-import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, dashboardFile} from './dashboard.js';
+import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, runtimeBuild, dashboardFile} from './dashboard.js';
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
@@ -315,6 +315,10 @@ export class Gateway {
     }
     if (method !== 'GET') throw refuse('not-found', 'no such route');
     needs('read');
+    if (path === '/api/v2/build') {
+      noQuery();
+      return json(200, runtimeBuild());
+    }
     if (path === '/api/v2/modules') {
       noQuery();
       return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module))});
@@ -505,7 +509,9 @@ export class Gateway {
     if (this.#options.redactions.holds(html)) throw refuse('internal', 'the module\'s page holds a secret, which the gateway never serves');
     const document = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
       + `<title>${escapeHtml(page.title)}</title></head><body>\n${html}\n</body></html>\n`;
-    return {status: 200, body: document, headers: {'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS}};
+    return {status: 200, body: document, headers: {'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS,
+      'x-frame-options': 'SAMEORIGIN', 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
+    }};
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
@@ -762,7 +768,7 @@ export class Gateway {
 function templateOf(path: string): string | undefined {
   if (path === '/mcp') return '/mcp';
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
-  if (path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
+  if (path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;

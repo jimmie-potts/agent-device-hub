@@ -406,8 +406,8 @@ it('the sign\'s page refers to its preview by reference and is served with a pol
   assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8');
   assert.match(page.text, /<img src="content\/preview.png"/);
   const policy = page.headers.get('content-security-policy') ?? '';
-  for (const directive of ['default-src \'none\'', 'img-src \'self\'', 'frame-ancestors \'none\'', 'form-action \'none\'', 'base-uri \'none\'']) assert.ok(policy.includes(directive), directive);
-  assert.equal(page.headers.get('x-frame-options'), 'DENY');
+  for (const directive of ['default-src \'none\'', 'img-src \'self\'', 'frame-ancestors \'self\'', 'form-action \'none\'', 'base-uri \'none\'']) assert.ok(policy.includes(directive), directive);
+  assert.equal(page.headers.get('x-frame-options'), 'SAMEORIGIN');
   const preview = await fetch(new URL('/modules/sign/content/preview.png', g.url), {headers: {authorization: `Bearer ${reader.token}`}});
   assert.equal(preview.headers.get('content-type'), 'image/png');
   assert.deepEqual([...new Uint8Array(await preview.arrayBuffer()).slice(0, 4)], [137, 80, 78, 71]);
@@ -894,5 +894,22 @@ it('authenticated readers and a browser session read the latest operation throug
   const modules = await g.ask(g.url, '/api/v2/modules', {headers: {cookie, 'sec-fetch-site': 'same-origin'}});
   assert.equal((modules.body as {modules: {name: string; serves?: string[]}[]}).modules.find(module => module.name === 'core')?.serves?.includes('operation'), true);
   assert.equal(g.logs.filter(record => record.event_name === 'command.queued').length, 1, 'reads send no second action');
+  assertNoToken(g);
+});
+
+it('running build identity is read-only and authenticated; module framing keeps cross-origin refusal', async context => {
+  const reader = READER();
+  const g = await gateway(context, [reader], {browserAccess: 'trusted-loopback'});
+  assert.equal((await g.ask(g.url, '/api/v2/build')).status, 401);
+  const build = await g.ask(g.url, '/api/v2/build', {token: reader.token});
+  assert.equal(build.status, 200);
+  assert.equal((build.body as {schema: string}).schema, 'runtime-build/2.0');
+  assert.equal((await g.ask(g.url, '/api/v2/build', {method: 'POST', body: {}, token: reader.token})).status, 404);
+  const signed = await g.ask(g.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: g.url, 'bunny-request': '1'}});
+  const cookie = signed.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie !== undefined && cookie !== '');
+  assert.equal((await g.ask(g.url, '/modules/sign/preview', {headers: {cookie, origin: 'http://other.invalid', 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'iframe'}})).status, 403);
+  const content = await g.ask(g.url, '/modules/sign/content/preview.png', {token: reader.token});
+  assert.equal(content.headers.get('x-frame-options'), 'DENY', 'content response policy is unchanged');
   assertNoToken(g);
 });

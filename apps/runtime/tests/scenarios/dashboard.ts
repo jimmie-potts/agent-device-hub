@@ -1,6 +1,10 @@
 // The dashboard's catalog scenarios (Hub #922), shared unchanged by the in-memory harness and disposable runs.
 // Their fixture identities and consumer policy belong here; the shared catalog only collects these definitions.
 import {sessionEntityId, type OperationRecord, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
+import {deviceAction, operationView} from '../../dashboard/src/devices.js';
+import {SIGN_SECTION} from '../fixtures/sign.js';
 import {chipOf} from '../../dashboard/src/sessions.js';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../fixtures/agents.js';
 import {
@@ -150,4 +154,36 @@ const dashboardLabels: Scenario = {
   ],
 };
 
-export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn, dashboardLabels];
+const dashboardControls: Scenario = {
+  id: 'dashboard-controls', title: 'guarded dashboard controls report tracked outcomes and declared module navigation',
+  seed: {modules: ['core', 'lifx', 'sign'], config: {lifx: LIFX_SIMULATED_SECTION, sign: SIGN_SECTION},
+    follows: [CORE_FAMILIES, ['operation'], {owner: 'bunny/modules/lifx', families: ['device']}, {owner: 'bunny/modules/sign', families: ['device']}]},
+  steps: [
+    expect('both device owners appear in the current module catalog', answers({as: 'browser', method: 'GET', path: '/api/v2/modules'}, answer => {
+      const modules = bodyOf<{modules: {name: string; serves?: string[]}[]}>(answer)?.modules ?? [];
+      return ['lifx', 'sign'].every(name => modules.some(module => module.name === name && module.serves?.includes('device') === true)) || 'missing device owner';
+    })),
+    expect('the LIFX record advertises a ready power control', h => h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').some(message =>
+      message.data.id === 'pendant-1' && message.data.availability === 'available' && message.data.capabilities.power.supported) || 'not ready'),
+    act('one browser power control carries the current configuration and generation', async h => {
+      const record = h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').find(message => message.data.id === 'pendant-1')?.data;
+      if (record === undefined) throw new StepFailure('no bulb');
+      const action = deviceAction(record, {family: 'power-set', data: {on: false}}, 'req-dashboard-power');
+      if (typeof action === 'string') throw new StepFailure(action);
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: `/api/v2/commands/${action.family}`,
+        body: {target: action.target, data: action.data, requestId: action.requestId}});
+      if (bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure('power was not accepted');
+    }),
+    expect('the core completion reports transmitted evidence without claiming physical observation', h => {
+      const operation = h.reader.states<OperationRecord>('operation').find(message => message.data.requestId === 'req-dashboard-power')?.data;
+      return operation !== undefined && operation.status === 'completed' && !operationView(operation).locked &&
+        operationView(operation).text.includes('physical effect was not observed') || 'no transmitted completion';
+    }),
+    expect('the declared sign page stays script-free and can be framed only by this origin', answers({as: 'browser', method: 'GET', path: '/modules/sign/preview'}, answer =>
+      answer.status === 200 && answer.headers['x-frame-options'] === 'SAMEORIGIN' && answer.headers['content-security-policy']?.includes("frame-ancestors 'self'") === true || 'page policy differs')),
+    expect('the browser can read the small running build identity', answers({as: 'browser', method: 'GET', path: '/api/v2/build'}, answer =>
+      answer.status === 200 && bodyOf<{schema?: string}>(answer)?.schema === 'runtime-build/2.0' || 'no build identity')),
+  ],
+};
+
+export const dashboardScenarios: readonly Scenario[] = [dashboardSessions, dashboardFinishedTurn, dashboardLabels, dashboardControls];

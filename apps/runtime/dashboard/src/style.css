@@ -236,3 +236,6 @@ label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--
 .wispr-trend circle{fill:currentColor}
 .wispr-trend summary,.wispr-coverage>summary{cursor:pointer;padding:var(--space-s) 0}
 .wispr-trend details[open]{max-height:280px;overflow:auto}
+
+/* Declared module pages remain in the copied shell. Their gateway policy forbids scripts and forms. */
+.module-page {width:100%;min-height:32rem;border:0;background:var(--bg);}

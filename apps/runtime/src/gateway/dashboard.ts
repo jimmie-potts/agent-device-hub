@@ -4,6 +4,7 @@
 // routes and their checks. The build (`apps/runtime/dashboard/build.mjs`) writes the files to `dist/dashboard/`.
 import {readFile} from 'node:fs/promises';
 import type {IncomingMessage} from 'node:http';
+import {BUILD_IDENTITY} from '../build-identity.js';
 import {contextOf} from './access.js';
 
 /** Where the build writes the dashboard: `dist/dashboard/` beside the runtime's compiled `dist/src/`. */
@@ -24,7 +25,7 @@ export const DASHBOARD_FILES: Readonly<Record<string, {file: string; type: strin
 export const DASHBOARD_HEADERS: Readonly<Record<string, string>> = {
   'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
   'cross-origin-opener-policy': 'same-origin',
-  'content-security-policy': 'default-src \'none\'; script-src \'self\'; style-src \'self\'; connect-src \'self\'; img-src \'self\'; base-uri \'none\'; frame-ancestors \'none\'; form-action \'self\'',
+  'content-security-policy': 'default-src \'none\'; script-src \'self\'; style-src \'self\'; connect-src \'self\'; img-src \'self\'; frame-src \'self\'; base-uri \'none\'; frame-ancestors \'none\'; form-action \'self\'',
 };
 
 /**
@@ -50,3 +51,6 @@ export async function dashboardFile(dir: URL, path: string): Promise<{bytes: Uin
     return undefined;
   }
 }
+
+/** The generated module is frozen when the process starts, including in the existing disposable run artifact copy. */
+export const runtimeBuild = (): object => BUILD_IDENTITY;

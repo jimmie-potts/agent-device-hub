@@ -444,6 +444,14 @@ npm run -s verify:runtime -- stop <run-id>
 
 ### The dashboard
 
+For the general controls and declared navigation, start `dashboard-controls`,
+open that run's own origin at `/`, and use **pendant-1**, **Sign preview** and
+**Connections**. `capture <run-id> scenario-dashboard-controls` checks the guarded
+action route, operation completion, same-origin module page and build read.
+The adapter retains its existing health screenshots; dashboard browser checks
+provide the separate UI evidence. This uses only synthetic bulbs and the sign.
+
+
 A run serves the [dashboard](../dashboard/README.md) at its origin (#922), which signs a browser in from the trusted
 loopback page. To check it as a person would, start a run of the core alone, open the origin in a browser, and play an
 agent's hook with `apps/runtime/dashboard/tests/hook.ts`, which publishes one synthetic lifecycle observation with the

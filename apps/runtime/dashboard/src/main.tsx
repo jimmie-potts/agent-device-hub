@@ -4,6 +4,10 @@
 // later slices; the Hub mode (#924) and the inbox (#923) have their panels on the home now.
 import React, {useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {DeviceCard, PlaybackCard} from './device-controls.tsx';
+import {BuildIdentity} from './build-identity.tsx';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
@@ -108,7 +112,7 @@ function Notice({notice}: {notice: NoticeRow}): React.JSX.Element {
 }
 
 /** The name, state and attention stay visible; the evidence and the rare facts sit behind Details. */
-function SessionRowView({row, live, now}: {row: SessionRow; live: boolean; now: number}): React.JSX.Element {
+function SessionRowView({row, live, now, control}: {row: SessionRow; live: boolean; now: number; control: boolean}): React.JSX.Element {
   const stale = row.uncertain || !live;
   const elapsed = Math.max(0, now - row.lastEvidenceAtMs);
   return <article className="session" data-session={row.id} data-chip={row.chip}>
@@ -120,7 +124,7 @@ function SessionRowView({row, live, now}: {row: SessionRow; live: boolean; now: 
         Activity: {row.facts.activity}. Last evidence: {age(elapsed)} ago. {stale ? 'Freshness is uncertain.' : 'Current observation; not a completion estimate.'}
       </InfoTip>
     </div>
-    <LabelEditor row={row} live={live}/>
+    {control && <LabelEditor row={row} live={live}/>}
     {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
     {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
     <details className="details session-details"><summary>Details</summary><Facts className="strip" items={[
@@ -147,7 +151,7 @@ function SessionsWidget({state, rows, live, now, size}: {
     {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : state.sessions.synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
       <p>{filtering ? 'Change the filters to see other sessions.' : 'The page shows sessions as soon as the core reports them.'}</p></div>}
     <div className="sessions">{rows.map(row => <div key={`${row.id}:${row.generation}`} hidden={!shown.has(row.id)}>
-      <SessionRowView row={row} live={live} now={now}/>
+      <SessionRowView row={row} live={live} now={now} control={state.runtime.control}/>
     </div>)}</div>
   </Widget>;
 }
@@ -198,6 +202,7 @@ function ConnectionsPage({state, now}: {state: DashboardState; now: number}): Re
       ['Syncs', sessions.syncs], ['Last change', sessions.changedAtMs === undefined ? 'Unknown' : `${age(Math.max(0, now - sessions.changedAtMs))} ago`],
       ['Last sync refusal', sessions.refused ?? 'None observed'],
     ]}/></div>
+    <BuildIdentity/>
     <div className="card"><h2>Observed sources</h2>{sources.map(source => <p key={source}>{source}</p>)}
       {sources.length === 0 && <p>No source evidence yet.</p>}
       <p className="hint">A connected feed does not prove a fresh session, successful task, read chat or physical device result.</p></div>
@@ -220,7 +225,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const working = rows.filter(row => row.chip === 'working').length;
   const notice = liveNotice(state);
   const layout = homeLayout();
-  const known = route.kind === 'home' || route.kind === 'connections';
+  const runtime = state.runtime;
+  const devices = runtime.copies.filter(copy => copy.family === 'device').flatMap(copy => (copy.records as readonly DeviceRecord[]).map(record => ({record, copy})));
+  const playback = runtime.copies.filter(copy => copy.family === 'playback').flatMap(copy => (copy.records as readonly PlaybackState[]).map(record => ({record, copy})));
+  const operationsCopy = runtime.copies.find(copy => copy.family === 'operation');
+  const operations = (operationsCopy?.records ?? []) as readonly OperationRecord[];
+  const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
+  const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
+  const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
+  const selectedPage = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module)?.pages.find(page => page.id === route.page) : undefined;
+  const known = route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
     if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} size={placement.size}/>;
@@ -234,6 +248,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <nav aria-label="Main navigation">
         <NavLink route={{kind: 'home'}} current={route}>Home <span>{rows.length}</span></NavLink>
         <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
+        {devices.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
+        {playback.map(({record}) => <NavLink key={record.id} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
+        {runtime.modules?.flatMap(module => module.pages.map(page => <NavLink key={`${module.name}:${page.id}`} route={{kind: 'module', module: module.name, page: page.id}} current={route}>{page.title}</NavLink>))}
       </nav>
       <PlacesNav links={links}/>
       <div className="sidebar-foot">
@@ -244,7 +261,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
     </aside>
     <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
-      <header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{state.feed === 'ended' ? 'Signed out' : 'Control enabled'} · Local</span></header>
+      <header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span></header>
       <section hidden={route.kind !== 'home'} aria-label="Home">
         <header className="page"><h1>Home</h1><div className="home-status">
           <span>{working} working · {rows.length} sessions</span><FeedIndicator state={state} now={now}/>
@@ -255,10 +272,27 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
           <div className="home-narrow">{layout.narrow.map(place)}</div>
         </div>
       </section>
+      {(route.kind === 'home' || route.kind === 'component') && <section aria-label="Devices">
+        {route.kind === 'home' && <h2>Devices</h2>}
+        {selectedDevice && route.kind === 'component' && <header className="page"><h1>{devices.find(({record}) => record.id === route.id)?.record.label ?? route.id}</h1></header>}
+        {runtime.catalogFailed && <p role="alert">The module catalog is unavailable. Retrying the read; controls stay unavailable.</p>}
+        {runtime.modules?.filter(module => module.state === 'failed' || module.state === 'refused').map(module => <p className="warning" key={module.name}>{module.name}: {module.state}. Its devices are unavailable.</p>)}
+        {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
+        {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
+        <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id}>
+          <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
+            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} compact={route.kind === 'home'}/>
+        </div>)}</div>
+      </section>}
+      {(route.kind === 'home' || route.kind === 'playback') && <section aria-label="Music"><div className="cards">{playback.map(({record, copy}) =>
+        <PlaybackCard key={record.id} record={record} live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}</div></section>}
+      {selectedPage !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
+        <iframe className="module-page" title={selectedPage.title} src={selectedPage.path} sandbox="allow-same-origin"/>
+      </section>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
       {!known && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
-        <p>Only the built-in pages have addresses here yet. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
+        <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>

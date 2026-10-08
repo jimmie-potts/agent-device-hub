@@ -10,32 +10,32 @@ changes ([ADR 0012](../../../docs/decisions/0012-bunny-event-platform.md)). It
 polls nothing and replays nothing: after a lost stream it syncs again and shows
 the core's current state.
 
-What the runtime copy has now, the first of #922's three slices:
+The runtime copy includes:
 
 - the shell, its hash routes, the Places navigation and the Neon skin;
 - browser sign-in on the runtime's gateway: a bookmark with trusted loopback
   sign-in, or the launcher's one-time code;
 - the agent sessions, synced from the core, with a finished turn shown unread
   until the session record clears it;
+- general device cards and guarded controls, music, declared module pages and a running build readout;
 - the home that the owner-approved mockup lays out ("Recommended (d)", owner
   decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
   (#923).
 
-Device cards, their general controls and music come in the second slice, and
-module pages, the run preview and the running build identity on Connections in the third. The Wispr page comes with #927
-and the automation pages with #925.
+The Wispr page comes with #927 and the automation pages with #925. Device-specific
+feature pages remain their own module stories.
 
 ## Pages, routes and widgets
 
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
-home and `#/connections`. `src/routes.ts` parses a hash into a discriminated
+home, `#/connections`, `#/component/<device>`, `#/music/<source>` and
+`#/module/<module>/<page>`. `src/routes.ts` parses a hash into a discriminated
 route, so built-in pages and component aliases are distinct kinds and an alias
 of `activity` or `connections` opens only that component
 ([#247](https://github.com/jimmie-potts/agent-device-hub/issues/247)). A
 navigation link applies its route in the click event, ahead of the browser's
 deferred `hashchange`, so two pages are never shown at once, and the back button
-walks the history. An address that names nothing, such as a component before the
-device slice, shows a not-found message and sends nothing. The launcher's
+walks the history. An address that names nothing shows a not-found message and sends nothing. The launcher's
 `#launch=` fragment is not a route: the page removes it before it exchanges the
 code.
 
@@ -166,3 +166,62 @@ The focused label/reload journey runs with
 `node apps/runtime/dashboard/tests/session-label.browser.ts` after a build.
 It shares its label assertions with the full `browser.ts` suite and checks
 conflict drafts, explicit retry, Clear, keyboard focus and desktop/phone axe.
+
+## Devices, music and operations
+
+The authenticated module catalog names every device owner. `runtime-feeds.ts`
+keeps one SDK copy per owner, alongside core operations and playback, using the
+existing participant. Desired state, device observation, queued kinds, last
+transmission and held state stay separate. A failed owner remains visible as
+unavailable; a lost stream keeps records stale until their own snapshot returns.
+
+Home keeps the existing mode/power quick controls; the device route exposes
+brightness, scenes, zones, media and manual moments only where declared. Each
+explicit general command includes the current configuration revision and generation.
+Playback uses its current revision. Nanoleaf content requires Free and Pixoo
+content requires Media; selecting content never changes mode. The four shipped
+device modules currently advertise moments unsupported. The capability-gated
+manual card is retained, but this dashboard does not implement a module's moment
+behavior.
+
+The existing authenticated action route sends each attempt once. The card shows
+requested, then accepted, then the operation record's completion and effect
+evidence. A local refusal means nothing was sent; a core refusal means the
+request was refused without changing state. Transmitted success is not physical
+observation. Failed, uncertain and conflicting results remain visible.
+
+Uncertain attempts lock ordinary controls across navigation and reload. Session
+storage keeps only attempt identifiers, not payloads or credentials. **Refresh
+current state** resyncs records and sends no command. Definitive operation
+evidence can release the lock. A held Nanoleaf device keeps its held warning and
+offers its existing explicit guarded mode command to release the hold. Nothing
+automatically retries or replays. Read-only sessions have no write controls.
+
+## Module pages, build and disposable preview
+
+Navigation takes only exact same-origin page paths from module declarations. A
+sandboxed frame keeps the page inside the shell. The gateway permits same-origin
+framing of module HTML only; scripts and forms stay forbidden, content policies
+stay unchanged, and the shell itself cannot be framed. Unknown pages show not
+found. No private file or installed-service fallback is used.
+
+Connections reads `/api/v2/build`: the serving process's frozen package version,
+source revision, build time and dirty flag, with unavailable identity shown as
+unknown. The build step creates that identity, not a Git command per request.
+
+Use the existing disposable adapter after a build:
+
+```bash
+npm run -s verify:runtime -- start --scenario dashboard-controls
+# Open the run's own origin at /, then pendant-1, Sign preview and Connections.
+npm run -s verify:runtime -- capture <run-id> scenario-dashboard-controls
+npm run -s verify:runtime -- stop <run-id>
+```
+
+The run uses simulated LIFX bulbs and a synthetic sign. The adapter's existing
+health screenshots remain health evidence; the focused browser journey provides
+UI evidence. Run that journey with
+`node apps/runtime/dashboard/tests/controls.browser.ts` after a build. It checks
+accepted/completed timing, an uncertain lock after reload and explicit refresh,
+no replay, declared-page navigation, keyboard operation and desktop/phone axe.
+Installation and physical acceptance remain separate.
