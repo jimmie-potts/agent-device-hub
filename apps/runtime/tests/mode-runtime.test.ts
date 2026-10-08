@@ -85,7 +85,6 @@ it('qualified failed modules remain targets; refused modules are excluded and pe
   clock.advance(0);
   await waitFor(() => coreHandle?.operation(pixooId)?.status === 'uncertain', 5000, 'restart deadline uncertainty');
   assert.equal(pixoo.commands.length, 1);
-  assert.ok(coreHandle);
   const inbox = await coreHandle.sdk.sync<InboxItem>(['inbox-item'], () => {}, {timeoutMs: 2000});
   assert.equal(inbox.status, 'synced');
   if (inbox.status === 'synced') {

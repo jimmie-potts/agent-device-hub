@@ -22,7 +22,7 @@ Hub #924 fills the existing home slot. The core already owns a SQLite store, tra
 - A crash after saving but before sending leaves the selection saved with absent device evidence. This is deliberate: restart does not reconstruct or replay commands, and absent evidence never becomes success.
 - The mode contract has no application request ID. The panel shows a recent completed selection request and its deterministic child IDs separately from the current saved choice. It does not infer that old operation evidence describes the current selection or what a device currently shows.
 - Fixed targets include stopped modules. Their commands may fail or become uncertain; other targets proceed and the inbox records each problem.
-- Final real-inbox integration and independent disposable Acceptance wait for accepted #923. Focused source and browser checks do not claim installed or physical acceptance.
+- The mode owner and the accepted shared inbox use the same core store and tracker. Failed or uncertain child operations appear in the real inbox; committed resend handling remains accepted independently of a fresh refusal. Independent disposable Acceptance remains required. Focused source and browser checks do not claim installed or physical acceptance.
 
 ## Migration Plan
 

@@ -9,7 +9,7 @@
 - [x] 2.1 Add the dashboard helper and mode selector with separate device evidence; verify helper unit tests and changed-control browser/accessibility journey.
 - [x] 2.2 Add the MCP mode extension on ordinary control scope; verify focused extension and gateway/MCP tests.
 - [x] 2.3 Integrate shared core/tracker/host/runtime/dashboard/MCP callsites under the coordinator's handoff; verify build/typecheck and composed mode catalog evidence.
-- [ ] 2.4 Rebase onto accepted #923 and reconcile its unanswered-mode fixture without overlapping the real Hub responder.
+- [x] 2.4 Integrate accepted #923 and reconcile its unanswered-mode fixture without overlapping the real Hub responder; verify real-inbox failure/uncertainty and committed resend handling in focused source tests.
 
 ## 3. Delivery verification
 
