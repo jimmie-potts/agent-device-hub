@@ -3,8 +3,10 @@
 // `createDesktopRead` in apps/hub/src/codex-desktop.ts at main 8590332f): only the known version 1 shape counts, an
 // unusable marker gives no unread set, and a file that changed while it was read is read again. The marker is only read,
 // never written, and neither its path nor its content leaves the module: only the unread IDs reach the module's main
-// thread. The read is synchronous, because it runs in the reader's own process (reader.ts).
-import {closeSync, constants, fstatSync, openSync, readSync, statSync} from 'node:fs';
+// thread. It runs in the reader's own process (reader.ts), asynchronously, so a read stuck on a stalled mount holds one
+// thread of that process's pool and its main thread still hears the runtime go.
+import {constants} from 'node:fs';
+import {open, stat} from 'node:fs/promises';
 import {join} from 'node:path';
 
 /** The marker's name in the Codex home. */
@@ -53,35 +55,35 @@ const stampOf = (info: {mtimeNs: bigint; size: bigint}): string => `${info.mtime
  * regular file, is over the bound or grew while it was read. The buffer fits the file, so a read holds no more memory
  * than the marker needs.
  */
-function readBounded(path: string): Buffer | undefined {
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+async function readBounded(path: string): Promise<Buffer | undefined> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
-    const info = fstatSync(fd);
+    const info = await file.stat();
     if (!info.isFile() || info.size > MAX_MARKER_BYTES) return undefined;
     const buffer = Buffer.alloc(info.size + 1);
     let size = 0;
     for (;;) {
-      const read = readSync(fd, buffer, size, buffer.length - size, null);
-      if (read === 0) return buffer.subarray(0, size);
-      size += read;
+      const {bytesRead} = await file.read(buffer, size, buffer.length - size, null);
+      if (bytesRead === 0) return buffer.subarray(0, size);
+      size += bytesRead;
       if (size > info.size) return undefined;
     }
   } finally {
-    closeSync(fd);
+    await file.close();
   }
 }
 
-/** Reads the marker in `home` unless its stamp is still `stamp`. It never throws and never writes. */
-export function readMarker(home: string, stamp: string): MarkerRead {
+/** Reads the marker in `home` unless its stamp is still `stamp`. It never rejects and never writes. */
+export async function readMarker(home: string, stamp: string): Promise<MarkerRead> {
   const path = join(home, MARKER_FILE);
   try {
-    const before = statSync(path, {bigint: true});
+    const before = await stat(path, {bigint: true});
     const version = stampOf(before);
     if (version === stamp) return {status: 'unchanged'};
     // A stable unusable file stays unusable until it changes.
     if (!before.isFile() || before.size > BigInt(MAX_MARKER_BYTES)) return {status: 'read', stamp: version, unread: null};
-    const bytes = readBounded(path);
-    if (bytes === undefined || stampOf(statSync(path, {bigint: true})) !== version) return {status: 'retry'};
+    const bytes = await readBounded(path);
+    if (bytes === undefined || stampOf(await stat(path, {bigint: true})) !== version) return {status: 'retry'};
     let text: string;
     try {
       text = new TextDecoder('utf-8', {fatal: true}).decode(bytes);

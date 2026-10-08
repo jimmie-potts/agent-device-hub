@@ -14,7 +14,7 @@ The runtime SHALL host one module, `codex-desktop` (module API 1.2), that turns 
 
 ### Requirement: Read evidence for top-level Desktop sessions
 
-The module SHALL follow the core's sessions through sync, read the marker every 2 s, and for each session whose read state the marker changes publish one `org.bunny.lifecycle.observed` occurrence with a `read-observed` event, from `bunny/modules/codex-desktop`, on `bunny.event.lifecycle.<session ID>`, with the session's identity and turn, an unknown parent and unknown ordering. The old Hub's rules SHALL hold: only the configured producer's Codex Desktop sessions count, and never a subagent with a known parent; a listed session is unread; an unlisted one is read once it was unread, or, when its read state is unknown and its activity is not `active`, once 5 s have passed since its last evidence. Only the known version 1 marker shape SHALL count; a missing, unreadable, oversized (over 16 MiB), malformed or other-format marker SHALL give no evidence, and a marker that changed while it was read SHALL give none until it is read again. The module SHALL publish the same evidence for one revision of a session's record once, and again only after the record changes. It SHALL log each change of the marker's usability once.
+The module SHALL follow the core's sessions through sync, read the marker every 2 s, and for each session whose read state the marker changes publish one `org.bunny.lifecycle.observed` occurrence with a `read-observed` event, from `bunny/modules/codex-desktop`, on `bunny.event.lifecycle.<session ID>`, with the session's identity and turn, an unknown parent and unknown ordering. The old Hub's rules SHALL hold: only the configured producer's Codex Desktop sessions count, and never a subagent with a known parent; a listed session is unread; an unlisted one is read once it was unread, or, when its read state is unknown and its activity is not `active`, once 5 s have passed since its last evidence. Only the known version 1 marker shape SHALL count; a missing, unreadable, oversized (over 16 MiB), malformed or other-format marker SHALL give no evidence, and a marker that changed while it was read SHALL give none until it is read again. The module SHALL publish evidence at once for a new revision of a session's record. While that revision stays the same, as when the core refused the observation, the module SHALL send the same evidence again on a later poll: first 4 s after it went out, then after a wait that doubles each time, at most a minute. It SHALL log each change of the marker's usability once.
 
 #### Scenario: The marker's sessions
 - **WHEN** the marker lists a finished top-level Desktop session, its subagent, another producer's Desktop session, a CLI session, another host's session and a Claude session
@@ -28,9 +28,13 @@ The module SHALL follow the core's sessions through sync, read the marker every 
 - **WHEN** the marker turns into another format while one session is listed and another finishes, then becomes usable again
 - **THEN** no evidence comes while it is unusable, both sessions read as read once it is usable, and one warning and one recovery are logged
 
-#### Scenario: Evidence the core does not take
+#### Scenario: Evidence the core refuses
+- **WHEN** the core refuses a session's read evidence once, as while its store fails, and then takes it
+- **THEN** the module sends it again on the first poll 4 s after it went out, the session's read state follows the marker, and nothing more is sent
+
+#### Scenario: Evidence the core never takes
 - **WHEN** the core leaves a session's record unchanged after its evidence
-- **THEN** the module publishes it once, and again only after the record's revision changes
+- **THEN** the module sends it again 4, 8, 16, 32 and 60 s later, then once a minute, and at once when the record's revision changes
 
 #### Scenario: Through the real core
 - **WHEN** the runtime runs the real core and the module's real reader on a synthetic marker in a temporary Codex home, and a Desktop session's turn ends while the marker lists it, beside a subagent and another producer's session
@@ -38,7 +42,7 @@ The module SHALL follow the core's sessions through sync, read the marker every 
 
 ### Requirement: Reading the marker under policy A
 
-The marker's folder SHALL be the module's device under policy A. Start SHALL never wait on it. The real reader SHALL read the marker synchronously in a child process of its own, started on the first read and again after it ended, given the home over its IPC channel and never in its arguments, never keeping the runtime alive, and never blocking on a special file. The module SHALL publish evidence only from a read that answered. A read that does not answer within 5 s SHALL make the marker unavailable, logged once as a `device.unavailable` warning with `bunny.device.id` `marker` and then as summaries, and the module SHALL not read again until that read answers, when one `device.available` record follows. A reader that fails SHALL make the marker unavailable and be tried again after 2 s times 2 to the number of failures in a row, at most a minute. The module's stop SHALL never wait on a read, and SHALL end the reader. The folder's errors and stalls SHALL never fail the module or reach the core or any other module.
+The marker's folder SHALL be the module's device under policy A. Start SHALL never wait on it. The real reader SHALL read the marker in a child process of its own, started on the first read and again after it ended, given the home over its IPC channel and never in its arguments, never keeping the runtime alive, and never blocking on a special file. It SHALL read asynchronously, so that when its channel closes, even while a read is stuck, it ends itself at once by signal. The module SHALL publish evidence only from a read that answered. A read that does not answer within 5 s SHALL make the marker unavailable, logged once as a `device.unavailable` warning with `bunny.device.id` `marker` and then as summaries, and the module SHALL not read again until that read answers, when one `device.available` record follows. A reader that fails SHALL make the marker unavailable and be tried again after 2 s times 2 to the number of failures in a row, at most a minute. The module's stop SHALL never wait on a read, and SHALL end the reader. The folder's errors and stalls SHALL never fail the module or reach the core or any other module.
 
 #### Scenario: A folder that stalls
 - **WHEN** the folder stalls after a good read while the marker changes, for a minute, then answers
@@ -59,6 +63,10 @@ The marker's folder SHALL be the module's device under policy A. Start SHALL nev
 #### Scenario: A reader stuck in a file system call
 - **WHEN** the real reader is stuck in an `open` that never returns, in the runtime with the real core
 - **THEN** the core still takes observations, health shows the module and the core running, the marker is unavailable once, and the runtime's stop finishes within 3 s; closing the transport ends the stuck reader
+
+#### Scenario: A runtime killed during a stall
+- **WHEN** the process that started the real reader's loop is killed outright while the reader is stuck in an `open` that never returns
+- **THEN** the reader is gone within 2 s
 
 ### Requirement: What leaves the Codex Desktop module
 

@@ -2007,7 +2007,8 @@ builds, then runs `test:codex-desktop:built`: the compiled tests in
 `npm run test:codex-desktop:built` after its fresh build. The suite covers the
 Hub's marker parser and read rules as published observations: top-level
 sessions of the configured producer only, the settle rule, an unusable marker,
-evidence once per record revision; a folder that stalls, before and after the
+evidence sent again with a doubling wait while the core leaves its record
+unchanged, as after a refusal; a folder that stalls, before and after the
 first read; a reader that fails and its backoff; a stop that never waits on a
 read; that nothing carries the Codex home; the section and the cutover's
 conversion; the real reader process on a synthetic marker in a temporary Codex

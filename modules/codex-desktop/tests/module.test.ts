@@ -3,8 +3,10 @@
 // and what leaves the module. The real core's reduction of the evidence is apps/runtime/tests/codex-desktop.test.ts.
 import assert from 'node:assert/strict';
 import type {LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
-import {MARKER_DEVICE, POLL_MS, READ_TIMEOUT_MS, SimulatedMarker, createCodexDesktopModule, type MarkerRead, type MarkerTransport} from '../src/index.js';
-import {SECTION, World, identityOf, it} from './support.js';
+import {
+  MARKER_DEVICE, POLL_MS, READ_TIMEOUT_MS, RESEND_FIRST_MS, RESEND_MAX_MS, SimulatedMarker, createCodexDesktopModule, type MarkerRead, type MarkerTransport,
+} from '../src/index.js';
+import {SECTION, START_MS, World, identityOf, it} from './support.js';
 
 it('the marker gives read evidence for the configured producer\'s top-level Desktop sessions only', async () => {
   const world = await World.open();
@@ -87,16 +89,46 @@ it('a missing, malformed or changed-format marker gives no evidence, and each ch
   }
 });
 
-it('evidence the core does not take is published once for each revision of the session\'s record', async () => {
+/** When each read observation went out, in seconds after the world's start. */
+const sentAt = (world: World): number[] => world.published.filter(message => message.type === 'org.bunny.lifecycle.observed').map(message => (Date.parse(message.time) - START_MS) / 1000);
+
+it('evidence the core refuses goes out again on a later poll, and once the core takes it, no more', async () => {
+  const world = await World.open();
+  try {
+    await world.session('one');
+    world.refuseNext(1);
+    world.marker.list(['one']);
+    await world.clock.advance(POLL_MS);
+    assert.deepEqual(world.evidence(), ['one unread']);
+    assert.equal(world.record('one')?.read, 'unknown', 'the core refused it');
+    // It went out with the first read, at 0 s. The record has not changed, so the first poll 4 s after that sends it
+    // again, and the core takes it.
+    await world.clock.advance(RESEND_FIRST_MS - POLL_MS - 1);
+    assert.deepEqual(world.evidence(), ['one unread']);
+    await world.clock.advance(1);
+    assert.deepEqual(sentAt(world), [0, 4]);
+    assert.equal(world.record('one')?.read, 'unread');
+    await world.clock.advance(600_000);
+    assert.deepEqual(world.evidence(), ['one unread', 'one unread'], 'nothing more once the record agrees');
+  } finally {
+    await world.close();
+  }
+});
+
+it('evidence the core never takes goes out again after a doubling wait, at most a minute apart, and at once for a new revision', async () => {
   const world = await World.open({reduce: false});
   try {
     await world.session('one');
     world.marker.list(['one']);
-    await world.clock.advance(20_000);
-    assert.deepEqual(world.evidence(), ['one unread']);
+    await world.clock.advance(122_000);
+    // Polls come every 2 s from 0 s: sent with the first read, then 4, 8, 16, 32 and 60 s later.
+    assert.deepEqual(sentAt(world), [0, 4, 12, 28, 60, 120]);
+    assert.equal(RESEND_MAX_MS, 60_000);
+    // A new revision of the record is new evidence: it goes out at the next poll, and the wait starts again.
     await world.session('one');
-    await world.clock.advance(POLL_MS);
-    assert.deepEqual(world.evidence(), ['one unread', 'one unread']);
+    await world.clock.advance(POLL_MS + RESEND_FIRST_MS);
+    assert.deepEqual(sentAt(world).slice(6), [124, 128]);
+    assert.ok(world.evidence().every(entry => entry === 'one unread'));
   } finally {
     await world.close();
   }

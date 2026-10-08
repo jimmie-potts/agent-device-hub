@@ -31,9 +31,9 @@ only `@jimmie-potts/sdk` and `@jimmie-potts/event-contracts`.
 | --- | --- | --- |
 | `codexDesktopOptions` | `src/configuration.ts` | The same three members and checks, as `configure`; a refusal is the shared error body with fixed text. `convertHubCodexDesktop` is new, for the installer. |
 | `unreadSessions` | `src/marker.ts` | Unchanged. |
-| `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now synchronous in the reader's own process. The reader never reads a special file, and its open cannot block on one. |
+| `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/serve.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now in the reader's own process. The reader never reads a special file, and its open cannot block on one. |
 | `readEvents` | `src/evidence.ts` | The same rules on the core's `session/2.0` records; each piece of evidence is a `read-observed` lifecycle observation. |
-| `startDesktopRead` | `src/module.ts` | The same 2 s poll, one read at a time, now with a read deadline, the marker's availability and evidence once per record revision. |
+| `startDesktopRead` | `src/module.ts` | The same 2 s poll, one read at a time, now with a read deadline, the marker's availability and evidence sent again for an unchanged record after a doubling wait instead of on every poll. |
 | `tests/codex-desktop.test.mjs`: the parser and configuration cases | `tests/marker.test.ts`, `tests/configuration.test.ts` | The same cases. |
 | The read state, settle and unusable marker cases | `tests/module.test.ts`, and with the real core `apps/runtime/tests/codex-desktop.test.ts` | The same decisions, observed as published observations; the real core's reduction in the runtime's test. |
 | The host's polling case | `apps/runtime/tests/codex-desktop.test.ts` | The real reader process on a synthetic marker, through the real core. |
@@ -91,9 +91,13 @@ changes, publishes one `org.bunny.lifecycle.observed` occurrence with a
 - The observation names the session's turn, an unknown parent and unknown
   ordering, as the Hub's did.
 
-Evidence for one revision of a session's record is published once: when the core
-does not take it, the module does not send it again until the record changes.
-Each observation starts its own trace, which the core's intake record carries.
+Evidence for a new revision of a session's record goes out at once. The module
+learns whether the core took it only from the record, so while that revision
+stays the same, as when the core refused the observation during a storage
+failure, a later poll sends it again: 4 s after it went out, then after a wait
+that doubles each time, at most a minute. The old Hub sent it on every poll while
+the state differed. Each observation starts its own trace, which the core's
+intake record carries.
 
 ## Reading the marker (policy A)
 
@@ -108,7 +112,10 @@ block one of the libuv pool's threads, which the whole process shares. So
 `folderReader()` reads in a child process of its own, `src/reader.ts`. The reader
 starts on the first read, and again after it ended. It takes no arguments, so no
 path shows in the process list: each read names the home over its IPC channel.
-It reads synchronously, never keeps the runtime alive, and ends with it.
+It never keeps the runtime alive. It reads asynchronously (`src/serve.ts`), so a
+stuck read holds one of its pool's threads and its main thread still hears its
+channel close: when the runtime goes, even killed outright during a stall, the
+reader kills itself at once, since `process.exit` would wait for the stuck read.
 
 - Evidence comes only from a read that answered, so a stalled folder yields
   none.
@@ -119,8 +126,9 @@ It reads synchronously, never keeps the runtime alive, and ends with it.
 - A reader that fails, as when its process ended, makes the marker unavailable
   too. It is tried again after 4, 8, 16 and 32 s, then every minute, until a
   read succeeds.
-- The module's stop never waits on a read. It kills the reader; one stuck in a
-  stalled call ends once the call returns. The runtime still stops and exits.
+- The module's stop never waits on a read. It kills the reader, and the runtime
+  still stops and exits. A process blocked in a call on a stalled mount may stay
+  until the call returns, but holds no runtime resource.
 - The module never fails for its folder, and the core and the other modules are
   never affected.
 

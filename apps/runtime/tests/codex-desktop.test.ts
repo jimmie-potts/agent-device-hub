@@ -3,7 +3,8 @@
 // home that stalls leaves the core and the runtime's stop untouched. No test reads a real Codex file.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {chmod, mkdtemp, readdir, realpath, rm, writeFile} from 'node:fs/promises';
+import {constants} from 'node:fs';
+import {chmod, mkdtemp, open, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
@@ -18,10 +19,26 @@ const SOURCE = {hostId: 'host-sim', sourceId: 'codex-desktop'} as const;
 const desktop = (sessionId: string, sourceId: string = SOURCE.sourceId): Identity => ({provider: 'codex', client: 'desktop', hostId: SOURCE.hostId, sourceId, sessionId});
 const marker = (ids: readonly string[]): string => JSON.stringify({'electron-thread-read-state-v1': {version: 1, unreadByIdentity: {host: {'local:a': ids}}}});
 
-async function codexHome(context: TestContext): Promise<string> {
+/**
+ * A Codex home in a new private folder. A stalled one's marker is a FIFO with no writer, whose blocking open does not
+ * return, as on a stalled mount; at the test's end a writer's open releases any read still waiting on it.
+ */
+async function codexHome(context: TestContext, {stalled = false} = {}): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'codex-home-')));
   await chmod(dir, 0o700);
-  context.after(() => rm(dir, {recursive: true, force: true}));
+  const marker = join(dir, MARKER_FILE);
+  if (stalled) execFileSync('mkfifo', ['-m', '600', marker]);
+  context.after(async () => {
+    if (stalled) {
+      try {
+        const writer = await open(marker, constants.O_WRONLY | constants.O_NONBLOCK);
+        await writer.close();
+      } catch {
+        // No read waits on it.
+      }
+    }
+    await rm(dir, {recursive: true, force: true});
+  });
   return dir;
 }
 
@@ -90,9 +107,8 @@ it('Codex Desktop\'s marker becomes read evidence the core takes, for the config
 });
 
 it('a Codex home that stalls leaves the core taking observations, the module running, and the runtime\'s stop at once', async context => {
-  const home = await codexHome(context);
   // A FIFO with no writer: the stuck reader's open of it never returns, as on a stalled mount.
-  execFileSync('mkfifo', [join(home, MARKER_FILE)]);
+  const home = await codexHome(context, {stalled: true});
   const probe = fixture('probe');
   const {runtime, logs} = await run(context, {
     modules: [createCoreModule(), createCodexDesktopModule({transport: folderReader(new URL('./fixtures/stuck-marker-reader.js', import.meta.url))}), probe],

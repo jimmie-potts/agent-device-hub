@@ -5,7 +5,8 @@
 // thread blocked in such a call cannot be stopped: a worker thread's `terminate()` and even `process.exit()` wait for it
 // (measured on Node 24 with a FIFO's open, 2026-10-07), and the libuv pool's threads are the whole process's. So the
 // reader runs in its own process, and the runtime never waits for it: a read that stalls only leaves this module without
-// read evidence, the module's stop kills the reader, and the runtime still stops and exits.
+// read evidence, the module's stop kills the reader, and the runtime still stops and exits. A runtime killed outright
+// leaves none behind either: the reader's main thread stays free, hears its channel close and kills itself (serve.ts).
 import {fork, type ChildProcess} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {markerReadOf, type MarkerRead} from './marker.js';
@@ -90,7 +91,7 @@ class FolderReader implements MarkerTransport {
 }
 
 /**
- * The real Codex home's reader: one child process, `reader.js`, that reads the marker synchronously and answers over its
- * IPC channel. `program` replaces it, for a test that needs a reader that never answers.
+ * The real Codex home's reader: one child process, `reader.js`, that reads the marker and answers over its IPC channel.
+ * `program` replaces it, for a test that needs a reader that never answers.
  */
 export const folderReader = (program: URL = READER): MarkerTransport => new FolderReader(program);

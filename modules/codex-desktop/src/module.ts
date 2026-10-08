@@ -22,6 +22,10 @@ export const POLL_MS = 2000;
 export const READ_TIMEOUT_MS = 5000;
 /** The longest wait between reads after the reader failed. */
 export const READ_BACKOFF_MAX_MS = 60_000;
+/** How long evidence waits for its session's record to change before a later poll sends it again: the core may have refused it. */
+export const RESEND_FIRST_MS = 4000;
+/** The longest wait between two sends of the same evidence: the wait doubles each time the record stays the same. */
+export const RESEND_MAX_MS = 60_000;
 /** The marker's name in the module's records: the one thing the module reaches. */
 export const MARKER_DEVICE = 'marker';
 export const LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.0';
@@ -86,8 +90,11 @@ class DesktopRun {
   #unread: ReadonlySet<string> | null = null;
   /** Whether the last read found a usable marker, for logging each change once. */
   #usable: boolean | undefined;
-  /** The evidence published for each session, by its record's revision, so a record that does not change gets it once. */
-  readonly #published = new Map<string, string>();
+  /**
+   * The evidence last sent for each session, by its record's revision, when and how long it waits for the record to
+   * change before it goes out again: the core may have refused it, and only the record says whether it took it.
+   */
+  readonly #sent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
 
   constructor(context: ModuleContext<CodexDesktopConfig>, config: CodexDesktopConfig, transport: MarkerTransport) {
     this.#context = context;
@@ -278,19 +285,23 @@ class DesktopRun {
 
   // Evidence
 
-  /** Publishes the evidence the last read gives, once for each session record's revision. */
+  /**
+   * Publishes the evidence the last read gives: at once for a new revision of a session's record, and again while that
+   * revision stays the same, as after a core that refused it, 4 s later, then after a wait that doubles to a minute.
+   */
   #evaluate(): void {
     const unread = this.#unread;
     const copy = this.#copy;
     if (unread === null || copy === undefined) return;
     const sessions = copy.states().map(message => message.data);
     const current = new Set(sessions.map(session => session.id));
-    for (const id of [...this.#published.keys()]) if (!current.has(id)) this.#published.delete(id);
+    for (const id of [...this.#sent.keys()]) if (!current.has(id)) this.#sent.delete(id);
     const nowMs = this.#context.clock.now();
     for (const evidence of readEvidence(sessions, unread, this.#config, nowMs)) {
       const mark = `${evidence.session.revision} ${evidence.state}`;
-      if (this.#published.get(evidence.session.id) === mark) continue;
-      this.#published.set(evidence.session.id, mark);
+      const sent = this.#sent.get(evidence.session.id);
+      if (sent?.mark === mark && nowMs - sent.atMs < sent.waitMs) continue;
+      this.#sent.set(evidence.session.id, {mark, atMs: nowMs, waitMs: sent?.mark === mark ? Math.min(RESEND_MAX_MS, sent.waitMs * 2) : RESEND_FIRST_MS});
       this.#track(this.#publish(evidence, nowMs));
     }
   }
@@ -305,7 +316,7 @@ class DesktopRun {
       });
     } catch {
       // The module is stopping, and its participant refuses use; the next start reads again.
-      this.#published.delete(id);
+      this.#sent.delete(id);
       return;
     }
     this.#context.log.debug('lifecycle.observed', {'bunny.operation': 'lifecycle', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);

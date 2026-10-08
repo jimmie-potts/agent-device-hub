@@ -41,6 +41,11 @@ lists the marker's actions and takes `sessions` only with `list`.
   anything, then imports only `@jimmie-potts/runtime/hook` by package name, which loads the normalizers, the SDK and the
   contracts, never the rest of the runtime, so the installer can place it behind the hook link. Measured, it costs
   about 15 ms more than the old hook.
+- **A stuck file read ends the hook by signal.** `enrichHook`'s title read stops waiting after 100 ms but cannot stop
+  an open on a stalled mount, and on Node 24 `process.exit` then blocks for as long as the mount stalls; nothing runs
+  after a blocked exit. So the hook checks for a file read under way (`process.getActiveResourcesInfo`) before it
+  exits: it exits 0 once there is none, and at the deadline, with one still stuck, it ends by `SIGKILL`, which the
+  clients treat as a non-blocking error. Added in fix round 1; the old hook has the same flaw.
 - **The 1.x envelope maps one way.** `observationOf` is the inverse of the core's `toEnvelope`: kebab-case kinds,
   `eventId` as `nativeEventId`, known ordering with its source as authority; a consumer's acknowledgment, a command in
   2.0, maps to nothing. A test checks the round trip for every kind.
@@ -49,13 +54,18 @@ lists the marker's actions and takes `sessions` only with `list`.
   FIFO's `open`. The Codex home lies on a Windows mount, so the reader runs in its own process, forked on the first read,
   unreferenced, given the home over IPC and never in its arguments, and killed at the module's stop. It costs about
   5 MiB above an idle Node process (49 MiB resident against 44 MiB). Alternative rejected: worker calls per poll, which
-  leak a thread per stalled poll and keep the runtime from exiting.
+  leak a thread per stalled poll and keep the runtime from exiting. Fix round 1 made the reader's read asynchronous, so
+  a stuck read holds a pool thread while its main thread still hears its channel close; it then kills itself, since
+  `process.exit` would wait, and a runtime killed outright during a stall leaves no reader behind.
 - **Policy A for the folder.** Evidence comes only from a read that answered. A read past 5 s makes the marker
   unavailable (`DeviceAvailability`: one warning and summaries), and the next read waits for the one under way. A
   failed reader backs off 4 to 60 s. Start never waits.
-- **Evidence once per record revision.** The Hub ingested again every 2 s while the reducer left the state unchanged;
+- **Evidence again after a doubling wait.** The Hub ingested again every 2 s while the reducer left the state unchanged;
   in the runtime each publication is a message the core logs, so the module remembers what it sent for each record's
-  revision and sends again only after the record changes.
+  revision and when. It learns whether the core took it only from the record: while the revision stays the same, as
+  after a refusal during a storage failure, a later poll sends it again, 4 s after it went out, then after a wait that
+  doubles to a minute. Fix round 1 replaced the first rule, once per revision, which left a refused observation unsent
+  until the next hook.
 - **Module API 1.2 for settings.** The module shows `hostId` and `sourceId`, never the home; the process test now takes
   each shipped module's API version from its manifest.
 - **Tier 2 drives the real script.** The harness contract gains `hook`, which spawns the script with an unchanged 1.x
@@ -68,8 +78,10 @@ lists the marker's actions and takes `sessions` only with `list`.
   source, and its hooks would be lost silently. Every producer the Hub's setup made has that ID; the installer can check
   each producer file with `producerSource` against the converted credentials (handed to #935).
 - [The reader process] costs a Node process. Accepted for isolation; measured.
-- [A stalled reader that never returns] keeps one process stuck until the mount recovers; the module never starts a
-  second while one is outstanding.
+- [A stalled reader that never returns] keeps one process stuck until the mount recovers or the runtime goes; the
+  module never starts a second while one is outstanding.
+- [Many hooks at once] share the CPU: in the failure-isolation review 5 sessions sending 20 hooks at once all landed,
+  but 10 sending 20 lost 21 of 200 at the deadline, which leaves about 0.1 s before the clients' 3 s timeout.
 - [Lost observations while the runtime is down] are the fail-open contract; the session's freshness shows the gap.
 
 ## Migration Plan

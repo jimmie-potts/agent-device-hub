@@ -1,7 +1,7 @@
 // What the Codex Desktop module's tests share (Hub #926): a manual clock, the module hosted in the kit's `ModuleHarness`
 // on its own bus with a simulated marker, and a stand-in core that serves sessions and, when asked, takes each read
-// observation as the core's reducer would, at a new revision. Every message the bus carries is checked against profile
-// 2.0 with the core families.
+// observation as the core's reducer would, at a new revision, or refuses the next few as a core whose store failed would.
+// Every message the bus carries is checked against profile 2.0 with the core families.
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -118,6 +118,8 @@ export class World {
   readonly hosted: ModuleHarness[] = [];
   #revision = 0;
   #core: Participant | undefined;
+  /** How many more read observations the stand-in core refuses, leaving the record as it was. */
+  #refusing = 0;
 
   private constructor(dir: string, options: WorldOptions) {
     this.dir = dir;
@@ -158,6 +160,11 @@ export class World {
   async session(sessionId: string, shape: SessionShape = {}): Promise<SessionRecord> {
     this.#revision += 1;
     return this.#put(sessionRecord(sessionId, this.#revision, this.clock.now(), shape));
+  }
+
+  /** Has the stand-in core refuse the next `count` read observations, as the core does while its store fails. */
+  refuseNext(count: number): void {
+    this.#refusing = count;
   }
 
   /** The record of one session, as the stand-in core holds it now. */
@@ -201,6 +208,10 @@ export class World {
     }));
     await core.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', async message => {
       if (this.#options.reduce === false || message.data.event.kind !== 'read-observed') return;
+      if (this.#refusing > 0) {
+        this.#refusing -= 1;
+        return;
+      }
       const record = this.sessions.get(message.subject);
       if (record === undefined) return;
       this.#revision += 1;
