@@ -32,7 +32,7 @@ converted to the strict profile and the module boundary. The module imports only
 | --- | --- | --- |
 | `src/protocol.ts` | `src/protocol.ts` | Checked indexed reads and no non-null assertions; packets, correlation and address rules unchanged. |
 | `src/controller.ts`, class `Bulb` | `src/queue.ts` | The controller v1 envelope, admission and receipts are gone; each attempt's deadline runs on the module's scheduler; `cancel` and `closeGracefully` became `close`, which aborts the call in flight. |
-| `src/controller.ts`, mode files | `src/store.ts`, `src/conversion.ts` | Modes live in the module's SQLite file; the old files are read once, by the cutover's conversion. |
+| `src/controller.ts`, mode files | `src/store.ts`, `src/conversion.ts` | Modes live in the module's SQLite file; only the optional legacy conversion reads the old files. |
 | `src/status-publisher.ts` | `src/status.ts`, `src/module.ts` | The status comes from the module's synced copy of the core's sessions, through `highestStatus` in `@jimmie-potts/event-contracts/v2/status`. |
 | `acquireWriterLease` in `controllers/tidbyt/src/runner.ts` | `src/lease.ts` | Lease files live in the module's private folder; a held lease is an answer, not a throw. |
 | `tests/protocol.test.mjs` | `tests/protocol.test.ts` | The same cases; the last drives the queue. |
@@ -74,15 +74,15 @@ The module reads no secret; a `secrets` member is ignored. No refusal repeats a
 value from the section, and no message, record or health entry carries an
 address.
 
-### Conversion at the cutover
+### Optional legacy conversion
 
 `convertLegacyConfiguration(block, modes)` turns the old host's `lifx` block into
 this section, and `readLegacyModes(folder, deviceIds)` reads each bulb's mode from
 the old host's `modes/` folder under its lease root, with the old controller's
 fail-closed rules: a linked file, a folder or file others can read, a missing file
 or invalid JSON reads as Free, which is the mode the old controller started that
-bulb in. The installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
-runs both. The conversion:
+bulb in. The selected [fresh setup](../../apps/runtime/SETUP.md) uses manually
+selected configuration and does not run either utility. The optional conversion:
 
 - keeps every bulb's address and model evidence, and a qualified bulb's mode as
   `initialMode` (`Work` becomes `work`);

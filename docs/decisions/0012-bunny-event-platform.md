@@ -1,6 +1,6 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06 and 2026-10-07 (see
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07 and 2026-10-08 (see
 [Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
@@ -46,6 +46,10 @@ The platform is a rebuild, not an in-place evolution of the Hub:
   packages are copied as a staged snapshot, and Nanoleaf is ported from Python
   with its behavior tests. Staged code keeps its baseline until its module
   story converts it.
+
+The original offline-cutover decision follows. The 2026-10-08
+[fresh-start amendment](#amendments) supersedes its data-migration and mandatory
+retirement provisions for the selected delivery; the rest remains applicable.
 
 Existing formats move in one offline cutover:
 - Each contract gets a 2.0 version that follows these conventions.
@@ -589,3 +593,16 @@ change and its trade-off:
   second implementation, with no exporter until #813.
   [#949](https://github.com/jimmie-potts/agent-device-hub/issues/949) owns the
   new instrumentation, because #813 excludes it.
+
+**2026-10-08, fresh setup without data migration.** The owner selected fresh
+runtime state, manually selected configuration and expected downtime for
+[#935](https://github.com/jimmie-potts/agent-device-hub/issues/935) and
+[#840](https://github.com/jimmie-potts/agent-device-hub/issues/840). The
+[fresh setup procedure](../../apps/runtime/SETUP.md) replaces the original
+backup, transfer, conversion and migration-verification plan. Existing tools
+remain available but are not steps or gates for this cutover. Old services,
+files and releases stay untouched for manual return; only one set of writers
+runs at a time. One owner-present setup and smoke check completes the installed
+step. Retirement is optional follow-up work with separate scope, rather than a
+gate for this delivery. This amendment does not authorize installed discovery,
+service changes or physical device commands before the owner's #840 window.

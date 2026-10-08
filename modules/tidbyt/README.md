@@ -81,10 +81,11 @@ secret file: no message, record, span, error body or health entry carries either
 
 `convertTidbytRunner(runner, credentials)` converts the old runner's
 `tidbyt-status.json` (parsed) and the text of the credentials file it names into
-this section. The cutover's installer
-([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)) runs it,
-writes the returned `apiKey` into a private secret file, and adds that file to
-the section as `secrets.token`. Never print `apiKey`.
+this section. A caller that separately selects this optional utility writes
+the returned `apiKey` into a private secret file and adds that file to the
+section as `secrets.token`. Never print `apiKey`. The selected
+[fresh setup](../../apps/runtime/SETUP.md) uses manually selected configuration
+and does not run the converter.
 
 - It keeps the cloud's device ID and both installation IDs, so the tiles already
   in the rotation are the ones the module writes, and none is left behind.

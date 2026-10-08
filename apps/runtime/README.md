@@ -322,11 +322,12 @@ none of the rest of the runtime.
   `http://127.0.0.1:<port>/api/monitor/v1/events`. A `receipt.json` beside it,
   when there is one, must be private, installed and match it. The hook uses only
   the endpoint's host and port: the runtime keeps the Hub's port, 8788 (#835).
-- **The credential.** The token authenticates as the producer's converted
-  credential. The Hub's setup named it `hub-` and the first 32 hex digits of the
+- **The credential.** The token authenticates as the producer's explicitly
+  granted credential (or one from the optional legacy conversion). The Hub's
+  setup named it `hub-` and the first 32 hex digits of the
   SHA-256 of the producer's source configuration without its hook name
   (`producerPrincipal` in `apps/hub/src/setup.ts`), and
-  [`convertHubEdge`](#credentials) makes it act as `bunny/parts/<that ID>`. The
+  the runtime grant uses `bunny/parts/<that ID>` as its source. The
   hook derives the same source from the producer file (`producerSource`), so
   the file needs no new member. Its `ingest` scope lets it publish lifecycle
   observations and nothing else ([Grants at the SDK edge](#grants-at-the-sdk-edge)).
@@ -379,11 +380,14 @@ they took 153 ms, and against one that never answers 2.91 s, the hook's budget.
 Most of it is starting Node and loading the hook's modules: the old Hub's hook
 took 138 ms at the median against a stopped endpoint.
 
-The cutover (#840, through the installer #935) installs this file as
-`bin/monitor-hook.mjs` behind the hook link, where the old Hub's hook is today,
-with `@jimmie-potts/runtime/hook` and its dependencies resolvable from there, so
-the clients' hook settings keep their command. Until then the installed Hub keeps
-`apps/hub/bin/monitor-hook.mjs`, which this does not change.
+The [fresh setup procedure](SETUP.md) switches only the qualified hook link
+during the owner-present cutover. The documented directory link, invoked as
+`<link>/bin/monitor-hook.mjs`, points to the retained release's `apps/runtime`
+directory. A separately qualified direct file link instead points to
+`apps/runtime/bin/monitor-hook.mjs`. Keep the release and its dependencies in
+place so the client's unchanged complete script path and
+`@jimmie-potts/runtime/hook` resolve there. Until then the installed Hub keeps
+its hook unchanged.
 
 ## Run
 
@@ -461,9 +465,10 @@ address.
 ### Callers
 
 Two kinds of caller reach the gateway, and each acts as one source with the old
-Hub's scopes. No caller is limited to some devices: the old Hub's device grants
-are dropped (owner decision, 2026-10-07), and the cutover's conversion lists
-each credential that dropping them widened (see [Credentials](#credentials)).
+Hub's scope names. No caller is limited to some devices. Fresh setup grants
+only the owner's explicitly selected scopes, whose runtime meaning covers all
+devices. The optional legacy conversion reports widened grants
+(see [Credentials](#credentials)); fresh setup does not use it.
 
 - **A client credential**, from the edge's [credentials file](#credentials),
   presents its bearer token from outside any browser page: a request with a
@@ -689,7 +694,7 @@ refusal quotes the file.
 Credentials are granted, revoked and rotated by changing the file, as today:
 `grantCredential(file, credential)` and `revokeCredential(file, id)` rewrite it
 whole and owner-only, as an operator adds a producer's credential by hand until grant operations exist ([Agent hooks](#agent-hooks)), and
-`writeEdgeCredentials(file, credentials)` writes it as the installer does. Each
+`writeEdgeCredentials(file, credentials)` writes the selected credentials. Each
 writer holds the file's lock, `<file>.lock`, which names its process: writers in
 one process take turns, so a grant and a revocation made at once both take
 effect, and a writer in another process is refused with
@@ -715,16 +720,18 @@ Each reload logs one `runtime.edge.reloaded` record: INFO with `bunny.outcome`
 `succeeded` and the count, or ERROR with `failed` and the refusal's
 `error.code`. Automatic rotation is not built.
 
-At the cutover the installer (#935) runs `convertHubEdge(hubConfig)` offline on
-the old Hub's configuration: each credential keeps its ID, digest and scopes,
+The optional `convertHubEdge(hubConfig)` utility converts an old Hub
+configuration offline. [Fresh setup](SETUP.md) does not run it or import the
+old credential inventory. When separately selected, each converted credential
+keeps its ID, digest and scopes,
 and acts as `bunny/parts/<its ID in routing form>`, so the token its client
 holds authenticates unchanged; one called `dashboard` acts as
 `bunny/parts/dashboard-credential`, since the browser sessions' source is theirs
 alone. Its device grant is dropped. The Hub limited `read` and `control` to the
 devices a credential named, and the runtime limits neither, so the conversion
 returns `widened`: the ID alone of each credential with `read` or `control`,
-which now reads or commands every device, for the owner to review at the
-cutover. `browserAccess`, `mcp`, `editorLinks` and `placeLinks` become the edge
+which now reads or commands every device, for the owner to review before using
+the conversion. `browserAccess`, `mcp`, `editorLinks` and `placeLinks` become the edge
 section's, checked as the runtime's reader checks them. It refuses, with
 `convert-invalid`, IDs that would share a source, editor links that are not
 routing IDs, and links or counts the runtime would refuse, which the owner fixes
@@ -777,9 +784,10 @@ refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,
 `config-checkout`, `config-not-file`, `config-not-private` (a file the runtime's
 user may not read, or one under a directory it may not search, included),
-`config-too-large` or `config-invalid`. No refusal quotes the file. The cutover's installer (#935)
-writes the file from today's files. There is no reload: a change takes effect
-when the runtime restarts.
+`config-too-large` or `config-invalid`. No refusal quotes the file.
+[Fresh setup](SETUP.md) writes a new file from the owner's explicit choices,
+without copying or converting old configuration. There is no reload: a change
+takes effect when the runtime restarts.
 
 Before it starts the modules, the runtime admits each one in list order with
 the SDK's `checkConfiguration`, against its own section only. A section for a
@@ -863,9 +871,11 @@ another user or that others can open is refused with
 
 ## Offline tools
 
-Tools that change a module's files run while the runtime is stopped, as the
-installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
-runs them at the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+Tools that change a module's files require the runtime to be stopped.
+The migration utilities below remain available for a separately selected
+import; the [fresh setup procedure](SETUP.md) uses empty state and runs none
+of them. Their examples and synthetic scenarios describe the utilities, not
+a required cutover step.
 
 ### The runtime's lease
 
@@ -919,9 +929,9 @@ name or a file's content.
 
 The line is the tool's own record, and its codes are the tool's own, outside
 the 2.0 error registry, as the health document `runtime-health/1.0` is the
-runtime's: no message crosses the bus while the runtime is stopped, and the
-installer (#935) reads the line and the exit code to decide whether the
-cutover goes on.
+runtime's: no message crosses the bus while the runtime is stopped. A caller
+that separately selects this utility reads the line and exit code. The fresh
+setup in #935 does not invoke it or use its result as a cutover gate.
 
 A refusal creates nothing: the tool checks the library, the state directory,
 the module's files and the free space before it makes anything. Only then does
@@ -1004,7 +1014,7 @@ Every path is absolute.
   `migrate` writes each device's token, alone and without a line break, as
   `nanoleaf-<device>-token`, mode 600.
 - `--section` is the private file where `migrate` writes the module's section,
-  which names those files. The installer puts it under `modules.nanoleaf` in
+  which names those files. A caller using this utility puts it under `modules.nanoleaf` in
   the configuration file. Its directory must be private too. `verify` also
   takes the configuration file itself and reads the section there.
 
@@ -1077,7 +1087,7 @@ exit but 0 is a no-go.
 | `source-corrupt` | 3 | `status.sqlite` fails SQLite's check, or `config.json`, `layout.json`, a scene file or a lock file is damaged, too large, a link or not a regular file |
 | `source-config` | 3 | The registry is malformed, a device has no private IPv4 address or no token the runtime can read back, or the module refuses the converted section |
 | `source-device-id` | 3 | A registered device ID is not a routing ID, which the configuration requires |
-| `source-not-configured` | 3 | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. The installed bridge has completed the shared-input cutover, so this is not expected at the cutover; the `linux-state-v4` fixture as it is gets it |
+| `source-not-configured` | 3 | The bridge never configured shared input, so no qualified source names the sessions the wall shows. On the bridge, run `nanoleaf shared-configure --config <file>` with a shared-input configuration that names the qualified sources (codex-nanoleaf's `docs/shared-input.md`), then migrate again. This utility requires a separately qualified source; the `linux-state-v4` fixture as it is gets this refusal. Fresh setup does not invoke the utility |
 | `disk-short` | 3, 4 | The disk filled while `migrate` wrote, its final checkpoint included |
 | `destination-not-clean` | 4 | A log or journal with content was left beside the module's database after `migrate` closed it |
 | `interrupted` | 3, 4 | A first SIGINT or SIGTERM stopped the tool: before it wrote (exit 3), or once it had written (exit 4: the database with its log and journal, the folder, the secret files and the section removed, and the one `failed` line written). A second signal stops it at once |
@@ -1588,7 +1598,7 @@ The gateway's scenarios scan every log record, message, health entry and
 answer for the parts' synthetic token prefix, `tok_SYNTHETIC835`.
 
 A seed's `config` gives configured modules their sections. Each harness writes
-them, as the installer would, into a private configuration file with a token
+them into a private synthetic configuration file with a token
 file per module that holds the synthetic token, and the edge's section with the
 parts' credentials, and starts the runtime with it.
 Both configured scenarios check that the token appears in no log record,
@@ -1631,12 +1641,14 @@ See [Runtime checks](../../docs/development.md#runtime-checks).
 
 ### Cutover preparation
 
-The internal planner in `src/install/planner.ts` prepares an ordered cutover
-from explicit synthetic or privately collected facts. It reads no installed
-state and performs no operation. A preparation digest binds the supplied facts;
-it grants no execution authority. Missing converters and insufficient space are
-reported before any writer could stop. Installed discovery, receipts, migration
-execution and activation belong to the later installer adapter.
+Use [Set up a fresh runtime](SETUP.md) for the selected procedure: empty state,
+manual configuration, a single-writer switch and a manual return to the old
+installation. No transfer, migration or new installer adapter is required.
+
+The internal model in `src/install/planner.ts` remains an unused pure planner
+for the earlier migration proposal. It reads no installed state and performs
+no operation. Its preparation digest grants no execution authority. Its
+converter, receipt and capacity requirements do not apply to fresh setup.
 
 After the root build, run the pure tests directly:
 

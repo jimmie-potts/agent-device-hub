@@ -29,7 +29,7 @@ only `@jimmie-potts/sdk` and `@jimmie-potts/event-contracts`.
 
 | Source | Module file | What changed |
 | --- | --- | --- |
-| `codexDesktopOptions` | `src/configuration.ts` | The same three members and checks, as `configure`; a refusal is the shared error body with fixed text. `convertHubCodexDesktop` is new, for the installer. |
+| `codexDesktopOptions` | `src/configuration.ts` | The same three members and checks, as `configure`; a refusal is the shared error body with fixed text. `convertHubCodexDesktop` is an optional legacy conversion utility. |
 | `unreadSessions` | `src/marker.ts` | Unchanged. |
 | `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/serve.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now in the reader's own process. The reader never reads a special file, and its open cannot block on one. |
 | `readEvents` | `src/evidence.ts` | The same rules on the core's `session/2.0` records; each piece of evidence is a `read-observed` lifecycle observation. |
@@ -69,8 +69,9 @@ The module reads no secret; the runtime's `secrets` member is ignored. No refusa
 repeats a value from the section. `convertHubCodexDesktop(hostConfiguration)`
 turns the old Hub's `host.json` into this section, or gives undefined when the Hub
 has no `codexDesktop`, and checks the result with the module's own `configure`.
-The installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
-runs it. The module's settings (module API 1.2) show `hostId` and `sourceId`,
+This is an optional legacy utility. The selected
+[fresh setup](../../apps/runtime/SETUP.md) uses manually selected configuration
+and does not run it. The module's settings (module API 1.2) show `hostId` and `sourceId`,
 never the home.
 
 ## Read evidence

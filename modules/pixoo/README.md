@@ -16,8 +16,8 @@ from divoom-app-upgrade until the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), which
 replaces it with this module. Until then, divoom-app-upgrade takes only bug
 fixes. Mirror each fix here and name its source commit in the commit message.
-The Pixoo pages are #932. The library's [migration](#library-migration) (#931)
-carries the service's library into this module's store at the cutover.
+The Pixoo pages are #932. The optional library [migration](#library-migration)
+(#931) remains available, but the selected fresh setup starts an empty library.
 
 ## Commands
 
@@ -76,8 +76,9 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
 `convertPixooSettings({device, hostedGif, presentation, nowPlaying})` turns the
 Pixoo service's `device.json`, `hosted-gif.json` and
 `agent-monitor/{presentation,now-playing}.json` into this section, keeping the
-Hub's device ID `pixoo-local`, for the installer
-([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935)).
+Hub's device ID `pixoo-local`. It is an optional legacy utility;
+[fresh setup](../../apps/runtime/SETUP.md) uses manually selected configuration
+and does not run it.
 
 ### State
 
@@ -289,13 +290,13 @@ with the playback module (#929) and its simulated speakers.
 
 ## Library migration
 
-The installer ([#935](https://github.com/jimmie-potts/agent-device-hub/issues/935))
-carries the Pixoo service's library into this module's store at the cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), offline,
-with the runtime's tool `apps/runtime/dist/src/migrate-pixoo.js`
+The optional offline tool `apps/runtime/dist/src/migrate-pixoo.js` can carry
+the Pixoo service's library into this module's store
 ([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931)). The
 runtime README's [Pixoo library migration](../../apps/runtime/README.md#pixoo-library-migration)
 gives its commands, exit codes and refusals; this section says what it carries.
+The selected [fresh setup](../../apps/runtime/SETUP.md) for #935/#840 runs none
+of these commands and requires no migration verification.
 
 - **Source.** The service's `<PIXOO_DATA_DIR>/library` at the installed
   release's schema version 3 (divoom-app-upgrade `1b4115c`), and no other
@@ -340,7 +341,8 @@ gives its commands, exit codes and refusals; this section says what it carries.
   (0, as the migration leaves it), that the tables that start fresh, the
   module's and the SDK's own included, are empty, and the files' modes, and
   counts each mismatch by kind. It checks the store before the runtime's first
-  start. The cutover goes ahead only on zero. It reads the source through the
+  start. Zero mismatches confirms that optional conversion; it is not a fresh
+  setup gate. It reads the source through the
   same `InstalledLibrary` as the migration, so a fault in that reader would
   reach both; the library's own check of the copies, which reads the catalog
   rows and files through the library's code, covers that.
@@ -506,8 +508,8 @@ Each line names the runtime part that replaces the files.
   `apps/server/package.json`, `apps/server/tsconfig.json`; `examples/config.sh`,
   `examples/systemd/pixoo-playlist-controller.env`,
   `examples/systemd/pixoo-playlist-controller.service`;
-  `scripts/qualify-runtime-upgrade.mjs`. Replaced by the extended installer and
-  the store migration at the cutover (#840, #843).
+  `scripts/qualify-runtime-upgrade.mjs`. The selected fresh setup uses the
+  runtime procedure; these old service tools are not ported into it.
 - **Web application** (`apps/web/`): `index.html`, `package.json`,
   `tsconfig.json`, `vite.config.ts`, and `src/` (`api.ts`, `controller.ts`,
   `library.tsx`, `main.tsx`, `monitor-client.ts`, `monitor.tsx`, `player.tsx`,

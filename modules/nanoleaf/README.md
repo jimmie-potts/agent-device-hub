@@ -49,9 +49,10 @@ its private folder.
 
 ## Migration
 
-The cutover (#840) carries the codex-nanoleaf bridge's state into the module with an offline tool
-([#933](https://github.com/jimmie-potts/agent-device-hub/issues/933)), which the installer (#935) runs before the
-runtime's first start. The runtime README's
+The optional offline tool from
+[#933](https://github.com/jimmie-potts/agent-device-hub/issues/933) can carry the codex-nanoleaf bridge's state
+into the module before its first start. The selected [fresh setup](../../apps/runtime/SETUP.md)
+for #935/#840 starts with empty state and does not run it. The runtime README's
 [Nanoleaf migration](../../apps/runtime/README.md#nanoleaf-migration) gives its command line, exit codes and refusals;
 `src/migration/` holds what it carries and checks. It reads the bridge's private state directory in either of two
 shapes and never changes it:
@@ -93,7 +94,7 @@ until its first sync selects shared input.
 
 The verifier compares each carried row by its key, with its SQLite storage class; each file as parsed JSON; the section
 member by member; and each secret through the runtime's own reader. It also counts what should not be there. The
-cutover goes ahead only on zero mismatches.
+optional conversion succeeds only on zero mismatches; this does not gate fresh setup.
 
 There is no enrollment command yet (owner decision, 2026-10-07): it waits until a device is added, and
 `src/enrollment.ts`, the port's enrollment, is ready for it. Until then, a new address is a one-line edit of the
