@@ -1657,6 +1657,44 @@
     "expectedRevision": 12
    },
    "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "notice-clear": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-notice-clear",
+   "source": "bunny/parts/operator",
+   "type": "org.bunny.notice.clear.requested",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/notice-clear/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-clear",
+    "noticeId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "expectedRevision": 1
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "notice-clear-empty": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "notice-clear-empty",
+   "source": "bunny/parts/operator",
+   "type": "org.bunny.notice.clear.requested",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/notice-clear/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-clear",
+    "noticeId": null,
+    "expectedRevision": 1
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
   }
  },
  "invalid": [
@@ -2551,6 +2589,60 @@
   {
    "name": "a wire operator flag on a label",
    "base": "session-label-set",
+   "set": {
+    "/data/operator": true
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties operator"
+  },
+  {
+   "name": "missing notice guard",
+   "base": "notice-clear",
+   "set": {
+    "/data/expectedRevision": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required expectedRevision"
+  },
+  {
+   "name": "negative notice guard",
+   "base": "notice-clear",
+   "set": {
+    "/data/expectedRevision": -1
+   },
+   "expect": "invalid-message",
+   "detail": "payload /expectedRevision minimum"
+  },
+  {
+   "name": "missing selected notice",
+   "base": "notice-clear",
+   "set": {
+    "/data/noticeId": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required noticeId"
+  },
+  {
+   "name": "invalid selected notice",
+   "base": "notice-clear",
+   "set": {
+    "/data/noticeId": "notice"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /noticeId pattern"
+  },
+  {
+   "name": "notice override for unqualified target",
+   "base": "notice-clear",
+   "set": {
+    "/subject": "hub"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not a session id"
+  },
+  {
+   "name": "wire operator flag on notice override",
+   "base": "notice-clear",
    "set": {
     "/data/operator": true
    },

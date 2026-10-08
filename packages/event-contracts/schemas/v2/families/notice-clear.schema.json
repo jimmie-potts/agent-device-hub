@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/notice-clear/2.0",
+  "description": "Operator-only tracked override: acknowledge the selected latest notice for every configured consumer, guarded by the session record revision. Null selects no notice and changes no session state. Completion uses the profile outcome payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "noticeId", "expectedRevision"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "noticeId": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+  }
+}

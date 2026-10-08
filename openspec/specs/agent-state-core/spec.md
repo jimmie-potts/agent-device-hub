@@ -322,3 +322,14 @@ The owner SHALL keep the latest `hostSessionId` of each session record whose par
 #### Scenario: Durable state and restart
 - **WHEN** the owner exports or restarts after Desktop events
 - **THEN** the export validates as durable 2.1 without `hostSessionId`, a previous-format reader reopens the store, and the restarted owner shows the field only after the session's next committed 1.2 event
+
+### Requirement: Atomic acknowledgment of all configured consumers
+The state owner SHALL offer one serialized operation that acknowledges the selected latest retained notice for every configured consumer in one durable save. It SHALL preserve read, attention, lifecycle evidence, freshness and consumer configuration. An already acknowledged selected notice SHALL commit no session mutation, and an older selected notice SHALL be refused after a newer notice arrives.
+
+#### Scenario: Every configured consumer in one save
+- **WHEN** an authorized host selects the current notice
+- **THEN** one save records each configured consumer's acknowledgment, preserving existing acknowledgments and all independent evidence
+
+#### Scenario: A newer notice intervenes
+- **WHEN** the serialized owner operation sees a newer latest notice than the selection
+- **THEN** it refuses the old selection without acknowledging the new notice

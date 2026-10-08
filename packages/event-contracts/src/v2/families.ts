@@ -118,6 +118,8 @@ export type NoticeAcknowledgeRequest = {requestId: string; consumerId: string; n
  * session record's revision the operator read. It approves or denies nothing at the agent.
  */
 export type ApprovalRecoverRequest = {requestId: string; turnId: string; expectedRevision: number};
+/** An operator override for the selected latest notice; null selects no notice and changes no session state. */
+export type NoticeClearRequest = {requestId: string; noticeId: string | null; expectedRevision: number};
 /** A tracked operator label change, guarded by the current session record's revision; null clears the label. */
 export type SessionLabelSetRequest = {requestId: string; label: string | null; expectedRevision: number};
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
@@ -243,6 +245,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),
+  define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),
   define('session-label-set', 'command', 'org.bunny.session-label.set.requested', checkSessionLabel),
   define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
 ];

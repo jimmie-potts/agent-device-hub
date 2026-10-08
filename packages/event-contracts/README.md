@@ -162,6 +162,7 @@ carries a device-specific payload: modules define those.
 | command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
 | command | `notice-acknowledge`, `playback-control` | `org.bunny.notice.acknowledge.requested`, `org.bunny.playback.control.requested` |
 | command | `approval-recover` | `org.bunny.approval.recover.requested` |
+| command | `notice-clear` | `org.bunny.notice.clear.requested` |
 | command | `session-label-set` | `org.bunny.session-label.set.requested` |
 
 The rules:
@@ -184,6 +185,7 @@ The rules:
   without an attention ID that the session holds on `turnId`, only while the
   session's evidence is uncertain, and publishes `attention-cleared` with cause
   `recovered`. It approves or denies nothing at the agent.
+- `notice-clear` (Hub #1009) is a tracked operator-only override with `requestId`, selected `noticeId` (a 64-character notice hash or null), and required `expectedRevision`. Its subject is the qualified session entity ID. The runtime refuses a changed latest notice/revision, acknowledges every configured consumer atomically, and records the profile's observed metadata completion. Null selects no notice and changes no session state. The family supplies no wire permission flag, provider read evidence or physical-device receipt.
 - `session-label-set` (Hub #1006) is a tracked operator command with
   `{requestId, label, expectedRevision}` and the qualified session ID as its
   subject. A string sets a user label; null clears it. Labels admit 1–80 Unicode

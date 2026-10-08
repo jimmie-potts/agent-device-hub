@@ -42,7 +42,7 @@ import type {CoreStore, CoreTransaction} from './store.js';
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
-export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set']);
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear']);
 
 /** One action for the dispatcher: a command, as `request` takes it, and who asks for it. */
 export type Action = {

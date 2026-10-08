@@ -191,6 +191,19 @@ and exits 1, and the service manager restarts it whole.
   or failing store as acknowledgments are refused. The gateway sends it for an
   operator ([Gateway](#gateway)), and a remote part with the `control` scope may
   request it through the SDK edge.
+- **Notice override** (#1009). Connections offers one confirmed **Clear this notice on every
+  device** operator tool. The authenticated action route accepts `notice-clear` with `{noticeId,
+  expectedRevision}` and the qualified session ID. The dedicated operator capability and tracker
+  admit it; ordinary dispatch and raw SDK callers cannot. The core and owner guard the selected
+  latest retained notice, and the core rechecks the record revision at save time. One owner save
+  acknowledges every configured consumer atomically with matching completion, history, outcome and
+  operation projection. Null selects a session with no notice; no-notice and already-acknowledged
+  actions change no session state. Unknown sessions are `not-found`, changed selections are
+  `revision-conflict`, and non-operators are `forbidden`. The synced record is the result; metadata
+  acknowledgment proves neither provider readership nor physical-device success. Consumer
+  self-acknowledgment stays unchanged. The session row clears from evidence and has no acknowledge
+  button. Nothing automatically retries or replays an action after a lost answer, reconnect or
+  restart.
 - **Sessions tool.** Its manifest (module API 1.2) contributes the MCP read tool
   `core_sessions`: the sessions it holds at its revision, optionally only one
   provider's and those whose label, title, project or session ID contains `q`,
