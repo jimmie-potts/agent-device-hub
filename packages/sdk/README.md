@@ -502,6 +502,19 @@ export const sign: BunnyModule<SignConfig> = {
   The runtime's fixture lamp, `createLampModule({transport})`, shows the
   convention (#846), and the fixture sign, `createSignModule({transport})`,
   shows a configured module (#919).
+- **Registration.** A runtime module exports `registration`, a
+  `ModuleRegistration`, from its package entry (#999): its factory (`name`,
+  `create` with the real transport, `simulate` with the simulated one,
+  `schemas` and `simulatedSection`), `shipped`, its place in the shipped list
+  (`order`, lower first, and `after`, the modules that must start before it),
+  `registerFamilies` when its families need checks beyond their schemas, and
+  `simulation`, how the runtime's scenario harnesses simulate its devices: the
+  `actions` a scenario may ask for, the other fields each takes (`admits`),
+  the in-memory harness's half (`memory`) and a disposable run's (`run`), whose
+  module reaches the supervisor's simulated device over a `DeviceLink`. The
+  types need only the SDK, so a module registers itself within its boundary.
+  The runtime's [Adding a module](../../apps/runtime/README.md#adding-a-module)
+  says how the runtime and the harnesses collect it.
 
 The context:
 

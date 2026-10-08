@@ -45,4 +45,5 @@ export const pixooSimulation: DeviceSimulation<SimulatedPixoo, Held> = {
   },
 };
 
-export const registration: ModuleRegistration = {...pixooFactory, shipped: true, order: 400, simulation: pixooSimulation};
+// After the playback module, whose record Now Playing follows from its start.
+export const registration: ModuleRegistration = {...pixooFactory, shipped: true, order: 400, after: ['playback'], simulation: pixooSimulation};
