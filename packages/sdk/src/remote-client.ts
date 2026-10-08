@@ -1,15 +1,16 @@
 // The client side of the remote transport (Hub #883): the same SDK calls, carried to an edge over SSE and HTTP. The
 // client builds every message itself, so the edge injects it unchanged. Subscriptions, responders and sync owners
 // live on one event stream; after a lost stream the client reconnects, registers them again and tells every
-// subscription of the gap, so a sync copy resyncs. Nothing is replayed.
-import {randomUUID} from 'node:crypto';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {reporter, warnSafely, type OnDiagnostic} from './diagnostics.js';
+// subscription of the gap, so a sync copy resyncs. Nothing is replayed. Its module graph imports no Node built-in, so a
+// browser page, such as the dashboard, bundles it from `@jimmie-potts/sdk/remote` and acts as its session (Hub #922).
+import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import {levelOf, reporter, warnSafely, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {refusalOf, replyOf} from './refusal.js';
-import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER} from './remote-protocol.js';
+import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER} from './remote-protocol.js';
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
@@ -18,12 +19,27 @@ import {
 import {startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
 
-export type RemoteOptions = {
-  /** The edge's base URL, such as `http://127.0.0.1:8790`. */
-  url: string;
-  source: string;
+/**
+ * How a remote part proves who it is: a client credential's bearer token, or a browser page's session (Hub #922).
+ */
+export type RemoteAuth = {
   /** The bearer token the edge granted this source. It is sent only in the `authorization` header. */
   token: string;
+  browser?: never;
+} | {
+  /**
+   * A browser page's session: the browser sends the session's cookie itself, so the client sends no token. It marks
+   * every call with `bunny-request: 1` (`REQUEST_HEADER`), which the runtime's gateway requires of a page's change, and
+   * the page's own origin goes with it as the browser sets it.
+   */
+  browser: true;
+  token?: never;
+};
+
+export type RemoteOptions = RemoteAuth & {
+  /** The edge's base URL, such as `http://127.0.0.1:8790`, or a page's own origin. */
+  url: string;
+  source: string;
   now?: () => number;
   /** How many messages may wait in one subscription's or responder's queue on this side. Defaults to 1024. */
   maxQueued?: number;
@@ -33,7 +49,9 @@ export type RemoteOptions = {
    * Hears the client's own decisions: `remote.disconnected` once when the stream is lost, and `remote.reconnected` with
    * the count of failed attempts when it is back, instead of each failed attempt; `remote.command.uncertain` when the
    * client settles a request `uncertain-result` itself, because the edge failed, went silent or the requester closed;
-   * and `sync.restarted` when an overflow restarts a copy. A no-op by default; a throw is ignored.
+   * `remote.refused` with the code when the edge refuses a reconnect with `unauthenticated` or `forbidden`, once per
+   * code until it reconnects, as when a browser session ended; and `sync.restarted` when an overflow restarts a copy. A
+   * no-op by default; a throw is ignored.
    */
   onDiagnostic?: OnDiagnostic;
   /** How long to wait before reconnecting a lost stream. Defaults to 100 ms, doubling up to 5 s. */
@@ -59,9 +77,10 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
 }};
-/** Real timers that never keep the process alive, for the liveness of the real stream. */
+/** Real timers that never keep a Node process alive, for the liveness of the real stream. A browser's timer is a number. */
 const realTimers: Scheduler = {after: (delayMs, callback) => {
-  const timer = setTimeout(callback, delayMs).unref();
+  const timer = setTimeout(callback, delayMs);
+  if (typeof timer === 'object') timer.unref();
   return () => { clearTimeout(timer); };
 }};
 
@@ -98,7 +117,7 @@ type Answering<T> = {queue: DeliveryQueue<Message<T>>; register: (connection: st
 class RemoteClient {
   readonly #base: string;
   readonly #source: string;
-  readonly #token: string;
+  readonly #token: string | undefined;
   readonly #now: () => number;
   readonly #maxQueued: number;
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
@@ -125,7 +144,7 @@ class RemoteClient {
   constructor(options: RemoteOptions) {
     this.#base = `${options.url.replace(/\/$/, '')}${REMOTE_PATH}`;
     this.#source = options.source;
-    this.#token = options.token;
+    this.#token = options.browser === true ? undefined : options.token;
     this.#now = options.now ?? (() => Date.now());
     this.#maxQueued = options.maxQueued ?? 1024;
     if (!Number.isSafeInteger(this.#maxQueued) || this.#maxQueued < 1) throw new RangeError('maxQueued must be a positive integer');
@@ -188,7 +207,7 @@ class RemoteClient {
       };
       void (async () => {
         try {
-          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), signal: controller.signal});
+          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), credentials: 'same-origin', signal: controller.signal});
           if (!response.ok || response.body === null) {
             reject(new SdkError(await this.#refusal(response)));
             return;
@@ -269,6 +288,8 @@ class RemoteClient {
    */
   async #reconnect(): Promise<string> {
     let attempts = 0;
+    // The refusal last reported, so a part whose credential or session ended hears of it once, not at each attempt.
+    let refused: ErrorCode | undefined;
     for (;;) {
       await new Promise<void>(resolve => {
         this.#backoff = {cancel: this.#scheduler.after(this.#delayMs, resolve), wake: resolve};
@@ -297,9 +318,16 @@ class RemoteClient {
         this.#delayMs = this.#firstDelayMs;
         this.#diagnose({event: 'remote.reconnected', level: 'info', source: this.#source, attempts});
         return connection;
-      } catch {
+      } catch (error) {
         attempts += 1;
         this.#delayMs = Math.min(this.#delayMs * 2, MAX_RECONNECT_DELAY_MS);
+        // A credential revoked or a browser session ended keeps the edge refusing until the part is granted again. The
+        // client keeps trying with its backoff, and says so once, so a page can offer to sign in again.
+        const code = error instanceof SdkError ? error.body.error.code : undefined;
+        if ((code === 'unauthenticated' || code === 'forbidden') && code !== refused) {
+          this.#diagnose({event: 'remote.refused', level: levelOf(code), source: this.#source, code, attempts});
+        }
+        refused = code;
       }
     }
   }
@@ -319,7 +347,7 @@ class RemoteClient {
   async #subscribe(pattern: string, handler: Handler<Record<string, unknown>>, {onOverflow}: SubscribeOptions): Promise<Subscription> {
     this.#live();
     const connection = await this.#connected;
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const run = async (call: () => void | Promise<void>): Promise<void> => {
       try {
         await call();
@@ -361,7 +389,7 @@ class RemoteClient {
   ): Promise<Subscription> {
     this.#live();
     const connection = await this.#connected;
-    const id = randomUUID();
+    const id = crypto.randomUUID();
     const answering: Answering<object> = {
       register: registered => this.#post(call, {connection: registered, id, ...what}),
       queue: new DeliveryQueue<Message<object>>(this.#maxQueued, async message => {
@@ -422,7 +450,7 @@ class RemoteClient {
     if (!draft.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
     const {timeoutMs} = options;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
-    const requestId = options.requestId ?? randomUUID();
+    const requestId = options.requestId ?? crypto.randomUUID();
     if (!ID.test(requestId)) throw invalid('requestId is not an identifier');
     const sentAtMs = this.#now();
     const command = buildMessage(this.#source, 'command', {...draft, data: {...draft.data, requestId}}, childOf(options.parent), sentAtMs, sentAtMs + timeoutMs);
@@ -563,13 +591,15 @@ class RemoteClient {
 
   /** Every call names the source the part acts as, so that the edge refuses a token used under another one at once. */
   #headers(): Record<string, string> {
-    return {authorization: `Bearer ${this.#token}`, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source};
+    // A browser session's cookie goes with the call as the browser sends it, and a page marks its calls as its own.
+    const proof = this.#token === undefined ? {[REQUEST_HEADER]: '1'} : {authorization: `Bearer ${this.#token}`};
+    return {...proof, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source};
   }
 
   /** One call to the edge. An edge refusal throws `SdkError` with its error body; a lost connection throws as fetch does. */
   async #post(call: string, payload: Fields, signal?: AbortSignal): Promise<unknown> {
     const response = await fetch(`${this.#base}/${call}`, {
-      method: 'POST', headers: this.#headers(), body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
+      method: 'POST', headers: this.#headers(), credentials: 'same-origin', body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
     });
     if (!response.ok) {
       const refused = await this.#refusal(response);

@@ -1,7 +1,7 @@
 // A refusal as every SDK boundary reads one (ADR 0012, "Envelope and conventions"): the shared error body with a
 // registry code and that code's `retryable` flag. Anything else is not a refusal, so it can never claim that a command
 // had no effect.
-import {MAX_DETAIL, RETRYABLE, errorBody, isErrorCode, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, RETRYABLE, errorBody, isErrorCode, type ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import type {Reply} from './sdk.js';
 
 type Fields = Record<string, unknown>;

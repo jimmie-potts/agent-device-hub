@@ -3,8 +3,8 @@
 // family, such as `device`, each for its own entities; a copy names its owner, or follows the owner that first served it.
 // This file is transport-neutral; a transport supplies the live subscriptions and the sync request through
 // `SyncTransport`.
-import {randomUUID} from 'node:crypto';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type EntityRef, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {EntityRef, Message} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import {DeliveryQueue} from './queue.js';
 import {MAX_TIMEOUT_MS, SdkError, type Draft, type Handler, type SubscribeOptions, type Subscription, type TraceContext} from './sdk.js';
 import {childOf, traceIdOf} from './trace.js';
@@ -293,7 +293,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#settle = undefined;
     const stopped = this.#stop();
     if (settle !== undefined) {
-      const {requestId, traceId} = this.#lastSent ?? {requestId: randomUUID(), traceId: undefined};
+      const {requestId, traceId} = this.#lastSent ?? {requestId: crypto.randomUUID(), traceId: undefined};
       const ids = traceId === undefined ? {requestId} : {requestId, traceId};
       settle({status: 'rejected', requestId, error: errorBody('cancelled', {...ids, detail: 'the requester closed'})});
     }
@@ -333,7 +333,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#wanted = false;
     this.#pending = [];
     const generation = this.#generation;
-    const requestId = randomUUID();
+    const requestId = crypto.randomUUID();
     const trace = childOf(this.#parent);
     this.#parent = undefined;
     const ids = {requestId, traceId: traceIdOf(trace.traceparent)};

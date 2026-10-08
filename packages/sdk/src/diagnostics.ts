@@ -22,6 +22,8 @@ export type DiagnosticLevel = 'debug' | 'info' | 'warn' | 'error';
  * - `edge.connected`, `edge.disconnected`, `edge.refused`, `edge.failed`: a remote edge's own decisions. A repeated
  *   refusal is recorded once, then summarized with its count at most once a minute.
  * - `remote.disconnected`, `remote.reconnected`: a remote client's stream.
+ * - `remote.refused`: the edge refused a remote client's reconnect with `unauthenticated` or `forbidden`, as when its
+ *   credential was revoked or its browser session ended. The client reports it once per code until it reconnects.
  * - `remote.command.uncertain`: a remote client settled a request `uncertain-result` itself, because the edge failed,
  *   could not be heard by the deadline and its grace, or the requester closed first. A request the edge answers is
  *   recorded where it was decided, at the edge or its bus.
@@ -30,7 +32,7 @@ export type DiagnosticEvent =
   | 'command.admitted' | 'command.refused' | 'command.cancelled' | 'command.replied' | 'command.uncertain'
   | 'sync.served' | 'sync.refused' | 'sync.restarted'
   | 'edge.connected' | 'edge.disconnected' | 'edge.refused' | 'edge.failed'
-  | 'remote.disconnected' | 'remote.reconnected' | 'remote.command.uncertain';
+  | 'remote.disconnected' | 'remote.reconnected' | 'remote.refused' | 'remote.command.uncertain';
 
 /** How the work stood after the decision, in the diagnostic contract's `bunny.outcome` terms. */
 export type DiagnosticOutcome = 'queued' | 'accepted' | 'rejected' | 'cancelled' | 'uncertain' | 'succeeded';

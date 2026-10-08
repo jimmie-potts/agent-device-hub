@@ -12,6 +12,10 @@
       "types": "./dist/v2/index.d.ts",
       "import": "./dist/v2/index.js"
     },
+    "./v2/errors": {
+      "types": "./dist/v2/errors.d.ts",
+      "import": "./dist/v2/errors.js"
+    },
     "./v2/families": {
       "types": "./dist/v2/families.d.ts",
       "import": "./dist/v2/families.js"

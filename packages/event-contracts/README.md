@@ -110,6 +110,10 @@ follows the strict profile for new code.
   - `errorBody(code, extra)`, which builds `{"error":{...}}`, takes
     `retryable` from the registry and throws on extras the error block would
     refuse, and on an unregistered code from an untyped caller.
+  - `@jimmie-potts/event-contracts/v2/errors` holds the registry, `errorBody`,
+    `ErrorBody`, `ErrorDetail`, `MAX_DETAIL` and `SCHEMA_BASE` in a module that
+    reads no file and loads no validator, so a browser part can bundle them
+    (Hub #922); the `v2` entry exports the same values.
   - `compareDelivery(prior, next)`, which classifies a retry under the
     identity `(source, id)` as `new`, `duplicate` or `conflict`. It compares
     every attribute and the payload, ignoring key order, so an outbox resends

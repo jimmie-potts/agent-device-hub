@@ -7,6 +7,11 @@ export const REMOTE_SCHEMA = 'sdk-remote/1.0';
 export const REMOTE_PATH = '/api/sdk/v1';
 /** The header in which a remote part declares the source it acts as; the edge refuses a token used under another (Hub #835). */
 export const SOURCE_HEADER = 'bunny-source';
+/**
+ * The header a browser page's every call carries (Hub #922): the runtime's gateway requires `bunny-request: 1` on a
+ * browser session's change, which a page on another site cannot send without the gateway's leave (Hub #835).
+ */
+export const REQUEST_HEADER = 'bunny-request';
 /** A call carries at most one message of the profile's 256 KiB, plus the call around it. */
 export const MAX_CALL_BYTES = (256 + 64) * 1024;
 /** An owner's snapshot answer carries many state drafts, each within the message cap once enveloped. */
