@@ -160,14 +160,11 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(max-width:680px){.places-group .nav-label{display:block}.places-group nav{grid-template-columns:repeat(2,minmax(0,1fr))}.places-group nav a,.places-group nav>span{padding:var(--space-xs) var(--space-s)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* Independent columns keep the session list alongside compact controls. */
-.home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:var(--space-m);align-items:start}
-.home-devices,.home-sessions{display:grid;gap:var(--space-m);min-width:0}
-.home-devices{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
-.home-devices .widget-head{flex-wrap:wrap}
-.home-devices .widget-head h2{flex-shrink:0}
-.home-sessions .filters{grid-template-columns:1fr}
-@media(min-width:1280px){.home-devices{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* The home follows the owner-approved mockup (Hub #922, "Recommended (d)"): the Hub mode and the sessions in the wide
+   column, the inbox and the attention summary in the narrow one. The columns grow independently. */
+.home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1fr);gap:var(--space-m);align-items:start}
+.home-wide,.home-narrow{display:grid;gap:var(--space-m);min-width:0}
+.hint.slot{margin:0}
 .home-status{display:flex;align-items:center;gap:var(--space-m);flex-wrap:wrap;font-size:var(--type-small);color:var(--muted-dense)}
 .device-glance{display:flex;gap:var(--space-m);align-items:center;justify-content:space-between;margin-bottom:var(--space-s)}
 .brightness-readout{display:flex;align-items:center;gap:var(--space-xs);font-size:var(--type-label)}
@@ -187,14 +184,25 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 .info-popover{position:absolute;right:0;top:100%;padding:var(--space-s) var(--space-m);width:280px;max-width:calc(100vw - 40px);background:var(--panel);border:1px solid var(--edge-strong);border-radius:var(--radius);color:var(--text);font-size:var(--type-small);line-height:1.5;overflow-wrap:anywhere;z-index:20}
 .tip-line{display:block}
 .device-glance .info-popover{right:auto;left:0}
-@media(max-width:800px){.home-columns{display:flex;flex-direction:column}.home-sessions{order:-1;width:100%}.home-devices{width:100%}.session-head{flex-wrap:wrap}.home-status{gap:var(--space-s)}}
-
-.home-sessions>.widget{grid-column:1/-1}
+@media(max-width:800px){.home-columns{display:flex;flex-direction:column}.home-wide,.home-narrow{width:100%}.session-head{flex-wrap:wrap}.home-status{gap:var(--space-s)}}
+/* A session's state: a dot and a chip in the fixed-meaning chip colors (style guide section 4.2), with its words. */
+.session-dot{width:12px;height:12px;border-radius:50%;flex:none;margin-top:var(--space-xs);background:var(--muted-dense)}
+.session-dot[data-chip=working]{background:var(--chip-working)}
+.session-dot[data-chip=approval],.session-dot[data-chip=input],.session-dot[data-chip=question]{background:var(--chip-question)}
+.session-dot[data-chip=finished]{background:var(--chip-unread)}
+.chip{flex-shrink:0;font-size:var(--type-label);letter-spacing:.04em;padding:var(--space-xxs) var(--space-s);border:1px solid var(--edge-dense);border-radius:var(--radius);background:var(--inset);color:var(--muted-dense);white-space:nowrap}
+.chip[data-chip=working]{border-color:var(--chip-working);color:var(--chip-working)}
+.chip[data-chip=approval],.chip[data-chip=input],.chip[data-chip=question]{border-color:var(--chip-question);color:var(--chip-question)}
+.chip[data-chip=finished]{border-color:var(--chip-unread);color:var(--chip-unread)}
+.session-head .session-id{flex:1 1 200px}
+.notice [role=status]{font-size:var(--type-small);line-height:1.45;color:var(--pending-text);margin:0}
+.notice [role=status]:empty{display:none}
+.notice [role=status][data-tone=accepted]{color:var(--text)}
+.notice .actions{align-items:center}
 .quick-controls [role=status]:empty{min-height:0}
 .attention-summary{margin:0;padding:var(--space-xs) var(--space-m);font-size:var(--type-small);color:var(--muted-dense)}
 @media(max-width:380px){.widget .quick-controls{grid-template-columns:1fr}}
 
-@media(min-width:801px){.home-devices{grid-column:1;grid-row:1}.home-sessions{grid-column:2;grid-row:1}}
 /* Hub #336: the Moments card's "Play over agent status" switch, a native checkbox with the switch role. */
 label.check{display:flex;align-items:center;gap:var(--space-s);color:var(--text)}
 label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--accent)}

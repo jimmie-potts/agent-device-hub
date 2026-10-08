@@ -7,5 +7,5 @@ export {
   MAX_TIMEOUT_MS, SdkError, type Cancel, type CommandDraft, type Handler, type Overflow, type Participant, type RequestOptions, type RequestResult,
   type Scheduler, type Subscription,
 } from './sdk.js';
-export type {SyncChange, SyncedCopy, SyncHandler, SyncOptions, SyncResult} from './sync.js';
+export type {SyncChange, SyncCompleted, SyncedCopy, SyncHandler, SyncOptions, SyncResult} from './sync.js';
 export type {Diagnostic, DiagnosticEvent, DiagnosticLevel, OnDiagnostic} from './diagnostics.js';

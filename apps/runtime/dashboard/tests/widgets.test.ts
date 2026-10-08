@@ -1,36 +1,35 @@
-import test from 'node:test';
+// The widget catalog and the home layout (Hub #277), on the runtime (Hub #922): each widget names the families it
+// syncs, and the home follows the owner-approved mockup, with the Hub mode (#924) and the inbox (#923) as slots.
 import assert from 'node:assert/strict';
-import {build} from 'esbuild';
-import {mkdtemp,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-const dir=await mkdtemp(join(tmpdir(),'dashboard-widgets-'));
-try {
- await build({entryPoints:['apps/dashboard/src/widgets.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'widgets.mjs')});
- const {widgetCatalog,widgetDefinition,homeLayout,invalidPlacements}=await import(join(dir,'widgets.mjs'));
- test('every catalog widget declares an ID, a source kind, the reads it needs, its sizes and whether it commands',()=>{
-  const ids=widgetCatalog.map(w=>w.id);
-  assert.deepEqual([...new Set(ids)],ids,'IDs are unique');
-  for(const w of widgetCatalog){
-   assert.match(w.id,/^[a-z0-9-]+$/);
-   assert.ok(w.name&&w.description);
-   assert.ok(['controller','hub','external'].includes(w.source.kind),w.id);
-   assert.ok(w.source.needs.length>0,w.id+' names its reads');
-   assert.ok(w.sizes.length>0,w.id+' declares a size');
-   assert.equal(typeof w.commands,'boolean');
+import test from 'node:test';
+import {homeLayout, invalidPlacements, widgetCatalog, widgetDefinition} from '../src/widgets.ts';
+
+void test('every catalog widget declares an ID, a source kind, the families it reads, its sizes and whether it commands', () => {
+  const ids = widgetCatalog.map(widget => widget.id);
+  assert.deepEqual([...new Set(ids)], ids, 'IDs are unique');
+  for (const widget of widgetCatalog) {
+    assert.match(widget.id, /^[a-z0-9-]+$/);
+    assert.ok(widget.name.length > 0 && widget.description.length > 0, widget.id);
+    assert.ok(['core', 'module', 'external'].includes(widget.source.kind), widget.id);
+    assert.ok(widget.source.families.length > 0, `${widget.id} names the families it reads`);
+    assert.ok(widget.sizes.length > 0, `${widget.id} declares a size`);
+    assert.equal(typeof widget.commands, 'boolean');
   }
-  assert.equal(widgetDefinition('component-status').source.kind,'controller');
-  assert.equal(widgetDefinition('attention').commands,false,'a read-only widget declares no command action');
-  assert.equal(widgetDefinition('missing'),undefined);
- });
- test('the home layout places one component widget per registered component, then the hub-wide widgets, at declared sizes',()=>{
-  const layout=homeLayout([{id:'wall'},{id:'pixel'},{id:'activity'}]);
-  assert.deepEqual(layout.filter(p=>p.widget==='component-status').map(p=>p.instance),['wall','pixel','activity']);
-  assert.deepEqual(layout.filter(p=>p.widget!=='component-status').map(p=>p.widget),['sessions','attention']);
-  assert.deepEqual(invalidPlacements(layout),[]);
-  assert.deepEqual(homeLayout([]).map(p=>p.widget),['sessions','attention'],'no components still leaves the hub-wide widgets');
- });
- test('a placement outside the catalog or at an undeclared size is reported',()=>{
-  assert.deepEqual(invalidPlacements([{widget:'graph',size:'small'},{widget:'attention','size':'large'}]),[{widget:'graph',size:'small'},{widget:'attention',size:'large'}]);
- });
-} finally {await rm(dir,{recursive:true,force:true});}
+  assert.deepEqual(widgetDefinition('sessions')?.source, {kind: 'core', families: ['session']});
+  assert.equal(widgetDefinition('attention')?.commands, false, 'a read-only widget declares no command action');
+  assert.equal(widgetDefinition('missing'), undefined);
+});
+
+void test('the home follows the mockup: Hub mode and sessions wide, the inbox and attention narrow, at declared sizes', () => {
+  const {wide, narrow} = homeLayout();
+  assert.deepEqual(wide.map(placement => placement.widget), ['hub-mode', 'sessions']);
+  assert.deepEqual(narrow.map(placement => placement.widget), ['inbox', 'attention']);
+  assert.deepEqual(invalidPlacements([...wide, ...narrow]), []);
+  // The two panels other stories fill are slots: placed now, reading nothing yet.
+  assert.deepEqual(widgetCatalog.filter(widget => widget.slot !== undefined).map(widget => [widget.id, widget.slot?.story]), [['hub-mode', '#924'], ['inbox', '#923']]);
+});
+
+void test('a placement outside the catalog or at an undeclared size is reported', () => {
+  assert.deepEqual(invalidPlacements([{widget: 'graph', size: 'small'}, {widget: 'attention', size: 'large'}]),
+    [{widget: 'graph', size: 'small'}, {widget: 'attention', size: 'large'}]);
+});

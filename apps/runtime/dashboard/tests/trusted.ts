@@ -1,192 +1,188 @@
+// Browser sign-in on the runtime's dashboard (Hub #922), converted from `apps/dashboard/tests/trusted.mjs`: the
+// launcher's one-time code, the trusted loopback bookmark (Hub #276) on either loopback name, a reload and a second tab
+// that share the browser's live session instead of opening more, a failed sign-in, Disconnect ending every tab's
+// session, and another local app's link that opens the page while its frame, another host name's link and a hostile
+// page that re-navigates the tab are refused or harmless (Hub #561). Nothing here sends a command.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
-import {mkdir,writeFile} from 'node:fs/promises';
-import {createServer} from 'node:http';
-import {fixture} from './fixture.mjs';
-// Hub #276: with browserAccess "trusted-loopback" a bookmark opens B.U.N.N.Y. signed in, and reloads and tabs stay signed in.
-// Hub #561: so does a link from another loopback app on the same host name.
-const browser=await chromium.launch({headless:true});
-const output=process.env.DASHBOARD_RECEIPTS;if(output)await mkdir(output,{recursive:true});
-const checks=[];
-const signedIn=page=>page.getByText('Control enabled · Local',{exact:true}).waitFor();
-async function until(condition,message){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout: '+message);await new Promise(r=>setTimeout(r,25));}}
-async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>v.id),[]);}
-try{
- {
-  const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
-  const errors=[];context.on('weberror',e=>errors.push(e.error().message));
-  try{
-   const page=await context.newPage();page.setDefaultTimeout(12000);
-   await page.goto(f.hub.url);await signedIn(page);
-   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).waitFor();await page.getByRole('link',{name:'pixel pixoo',exact:true}).waitFor();
-   assert.equal(await page.getByText('Use a separately provisioned access token').count(),0,'no login form');
-   assert.equal(f.hub.resources().browserSessions,1);
-   if(output)await page.screenshot({path:output+'/trusted-signed-in.png',fullPage:true});
-   checks.push('a fresh context opens signed in');
+import {mkdir} from 'node:fs/promises';
+import {createServer, type Server} from 'node:http';
+import type {AddressInfo} from 'node:net';
+import {AxeBuilder} from '@axe-core/playwright';
+import {chromium, type BrowserContext, type Page, type Response} from 'playwright';
+import {requestBrowserLaunch} from '../../dist/src/index.js';
+import {changes, feed, startWorld, type World} from './harness.ts';
 
-   // Hub #277: a bookmarked page address is a route, not a launch code; it opens signed in on that page and keeps its address.
-   const bookmark=await context.newPage();await bookmark.goto(f.hub.url+'/#/component/pixel');await signedIn(bookmark);
-   await bookmark.locator('section:visible .section-heading h2',{hasText:/^pixel$/}).waitFor();assert.equal(new URL(bookmark.url()).hash,'#/component/pixel');
-   await bookmark.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===1,'the bookmark tab logs out');
-   checks.push('a route bookmark opens signed in on its page');
+const browser = await chromium.launch({headless: true});
+const output = process.env.DASHBOARD_RECEIPTS;
+if (output !== undefined) await mkdir(output, {recursive: true});
+const checks: string[] = [];
+const errors: string[] = [];
+const sent: string[] = [];
 
-   await page.reload();await signedIn(page);
-   await until(()=>f.hub.resources().browserSessions===1,'the unloaded page’s session is logged out');
-   checks.push('reload stays signed in without piling up sessions');
-
-   const second=await context.newPage();await second.goto(f.hub.url);await signedIn(second);
-   assert.equal(f.hub.resources().browserSessions,2,'each tab has its own session');
-   await second.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===1,'closing a tab logs its session out');
-   checks.push('a second tab signs in and closing it logs out');
-
-   const local=await context.newPage();await local.goto(f.hub.url.replace('127.0.0.1','localhost'));await signedIn(local);
-   await local.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===1,'the localhost tab logs out');
-   checks.push('localhost opens signed in');
-
-   // Headless Chromium does not reliably keep pages in the back-forward cache, so the page transition events are dispatched as a restored page receives them.
-   await page.evaluate(()=>dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));
-   await until(()=>f.hub.resources().browserSessions===0,'a page entering the back-forward cache logs out');
-   await page.evaluate(()=>dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
-   await until(()=>f.hub.resources().browserSessions===1,'a restored page signs in again');
-   await page.getByRole('button',{name:'Sign in again',exact:true}).waitFor({state:'detached'});await signedIn(page);
-   checks.push('a page restored from the back-forward cache signs in again');
-
-   // Sixteen more sessions evict this page's session; the dashboard offers one explicit click to sign in again.
-   for(let index=0;index<16;index++){const response=await fetch(f.hub.url+'/api/dashboard/v1/session',{method:'POST',headers:{origin:f.hub.url,'content-type':'application/json','x-pixoo-request':'1'},body:'{}'});assert.equal(response.status,200);}
-   const again=page.getByRole('button',{name:'Sign in again',exact:true});await again.waitFor();
-   if(output)await page.screenshot({path:output+'/trusted-session-ended.png',fullPage:true});
-   await again.click();await again.waitFor({state:'detached'});await signedIn(page);
-   assert.equal(await page.getByRole('alert').count(),0,'the error clears with the new session');
-   checks.push('an evicted session recovers with Sign in again');
-
-   await page.getByRole('button',{name:'Disconnect',exact:true}).click();
-   await page.getByText('You’re signed out.',{exact:true}).waitFor();
-   assert.equal(await page.getByText('After a reload, run it again.',{exact:false}).count(),0,'no launcher reload hint in a trusted page');
-   await axe(page);
-   if(output)await page.screenshot({path:output+'/trusted-signed-out.png',fullPage:true});
-   await page.getByRole('button',{name:'Sign in',exact:true}).click();await signedIn(page);
-   checks.push('Disconnect offers Sign in, which restores the dashboard');
-   assert.equal(f.writes.length,0,'signing in and inspecting send no device command');
-   assert.deepEqual(errors,[]);
-  }finally{await context.close();await f.close();}
- }
- {
-  const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
-  try{
-   const page=await context.newPage();page.setDefaultTimeout(12000);
-   await page.route('**/api/dashboard/v1/session',route=>route.fulfill({status:503,json:{error:{code:'capacity'}}}));
-   await page.goto(f.hub.url);
-   await page.getByRole('alert').filter({hasText:'B.U.N.N.Y. couldn’t sign you in. Reload to try again, or use the launcher.'}).waitFor();
-   await page.getByText('Open B.U.N.N.Y. with the Hub launcher.',{exact:true}).waitFor();
-   await axe(page);
-   if(output)await page.screenshot({path:output+'/trusted-failed.png',fullPage:true});
-   await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await signedIn(page);
-   checks.push('a failed sign-in shows the launcher and token fallbacks');
-  }finally{await context.close();await f.close();}
- }
- {
-  const f=await fixture({empty:true}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
-  try{
-   const page=await context.newPage();page.setDefaultTimeout(12000);
-   await page.goto(f.hub.url);await page.getByText('Open B.U.N.N.Y. with the Hub launcher.',{exact:true}).waitFor();
-   await page.getByText('The launcher opens this page and connects automatically. After a reload, run it again.',{exact:true}).waitFor();
-   assert.equal(await page.getByRole('alert').count(),0,'a hub without the option shows no error');
-   assert.equal(await page.getByRole('button',{name:'Sign in',exact:true}).count(),0);
-   assert.equal(f.hub.resources().browserSessions,0);
-   if(output)await page.screenshot({path:output+'/option-off.png',fullPage:true});
-   checks.push('without the option the login page is unchanged');
-  }finally{await context.close();await f.close();}
- }
- {
-  // Hub #561: a link from another loopback app, like the wall's B.U.N.N.Y. link, opens the dashboard signed in, in a new tab.
-  // That app cannot frame the dashboard or keep a handle to its tab, and a link from another host name is cross-site and stays refused.
-  const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
-  const hubPort=new URL(f.hub.url).port;
-  const other=createServer((req,res)=>{
-   const url=new URL(req.url,'http://other'),target=`http://${url.searchParams.get('to')==='localhost'?'localhost':'127.0.0.1'}:${hubPort}/`;
-   res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
-   // A hostile local page: one click opens the Hub in a window it keeps a handle to, then it re-navigates that window every
-   // 10-30 ms, faster than each load's pagehide logout, to pile up sessions until the cap evicts the owner's (Hub #561 review).
-   if(url.pathname==='/attack')return res.end(`<!doctype html><html lang="en"><title>Hostile local app</title><button id="go">Open</button><script>
-    const hub=${JSON.stringify(target)};window.rounds=0;window.severed=false;
-    document.getElementById('go').onclick=()=>{const w=window.open(hub);const tick=()=>{if(w.closed){window.severed=true;return;}w.location=hub;window.rounds++;setTimeout(tick,10+Math.random()*20);};setTimeout(tick,20);};
-   </script></html>`);
-   res.end(`<!doctype html><html lang="en"><title>Another local app</title><a href="${target}" target="_blank" rel="noopener noreferrer">B.U.N.N.Y.</a>${url.pathname==='/framed'?`<iframe title="Framed B.U.N.N.Y." src="${target}"></iframe>`:''}</html>`);
+async function fresh(): Promise<BrowserContext> {
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  context.on('weberror', error => { errors.push(error.error().name); });
+  context.on('page', page => {
+    changes(page, sent);
+    page.setDefaultTimeout(12_000);
   });
-  await new Promise(resolve=>other.listen(0,'127.0.0.1',resolve));
-  const otherPort=other.address().port,toHub=response=>new URL(response.url()).port===hubPort;
-  /** Opens a page of the other app and clicks its B.U.N.N.Y. link, as the owner does. Returns the new tab and the Hub's answer to its navigation. */
-  async function follow(from){
-   const page=await context.newPage();page.setDefaultTimeout(12000);await page.goto(from);
-   const [tab,response]=await Promise.all([context.waitForEvent('page'),context.waitForEvent('response',r=>r.request().isNavigationRequest()&&toHub(r)),page.getByRole('link',{name:'B.U.N.N.Y.',exact:true}).click()]);
-   tab.setDefaultTimeout(12000);
-   return {page,tab,response,site:(await response.request().allHeaders())['sec-fetch-site']};
+  return context;
+}
+async function open(context: BrowserContext, url: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(url);
+  return page;
+}
+const signedIn = async (page: Page): Promise<void> => {
+  await page.getByText('Control enabled · Local', {exact: true}).waitFor();
+  await feed(page, 'connected');
+};
+const axe = async (page: Page): Promise<string[]> => (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(violation => violation.id);
+
+let world: World | undefined;
+try {
+  {
+    // Without trusted loopback sign-in, a direct visit shows the launcher's page, and only the launcher's code signs in.
+    world = await startWorld({trusted: false, launcher: true});
+    const context = await fresh();
+    const page = await open(context, world.url);
+    await page.getByRole('heading', {name: 'Open B.U.N.N.Y. with the launcher.', exact: true}).waitFor();
+    assert.equal(world.browserSessions(), 0);
+    assert.deepEqual(await axe(page), []);
+    const launch = await requestBrowserLaunch(world.stateDir);
+    // The launcher opens a new tab at the runtime's origin with the code.
+    const launched = await open(context, `${launch.url}#launch=${launch.code}`);
+    await signedIn(launched);
+    assert.equal(new URL(launched.url()).hash, '', 'the code leaves the address before it is exchanged');
+    assert.equal(world.browserSessions(), 1);
+    const again = await open(await fresh(), `${launch.url}#launch=${launch.code}`);
+    await again.getByRole('alert').filter({hasText: 'That launch expired or failed. Run the launcher again.'}).waitFor();
+    const malformed = await open(await fresh(), `${world.url}/#launch=not-a-code`);
+    await malformed.getByRole('alert').filter({hasText: 'That launch expired or failed.'}).waitFor();
+    assert.equal(world.browserSessions(), 1, 'a used or malformed code signs nobody in');
+    checks.push('the launcher\'s code signs one browser in once, and a direct visit shows the launcher\'s page');
+    await world.close();
+    world = undefined;
   }
-  const errors=[];context.on('weberror',e=>errors.push(e.error().message));
-  try{
-   for(const [from,name] of [[`http://127.0.0.1:${otherPort}/`,'127.0.0.1'],[`http://localhost:${otherPort}/?to=localhost`,'localhost']]){
-    const {page,tab,response,site}=await follow(from);
-    assert.equal(site,'same-site',`Chromium sends a ${name} link to another port as same-site`);
-    assert.equal(response.status(),200,`the Hub serves the page linked from another ${name} app`);
-    await signedIn(tab);
-    assert.equal(f.hub.resources().browserSessions,1,'the linked tab signs in once');
-    if(output)await tab.screenshot({path:`${output}/linked-${name}.png`,fullPage:true});
-    await tab.close({runBeforeUnload:true});await page.close();await until(()=>f.hub.resources().browserSessions===0,'closing the linked tab logs its session out');
-   }
-   checks.push('a link from another loopback app opens the dashboard signed in');
+  {
+    world = await startWorld();
+    const context = await fresh();
+    const page = await open(context, world.url);
+    await signedIn(page);
+    assert.equal(world.browserSessions(), 1, 'a bookmark signs in without a form');
+    await page.reload();
+    await signedIn(page);
+    const second = await open(context, `${world.url}/#/connections`);
+    await signedIn(second);
+    await second.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
+    assert.equal(new URL(second.url()).hash, '#/connections', 'a bookmarked page keeps its address');
+    assert.equal(world.browserSessions(), 1, 'a reload and a second tab use the live session');
+    const localhost = await open(await fresh(), world.url.replace('127.0.0.1', 'localhost'));
+    await signedIn(localhost);
+    assert.equal(world.browserSessions(), 2, 'a bookmark on localhost signs its own browser in');
+    checks.push('a bookmark signs in on either loopback name, and a reload and a second tab share its session');
 
-   {
-    const {page,tab,response,site}=await follow(`http://localhost:${otherPort}/`);
-    assert.equal(site,'cross-site','a localhost page linking to 127.0.0.1 is cross-site');
-    assert.equal(response.status(),403,'the Hub refuses a cross-site link');
-    await tab.getByText('forbidden',{exact:false}).waitFor();
-    assert.equal(f.hub.resources().browserSessions,0);
-    await tab.close();await page.close();
-   }
-   checks.push('a link from another host name is refused');
+    // Disconnect ends the session in every tab of the browser: the other tab offers one sign-in and waits for it.
+    await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
+    await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
+    await feed(second, 'ended');
+    await second.getByRole('button', {name: 'Sign in again', exact: true}).waitFor();
+    await new Promise(resolve => { setTimeout(resolve, 1500); });
+    assert.equal(world.browserSessions(), 1, 'only the localhost browser\'s session is left; nothing signed in by itself');
+    await second.getByRole('button', {name: 'Sign in again', exact: true}).click();
+    await signedIn(second);
+    assert.equal(world.browserSessions(), 2);
+    checks.push('Disconnect ends the session in every tab, which each offer one sign-in');
 
-   {
-    const page=await context.newPage();page.setDefaultTimeout(12000);
-    const framed=page.waitForResponse(toHub);await page.goto(`http://127.0.0.1:${otherPort}/framed`);
-    const response=await framed;
-    assert.equal((await response.request().allHeaders())['sec-fetch-dest'],'iframe');
-    assert.equal(response.status(),403,'the Hub refuses to be framed by another loopback app');
-    await page.frameLocator('iframe').getByText('forbidden',{exact:false}).waitFor();
-    assert.equal(await page.frameLocator('iframe').getByText('Control enabled · Local',{exact:true}).count(),0);
-    assert.equal(f.hub.resources().browserSessions,0,'a framed page never signs in');
-    await page.close();
-   }
-   checks.push('another loopback app cannot frame the dashboard');
+    // A sign-in that fails shows an alert with the launcher's text.
+    const failing = await (await fresh()).newPage();
+    failing.setDefaultTimeout(12_000);
+    await failing.route('**/api/v2/browser/session', route => route.fulfill({status: 500, contentType: 'application/json', body: '{}'}));
+    await failing.goto(world.url);
+    await failing.getByRole('alert').filter({hasText: 'B.U.N.N.Y. couldn’t sign you in.'}).waitFor();
+    await failing.getByText('The launcher opens this page and signs it in.', {exact: true}).waitFor();
+    checks.push('a failed sign-in shows an alert and the launcher\'s text');
+    await world.close();
+    world = undefined;
+  }
+  {
+    // Hub #561: a link on another loopback app's page opens the dashboard signed in; that app cannot frame it, a link
+    // from another host name is refused, and a page that drives a window it opened back to the dashboard never evicts
+    // the owner's session.
+    world = await startWorld();
+    const runtimePort = new URL(world.url).port;
+    const other: Server = createServer((request, response) => {
+      const url = new URL(request.url ?? '/', 'http://other');
+      const target = `http://${url.searchParams.get('to') === 'localhost' ? 'localhost' : '127.0.0.1'}:${runtimePort}/`;
+      response.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
+      if (url.pathname === '/attack') {
+        response.end(`<!doctype html><html lang="en"><title>Hostile local app</title><button id="go">Open</button><script>
+          const runtime = ${JSON.stringify(target)}; window.rounds = 0; window.severed = false;
+          document.getElementById('go').onclick = () => { const w = window.open(runtime); const tick = () => { if (w.closed) { window.severed = true; return; }
+            w.location = runtime; window.rounds++; setTimeout(tick, 10 + Math.random() * 20); }; setTimeout(tick, 20); };
+        </script></html>`);
+        return;
+      }
+      response.end(`<!doctype html><html lang="en"><title>Another local app</title><a href="${target}" target="_blank" rel="noopener noreferrer">B.U.N.N.Y.</a>${url.pathname === '/framed' ? `<iframe title="Framed B.U.N.N.Y." src="${target}"></iframe>` : ''}</html>`);
+    });
+    await new Promise<void>(resolve => { other.listen(0, '127.0.0.1', resolve); });
+    const otherPort = (other.address() as AddressInfo).port;
+    const toRuntime = (response: Response): boolean => new URL(response.url()).port === runtimePort;
+    try {
+      const context = await fresh();
+      const follow = async (from: string): Promise<{tab: Page; response: Response; site: string | undefined}> => {
+        const page = await open(context, from);
+        const [tab, response] = await Promise.all([
+          context.waitForEvent('page'), context.waitForEvent('response', candidate => candidate.request().isNavigationRequest() && toRuntime(candidate)),
+          page.getByRole('link', {name: 'B.U.N.N.Y.', exact: true}).click(),
+        ]);
+        return {tab, response, site: (await response.request().allHeaders())['sec-fetch-site']};
+      };
+      const linked = await follow(`http://127.0.0.1:${otherPort}/`);
+      assert.deepEqual([linked.site, linked.response.status()], ['same-site', 200], 'a link from another loopback port is same-site and served');
+      await signedIn(linked.tab);
+      assert.equal(world.browserSessions(), 1);
+      const crossed = await follow(`http://localhost:${otherPort}/`);
+      assert.deepEqual([crossed.site, crossed.response.status()], ['cross-site', 403], 'a localhost page linking to 127.0.0.1 is refused');
+      await crossed.tab.getByText('forbidden', {exact: false}).waitFor();
+      checks.push('another local app\'s link opens the dashboard signed in, and another host name\'s link is refused');
 
-   {
-    // Negative control: the owner is signed in, and a page on another loopback port drives a window it opened back to the
-    // Hub over and over. Cross-Origin-Opener-Policy must sever that handle, so the owner's session survives and the Hub
-    // never holds more than the owner's session and the one tab the click opened.
-    const owner=await context.newPage();owner.setDefaultTimeout(12000);
-    const issued=owner.waitForResponse(r=>r.url()===f.hub.url+'/api/dashboard/v1/session');
-    await owner.goto(f.hub.url);const token=(await (await issued).json()).token;await signedIn(owner);
-    const ownerStatus=async()=>(await fetch(f.hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${token}`}})).status;
-    assert.equal(await ownerStatus(),200);assert.equal(f.hub.resources().browserSessions,1);
-    const hostile=await context.newPage();hostile.setDefaultTimeout(12000);await hostile.goto(`http://127.0.0.1:${otherPort}/attack`);
-    await hostile.getByRole('button',{name:'Open',exact:true}).click();
-    let most=0,status=200;const started=Date.now();
-    // Without the opener policy this loop evicts the owner within about two seconds; watch for eight.
-    while(Date.now()-started<8000){most=Math.max(most,f.hub.resources().browserSessions);status=await ownerStatus();if(status!==200)break;await new Promise(r=>setTimeout(r,25));}
-    const attack=await hostile.evaluate(()=>({rounds:window.rounds,severed:window.severed}));
-    assert.equal(status,200,`the owner's session was evicted after ${Date.now()-started} ms: the hostile page re-navigated its window ${attack.rounds} times and the Hub held up to ${most} sessions`);
-    assert.ok(most<=2,`the Hub held ${most} sessions; only the owner's and the one opened tab may exist`);
-    assert.equal(attack.severed,true,'the opened tab no longer answers to the hostile page\'s handle');
-    await signedIn(owner);assert.equal(await owner.getByRole('button',{name:'Sign in again',exact:true}).count(),0);
-    for(const page of context.pages())if(page!==owner)await page.close({runBeforeUnload:true});
-    await owner.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===0,'every tab logs its session out');
-   }
-   checks.push('another loopback app cannot drive repeated sign-ins that evict the owner');
-   assert.equal(f.writes.length,0,'following links sends no device command');
-   assert.deepEqual(errors,[]);
-  }finally{await context.close();await new Promise(resolve=>{other.close(resolve);other.closeAllConnections();});await f.close();}
- }
- const receipt={synthetic:true,physical:false,passed:true,checks};
- if(output)await writeFile(output+'/trusted.json',JSON.stringify(receipt,null,2));
- console.log(JSON.stringify(receipt));
-}finally{await browser.close();}
+      const framer = await context.newPage();
+      const framed = framer.waitForResponse(toRuntime);
+      await framer.goto(`http://127.0.0.1:${otherPort}/framed`);
+      const frameResponse = await framed;
+      assert.equal((await frameResponse.request().allHeaders())['sec-fetch-dest'], 'iframe');
+      assert.equal(frameResponse.status(), 403, 'another loopback app cannot frame the dashboard');
+      assert.equal(await framer.frameLocator('iframe').getByText('Control enabled · Local', {exact: true}).count(), 0);
+      checks.push('another loopback app cannot frame the dashboard');
+
+      // The negative control of #561: without the opener policy and the shared session, this loop would pile up
+      // sign-ins until the session limit evicted the owner. Here the owner's tab stays signed in throughout.
+      const hostile = await open(context, `http://127.0.0.1:${otherPort}/attack`);
+      await hostile.getByRole('button', {name: 'Open', exact: true}).click();
+      let most = 0;
+      const started = Date.now();
+      while (Date.now() - started < 5000) {
+        most = Math.max(most, world.browserSessions());
+        await new Promise(resolve => { setTimeout(resolve, 25); });
+      }
+      const attack = await hostile.evaluate(() => ({rounds: (window as unknown as {rounds: number}).rounds, severed: (window as unknown as {severed: boolean}).severed}));
+      assert.equal(attack.severed, true, 'the opened tab no longer answers to the hostile page\'s handle');
+      assert.ok(most <= 1, `the runtime held ${most} sessions`);
+      await linked.tab.bringToFront();
+      assert.equal(await linked.tab.locator('main#main').getAttribute('data-feed'), 'connected', 'the owner\'s tab is still signed in');
+      checks.push('another local app cannot drive repeated sign-ins that evict the owner');
+      if (output !== undefined) await linked.tab.screenshot({path: `${output}/runtime-linked.png`, fullPage: true});
+      await context.close();
+    } finally {
+      other.closeAllConnections();
+      await new Promise<void>(resolve => { other.close(() => { resolve(); }); });
+    }
+  }
+  assert.deepEqual(sent, [], 'signing in and following links send no command');
+  assert.deepEqual(errors, []);
+  process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);
+} finally {
+  await world?.close();
+  await browser.close();
+}

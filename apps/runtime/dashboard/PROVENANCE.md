@@ -26,3 +26,26 @@ All files come from `jimmie-potts/agent-device-hub` at main
 | `tests/smoke.ts` | `apps/dashboard/tests/smoke.mjs` |
 
 The tests keep their content under `.ts` names, which their conversion needs.
+
+## What changed
+
+The first slice converts the copies to the runtime and its strict profile, and
+leaves out what other slices and stories bring back.
+
+| Runtime file | Change |
+| --- | --- |
+| `README.md` | Rewritten for the runtime copy: what it has now, sync, sign-in, Places and checks. |
+| `src/main.tsx` | The shell, Places, sessions and sign-in, rewritten from the 1.x snapshot, polling and bearer tokens onto the SDK's sync and the gateway's cookie session. The device views, music, Wispr page, moments, Pixoo media, device art and the running Hub's build are left out: the second slice brings the devices and music back, #927 the Wispr page, #925 the moments and #932 and #934 the module pages. |
+| `src/routes.ts` | Strict TypeScript; the Wispr route waits for #927. |
+| `src/widgets.ts` | Widgets name the families they sync; the home follows the approved mockup, with the Hub mode (#924) and inbox (#923) slots. |
+| `src/style.css` | The home's two columns, and the session dot, chip and notice status. |
+| `src/skins/neon-geometry-wars.css` | Unchanged. |
+| `tests/routes.test.ts`, `tests/widgets.test.ts`, `tests/style.test.ts`, `tests/layout.ts` | Strict TypeScript that Node runs as it is, for the converted modules. |
+| `tests/browser.ts`, `tests/trusted.ts`, `tests/smoke.ts` | Rewritten against the built runtime with the core and a synthetic hook, in place of the old Hub's fixture. |
+
+New files, written for the runtime: `src/connection.ts` (the SDK participant
+and the sessions copy), `src/sessions.ts` (what each session row shows),
+`src/signin.ts` (the gateway's sign-in), `src/ui.tsx` (badges, facts, the tip
+and the command status, adapted from `apps/dashboard/src/controls.tsx` and
+`main.tsx`), `build.mjs`, both `tsconfig.json` files, `tests/harness.ts` and
+`tests/sessions.test.ts`.
