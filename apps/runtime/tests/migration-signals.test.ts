@@ -17,16 +17,21 @@ const ENTRIES = [
   ['nanoleaf', fileURLToPath(new URL('../src/migrate-nanoleaf.js', import.meta.url)), NANOLEAF_EXIT.usage],
 ] as const;
 
-it('a SIGINT or SIGTERM after a tool\'s line leaves the exit code the line reports', async () => {
+it('a SIGINT or SIGTERM after a tool\'s line leaves the exit code the line reports', async context => {
   for (const [tool, entry, usage] of ENTRIES) {
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       // A malformed command line: the tool refuses at once with its usage line and exit 2.
       const child = spawn(process.execPath, ['--import', KEEP_ALIVE, entry, 'migrate'], {stdio: ['pipe', 'pipe', 'pipe']});
+      const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
+      context.after(async () => {
+        // A failed assertion or timeout must not leave the keep-alive child waiting on stdin.
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        await exited;
+      });
       let stdout = '';
       let stderr = '';
       child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
       child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
-      const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
       await waitFor(() => stderr.includes('settled'), 15_000, `${tool}: the entry point set its exit code`);
       assert.ok(stdout.endsWith('\n'), `${tool}: the line came first`);
       assert.equal(child.kill(signal), true, `${tool} ${signal}: the signal was sent`);
