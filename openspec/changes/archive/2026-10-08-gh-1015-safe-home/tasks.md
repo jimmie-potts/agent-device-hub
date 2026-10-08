@@ -6,5 +6,5 @@
 
 ## 2. Validation and documentation
 
-- [ ] 2.1 Update the verification guide and run build, typecheck, lint, affected runtime/SDK/app-verify suites, workflow checks and strict spec validation; record counts and negative controls.
-- [ ] 2.2 Synchronize the runtime spec and archive this change after successful current lookups and completed acceptance evidence.
+- [x] 2.1 Update the verification guide and run build, typecheck, lint, affected runtime/SDK/app-verify suites, workflow checks and strict spec validation; record counts and negative controls.
+- [x] 2.2 Synchronize the runtime spec and archive this change after successful current lookups and completed acceptance evidence.
