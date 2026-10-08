@@ -10,7 +10,9 @@
 ## 3. Delivery evidence
 
 - [x] 3.1 Extend codex-desktop-read scenario and provenance docs; verify the affected scenario and required direct consumer/package/build/type/lint/workflow checks.
-- [ ] 3.2 Observe the bounded disposable Acceptance run and retain its evidence, coordinated by root.
-- [ ] 3.3 Synchronize both affected specs and archive after successful current lookups and completed acceptance evidence.
+- [x] 3.2 Observe the bounded disposable Acceptance run and retain its evidence, coordinated by root.
+- [x] 3.3 Synchronize both affected specs after successful current lookups and completed acceptance evidence, ready for archival.
 
 Independent Standards and Specification reviews inspect the committed candidate after synchronization and archival. They remain delivery gates owned by the coordinator.
+
+Independent disposable Acceptance at `bb81bb79` passed `codex-desktop-read` in run `runtime-20261008T135909Z-e4c222`: 30 scenario steps and independent session observations passed; cleanup completed. This is synthetic source evidence, with installation deferred to #840.
