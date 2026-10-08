@@ -27,6 +27,9 @@ export {
   type ModuleScheduler, type ModuleSettings, type ModuleTool, type Secrets, type Tracing, type WorkerCallOptions, type Workers,
 } from './module.js';
 export {WorkerCalls, type WorkerCallsOptions} from './workers.js';
+export {
+  type DeviceAction, type DeviceLink, type DeviceSimulation, type LinkAnswer, type LinkCall, type ModuleFactory, type ModuleRegistration, type SimulationOptions,
+} from './registration.js';
 export {childOf, traceFields} from './trace.js';
 export {
   HEARTBEAT_MS, MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, REFUSAL_WINDOW_MS, REMEMBER_MS, RemoteEdge, STALL_MS, type EdgeOptions, type EdgePermissions, type EdgePrincipal, type RemoteGrant,

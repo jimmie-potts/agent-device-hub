@@ -6,6 +6,7 @@ export {
   RESYNC_MAX_MS, SIMULATED_SECTION, STATUS_POLL_MS, SYNC_TIMEOUT_MS, TIDBYT_MODULE, createTidbytModule, deviceKey, deviceState, reportsUnavailable,
   tidbytFactory, type TidbytModuleOptions, type TidbytTiming,
 } from './module.js';
+export {registration, tidbytSimulation} from './registration.js';
 export {
   API_KEY_SECRET, DEFAULT_DEVICE_ID, DEFAULT_NOW_PLAYING_INSTALLATION, DEFAULT_STATUS_INSTALLATION, configureTidbyt, convertTidbytRunner,
   parseRunnerCredentials, playbackIdOf, type ConvertedTidbyt, type RunnerCredentials, type TidbytConfig, type TidbytSection,

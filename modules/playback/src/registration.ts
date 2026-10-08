@@ -1,0 +1,92 @@
+// The playback module's registration (Hub #999): its factory, its place in the shipped list and how the scenario
+// harnesses simulate its speakers. A disposable run's supervisor holds the simulated speakers, and the runtime's module
+// reaches them one call at a time over its link; no address crosses it.
+import type {DeviceAction, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
+import {createPlaybackModule, playbackFactory} from './module.js';
+import {SimulatedSpeakers, type SimulatedKind} from './simulated.js';
+import type {SonosReply, SonyReply} from './transport.js';
+
+const KINDS: readonly string[] = ['sony', 'sonos'] satisfies SimulatedKind[];
+
+/**
+ * The phone plays `title` to one speaker over AirPlay, pauses, stops or switches it to another input; the speaker stops
+ * answering, answers each call 400 ms late or answers again at once; or its next command is refused or never answered.
+ */
+function act(speakers: SimulatedSpeakers, simulation: DeviceAction): void {
+  const speaker = simulation.speaker as SimulatedKind;
+  const {title} = simulation;
+  switch (simulation.action) {
+    case 'play':
+      speakers.play(speaker, typeof title === 'string' ? {title} : undefined);
+      return;
+    case 'pause':
+      speakers.pause(speaker);
+      return;
+    case 'stop':
+      speakers.stop(speaker);
+      return;
+    case 'other-input':
+      speakers.otherInput(speaker);
+      return;
+    case 'silent':
+      speakers.silent(speaker);
+      return;
+    case 'slow':
+      speakers.slow(speaker);
+      return;
+    case 'answer':
+      speakers.answer(speaker);
+      return;
+    case 'refuse-next':
+      speakers.nextCommand(speaker, 'refuse');
+      return;
+    case 'hang-next':
+      speakers.nextCommand(speaker, 'hang');
+      return;
+  }
+}
+
+/** One speaker call as it crosses the link: a Sony JSON-RPC method (`sony`) or a Sonos SOAP action (`sonos`). */
+type SonyCall = {method: string; version: string};
+type SonosCall = {action: string; args: string};
+
+export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSpeakers> = {
+  actions: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'],
+  admits: (_action, {speaker, title, ...rest}) => typeof speaker === 'string' && KINDS.includes(speaker) && Object.keys(rest).length === 0 &&
+    (title === undefined || (typeof title === 'string' && title.length <= 200)),
+  memory: {
+    // A slow speaker waits on the harness's virtual time.
+    create: ({scheduler}) => new SimulatedSpeakers({}, {scheduler}),
+    state: speakers => speakers.state(),
+    act,
+    // Freshness follows the harness's clock, so a silent speaker ages in virtual time.
+    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now}),
+  },
+  run: {
+    create: () => new SimulatedSpeakers(),
+    state: speakers => speakers.state(),
+    act: (speakers, simulation) => { act(speakers, simulation); },
+    serve: (speakers, {method, args, signal}) => {
+      if (method === 'sony') {
+        const {method: rpc, version} = args as SonyCall;
+        return speakers.sony('', rpc, version, signal);
+      }
+      const {action, args: soap} = args as SonosCall;
+      return speakers.sonos('', action, soap, signal);
+    },
+    // A speaker that does not answer never replies, so the module's deadline aborts the call, which tells the supervisor too.
+    remote: link => {
+      const call = async (method: 'sony' | 'sonos', body: SonyCall | SonosCall, signal: AbortSignal): Promise<unknown> => {
+        const answer = await link.call(method, body, signal);
+        if (answer.status !== 'answered') throw new Error('the speaker did not answer');
+        return answer.value;
+      };
+      return createPlaybackModule({transport: {
+        sony: async (_endpoint, method, version, signal) => await call('sony', {method, version}, signal) as SonyReply,
+        sonos: async (_endpoint, action, args, signal) => await call('sonos', {action, args}, signal) as SonosReply,
+      }});
+    },
+  },
+};
+
+export const registration: ModuleRegistration = {...playbackFactory, shipped: true, order: 100, simulation: playbackSimulation};

@@ -8,3 +8,4 @@ export {folderReader, type MarkerTransport} from './transport.js';
 export {serveReads, type ReadMarker} from './serve.js';
 export {SimulatedMarker, type MarkerState} from './simulated.js';
 export {CODEX_DESKTOP_SIMULATED_SECTION, codexDesktopFactory} from './factory.js';
+export {codexDesktopSimulation, registration} from './registration.js';

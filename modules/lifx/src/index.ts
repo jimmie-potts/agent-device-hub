@@ -18,3 +18,4 @@ export type {PaintKey} from './status.js';
 export {decodeState, encodeColor, encodePower, PACKET, UdpTransport, unicastAddress} from './protocol.js';
 export type {Hsbk, LightState, Transport} from './protocol.js';
 export {LIFX_SIMULATED_SECTION, lifxModuleFactory} from './factory.js';
+export {lifxSimulation, registration} from './registration.js';
