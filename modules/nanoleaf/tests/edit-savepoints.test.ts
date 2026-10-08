@@ -149,7 +149,7 @@ const machineEdit = (requestId: string, expected: number, edit: object): {key: s
   moduleCommand(NANOLEAF_FAMILIES.machineEdit.family, NANOLEAF_FAMILIES.machineEdit.type, {requestId, expectedConfigurationRevision: expected, edit});
 
 suite('the module on a full disk', () => {
-  test('refuses a wall edit and a machine edit as a store failure, leaves no transaction, and takes both once there is room', async context => {
+  test('refuses a wall edit and a machine edit with capacity, leaves no transaction, and takes both once there is room', async context => {
     const world = await ModuleWorld.open(context);
     await world.start();
     const db = world.harness.moduleDatabase();
@@ -158,13 +158,23 @@ suite('the module on a full disk', () => {
     padBookkeeping(db);
     const revision = (): number => Number(world.query('SELECT configuration_revision FROM nanoleaf_devices WHERE device=?', 'wall')[0]?.[0]);
     const pages = fillDisk(db);
-    for (const [name, command] of [['wall', () => wallEdit('wall-full', RECOLOR)], ['machine', () => machineEdit('machine-full', revision(), RECOLOR)]] as const) {
+    for (const [name, command] of [['wall-full', () => wallEdit('wall-full', RECOLOR)], ['machine-full', () => machineEdit('machine-full', revision(), RECOLOR)]] as const) {
       const {key, draft} = command();
       const result = await world.request(key, draft);
-      // The module answers any store failure at admission as `internal`, with nothing changed.
-      assert.equal(result.status === 'rejected' && result.error.error.code, 'internal', `${name}: ${JSON.stringify(result)}`);
+      // A full disk is the registry's `capacity`: the store cannot take the command now, and nothing changed.
+      assert.deepEqual(result.status === 'rejected' && result.error.error, {
+        code: 'capacity', retryable: true, detail: 'the module\'s store is full; nothing changed', requestId: name,
+        traceId: result.status === 'rejected' ? result.error.error.traceId : undefined,
+      }, `${name}: ${JSON.stringify(result)}`);
       assert.equal(db.isTransaction, false, `${name}: no transaction is left open`);
+      // The bus records the reply at the registry's level for `capacity`, WARN; the module adds no ERROR record.
+      const decision = world.diagnostics.find(diagnostic => diagnostic.event === 'command.replied' && diagnostic.requestId === name);
+      assert.deepEqual([decision?.level, decision?.code, decision?.outcome], ['warn', 'capacity', 'rejected'], name);
+      assert.deepEqual(world.logs().filter(record => record.fields['bunny.request.id'] === name).map(record => [record.level, record.event]), [], name);
     }
+    // No record holds the error's text: SQLite's message for a full disk, or the failed rollback's.
+    const text = JSON.stringify([world.logs(), world.diagnostics]);
+    for (const leak of ['database or disk is full', 'no such savepoint']) assert.ok(!text.includes(leak), leak);
     assert.deepEqual(world.query("SELECT color FROM projects WHERE id='a'"), [['#aa55ff']], 'nothing changed');
     db.exec(`PRAGMA max_page_count = ${String(pages * 64)}`);
     const wall = wallEdit('wall-room', {kind: 'project-color', project: 'a', color: '#223344'});
@@ -174,5 +184,23 @@ suite('the module on a full disk', () => {
     await world.until(() => world.outcomes('machine-room').length > 0, 5000, 'the machine edit applied');
     assert.equal(world.outcomes('machine-room')[0]?.data.result, 'succeeded');
     assert.deepEqual(world.query("SELECT color FROM projects WHERE id='a'"), [['#123456']]);
+  });
+
+  test('any other store failure at admission stays internal, logged once at ERROR with its type and no text', async context => {
+    const world = await ModuleWorld.open(context);
+    await world.start();
+    const db = world.harness.moduleDatabase();
+    if (db === undefined) throw new Error('the module has no open store');
+    db.exec("INSERT INTO projects VALUES ('a','Project A','#aa55ff','[]')");
+    // A read-only store refuses each write with SQLITE_READONLY, not a full disk.
+    const release = world.refuseStore('writes');
+    const {key, draft} = wallEdit('wall-refused', RECOLOR);
+    const result = await world.request(key, draft);
+    assert.equal(result.status === 'rejected' && result.error.error.code, 'internal');
+    const records = world.logs().filter(record => record.fields['bunny.request.id'] === 'wall-refused');
+    assert.deepEqual(records.map(record => [record.level, record.event, record.fields['bunny.code'], record.fields['error.type']]),
+      [['error', 'command.rejected', 'internal', 'Error']]);
+    assert.ok(!JSON.stringify(records).includes('readonly database'), 'no record holds the error\'s text');
+    release();
   });
 });
