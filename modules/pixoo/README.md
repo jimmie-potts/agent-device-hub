@@ -302,18 +302,28 @@ gives its commands, exit codes and refusals; this section says what it carries.
   migrations create. The tool reads the catalog read-only and immutable, holds
   the library's owner lock shared, so a running service is refused and one
   started meanwhile cannot open the library, and opens every file without
-  following a link. It never changes the source.
+  following a link. A library without `owner.sqlite` is refused, since nothing
+  then shows that no service holds it. It never changes the source. The Pixoo
+  service must stay at the installed release until the migration: a newer
+  divoom-app-upgrade (its main adds schema version 4 in `47c0fb2`) would upgrade
+  the library, and the tool would refuse it with `source-schema`.
 - **Carried.** Every asset, rendition, playlist and item, inserted through
   SQLite at the installed schema, which the library's own first three
   migrations create in the module's database, and every original and rendition
   file the catalog names, copied into `media/` in the module's private folder
   as new private files. The library's own forward migration then takes the
   database to version 4, and its own check (`verifyStorage`) reads every copy
-  back against the hashes its catalog gives.
-- **Left in the backup.** Sessions, their retained renditions, the player's
-  checkpoint and pending cleanups start fresh (owner decision 10), and files no
-  catalog entry names, such as a deleted asset's original or a staging folder,
-  are not copied. The report counts the rows it leaves behind.
+  back against the hashes its catalog gives. A full disk at any of these steps
+  fails the migration with `disk-short`, an interrupt with `interrupted`, and
+  either stops every copy before the tool removes what it wrote.
+- **Left in the backup.** Sessions, the player's checkpoint and pending
+  cleanups start fresh (owner decision 10), and files no catalog entry names are
+  not copied. `leftInBackup` counts the sessions (each one's retained
+  renditions, its `session_refs` rows, go with it), the checkpoints, the
+  cleanup jobs, and the files under `media/` that no catalog entry names: a
+  deleted asset's original or renditions, which its cleanup job would remove,
+  and an upload left in `staging/`. The module never reads any of them, and the
+  backup keeps the whole library.
 - **Not precomputed.** The tool writes none of this module's own tables. The
   first start after the migration checks each multi-frame rendition that the
   hosted profile has not checked, once, in the background (see
@@ -323,8 +333,14 @@ gives its commands, exit codes and refusals; this section says what it carries.
   but this module can no longer render them again (see [Isolation](#isolation)).
   It never names them.
 - **Verifier.** `verifyMigration` compares every carried row and every file's
-  SHA-256 with the source, checks the database's schema and the files' modes, and
-  counts each mismatch by kind. The cutover goes ahead only on zero.
+  SHA-256 with the source, checks the database's schema, its catalog revision
+  (0, as the migration leaves it), that the tables that start fresh, the
+  module's and the SDK's own included, are empty, and the files' modes, and
+  counts each mismatch by kind. It checks the store before the runtime's first
+  start. The cutover goes ahead only on zero. It reads the source through the
+  same `InstalledLibrary` as the migration, so a fault in that reader would
+  reach both; the library's own check of the copies, which reads the catalog
+  rows and files through the library's code, covers that.
 
 `writeSyntheticLibrary(directory)` builds a library of the installed schema
 with this module's own code, for the tests and the `pixoo-migrated` disposable
@@ -442,6 +458,12 @@ Read on 2026-10-06 from divoom-app-upgrade:
   selection on stop, pause or clear with monitoring enabled" are back in
   `tests/unit/monitor-presentation.test.ts`, against `PixooControl`, which
   replaces `ControlService`.
+- **For the library migration (#931).** `LibraryError` keeps the error it wraps
+  as its `cause`, in `migrate`, `Library.attach` and the library's queue, so a
+  caller can tell a full disk; nothing shows the cause. The `transaction`
+  helper rolls back only a transaction still open: a COMMIT that fails, as on a
+  full disk, has already rolled back, and its error was masked by the failed
+  ROLLBACK's.
 
 ### Files not moved
 

@@ -912,8 +912,11 @@ maintenance intake reads them, and `runtime.stopped` must count no lost record o
 span. The decision-record and tracing tests read the runtime's records and the
 spans its host adapter hands a test sink (#949). The Pixoo library migration's
 tool (#931) runs in process and as its entry point, against a synthetic library
-it writes with the Pixoo module's code, and starts the runtime in a child
-process to show each one refusing the other's lease. They need no device or network.
+it writes with the Pixoo module's code, starts the runtime in a child process to
+show each one refusing the other's lease, and interrupts the entry point with
+SIGINT and SIGTERM. Its full-disk test mounts small private tmpfs file systems
+in a user and mount namespace (`unshare -rm`); a host that refuses one skips it
+and says why. They need no device or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
 zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
 stalled reader; the README's Memory section says how.

@@ -27,3 +27,11 @@
 - [x] 5.1 Add the `pixoo-migrated` run scenario, which migrates a synthetic library into the run's state directory before the shipped runtime starts: `apps/runtime/verify/tests/migrated.test.ts`.
 - [x] 5.2 Document the tool in the runtime README, the migration in the Pixoo module README, the run in the verification README, and the tests and stream owner in `docs/development.md`.
 - [x] 5.3 Run build, typecheck, lint, the SDK, runtime, scenario, verification, events, maintenance and Pixoo suites, and the workflow and OpenSpec checks.
+
+## 6. Fix round 1 (PR #994 reviews)
+
+- [x] 6.1 Stop every copy on the first failure or an abort before the migration settles: "a failed read stops every copy…", "an abort stops every copy…" and the tool's "a copy that fails mid-way…", red first.
+- [x] 6.2 Run and check the last checkpoint, and fail on a log left after the close: "a log left beside the database…" and the real tmpfs test "on a real full disk…", red first (it reported `migrated` with a log at 340 to 420 KiB).
+- [x] 6.3 Keep the cause in the library's errors, stop the transaction helper masking a failed COMMIT, and map a full disk to `disk-short` at every step: "a full database at any step…", red first.
+- [x] 6.4 Turn SIGINT and SIGTERM into an abort that stops the copies, removes what was written and exits 4: "an interrupt before anything is written…", red first.
+- [x] 6.5 Create nothing on a refusal, refuse folders others may open before the database exists, count whole blocks, refuse a library without its owner lock file or given as a file, count files left in the backup, and check the catalog revision and the module's own tables in the verifier: each with its test, and each killed by its mutant (F1 to F19).
