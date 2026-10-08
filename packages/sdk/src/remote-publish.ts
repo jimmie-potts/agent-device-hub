@@ -139,7 +139,7 @@ export function publishOnce(options: PublishOnceOptions, key: string, message: M
       else reached = true;
     });
     // Every error is heard, so one after the call settled never escapes as an unhandled event.
-    outgoing.on('error', () => { lost('the edge could not be reached'); });
+    outgoing.on('error', () => { lost(reached ? 'the edge\'s connection ended before its answer' : 'the edge could not be reached'); });
     timer = setTimeout(() => { lost(`the edge did not answer within ${timeoutMs} ms`); }, timeoutMs);
     outgoing.end(body);
   });

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {createServer, type IncomingMessage, type Server} from 'node:http';
-import type {AddressInfo} from 'node:net';
+import {createServer as createListener, type AddressInfo, type Socket} from 'node:net';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {MAX_TIMEOUT_MS, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, SdkError, prepareMessage, publishOnce} from '../src/index.js';
 import {SESSION_FAMILY, TRACEPARENT, assertValid, it, session, trace, turnEnded, until} from './support.js';
@@ -128,6 +128,44 @@ it('an edge that takes the call and never answers is uncertain at the deadline: 
   assert.ok(elapsed >= 290 && elapsed < 1000, `settled at the deadline, after ${Math.round(elapsed)} ms`);
   assert.equal(calls.length, 1);
 }));
+
+/** Whether `text` holds a whole HTTP request: its head and as many body bytes as its `content-length` names. */
+function complete(text: string): boolean {
+  const head = text.indexOf('\r\n\r\n');
+  const length = /^content-length: (\d+)$/im.exec(text)?.[1];
+  return head >= 0 && length !== undefined && Buffer.byteLength(text.slice(head + 4)) >= Number(length);
+}
+
+it('an edge whose connection drops after it read the call is uncertain: the message may have been published', async () => {
+  // A listener that reads the whole call, then ends the connection with no answer, or resets it.
+  const endings: [string, (socket: Socket) => void][] = [['ended', socket => { socket.end(); }], ['reset', socket => { socket.resetAndDestroy(); }]];
+  for (const [name, end] of endings) {
+    let read = '';
+    const listener = createListener(socket => {
+      socket.setEncoding('utf8').on('data', (chunk: string) => {
+        read += chunk;
+        if (complete(read)) end(socket);
+      });
+      socket.on('error', () => {});
+    });
+    listener.listen(0, '127.0.0.1');
+    await once(listener, 'listening');
+    try {
+      const message = prepareMessage('bunny/core', session('s1', 1));
+      const started = performance.now();
+      const result = await publishOnce({url: `http://127.0.0.1:${(listener.address() as AddressInfo).port}`, source: 'bunny/core', token: 'synthetic-token', timeoutMs: 2000}, KEY, message);
+      assert.equal(result.status, 'uncertain', name);
+      assert.deepEqual(result.status === 'uncertain' ? result.error.error : undefined, {
+        ...errorBody('uncertain-result', {traceId: trace(message.traceparent).traceId, detail: 'the edge\'s connection ended before its answer; the message may have been published'}).error,
+      }, name);
+      assert.ok(performance.now() - started < 1000, `${name}: settled when the connection ended, not at the deadline`);
+      assert.ok(read.includes(JSON.stringify(message.id)), `${name}: the listener read the call`);
+    } finally {
+      listener.close();
+      await once(listener, 'close');
+    }
+  }
+});
 
 it('an edge that fails, or answers with something other than its answer, leaves the publication uncertain', async () => {
   const cases: [string, {status: number; body: string}][] = [
