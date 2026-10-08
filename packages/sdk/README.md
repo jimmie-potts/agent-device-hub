@@ -454,9 +454,14 @@ export const sign: BunnyModule<SignConfig> = {
     (`CONTENT_PATH` and `ASSETS_PATH`). Omitted `presentation` means passive
     HTML; `presentation: 'passive'` is equivalent. API 1.3 adds the two
     interactive shapes below.
-  - `content(ref)`: content by reference, `{type, bytes}` or undefined, served
+  - `content(ref, request?)`: content by reference, `{type, bytes}` or undefined, served
     at `/modules/<name>/content/<ref>`, such as the preview a page shows with
-    `<img src="content/preview.png">`. The gateway serves images, plain text and
+    `<img src="content/preview.png">`. API 1.3 supplies `request.query` and
+    `request.signal`, aborted on completion or the five-second deadline, and
+    accepts returned `ErrorBody` refusals with fixed gateway text. Queries have
+    at most 16 distinct keys (1–64 characters) and values of at most 512
+    characters; the module validates its own fields. Earlier versions refuse
+    queries. Reads change no owner state. The gateway serves images, plain text and
     JSON of at most 16 MiB.
   - `tools`: at most `MAX_TOOLS` (16) read tools, each `{name, description,
     input, output, read}`, which MCP publishes as `<module>_<name>` to a
@@ -519,7 +524,9 @@ export const sign: BunnyModule<SignConfig> = {
   The SDK frontend entry contains types only.
 
   `context.api.read(path)` reads runtime JSON with the browser session; the
-  feature validates the returned document. `api.sync(families, changed)` syncs
+  feature validates the returned document. `api.image(path)` reads this module's
+  content as a PNG, JPEG, GIF or WebP Blob, using the same authentication and
+  page lifetime; executable responses are refused. `api.sync(families, changed)` syncs
   only this module's declared families on the shared participant. Close a copy
   when finished; the shell also closes active and late copies when the page or
   session ends. `api.command(action)` sends once through the existing dispatcher.

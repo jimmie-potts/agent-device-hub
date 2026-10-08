@@ -96,6 +96,35 @@ const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', tok
 const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
 
+it('modern content receives bounded query values while legacy content still refuses queries', async context => {
+  const reader = READER();
+  const heard: unknown[] = [];
+  const modern: BunnyModule = {manifest: {name: 'modern', apiVersion: '1.3', content: (ref: string, ...extras: unknown[]) => {
+    if (ref === 'missing') return errorBody('not-found', {detail: 'private fixture path must not be returned'});
+    const request = extras[0] as {query?: unknown; signal?: AbortSignal} | undefined;
+    heard.push(request);
+    return {type: 'application/json', bytes: Buffer.from(JSON.stringify({ref, query: request?.query}))};
+  }}, start: () => {}, stop: () => {}};
+  const legacy: BunnyModule = {...modern, manifest: {...modern.manifest, name: 'legacy', apiVersion: '1.2'}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), modern, legacy]});
+  const result = await g.ask(g.url, '/modules/modern/content/catalog?offset=25&limit=25&q=desk', {token: reader.token});
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {ref: 'catalog', query: {offset: '25', limit: '25', q: 'desk'}});
+  assert.equal((heard[0] as {signal: AbortSignal}).signal.aborted, true, 'the read signal ends with the contribution');
+  for (const path of ['/modules/legacy/content/catalog?offset=25', '/modules/modern/content/catalog?q=a&q=b',
+    `/modules/modern/content/catalog?q=${'x'.repeat(513)}`, `/modules/modern/content/catalog?${'x'.repeat(65)}=a`,
+    `/modules/modern/content/catalog?${Array.from({length: 17}, (_, i) => `q${i}=x`).join('&')}`]) {
+    assert.equal((await g.ask(g.url, path, {token: reader.token})).status, 400);
+  }
+  assert.equal(heard.length, 1, 'refused queries never reach a reader');
+  assert.equal((await g.ask(g.url, '/modules/legacy/content/catalog', {token: reader.token})).status, 200);
+  const missing = await g.ask(g.url, '/modules/modern/content/missing', {token: reader.token});
+  assert.deepEqual([missing.status, codeOf(missing)], [404, 'not-found']);
+  assert.equal(missing.text.includes('private fixture path'), false, 'module refusal details never leave the gateway');
+  assert.equal((await g.ask(g.url, '/modules/legacy/content/missing', {token: reader.token})).status, 500, 'legacy content has no returned-refusal contract');
+  assert.equal((await g.ask(g.url, '/modules/modern/content/catalog', {token: reader.token})).status, 200, 'expected refusals do not fail the module');
+});
+
 it('trusted frontend pages and assets require read authority and cause no device change', async context => {
   const reader = READER();
   const transport = new SimulatedSigns({online: true});

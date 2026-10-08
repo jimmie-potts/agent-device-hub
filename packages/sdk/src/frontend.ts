@@ -18,6 +18,8 @@ export type FrontendCommand = {
 export type FrontendApi = {
   /** Reads a runtime JSON route. The feature checks the document's schema before using it. */
   read(path: string): Promise<unknown>;
+  /** Reads an image from this module's content references with the same authentication and page lifetime. */
+  image(path: string): Promise<Blob>;
   /** Sends once through the core's tracked command boundary, without automatic retry. */
   command(action: FrontendAction): Promise<FrontendActionReply>;
   /** Syncs this module's families on the shell's existing participant; the page closes the copy when done. */

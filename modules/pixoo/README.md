@@ -159,6 +159,36 @@ every device module serves it for its own devices, so a reader syncs the
 Pixoo's by naming `bunny/modules/pixoo` as the owner (#967); a sync of `device`
 that names no owner is refused while several modules serve it.
 
+### Browser content reads
+
+API 1.3 serves authenticated reads at `/modules/pixoo/content/<ref>`:
+
+| Reference | Reply |
+| --- | --- |
+| `catalog-media` | Paged rendition summaries and kept compatibility evidence |
+| `catalog-playlists` | Paged playlist summaries |
+| `playlist.<UUID>` | One playlist with its revision and items |
+| `asset.<UUID>` | Asset metadata and lightweight saved-rendition summaries |
+| `rendition.<sha256>` | One selected rendition manifest |
+| `preview.<sha256>` | Preview timing, frame indices and warnings |
+| `frame.<sha256>.<index>` | One referenced PNG frame |
+| `thumbnail.<sha256>` | The first referenced PNG frame |
+
+Only the two catalog references accept query parameters: `q` (up to 120
+characters), `offset` (default 0) and `limit` (default 25, at most 100).
+Queries use SQL pagination. Replies include the catalog revision so a page can
+detect a changed catalog. Every JSON reply is bounded to 256 KiB; PNG frames
+retain the preview reader's 64 KiB bound and hash checks. Asset selection lists
+rendition references and facts rather than repeating every animation manifest.
+
+Reads use the existing library and preview code; preview metadata follows
+`divoom-app-upgrade`'s `apps/server/src/catalog-integration.ts` at
+`0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Media pages reuse the kept
+compatibility calculation from `Library.catalogMedia`: unchecked hosted media
+remains unknown, and a read never validates frames or writes hosted checks.
+Original media stays private. Invalid queries, missing references and cancelled
+reads return shared refusal codes without changing owner state.
+
 ### Commands
 
 Each command goes to `bunny.cmd.<family>.<device id>`:

@@ -612,11 +612,19 @@ for a stream it ended because its reader stopped), `runtime.edge.refused` and
 | `POST /api/v2/commands/approval-recover` | `control` | Sends `approval-recover` to the core as the caller's source, with `{session, turnId, expectedRevision, requestId?}`, and answers `{"schema": "command-reply/2.0", status: "accepted", requestId}` or the core's refusal. A request whose fate the bus cannot know is `uncertain-result`. |
 | `POST /api/v2/commands/<family>` | `control` | An action (#782): one device's command, a moment or a mode change, `{target, data, requestId?}`, sent through the core's dispatcher as `bunny.cmd.<family>.<target>` for the caller's source, so it is tracked. Its type, `org.bunny.<entity>.<verb>.requested`, and schema, `<family>/2.0`, follow from the family, and it is checked against the family's schema first, as the edge checks a remote message: invalid input is `invalid-request`, a family whose schema the runtime does not know `not-found`, the core's own operator commands `invalid-request`, and nothing is tracked or sent. It answers `{"schema": "command-reply/2.0", status: "accepted", requestId}`, the owner's or the bus's refusal, such as 503 `unavailable` for a known family that no running module answers, which is tracked and recorded failed, `uncertain-result`, which is never retried, or `unavailable` without the core. A request ID already used for the same action answers what that action got; for another, `duplicate-conflict`. |
 | `GET /modules/<name>/<page>` | `read` | A declared page. Passive HTML keeps its restrictive policy. API 1.3 React pages redirect to their shared-shell route; trusted editors load their declared bundles under the policy below. |
-| `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference, such as the preview its page shows: an image, plain text or JSON of at most 16 MiB. |
+| `GET /modules/<name>/content/<ref>` | `read` | The module's content by reference: an image, plain text or JSON of at most 16 MiB. API 1.3 supports bounded query fields and safe returned refusals; earlier modules refuse queries. |
 | `GET /modules/<name>/assets/<asset>` | `read` | A finite declared API 1.3 build asset: JavaScript, CSS or a supported static image, at most 16 MiB. No caller-selected path or user upload becomes an executable asset. |
 | `GET /`, `/dashboard.js`, `/dashboard.css` | none | The [dashboard](dashboard/README.md) (#922), the old Hub's paths, built into `dist/dashboard/`. It holds no secret and loads without a session, so the page can sign in: from this origin's own pages, a bookmark or the launcher, and `/` also from a link on another local app's page with the same host name, a same-site top-level navigation to a document (Hub #561). Another site's `Origin` or fetch metadata, a frame or fetch from another local app, and any of them for the assets are `forbidden`; another method `not-found`, a query `invalid-request`, and a runtime whose dashboard is not built answers `not-found`. Each answer refuses framing, sends `Cross-Origin-Opener-Policy: same-origin`, and a policy that runs only the page's own script and style and connects only to this origin. |
 | `/mcp` | client credentials | [MCP](#mcp). |
 | `/api/sdk/v1/*` | per call | The SDK edge, above. |
+
+API 1.3 content queries allow at most 16 distinct keys, each 1–64 characters,
+with values of at most 512 characters. The module validates its closed query
+set. Its read signal ends on completion or the five-second deadline. Returned
+refusals expose a registry code with fixed text, without failing the module or
+returning private error details. Pixoo uses SQL catalog pages within 256 KiB
+and separate PNG preview references; these reads leave cached compatibility
+evidence unchanged.
 
 A module's pages, assets, content, settings and tools are every reader's. A module is
 called only while it runs (otherwise `unavailable`), within 5 s (otherwise

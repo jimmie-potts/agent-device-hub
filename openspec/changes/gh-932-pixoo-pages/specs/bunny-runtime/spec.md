@@ -74,6 +74,13 @@ The gateway SHALL continue authenticated, owned and validated context for the da
 
 ## ADDED Requirements
 
+### Requirement: Bounded queried content reads
+The existing authenticated content route SHALL pass query values to API 1.3 modules, allowing at most 16 distinct keys of at most 64 characters and values of at most 512 characters. Older modules SHALL continue to reject queries. The module SHALL validate its own closed query set. Expected content refusals SHALL preserve only a valid shared error code with fixed gateway detail; invalid or secret-bearing replies SHALL remain `internal`. The supplied abort signal SHALL end when the read finishes or exceeds the existing contribution deadline. Existing content MIME, response-size, Origin, running-module and secret-exclusion checks SHALL remain in force.
+
+#### Scenario: Bounded paging parameters and safe refusals
+- **WHEN** a reader requests a modern content reference with valid parameters, repeated or excessive query keys, or a query on a legacy module
+- **THEN** valid parameters reach the running owner and the other inputs are refused before calling it; a returned domain error does not fail the module or expose its supplied detail
+
 ### Requirement: Trusted frontend serving and browser build
 The runtime SHALL compile explicitly declared browser frontend entries from the fixed shipped modules into the shared dashboard without importing Node-side module registrations, storage or device transports. The authenticated catalog SHALL identify each declared page's presentation. Component-page URLs SHALL lead to the canonical same-origin shell page without running a renderer or command. Trusted editor HTML and finite declared assets SHALL require read authority and retain Origin, running-module, deadline, bounded response, secret exclusion, no-store and nosniff protections. Executable assets SHALL be resolved by declaration identity, never a client-selected filesystem path. User content SHALL remain on the non-executable content route.
 

@@ -9,7 +9,7 @@ import {randomUUID} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {
   ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
@@ -359,8 +359,7 @@ export class Gateway {
     }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
-      noQuery();
-      return this.#content(content[1] ?? '', content[2] ?? '');
+      return this.#content(content[1] ?? '', content[2] ?? '', url.searchParams);
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
@@ -557,13 +556,28 @@ export class Gateway {
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
-  async #content(name: string, ref: string): Promise<Answer> {
+  async #content(name: string, ref: string, params: URLSearchParams): Promise<Answer> {
     const module = this.#module(name);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (content === undefined) throw refuse('not-found', 'the module serves no content');
-    const found = await this.#call(name, () => content(ref));
+    const modern = Number(module.manifest.apiVersion.split('.')[1]) >= 3;
+    const keys = [...params.keys()];
+    if ((!modern && keys.length > 0) || keys.length > 16 || new Set(keys).size !== keys.length
+      || [...params].some(([key, value]) => key.length === 0 || key.length > 64 || value.length > 512)) {
+      throw refuse('invalid-request', 'content query fields must be distinct and within the module API limits');
+    }
+    const controller = new AbortController();
+    let found;
+    try {found = await this.#call(name, () => content(ref, modern ? {query: Object.freeze(Object.fromEntries(params)), signal: controller.signal} : undefined));}
+    finally {controller.abort();}
     if (found === undefined) throw refuse('not-found', 'no such content');
+    if ('error' in found) {
+      const error: unknown = found.error;
+      if (!modern || typeof error !== 'object' || error === null || !('code' in error) || !isErrorCode(error.code)
+        || this.#options.redactions.holds(JSON.stringify(found))) throw refuse('internal', 'the module returned invalid content');
+      throw refuse(error.code, 'the module refused the content read');
+    }
     if (!CONTENT_TYPES.has(found.type) || !(found.bytes instanceof Uint8Array) || found.bytes.byteLength > MAX_CONTENT_BYTES) {
       throw refuse('internal', 'the module\'s content is not an image, text or JSON of at most 16 MiB');
     }

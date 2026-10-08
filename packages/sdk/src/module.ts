@@ -248,6 +248,8 @@ export type ModuleAsset = {
 
 /** Content the module serves by reference, such as a preview frame: its media type and bytes. */
 export type ModuleContent = {readonly type: string; readonly bytes: Uint8Array};
+/** API 1.3 content parameters. The reader validates its own query fields and remains read-only. */
+export type ModuleContentRequest = {readonly query: Readonly<Record<string, string>>; readonly signal: AbortSignal};
 
 /**
  * A read tool the module contributes to MCP (module API 1.2, Hub #835). The gateway publishes it as
@@ -301,9 +303,10 @@ export type ModuleManifest<Config = unknown> = {
   readonly assets?: readonly ModuleAsset[];
   /**
    * Its content by reference (module API 1.2): what `ref`, an ID of 1 to 128 letters, digits, underscores, dots or
-   * hyphens, names, or undefined when there is no such content. It reads and changes nothing else.
+   * hyphens, names, or undefined when there is no such content. It reads and changes nothing else. API 1.3 adds
+   * bounded query parameters, a signal aborted on completion or timeout, and safe returned ErrorBody refusals.
    */
-  readonly content?: (ref: string) => ModuleContent | undefined | Promise<ModuleContent | undefined>;
+  readonly content?: (ref: string, request?: ModuleContentRequest) => ModuleContent | ErrorBody | undefined | Promise<ModuleContent | ErrorBody | undefined>;
   /** Its read tools, at most `MAX_TOOLS` (module API 1.2). */
   readonly tools?: readonly ModuleTool[];
   /** What the gateway shows of its configuration (module API 1.2). */

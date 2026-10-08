@@ -153,6 +153,31 @@ export class DashboardConnection {
     };
     const unavailable = (): SdkError => new SdkError(errorBody('unavailable', {detail: 'the module page is not connected'}));
     const rejected = <T>(): SyncResult<T> => ({status: 'rejected', requestId: 'not-sent', error: unavailable().body});
+    const readResponse = async (path: string, image = false): Promise<Response> => {
+      if (!active()) throw unavailable();
+      const origin = new URL(this.#options.url).origin;
+      const url = new URL(path, origin);
+      const contentRoute = url.pathname.startsWith(`/modules/${name}/content/`);
+      if (!path.startsWith('/') || path.startsWith('//') || url.origin !== origin || url.hash !== ''
+        || !(contentRoute || (!image && url.pathname.startsWith('/api/v2/')))) {
+        throw new SdkError(errorBody('invalid-request', {detail: 'a module read names a permitted runtime route'}));
+      }
+      let response: Response;
+      try {
+        response = await fetch(`${url.pathname}${url.search}`, {
+          credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: childOf(undefined), signal: controller.signal,
+        });
+      } catch { throw unavailable(); }
+      if (!active()) throw unavailable();
+      if (!response.ok) {
+        let body: unknown;
+        try { body = await response.json(); } catch { throw unavailable(); }
+        if (!active()) throw unavailable();
+        const code = typeof body === 'object' && body !== null ? (body as {error?: {code?: unknown}}).error?.code : undefined;
+        throw new SdkError(errorBody(isErrorCode(code) ? code : 'unavailable', {detail: 'the module read was refused'}));
+      }
+      return response;
+    };
     const scope: ModuleScope = {
       close: async () => {
         if (closed) return;
@@ -164,27 +189,22 @@ export class DashboardConnection {
       },
       api: {
         read: async path => {
-          if (!active()) throw unavailable();
-          const origin = new URL(this.#options.url).origin;
-          const url = new URL(path, origin);
-          if (!path.startsWith('/') || path.startsWith('//') || url.origin !== origin || url.hash !== ''
-            || !(url.pathname.startsWith('/api/v2/') || url.pathname.startsWith(`/modules/${name}/content/`))) {
-            throw new SdkError(errorBody('invalid-request', {detail: 'a module read names a runtime JSON route'}));
-          }
-          let response: Response;
+          const response = await readResponse(path);
           let body: unknown;
-          try {
-            response = await fetch(`${url.pathname}${url.search}`, {
-              credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: childOf(undefined), signal: controller.signal,
-            });
-            body = await response.json();
-          } catch { throw unavailable(); }
+          try { body = await response.json(); } catch { throw unavailable(); }
           if (!active()) throw unavailable();
-          if (!response.ok) {
-            const code = typeof body === 'object' && body !== null ? (body as {error?: {code?: unknown}}).error?.code : undefined;
-            throw new SdkError(errorBody(isErrorCode(code) ? code : 'unavailable', {detail: 'the module read was refused'}));
-          }
           return body;
+        },
+        image: async path => {
+          const response = await readResponse(path, true);
+          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(response.headers.get('content-type') ?? '')) {
+            throw new SdkError(errorBody('invalid-request', {detail: 'the module image has an unsupported media type'}));
+          }
+          let blob: Blob;
+          try { blob = await response.blob(); } catch { throw unavailable(); }
+          if (!active()) throw unavailable();
+          if (blob.size > 16 * 1024 * 1024) throw new SdkError(errorBody('invalid-request', {detail: 'the module image exceeds the response limit'}));
+          return blob;
         },
         command: async action => {
           if (!active()) return unavailable().body;

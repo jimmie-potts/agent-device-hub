@@ -17,7 +17,7 @@ import {
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
   DeviceAvailability, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
-  type Snapshot, type StateDraft, type SyncChange,
+  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange,
 } from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
@@ -25,6 +25,7 @@ import {Player, LibraryPlaybackStore} from '../playback/index.js';
 import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
+import {readPixooContent} from './content.js';
 import type {RenderRequest} from './render-worker.js';
 import {
   DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, schemaOf,
@@ -96,6 +97,7 @@ export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfi
     manifest: {
       name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
       pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}],
+      content: (ref, request) => running?.content(ref, request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'}),
     },
     async start(context) {
       // The runtime starts a module that declares `configure` only with what `configure` accepted.
@@ -311,6 +313,13 @@ class PixooRuntime {
     }
     if (cause !== 'command') this.#changed();
     if (first) void this.#checkHosted().catch((error: unknown) => { this.#failedWrite(error); });
+  }
+
+  /** Reads the private catalog or a referenced preview; expected read refusals never change owner state. */
+  content(ref: string, request?: ModuleContentRequest): Promise<ModuleContent | ErrorBody> | ErrorBody {
+    const library = this.#library;
+    if (library === undefined || this.#stopping) return errorBody('unavailable', {detail: 'the Pixoo is not running'});
+    return readPixooContent(library, this.#config.device.profile, ref, request, this.#options.transport.simulated ? 100 : 500);
   }
 
   async stop(): Promise<void> {

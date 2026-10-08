@@ -79,6 +79,25 @@ void test('module reads use browser authentication, refuse outside routes and re
   assert.equal(requests.length, 1, 'the ended session cannot keep reading');
 });
 
+void test('module image reads share scoped authentication and reject executable responses', async context => {
+  const {connection} = await moduleConnection(context);
+  const page = connection.openModule('pixoo');
+  let signal: AbortSignal | null | undefined;
+  context.mock.method(globalThis, 'fetch', (_path: string, init: RequestInit) => {
+    assert.equal(init.credentials, 'same-origin');
+    signal = init.signal;
+    return Promise.resolve(new Response(new Uint8Array([1, 2, 3]), {headers: {'content-type': 'image/png'}}));
+  });
+  const blob = await page.api.image('/modules/pixoo/content/thumbnail.abc');
+  assert.equal(blob.type, 'image/png'); assert.equal(blob.size, 3);
+  await assert.rejects(page.api.image('/modules/other/content/thumbnail.abc'));
+  await assert.rejects(page.api.image('/api/v2/modules'));
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(new Response('<script>bad()</script>', {headers: {'content-type': 'text/html'}})));
+  await assert.rejects(page.api.image('/modules/pixoo/content/thumbnail.abc'));
+  await page.close(); assert.equal(signal?.aborted, true);
+  await assert.rejects(page.api.image('/modules/pixoo/content/thumbnail.abc'));
+});
+
 /** Timers that run only when the test moves the clock. */
 function manual(): {scheduler: Scheduler; advance: (ms: number) => Promise<void>; now: () => number} {
   let now = 0;

@@ -26,6 +26,13 @@ The manifest MAY declare a synchronous `configure(section)` that returns `{confi
 
 ## ADDED Requirements
 
+### Requirement: Queried content references
+Module API 1.3 SHALL permit `content(ref, request?)` to receive readonly string query values and an abort signal, and to return content, undefined or a shared error body. The content reader SHALL validate the query fields it supports and SHALL perform no mutation. Legacy content functions SHALL remain valid. The browser frontend context SHALL offer authenticated JSON and image reads without exposing credentials or Node-side code.
+
+#### Scenario: A paged read and a domain refusal
+- **WHEN** an API 1.3 module reads a catalog reference with valid paging parameters and then receives invalid parameters
+- **THEN** it can return the selected bounded content or a registry-code refusal without failing the module, and cancellation ends pending read work
+
 ### Requirement: Browser frontend and trusted asset declarations
 The SDK SHALL define browser-safe frontend contributions for the fixed shipped modules, keyed by module and page identity. Pages SHALL distinguish passive HTML, integrated frontend components and trusted bundled editors. A component page SHALL require no Node renderer. A trusted editor SHALL name finite declared script/style assets; asset identities and types SHALL be validated separately from arbitrary content references. Malformed, duplicate, mixed or reserved declarations SHALL be refused with the shared `invalid-request` code before use. Browser contributions SHALL expose no credential, storage or device transport implementation.
 
