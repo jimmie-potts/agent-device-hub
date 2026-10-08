@@ -7,7 +7,7 @@
 ## 2. Connections control and evidence
 
 - [x] 2.1 Implement a standalone confirmed OperatorTools component and evidence helper; verify typed props and helper unit tests against the existing copies.
-- [ ] 2.2 Integrate the minimal Connections insertion with #922; verify the focused browser journey for confirmation, passive row, synced result, keyboard/axe, read-only presentation and no replay.
+- [x] 2.2 Integrate the minimal Connections insertion with #922; verify the focused browser journey for confirmation, passive row, synced result, keyboard/axe, read-only presentation and no replay.
 - [ ] 2.3 Exercise the one notice-clear catalog scenario over simulated Nanoleaf/Pixoo records in memory and a disposable run; retain actual exits and cleanup proof.
 - [ ] 2.4 Complete affected mandatory shared checks and independent Acceptance on the clean integrated candidate; retain receipts.
 

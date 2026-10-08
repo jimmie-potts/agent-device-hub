@@ -44,11 +44,11 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
   };
   return <div className="card" aria-label="Operator tools"><h2>Operator tools</h2>
     <p>This override acknowledges the selected current notice for every configured consumer. It proves no provider readership or physical device result.</p>
-    <label htmlFor={id}>Session<select id={id} value={selectedId} disabled={pending || confirmation !== undefined}
+    <label htmlFor={id}>Session</label><select id={id} value={selectedId} disabled={pending || confirmation !== undefined}
       onChange={event => {setSelectedId(event.target.value); setAttempt(undefined); setAnswer(undefined);}}>
       <option value="">Choose a session</option>
       {sessions.records.map(record => <option key={record.id} value={record.id}>{sessionName(record)}</option>)}
-    </select></label>
+    </select>
     <button ref={trigger} type="button" onClick={open} disabled={!available || current === undefined || confirmation !== undefined}>Clear this notice on every device</button>
     {!control && <p className="warning">Read-only connection. Operator controls require control authority.</p>}
     {control && (!live || !sessions.synced || selected?.freshness === 'uncertain' || selected?.restartUncertain === true) && <p className="warning">Current session evidence is unavailable. Wait for a fresh synced record.</p>}

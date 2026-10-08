@@ -16,6 +16,8 @@ void test('a notice override distinguishes transport, completion and current own
   assert.equal(noticeEvidence(attempt, acknowledged, true, 9, [operation], false, accepted).observed, false);
   assert.equal(noticeEvidence(attempt, acknowledged, false, 9, [operation], true, accepted).observed, false);
   assert.equal(noticeEvidence(attempt, acknowledged, true, 9, [operation], true, accepted).observed, true);
+  assert.equal(noticeEvidence(attempt, acknowledged, true, 9, [{...operation, revision: 10}], true, accepted).observed, true,
+    'a later reply projection can advance only the operation revision after the atomic owner save');
   assert.equal(noticeEvidence(attempt, {...acknowledged, generation: 2}, true, 9, [operation], true, accepted).retired, true);
   assert.equal(noticeEvidence(attempt, acknowledged, true, 9, [{...operation, requestId: 'another'}], true, accepted).observed, false);
   assert.equal(noticeEvidence(attempt, {...record, notices: [{...notice, acknowledgedBy: ['pixoo']}]}, true, 100, [operation], true, accepted).observed, false, 'completion before the session copy cannot confirm a partial prior acknowledgment');

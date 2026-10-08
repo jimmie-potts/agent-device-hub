@@ -18,7 +18,8 @@ export function noticeEvidence(attempt: NoticeAttempt, record: SessionRecord | u
   return {
     reply: answer === undefined ? 'requested' : 'error' in answer ? answer.error.code === 'uncertain-result' ? 'uncertain' : 'refused' : 'accepted',
     completion: operationsSynced ? operation?.status ?? 'not observed' : 'not synced',
-    observed: !retired && live && completed && (record?.revision ?? -1) >= Math.max(attempt.revision, operation?.revision ?? Infinity) && (sessionRevision ?? -1) >= (operation?.revision ?? Infinity) && (notice?.acknowledgedBy.length ?? 0) > 0,
+    // The guarded save advances this session; recording the later reply can advance only the operation projection.
+    observed: !retired && live && completed && (record?.revision ?? -1) > attempt.revision && (sessionRevision ?? -1) >= (record?.revision ?? Infinity) && (notice?.acknowledgedBy.length ?? 0) > 0,
     retired,
   };
 }

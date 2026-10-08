@@ -5,6 +5,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
 import {deviceAction, operationView} from '../../dashboard/src/devices.js';
 import {SIGN_SECTION} from '../fixtures/sign.js';
+import {FIXTURE_CONSUMERS} from '../fixtures/core.js';
 import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, frameDigest, renderDashboard, type DisplayRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {NANOLEAF_FAMILIES, SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
 import {PLAYBACK_SECTION} from './modules/playback.js';
@@ -227,7 +228,7 @@ const dashboardNoticeClear: Scenario = {
         requestId: 'req-notice-clear', data: {noticeId: record.notices.at(-1)?.id, expectedRevision: record.revision}}});
       if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure(`override answered ${answer.status}`);
     }),
-    expect('the owner records every configured consumer', h => acknowledgedBy(h, ['dashboard', 'nanoleaf', 'pixoo'])),
+    expect('the owner records every configured consumer', h => acknowledgedBy(h, FIXTURE_CONSUMERS.map(consumer => consumer.id))),
     expect('the passive dashboard row clears from the synced record', dashboardShows('idle')),
     expect('Nanoleaf holds the cleared notice', h => h.reader.states<{tasks: {status: string}[]}>(NANOLEAF_FAMILIES.wall.family, 'bunny/modules/nanoleaf')
       .some(message => message.data.tasks.length === 1 && message.data.tasks.every(task => task.status === 'idle')) || 'Nanoleaf notice remains unread', 5000),
