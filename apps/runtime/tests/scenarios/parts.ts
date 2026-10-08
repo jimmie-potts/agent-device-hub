@@ -21,7 +21,7 @@ import {historySchemas} from '../fixtures/core.js';
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
 import {
-  GRANTS, PRODUCER, ROLES, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
+  GRANTS, PRODUCER, ROLES, StepFailure, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
   type Simulation,
 } from './catalog.js';
 
@@ -231,7 +231,7 @@ export class GatewayClient {
     });
     const cookie = /^bunny-session=([^;]+)/.exec(response.headers.get('set-cookie') ?? '')?.[1];
     await response.body?.cancel();
-    if (response.status !== 200 || cookie === undefined) throw new Error(`the browser could not sign in: ${response.status}`);
+    if (response.status !== 200 || cookie === undefined) throw new StepFailure(`the browser could not sign in: ${response.status}`);
     this.#cookie = cookie;
     return cookie;
   }
@@ -263,8 +263,6 @@ export function actionAnswerOf(answer: GatewayAnswer): string {
     return `answered ${answer.status}`;
   }
 }
-
-export const describe = (error: unknown): string => error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 
 type Copy = SyncedCopy<Record<string, unknown>>;
 /** One copy the reader keeps: its families, and the owner it names, if any. */

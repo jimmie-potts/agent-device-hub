@@ -54,6 +54,9 @@ void test('a correct run passes every check, and each negative control fails exa
   for (const [scenario, outcomes] of Object.entries(expected)) {
     const run = await startRun(context, at, scenario);
     try {
+      // Each run passes readiness first, so a control fails its own boundary check rather than its health (Hub #954).
+      const ready = await plugin.readiness.probe({url: run.readyUrl, scenario, signal: AbortSignal.timeout(5000)} as unknown as ProbeContext);
+      assert.deepEqual(ready, {ok: true}, `${scenario}: readiness`);
       assert.deepEqual(await checks(run), outcomes, scenario);
       const seen = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
       assert.equal(seen.home, `${run.dataDir}/home`, `${scenario}: the runtime's home is observed`);

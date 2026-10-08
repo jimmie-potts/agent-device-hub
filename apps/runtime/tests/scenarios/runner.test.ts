@@ -6,10 +6,11 @@ import {mkdir, stat} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
-import {traceFields} from '@jimmie-potts/sdk';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {SdkError, traceFields} from '@jimmie-potts/sdk';
 import {RuntimeError} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
-import {act, expect, holds, runScenario, scenario, type Scenario} from './catalog.js';
+import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, type Harness, type Scenario} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
 
 const EMPTY = {modules: [], follows: []} as const;
@@ -41,7 +42,7 @@ it('an act that throws and a hold that breaks both fail', async () => {
         const answer = await probe.send('operator', 'none', {key: 'bunny.cmd.lamp-switch.lamp-1', draft: {
           type: 'org.bunny.lamp.switch.requested', subject: 'lamp-1', dataschema: 'https://bunny.invalid/events/lamp-switch/2.0', data: {power: 'on'},
         }}, {timeoutMs: 1000, requestId: 'req-none'});
-        throw new Error(`the request is ${answer}`);
+        throw new StepFailure(`the request is ${answer}`);
       }),
     ]}, h);
     assert.deepEqual(thrown.steps.map(step => [step.outcome, step.detail]), [['failed', 'the request is unavailable']]);
@@ -53,6 +54,32 @@ it('an act that throws and a hold that breaks both fail', async () => {
   } finally {
     await h.close();
   }
+});
+
+// A run keeps each step's detail in its proof, so a step names an exception by its type or registry code, never by its
+// message, which may quote anything; a step's own failure keeps its fixed text (ADR 0012, "Safe errors"; Hub #954).
+it('a failed step names an exception by its type or registry code, never its message, and keeps a step\'s own text', async () => {
+  const secret = 'tok_SYNTHETIC954';
+  const h = {tier: 'run', transport: 'remote', wait: () => Promise.resolve()} as unknown as Harness;
+  const run = (step: Scenario['steps'][number]) => runScenario({id: 'control-throws', title: 'negative control', seed: EMPTY, steps: [step]}, h);
+  const cases: [Scenario['steps'][number], string][] = [
+    [act('parse a body', () => { JSON.parse(secret); }), 'threw SyntaxError'],
+    [expect('a refusal', () => { throw new SdkError(errorBody('unavailable', {detail: `no owner for ${secret}`})); }, 0), 'threw SdkError unavailable'],
+    [holds('a fetch', () => { throw new TypeError(`fetch failed for ${secret}`); }, 0), 'threw TypeError'],
+    [act('a step\'s own failure', () => { throw new StepFailure('the request is unavailable'); }), 'the request is unavailable'],
+  ];
+  for (const [step, detail] of cases) {
+    const result = await run(step);
+    assert.deepEqual(result.steps.map(entry => [entry.outcome, entry.detail]), [['failed', detail]], step.name);
+    assert.equal(JSON.stringify(result).includes(secret), false, `${step.name}: no detail quotes the exception`);
+  }
+});
+
+// A hook that writes anything breaks its contract, and what it wrote may be a crash's stack, so the step names its length.
+it('a hook run that wrote output fails with the output\'s length, never the output', () => {
+  const output = 'TypeError: tok_SYNTHETIC954 is not a function\n    at file:///hook.mjs:1:1';
+  assert.equal(hookProblem({code: 0, signal: null, output, elapsedMs: 5}), `the hook wrote ${output.length} characters`);
+  assert.equal(hookProblem({code: 0, signal: null, output: '', elapsedMs: 5}), undefined);
 });
 
 it('a catalog scenario fails at the step whose behavior breaks', async () => {

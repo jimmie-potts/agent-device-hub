@@ -166,11 +166,15 @@ whichever application started it:
 - A unit that is `active (running)` or `activating` counts. A failed, inactive
   or stopping unit, a lease or thaw timer or its service, and the host route's
   command unit do not, so a stale or failed unit never blocks a start. Any run
-  counts, including the short-lived `avt-<hex>` runs of another session's
-  app-verify tests; they end by themselves within minutes, so a refused start
-  waits and retries. A claim
+  counts, including another session's test runs: the core's short-lived
+  `avt-<hex>` runs, the Hub, runtime and CHOMPI verify suites' runs under their
+  apps' own names (`hub-…`, `runtime-…`, `chompi-…`), and a composition test's
+  stand-ins (`<tag>-nl` and `<tag>-px`). They end by themselves within minutes,
+  so a refused start waits and retries. A claim
   left by a killed start goes within about a second, and in any case after 30
-  minutes. A live
+  minutes. A release stops only the claim its start took; when it cannot read
+  which one that is, it stops nothing and the claim ends with the starting
+  process. A live
   unit with a stale receipt does count, because it still holds memory:
   `doctor` shows it and `stop <run-id>` ends it.
 - A run has no unit until its build, seed and lease steps are done, so a guarded
@@ -550,7 +554,12 @@ claims to be the same candidate.
 After `npm ci`, if the Hub wrapper's verification core has not been built,
 `npm run -s verify -- start` prints one JSON result with `state: unavailable`
 and `error: core-build-missing`, then exits 3. Its detail tells the caller to
-run `npm run build` from the repository root. No preview is created.
+run `npm run build` from the repository root. No preview is created. A
+composition says the same in its own 1.x line, without `state`, and exits 3:
+
+```json
+{"operation":"start","error":"core-build-missing","detail":"The verification core is not built; run npm run build from the repository root."}
+```
 
 `start` on a checkout whose build is broken reports
 `{"state":"failed","cause":"readiness-timeout","cleanup":{"result":"clean"}}`.
@@ -899,10 +908,10 @@ receipts.
 A control holds only when it fails at its named assertion. `compose` records
 the expected assertion and whether the control held, and exits 0 only for a
 held control. A control that passes, or fails anywhere else, exits 1. Run the
-controls after `handoff`, or in a composition started once the first has
-stopped ([one run at a time](#one-run-at-a-time)), so the verified sets hold
-only passed captures; a separate composition keeps them from freezing or
-reseeding a Pixoo the owner is already looking at.
+controls after `handoff`, so the verified sets hold only passed captures, or in
+a separate composition started once the first has stopped
+([one run at a time](#one-run-at-a-time)), whose runs are never cited as
+delivery receipts.
 
 "Follows the Hub" means the consumer's feed is `current`, names the owner
 `verify-owner`, has applied the Hub's revision and, for Pixoo, lists exactly

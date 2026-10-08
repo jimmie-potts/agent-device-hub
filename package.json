@@ -9,7 +9,7 @@
   "scripts": {
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
-    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs",
+    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs tests/scratch_root.test.mjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs",
     "build": "node scripts/build-observability-validator.mjs && tsc -p packages/observability/tsconfig.json && tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard && tsc -p packages/event-contracts/tsconfig.json && tsc -p packages/sdk/tsconfig.json && tsc -p modules/playback/tsconfig.json && tsc -p modules/lifx/tsconfig.json && tsc -p modules/tidbyt/tsconfig.json && tsc -p modules/pixoo/tsconfig.json && tsc -p modules/nanoleaf/tsconfig.json && tsc -p modules/codex-desktop/tsconfig.json && tsc -p apps/runtime/tsconfig.json && npm run build:wispr && tsc -p apps/maintenance/tsconfig.json && tsc -p apps/chompi-bridge/tsconfig.json",

@@ -4,8 +4,11 @@
 import assert from 'node:assert/strict';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {test} from 'node:test';
-import {scenario} from '../../tests/scenarios/catalog.js';
-import {connectRun} from '../adapter.js';
+import {act, runScenario, scenario, type Harness} from '../../tests/scenarios/catalog.js';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {SdkError} from '@jimmie-potts/sdk';
+import {RunFailure, connectRun, failureOf} from '../adapter.js';
+import {scenarioProof} from '../plugin.js';
 import {base, startRun} from './support.js';
 
 void test('a dropped part stays away until the next wait, then the same part reconnects and resyncs', {timeout: 60_000}, async context => {
@@ -24,4 +27,28 @@ void test('a dropped part stays away until the next wait, then the same part rec
   assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], [1, 2, 2], 'it reconnected and synced each copy again');
   assert.equal(h.sdk('reader'), reader, 'the same remote part');
   assert.deepEqual(h.problems(), []);
+});
+
+// What the adapter reports goes into a capture's proof, so it names a failure by its own fixed text, a refusal's registry
+// code or the exception's type, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
+void test('the adapter names a failure by its own text, a refusal\'s registry code or the exception\'s type, never an exception\'s message', () => {
+  const secret = 'tok_SYNTHETIC954';
+  assert.equal(failureOf(new RunFailure('state answered 503')), 'state answered 503');
+  assert.equal(failureOf(new SdkError(errorBody('unavailable', {detail: `no owner for ${secret}`}))), 'SdkError unavailable');
+  assert.equal(failureOf(new TypeError(`fetch failed for ${secret}`)), 'TypeError');
+  assert.equal(failureOf(secret), 'string');
+});
+
+// What a scenario's capture step keeps: the result it attaches and the reason its expectation gives (Hub #954).
+void test('a scenario\'s proof and its failed expectation never quote an exception a step or a part threw', async () => {
+  const secret = 'tok_SYNTHETIC954';
+  const h = {tier: 'run', transport: 'remote', wait: () => Promise.resolve()} as unknown as Harness;
+  const result = await runScenario({id: 'control-proof', title: 'negative control', seed: {modules: [], follows: []}, steps: [
+    act('read a body that is not JSON', () => { JSON.parse(secret); }),
+  ]}, h);
+  const proof = scenarioProof(result, [`bunny/parts/reader on stream: ${failureOf(new TypeError(`fetch failed for ${secret}`))}`]);
+  assert.equal(proof.failure, 'read a body that is not JSON: threw SyntaxError');
+  assert.match(proof.attachment, /"detail": "threw SyntaxError"/);
+  assert.match(proof.attachment, /bunny\/parts\/reader on stream: TypeError/);
+  assert.equal(`${proof.attachment}${proof.failure ?? ''}`.includes(secret), false, 'neither the attachment nor the expectation quotes the exception');
 });

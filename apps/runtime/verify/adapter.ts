@@ -5,6 +5,8 @@
 // wait and after every action, and the harness API's flush makes that copy current. `disconnect` has the runtime's edge
 // end the part's stream, and the same remote part reconnects on its own, as in the in-memory harness; its timers wait
 // until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
+// What it reports goes into a capture's proof, so a failure is named by its registry code, its type or the adapter's own
+// fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
 import {SimulatedMarker} from '@jimmie-potts/codex-desktop';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -14,10 +16,10 @@ import {SimulatedCloud} from '@jimmie-potts/tidbyt';
 import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/catalog.js';
-import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, describe, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
+import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
 
@@ -28,6 +30,15 @@ export interface RunHarness extends Harness {
   problems(): readonly string[];
   close(): Promise<void>;
 }
+
+/** A failure of the adapter's own, with fixed text from the code that raised it, which a step's detail keeps. */
+export class RunFailure extends StepFailure {}
+
+/**
+ * How the adapter names a failure in a step's answer or its problems, which the proof keeps: as a step does, by its own
+ * fixed text, an SDK refusal's registry code or the exception's type, never by the exception's text.
+ */
+export {failureOf};
 
 /** How long a remote part whose stream was lost waits before it reconnects. */
 const RECONNECT_MS = 50;
@@ -135,7 +146,7 @@ class Run implements RunHarness {
 
   sdk(role: Role): Participant {
     const {participant} = this.#part(role);
-    if (participant === undefined) throw new Error(`the ${role} is not connected`);
+    if (participant === undefined) throw new RunFailure(`the ${role} is not connected`);
     return participant;
   }
 
@@ -143,7 +154,7 @@ class Run implements RunHarness {
     this.#answers.set(label, 'pending');
     // The request starts in its turn among the actions; its answer may come long after the next action began.
     const started = this.#act(() => Promise.resolve({request: this.sdk(role).request(key, draft, options)}));
-    return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${describe(error)}`).then(async answer => {
+    return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
       // What the run published before the answer is in the copy before the scenario reads it.
       await this.#refresh();
       this.#answers.set(label, answer);
@@ -178,7 +189,7 @@ class Run implements RunHarness {
   async health(): Promise<readonly ModuleHealth[]> {
     await this.#actions;
     const response = await fetch(new URL(HEALTH_PATH, this.#origin));
-    if (!response.ok) throw new Error(`health answered ${response.status}`);
+    if (!response.ok) throw new RunFailure(`health answered ${response.status}`);
     return (await response.json() as RuntimeHealth).modules;
   }
 
@@ -257,7 +268,7 @@ class Run implements RunHarness {
     restarted.catch(() => {});
     const deadline = Date.now() + STOPPED_HOLD_MS;
     while (await fetch(new URL(HEALTH_PATH, this.#origin)).then(() => true, () => false)) {
-      if (Date.now() > deadline) throw new Error('the runtime did not stop');
+      if (Date.now() > deadline) throw new RunFailure('the runtime did not stop');
       await sleep(25);
     }
     const ran = await runHookScript(producer, payload);
@@ -283,7 +294,7 @@ class Run implements RunHarness {
 
   #act<T>(action: () => Promise<T>): Promise<T> {
     const done = this.#actions.then(action);
-    this.#actions = done.catch((error: unknown) => { this.#problems.push(`an action failed: ${describe(error)}`); });
+    this.#actions = done.catch((error: unknown) => { this.#problems.push(`an action failed: ${failureOf(error)}`); });
     return done;
   }
 
@@ -291,7 +302,7 @@ class Run implements RunHarness {
     const response = await fetch(new URL(`${HARNESS_PATH}/${route}`, this.#target.harness), {
       method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body),
     });
-    if (!response.ok) throw new Error(`${route} answered ${response.status}`);
+    if (!response.ok) throw new RunFailure(`${route} answered ${response.status}`);
   }
 
   /** Brings the copy of the run's state up to date: the harness flushes the runtime before it answers. */
@@ -306,7 +317,7 @@ class Run implements RunHarness {
     url.searchParams.set('logs', String(this.#state.logs.length));
     url.searchParams.set('published', String(this.#state.published.length));
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`state answered ${response.status}`);
+    if (!response.ok) throw new RunFailure(`state answered ${response.status}`);
     const state = await response.json() as HarnessState;
     for (const {message} of state.published) this.#check(message, 'a published message');
     this.#state = {...state, logs: [...this.#state.logs, ...state.logs], published: [...this.#state.published, ...state.published]};
@@ -316,12 +327,12 @@ class Run implements RunHarness {
     if (part.closed) return;
     const source = sourceOf(part.role);
     const token = this.#grants.get(source);
-    if (token === undefined) throw new Error(`the run has no grant for ${source}`);
+    if (token === undefined) throw new RunFailure(`the run has no grant for ${source}`);
     part.participant = await connectRemote({
       url: this.#origin, source, token, reconnectDelayMs: RECONNECT_MS, scheduler: part.scheduler,
       onError: (error, scope) => {
         // While a runtime restarts, a remote part's reconnects meet a closed port or an edge still starting.
-        if (scope.pattern !== 'stream') this.#problems.push(`${scope.source} on ${scope.pattern}: ${describe(error)}`);
+        if (scope.pattern !== 'stream') this.#problems.push(`${scope.source} on ${scope.pattern}: ${failureOf(error)}`);
       },
     });
     if (part.role === 'reader') {
@@ -340,7 +351,7 @@ class Run implements RunHarness {
 
   #part(role: Role): Part {
     const part = this.#parts.get(role);
-    if (part === undefined) throw new Error(`no part ${role}`);
+    if (part === undefined) throw new RunFailure(`no part ${role}`);
     return part;
   }
 

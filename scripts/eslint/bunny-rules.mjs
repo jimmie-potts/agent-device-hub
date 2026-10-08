@@ -124,11 +124,24 @@ const noConsole = {
   },
   create(context) {
     const {sourceCode} = context;
-    const stream = identifier => {
-      const member = identifier.parent;
-      if (member.type !== 'MemberExpression' || member.object !== identifier) return;
-      const name = memberName(member);
-      if (STREAMS.has(name)) context.report({node: member, messageId: 'stream', data: {stream: name}});
+    /**
+     * A use of `process`: an identifier, or `globalThis.process`. Reading `stdout` or `stderr` from it, as a member or by
+     * destructuring (`const {stdout} = process`), is a write to the stream.
+     */
+    const stream = node => {
+      const parent = node.parent;
+      if (parent.type === 'MemberExpression' && parent.object === node) {
+        const name = memberName(parent);
+        if (STREAMS.has(name)) context.report({node: parent, messageId: 'stream', data: {stream: name}});
+        return;
+      }
+      const pattern = parent.type === 'VariableDeclarator' && parent.init === node ? parent.id
+        : parent.type === 'AssignmentExpression' && parent.right === node ? parent.left : undefined;
+      if (pattern?.type !== 'ObjectPattern') return;
+      for (const property of pattern.properties) {
+        const name = property.type === 'Property' ? keyName(property) : undefined;
+        if (STREAMS.has(name)) context.report({node: property, messageId: 'stream', data: {stream: name}});
+      }
     };
     return {
       ImportDeclaration(node) {
@@ -155,7 +168,9 @@ const noConsole = {
         for (const identifier of uses('console')) context.report({node: identifier, messageId: 'console'});
         for (const identifier of uses('globalThis')) {
           const member = identifier.parent;
-          if (member.type === 'MemberExpression' && member.object === identifier && memberName(member) === 'console') context.report({node: member, messageId: 'console'});
+          if (member.type !== 'MemberExpression' || member.object !== identifier) continue;
+          if (memberName(member) === 'console') context.report({node: member, messageId: 'console'});
+          if (memberName(member) === 'process') stream(member);
         }
         for (const identifier of uses('process')) stream(identifier);
       },
@@ -356,8 +371,21 @@ const noRawErrorText = {
           const call = parent.parent;
           return name === 'toString' && call.type === 'CallExpression' && call.callee === parent ? [{node: call}] : [];
         }
-        case 'TemplateLiteral':
-          return parent.parent.type === 'TaggedTemplateExpression' ? [] : [{node: use}];
+        case 'TemplateLiteral': {
+          // A tag decides what it does with each value; `String.raw` turns each into text.
+          const tagged = parent.parent.type === 'TaggedTemplateExpression' ? unwrap(parent.parent.tag) : undefined;
+          if (tagged === undefined) return [{node: use}];
+          const raw = tagged.type === 'MemberExpression' && memberName(tagged) === 'raw' && unwrap(tagged.object).type === 'Identifier'
+            && unwrap(tagged.object).name === 'String' && isGlobal(unwrap(tagged.object));
+          return raw ? [{node: parent.parent}] : [];
+        }
+        case 'ArrayExpression': {
+          // An array literal joined into text: `[label, error].join(' ')`.
+          const array = outermost(parent), member = array.parent, call = member.parent;
+          const joined = member.type === 'MemberExpression' && member.object === array && memberName(member) === 'join'
+            && call.type === 'CallExpression' && call.callee === member;
+          return joined ? [{node: call}] : [];
+        }
         case 'BinaryExpression':
           return parent.operator === '+' ? [{node: parent}] : [];
         case 'AssignmentExpression':
@@ -376,6 +404,9 @@ const noRawErrorText = {
           }
           if (callee.type !== 'MemberExpression') return [];
           const object = unwrap(callee.object), name = memberName(callee);
+          // Text concatenated onto a string literal: `'failed: '.concat(error)`. An array's `concat` keeps the value whole.
+          const text = (object.type === 'Literal' && typeof object.value === 'string') || object.type === 'TemplateLiteral';
+          if (name === 'concat' && text) return [{node: parent}];
           if (object.type !== 'Identifier') return [];
           if (object.name === 'JSON' && name === 'stringify' && first && isGlobal(object)) return [{node: parent}];
           return UTIL_TEXT.has(name) && fromUtil(object, true) ? [{node: parent, stack: true}] : [];

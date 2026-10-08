@@ -4,7 +4,9 @@
 // `moduleConformance` loads node:test, so another runner, such as Vitest, can run `conformanceChecks` itself.
 //
 // Several modules serve one family, such as `device`, each for its own devices (Hub #967), so the kit syncs a module's
-// families from the module by name, and its stand-in owner can serve under the owner a module names.
+// families from the module by name, and its stand-in owner can serve under the owner a module names. A reader may sync
+// any one of them alone, as a grant that reads only `device` does, so the kit also syncs each served family alone and
+// fails a module that answers outside the request: the bus refuses that answer and stops the module (Hub #954).
 //
 // Under ADR 0012's failure isolation (policy A), a device's errors and timeouts are not module failures: a module turns
 // them into outcomes and an `unavailable` device state. Only an error that escapes the module, from its start, a
@@ -42,7 +44,7 @@ export type ConformanceSpec = {
   create: () => BunnyModule;
   /** The payload schemas of the module's own families, by `dataschema`. The core families are registered already. */
   schemas?: Readonly<Record<string, object>>;
-  /** The families the module serves with `serveSync`, if any. */
+  /** The families the module serves with `serveSync`, if any. With more than one, the kit also syncs each one alone. */
   serves?: readonly string[];
   /**
    * The families the module copies with `sync` at start, and the snapshot the kit's stand-in owner serves. The stand-in
@@ -84,6 +86,7 @@ export const CHECKS = {
   lifecycle: 'starts, and stops leaving nothing behind',
   offline: 'starts while its device never answers, and reports it unavailable',
   serves: 'serves its families through sync',
+  servesEach: 'serves each of its families alone, and nothing outside the request',
   copies: 'copies the families it follows',
   accepts: 'accepts a command and replies',
   refuses: 'refuses a command with the shared error body',
@@ -362,6 +365,26 @@ const serves = (spec: ConformanceSpec, families: readonly string[]): Promise<voi
   await result.copy.close();
 });
 
+/**
+ * Each family alone, synced from the module by name: the answer holds only that family's states. A module that answers
+ * outside the request is refused `internal` and fails, so a reader that names one family would take it down.
+ */
+const servesEach = (spec: ConformanceSpec, families: readonly string[]): Promise<void> => inWorld(spec, async world => {
+  await world.start();
+  for (const family of families) {
+    const result = await world.probe.sync([family], () => {}, {timeoutMs: world.timeoutMs, owner: world.harness.source});
+    assert.equal(result.status, 'synced', `a sync of ${family} alone is served${result.status === 'rejected' ? `, not refused ${result.error.error.code}` : ''}`);
+    if (result.status !== 'synced') return;
+    world.check(result.message, 'sync.completed');
+    for (const state of result.copy.states()) {
+      world.check(state, 'a synced state');
+      world.answers.push(state);
+      assert.equal(schemaFamily(state.dataschema), family, `a sync of ${family} alone holds only ${family} states`);
+    }
+    await result.copy.close();
+  }
+});
+
 const copies = (spec: ConformanceSpec, {families, owner}: NonNullable<ConformanceSpec['copies']>): Promise<void> => inWorld(spec, async world => {
   await world.start();
   const asked = world.syncRequests.filter(request => request.source === world.harness.source);
@@ -476,6 +499,8 @@ export function conformanceChecks(spec: ConformanceSpec): ConformanceCheck[] {
   const {serves: served, copies: copied, accepted, refused, offline: unreachable} = spec;
   if (unreachable !== undefined) checks.push({name: CHECKS.offline, run: () => offline(spec, unreachable)});
   if (served !== undefined) checks.push({name: CHECKS.serves, run: () => serves(spec, served)});
+  // With one family, the serves check already syncs it alone.
+  if (served !== undefined && served.length > 1) checks.push({name: CHECKS.servesEach, run: () => servesEach(spec, served)});
   if (copied !== undefined) checks.push({name: CHECKS.copies, run: () => copies(spec, copied)});
   if (accepted !== undefined) checks.push({name: CHECKS.accepts, run: () => accepts(spec, accepted)});
   if (refused !== undefined) checks.push({name: CHECKS.refuses, run: () => refuses(spec, refused)});
