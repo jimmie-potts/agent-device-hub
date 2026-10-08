@@ -23,11 +23,11 @@ const MODULE_FOLDERS = moduleFolders(fileURLToPath(new URL('../../../../../', im
 it('the catalog names each scenario once, the core\'s first, and each one observes something', () => {
   const ids = SCENARIOS.map(scenario => scenario.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids.slice(0, 18), [
+  assert.deepEqual(ids.slice(0, 19), [
     'approval-reaches-every-module', 'command-tracked-outcome', 'module-fails-others-continue', 'reconnect-and-sync', 'zero-modules', 'agent-sessions',
     'end-to-end', 'configured-module', 'misconfigured-module', 'device-owners', 'gateway-reads', 'grants-and-duplicates', 'approval-recovery',
     'module-contributions', 'agent-hooks',
-    'dashboard-sessions', 'dashboard-finished-turn', 'operation-records',
+    'dashboard-sessions', 'dashboard-finished-turn', 'session-label', 'operation-records',
   ]);
   for (const scenario of SCENARIOS) {
     assert.match(scenario.id, /^[a-z][a-z0-9-]{2,40}$/);
