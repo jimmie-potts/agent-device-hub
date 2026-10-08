@@ -61,7 +61,7 @@ void test('a correct run passes every check, and each negative control fails exa
       const seen = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
       assert.equal(seen.home, `${run.dataDir}/home`, `${scenario}: the runtime's home is observed`);
       if (scenario === 'fixtures' || scenario === 'shipped') {
-        const restart = await fetch(new URL(`${HARNESS_PATH}/restart`, run.harness), {method: 'POST', body: '{}'});
+        const restart = await fetch(new URL(`${HARNESS_PATH}/restart`, run.harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: '{}'});
         assert.equal(restart.status, 200);
         await restart.body?.cancel();
         const after = await (await fetch(new URL(`${HARNESS_PATH}/boundaries`, run.harness))).json() as BoundaryReport;
