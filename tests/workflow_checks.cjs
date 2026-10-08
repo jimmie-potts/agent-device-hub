@@ -296,10 +296,10 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
-      'npm run test:codex-desktop:built', 'npm run test:dashboard'],
+      'npm run test:codex-desktop:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
-      'npm run test:dashboard:smoke', 'npm run test:observability:browser'],
+      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'npm run test:observability:browser'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
@@ -364,15 +364,18 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
   }
   assert.equal(builds, 2);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
-  // locally until #839 deletes that code. CI runs the dashboard's smoke check instead.
+  // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
+  // keeps its full browser suite local too.
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   for (const name of ['test:hub:built', 'test:hub:package:built', 'test:hub:verify:built', 'test:agent-status:built', 'test:lifx:built',
     'test:tidbyt:built', 'test:tidbyt:python', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
-    'test:performance', 'test:dashboard:browser']) {
+    'test:performance', 'test:dashboard:browser', 'test:runtime-dashboard:browser']) {
     assert.ok(scripts[name], `${name} stays available for local runs`);
     assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs locally, not in CI`);
   }
   assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
+  // Hub #922: the runtime's dashboard follows the same pattern, a smoke check in CI and its full browser suite locally.
+  assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
 });
 
 // Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.

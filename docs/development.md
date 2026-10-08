@@ -213,10 +213,10 @@ Normal CI has five GitHub-hosted Linux jobs, and each suite runs in exactly one 
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the old dashboard's unit tests, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the old dashboard's smoke check and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 
 The Checks workflow performs two full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
@@ -250,7 +250,8 @@ CI still covers the old code that kept checks rely on. `npm run build` and
 `test:contracts:built` runs because MCP, maintenance, the event mapping tests
 and the observability pilot import `@jimmie-potts/device-contracts` from source.
 `test:dashboard` and `test:dashboard:smoke` run because #922 copies the
-dashboard into the runtime. The Python setup still installs
+dashboard into the runtime; the copy has its own
+[checks](#runtime-dashboard-checks). The Python setup still installs
 `requirements-contracts.txt`, whose Pillow pin only the local Tidbyt check uses.
 
 Native Windows is outside the supported CI matrix. Windows development uses
@@ -938,7 +939,9 @@ suite runs against both transports. The remote tests start an edge on
 keep SQLite files under the system temporary directory. The one-call publish
 helper's tests (Hub #926) also use loopback listeners that refuse the
 connection, never answer or answer with something other than an edge's answer.
-They need no runtime, device or other network.
+They need no runtime, device or other network. `browser.test.ts` bundles the remote
+client's entry, `@jimmie-potts/sdk/remote`, for a browser with esbuild, so a Node
+built-in or a file read in its module graph fails the suite (Hub #922).
 
 ## Runtime checks
 
@@ -1071,6 +1074,46 @@ registry (#954). The host route takes the runtime as `--app runtime`. Its lifecy
 real transient units and skip with a printed reason without a user manager; the
 App verification CI job runs the rest. It needs Playwright Chromium and an
 outside-checkout `TMPDIR`, as the app verification tests do.
+
+## Runtime dashboard checks
+
+`apps/runtime/dashboard` is the B.U.N.N.Y. dashboard on the runtime (Hub #922),
+copied from `apps/dashboard`; its [README](../apps/runtime/dashboard/README.md)
+covers what it has and [PROVENANCE.md](../apps/runtime/dashboard/PROVENANCE.md)
+what was copied and changed. It follows the
+[strict profile](#strict-profile-for-new-code), tests included: `src/`
+type-checks for the browser with its own `tsconfig.json`, and `tests/` for Node
+with `tests/tsconfig.json`. Node 24 runs the tests' TypeScript as it is, with no
+build step of their own.
+
+Use Node 24 from the worktree root. `npm run build` builds the page into
+`apps/runtime/dist/dashboard/`, after the SDK and the event contracts, and
+`npm run typecheck` checks both projects.
+
+```bash
+npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
+npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
+npm run test:runtime-dashboard:browser   # the full browser suite, local only
+```
+
+The core CI job runs `test:runtime-dashboard:built`. The browser checks use
+Playwright Chromium against the built runtime in the test's own process, with
+the core, its gateway on a free loopback port, a private state directory under
+the system temporary directory, which must be outside every Git checkout, and a
+synthetic hook that publishes lifecycle observations through the SDK edge. They
+contact no device and no installed service. `smoke.ts` checks that the gateway
+serves the built page, which signs in without a form, shows a synthetic
+session's finished turn unread with the Hub mode and inbox panels, passes axe at
+1,280 px and sends no command while it loads. The full suite (`browser.ts` and
+`trusted.ts`) adds sessions appearing, an approval raised and cleared, a
+finished turn that stays unread until the record clears it, a resync after a
+lost stream with no replayed command, the explicit acknowledgment, routes,
+Places, axe at 1,440 and 390 px, a session that ends with a restart, Disconnect,
+the launcher's code, the bookmark on either loopback name, a reload and a
+second tab, and another local app's link, frame and hostile re-navigation
+(Hub #561). Run it when a change touches `apps/runtime/dashboard`, the gateway's
+page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
+a directory to keep their screenshots.
 
 ## Agent lifecycle contract checks
 
@@ -1583,9 +1626,9 @@ fixture's Hub and checks that:
   `mode.set` command with the snapshot's request ID, configuration revision and
   generation.
 
-It takes about 2 s locally. When #922 copies the dashboard, give the
-copy the same pattern: a short smoke check in CI and its full browser suite as a
-local check.
+It takes about 2 s locally. The runtime's copy (#922) follows the same pattern:
+a short smoke check in CI and its full browser suite as a local check; see
+[Runtime dashboard checks](#runtime-dashboard-checks).
 
 The browser matrix's `running Hub build` cases check Connections with synthetic
 known metadata and an older context without a build field. They cover read-only
