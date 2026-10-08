@@ -10,4 +10,7 @@
 ## 3. Delivery evidence
 
 - [x] 3.1 Extend codex-desktop-read scenario and provenance docs; verify the affected scenario and required direct consumer/package/build/type/lint/workflow checks.
-- [ ] 3.2 Obtain independent revision review/Acceptance and synchronize/archive after successful lookups and acceptance evidence, coordinated by root.
+- [ ] 3.2 Observe the bounded disposable Acceptance run and retain its evidence, coordinated by root.
+- [ ] 3.3 Synchronize both affected specs and archive after successful current lookups and completed acceptance evidence.
+
+Independent Standards and Specification reviews inspect the committed candidate after synchronization and archival. They remain delivery gates owned by the coordinator.

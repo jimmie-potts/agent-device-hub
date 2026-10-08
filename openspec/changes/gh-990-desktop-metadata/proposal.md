@@ -17,6 +17,7 @@ None.
 
 ### Modified Capabilities
 
+- `bunny-message-profile`: additive Desktop metadata evidence in the existing lifecycle/2.0 family.
 - `runtime-codex-desktop`: archive and independent title observations alongside read evidence.
 
 ## Impact

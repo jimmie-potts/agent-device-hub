@@ -994,8 +994,7 @@ as child processes with synthetic 1.x producer files and synthetic Claude Code
 payloads, against the runtime's gateway, a closed port and a listener that never
 answers; they strip any `CLAUDE_CODE_*` variable and `CODEX_HOME` from the hook's
 environment. The Codex Desktop tests
-run the module's real reader process on a synthetic marker in a temporary Codex
-home, and make the marker a FIFO with `mkfifo` to stand in for a stalled mount.
+run the module's real reader process on a synthetic marker in a temporary Codex home, and make the marker a FIFO with `mkfifo` to stand in for a stalled mount.
 No test reads a real client's hook settings or Codex files. They need no device
 or network.
 `node apps/runtime/scripts/measure-memory.mjs` measures the
@@ -2135,15 +2134,26 @@ sessions of the configured producer only, the settle rule, an unusable marker,
 evidence sent again with a doubling wait while the core leaves its record
 unchanged, as after a refusal; a folder that stalls, before and after the
 first read; a reader that fails and its backoff; a stop that never waits on a
-read; that nothing carries the Codex home; the section and the cutover's
-conversion; the real reader process on a synthetic marker in a temporary Codex
-home, and a reader stuck in a FIFO's open that closing the transport ends; and
+read; that nothing carries the Codex home; the configured section; the real
+reader process on a synthetic marker in a temporary Codex home, and a reader stuck in a FIFO's open that closing the transport ends; and
 the [module test kit](../packages/sdk/README.md#module-test-kit). The runtime's
 tests run it with the real core (`apps/runtime/tests/codex-desktop.test.ts`), and
 its catalog scenario `codex-desktop-read` runs it with a simulated marker in
 `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). No test reads a real Codex file.
 Installation belongs to the cutover (#840).
+
+Hub #990 also covers archive filenames and independent `session_index.jsonl`
+titles through that reader loop, with synthetic homes only. Tests prove scoped
+root/ancestor admission, explicit unarchive, expiry and fail-open unavailable
+scans, and title updates independent of marker usability. Owner and real
+CoreStore checks retain explicit labels, host session IDs, lifecycle facts and
+restart uncertainty. Required contract and agent-state package checks cover the
+additive `metadata-observed` input. Its runtime consumers are the complete
+`core-store.test.ts`, `core.test.ts`, `codex-desktop.test.ts`,
+`operation-records.test.ts`, `gateway.test.ts` and `credentials.test.ts` files;
+the catalog scenario covers archive admission and independent titles alongside
+read evidence. These behaviors need no data conversion or migration.
 
 ## Nanoleaf port
 
