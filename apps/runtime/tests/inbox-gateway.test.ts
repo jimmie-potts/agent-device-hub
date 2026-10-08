@@ -47,3 +47,51 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   assert.ok(handle);
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 1, 'MCP observes shared handling');
 });
+
+
+it('authenticated HTTP inbox handling continues its trace through removal and explicit resend', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const gadget = new Gadget(), files = await edgeConfig(context, [operator]);
+  const lines: string[] = [];
+  const {runtime} = await run(context, {modules: [core, gadget.module()], configFile: files.config, edge: {schemas: gadgetSchemas}, spans: line => { lines.push(line); }});
+  assert.ok(handle);
+  const removals: {subject: string; traceparent: string}[] = [];
+  const subscription = await handle.sdk.subscribe('bunny.state.inbox-item.*', message => {
+    if (message.kind === 'removal') removals.push(message);
+  });
+  context.after(() => subscription.close());
+  const items = async () => {
+    const response = await fetch(new URL('/api/v2/families/inbox-item', runtime.url), {headers: {authorization: `Bearer ${operator.token}`}});
+    return (await response.json() as {records: {id: string; revision: number}[]}).records;
+  };
+  for (const [index, action] of ['dismiss', 'send-again'].entries()) {
+    gadget.script({reply: 'unavailable'});
+    await core.actions.dispatch({...setGadget(42), requestedBy: operator.source, requestId: `trace-original-${index}`});
+    await waitFor(async () => (await items()).length === 1);
+    const item = (await items())[0]; assert.ok(item);
+    const traceId = index === 0 ? '0af7651916cd43dd8448eb211c80319c' : '11111111111111111111111111111111';
+    const parentSpanId = 'b7ad6b7169203331';
+    const response = await fetch(new URL('/api/v2/commands/inbox-handle', runtime.url), {
+      method: 'POST', headers: {authorization: `Bearer ${operator.token}`, 'content-type': 'application/json', traceparent: `00-${traceId}-${parentSpanId}-01`},
+      body: JSON.stringify({target: item.id, requestId: `trace-handle-${index}`, data: {action, expectedRevision: item.revision}}),
+    });
+    assert.equal(response.status, 200); await response.json();
+    await waitFor(() => removals.some(message => message.subject === item.id));
+    assert.equal(removals.find(message => message.subject === item.id)?.traceparent.slice(3, 35), traceId, 'shared removal continues the authenticated HTTP trace');
+    if (action === 'send-again') {
+      await waitFor(() => gadget.commands.length === 3);
+      const resent = gadget.commands[2]; assert.ok(resent);
+      assert.equal(resent.traceparent.slice(3, 35), traceId, 'fresh device command remains in the handling trace');
+      assert.equal(handle.operation(resent.data.requestId)?.traceparent.slice(3, 35), traceId, 'new tracked operation retains that context');
+    }
+  }
+  await runtime.stop();
+  for (const traceId of ['0af7651916cd43dd8448eb211c80319c', '11111111111111111111111111111111']) {
+    const spans = lines.flatMap(line => (JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string; traceId: string; spanId: string; parentSpanId?: string; kind: number}[]}[]}[]}).resourceSpans.flatMap(group => group.scopeSpans.flatMap(scope => scope.spans)));
+    const server = spans.find(span => span.traceId === traceId && span.kind === 2 && span.name === 'bunny.command.request' && span.parentSpanId === 'b7ad6b7169203331');
+    assert.ok(server, 'the authenticated handling HTTP server span is recorded');
+    assert.equal(server.parentSpanId, 'b7ad6b7169203331');
+    assert.ok(spans.some(span => span.traceId === traceId && span.kind === 3 && span.name === 'bunny.command.request' && span.parentSpanId === server.spanId), 'the SDK request is a child of the HTTP server span');
+  }
+});

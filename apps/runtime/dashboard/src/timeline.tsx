@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {childOf} from '@jimmie-potts/sdk/remote';
 
 type Row = {seq: number; atMs: number; kind: string; source: string; subject: string; type: string; requestId: string | null; record: unknown};
@@ -7,14 +7,17 @@ export function Timeline(): React.JSX.Element {
   const [rows, setRows] = useState<Row[]>([]), [status, setStatus] = useState('Loading history…');
   const [kind, setKind] = useState(''), [source, setSource] = useState(''), [session, setSession] = useState('');
   const [from, setFrom] = useState(''), [to, setTo] = useState('');
+  const latestRead = useRef(0);
   const read = async (query = ''): Promise<void> => {
+    const generation = ++latestRead.current;
     setStatus('Loading history…');
     try {
       const response = await fetch(`/api/v2/history${query}`, {cache: 'no-store', redirect: 'error', credentials: 'same-origin', headers: childOf(undefined)});
       const answer = await response.json() as {rows?: Row[]; error?: {code?: string}};
+      if (generation !== latestRead.current) return;
       if (!response.ok || !Array.isArray(answer.rows)) { setStatus(`History unavailable: ${answer.error?.code ?? 'invalid reply'}`); return; }
       setRows(answer.rows); setStatus(`${answer.rows.length} history entries. Reading sends no command.`);
-    } catch { setStatus('History unavailable. Use Apply filters to read again.'); }
+    } catch { if (generation === latestRead.current) setStatus('History unavailable. Use Apply filters to read again.'); }
   };
   useEffect(() => { void read(); }, []);
   return <section className="timeline" aria-label="Timeline"><header className="page"><h1>Timeline</h1></header>

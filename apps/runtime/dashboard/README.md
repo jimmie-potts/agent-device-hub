@@ -245,7 +245,9 @@ remain separate. Nothing resends on reload, reconnect or elapsed time.
 
 **Timeline** reads retained history on entry and **Apply filters**, with inclusive
 From/To, Kind, Source and qualified Session filters. Reads send no command and
-use the existing authenticated gateway. The focused synthetic journey is
+use the existing authenticated gateway. Only the latest submitted read can
+update the results or status, even when replies arrive out of order.
+The focused synthetic journey is
 `node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
 it checks explicit resend, dashboard dismissal visible through MCP, timeline
 filters, keyboard, read-only presentation and desktop/phone axe.

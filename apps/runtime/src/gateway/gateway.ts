@@ -312,7 +312,7 @@ export class Gateway {
       noQuery();
       needs('control');
       const input = actionInput(await readBody(request));
-      const answer = await this.#dispatch(principal, commandFamily, input);
+      const answer = await this.#dispatch(principal, commandFamily, input, request);
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     }
     if (method !== 'GET') throw refuse('not-found', 'no such route');
@@ -602,15 +602,30 @@ export class Gateway {
    * nothing is tracked. The answer is the dispatcher's: `accepted`, the owner's or the bus's refusal, or
    * `uncertain-result`, which is never retried.
    */
-  async #dispatch(principal: Principal, family: string, input: ActionInput): Promise<ActionAnswer> {
+  async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;
     if (family === 'inbox-handle') {
       const requestId = input.requestId ?? randomUUID();
-      const result = await this.#participant(principal.source).request(command.key, command.draft, {requestId, timeoutMs: COMMAND_TIMEOUT_MS});
-      return result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
+      const incoming = request?.headers.traceparent;
+      const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+      const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+      // Only this authenticated, validated HTTP handling path owns an HTTP-to-SDK handoff.
+      const span = request === undefined ? undefined : startSpan(this.#options.trace ?? noSpans, 'bunny.command.request', {
+        parent, kind: 'server', attributes: {'http.route': '/api/v2/commands/{family}', 'http.request.method': 'POST'},
+      });
+      if (request !== undefined && span !== undefined) this.#dashboardTraces.set(request, span.context);
+      try {
+        const result = await this.#participant(principal.source).request(command.key, command.draft, {
+          requestId, timeoutMs: COMMAND_TIMEOUT_MS, ...(span === undefined ? {} : {parent: span.context}),
+        });
+        return result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
+      } catch (error) {
+        span?.end('error');
+        throw error;
+      } finally { span?.end(); }
     }
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});

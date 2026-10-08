@@ -1,7 +1,7 @@
 // Focused #923 journey: one synthetic runtime, no installed service or physical device.
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
-import {chromium, type Browser} from 'playwright';
+import {chromium, type Browser, type Route} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({devices: true, inbox: true});
 let browser: Browser | undefined;
@@ -54,6 +54,56 @@ try {
     assert.equal(sent.length, beforeReload + 1, 'timeline filters send no command');
     await axe(); await page.setViewportSize({width: 390, height: 844}); await axe();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    // Responses complete in reverse order: entry versus a filter, then two submitted filters.
+    await page.getByRole('link', {name: /Home/}).first().click();
+    const held = new Map<string, Route>(), waiting = new Map<string, (route: Route) => void>();
+    const take = (kind: string): Promise<Route> => {
+      const route = held.get(kind);
+      if (route !== undefined) { held.delete(kind); return Promise.resolve(route); }
+      return new Promise(resolve => { waiting.set(kind, resolve); });
+    };
+    await page.route('**/api/v2/history*', route => {
+      const kind = new URL(route.request().url()).searchParams.get('kind') ?? 'entry';
+      const resolve = waiting.get(kind);
+      if (resolve === undefined) held.set(kind, route);
+      else { waiting.delete(kind); resolve(route); }
+    });
+    const reply = async (route: Route, kinds: string[], error = false): Promise<void> => {
+      const response = page.waitForResponse(answer => answer.url() === route.request().url());
+      await route.fulfill({status: error ? 503 : 200, contentType: 'application/json', body: JSON.stringify(error ? {error: {code: 'unavailable'}} : {
+        rows: kinds.map((kind, seq) => ({seq, atMs: 1_700_000_000_000, kind, source: 'bunny/core', subject: `ordered-${seq}`, type: 'test', requestId: null, record: {}})),
+      })});
+      await (await response).finished();
+      await page.evaluate(() => new Promise<void>(resolve => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); }));
+    };
+    await page.getByRole('link', {name: 'Timeline', exact: true}).click();
+    const entry = await take('entry');
+    await page.getByLabel('Kind', {exact: true}).selectOption('operation');
+    await page.getByRole('button', {name: 'Apply filters'}).click();
+    await reply(await take('operation'), ['operation']);
+    await page.getByRole('status').filter({hasText: '1 history entries.'}).waitFor();
+    await reply(entry, ['outcome', 'outcome']);
+    assert.deepEqual(await page.locator('ol li h2').allTextContents(), ['operation · ordered-0'], 'entry reply cannot replace the first applied filter');
+    assert.match(await page.getByRole('status').innerText(), /^1 history entries/);
+    await page.getByLabel('Kind', {exact: true}).selectOption('outcome');
+    await page.getByRole('button', {name: 'Apply filters'}).click(); const older = await take('outcome');
+    await page.getByLabel('Kind', {exact: true}).selectOption('operation');
+    await page.getByRole('button', {name: 'Apply filters'}).click();
+    await reply(await take('operation'), ['operation', 'operation']);
+    await page.getByRole('status').filter({hasText: '2 history entries.'}).waitFor();
+    await reply(older, ['outcome']);
+    assert.deepEqual(await page.locator('ol li h2').allTextContents(), ['operation · ordered-0', 'operation · ordered-1'], 'older filter reply cannot replace the latest applied filter');
+    assert.match(await page.getByRole('status').innerText(), /^2 history entries/);
+    await page.getByLabel('Kind', {exact: true}).selectOption('outcome');
+    await page.getByRole('button', {name: 'Apply filters'}).click(); const obsoleteError = await take('outcome');
+    await page.getByLabel('Kind', {exact: true}).selectOption('operation');
+    await page.getByRole('button', {name: 'Apply filters'}).click();
+    await reply(await take('operation'), []);
+    await page.getByRole('status').filter({hasText: '0 history entries.'}).waitFor();
+    await reply(obsoleteError, [], true);
+    assert.match(await page.getByRole('status').innerText(), /^0 history entries/, 'obsolete failure cannot replace the latest successful status');
+    assert.equal(sent.length, beforeReload + 1, 'overlapping timeline reads send no command');
+    await page.unroute('**/api/v2/history*');
     await page.getByRole('link', {name: /Home/}).first().click(); await axe();
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
