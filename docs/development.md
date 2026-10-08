@@ -156,10 +156,12 @@ install's `--with-deps` downloads, until the job's limit. So every apt command i
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
 verification and Work guide, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
-The script makes apt drop and retry a connection or download that receives
-nothing for 30 s; a slow download that still receives data does not time out.
-After a failed attempt, it stops the apt-get the attempt left running, waits up
-to 60 s for apt and dpkg to exit, runs `dpkg --configure -a` and retries, three
+The runner image already makes apt drop a connection that receives nothing for
+15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
+download that still trickles never times out. After a failed attempt, the script
+stops the apt-get the attempt left running, waits up to 60 s for apt and dpkg to
+exit and runs `dpkg --configure -a`. It then moves the mirror apt tried first to
+the end of that list, so the retry starts on another mirror; it makes three
 attempts in all. The step limits (20 minutes for the browser installs, 14 for the
 hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
