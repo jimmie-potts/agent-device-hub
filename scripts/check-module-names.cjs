@@ -1,6 +1,6 @@
 // Fails when a file every module story would otherwise edit names a device module (Hub #999). Each module registers
 // itself from its own folder, and the runtime and both scenario harnesses collect the registrations, so these shared
-// files name only the core and the fixture modules, which live outside `modules/`. A module's name is its folder under
+// files name only the core and fixture modules, except the explicit file-fixture references below. A module's name is its folder under
 // `modules/`, in any letter case, with its hyphens written as hyphens, spaces or nothing (`codex-desktop`, `Codex
 // Desktop`, `codexDesktop`). Run from the repository root: `node scripts/check-module-names.cjs`.
 const fs = require('node:fs');
@@ -25,6 +25,18 @@ const SHARED_FILES = [
   'apps/runtime/verify/supervisor.ts',
 ];
 
+/**
+ * #927 uses selected synthetic collector files, not a device transport. The owner deferred a generic fixture loader
+ * in #999 and permits coordinated shared-file edits. Keep this exception confined to its two harnesses and seed;
+ * production module discovery, the catalog and every other module still use the original registration rule.
+ */
+const FIXTURE_REFERENCES = Object.freeze({
+  'apps/runtime/tests/scenarios/framework.ts': ['wispr'],
+  'apps/runtime/tests/scenarios/memory.ts': ['wispr'],
+  'apps/runtime/verify/child.ts': ['wispr'],
+  'apps/runtime/verify/seed.ts': ['wispr'],
+});
+
 /** The device modules: each folder under `modules/` that holds a `package.json`, in name order. */
 function moduleNames(root) {
   const modules = path.join(root, 'modules');
@@ -48,13 +60,13 @@ function findModuleNames(root, files = SHARED_FILES) {
   for (const file of files) {
     const lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n');
     lines.forEach((text, index) => {
-      for (const {name, pattern} of names) if (pattern.test(text)) found.push({file, line: index + 1, name});
+      for (const {name, pattern} of names) if (pattern.test(text) && !FIXTURE_REFERENCES[file]?.includes(name)) found.push({file, line: index + 1, name});
     });
   }
   return found;
 }
 
-module.exports = {SHARED_FILES, findModuleNames, moduleNames, spellings};
+module.exports = {SHARED_FILES, FIXTURE_REFERENCES, findModuleNames, moduleNames, spellings};
 
 if (require.main === module) {
   const found = findModuleNames(path.resolve(__dirname, '..'));
