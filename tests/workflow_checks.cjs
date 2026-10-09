@@ -384,9 +384,10 @@ const packagedMarkdown = [
   'docs/agent-lifecycle-contract.md', 'docs/app-verification.md', 'docs/controller-contract.md',
   'docs/decisions/0009-app-verification-runs.md', 'docs/install-contract.md', 'docs/observability-contract.md',
   'docs/provider-qualification.md', 'packages/agent-state/README.md', 'packages/app-verify/README.md',
+  'packages/app-verify/OPERATIONS.md', 'packages/app-verify/TESTING.md',
   'packages/mcp/README.md', 'packages/observability/README.md', 'packages/wispr-contracts/README.md',
 ];
-const packagedNames = new Set(['README.md', 'SETUP.md', 'CONTRACT.md', 'install-contract.md', 'provider-qualification.md',
+const packagedNames = new Set(['OPERATIONS.md', 'TESTING.md', 'README.md', 'SETUP.md', 'CONTRACT.md', 'install-contract.md', 'provider-qualification.md',
   'app-verification.md', 'adr-0009-app-verification-runs.md']);
 
 test('Markdown that package checks copy exists, and the hash-checked vendor folders hold none', () => {
