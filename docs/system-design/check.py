@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
+sys.path.insert(0, str(ROOT.parent / "diagrams"))
 import architecture_diagrams as AD  # noqa: E402
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ID = re.compile(r"[A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*\Z")
-sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
+sys.path.insert(0, str(ROOT.parent / "diagrams"))
 sys.path.insert(0, str(ROOT.parent / "skins"))
 import architecture_diagrams as AD  # noqa: E402  the shared diagram definitions and their Archify renderings
 import skin as SKIN  # noqa: E402  shared token files and theme control

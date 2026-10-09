@@ -1,0 +1,36 @@
+{
+  "reviewedAt": "2026-10-09",
+  "sourceRevision": "ea45a7762a2bc212dc386c2892d09f345b33f838",
+  "evidence": "source; installed acceptance remains in issue 840",
+  "diagrams": [
+    {
+      "id": "runtime-sync",
+      "sources": [
+        "packages/sdk/src/sync.ts",
+        "packages/sdk/src/remote-client.ts",
+        "packages/sdk/src/remote-edge.ts"
+      ],
+      "specificationSha256": "671deebee724b03d14687f88f8f9a5b23e17aeac153bbcba8381ed3dfb38720a",
+      "artifactSha256": "c60b8edd445919f24b1a15cf3583e2397dab6e096862b241290b2c8d6ee69fc3"
+    },
+    {
+      "id": "runtime-outcomes",
+      "sources": [
+        "apps/runtime/src/core/tracker.ts",
+        "apps/runtime/src/core/operations.ts",
+        "packages/sdk/src/outbox.ts"
+      ],
+      "specificationSha256": "03c6ad144112e57d9b055d88306f89f67794b8d8b5615bd6d77ac16fc8bae890",
+      "artifactSha256": "94d170ce7656f9354d6f7b216c7ea3531c72b2e1e17e214c239ad66381eaf023"
+    },
+    {
+      "id": "prompti-input",
+      "sources": [
+        "apps/chompi-bridge/src/routing/router.ts",
+        "apps/chompi-bridge/README.md"
+      ],
+      "specificationSha256": "cf78fb2d31b44ca6ea4de67465de9503ec6e85c80c0da321d90d77e5550bc97e",
+      "artifactSha256": "7b51ca894dd7827df54160d84dafd9adab8d956910d9da4be8b7a23b5c5f0f8a"
+    }
+  ]
+}

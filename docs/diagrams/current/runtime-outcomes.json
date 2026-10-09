@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Runtime: command responsibility and outcome",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1180,
+      740
+    ],
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "recovery"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Client"
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Core tracker"
+    },
+    {
+      "id": "module",
+      "type": "backend",
+      "label": "Device module"
+    },
+    {
+      "id": "device",
+      "type": "external",
+      "label": "Device"
+    }
+  ],
+  "messages": [
+    {
+      "id": "step-1",
+      "from": "client",
+      "to": "core",
+      "y": 185,
+      "label": "Live request with expiry",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-2",
+      "from": "core",
+      "to": "module",
+      "y": 233,
+      "label": "Dispatch to the designated owner",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-3",
+      "from": "module",
+      "to": "core",
+      "y": 281,
+      "label": "Accept responsibility or refuse",
+      "variant": "return"
+    },
+    {
+      "id": "step-4",
+      "from": "core",
+      "to": "client",
+      "y": 329,
+      "label": "Track admission; not device success",
+      "variant": "return"
+    },
+    {
+      "id": "step-5",
+      "from": "module",
+      "to": "device",
+      "y": 377,
+      "label": "If accepted: attempt through one writer",
+      "variant": "default"
+    },
+    {
+      "id": "step-6",
+      "from": "device",
+      "to": "module",
+      "y": 425,
+      "label": "Succeeded, failed or uncertain result",
+      "variant": "return"
+    },
+    {
+      "id": "step-7",
+      "from": "module",
+      "to": "core",
+      "y": 473,
+      "label": "Commit outcome to outbox, then report",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-8",
+      "from": "core",
+      "to": "client",
+      "y": 521,
+      "label": "Atomic state, tracker, inbox and history",
+      "variant": "return"
+    },
+    {
+      "id": "step-9",
+      "from": "module",
+      "to": "core",
+      "y": 569,
+      "label": "After restart: retry stored outcome only",
+      "variant": "dashed"
+    },
+    {
+      "id": "step-10",
+      "from": "core",
+      "to": "module",
+      "y": 617,
+      "label": "Commit/deduplicate, then acknowledge",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Expiry and effects",
+      "items": [
+        "Still queued: expired, no effect. Handler started, lost reply or missing outcome: uncertain-result.",
+        "Cancellation ends waiting, not prior effects. retryable never permits resending a command."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Stored outcome, same identity",
+      "items": [
+        "Keep message ID, time, request and trace context across publication and restart.",
+        "Record safe codes at the deciding boundary. Core acknowledges only after durable intake."
+      ]
+    }
+  ]
+}

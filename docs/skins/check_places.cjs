@@ -15,8 +15,7 @@ const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'places.json'),'ut
 const expected=manifest.map(p=>p.label);
 const doc=relative=>path.join(root,relative);
 const pages=[
- ['guide',doc('docs/work-guide/outputs/agent-device-work-guides.html')],
- ...fs.readdirSync(doc('docs/work-guide/outputs/architecture')).filter(f=>f.endsWith('.html')).map(f=>['architecture',doc('docs/work-guide/outputs/architecture/'+f)]),
+ ...fs.readdirSync(doc('docs/diagrams/legacy/rendered')).filter(f=>f.endsWith('.html')).map(f=>['architecture',doc('docs/diagrams/legacy/rendered/'+f)]),
  ['atlas',doc('docs/system-design/index.html')],
  ['atlas',doc('docs/system-design/full-system-design.html')],
  ...fs.readdirSync(doc('docs/system-design/components')).filter(f=>f.endsWith('.html')).map(f=>['atlas',doc('docs/system-design/components/'+f)]),

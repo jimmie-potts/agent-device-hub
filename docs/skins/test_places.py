@@ -41,10 +41,8 @@ class PlacesTests(unittest.TestCase):
             self.assertNotIn('token=', block)
             self.assertNotIn('localhost', block)
             self.assertIn('href="http://127.0.0.1:8788/"', block)
-            if public:
-                self.assertIn('href="https://jimmie-potts.github.io/agent-device-guide/"', block)
-            else:
-                self.assertIn('href="../../work-guide/outputs/agent-device-work-guides.html"', block)
+            # Retained pages do not depend on the retiring local Guide tree.
+            self.assertIn('href="https://jimmie-potts.github.io/agent-device-guide/"', block)
 
 
 if __name__ == '__main__':

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="generator" content="archify 2.17.0-dev.1">
-  <title>B.U.N.N.Y. system map: what runs where Diagram</title>
+  <title>Runtime: command responsibility and outcome Diagram</title>
   <script>
     // Resolve the theme before first paint so light-preference users don't
     // see a dark flash. The toolbar script below re-applies with UI state.
@@ -4847,47 +4847,8 @@
       svg [data-node-id], svg [data-edge-from], svg [data-detail], svg [data-detail-anchor], svg [data-legend-hit], svg { transition: none !important; }
     }
   </style>
-<style id="places-style">/* Fixed-meaning colors shared by every skin. A skin never redefines these names.
-   Repository identity, issue status, atlas document status and diagram edge keys
-   keep their meaning in every theme; only the shade changes for light and print. */
-:root{
---repo-hub:#22d3ee;--repo-nanoleaf:#e879f9;--repo-pixoo:#b5ed86;
---status-open:#a8bbd5;--status-active:#f5ce83;--status-blocked:#ffa3a6;--status-completed:#8ee0b6;--status-closed:#b9afce;
---status-delivered:#83edce;--status-planned:#a0c9ff;--status-qualification:#ffcc83;--status-mixed:#ffcc83;--status-optional:#d6b1ff;
---edge-observe:#34d399;--edge-feed:#a78bfa;--edge-command:#fb7185;--edge-other:#94a3b8;
---walk-alt:#f5b544}
-@media screen{:root[data-theme="light"]{
---repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
---status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
---status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
---edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
---walk-alt:#b45309}}
-/* Without scripts, follow the reader's system preference. Keep identical to the block above. */
-@media screen and (prefers-color-scheme:light){:root:not([data-theme="dark"]){
---repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
---status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
---status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
---edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
---walk-alt:#b45309}}
-@media print{:root{
---repo-hub:#145565;--repo-nanoleaf:#7b2c8a;--repo-pixoo:#4a6b1f;
---status-open:#334655;--status-active:#7a4a00;--status-blocked:#9b1c28;--status-completed:#17603d;--status-closed:#574a75;
---status-delivered:#17563f;--status-planned:#174f80;--status-qualification:#715021;--status-mixed:#715021;--status-optional:#714489;
---edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
---walk-alt:#9a4a06}}
-.places-nav{box-sizing:border-box;display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .65rem;width:100vw;max-width:100%;padding:.55rem .85rem;border-block:1px solid var(--edge-other);background:transparent;color:var(--status-open);font:500 .8rem/1.4 system-ui,sans-serif;letter-spacing:normal;overflow-wrap:anywhere}
-.places-nav *{box-sizing:border-box}
-.places-nav__brand{font-weight:750;letter-spacing:.07em;color:var(--status-delivered);margin-right:.4rem}
-.places-nav__current{font-weight:650;color:var(--status-delivered)}
-.places-nav__links{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem .65rem;min-width:0}
-.places-nav a,.places-nav__current{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .2rem;white-space:normal}
-.places-nav a{color:var(--status-open);text-decoration:underline;text-underline-offset:.2em}
-.places-nav a:hover,.places-nav a:focus-visible{color:var(--status-delivered)}
-.places-nav a:focus-visible{outline:2px solid var(--status-delivered);outline-offset:2px}
-.places-nav__tag{font-size:.67rem;text-transform:uppercase;letter-spacing:.05em;color:var(--status-active)}
-@media print{.places-nav{display:none}}
-</style></head>
-<body><!-- places:start --><nav class="places-nav" aria-label="Places" data-current="architecture"><span class="places-nav__brand">B.U.N.N.Y. / Architecture</span><span class="places-nav__links"><a href="../../../outputs/agent-device-work-guides.html">Guide</a><span class="places-nav__current" aria-current="page">Architecture</span><a href="../../../../system-design/index.html">Atlas</a><a href="../../../../system-design/reference/index.html">Reference</a><a href="http://127.0.0.1:8788/">B.U.N.N.Y.<span class="places-nav__tag">Local</span></a><a href="http://127.0.0.1:8765/">Wall<span class="places-nav__tag">Local</span></a></span></nav><!-- places:end -->
+</head>
+<body>
   <!-- Toolbar: theme, live visual style, trace motion, presentation stage, and export.
        Motion appears only for trace-enabled artifacts and has no shortcut;
        Keyboard: T toggles theme, S cycles style, F toggles the stage, E opens export. -->
@@ -4994,11 +4955,11 @@
            data-preset-badge-blueprint="BLUEPRINT / REV 01"
            data-preset-badge-editorial="EDITORIAL / FIELD NOTE">
         <div class="pulse-dot"></div>
-        <h1>B.U.N.N.Y. system map: what runs where</h1>
+        <h1>Runtime: command responsibility and outcome</h1>
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"observe","label":"Observation path","focus":["providers","hooks","hubRoutes","core","hubStore","nanoCtl","pixooSvc"],"note":"One shared interpretation; controllers project state."},{"id":"command","label":"Command path","focus":["dashboard","mcpClients","mcpModule","hubRoutes","nanoCtl","pixooSvc"],"note":"Explicit requests reach the existing command owners."},{"id":"writers","label":"Writers and stores","focus":["nanoWorker","nanoStore","lights","pixooSvc","pixooStore","pixooDev","hubStore"],"note":"One writer and one private store per owner."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[]</script>
 
     <script id="archify-i18n-data" type="application/json">{"locale":"en","messages":{"viewer.kind.frontend":"Frontend","viewer.kind.backend":"Backend","viewer.kind.database":"Database","viewer.kind.cloud":"Cloud","viewer.kind.security":"Security","viewer.kind.messagebus":"Message bus","viewer.kind.external":"External","viewer.kind.neutral":"Neutral","viewer.kind.node":"Node","viewer.kind.start":"Start","viewer.kind.active":"Active","viewer.kind.waiting":"Waiting","viewer.kind.decision":"Decision","viewer.kind.success":"Success","viewer.kind.failure":"Failure","viewer.toolbar.actions":"Diagram actions","viewer.theme.toggle.title":"Toggle theme (T)","viewer.theme.toggle":"Toggle color theme","viewer.theme.dark":"Dark","viewer.theme.light":"Light","viewer.preset.choose.title":"Choose visual style (S cycles)","viewer.preset.choose":"Choose visual style","viewer.preset.style":"Style","viewer.preset.menu":"Visual style","viewer.preset.identity":"Visual identity","viewer.preset.cycles":"S cycles","viewer.preset.classic":"Classic","viewer.preset.classic.short":"Classic","viewer.preset.classic.hint":"Stable technical default","viewer.preset.flow":"Signal Flow","viewer.preset.flow.short":"Flow","viewer.preset.flow.hint":"Motion-forward presentation","viewer.preset.blueprint":"Blueprint","viewer.preset.blueprint.hint":"Engineering review","viewer.preset.editorial":"Editorial","viewer.preset.editorial.hint":"Publication and launch notes","viewer.preset.badge.signalFlow":"SIGNAL FLOW","viewer.preset.badge.blueprint":"BLUEPRINT / REV 01","viewer.preset.badge.editorial":"EDITORIAL / FIELD NOTE","viewer.preset.badge.editorialPlate":"ARCHIFY / PLATE 04","viewer.preset.current":"Visual style: {style}. Choose visual style","viewer.motion.live":"Live","viewer.motion.still":"Still","viewer.motion.pause":"Pause motion","viewer.motion.resume":"Resume motion","viewer.motion.reduced":"Motion paused by reduced-motion preference","viewer.motion.hidden":"Motion paused while this page is hidden","viewer.motion.yielding":"Pause motion; currently yielding to {owner}","viewer.motion.yielding.title":"Live preview enabled · yielding to {owner}","viewer.owner.story":"the guided story","viewer.owner.chapter":"the active chapter","viewer.owner.chapterPreview":"the chapter delta preview","viewer.owner.handoff":"the chapter handoff","viewer.owner.route":"Route Probe","viewer.owner.lens":"Semantic Lens","viewer.owner.relationship":"Relationship Preview","viewer.owner.intent":"Intent Trace","viewer.owner.focus":"semantic focus","viewer.owner.legend":"legend preview","viewer.owner.reader":"reader interaction","viewer.present.enter":"Enter presentation stage","viewer.present.enter.title":"Presentation stage (F)","viewer.present.exit":"Exit presentation stage","viewer.present.exit.title":"Exit presentation stage (F or Escape)","viewer.present.present":"Present","viewer.present.exit.label":"Exit","viewer.export.button":"Export","viewer.export.button.title":"Export diagram (E)","viewer.export.diagram":"Export diagram","viewer.export.menu":"Export","viewer.export.subtitle":"Portable, clean outputs","viewer.export.share":"Share","viewer.export.shareCard":"Share Card","viewer.export.routeShareCard":"Route Share Card","viewer.export.reachShareCard":"Reach Share Card","viewer.export.copyShareCard":"Copy Share Card","viewer.export.copyDiagram":"Copy diagram","viewer.export.clipboardPng":"PNG to clipboard","viewer.export.raster":"Raster images","viewer.export.image":"Image","viewer.export.lossless":"Lossless image","viewer.export.compact":"Compact image","viewer.export.modern":"Modern image","viewer.export.vectorMotion":"Vector and motion","viewer.export.vectorMotion.heading":"Vector \u0026 motion","viewer.export.editable":"Editable vector","viewer.export.motion6s":"6s motion","viewer.export.unsupported":"Not supported by this browser","viewer.export.clipboardUnsupported":"Clipboard image write not supported by this browser","viewer.export.clipboardUnsupported.period":"Clipboard image write not supported by this browser.","viewer.export.clipboardUnsupported.short":"Clipboard image write not supported in this browser.","viewer.export.motionUnavailable":"Motion capture unavailable in this browser","viewer.export.webmUnavailable":"WebM unavailable in this browser","viewer.export.failed":"Export failed: {message}","viewer.export.unknownVariant":"Unknown Share Card variant: {variant}","viewer.export.routeRequired":"Trace a route before exporting a Route Share Card","viewer.export.reachRequired":"Trace authored reach before exporting a Reach Share Card","viewer.export.unknown":"unknown","viewer.export.routeFailed":"Route Share Card export failed: {message}","viewer.export.reachFailed":"Reach Share Card export failed: {message}","viewer.export.copyFailed":"Copy failed: {message}","viewer.export.copiedPng":"Copied PNG to clipboard","viewer.export.copiedShare":"Copied Share Card","viewer.export.downloadedShare":"Downloaded Share Card","viewer.export.downloadedRoute":"Downloaded Route Share Card","viewer.export.downloadedReach":"Downloaded Reach Share Card","viewer.export.downloadedWebm":"Downloaded WebM","viewer.export.recording":"Recording 6 seconds of motion…","viewer.export.card.routeSummary.one":"Route: {source} → {target} · {count} directed hop","viewer.export.card.routeSummary.other":"Route: {source} → {target} · {count} directed hops","viewer.export.card.reachSummary":"Authored {direction} from {origin} · {nodes} · {links} · max {hops}","viewer.export.card.node.one":"{count} node","viewer.export.card.node.other":"{count} nodes","viewer.export.card.link.one":"{count} link","viewer.export.card.link.other":"{count} links","viewer.export.card.hop.one":"{count} hop","viewer.export.card.hop.other":"{count} hops","viewer.export.card.routeBadge":"ARCHIFY · ROUTE · {hops}","viewer.export.card.reachBadge":"ARCHIFY · {direction} REACH","viewer.export.card.defaultBadge":"ARCHIFY · {preset} · {theme}","viewer.export.direction.upstream":"Upstream","viewer.export.direction.downstream":"Downstream","viewer.export.error.canvasUnavailable":"Canvas unavailable for {label}","viewer.export.error.contextUnavailable":"2D canvas context unavailable for {label}","viewer.export.error.toBlobUnavailable":"canvas.toBlob unavailable for {label}","viewer.export.error.toBlobNull":"canvas.toBlob returned no data for {label}","viewer.export.error.variantsCombined":"Share Card variants cannot be combined","viewer.export.error.viewerState":"Share Card export could not remove temporary viewer state","viewer.export.error.routeState":"Route Card export could not preserve the resolved route safely","viewer.export.error.reachState":"Reach Card export could not preserve authored reach safely","viewer.export.error.webmRequirements":"WebM motion export requires a trace animation and browser MediaRecorder support","viewer.export.error.mediaRecorder":"MediaRecorder failed","viewer.export.error.emptyWebm":"MediaRecorder produced an empty WebM","viewer.export.error.webmBackground":"SVG background could not be loaded for WebM export","viewer.guided.region":"Guided diagram views","viewer.guided.previous":"Previous guided view","viewer.guided.previous.title":"Previous guided view ([)","viewer.guided.next":"Next guided view","viewer.guided.next.title":"Next guided view (])","viewer.guided.views":"Guided views","viewer.guided.explore":"Explore this system","viewer.guided.intro":"Step through curated paths without changing the source diagram.","viewer.guided.trail":"Story trail","viewer.guided.beat":"Beat","viewer.guided.nextBeat":"Next","viewer.guided.play":"Play guided story","viewer.guided.play.title":"Play guided story (P)","viewer.guided.pause":"Pause guided story","viewer.guided.pause.title":"Pause guided story (P)","viewer.guided.replay":"Replay guided story","viewer.guided.replay.title":"Replay guided story (P)","viewer.guided.playStory":"Play story","viewer.guided.pauseStory":"Pause","viewer.guided.replayStory":"Replay story","viewer.guided.motionUnavailable":"Story playback unavailable while motion is Still","viewer.guided.enableMotion":"Switch motion to Live to play the guided story","viewer.guided.selectBeatLink":"Select a Story Beat to copy its exact link","viewer.guided.copyMoment":"Copy moment","viewer.guided.momentCopied":"Moment link copied","viewer.guided.momentCopyFailed":"Could not copy story moment link","viewer.guided.copied":"Copied","viewer.guided.copyFailed":"Copy failed","viewer.guided.showAll":"Show all","viewer.guided.showAll.aria":"Show entire diagram","viewer.guided.chapters":"Story chapters","viewer.guided.storyTrail":"Story trail for {label}: {count} beats","viewer.guided.chapter.open":"Open chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.current":"Current chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.selectedNodes":"{count} selected nodes","viewer.guided.chapter.stops":"{count} stops","viewer.guided.chapter.stop.one":"{count} stop","viewer.guided.chapter.stop.other":"{count} stops","viewer.guided.chapter.current.title":"{label} — current chapter, {count} stops","viewer.guided.chapter.delta.expanded":"{stay} stay, {enter} enter, {leave} leave","viewer.guided.chapter.delta.aria":"Open chapter {index} of {total}: {label}. Chapter focus delta: {delta}","viewer.guided.chapter.delta.title":"{label} — {delta} chapter focus","viewer.guided.handoff":"{from} → {to} · via {label}","viewer.guided.share.chapter":"Chapter {index} / {total}","viewer.guided.share.initial":"Chapter 01 / 01","viewer.guided.share.default":"Guided chapter","viewer.guided.state.ready":"Ready","viewer.guided.state.playing":"Playing","viewer.guided.state.settled":"Settled","viewer.guided.state.paused":"Paused","viewer.guided.state.pinned":"Pinned","viewer.guided.state.still":"Still","viewer.guided.share.step":"Step {index} / {total} · {label}","viewer.guided.share.staticMoment":"{step} · Static moment","viewer.guided.share.complete":"{count} steps complete · {note}","viewer.guided.share.settled":"Path settled for reading.","viewer.guided.share.staticPath":"{count} steps · Static path","viewer.guided.share.ready":"{count} steps · Ready","viewer.guided.share.aria":"{state} chapter {index} of {total}: {label}. {beat}. {route}","viewer.guided.beat.start":"Beat {index} / {total} · {label} · starting point","viewer.guided.beat.forward":"Beat {index} / {total} · {from} → {to}","viewer.guided.beat.reverse":"Beat {index} / {total} · {from} → {to} · reverse authored link","viewer.guided.beat.multiple":"Beat {index} / {total} · {from} ⇄ {to} · {count} authored links","viewer.guided.beat.group":"Beat {index} / {total} · {from} · {to} · grouped · no direct link","viewer.guided.beat.aria.prefix":"Story beat {index} of {total}: {label}. ","viewer.guided.beat.aria.start":"Starting point.","viewer.guided.beat.aria.forward":"From {from} through one authored forward relationship.","viewer.guided.beat.aria.reverse":"From {from}; the authored relationship points from {to} to {from}.","viewer.guided.beat.aria.multiple":"From {from} through {count} authored relationships; shown without arbitrary motion.","viewer.guided.beat.aria.group":"Grouped from {from} with no direct authored relationship.","viewer.guided.caption.start":"Starting point","viewer.guided.caption.grouped":"Grouped transition · no direct authored link","viewer.guided.caption.more":" +{count} more","viewer.guided.caption.reverse":"Reverse authored relationship","viewer.guided.caption.relationships":"{count} authored relationships","viewer.guided.caption.relationship":"Authored relationship","viewer.guided.caption.direction":"authored direction: {from} → {to}","viewer.guided.caption.starting":"Authored starting point","viewer.guided.beatLink":"Copy link to current story moment: Beat {index} of {total}: {label}","viewer.guided.noStory":"This diagram has no authored guided story.","viewer.guide.eyebrow":"Diagram guide","viewer.guide.close":"Close diagram guide","viewer.guide.inspecting":"Inspecting compiled semantics","viewer.guide.actions":"Diagram exploration actions","viewer.guide.find":"Find any node","viewer.guide.find.hint":"Search labels, responsibilities, kinds, and stable IDs.","viewer.guide.route":"Trace a route","viewer.guide.route.aria":"Trace a directed route","viewer.guide.route.hint":"Ask how two semantic nodes connect in authored direction.","viewer.guide.map":"See the whole system","viewer.guide.map.hint":"Open Semantic Radar with a live viewport and stable nodes.","viewer.guide.lens":"Compare semantic kinds","viewer.guide.lens.hint":"Count roles, reveal their traffic, and compare direct authored links.","viewer.guide.story":"Play the guided story","viewer.guide.story.hint":"Walk the authored chapters and real relationships.","viewer.guide.present":"Enter Presentation Stage","viewer.guide.present.hint":"Give the live diagram the viewport without changing export.","viewer.guide.shortcuts":"Additional keyboard shortcuts","viewer.guide.shortcut.export":"Export","viewer.guide.shortcut.theme":"Theme","viewer.guide.shortcut.style":"Style","viewer.guide.shortcut.reset":"Reset","viewer.guide.shortcut.zoomIn":"Zoom in","viewer.guide.shortcut.zoomOut":"Zoom out","viewer.guide.shortcut.close":"Close","viewer.guide.facts":"{nodes} · {relationships} · {views}","viewer.guide.fact.node.one":"{count} semantic node","viewer.guide.fact.node.other":"{count} semantic nodes","viewer.guide.fact.relationship.one":"{count} relationship","viewer.guide.fact.relationship.other":"{count} relationships","viewer.guide.fact.view.one":"{count} guided view","viewer.guide.fact.view.other":"{count} guided views","viewer.guide.story.available.one":"Walk {count} authored chapter and its real relationships.","viewer.guide.story.available.other":"Walk {count} authored chapters and their real relationships.","viewer.guide.story.unavailable":"No authored guided story in this diagram.","viewer.guide.open":"Open diagram guide","viewer.guide.noStory":"This diagram has no authored guided story.","viewer.finder.title":"Find a node","viewer.finder.close":"Close node finder","viewer.finder.placeholder":"Search labels or IDs","viewer.finder.search":"Search diagram nodes","viewer.finder.results":"Diagram nodes","viewer.finder.empty":"No matching nodes","viewer.finder.result.focus":"Focus {label}","viewer.finder.result.routeStart":"Choose {label} as route start","viewer.finder.result.routeTarget":"Choose {label} as route destination, {links}","viewer.finder.status.empty":"No matching nodes","viewer.finder.status.count.one":"{count} matching node","viewer.finder.status.count.other":"{count} matching nodes","viewer.finder.noun.nodes":"nodes","viewer.finder.link.one":"{count} link","viewer.finder.link.other":"{count} links","viewer.finder.result.focus.one":"Focus {label}, {count} related connection","viewer.finder.result.focus.other":"Focus {label}, {count} related connections","viewer.finder.status.filtered":"{visible} of {available} {noun}","viewer.finder.status.all":"{available} {noun}","viewer.passport.eyebrow":"Semantic passport","viewer.passport.metadata":"Node metadata","viewer.passport.evidence":"Verified source evidence","viewer.passport.verified":"Verified source","viewer.passport.reach":"Authored reach","viewer.passport.reach.trace":"Trace authored reachability","viewer.passport.upstream":"Upstream","viewer.passport.downstream":"Downstream","viewer.passport.upstream.trace":"Trace upstream authored reachability","viewer.passport.downstream.trace":"Trace downstream authored reachability","viewer.passport.close":"Close semantic passport","viewer.passport.copy":"Copy link","viewer.passport.copy.focus":"Copy link to focused node","viewer.passport.relations":"Relations","viewer.passport.relations.show":"Show connected relationships","viewer.passport.relations.hide":"Hide connected relationships","viewer.passport.relations.list":"Connected relationships","viewer.passport.copyRelation":"Copy relation","viewer.passport.copyNode":"Copy node","viewer.passport.copyPinned":"Copy link to pinned relationship","viewer.passport.copySource":"Copy link to source node","viewer.passport.copy.focused.success":"Focused node link copied","viewer.passport.copy.pinned.success":"Pinned relationship link copied","viewer.passport.copy.focused.failed":"Could not copy focused node link","viewer.passport.copy.pinned.failed":"Could not copy pinned relationship link","viewer.passport.relationship.none":"No connected relationships","viewer.passport.relationship.count.one":"{count} relation","viewer.passport.relationship.count.other":"{count} relations","viewer.passport.relationship.show.one":"Show {count} connected relationship","viewer.passport.relationship.show.other":"Show {count} connected relationships","viewer.passport.relationship.summary":"{out} outgoing · {in} incoming{loops}","viewer.passport.relationship.loops":" · {count} loop","viewer.passport.relationship.explorer":"Direct relationship explorer","viewer.passport.relationship.help":"Use arrow keys to explore relationships. Press Enter or Space to pin details; Escape clears.","viewer.passport.relationship.loopsBack":"loops back","viewer.passport.relationship.connectsTo":"connects to","viewer.passport.relationship.connectsFrom":"connects from","viewer.passport.relationship.pinned":"Pinned relationship · {from} → {to} · {label}","viewer.passport.relationship.inspect":"Inspect relationship {index} of {total}: {from} to {to}, {label}. Press Enter for details.","viewer.passport.relationship.group.out":"Outgoing","viewer.passport.relationship.group.in":"Incoming","viewer.passport.relationship.group.loop":"Self loops","viewer.passport.relationship.row":"{group}: {relationship}, {neighbor}","viewer.passport.relationship.direction.out":"OUT →","viewer.passport.relationship.direction.in":"← IN","viewer.passport.relationship.direction.loop":"LOOP","viewer.passport.sourceCount.one":"{count} verified source reference","viewer.passport.sourceCount.other":"{count} verified source references","viewer.passport.sourceMarker":"SRC","viewer.passport.beacon.one":"{count} verified source; focus this node to inspect","viewer.passport.beacon.other":"{count} verified sources; focus this node to inspect","viewer.passport.repository.open":"Open verified repository revision {revision}","viewer.passport.source.open":"Open verified source {path} at revision {revision}","viewer.passport.source.openLink":"Open ↗","viewer.passport.reach.upstream.one":"Trace {count} upstream authored node","viewer.passport.reach.upstream.other":"Trace {count} upstream authored nodes","viewer.passport.reach.downstream.one":"Trace {count} downstream authored node","viewer.passport.reach.downstream.other":"Trace {count} downstream authored nodes","viewer.passport.reach.noUpstream":"No upstream authored nodes","viewer.passport.reach.noDownstream":"No downstream authored nodes","viewer.passport.reach.status":"{direction} · {nodes} nodes · {links} links · max {hops} hops","viewer.route.eyebrow":"Route probe","viewer.route.start":"Choose a start node","viewer.route.start.find":"Find start","viewer.route.start.find.aria":"Find a route start","viewer.route.copy":"Copy link","viewer.route.copy.aria":"Copy link to traced route","viewer.route.clear":"Clear","viewer.route.clear.aria":"Clear route probe","viewer.route.traced":"Traced route","viewer.route.pickTwo":"Pick two semantic nodes on the diagram","viewer.route.pickOne":"Pick a semantic node on the diagram","viewer.route.controls":"Route journey controls","viewer.route.previous":"Previous route position","viewer.route.play":"Play route journey","viewer.route.pause":"Pause route journey","viewer.route.replay":"Replay route journey","viewer.route.next":"Next route position","viewer.route.journey":"Journey","viewer.route.pause.label":"Pause","viewer.route.replay.label":"Replay","viewer.route.overview":"Overview","viewer.route.overview.aria":"Show complete route overview","viewer.route.instructions":"Choose the source, then the destination. Direction matters.","viewer.route.destination":"Choose a destination from {label}","viewer.route.destination.find":"Find target","viewer.route.destination.find.aria":"Find a reachable route destination","viewer.route.differentDestination":"Choose a different destination","viewer.route.distinct":"A route needs two distinct semantic nodes.","viewer.route.unreachable":"No directed route to {label}","viewer.route.unreachable.detail":"{target} is not reachable from {source}. Pick a highlighted destination.","viewer.route.start.instructions":"Select the source. The next step will reveal only directed destinations.","viewer.route.copy.success":"Traced route link copied","viewer.route.copy.failed":"Could not copy traced route link","viewer.route.position":"Route position {index} of {total}: {label}","viewer.route.step":"Step {index} of {total} · {phase} · {label}","viewer.route.motionRequired":"Automatic journey requires Live motion","viewer.route.trigger.clear":"Clear traced route","viewer.route.overview.status":"{nodes} · {hops} · shortest authored route","viewer.route.overview.node.one":"{count} node","viewer.route.overview.node.other":"{count} nodes","viewer.route.overview.hop.one":"{count} directed hop","viewer.route.overview.hop.other":"{count} directed hops","viewer.route.phase.playing":"Playing","viewer.route.phase.complete":"Complete","viewer.route.phase.inspecting":"Inspecting","viewer.route.destination.count.one":"{count} directed destination available. Pick a highlighted node.","viewer.route.destination.count.other":"{count} directed destinations available. Pick a highlighted node.","viewer.route.noOutgoing":"No outgoing route starts here. Clear and choose another source.","viewer.route.result.title":"{source} to {target}","viewer.route.finder.source.title":"Choose route start","viewer.route.finder.source.placeholder":"Search route sources","viewer.route.finder.source.empty":"No matching route sources","viewer.route.finder.source.results":"Nodes that can start a route","viewer.route.finder.source.noun":"route sources","viewer.route.finder.source.badge":"start","viewer.route.finder.target.title":"Destination from {label}","viewer.route.finder.target.placeholder":"Search reachable destinations","viewer.route.finder.target.empty":"No matching reachable destinations","viewer.route.finder.target.results":"Reachable route destinations","viewer.route.finder.target.noun":"reachable destinations","viewer.route.hop.one":"{count} hop","viewer.route.hop.other":"{count} hops","viewer.lens.eyebrow":"Semantic lens","viewer.lens.title":"Compare system roles","viewer.lens.close":"Close semantic lens","viewer.lens.instruction":"Choose up to two semantic kinds. One reveals its real traffic; two compare only direct authored relationships.","viewer.lens.kinds":"Semantic kinds","viewer.lens.choose":"Choose a kind to inspect its nodes and touching relationships.","viewer.lens.copy":"Copy link to semantic lens","viewer.lens.clear":"Clear semantic lens","viewer.lens.open":"Open semantic lens","viewer.lens.openActive":"Open active semantic lens","viewer.lens.legend":"Semantic legend","viewer.lens.legend.inspect.one":"Inspect {label}, {count} node","viewer.lens.legend.inspect.other":"Inspect {label}, {count} nodes","viewer.lens.kind.count.one":"{label}, {count} node","viewer.lens.kind.count.other":"{label}, {count} nodes","viewer.lens.compare.one":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationship","viewer.lens.compare.other":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationships","viewer.lens.single":"{nodes} · {relationships} · connected peers remain visible","viewer.lens.node.one":"{count} {label} node","viewer.lens.node.other":"{count} {label} nodes","viewer.lens.relationship.one":"{count} touching relationship","viewer.lens.relationship.other":"{count} touching relationships","viewer.radar.title":"Semantic radar","viewer.radar.building":"Building overview","viewer.radar.openFull":"Open full semantic radar","viewer.radar.open":"Open radar","viewer.radar.close":"Close semantic radar","viewer.radar.surface":"Diagram overview. Click a node to focus it, or use arrow keys to pan.","viewer.radar.click":"Click node","viewer.radar.drag":"Drag to pan","viewer.radar.space":"Semantic radar needs more MAP space.","viewer.radar.nodes":"Semantic diagram radar nodes","viewer.radar.focus":"Focus {label} from Semantic Radar","viewer.radar.status":"{count} nodes · {viewport}","viewer.radar.fullMap":"{count} nodes · full map","viewer.radar.compacted":"Radar compacted to avoid covering the Semantic Passport or MAP controls.","viewer.radar.cancelWaiting":"Cancel semantic radar waiting for more MAP space","viewer.radar.needsSpace":"Semantic radar needs more visible MAP space","viewer.radar.viewport.full":"full map","viewer.radar.viewport.width":"{percent}% width","viewer.radar.viewport.scale":"{percent}% viewport","viewer.nav.controls":"Diagram view controls","viewer.nav.route":"Trace a directed route","viewer.nav.route.title":"Trace route (R)","viewer.nav.route.short":"PATH","viewer.nav.radar":"Open semantic radar","viewer.nav.radar.title":"Semantic radar (M)","viewer.nav.radar.short":"MAP","viewer.nav.lens":"Open semantic lens","viewer.nav.lens.title":"Semantic lens (L)","viewer.nav.lens.short":"LENS","viewer.nav.find":"Find a node","viewer.nav.find.title":"Find a node (/)","viewer.nav.guide":"Open diagram guide","viewer.nav.guide.title":"Diagram guide (?)","viewer.nav.zoomOut":"Zoom out","viewer.nav.zoomOut.title":"Zoom out (-)","viewer.nav.reset":"Reset diagram view","viewer.nav.reset.title":"Reset view (0)","viewer.nav.read":"READ","viewer.nav.zoomIn":"Zoom in","viewer.nav.zoomIn.title":"Zoom in (+)","viewer.nav.camera":"{hint}. Reset diagram view","viewer.nav.camera.title":"{semantic}{hint} · reset view (0)","viewer.nav.camera.semantic":"Semantic camera active · ","viewer.nav.level.map":"MAP","viewer.nav.level.read":"READ","viewer.nav.level.full":"FULL","viewer.nav.level.auto":"AUTO","viewer.nav.detail.map":"Zoom in to reveal relationship labels and node context","viewer.nav.detail.read":"Zoom in again to reveal tags and annotations","viewer.nav.detail.full":"Full diagram detail","viewer.intent.summary":"{label}. {out} outgoing, {in} incoming{loops}. {total} connections. Press Enter for details.","viewer.intent.loops":", {count} self loop","viewer.common.copied":"Copied","viewer.common.copyFailed":"Copy failed","viewer.common.copyLink":"Copy link","viewer.common.clear":"Clear","viewer.common.close":"Close"}}</script>
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
@@ -5043,9 +5004,9 @@
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
-      <svg viewBox="0 0 1100 616" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
-        <title id="archify-diagram-title">B.U.N.N.Y. system map: what runs where</title>
-        <desc id="archify-diagram-description">An architecture diagram generated by Archify.</desc>
+      <svg viewBox="0 0 1180 740" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="archify-diagram-title">Runtime: command responsibility and outcome</title>
+        <desc id="archify-diagram-description">A sequence diagram generated by Archify.</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -5068,352 +5029,165 @@
         <!-- Background Grid -->
         <rect width="100%" height="100%" fill="url(#grid)" />
 
-        <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="Linux hub process (apps/hub) · installed shared monitor" x="220" y="152" width="840" height="112" rx="12" class="c-region" stroke-width="1"/>
+        <!-- Time Segments -->
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)" x="10" y="294" width="420" height="254" rx="8" class="c-security-group" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="2" data-composition-frame-label="Pixoo backend process (divoom-app-upgrade)" x="640" y="294" width="420" height="112" rx="8" class="c-security-group" stroke-width="1"/>
+        <!-- Lifelines -->
+        <path d="M 157 142 L 157 675" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 453 142 L 453 675" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 749 142 L 749 675" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 1045 142 L 1045 675" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
-        <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="providers" data-edge-to="hooks" data-edge-label="lifecycle events" data-edge-key="0" data-edge-id="observe" data-composition-points="190,71;250,71" d="M 190 71 L 250 71" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="hooks" data-edge-to="hubRoutes" data-edge-label="POST events" data-edge-key="1" data-edge-id="ingest" data-composition-points="325,102;325,142;521,142;521,182" d="M 325 102 L 325 134 Q 325 142 333 142 L 513 142 Q 521 142 521 150 L 521 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="dashboard" data-edge-to="hubRoutes" data-edge-label="read · control" data-edge-key="2" data-edge-id="ui" data-composition-points="535,102;535,182" d="M 535 102 L 535 182" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="mcpClients" data-edge-to="hubRoutes" data-edge-label="MCP tools" data-edge-key="3" data-edge-id="mcp" data-composition-points="745,102;745,142;549,142;549,182" d="M 745 102 L 745 134 Q 745 142 737 142 L 557 142 Q 549 142 549 150 L 549 182" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="hubRoutes" data-edge-to="core" data-edge-label="ingest · snapshot" data-edge-key="4" data-edge-id="reduce" data-composition-points="610,213;670,213" d="M 610 213 L 670 213" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="core" data-edge-to="hubStore" data-edge-label="commit revision" data-edge-key="5" data-edge-id="commit" data-composition-points="820,213;880,213" d="M 820 213 L 880 213" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="mcpModule" data-edge-to="hubRoutes" data-edge-label="imports" data-edge-key="6" data-edge-id="imports" data-composition-points="400,213;460,213" d="M 400 213 L 460 213" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="state feed" data-edge-key="7" data-edge-id="feed-nano" data-composition-points="528,244;528,284;325,284;325,324" d="M 528 244 L 528 276 Q 528 284 520 284 L 333 284 Q 325 284 325 292 L 325 324" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="controller v1 command" data-edge-key="8" data-edge-id="cmd-nano" data-composition-points="514,244;514,268;424,268;424,355;400,355" d="M 514 244 L 514 260 Q 514 268 506 268 L 432 268 Q 424 268 424 276 L 424 347 Q 424 355 416 355 L 400 355" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="state feed" data-edge-key="9" data-edge-id="feed-pixoo" data-composition-points="556,244;556,284;745,284;745,324" d="M 556 244 L 556 276 Q 556 284 564 284 L 737 284 Q 745 284 745 292 L 745 324" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="controller v1 command" data-edge-key="10" data-edge-id="cmd-pixoo" data-composition-points="542,244;542,268;646,268;646,355;670,355" d="M 542 244 L 542 260 Q 542 268 550 268 L 638 268 Q 646 268 646 276 L 646 347 Q 646 355 654 355 L 670 355" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="nanoCtl" data-edge-to="nanoWorker" data-edge-label="queued work" data-edge-key="11" data-edge-id="nano-queue" data-composition-points="250,355;190,355" d="M 250 355 L 190 355" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="nanoCtl" data-edge-to="nanoStore" data-edge-label="state · lock" data-edge-key="12" data-edge-id="nano-state" data-composition-points="325,386;325,466" d="M 325 386 L 325 466" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="nanoWorker" data-edge-to="lights" data-edge-label="transmit" data-edge-key="13" data-edge-id="nano-lights" data-composition-points="115,386;115,466" d="M 115 386 L 115 466" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="pixooSvc" data-edge-to="pixooStore" data-edge-label="private" data-edge-key="14" data-edge-id="pixoo-state" data-composition-points="820,355;880,355" d="M 820 355 L 880 355" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="pixooSvc" data-edge-to="pixooDev" data-edge-label="serialized upload" data-edge-key="15" data-edge-id="pixoo-dev" data-composition-points="745,386;745,466" d="M 745 386 L 745 466" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <!-- Activations -->
 
-        <!-- Components -->
-        <g id="node-providers" data-node-id="providers" data-node-label="Agent providers" tabindex="0" role="button" aria-label="Focus Agent providers, Codex CLI · Desktop · Claude Code, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex CLI · Desktop · Claude Code" data-node-context="Architecture component">
-          <title>Agent providers · Codex CLI · Desktop · Claude Code · Architecture component</title>
-          <rect x="40" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="40" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(46 46) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="115" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent providers</text>
-        <text data-detail="context" x="115" y="85" class="t-muted" font-size="7.1" text-anchor="middle">Codex CLI · Desktop · Claude Code</text>
+
+        <!-- Messages -->
+        <g data-edge-from="client" data-edge-to="core" data-edge-label="Live request with expiry" data-edge-key="0" data-edge-id="step-1">
+          <path data-composition-edge-from="client" data-composition-edge-to="core" data-composition-edge-id="step-1" data-composition-points="164,185;446,185" d="M 164 185 L 446 185" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g data-detail="context">
+          <rect x="236.6" y="165" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="175" class="t-backend" font-size="9" text-anchor="middle">Live request with expiry</text>
+        </g>
         </g>
 
-        <g id="node-hooks" data-node-id="hooks" data-node-label="Provider hooks" tabindex="0" role="button" aria-label="Focus Provider hooks, allowlisted metadata · fail-open, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlisted metadata · fail-open" data-node-tag="source · setup SDK" data-node-context="Architecture component">
-          <title>Provider hooks · allowlisted metadata · fail-open · Architecture component · source · setup SDK</title>
-          <rect x="250" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="40" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 46) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Provider hooks</text>
-        <text data-detail="context" x="325" y="85" class="t-muted" font-size="7.3" text-anchor="middle">allowlisted metadata · fail-open</text>
-        <text data-detail="fine" x="325" y="94" class="t-security" font-size="7" text-anchor="middle">source · setup SDK</text>
+        <g data-edge-from="core" data-edge-to="module" data-edge-label="Dispatch to the designated owner" data-edge-key="1" data-edge-id="step-2">
+          <path data-composition-edge-from="core" data-composition-edge-to="module" data-composition-edge-id="step-2" data-composition-points="460,233;742,233" d="M 460 233 L 742 233" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g data-detail="context">
+          <rect x="511.8" y="213" width="178.4" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="223" class="t-backend" font-size="9" text-anchor="middle">Dispatch to the designated owner</text>
+        </g>
         </g>
 
-        <g id="node-dashboard" data-node-id="dashboard" data-node-label="B.U.N.N.Y. dashboard" tabindex="0" role="button" aria-label="Focus B.U.N.N.Y. dashboard, React · served by the hub at /, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="React · served by the hub at /" data-node-tag="source delivered" data-node-context="Architecture component">
-          <title>B.U.N.N.Y. dashboard · React · served by the hub at / · Architecture component · source delivered</title>
-          <rect x="460" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="40" width="150" height="62" rx="6" class="c-frontend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(466 46) scale(0.6875)">
+        <g data-edge-from="module" data-edge-to="core" data-edge-label="Accept responsibility or refuse" data-edge-key="2" data-edge-id="step-3">
+          <path data-composition-edge-from="module" data-composition-edge-to="core" data-composition-edge-id="step-3" data-composition-points="742,281;460,281" d="M 742 281 L 460 281" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="514.4" y="261" width="173.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="271" class="t-muted" font-size="9" text-anchor="middle">Accept responsibility or refuse</text>
+        </g>
+        </g>
+
+        <g data-edge-from="core" data-edge-to="client" data-edge-label="Track admission; not device success" data-edge-key="3" data-edge-id="step-4">
+          <path data-composition-edge-from="core" data-composition-edge-to="client" data-composition-edge-id="step-4" data-composition-points="446,329;164,329" d="M 446 329 L 164 329" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="208" y="309" width="194" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="319" class="t-muted" font-size="9" text-anchor="middle">Track admission; not device success</text>
+        </g>
+        </g>
+
+        <g data-edge-from="module" data-edge-to="device" data-edge-label="If accepted: attempt through one writer" data-edge-key="4" data-edge-id="step-5">
+          <path data-composition-edge-from="module" data-composition-edge-to="device" data-composition-edge-id="step-5" data-composition-points="756,377;1038,377" d="M 756 377 L 1038 377" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="789.6" y="357" width="214.8" height="16" rx="3" class="c-mask"/>
+          <text x="897" y="367" class="t-backend" font-size="9" text-anchor="middle">If accepted: attempt through one writer</text>
+        </g>
+        </g>
+
+        <g data-edge-from="device" data-edge-to="module" data-edge-label="Succeeded, failed or uncertain result" data-edge-key="5" data-edge-id="step-6">
+          <path data-composition-edge-from="device" data-composition-edge-to="module" data-composition-edge-id="step-6" data-composition-points="1038,425;756,425" d="M 1038 425 L 756 425" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="794.8" y="405" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="897" y="415" class="t-muted" font-size="9" text-anchor="middle">Succeeded, failed or uncertain result</text>
+        </g>
+        </g>
+
+        <g data-edge-from="module" data-edge-to="core" data-edge-label="Commit outcome to outbox, then report" data-edge-key="6" data-edge-id="step-7">
+          <path data-composition-edge-from="module" data-composition-edge-to="core" data-composition-edge-id="step-7" data-composition-points="742,473;460,473" d="M 742 473 L 460 473" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g data-detail="context">
+          <rect x="498.8" y="453" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="463" class="t-backend" font-size="9" text-anchor="middle">Commit outcome to outbox, then report</text>
+        </g>
+        </g>
+
+        <g data-edge-from="core" data-edge-to="client" data-edge-label="Atomic state, tracker, inbox and history" data-edge-key="7" data-edge-id="step-8">
+          <path data-composition-edge-from="core" data-composition-edge-to="client" data-composition-edge-id="step-8" data-composition-points="446,521;164,521" d="M 446 521 L 164 521" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="195" y="501" width="220" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="511" class="t-muted" font-size="9" text-anchor="middle">Atomic state, tracker, inbox and history</text>
+        </g>
+        </g>
+
+        <g data-edge-from="module" data-edge-to="core" data-edge-label="After restart: retry stored outcome only" data-edge-key="8" data-edge-id="step-9">
+          <path data-composition-edge-from="module" data-composition-edge-to="core" data-composition-edge-id="step-9" data-composition-points="742,569;460,569" d="M 742 569 L 460 569" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+        <g data-detail="context">
+          <rect x="491" y="549" width="220" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="559" class="t-messagebus" font-size="9" text-anchor="middle">After restart: retry stored outcome only</text>
+        </g>
+        </g>
+
+        <g data-edge-from="core" data-edge-to="module" data-edge-label="Commit/deduplicate, then acknowledge" data-edge-key="9" data-edge-id="step-10">
+          <path data-composition-edge-from="core" data-composition-edge-to="module" data-composition-edge-id="step-10" data-composition-points="460,617;742,617" d="M 460 617 L 742 617" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-detail="context">
+          <rect x="501.4" y="597" width="199.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="607" class="t-muted" font-size="9" text-anchor="middle">Commit/deduplicate, then acknowledge</text>
+        </g>
+        </g>
+
+        <!-- Segment Labels -->
+
+
+        <!-- Participants -->
+        <g id="node-client" data-node-id="client" data-node-label="Client" tabindex="0" role="button" aria-label="Focus Client, Sequence participant" aria-pressed="false" data-node-kind="frontend" data-node-context="Sequence participant">
+          <title>Client · Sequence participant</title>
+          <rect x="62" y="72" width="190" height="54" rx="6" class="c-mask"/>
+          <rect x="62" y="72" width="190" height="54" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(68 78) scale(0.6875)">
             <rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">B.U.N.N.Y. dashboard</text>
-        <text data-detail="context" x="535" y="85" class="t-muted" font-size="7.8" text-anchor="middle">React · served by the hub at /</text>
-        <text data-detail="fine" x="535" y="94" class="t-frontend" font-size="7" text-anchor="middle">source delivered</text>
+          <text data-node-label="" x="157" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Client</text>
         </g>
 
-        <g id="node-mcpClients" data-node-id="mcpClients" data-node-label="MCP clients" tabindex="0" role="button" aria-label="Focus MCP clients, Codex · Claude Code, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex · Claude Code" data-node-context="Architecture component">
-          <title>MCP clients · Codex · Claude Code · Architecture component</title>
-          <rect x="670" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(676 46) scale(0.6875)">
+        <g id="node-core" data-node-id="core" data-node-label="Core tracker" tabindex="0" role="button" aria-label="Focus Core tracker, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-context="Sequence participant">
+          <title>Core tracker · Sequence participant</title>
+          <rect x="358" y="72" width="190" height="54" rx="6" class="c-mask"/>
+          <rect x="358" y="72" width="190" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(364 78) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="453" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Core tracker</text>
+        </g>
+
+        <g id="node-module" data-node-id="module" data-node-label="Device module" tabindex="0" role="button" aria-label="Focus Device module, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-context="Sequence participant">
+          <title>Device module · Sequence participant</title>
+          <rect x="654" y="72" width="190" height="54" rx="6" class="c-mask"/>
+          <rect x="654" y="72" width="190" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(660 78) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" x="749" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Device module</text>
+        </g>
+
+        <g id="node-device" data-node-id="device" data-node-label="Device" tabindex="0" role="button" aria-label="Focus Device, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-context="Sequence participant">
+          <title>Device · Sequence participant</title>
+          <rect x="950" y="72" width="190" height="54" rx="6" class="c-mask"/>
+          <rect x="950" y="72" width="190" height="54" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(956 78) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MCP clients</text>
-        <text data-detail="context" x="745" y="85" class="t-muted" font-size="9" text-anchor="middle">Codex · Claude Code</text>
-        </g>
-
-        <g id="node-future" data-node-id="future" data-node-label="Music + moments" tabindex="0" role="button" aria-label="Focus Music + moments, HT-A9 source · rules planned, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="HT-A9 source · rules planned" data-node-tag="playback installed" data-node-context="Architecture component">
-          <title>Music + moments · HT-A9 source · rules planned · Architecture component · playback installed</title>
-          <rect x="880" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="880" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(886 46) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="955" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Music + moments</text>
-        <text data-detail="context" x="955" y="85" class="t-muted" font-size="8.4" text-anchor="middle">HT-A9 source · rules planned</text>
-        <text data-detail="fine" x="955" y="94" class="t-external" font-size="7" text-anchor="middle">playback installed</text>
-        </g>
-
-        <g id="node-mcpModule" data-node-id="mcpModule" data-node-label="device-mcp module" tabindex="0" role="button" aria-label="Focus device-mcp module, library · no listener, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="backend" data-node-sublabel="library · no listener" data-node-tag="source 1.0.0" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
-          <title>device-mcp module · library · no listener · Linux hub process (apps/hub) · installed shared monitor · source 1.0.0</title>
-          <rect x="250" y="182" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(256 188) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">device-mcp module</text>
-        <text data-detail="context" x="325" y="227" class="t-muted" font-size="9" text-anchor="middle">library · no listener</text>
-        <text data-detail="fine" x="325" y="236" class="t-backend" font-size="7" text-anchor="middle">source 1.0.0</text>
-        </g>
-
-        <g id="node-hubRoutes" data-node-id="hubRoutes" data-node-label="Hub HTTP routes" tabindex="0" role="button" aria-label="Focus Hub HTTP routes, monitor · controllers · mcp, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="security" data-node-sublabel="monitor · controllers · mcp" data-node-tag="loopback · bearer" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
-          <title>Hub HTTP routes · monitor · controllers · mcp · Linux hub process (apps/hub) · installed shared monitor · loopback · bearer</title>
-          <rect x="460" y="182" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="182" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(466 188) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hub HTTP routes</text>
-        <text data-detail="context" x="535" y="227" class="t-muted" font-size="8.7" text-anchor="middle">monitor · controllers · mcp</text>
-        <text data-detail="fine" x="535" y="236" class="t-security" font-size="7" text-anchor="middle">loopback · bearer</text>
-        </g>
-
-        <g id="node-core" data-node-id="core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, reducer · one active owner, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="backend" data-node-sublabel="reducer · one active owner" data-node-tag="source delivered" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
-          <title>Agent-state core · reducer · one active owner · Linux hub process (apps/hub) · installed shared monitor · source delivered</title>
-          <rect x="670" y="182" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 188) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent-state core</text>
-        <text data-detail="context" x="745" y="227" class="t-muted" font-size="9" text-anchor="middle">reducer · one active owner</text>
-        <text data-detail="fine" x="745" y="236" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
-        </g>
-
-        <g id="node-hubStore" data-node-id="hubStore" data-node-label="Hub private SQLite" tabindex="0" role="button" aria-label="Focus Hub private SQLite, owner + state files · 0700, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="database" data-node-sublabel="owner + state files · 0700" data-node-tag="never a controller store" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
-          <title>Hub private SQLite · owner + state files · 0700 · Linux hub process (apps/hub) · installed shared monitor · never a controller store</title>
-          <rect x="880" y="182" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="880" y="182" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 188) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="955" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hub private SQLite</text>
-        <text data-detail="context" x="955" y="227" class="t-muted" font-size="9" text-anchor="middle">owner + state files · 0700</text>
-        <text data-detail="fine" x="955" y="236" class="t-database" font-size="7" text-anchor="middle">never a controller store</text>
-        </g>
-
-        <g id="node-nanoWorker" data-node-id="nanoWorker" data-node-label="Nanoleaf light worker" tabindex="0" role="button" aria-label="Focus Nanoleaf light worker, sole light writer, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="sole light writer" data-node-tag="designated writer" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
-          <title>Nanoleaf light worker · sole light writer · Nanoleaf Linux runtime (codex-nanoleaf, WSL) · designated writer</title>
-          <rect x="40" y="324" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="40" y="324" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 330) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="115" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf light worker</text>
-        <text data-detail="context" x="115" y="369" class="t-muted" font-size="9" text-anchor="middle">sole light writer</text>
-        <text data-detail="fine" x="115" y="378" class="t-backend" font-size="7" text-anchor="middle">designated writer</text>
-        </g>
-
-        <g id="node-nanoCtl" data-node-id="nanoCtl" data-node-label="Nanoleaf controller" tabindex="0" role="button" aria-label="Focus Nanoleaf controller, /controller/v1 · shared input, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="security" data-node-sublabel="/controller/v1 · shared input" data-node-tag="Linux · installed" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
-          <title>Nanoleaf controller · /controller/v1 · shared input · Nanoleaf Linux runtime (codex-nanoleaf, WSL) · Linux · installed</title>
-          <rect x="250" y="324" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="324" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 330) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf controller</text>
-        <text data-detail="context" x="325" y="369" class="t-muted" font-size="8.1" text-anchor="middle">/controller/v1 · shared input</text>
-        <text data-detail="fine" x="325" y="378" class="t-security" font-size="7" text-anchor="middle">Linux · installed</text>
-        </g>
-
-        <g id="node-pixooSvc" data-node-id="pixooSvc" data-node-label="Pixoo backend" tabindex="0" role="button" aria-label="Focus Pixoo backend, ControlService · one queue, Pixoo backend process (divoom-app-upgrade)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="ControlService · one queue" data-node-tag="designated writer" data-node-context="Pixoo backend process (divoom-app-upgrade)">
-          <title>Pixoo backend · ControlService · one queue · Pixoo backend process (divoom-app-upgrade) · designated writer</title>
-          <rect x="670" y="324" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="324" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 330) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo backend</text>
-        <text data-detail="context" x="745" y="369" class="t-muted" font-size="9" text-anchor="middle">ControlService · one queue</text>
-        <text data-detail="fine" x="745" y="378" class="t-backend" font-size="7" text-anchor="middle">designated writer</text>
-        </g>
-
-        <g id="node-pixooStore" data-node-id="pixooStore" data-node-label="Pixoo private SQLite" tabindex="0" role="button" aria-label="Focus Pixoo private SQLite, library · owner lock, Pixoo backend process (divoom-app-upgrade)" aria-pressed="false" data-node-kind="database" data-node-sublabel="library · owner lock" data-node-context="Pixoo backend process (divoom-app-upgrade)">
-          <title>Pixoo private SQLite · library · owner lock · Pixoo backend process (divoom-app-upgrade)</title>
-          <rect x="880" y="324" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="880" y="324" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 330) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="955" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo private SQLite</text>
-        <text data-detail="context" x="955" y="369" class="t-muted" font-size="9" text-anchor="middle">library · owner lock</text>
-        </g>
-
-        <g id="node-lights" data-node-id="lights" data-node-label="Nanoleaf Lines" tabindex="0" role="button" aria-label="Focus Nanoleaf Lines, configured LAN device, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="configured LAN device" data-node-context="Architecture component">
-          <title>Nanoleaf Lines · configured LAN device · Architecture component</title>
-          <rect x="40" y="466" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="40" y="466" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(46 472) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="115" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf Lines</text>
-        <text data-detail="context" x="115" y="511" class="t-muted" font-size="9" text-anchor="middle">configured LAN device</text>
-        </g>
-
-        <g id="node-nanoStore" data-node-id="nanoStore" data-node-label="Nanoleaf SQLite" tabindex="0" role="button" aria-label="Focus Nanoleaf SQLite, Linux-owned · private, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="database" data-node-sublabel="Linux-owned · private" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
-          <title>Nanoleaf SQLite · Linux-owned · private · Nanoleaf Linux runtime (codex-nanoleaf, WSL)</title>
-          <rect x="250" y="466" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="466" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(256 472) scale(0.6875)">
-            <ellipse cx="8" cy="4" rx="5" ry="2"/>
-            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf SQLite</text>
-        <text data-detail="context" x="325" y="511" class="t-muted" font-size="9" text-anchor="middle">Linux-owned · private</text>
-        </g>
-
-        <g id="node-newCtl" data-node-id="newCtl" data-node-label="New controllers" tabindex="0" role="button" aria-label="Focus New controllers, Tidbyt · LIFX · PC lighting, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="Tidbyt · LIFX · PC lighting" data-node-tag="host installed · PC later" data-node-context="Architecture component">
-          <title>New controllers · Tidbyt · LIFX · PC lighting · Architecture component · host installed · PC later</title>
-          <rect x="460" y="466" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="466" width="150" height="62" rx="6" class="c-cloud" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(466 472) scale(0.6875)">
-            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">New controllers</text>
-        <text data-detail="context" x="535" y="511" class="t-muted" font-size="8.7" text-anchor="middle">Tidbyt · LIFX · PC lighting</text>
-        <text data-detail="fine" x="535" y="520" class="t-cloud" font-size="7" text-anchor="middle">host installed · PC later</text>
-        </g>
-
-        <g id="node-pixooDev" data-node-id="pixooDev" data-node-label="Pixoo 64×64" tabindex="0" role="button" aria-label="Focus Pixoo 64×64, simulator unless selected, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="simulator unless selected" data-node-context="Architecture component">
-          <title>Pixoo 64×64 · simulator unless selected · Architecture component</title>
-          <rect x="670" y="466" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="466" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(676 472) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo 64×64</text>
-        <text data-detail="context" x="745" y="511" class="t-muted" font-size="9" text-anchor="middle">simulator unless selected</text>
-        </g>
-
-        <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="providers" data-edge-to="hooks" data-edge-label="lifecycle events" data-edge-key="0" data-edge-id="observe">
-          <rect x="176.6" y="106" width="86.8" height="14" rx="3" class="c-mask"/>
-          <text x="220" y="116" class="t-backend" font-size="8" text-anchor="middle">lifecycle events</text>
-        </g>
-        <g data-detail="context" data-edge-from="hooks" data-edge-to="hubRoutes" data-edge-label="POST events" data-edge-key="1" data-edge-id="ingest">
-          <rect x="351.6" y="146" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="383" y="156" class="t-backend" font-size="8" text-anchor="middle">POST events</text>
-        </g>
-        <g data-detail="context" data-edge-from="dashboard" data-edge-to="hubRoutes" data-edge-label="read · control" data-edge-key="2" data-edge-id="ui">
-          <rect x="540.4" y="106" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="579" y="116" class="t-security" font-size="8" text-anchor="middle">read · control</text>
-        </g>
-        <g data-detail="context" data-edge-from="mcpClients" data-edge-to="hubRoutes" data-edge-label="MCP tools" data-edge-key="3" data-edge-id="mcp">
-          <rect x="660.4" y="146" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="687" y="156" class="t-security" font-size="8" text-anchor="middle">MCP tools</text>
-        </g>
-        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="core" data-edge-label="ingest · snapshot" data-edge-key="4" data-edge-id="reduce">
-          <rect x="594.2" y="248" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="640" y="258" class="t-backend" font-size="8" text-anchor="middle">ingest · snapshot</text>
-        </g>
-        <g data-detail="context" data-edge-from="core" data-edge-to="hubStore" data-edge-label="commit revision" data-edge-key="5" data-edge-id="commit">
-          <rect x="809" y="248" width="82" height="14" rx="3" class="c-mask"/>
-          <text x="850" y="258" class="t-muted" font-size="8" text-anchor="middle">commit revision</text>
-        </g>
-        <g data-detail="context" data-edge-from="mcpModule" data-edge-to="hubRoutes" data-edge-label="imports" data-edge-key="6" data-edge-id="imports">
-          <rect x="408.2" y="248" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="430" y="258" class="t-muted" font-size="8" text-anchor="middle">imports</text>
-        </g>
-        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="state feed" data-edge-key="7" data-edge-id="feed-nano">
-          <rect x="337.5" y="276" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="366.5" y="286" class="t-messagebus" font-size="8" text-anchor="middle">state feed</text>
-        </g>
-        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="controller v1 command" data-edge-key="8" data-edge-id="cmd-nano">
-          <rect x="383.6" y="248" width="110.8" height="14" rx="3" class="c-mask"/>
-          <text x="439" y="258" class="t-security" font-size="8" text-anchor="middle">controller v1 command</text>
-        </g>
-        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="state feed" data-edge-key="9" data-edge-id="feed-pixoo">
-          <rect x="681.5" y="276" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="710.5" y="286" class="t-messagebus" font-size="8" text-anchor="middle">state feed</text>
-        </g>
-        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="controller v1 command" data-edge-key="10" data-edge-id="cmd-pixoo">
-          <rect x="578.6" y="248" width="110.8" height="14" rx="3" class="c-mask"/>
-          <text x="634" y="258" class="t-security" font-size="8" text-anchor="middle">controller v1 command</text>
-        </g>
-        <g data-detail="context" data-edge-from="nanoCtl" data-edge-to="nanoWorker" data-edge-label="queued work" data-edge-key="11" data-edge-id="nano-queue">
-          <rect x="188.6" y="364" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="220" y="374" class="t-backend" font-size="8" text-anchor="middle">queued work</text>
-        </g>
-        <g data-detail="context" data-edge-from="nanoCtl" data-edge-to="nanoStore" data-edge-label="state · lock" data-edge-key="12" data-edge-id="nano-state">
-          <rect x="331.2" y="390" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="365" y="400" class="t-muted" font-size="8" text-anchor="middle">state · lock</text>
-        </g>
-        <g data-detail="context" data-edge-from="nanoWorker" data-edge-to="lights" data-edge-label="transmit" data-edge-key="13" data-edge-id="nano-lights">
-          <rect x="124.8" y="390" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="149" y="400" class="t-backend" font-size="8" text-anchor="middle">transmit</text>
-        </g>
-        <g data-detail="context" data-edge-from="pixooSvc" data-edge-to="pixooStore" data-edge-label="private" data-edge-key="14" data-edge-id="pixoo-state">
-          <rect x="828.2" y="364" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="850" y="374" class="t-muted" font-size="8" text-anchor="middle">private</text>
-        </g>
-        <g data-detail="context" data-edge-from="pixooSvc" data-edge-to="pixooDev" data-edge-label="serialized upload" data-edge-key="15" data-edge-id="pixoo-dev">
-          <rect x="755.2" y="390" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="801" y="400" class="t-backend" font-size="8" text-anchor="middle">serialized upload</text>
-        </g>
-
-        <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="Linux hub process (apps/hub) · installed shared monitor">
-          <rect data-graph-role="structural-frame-label-mask" x="224" y="162" width="307" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="228" y="175" class="t-cloud" font-size="9" font-weight="600">Linux hub process (apps/hub) · installed shared monitor</text>
-        </g>
-
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="security-group" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
-          <rect data-graph-role="structural-frame-label-mask" x="14" y="304" width="247.6" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="18" y="317" class="t-security" font-size="9" font-weight="600">Nanoleaf Linux runtime (codex-nanoleaf, WSL)</text>
-        </g>
-
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="2" data-composition-frame-kind="security-group" data-composition-frame-label="Pixoo backend process (divoom-app-upgrade)">
-          <rect data-graph-role="structural-frame-label-mask" x="644" y="304" width="236.79999999999998" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="648" y="317" class="t-security" font-size="9" font-weight="600">Pixoo backend process (divoom-app-upgrade)</text>
+          <text data-node-label="" x="1045" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Device</text>
         </g>
 
         <!-- Legend -->
-        <g data-legend="" data-legend-bridge="">
-          <text x="40" y="580" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="Frontend" data-legend-x="40" data-legend-baseline="600" data-legend-width="83">
-            <rect x="40" y="591" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
-            <text x="62" y="600" class="t-muted" font-size="10" font-weight="500">Frontend</text>
+        <g data-legend="">
+          <text x="40" y="666" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="686" data-legend-width="78">
+            <path d="M 40 683 L 74 683" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+            <text x="83" y="686" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Backend" data-legend-x="145" data-legend-baseline="600" data-legend-width="78">
-            <rect x="145" y="591" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
-            <text x="167" y="600" class="t-muted" font-size="10" font-weight="500">Backend</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="686" data-legend-width="73">
+            <path d="M 140 683 L 174 683" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+            <text x="183" y="686" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="Database" data-legend-x="245" data-legend-baseline="600" data-legend-width="83">
-            <rect x="245" y="591" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
-            <text x="267" y="600" class="t-muted" font-size="10" font-weight="500">Database</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="235" data-legend-baseline="686" data-legend-width="83">
+            <path d="M 235 683 L 269 683" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
+            <text x="278" y="686" class="t-muted" font-size="10" font-weight="500">recovery</text>
           </g>
-          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="Cloud" data-legend-x="350" data-legend-baseline="600" data-legend-width="68">
-            <rect x="350" y="591" width="16" height="10" rx="2.5" class="c-cloud" stroke-width="1"/>
-            <text x="372" y="600" class="t-muted" font-size="10" font-weight="500">Cloud</text>
-          </g>
-          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Security" data-legend-x="440" data-legend-baseline="600" data-legend-width="83">
-            <rect x="440" y="591" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
-            <text x="462" y="600" class="t-muted" font-size="10" font-weight="500">Security</text>
-          </g>
-          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="545" data-legend-baseline="600" data-legend-width="83">
-            <rect x="545" y="591" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
-            <text x="567" y="600" class="t-muted" font-size="10" font-weight="500">External</text>
+          <g data-legend-semantic-kind="default" data-legend-x="340" data-legend-baseline="686" data-legend-width="118">
+            <path d="M 340 683 L 374 683" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+            <text x="383" y="686" class="t-muted" font-size="10" font-weight="500">default message</text>
           </g>
         </g>
       </svg>
@@ -5604,37 +5378,23 @@
     <div class="cards">
       <div class="card">
         <div class="card-header">
-          <div class="card-dot cyan"></div>
-          <h3>Observation path</h3>
-        </div>
-        <ul>
-          <li>&bull; Provider hooks send allowlisted lifecycle metadata and return within their bound</li>
-          <li>&bull; The core interprets observations once and commits each revision to its private store</li>
-          <li>&bull; Consumers receive revision notifications and read the current snapshot</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
           <div class="card-dot rose"></div>
-          <h3>Command path</h3>
+          <h3>Expiry and effects</h3>
         </div>
         <ul>
-          <li>&bull; Dashboard and MCP clients authenticate at the hub routes</li>
-          <li>&bull; The hub sends controller v1 commands to each existing owner</li>
-          <li>&bull; Per-device queues: an offline device cannot stall another</li>
+          <li>&bull; Still queued: expired, no effect. Handler started, lost reply or missing outcome: uncertain-result.</li>
+          <li>&bull; Cancellation ends waiting, not prior effects. retryable never permits resending a command.</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <div class="card-dot emerald"></div>
-          <h3>Ownership</h3>
+          <div class="card-dot cyan"></div>
+          <h3>Stored outcome, same identity</h3>
         </div>
         <ul>
-          <li>&bull; One active agent-state owner; Pixoo can embed the same core</li>
-          <li>&bull; Each physical device keeps one designated writer and private state</li>
-          <li>&bull; Music, rules and new controllers are labelled separately</li>
+          <li>&bull; Keep message ID, time, request and trace context across publication and restart.</li>
+          <li>&bull; Record safe codes at the deciding boundary. Core acknowledges only after durable intake.</li>
         </ul>
       </div>
     </div>

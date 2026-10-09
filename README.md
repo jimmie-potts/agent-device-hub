@@ -61,9 +61,9 @@ shared presets follow the Codex-first milestone and general-control definition.
 
 The Work Guide application, generated pages, backlog snapshots and exclusive tests
 remain retirement work under [#892](https://github.com/jimmie-potts/agent-device-hub/issues/892).
-Shared diagram definitions/renderings used by the atlas must be extracted under
-[#890](https://github.com/jimmie-potts/agent-device-hub/issues/890) before removal.
-The new runtime diagram is independent of that tree. Do not refresh or expand the
+The [flow sequences and dated shared diagrams](docs/diagrams/README.md) now have
+an independent owner under `docs/diagrams/`; the atlas reads them there.
+The current runtime diagram is independent of Work Guide too. Do not refresh or expand the
 Guide to record ordinary delivery status.
 
 ## System design documents

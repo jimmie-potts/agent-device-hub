@@ -76,6 +76,7 @@ export default defineConfig(
       'docs/system-design/reference/assets/**', 'docs/system-design/reference/database/**',
       // Saved source copies from other repositories, kept as architecture evidence.
       'docs/work-guide/work/architecture/sources/**',
+      'docs/diagrams/legacy/sources/**',
     ],
   },
   {

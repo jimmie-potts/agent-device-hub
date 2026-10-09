@@ -69,11 +69,11 @@ def public_html(name, content):
         raise ValueError(f'Missing source Places navigation in {name}')
     # The authored atlas uses a sibling path inside the Hub repository.
     # Pages places the nine reviewed viewers directly under /architecture/.
-    if "../work-guide/outputs/architecture/" in content:
+    if "../diagrams/legacy/rendered/" in content:
         if name not in ("index.html", "full-system-design.html"):
             raise ValueError(f"Unexpected architecture link in {name}")
-        content = content.replace("../work-guide/outputs/architecture/", "../architecture/")
-    if "work-guide/outputs/architecture/" in content:
+        content = content.replace("../diagrams/legacy/rendered/", "../architecture/")
+    if "diagrams/legacy/rendered/" in content:
         raise ValueError(f"Unconverted private layout link in {name}")
     if name == "diagrams/state-and-actions.html":
         content, count = re.subn(
@@ -166,7 +166,7 @@ def export(source, site):
         raise ValueError("Missing local atlas link in generated work guide")
     (site / "index.html").write_text(
         SKIN.inject_places(guide.replace(local_link, 'class="atlas-link" href="atlas/index.html"'), 'guide', site / 'index.html', public=True), encoding="utf-8")
-    viewers = sorted((guide_root / "architecture").glob("*.html"))
+    viewers = sorted((source / "docs/diagrams/legacy/rendered").glob("*.html"))
     if len(viewers) != 9 or any(path.is_symlink() for path in viewers):
         raise ValueError("Expected nine regular architecture viewers")
     architecture = site / "architecture"

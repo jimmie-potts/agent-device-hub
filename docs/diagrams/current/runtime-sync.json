@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Runtime: connect, sync and reconnect",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1180,
+      760
+    ],
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "recovery"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "Remote client"
+    },
+    {
+      "id": "sdk",
+      "type": "messagebus",
+      "label": "Client SDK"
+    },
+    {
+      "id": "edge",
+      "type": "security",
+      "label": "Gateway"
+    },
+    {
+      "id": "owner",
+      "type": "backend",
+      "label": "State owner"
+    }
+  ],
+  "messages": [
+    {
+      "id": "step-1",
+      "from": "client",
+      "to": "sdk",
+      "y": 185,
+      "label": "Connect with credential",
+      "variant": "default"
+    },
+    {
+      "id": "step-2",
+      "from": "sdk",
+      "to": "edge",
+      "y": 233,
+      "label": "Authenticate and subscribe",
+      "variant": "security"
+    },
+    {
+      "id": "step-3",
+      "from": "sdk",
+      "to": "owner",
+      "y": 281,
+      "label": "Request current state via gateway",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-4",
+      "from": "owner",
+      "to": "sdk",
+      "y": 329,
+      "label": "States, revision and membership",
+      "variant": "return"
+    },
+    {
+      "id": "step-5",
+      "from": "sdk",
+      "to": "client",
+      "y": 377,
+      "label": "Replace membership; apply newer changes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-6",
+      "from": "owner",
+      "to": "sdk",
+      "y": 425,
+      "label": "Follow live changes",
+      "variant": "default"
+    },
+    {
+      "id": "step-7",
+      "from": "edge",
+      "to": "sdk",
+      "y": 473,
+      "label": "Gap or disconnect: restart sync",
+      "variant": "dashed"
+    },
+    {
+      "id": "step-8",
+      "from": "sdk",
+      "to": "owner",
+      "y": 521,
+      "label": "Gap / overflow: restart sync request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-9",
+      "from": "owner",
+      "to": "sdk",
+      "y": 569,
+      "label": "Fresh states and complete membership",
+      "variant": "return"
+    },
+    {
+      "id": "step-10",
+      "from": "sdk",
+      "to": "client",
+      "y": 617,
+      "label": "Current state; never replay commands",
+      "variant": "return"
+    }
+  ]
+}
