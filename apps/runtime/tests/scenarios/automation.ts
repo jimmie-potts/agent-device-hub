@@ -72,15 +72,21 @@ const liveMoment: Scenario = {
     act('the hook starts a turn and raises an approval prompt', async h => {
       await publish(h, sessionStarted); await publish(h, turnStarted); await publish(h, approvalPrompt('approval-925'));
     }),
-    expect('the active approval retains priority and no moment is dispatched', h => {
+    act('the hook ends the matching turn while the known approval remains active', h => publish(h, turnEnded)),
+    expect('the active approval blocks the matching occurrence and no moment is dispatched', async h => {
       const attention = waiting(h, ['approval-925']);
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/automation/log?limit=10'});
+      const log = bodyOf<{entries: {ruleId: string; target: string; outcome: string; reason?: string; requestId?: string}[]}>(answer);
+      const blocked = log?.entries.find(entry => entry.ruleId === runOf(h).ruleId && entry.target === 'wall' && entry.outcome === 'blocked' && entry.reason === 'alert');
       const tasks = h.reader.states<{id: string; tasks: {status: string; element: string | null}[]}>(NANOLEAF_FAMILIES.wall.family, 'bunny/modules/nanoleaf')
         .find(state => state.data.id === 'wall')?.data.tasks;
-      return attention === true ? tasks?.some(task => task.status === 'blocked' && task.element !== null) === true && commands(h).length === 0 ||
-        'the wall has not shown the approval without a moment' : attention;
+      return attention === true ? answer.status === 200 && blocked !== undefined && blocked.requestId === undefined &&
+        tasks?.some(task => task.status === 'blocked' && task.element !== null) === true && commands(h).length === 0 ||
+        'the matching occurrence has not been blocked by the displayed approval without a moment' : attention;
     }, 5000),
-    act('the hook resolves the approval before the turn ends', h => publish(h, approvalResolved('approval-925'))),
+    act('the hook resolves the approval before starting the next turn', h => publish(h, approvalResolved('approval-925'))),
     expect('the core clears the approval', h => waiting(h, [])),
+    act('the hook starts a fresh turn for the eligible moment', h => publish(h, turnStarted, {turn: 'turn-2'})),
     act('the operator selects Free through the tracked dispatcher', h => dispatchOnce(h, 'operator', 'automation-free', {
       key: 'bunny.cmd.device-mode-set.wall', draft: {type: 'org.bunny.device-mode.set.requested', subject: 'wall',
         dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'free'}},
@@ -93,7 +99,7 @@ const liveMoment: Scenario = {
     }, 5000),
     act('the hook ends the turn with no Automation page connected', async h => {
       const device = lines(h); runOf(h).base = {name: device.select, brightness: device.brightness, writes: device.writes};
-      await publish(h, turnEnded);
+      await publish(h, turnEnded, {turn: 'turn-2'});
     }),
     expect('arbitration records admission separately from the tracked command', async h => {
       const answer = await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/automation/log?limit=10'});
