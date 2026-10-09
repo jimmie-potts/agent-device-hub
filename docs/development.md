@@ -1586,6 +1586,17 @@ loopback port. The [adapter README](../apps/chompi-bridge/verify/README.md)
 lists its steps and boundaries. Runs prove routing behavior only; Windows client
 fidelity stays with the native check and the owner's installed checks.
 
+## Wispr runtime module checks
+
+The root build and typecheck include `modules/wispr`. Run
+`npm run test:wispr-module:built` after the build; the core CI job runs the same
+suite. It exercises the unchanged collector file contract through fresh private
+synthetic aggregate/diagnostic files and the module's worker. It covers numeric
+queries, text opt-in, missing/stale/cleared files, bounded reads, cancellation and
+privacy/lifecycle delivery fences. It reads no installed collector files or
+database. Gateway, React and disposable runtime checks qualify integration
+separately; package tests alone do not establish those paths or installation.
+
 ## Wispr Hub checks
 
 `apps/hub/tests/wispr.test.mjs` exercises #470 through the real HTTP server with

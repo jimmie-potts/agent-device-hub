@@ -8,6 +8,8 @@ export const WISPR_MODULE = 'wispr';
 export type WisprModule = BunnyModule<WisprConfig> & {
   /** Called only by the coordinator-owned authenticated read adapter, never an SDK family or MCP tool. */
   read(route: string, query?: string, signal?: AbortSignal): Promise<WisprReadResult>;
+  /** Fences resolved read bytes until the authenticated adapter synchronously delivers them. */
+  deliveryGuard(): () => boolean;
   browserExposed(): boolean;
   /** Internal settings/lifecycle seam. No new HTTP configuration writer is implied. */
   privacy(exposeToDashboard: boolean, shareTextAggregates: boolean): void;
@@ -33,6 +35,12 @@ export function createWisprModule(options: WisprModuleOptions = {}): WisprModule
       )));
     },
     async stop(): Promise<void> { const previous = reader; reader = undefined; await previous?.close(); },
+    deliveryGuard(): () => boolean {
+      const selected = reader, selectedLifetime = lifetime;
+      if (selected === undefined || selectedLifetime === undefined || selectedLifetime.aborted) return () => false;
+      const epoch = selected.epoch();
+      return () => reader === selected && lifetime === selectedLifetime && !selectedLifetime.aborted && selected.epoch() === epoch;
+    },
     browserExposed: () => reader?.config.exposeToDashboard === true && lifetime?.aborted !== true,
     privacy(expose: boolean, text: boolean): void {
       if (reader === undefined || ended()) throw new WisprError('wispr-unavailable', 503);

@@ -20,7 +20,7 @@ It SHALL validate the unchanged file handoff with the existing pure `@jimmie-pot
 
 ### Requirement: Bounded reads and safe module lifetime
 
-The module SHALL reuse the bounded worker/file/query behavior: diagnostics are observed on demand, numeric refreshes coalesce for 30 seconds, responses are at most 1 MiB, and initial missing input is unavailable instead of zero. Last-good numeric data SHALL retain its observed identity and age on failure. Generation changes SHALL evict old data, including when replacement aggregates are unavailable. Module stop, request cancellation and privacy changes SHALL retire outstanding reads without emitting retired data. Expected read failures SHALL return the shared error body and SHALL NOT fail the module.
+The module SHALL reuse the bounded worker/file/query behavior: diagnostics are observed on demand, numeric refreshes coalesce for 30 seconds, responses are at most 1 MiB, and initial missing input is unavailable instead of zero. Last-good numeric data SHALL retain its observed identity and age on failure. Generation changes SHALL evict old data, including when replacement aggregates are unavailable. Module stop, request cancellation and privacy changes SHALL retire outstanding reads without emitting retired data. The authenticated adapter SHALL recheck the original principal, browser exposure where applicable, and the module lifetime/privacy guard immediately before HTTP emission, including a change after the read promise resolves. Expected read failures SHALL return the shared error body and SHALL NOT fail the module.
 
 #### Scenario: Missing or stale selected input
 - **WHEN** the initial files are missing or a prior valid aggregate becomes stale or malformed
