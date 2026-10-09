@@ -1,5 +1,13 @@
 # Set up a fresh runtime
 
+This is the fresh-cutover and manual-return procedure. The accepted
+[#840 record](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+owns the completed installation and its selected module/health exceptions.
+This guide is not a qualified routine upgrade/rollback procedure; the legacy
+`apps/hub/bin/hub-install.mjs` installer does not update `bunny-runtime.service`.
+Select and qualify an owning runtime upgrade procedure before claiming an
+installed delivery. Do not repeat fresh setup against existing runtime state.
+
 This procedure prepares the existing WSL host for the owner-present cutover.
 It starts with empty runtime state and manually selected configuration. It does
 not transfer data or run the legacy migration tools. Keep the old installation,

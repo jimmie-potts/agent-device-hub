@@ -19,8 +19,9 @@ no module at all. The [agent hooks](#agent-hooks) reach the core through the
 gateway, with `bin/monitor-hook.mjs`.
 Without a [configuration file](#configuration), the runtime refuses each module
 that takes one, with `not-found`, shows it in health and runs on, so the shipped
-runtime then runs the core alone, with the device modules `refused`. Nothing
-installs it yet; the cutover (#840) does.
+runtime then runs the core alone, with the device modules `refused`. Installation and representative acceptance are recorded in the
+[accepted fresh cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585),
+with its scoped Wispr/CHOMPI deferrals. Source tests alone do not establish that evidence.
 
 Modules are written against the [module API](../../packages/sdk/README.md#modules)
 in `@jimmie-potts/sdk`. There is no dynamic loading, middleware or durable

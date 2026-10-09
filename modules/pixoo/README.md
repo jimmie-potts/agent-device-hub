@@ -10,12 +10,11 @@ arrived as a snapshot for
 [module API](../../packages/sdk/README.md#modules) 1.3.
 
 The runtime ships it through `src/module/registration.ts`, which wraps
-`pixooFactory` and declares its place after playback, but
-nothing installs it yet. The installed Pixoo service keeps running, unchanged,
-from divoom-app-upgrade until the cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), which
-replaces it with this module. Until then, divoom-app-upgrade takes only bug
-fixes. Mirror each fix here and name its source commit in the commit message.
+`pixooFactory` and declares its place after playback. Installation and
+representative physical evidence belong to the accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840).
+The old divoom-app-upgrade service is stopped and retained for manual return;
+its repository retains its bug-fix boundary until separately authorized retirement. Mirror each fix here and name its source commit in the commit message.
 The Pixoo pages are #932. The optional library [migration](#library-migration)
 (#931) remains available, but the selected fresh setup starts an empty library.
 

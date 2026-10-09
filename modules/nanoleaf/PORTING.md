@@ -4,7 +4,7 @@ This package is the TypeScript port of the Nanoleaf domain logic for
 [#26](https://github.com/jimmie-potts/agent-device-hub/issues/26). The Nanoleaf module story
 ([#844](https://github.com/jimmie-potts/agent-device-hub/issues/844)) runs it as the runtime
 module `nanoleaf` ([README.md](README.md), `src/module/`). The installed Python runtime keeps
-running unchanged until the cutover. GitHub issues own the delivery status of each slice.
+retained, stopped and disabled after the accepted #840 cutover for manual return. GitHub issues own the delivery status of each slice.
 
 ## Provenance
 
@@ -818,7 +818,7 @@ on a read-only export of that commit, since the Python tests import from their o
     pass checks for it after its writes, which Python never needed.
   - The hold check before each journaled write guards against a hold set from outside the worker:
     an expiry, which #844's host may run while a device's worker is stopped (see
-    [Known limits](#known-limits)). The tests' expiry hooks set such a hold, and `a hold set during a
+    [Known differences](#known-differences)). The tests' expiry hooks set such a hold, and `a hold set during a
     control's write stops the Work display write` fails without the check.
   - Three checks change no test, so each is an equivalent negative control here:
     - the hold check at the start of a pass's transaction: no test step runs between the preview's

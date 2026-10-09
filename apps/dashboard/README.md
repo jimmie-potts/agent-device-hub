@@ -1,5 +1,10 @@
 # B.U.N.N.Y. integration dashboard
 
+**Legacy 1.x reference.** The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+stopped and disabled the old writers. These files remain for manual return and
+separately authorized retirement, not as the current setup entry point.
+Read [the runtime guide](../runtime/dashboard/README.md) for the current system.
+
 The React/TypeScript frontend reads the shared hub and submits explicit integration
 commands to its existing services. It creates no collector or device writer.
 The home, component and connection pages remain useful without an active task.

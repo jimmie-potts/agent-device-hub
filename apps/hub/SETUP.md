@@ -1,5 +1,10 @@
 # Reversible shared monitoring setup
 
+**Legacy 1.x reference.** The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+stopped and disabled the old writers. These files remain for manual return and
+separately authorized retirement, not as the current setup entry point.
+Read [the runtime guide](../runtime/SETUP.md) for the current system.
+
 This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). It supplies local SDK operations for a named installation owner. Running these operations against personal files, starting clients or services, moving live state, and operating devices require a separate explicit request. Source checks use disposable private directories and never start a physical worker. [Connect device controllers for B.U.N.N.Y.](#connect-device-controllers-for-bunny) wires installed device controllers into the hub. [Start the runtime at boot](#start-the-runtime-at-boot) keeps the WSL services running without a sign-in.
 
 ## Supported evidence

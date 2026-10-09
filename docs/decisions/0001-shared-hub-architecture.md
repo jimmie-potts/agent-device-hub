@@ -1,5 +1,12 @@
 # ADR 0001: Shared agent status with existing device controllers
 
+Current applicability: this is the original bootstrap decision. ADR 0003 revised
+repository ownership, and [ADR 0012](0012-bunny-event-platform.md) superseded
+Pixoo-first hosting and the separate-process target with one TypeScript runtime.
+The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+records deployment. The text below preserves the original rationale and scope;
+its "pending" and Windows-worker statements are historical, not current setup.
+
 Status: Accepted direction; implementation pending.
 
 The repository-boundary decision below is superseded by

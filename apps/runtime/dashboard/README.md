@@ -2,8 +2,8 @@
 
 The B.U.N.N.Y. dashboard served by the [runtime](../README.md)'s gateway
 ([Hub #922](https://github.com/jimmie-potts/agent-device-hub/issues/922)). It is
-a copy of [`apps/dashboard`](../../dashboard/README.md), which the old Hub keeps
-serving until the retirement story (#839); [PROVENANCE.md](PROVENANCE.md) lists
+a copy of [`apps/dashboard`](../../dashboard/README.md), which remains in the
+stopped old Hub for manual return until separately authorized retirement (#839); [PROVENANCE.md](PROVENANCE.md) lists
 what was copied, from which commit, and what changed. The React/TypeScript page
 reads the core's agent sessions through the SDK's sync and follows their live
 changes ([ADR 0012](../../../docs/decisions/0012-bunny-event-platform.md)). It

@@ -6,10 +6,11 @@ automatic agent status and what plays on the Tidbyt
 replaces the Tidbyt runner inside the old local controller host at the cutover
 ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). It is in
 the runtime's shipped list (`apps/runtime/src/modules.ts`), after the playback
-module. Nothing installs it until the cutover. The originals in
-[`controllers/tidbyt`](../../controllers/tidbyt/README.md) keep running in the
-installed host until the retirement
-([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
+module. The accepted [cutover record](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+owns installation and representative physical evidence. The originals in
+[`controllers/tidbyt`](../../controllers/tidbyt/README.md) remain in the stopped
+old host for manual return until separately authorized
+[retirement](https://github.com/jimmie-potts/agent-device-hub/issues/839).
 
 The module writes two background installations through Tidbyt's cloud, each in
 the device's normal rotation:

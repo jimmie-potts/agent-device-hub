@@ -700,8 +700,20 @@ uncertain, keep the full gate.
 
 ## Installation and evidence
 
-For installed Hub upgrade and rollback work, follow the owning
+Identify the selected installation before planning an upgrade. The current
+B.U.N.N.Y. installation is `apps/runtime`, whose [setup guide](../apps/runtime/SETUP.md)
+owns fresh setup and manual return to retained old services. It does not supply a
+qualified routine upgrade/rollback command. Source delivery must not silently use
+the legacy installer or claim installation complete when the selected runtime's
+upgrade procedure is unavailable. Preserve the source result and report that
+installation gate pending until the owning procedure is qualified.
+
+For a selected retained legacy Hub, follow the
 [Hub upgrade procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
+That installer targets `apps/hub`, not `bunny-runtime.service`. The accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+stopped and disabled the old writers while preserving their manual return path;
+retirement remains separately authorized work.
 
 Authorized delivery finishes merged, installed on its established target and
 verified. The owner’s standing installation authority covers that routine upgrade

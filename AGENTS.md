@@ -13,8 +13,8 @@ commands, replies, errors and their effects, retries, message formats, consumer
 state, logging and tracing, and all such work follows that ADR and, for logs
 and traces, the [diagnostic contract](docs/observability-contract.md).
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
-the rebuild and its one offline cutover. Until that cutover, extend each
-component's released 1.x contract only additively. This includes the owner's CHOMPI work. Do not add
+the rebuild and accepted fresh cutover. Retained legacy components extend their
+released 1.x contracts only additively until separately authorized retirement. This includes the owner's CHOMPI work. Do not add
 another message format, error shape or new path that polls the Hub for state.
 GitHub issues own the delivery sequence, acceptance criteria, dependencies and
 status; do not copy issue lists or dependency chains into repository docs.
@@ -146,7 +146,19 @@ omission needs its schema-based reason; failed lookups do not justify omission.
 
 ## Runtime and migration boundaries
 
-Installation: a merged change to the installed Hub is complete only after
+For installed B.U.N.N.Y. work, first identify whether the selected target is the
+current `apps/runtime` installation or a retained legacy Hub. Read
+`apps/runtime/README.md` and `apps/runtime/SETUP.md` for the current runtime.
+The accepted #840 cutover stopped and disabled the old writers while retaining
+their units, releases and stores for manual return. The legacy Hub installer
+below does not update `bunny-runtime.service`. The runtime setup guide covers
+fresh setup and manual return, not a routine upgrade/rollback command; do not
+substitute the legacy installer or infer a qualified upgrade path. If a selected
+runtime change needs an upgrade procedure not yet qualified, preserve the source
+result and report that delivery's installation gate pending. Documentation-only
+work needs instruction/readback evidence and no service restart.
+
+Installation of a selected retained legacy Hub: a merged change is complete only after
 `node apps/hub/bin/hub-install.mjs upgrade <sha>` installs it on the owner's
 installation and its receipt, running identity and health are verified. The owner
 has given standing installation authority for authorized delivery to this

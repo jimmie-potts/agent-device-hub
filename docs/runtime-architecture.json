@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "B.U.N.N.Y. runtime architecture",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1390,
+      650
+    ]
+  },
+  "components": [
+    {
+      "id": "clients",
+      "type": "external",
+      "label": "Remote clients",
+      "sublabel": "Dashboard, hooks, MCP",
+      "pos": [
+        50,
+        260
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "security",
+      "label": "Runtime gateway",
+      "sublabel": "HTTP up / SSE down",
+      "pos": [
+        415,
+        260
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "bus",
+      "type": "messagebus",
+      "label": "SDK bus",
+      "sublabel": "In-process objects",
+      "pos": [
+        780,
+        260
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Core owner",
+      "sublabel": "Sessions, inbox, actions",
+      "pos": [
+        780,
+        65
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "modules",
+      "type": "backend",
+      "label": "Device modules",
+      "sublabel": "One writer per device",
+      "pos": [
+        780,
+        480
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "Private stores",
+      "sublabel": "Core and module SQLite",
+      "pos": [
+        1145,
+        260
+      ],
+      "size": [
+        225,
+        92
+      ]
+    },
+    {
+      "id": "devices",
+      "type": "external",
+      "label": "Configured devices",
+      "sublabel": "Lights, displays, playback",
+      "pos": [
+        1145,
+        480
+      ],
+      "size": [
+        225,
+        92
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "remote",
+      "from": "clients",
+      "to": "edge",
+      "label": "HTTP requests"
+    },
+    {
+      "id": "gateway-bus",
+      "from": "edge",
+      "to": "bus",
+      "label": "Profile 2.0 requests"
+    },
+    {
+      "id": "core-bus",
+      "from": "core",
+      "to": "bus",
+      "label": "State and sync replies",
+      "labelDy": 24
+    },
+    {
+      "id": "module-bus",
+      "from": "bus",
+      "to": "modules",
+      "label": "Commands and state",
+      "labelDy": 24
+    },
+    {
+      "id": "core-store",
+      "from": "core",
+      "to": "store",
+      "label": "Atomic commit"
+    },
+    {
+      "id": "module-store",
+      "from": "modules",
+      "to": "store",
+      "label": "Own state and outbox",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "device-write",
+      "from": "modules",
+      "to": "devices",
+      "label": "Owning transport"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One runtime",
+      "items": [
+        "One TypeScript process; arrows show selected message paths.",
+        "Each physical device retains one designated writer."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Recovery",
+      "items": [
+        "SSE, sync replies and outcomes also return to remote clients.",
+        "Outcomes may be reported again; commands never replay.",
+        "Reconnect syncs current membership; commands never replay."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Evidence",
+      "items": [
+        "Source baseline: 36fb7b99, reviewed October 9, 2026.",
+        "Installed scope and exceptions: accepted cutover #840."
+      ]
+    }
+  ]
+}

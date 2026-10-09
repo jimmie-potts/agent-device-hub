@@ -4,13 +4,13 @@
 ([Hub #928](https://github.com/jimmie-potts/agent-device-hub/issues/928)), written
 against the [module API](../../packages/sdk/README.md#modules) 1.1 under
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md). It replaces the LIFX
-half of the old [local controller host](../../apps/local-controllers/README.md) at
-the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
-Until then the installed service keeps running
-[`controllers/lifx`](../../controllers/lifx/README.md), which stays unchanged until
-the retirement story ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
-Nothing installs this module yet, and its tests and disposable runs use simulated
-bulbs only.
+half of the old [local controller host](../../apps/local-controllers/README.md)
+after the [accepted cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585).
+The old service is stopped and disabled; [`controllers/lifx`](../../controllers/lifx/README.md)
+and its installation remain for manual return until separately authorized
+retirement ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
+Tests and disposable runs use simulated bulbs. Installed and representative
+physical evidence is bounded by the linked cutover record.
 
 The runtime ships it after the core (`apps/runtime/src/modules.ts`), through
 `lifxModuleFactory`: `udpNetwork` for real bulbs, or `SimulatedLifx` under

@@ -9,10 +9,11 @@ runs from launcher slot 04. The design comes from the
 [qualification report](../../docs/chompi-controller-qualification.md) and
 [Hub #741](https://github.com/jimmie-potts/agent-device-hub/issues/741).
 
-**Status: source only.** The image builds and passes host tests and artifact
-checks. It has run on the owner's device during the
-[#743](https://github.com/jimmie-potts/agent-device-hub/issues/743) trial,
-which owns installation and physical acceptance; neither is complete.
+Build/tests and installation/physical acceptance are separate evidence. The
+[#743 trial receipt](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747)
+records accepted launcher-slot installation, input/LED checks and the music-firmware
+roundtrip on the owner's device. That dated trial does not qualify every later
+firmware revision or another device; use its exact source and evidence limits.
 
 ## What it does and does not do
 

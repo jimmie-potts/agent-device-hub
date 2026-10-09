@@ -145,8 +145,9 @@ the selected N30 approach.
 The separate CHOMPI controller epic ([#738](https://github.com/jimmie-potts/agent-device-hub/issues/738))
 replaces CHOMPI firmware with a non-MIDI HID controller and its own Windows
 bridge. Its [qualification report](chompi-controller-qualification.md) records
-the transport, routing and trial plan; the legacy MIDI bridge stays unchanged
-until that epic's installed cutover.
+the dated transport/routing investigation and later accepted #743 trial.
+That accepted Windows/client/physical trial is separate from current-runtime
+integration #837 and wider portability; the linked report names its tested versions.
 
 ## Delivery sequence
 

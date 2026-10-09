@@ -1,5 +1,10 @@
 # Linux hub host
 
+**Legacy 1.x reference.** The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+stopped and disabled the old writers. These files remain for manual return and
+separately authorized retirement, not as the current setup entry point.
+Read [the runtime guide](../runtime/README.md) for the current system.
+
 This application implements the source scope of [Hub #5](https://github.com/jimmie-potts/agent-device-hub/issues/5). It targets Node 24 on Linux in WSL. Native Windows qualification is outside scope. Routine upgrades follow the [standing installation authority](../../AGENTS.md#runtime-and-migration-boundaries) and named-owner procedure; new installations and live migrations need their own scope.
 
 The host supplies private SQLite ownership, the shared agent-state engine, authenticated loopback monitor routes, bounded controller clients and both delivered integration extensions. Supervised migration transfers state into a fenced destination, verifies routes, then opens ingestion. The [setup runbook](SETUP.md) covers reversible producer setup and Nanoleaf cutover from #8. Installed-client and full integrated performance qualification remain separate.
