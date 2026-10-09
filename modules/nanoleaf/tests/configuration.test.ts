@@ -8,7 +8,10 @@ import type {TestContext} from 'node:test';
 import {followRegistry, loadConfig, pairLines} from '../src/configuration.js';
 import {withState} from '../src/database.js';
 import {layoutDevices, linesEntry, saveDeviceLayout, saveLayout} from '../src/devices.js';
+import {connectorLayout, geometry} from '../src/geometry.js';
 import {readJson, writeJson} from '../src/jsonfile.js';
+import {editorContent} from '../src/module/editor-content.js';
+import {LINES_ADDRESS, SimulatedNanoleaf, SYNTHETIC_TOKEN} from '../src/module/simulated.js';
 import {modeStatus} from '../src/modes.js';
 import {readLayout} from '../src/panels.js';
 import type {LightAddress, LightRequest} from '../src/transport.js';
@@ -51,6 +54,37 @@ function discovery(context: TestContext): {directory: string; requests: [string,
 }
 
 suite('DiscoveryTest', () => {
+  test('fresh Lines startup caches validated geometry from its existing reply, with no editor read or write effect', async context => {
+    const directory = temporary(context);
+    writeJson(join(directory, 'config.json'), {ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN});
+    const simulator = new SimulatedNanoleaf();
+    let reads = 0;
+    const request: LightRequest = async (address, method, endpoint, payload) => {
+      reads += 1;
+      const reply = await simulator.request(address, method, endpoint, payload) as {panelLayout: {layout: {positionData: object[]}}};
+      Object.assign(reply.panelLayout, {private: 'SYNTHETIC_PRIVATE_GEOMETRY'});
+      for (const point of reply.panelLayout.layout.positionData) Object.assign(point, {token: SYNTHETIC_TOKEN});
+      return reply;
+    };
+    const loaded = await loadConfig(directory, 'wall', request);
+    assert.equal(geometry(loaded).length, 6);
+    assert.equal(connectorLayout(loaded)?.nodes.length, 12);
+    const path = join(directory, 'layout.json');
+    const bytes = readFileSync(path);
+    assert.equal(bytes.includes(SYNTHETIC_TOKEN), false);
+    assert.equal(bytes.includes('SYNTHETIC_PRIVATE_GEOMETRY'), false);
+    assert.equal(reads, 1);
+    const again = await loadConfig(directory, 'wall', refuse);
+    assert.deepEqual(geometry(again), geometry(loaded));
+    const answer = editorContent(directory, ['wall'], 'editor-layout', {query: {device: 'wall'}, signal: new AbortController().signal});
+    assert.ok(answer !== undefined && !('error' in answer));
+    assert.equal((JSON.parse(Buffer.from(answer.bytes).toString('utf8')) as {geometry: {lines: unknown[]}}).geometry.lines.length, 6);
+    assert.deepEqual(readFileSync(path), bytes);
+    assert.equal(reads, 1);
+    assert.equal(simulator.state().devices[LINES_ADDRESS]?.reads, 1);
+    assert.equal(simulator.state().devices[LINES_ADDRESS]?.writes, 0);
+  });
+
   test('test_panels_layout_is_discovered_once_and_saved_beside_lines', async context => {
     const {directory, requests, request} = discovery(context);
     const config = await loadConfig(directory, 'panels', request);
@@ -195,13 +229,16 @@ suite('Lines replies parsed as Python parsed them', () => {
 });
 
 suite('discovery recorded from Python', () => {
-  test('an unsaved Lines layout is paired, positioned and saved as Python saved it', async context => {
+  test('an unsaved Lines layout keeps Python pairing and positions with an allowlisted editor cache', async context => {
     const directory = temporary(context);
     writeJson(join(directory, 'config.json'), {ip: '192.0.2.1', token: 'fake'});
     const reported = fixtureJson('lines-layout.json');
     const config = await loadConfig(directory, 'wall', () => Promise.resolve({panelLayout: structuredClone(reported)}));
     const recorded = (fixtureJson('recorded/rendering.json') as {discovery: {config: Record<string, unknown>; layout: unknown}}).discovery;
     assert.deepEqual(Object.fromEntries(Object.keys(recorded.config).map(key => [key, config[key]])), recorded.config);
-    assert.deepEqual(JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8')), recorded.layout);
+    const saved = JSON.parse(readFileSync(join(directory, 'layout.json'), 'utf8')) as {devices: {wall: {zone_geometry?: unknown}}};
+    assert.ok(saved.devices.wall.zone_geometry !== undefined);
+    delete saved.devices.wall.zone_geometry;
+    assert.deepEqual(saved, recorded.layout);
   });
 });

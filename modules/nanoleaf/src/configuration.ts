@@ -6,6 +6,7 @@ import {isObject, pyHypot, pyMod, pyRound, pySum, radians, sameValue} from './co
 import {credential, DEFAULT, KINDS, layoutDevices, linesEntry, projection, registry, saveDeviceLayout, type DeviceProjection, type LayoutEntry,
   type RegistryEntry} from './devices.js';
 import {ValueError} from './errors.js';
+import {validatedConnectorGeometry} from './geometry.js';
 import {readJson, writeJson} from './jsonfile.js';
 import {readLayout} from './panels.js';
 import {lightRequest, type LightRequest} from './transport.js';
@@ -136,6 +137,17 @@ export async function loadConfig(directory: string, device: string = DEFAULT, re
       };
       const positions = groups.map(pair => [pySum(pair.map(id => at(id, 'x'))) / 2, pySum(pair.map(id => at(id, 'y'))) / 2]);
       layout = linesEntry(groups, positions, layout);
+      // Keep only validated geometry from this already-required startup reply (Hub #934).
+      // Unsupported artwork does not change the existing pairing/position behavior or trigger another read.
+      try {
+        const global = isObject(panelLayout) ? panelLayout.globalOrientation : undefined;
+        const [cache] = validatedConnectorGeometry({positionData: positionData(panelLayout),
+          orientation: isObject(global) ? global.value : undefined}, groups);
+        layout.zone_geometry = {version: cache.version, orientation: cache.orientation,
+          positionData: cache.positionData.map(point => ({...point}))};
+      } catch (error) {
+        if (!(error instanceof ValueError)) throw error;
+      }
     }
     saveDeviceLayout(layoutFile, device, layout, writeJson);
   }
