@@ -324,4 +324,3 @@ installed-system acceptance or physical-device evidence. It is not a Windows
 browser result either;
 [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497) qualifies
 that.
-

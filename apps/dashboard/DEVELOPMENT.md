@@ -260,4 +260,3 @@ Browser suite gotchas, learned in #277:
   with no pointer or key events. `getByLabel('X', {exact: true})` fails for
   `<label>X<select>` because the option text joins the label; use
   `getByRole('combobox', {name})`.
-

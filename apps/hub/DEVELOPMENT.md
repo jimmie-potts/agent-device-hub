@@ -347,4 +347,3 @@ Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
 workflow checks listed above. Synthetic environments prove the mapping only;
 whether installed Desktop hooks inherit the variables is installed-observation
 evidence.
-

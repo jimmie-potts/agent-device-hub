@@ -89,4 +89,3 @@ The unit is gone, no timer exists, and the runtime directory was removed even
 when seeding had already happened. The proof directory stays with the `failed`
 receipt and `events.jsonl`, so `doctor` lists the run as `failed` with its
 cause; that record is the useful outcome of a failed start.
-

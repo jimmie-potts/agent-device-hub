@@ -137,4 +137,3 @@ The run serves the bridge, the control page and the synthetic feed on one
 loopback port. The [adapter README](verify/README.md)
 lists its steps and boundaries. Runs prove routing behavior only; Windows client
 fidelity stays with the native check and the owner's installed checks.
-

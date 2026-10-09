@@ -124,4 +124,3 @@ composition's runs are delivery receipts; a controls composition's runs are
 not. A composition proves
 simulated cross-service behavior only, not installed or physical
 acceptance.
-

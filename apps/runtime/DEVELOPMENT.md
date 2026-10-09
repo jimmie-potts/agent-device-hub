@@ -290,4 +290,3 @@ bounded reads and previews, one tracked playlist edit and a forged read-only
 refusal. Run it in both catalog transports and through the disposable adapter;
 independent Acceptance also uses the pages interactively. These are source and
 simulator checks, not physical-display acceptance.
-

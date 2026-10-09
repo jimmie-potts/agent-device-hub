@@ -282,4 +282,3 @@ for these reasons:
 | An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
 
 <a id="depot-diagnostic-access"></a>
-

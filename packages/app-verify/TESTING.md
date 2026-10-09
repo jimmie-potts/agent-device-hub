@@ -106,4 +106,3 @@ disposable Node subprocess; supervisor fixtures start no systemd units.
 These source checks do not qualify the named host or Windows browser. Keep
 shared build/type, controller-contract and workflow checks for this source
 change; unchanged app lifecycle/consumer behavior keeps its existing CI checks.
-

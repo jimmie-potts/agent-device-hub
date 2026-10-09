@@ -182,4 +182,3 @@ Run build/type first and install the pinned contract and host requirements.
 Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
 adoption is covered by the existing Hub/MCP/setup checks. These are synthetic
 source checks; they do not install services or qualify physical devices.
-

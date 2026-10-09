@@ -46,17 +46,17 @@ async function writeReceipt(box, value) {
   return dir;
 }
 
-test('each refusal maps to the approved registry code, and the README lists the same table', async () => {
+test('each refusal maps to the approved registry code, and the operations contract lists the same table', async () => {
   const {REFUSAL_CODES: core, refusalBody} = await import(new URL('../dist/error-body.js', import.meta.url).href);
   assert.deepEqual({...core}, REFUSAL_CODES);
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const readme = await readFile(new URL('../OPERATIONS.md', import.meta.url), 'utf8');
   const section = readme.slice(readme.indexOf('### Refusal error body'));
   const rows = [...section.slice(0, section.indexOf('\n## ')).matchAll(/^\| `([a-z-]+)` \| `([a-z-]+)` \| (yes|no) \|$/gm)].map(m => [m[1], m[2], m[3]]);
-  assert.deepEqual(Object.fromEntries(rows.map(([error, code]) => [error, code])), REFUSAL_CODES, 'the README table names every refusal and its code');
+  assert.deepEqual(Object.fromEntries(rows.map(([error, code]) => [error, code])), REFUSAL_CODES, 'the operations contract table names every refusal and its code');
   assert.equal(rows.length, Object.keys(REFUSAL_CODES).length, 'each refusal is listed once');
   for (const [error, , retryable] of rows) {
-    assert.equal(retryable === 'yes', refusalBody(error, 'x').error.retryable, `${error}: the README's Retryable column is what the core prints`);
-    assert.equal(retryable === 'yes', expectedBody(error, 'x').error.retryable, `${error}: the README's Retryable column is the registry flag`);
+    assert.equal(retryable === 'yes', refusalBody(error, 'x').error.retryable, `${error}: the operations contract's Retryable column is what the core prints`);
+    assert.equal(retryable === 'yes', expectedBody(error, 'x').error.retryable, `${error}: the operations contract's Retryable column is the registry flag`);
   }
 });
 
