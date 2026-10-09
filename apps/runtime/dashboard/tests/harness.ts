@@ -10,6 +10,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
+import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
+  SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
 import {connectRemote, type RemoteParticipant} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
@@ -28,6 +30,8 @@ export type WorldOptions = {
   modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
   devices?: boolean;
+  /** Adds the real Nanoleaf module over synthetic Lines for the Automation journey. */
+  nanoleaf?: boolean;
   inbox?: boolean;
   /** Lets a trusted loopback page sign a browser in without a code (Hub #276). On by default. */
   trusted?: boolean;
@@ -58,6 +62,8 @@ export type World = {
   restoreDeviceReply(): void;
   failCommand(): Promise<void>;
   inboxViaMcp(): Promise<unknown[]>;
+  /** Actual synthetic controller writes and selections, including across runtime restarts. */
+  nanoleafState(): SimulatedState;
   close(): Promise<void>;
 };
 
@@ -68,6 +74,7 @@ async function writePrivate(file: string, text: string): Promise<void> {
 
 /** The runtime, the core, its gateway and the hook, in a private directory. */
 export async function startWorld(options: WorldOptions = {}): Promise<World> {
+  assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));
   const stateDir = join(root, 's');
   const configDir = join(root, 'c');
@@ -80,6 +87,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
   ]}));
   const bulbs = new SimulatedLifx();
+  const lines = new SimulatedNanoleaf();
   const gadget = new Gadget();
   let releaseWrite: (() => void) | undefined;
   let heldWrite: Promise<void> | undefined;
@@ -93,7 +101,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   })};
   const signToken = join(configDir, 'sign-token');
   if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
+  const nanoleafToken = join(configDir, 'nanoleaf-token');
+  if (options.nanoleaf === true) await writePrivate(nanoleafToken, NANOLEAF_TOKEN);
   const moduleConfig = {...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
+    ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, secrets: {token: nanoleafToken}}} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
@@ -105,8 +116,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
+    port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {},
+      ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -115,6 +128,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
+    nanoleafState: () => lines.state(),
     observe: async (event, observed = {}) => {
       const {key, draft} = observation(event, Date.now(), observed);
       await (await connected()).publish(key, draft);

@@ -952,6 +952,14 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 
 ## Runtime checks
 
+The Automation browser journey uses the existing runtime harness with the real
+Nanoleaf module over `SimulatedNanoleaf`. It checks explicit disabled creation,
+enable/settings/edit/delete, passive drafts, one page-closed tracked moment,
+named Free scene/brightness restoration, keyboard and axe. Read-only UI uses an
+intercepted authority response; the gateway suite separately checks real reader
+refusal. The `automation-lines-moment` catalog scenario adds reader resync and
+restart without replay over both existing transports. No physical proof is claimed.
+
 Automation gateway checks (`apps/runtime/tests/automation-gateway.test.ts`) cover
 read/control admission, the required write header, bounded bodies, credential
 revocation during a pending write and safe error/trace records. The route helper
@@ -1142,6 +1150,7 @@ npm run test:runtime-dashboard:browser   # the full browser suite, local only
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
+node apps/runtime/dashboard/tests/automation.browser.ts # fresh rules, one simulated moment and safe restoration
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use

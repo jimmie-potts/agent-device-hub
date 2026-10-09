@@ -80,7 +80,7 @@ export interface ReaderView {
 export type Caller = Role | 'producer' | 'browser' | 'stranger' | 'anonymous';
 /** One HTTP call to the gateway. `origin: 'other'` sends it as a page on another site would. */
 export type GatewayCall = {
-  as: Caller; method: 'GET' | 'POST' | 'DELETE'; path: string; body?: unknown; headers?: Readonly<Record<string, string>>; origin?: 'other';
+  as: Caller; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; path: string; body?: unknown; headers?: Readonly<Record<string, string>>; origin?: 'other';
 };
 /** What the gateway answered: its status, its headers in lowercase and its body as text. */
 export type GatewayAnswer = {status: number; headers: Readonly<Record<string, string>>; text: string};
