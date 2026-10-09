@@ -24,6 +24,14 @@ The dashboard SHALL provide one Automation page for rules, interrupt set, budget
 - **WHEN** the owner creates and enables a valid event rule through the authenticated page
 - **THEN** its targets and shape are checked before storage and the core can evaluate it independently of the page
 
+#### Scenario: A pending write loses authority
+- **WHEN** an Automation mutation lacks control scope or bunny-request:1, or its original credential is revoked or rotated while its body is being read
+- **THEN** the gateway returns the shared refusal code without changing rules or settings, records the refusal without request data, and leaves the core running
+
+#### Scenario: Rule and log controls
+- **WHEN** the owner reads or edits rules, the interrupt set or settings and inspects the Automation log
+- **THEN** bounded authenticated routes preserve the existing shapes under automation/2.0, rules remain disabled unless explicitly enabled, and log entries identify admission separately from any tracked terminal outcome
+
 ## MODIFIED Requirements
 
 ### Requirement: Scenario catalog and in-memory harness

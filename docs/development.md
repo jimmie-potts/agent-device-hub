@@ -952,6 +952,13 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 
 ## Runtime checks
 
+Automation gateway checks (`apps/runtime/tests/automation-gateway.test.ts`) cover
+read/control admission, the required write header, bounded bodies, credential
+revocation during a pending write and safe error/trace records. The route helper
+tests preserve the existing CRUD/settings shapes. Both are discovered by
+`npm run test:runtime:built` after the normal build and by the existing core CI
+job; the Automation page's unit checks join `test:runtime-dashboard:built`.
+
 `apps/runtime` is the runtime skeleton and module host from
 [ADR 0012](decisions/0012-bunny-event-platform.md); its
 [README](../apps/runtime/README.md) covers running it, health, state, failure

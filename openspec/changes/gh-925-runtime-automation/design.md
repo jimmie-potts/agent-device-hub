@@ -12,6 +12,8 @@ Copy the existing rule engine and table definitions with provenance, adapting on
 
 Use the dispatcher for each target and retain its request ID in the private log. Project the current operation separately from the admission receipt; do not turn acceptance into completion or retry uncertainty.
 
+Keep the existing rule/settings JSON shapes on `/api/v2/automation`: rules CRUD and explicit enable/disable, interrupt-set, settings and paginated log. Success answers use `automation/2.0`; refusals use the shared error registry, never exception details. Reads require read scope; each write requires control scope and `bunny-request: 1`, including bearer requests and DELETE. Re-admit the original request after reading its bounded body and immediately before a mutation, so token rotation or revocation cannot retain pending write authority. Expected request errors must not fail the core module. Route templates and authenticated trace context use the gateway's existing diagnostics. The page reads on entry or explicit refresh, sends only explicit mutations, and never retries a write after a lost reply. Rule dispatch runs independently of the page.
+
 Admit bounded Lines moments into the existing control journal. Preflight Free content through reads before admission, recheck it in the writer, and reuse curated effects through the same Execution journal. Work restoration is recomputed from current state; named Free restoration is allowed only while no newer content choice has taken precedence. Mode changes retire the journal row, and interrupted writes use the existing hold policy.
 
 ## Risks / Trade-offs
