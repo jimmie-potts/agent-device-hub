@@ -358,7 +358,7 @@ function setAssemblyPref(name,on){try{if(on)localStorage.removeItem(assemblyPref
 function geometryKey(){return JSON.stringify([state.connector_layout,state.lines.map(l=>[l.id,l.points]),state.settings.rotation,state.settings.flip_x,state.settings.flip_y])}
 function reducedMotion(){return !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches}
 function playAssembly(reason){
-  if(assembly.active||!state?.lines.length||kindOf()!=='lines')return false;
+  if(disposed||assembly.active||!state?.lines.length||kindOf()!=='lines')return false;
   if(!['opening','entry','replay'].includes(reason))return false;
   if(reason==='opening'&&!assemblyPref('opening'))return false;
   if(reason==='entry'&&!assemblyPref('entry'))return false;
@@ -410,10 +410,11 @@ function playAssembly(reason){
   }
   animations.push(root.querySelector('.numbers').animate([{opacity:0},{opacity:0,offset:Math.max(0,1-320/total)},{opacity:1}],{duration:total,fill:'both',id:'assembly'}));
   assembly.active=true;assembly.animations=animations;assembly.key=geometryKey();root.classList.add('assembling');
-  Promise.all(animations.map(a=>a.finished.catch(()=>{}))).then(()=>{if(assembly.active&&assembly.animations===animations)endAssembly()});
+  Promise.all(animations.map(a=>a.finished.catch(()=>{}))).then(()=>{if(!disposed&&assembly.active&&assembly.animations===animations)endAssembly()});
   return true;
 }
 function endAssembly(afterPointer=false){
+  if(disposed)return;
   if(prism){prism.finish('interaction');assembly.active=false;return}
   if(!assembly.active)return;
   for(const a of assembly.animations){try{a.finish()}catch{}a.cancel()}
@@ -430,10 +431,10 @@ function endAssembly(afterPointer=false){
   const timer=later(release,5000);for(const type of ['click','pointerup','pointercancel'])listen(host,type,release,true);
 }
 function anchorPulses(){
-  if(prism)return;
+  if(disposed||prism)return;
   // Every pulse shares the document timeline's phase, so rebuilds and mode changes never restart it.
   for(const animation of $('wall').getAnimations({subtree:true}))
-    if((animation.animationName==='pulse'||animation.animationName==='pulseCore')&&animation.startTime!==0)animation.startTime=0;
+    if((animation.animationName==='nanoleaf-pulse'||animation.animationName==='nanoleaf-pulseCore')&&animation.startTime!==0)animation.startTime=0;
 }
 function sizeLineNumbers(){
   if(kindOf()==='panels')return sizeTriangleNumbers();
@@ -762,6 +763,8 @@ later(function tick(){if(state)inspect();later(tick,1000)},1000);
     },
     dispose(){
       if(disposed)return;disposed=true;
+      const animations=assembly.animations;assembly.active=false;assembly.hold=false;assembly.animations=[];
+      for(const animation of animations)animation.cancel();
       observer.disconnect();for(const off of listeners)off();
       for(const id of timers)clearTimeout(id);for(const id of frames)cancelAnimationFrame(id);
       prism?.destroy();host.replaceChildren();

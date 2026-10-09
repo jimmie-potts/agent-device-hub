@@ -36,6 +36,33 @@ try {
   const beforeScene = await scene();
   const beforeEffect = effect();
   browser = await chromium.launch({headless: true});
+  const fallback = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'no-preference'});
+  try {
+    const errors: string[] = []; fallback.on('weberror', error => { errors.push(`${error.error().name}: ${error.error().message}`); });
+    const page = await fallback.newPage(); page.setDefaultTimeout(12_000);
+    const sent = changes(page);
+    await page.route('**/modules/nanoleaf/content/editor-layout?device=wall', route => route.fulfill({status: 503,
+      contentType: 'application/json', body: '{"error":{"code":"unavailable","retryable":true}}'}));
+    await page.goto(`${world.url}/#/module/nanoleaf/wall`); await feed(page, 'connected');
+    const drawing = page.locator('.nanoleaf-wall #wall.assembling');
+    await drawing.waitFor();
+    const animations = await drawing.evaluateHandle(element => element.getAnimations({subtree: true}).filter(animation => animation.id === 'assembly'));
+    try {
+      assert.ok(await animations.evaluate(items => items.length >= 3 && items.some(animation => animation.playState === 'running')),
+        'normal-motion fallback assembly is visible and still running before navigation');
+      const completion = animations.evaluate(async items => (await Promise.allSettled(items.map(animation => animation.finished))).map(result => result.status));
+      await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+      await page.locator('.nanoleaf-wall').waitFor({state: 'detached'});
+      const states = await animations.evaluate(items => items.map(animation => animation.playState));
+      const finished = await completion;
+      await page.evaluate(() => new Promise<void>(resolve => { setTimeout(resolve, 0); }));
+      process.stdout.write(`${JSON.stringify({checkpoint: 'normal-motion-fallback-exit', states, finished, errors, requests: sent.length})}\n`);
+      assert.ok(states.every(state => state === 'idle'), 'page exit cancels every running fallback animation');
+      assert.ok(finished.every(state => state === 'rejected'), 'cancelled animation promises settle without restarting the removed wall');
+      assert.deepEqual(errors, []);
+      assert.equal(sent.length, 0, 'fallback assembly and navigation send no command');
+    } finally { await animations.dispose(); }
+  } finally { await fallback.close(); }
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => { errors.push(`${error.error().name}: ${error.error().message}`); });
