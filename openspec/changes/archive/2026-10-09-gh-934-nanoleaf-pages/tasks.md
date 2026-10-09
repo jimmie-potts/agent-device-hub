@@ -11,10 +11,10 @@
 ## 3. Focused integration evidence
 
 - [x] 3.1 Through the coordinator-owned browser harness, verify the declared page, keyboard selection, retained editor controls and accessibility; one real authenticated edit must complete and appear in owner state. Verify no effect on open/local selection, no resend on reload, an inert malicious title/link, read-only controls and actual unauthorized/Origin refusal.
-- [ ] 3.2 Add a focused Nanoleaf page catalog scenario through the existing coordinator-owned catalog and simulated fixtures. Verify tracked wall editing, pure page/content reads and matching observed on/off power in tier 1 and a disposable capture, with no installed endpoint or personal source.
-- [ ] 3.3 Run the affected module, SDK, runtime and browser checks after one candidate build, plus typecheck, lint, workflow and strict specification checks. Record exact revisions, results, negative controls and evidence limits; retain independent Standards, Specification and disposable Acceptance at the delivery checkpoint.
+- [x] 3.2 Add a focused Nanoleaf page catalog scenario through the existing coordinator-owned catalog and simulated fixtures. Verify tracked wall editing, pure page/content reads and matching observed on/off power in tier 1 and a disposable capture, with no installed endpoint or personal source.
+- [x] 3.3 Run the affected module, SDK, runtime and browser checks after one candidate build, plus typecheck, lint, workflow and strict specification checks. Record exact revisions, results, negative controls and evidence limits; retain independent Standards, Specification and disposable Acceptance at the delivery checkpoint.
 
 ## 4. Documentation and delivery preparation
 
 - [x] 4.1 Update module README, PORTING provenance and the coordinator-owned validation notes/CI discovery for the selected checks. Verify the source-to-control map and scope wording against the implemented page, preserving source-only delivery and deferred geometry discovery/#761.
-- [ ] 4.2 After implementation and acceptance evidence are complete, obtain fresh OpenSpec lookups, synchronize the affected specification and archive this change on the delivery branch. Verify every task is supported and strict validation succeeds before final committed review.
+- [x] 4.2 After implementation and acceptance evidence are complete, obtain fresh OpenSpec lookups, synchronize the affected specification and archive this change on the delivery branch. Verify every task is supported and strict validation succeeds before final committed review.
