@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "PROMPTI: guarded input in the retained bridge",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1180,
+      760
+    ]
+  },
+  "participants": [
+    {
+      "id": "control",
+      "type": "external",
+      "label": "Desk control"
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Input router"
+    },
+    {
+      "id": "adapter",
+      "type": "security",
+      "label": "Windows adapter"
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "Target client"
+    }
+  ],
+  "messages": [
+    {
+      "id": "step-1",
+      "from": "control",
+      "to": "router",
+      "y": 185,
+      "label": "Fresh selection or Send press",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-2",
+      "from": "router",
+      "to": "adapter",
+      "y": 233,
+      "label": "Check qualified client and fresh target",
+      "variant": "security"
+    },
+    {
+      "id": "step-3",
+      "from": "adapter",
+      "to": "app",
+      "y": 281,
+      "label": "Selection: navigate exact session",
+      "variant": "default"
+    },
+    {
+      "id": "step-4",
+      "from": "app",
+      "to": "adapter",
+      "y": 329,
+      "label": "Observe target and composer/card",
+      "variant": "return"
+    },
+    {
+      "id": "step-5",
+      "from": "adapter",
+      "to": "router",
+      "y": 377,
+      "label": "Known target or failure/unknown",
+      "variant": "return"
+    },
+    {
+      "id": "step-6",
+      "from": "router",
+      "to": "adapter",
+      "y": 425,
+      "label": "Send: check composer; refuse approval/unknown",
+      "variant": "security"
+    },
+    {
+      "id": "step-7",
+      "from": "adapter",
+      "to": "app",
+      "y": 473,
+      "label": "Recheck foreground/composer before input",
+      "variant": "security"
+    },
+    {
+      "id": "step-8",
+      "from": "app",
+      "to": "adapter",
+      "y": 521,
+      "label": "Input result or uncertainty",
+      "variant": "return"
+    },
+    {
+      "id": "step-9",
+      "from": "adapter",
+      "to": "router",
+      "y": 569,
+      "label": "Sent, refused or uncertain",
+      "variant": "return"
+    },
+    {
+      "id": "step-10",
+      "from": "router",
+      "to": "control",
+      "y": 617,
+      "label": "Report result; never retry uncertain Send",
+      "variant": "return"
+    }
+  ]
+}

@@ -71,7 +71,7 @@ def places_strip(current, output, public=False):
         else:
             if place['group'] == 'Local':
                 href = place['localUrl']
-            elif public:
+            elif public or (place['id'] == 'guide' and current != 'guide'):
                 href = place['publicUrl']
             else:
                 href = os.path.relpath(REPO / place['localPath'], output.parent).replace(os.sep, '/')

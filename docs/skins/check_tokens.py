@@ -67,7 +67,8 @@ WORD = re.compile(r'(?<![\w-])[A-Za-z]+(?![\w-])')
 def sources():
     """Authored style sources of the guide and atlas generators (token CSS files excluded)."""
     guide, atlas = DOCS / 'work-guide' / 'work', DOCS / 'system-design'
-    return [guide / 'build_guide.py', *sorted(guide.glob('guide_*.css')), guide / 'guide_overview.js', guide / 'timeline.py',
+    guide_sources = ([guide / 'build_guide.py', *sorted(guide.glob('guide_*.css')), guide / 'guide_overview.js', guide / 'timeline.py'] if guide.is_dir() else [])
+    return [*guide_sources,
             *sorted((atlas / 'assets').glob('*.css')), *sorted((atlas / 'assets').glob('*.js')), atlas / 'build.py',
             SKINS / 'skin.py']
 

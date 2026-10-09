@@ -37,19 +37,20 @@ node docs/system-design/check.cjs
 
 The overview's system map and agent observation walkthrough are not authored
 under `source/`. They come from the shared definitions `D2` and `D3` in
-`docs/work-guide/work/architecture_diagrams.py`, their Archify renderings under
-`docs/work-guide/work/architecture/rendered/`, and the atlas-owned link inventory
+`docs/diagrams/architecture_diagrams.py`, their Archify renderings under
+`docs/diagrams/legacy/rendered/`, and the atlas-owned link inventory
 in `design.json` (`map`). To change either diagram, edit the definition, render
 with the installed archify skill (`ARCHIFY_DIR=... python3
-docs/work-guide/work/architecture_diagrams.py`), rebuild the guide and the atlas,
-and run both check sets. `check.py` fails when a saved specification or rendered
+docs/diagrams/architecture_diagrams.py`), rebuild the atlas and run the [independent diagram checks](diagrams/README.md). `check.py` fails when a saved specification or rendered
 SVG no longer matches its definition or receipt.
 
 The generator and static check use Python's standard library. Browser checks use
 installed Playwright/Chromium, with the same `GUIDE_PLAYWRIGHT_MODULE` and
 `GUIDE_CHROMIUM_PATH` overrides as the work guide. `BUNNY_DESIGN_RECEIPTS` selects
 an external screenshot/PDF/receipt directory; the default is a temporary folder.
-The Work guide CI job runs these document checks using its pinned browser setup.
+The retained document checks run independently of Work Guide. See the
+[diagram ownership and validation guide](diagrams/README.md); the retirement
+change moves their hosted execution into a retained workflow.
 
 The API/database reference is linked from the design navigation. Its Scalar
 viewers embed three source-pinned OpenAPI documents; SchemaSpy reports cover the

@@ -49,8 +49,10 @@ review may conclude "reviewed; no architecture change" without regeneration.
 When it changes, validate and deliver the JSON with the installed archify skill,
 then inspect the exact HTML in a browser. Keep deterministic receipts, browser
 measurements and visual review separate. The new files have no Work Guide imports.
-The dated atlas and its nine shared legacy diagrams retain their pinned baselines;
-#890 owns extraction and the remaining flow views before #892 retires the Guide.
+The [flow sequences and retained diagram guide](diagrams/README.md) explain reconnect,
+command outcomes and PROMPTI input routing. The dated atlas and its nine shared
+legacy diagrams retain their pinned baselines under `docs/diagrams/legacy/`,
+independently of Work Guide.
 
 This document records current and retained legacy ownership, state and command
 boundaries. The [runtime](../apps/runtime/README.md), its [dashboard](../apps/runtime/dashboard/README.md)

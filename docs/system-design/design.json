@@ -1049,12 +1049,12 @@
   ],
   "map": {
     "reviewed_at": "2026-09-23",
-    "note": "The system map and walkthrough are built from the shared diagram definitions in docs/work-guide/work/architecture_diagrams.py and their Archify renderings. Component documents keep the 19 September 2026 snapshot; reference pages keep the 20 September 2026 baseline.",
+    "note": "The system map and walkthrough are built from the shared diagram definitions in docs/diagrams/architecture_diagrams.py and their Archify renderings. Component documents keep the 19 September 2026 snapshot; reference pages keep the 20 September 2026 baseline.",
     "diagrams": {
       "system": "arch-shared-system",
       "walkthrough": "seq-lifecycle-observation"
     },
-    "viewers": "../work-guide/outputs/architecture/",
+    "viewers": "../diagrams/legacy/rendered/",
     "reference_baseline": "Reference pages are pinned to the 20 September 2026 baseline (Pixoo 9f1c0ec7, Nanoleaf 2558df5a). They are older than the map pins and do not describe a hub schema.",
     "nodes": {
       "providers": {
