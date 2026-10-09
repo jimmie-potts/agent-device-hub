@@ -8,6 +8,8 @@ Preserve the selected collector-file analytics as a read-only runtime module wit
 
 The Wispr module SHALL accept a fresh manually entered section naming distinct aggregate and diagnostics JSON files, a neutral source ID and bounded freshness. Exposure and text sharing SHALL default false. Reads SHALL preserve the collector's published contract, private file qualification and source ACL choices. The module SHALL create no analytics database or persisted copy and SHALL NOT read the collector or Wispr database, migrate settings or start collection.
 
+It SHALL validate the unchanged file handoff with the existing pure `@jimmie-potts/wispr-contracts` package. This scoped dependency SHALL permit no import of the collector, old Hub or another module's implementation.
+
 #### Scenario: Fresh configuration
 - **WHEN** the section names valid selected files without sharing flags
 - **THEN** both flags are false and startup opens no source file or analytics database

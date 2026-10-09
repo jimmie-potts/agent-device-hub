@@ -158,6 +158,14 @@ export default defineConfig(
     rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname, allowedPackages: modulePackages, workspaceScopes}]},
   },
   {
+    // Wispr retains the owner's selected collector-file handoff (#927). Its existing pure schema package
+    // validates that unchanged boundary; this does not permit another module or the collector implementation.
+    name: 'bunny/module-boundary/wispr-contract',
+    files: ['modules/wispr/**/*.{ts,tsx,js,mjs}'],
+    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname,
+      allowedPackages: [...modulePackages, '@jimmie-potts/wispr-contracts'], workspaceScopes}]},
+  },
+  {
     // ADR 0012's "Safe errors" and "Observability" rules, for production code under the profile.
     name: 'bunny/safe-errors',
     files: [...strict, 'modules/**/*.{js,mjs}'],

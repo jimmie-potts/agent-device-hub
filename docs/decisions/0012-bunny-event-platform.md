@@ -79,6 +79,9 @@ Existing formats move in one offline cutover:
 - Remote parts (the CHOMPI bridge and Wispr collector on Windows, agent hooks,
   the dashboard and MCP clients) use the same SDK calls over SSE down and HTTP
   up. There is no broker.
+  Wispr retains its manually selected published-file handoff as an owner-approved
+  exception (2026-10-07, #927); the collector and file contract stay unchanged,
+  and a later messaging conversion is deferred to #977.
 - A module imports only the SDK and the contracts packages, never another
   module.
 - **Failure isolation:** a device's errors and timeouts are not module

@@ -10,6 +10,7 @@ See proposal.md and live #927. Existing `apps/hub/src/wispr*.ts`, their syntheti
 
 ## Decisions
 
+- Retain the existing pure `@jimmie-potts/wispr-contracts` validator for the unchanged published files. A Wispr-only module-boundary allowance admits that package while still refusing collector, Hub and other module implementations. No other module gains access to this file contract.
 - Keep the lazy worker and 30-second coalescing with its in-memory fence. Use the host worker lifetime in production; one-shot workers would discard that behavior. Read only on demand, never from a new background collector job.
 - Reject all pending reads on privacy changes and track a privacy epoch through each reply. Check epoch and cancellation again when adapting completed bytes so an already-resolved old reply cannot pass. Stop rejects reads and terminates the worker. Private file/query errors become registry refusals, not uncaught module failures.
 - The backend owns configuration, lifecycle and `read(route, query, signal)`; root attaches API1.3 content, page and browser-exposure behavior after shared integration. The gateway rechecks the original credential/session/read permission before HTTP emission. No duplicate SDK contract is introduced here.

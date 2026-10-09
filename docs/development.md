@@ -390,7 +390,9 @@ is staged now, since the Pixoo module joined the profile
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
   Node built-ins and third-party packages. Workspace packages are those in
   `workspaceScopes` (`@jimmie-potts/`); every workspace package must use one of
-  them. It checks static, re-export, type and
+  them. The Wispr module alone also imports the pure `@jimmie-potts/wispr-contracts`
+  package to validate its unchanged collector-file handoff (#927); it may not
+  import the collector, old Hub or another module. It checks static, re-export, type and
   literal dynamic imports, including `file:` URLs, and rejects non-literal
   dynamic imports. Paths resolve from the repository root, so the rule works
   from any directory. `createRequire` and `.cjs` files are not checked.
