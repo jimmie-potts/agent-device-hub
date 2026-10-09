@@ -332,6 +332,18 @@ Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `tu
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
 
+The shared dashboard's Automation page manages these fresh rules and settings.
+The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
+(GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
+`interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
+1–500 and `before` sequence). Success responses use schema `automation/2.0`.
+Reads require read scope; all mutations require control and `bunny-request: 1`,
+including client credentials. Rule bodies and interrupt sets are bounded to
+8 KiB, settings to 1 KiB, and enable/disable bodies to 16 bytes. The gateway
+rechecks the original request's authority immediately before changing state;
+expected refusal codes leave the core running. A lost reply is never retried
+automatically. Inspect the current rules/settings before another edit.
+
 ## Agent hooks
 
 `bin/monitor-hook.mjs` is the 2.0 agent hook (#926): the hook command of Claude

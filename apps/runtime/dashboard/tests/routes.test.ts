@@ -19,7 +19,7 @@ void test('built-in pages and components are distinct kinds, so an alias named l
 });
 
 void test('hashes round-trip through the canonical form, including encoded aliases', () => {
-  const routes: Route[] = [{kind: 'component', id: 'wall'}, {kind: 'component', id: 'living room/lamp'}, {kind: 'playback', sourceId: 'ht-a9'}, {kind: 'connections'}];
+  const routes: Route[] = [{kind: 'component', id: 'wall'}, {kind: 'component', id: 'living room/lamp'}, {kind: 'playback', sourceId: 'ht-a9'}, {kind: 'connections'}, {kind: 'automation'}];
   for (const route of routes) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.equal(routeHash({kind: 'component', id: 'living room/lamp'}), '#/component/living%20room%2Flamp');
 });
