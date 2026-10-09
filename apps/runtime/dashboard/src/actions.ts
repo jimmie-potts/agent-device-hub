@@ -1,9 +1,10 @@
 // One explicit browser action, with no retry or replay (Hub #1006). Device controls reuse this transport.
 import {MAX_DETAIL, RETRYABLE, errorBody, isErrorCode, type ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
+import type {FrontendAction, FrontendActionReply, FrontendUpload} from '@jimmie-potts/sdk/frontend';
 
-export type ActionReply = {status: 'accepted'; requestId: string} | ErrorBody;
-export type BrowserAction = {family: string; target: string; data: object; requestId: string};
+export type ActionReply = FrontendActionReply;
+export type BrowserAction = FrontendAction;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -20,12 +21,21 @@ function refusal(value: unknown, requestId: string): value is ErrorBody {
 
 /** Sends once. A lost or malformed reply leaves the attempt uncertain; recovery never resends it. */
 export async function sendAction({family, target, data, requestId}: BrowserAction): Promise<ActionReply> {
+  return send(`/api/v2/commands/${encodeURIComponent(family)}`, JSON.stringify({target, data, requestId}), 'application/json', requestId);
+}
+
+/** The module route prepares an existing command; it returns exactly the same acceptance/refusal envelope. */
+export async function sendUpload(module: string, {family, target, requestId, upload}: FrontendUpload): Promise<ActionReply> {
+  const query = new URLSearchParams({family, target, requestId, name: upload.name});
+  return send(`/api/v2/modules/${encodeURIComponent(module)}/upload?${query}`, upload.file, 'application/octet-stream', requestId);
+}
+
+async function send(path: string, body: string | Blob, contentType: string, requestId: string): Promise<ActionReply> {
   const uncertain = (): ErrorBody => errorBody('uncertain-result', {...ID.test(requestId) ? {requestId} : {}, detail: 'the action has no reliable reply; it was not sent again'});
   try {
-    const response = await fetch(`/api/v2/commands/${encodeURIComponent(family)}`, {
+    const response = await fetch(path, {
       method: 'POST', cache: 'no-store', redirect: 'error', credentials: 'same-origin',
-      headers: {'content-type': 'application/json', [REQUEST_HEADER]: '1', ...childOf(undefined)},
-      body: JSON.stringify({target, data, requestId}),
+      headers: {'content-type': contentType, [REQUEST_HEADER]: '1', ...childOf(undefined)}, body,
     });
     const answer: unknown = await response.json();
     if (response.status === 200 && object(answer) && Object.keys(answer).length === 3 && answer.schema === 'command-reply/2.0' &&

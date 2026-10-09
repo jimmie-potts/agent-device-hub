@@ -11,6 +11,8 @@ import type {InboxItem, ModeState, OperationRecord, PlaybackState} from '@jimmie
 import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
 import {BuildIdentity} from './build-identity.tsx';
+import {FRONTENDS} from '@bunny/module-frontends';
+import {ModulePageView} from './module-page.tsx';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
@@ -240,7 +242,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
-  const selectedPage = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module)?.pages.find(page => page.id === route.page) : undefined;
+  const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
+  const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
   const known = route.kind === 'timeline' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
@@ -301,8 +304,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </section>}
       {(route.kind === 'home' || route.kind === 'playback') && <section aria-label="Music"><div className="cards">{playback.map(({record, copy}) =>
         <PlaybackCard key={record.id} record={record} live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}</div></section>}
-      {selectedPage !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
-        <iframe className="module-page" title={selectedPage.title} src={selectedPage.path} sandbox="allow-same-origin"/>
+      {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
+        <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
+          connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
       {route.kind === 'timeline' && <Timeline/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}

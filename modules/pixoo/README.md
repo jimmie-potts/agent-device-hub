@@ -7,7 +7,7 @@ the Pixoo's library, player and presentation from divoom-app-upgrade, which
 arrived as a snapshot for
 [#25](https://github.com/jimmie-potts/agent-device-hub/issues/25). It follows
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) and the
-[module API](../../packages/sdk/README.md#modules) 1.1.
+[module API](../../packages/sdk/README.md#modules) 1.3.
 
 The runtime ships it through `src/module/registration.ts`, which wraps
 `pixooFactory` and declares its place after playback, but
@@ -35,6 +35,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | Path | Contents |
 | --- | --- |
 | `src/module` | The runtime module: `module.ts` (`createPixooModule`, `pixooFactory`), `control.ts` (command handling, `PixooControl`), `configuration.ts` (`configurePixoo`, `convertPixooSettings`), `transport.ts` (the HTTP transport and `SimulatedPixoo`), `schemas.ts` (its 2.0 families), `store.ts` (its own rows) and `render-worker.ts` |
+| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/rendering/previews, playlist editing, Player, Monitor and Settings controls in the shared dashboard (#932) |
 | `src/core` | Shared schemas for requests, presentation settings, Monitor filters and Now Playing |
 | `src/device` | The fake (simulator) adapter, the HTTP adapter and its transport, hosted GIF files, and the device qualification functions |
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
@@ -44,6 +45,79 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
 | `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration, its store on a full database and the library migration |
+
+## Frontend
+
+The explicit `./frontend` entry exports the module's `frontend` contribution.
+The dashboard's build collects it separately from the Node registration. Its
+Playlists page follows this module's `device` and `pixoo-playlist` records through
+the shell's existing connection and uses the shell's shared UI and command
+attempt component.
+
+Selecting a playlist and editing its draft name change only local form state.
+Save sends one `pixoo-playlist-change` with the draft's captured playlist
+revision. The saved owner name and revision stay separate from acceptance and
+the tracked command result. Invalid, unchanged, stale or locked drafts cannot
+save; read-only callers get no editing controls. Reload and reconnect send no
+commands. Create, duplicate, delete, repeat/shuffle options and item changes
+use the same revision-checked command path. Options and item order/timing are
+drafts until explicitly saved; a changed owner revision requires reloading.
+The media picker reads bounded catalog pages and referenced thumbnails.
+Larger item edits that exceed the existing HTTP command limit are refused
+before sending. Read-only callers can inspect saved playlists and thumbnails.
+
+Choose a PNG, JPEG or GIF up to 10 MiB, then use Add media. Choosing the file
+changes only the browser draft. The shared command component retains the
+request identity and displays the owner's completed or uncertain result; it
+never stores or resends the file. A completed asset change refreshes the
+catalog, whose search and pages use the existing content reader without
+changing compatibility evidence. Importing media does not start playback.
+Read-only users can browse but have no upload form.
+
+Inspect loads the selected rendition's preview metadata and PNG frames by
+reference. Preview animation is explicit and illustrative; it never starts
+device playback. The canvas renderer reuses `apps/dashboard/src/pixoo-media.tsx`
+at `bf11587c`, decoding authenticated image bytes and releasing owned bitmaps
+when the view changes. The dashboard's image content policy remains unchanged.
+The selected media view lists saved renditions and keeps fit, scaling and padding
+as drafts until Render preview. Rendering preserves the original and existing
+renditions; Delete media requires confirmation and uses the owner's existing
+reference-preserving deletion. Upload, render and delete share one command
+attempt. Use in playlist opens the existing playlist editor; its media picker
+selects the saved rendition explicitly.
+
+Player reads a bounded frozen-session snapshot and timing through the module's
+authenticated `player` content reference. The read accepts no query and changes
+no playback state. Playback, display mode and restart-with-changes use the
+existing tracked commands and device generation guards. Saved playlist changes
+stay separate from the active session until an explicit restart. The remaining
+time is a local estimate, with no polling or physical-telemetry claim.
+
+Monitor reads copied session facts and cached preview frames through bounded
+content references. Search, filters, cadence and Now Playing choices stay local
+until explicitly applied. Show monitor and Select Media use the existing mode
+commands; reading the page never activates presentation. Dismissal acknowledges
+only the Pixoo consumer. Session labels link to the shared Sessions page. A
+title-only or cached-preview change advances the display record revision even
+when its small summary is unchanged, refreshing the page without polling.
+
+Settings shows the safe configuration projection and current device facts.
+Address, profile and hosted-GIF setup use the runtime configuration file and a
+restart; the page provides no second configuration writer. Brightness and screen
+controls use tracked commands. Requested brightness is distinct from observed
+telemetry. Read-only callers can inspect both pages without mutation controls.
+
+`src/frontend/library.tsx` adapts the original `apps/web/src/library.tsx` at
+`0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Runtime reads and tracked commands
+replace its local API; upload now requires an explicit Add media action.
+`playlists.tsx`, `player.tsx`, `preview.tsx`, `monitor.tsx` and `settings.tsx`
+adapt the corresponding source views at that same revision, replacing their
+local API with the shared authenticated context.
+
+This page reuses the playlist-selection and saved-owner-detail pattern from
+`apps/dashboard/src/pixoo-media.tsx` at `bf11587c`, plus this module's existing
+playlist schema and revision-checked command behavior. Its form is new for the
+runtime's tracked command boundary; it does not use the legacy controller API.
 
 ## The module
 
@@ -137,6 +211,36 @@ every device module serves it for its own devices, so a reader syncs the
 Pixoo's by naming `bunny/modules/pixoo` as the owner (#967); a sync of `device`
 that names no owner is refused while several modules serve it.
 
+### Browser content reads
+
+API 1.3 serves authenticated reads at `/modules/pixoo/content/<ref>`:
+
+| Reference | Reply |
+| --- | --- |
+| `catalog-media` | Paged rendition summaries and kept compatibility evidence |
+| `catalog-playlists` | Paged playlist summaries |
+| `playlist.<UUID>` | One playlist with its revision and items |
+| `asset.<UUID>` | Asset metadata and lightweight saved-rendition summaries |
+| `rendition.<sha256>` | One selected rendition manifest |
+| `preview.<sha256>` | Preview timing, frame indices and warnings |
+| `frame.<sha256>.<index>` | One referenced PNG frame |
+| `thumbnail.<sha256>` | The first referenced PNG frame |
+
+Only the two catalog references accept query parameters: `q` (up to 120
+characters), `offset` (default 0) and `limit` (default 25, at most 100).
+Queries use SQL pagination. Replies include the catalog revision so a page can
+detect a changed catalog. Every JSON reply is bounded to 256 KiB; PNG frames
+retain the preview reader's 64 KiB bound and hash checks. Asset selection lists
+rendition references and facts rather than repeating every animation manifest.
+
+Reads use the existing library and preview code; preview metadata follows
+`divoom-app-upgrade`'s `apps/server/src/catalog-integration.ts` at
+`0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Media pages reuse the kept
+compatibility calculation from `Library.catalogMedia`: unchecked hosted media
+remains unknown, and a read never validates frames or writes hosted checks.
+Original media stays private. Invalid queries, missing references and cancelled
+reads return shared refusal codes without changing owner state.
+
 ### Commands
 
 Each command goes to `bunny.cmd.<family>.<device id>`:
@@ -155,12 +259,23 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
 
 A staged import reads `incoming/<sha256>` in the module's private folder and
-checks its size and hash. Nothing in this module writes or removes those
-files: the uploader does both. That is #932's Pixoo pages, on #835's module
-API 1.2, which write a file under its SHA-256, send the import that names it,
-and remove the file once the import's outcome arrives, whatever its result.
-Until #932, media over 160 KiB cannot be imported over the bus; the Pixoo
-service took up to 10 MiB.
+checks its size and hash. API 1.3's upload contribution prepares one input at a
+time, up to 10 MiB, with exclusive file creation. It validates the module's
+device target and media name, and refuses a busy slot or cancelled preparation.
+The authenticated upload request dispatches the existing `pixoo-asset-change`
+with its retained request ID; its command source is `bunny/core`.
+
+A definitive refusal releases the input. An uncertain dispatcher reply keeps
+it while work may still read it. A committed terminal owner outcome releases
+the matching input, as does a retained accepted reply with no matching pending
+core command. Cleanup errors leave the slot occupied and do not replace the
+known reply or outcome. Restart reports unfinished commands uncertain first,
+then removes abandoned hash files from the uploader-owned incoming directory;
+other filenames and existing media remain. Imports are never replayed.
+
+Inline imports up to 160 KiB remain available on the bus. Ordinary HTTP uploads
+carry raw bytes separately from the bounded JSON command; they do not change
+the command or importer contract, and importing media does not display it.
 
 Before acting, the module refuses with the shared error body:
 - a command that breaks its schema;
@@ -514,7 +629,9 @@ Each line names the runtime part that replaces the files.
   `tsconfig.json`, `vite.config.ts`, and `src/` (`api.ts`, `controller.ts`,
   `library.tsx`, `main.tsx`, `monitor-client.ts`, `monitor.tsx`, `player.tsx`,
   `playlists.tsx`, `preview.tsx`, `settings.tsx`, `style.css`, `workspace.tsx`).
-  Replaced by the Pixoo pages in the B.U.N.N.Y. shell (#843).
+  #932 ports the feature views into the B.U.N.N.Y. shell; the separate app's
+  server, build and connection are not included. The Frontend section records
+  the currently adapted views and their source.
 - **Verification adapter** (`scripts/verify.mjs` and `scripts/verify/`):
   `build.ts`, `capture-steps.ts`, `controls.ts`, `installed-ports.ts`,
   `pairing.ts`, `plugin.ts`, `readiness.ts`, `run-environment.ts`,

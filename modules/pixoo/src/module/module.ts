@@ -16,15 +16,22 @@ import {
 } from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
-  type Snapshot, type StateDraft, type SyncChange,
+  DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
+  type ModuleStagedUpload, type ModuleUploadRequest,
+  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange,
 } from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
 import {Player, LibraryPlaybackStore} from '../playback/index.js';
 import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
+import {pixooSettings} from './settings.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
+import {readPixooContent} from './content.js';
+import {playerContent} from './player-content.js';
+import {readMonitorContent} from './monitor-content.js';
+import type {PlaybackSourceStatus} from '../presentation/sources.js';
+import {PixooUploads} from './upload.js';
 import type {RenderRequest} from './render-worker.js';
 import {
   DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, schemaOf,
@@ -93,7 +100,16 @@ const requestField = (requestId: string): LogFields => /^[A-Za-z0-9][A-Za-z0-9._
 export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfig> {
   let running: PixooRuntime | undefined;
   return {
-    manifest: {name: PIXOO_MODULE, apiVersion: '1.1', configure: section => configurePixoo(section, {simulated: options.transport.simulated})},
+    manifest: {
+      name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
+      pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}, {id: 'library', title: 'Library', presentation: 'react'},
+        {id: 'player', title: 'Player', presentation: 'react'}, {id: 'monitor', title: 'Monitor', presentation: 'react'},
+        {id: 'settings', title: 'Settings', presentation: 'react'}],
+      settings: pixooSettings(options.transport.simulated),
+      content: (ref, request) => running?.content(ref, request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'}),
+      upload: {family: FAMILIES.assetChange, maxBytes: MAX_UPLOAD_BYTES,
+        stage: request => running?.stage(request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'})},
+    },
     async start(context) {
       // The runtime starts a module that declares `configure` only with what `configure` accepted.
       const {config} = context;
@@ -148,6 +164,7 @@ class PixooRuntime {
   readonly #timers = new Set<Cancel>();
   #store: PixooStore | undefined;
   #library: Library | undefined;
+  #uploads: PixooUploads | undefined;
   #outbox: Outbox | undefined;
   #opened: OpenedDevice | undefined;
   #player: Player | undefined;
@@ -159,6 +176,9 @@ class PixooRuntime {
   #catalogRecords = new Map<string, string>();
   /** The revision of the records last committed and applied to `#shown`, which a sync is answered at. */
   #servedRevision = 0;
+  /** Referenced player/Monitor details may change while their small display summary stays equal. */
+  #detailVersion = 0;
+  #publishedDetails = 0;
   /** Admissions and publishes run one at a time, so each compares against what the one before it committed. */
   #serial: Promise<unknown> = Promise.resolve();
   /** The Now Playing view last given to the presentation, so an unchanged one is not given again. */
@@ -257,10 +277,14 @@ class PixooRuntime {
 
     // Commands left from before this start are reported, never run again (ADR 0012, "accepted").
     await this.#reportUnfinished();
+    const uploads = this.#uploads = new PixooUploads({folder: files(), target: this.#device, signal: this.#context.signal,
+      pending: requestId => store.pending().some(command => command.source === 'bunny/core' && command.requestId === requestId && command.family === FAMILIES.assetChange),
+      failed: error => { this.#failedWrite(error); }});
+    await uploads.recover();
     await this.#serve();
     await this.#respond();
-    player.subscribe(() => { this.#changed(); });
-    monitor.onChange = () => { this.#changed(); };
+    player.subscribe(() => { this.#detailVersion += 1; this.#changed(); });
+    monitor.onChange = () => { this.#detailVersion += 1; this.#changed(); };
     // The copies of the core's sessions and of the playback record, rebuilt by sync and never stored.
     await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); });
     await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); });
@@ -308,6 +332,31 @@ class PixooRuntime {
     }
     if (cause !== 'command') this.#changed();
     if (first) void this.#checkHosted().catch((error: unknown) => { this.#failedWrite(error); });
+  }
+
+  /** Reads the private catalog or a referenced preview; expected read refusals never change owner state. */
+  content(ref: string, request?: ModuleContentRequest): Promise<ModuleContent | ErrorBody> | ModuleContent | ErrorBody {
+    const library = this.#library;
+    if (library === undefined || this.#stopping) return errorBody('unavailable', {detail: 'the Pixoo is not running'});
+    if (ref === 'player') {
+      if (Object.keys(request?.query ?? {}).length !== 0) return errorBody('invalid-request', {detail: 'the content read takes no query'});
+      if (request?.signal.aborted === true) return errorBody('cancelled', {detail: 'the content read was cancelled'});
+      return this.#player === undefined ? errorBody('unavailable', {detail: 'the Pixoo player is not running'})
+        : playerContent(this.#player, this.#deviceClock.now(), this.#options.transport.simulated);
+    }
+    if (ref === 'monitor' || ref === 'monitor-sessions' || ref.startsWith('monitor-frame.') || ref === 'now-playing-frame') {
+      return this.#monitor === undefined ? errorBody('unavailable', {detail: 'the Pixoo presentation is not running'})
+        : readMonitorContent({monitor: this.#monitor, sessions: [...this.#sessions.records.values()],
+          playback: this.#nowPlaying === '' ? {source: 'unavailable', view: {card: false}}
+            : JSON.parse(this.#nowPlaying) as PlaybackSourceStatus}, ref, request);
+    }
+    return readPixooContent(library, this.#config.device.profile, ref, request, this.#options.transport.simulated ? 100 : 500);
+  }
+
+  /** Prepare one ordinary import; its core reply and owner outcome determine when temporary input may be released. */
+  stage(request: ModuleUploadRequest): Promise<ModuleStagedUpload | ErrorBody> | ErrorBody {
+    if (this.#uploads === undefined || this.#stopping) return errorBody('unavailable', {detail: 'the Pixoo is not running'});
+    return this.#uploads.stage(request);
   }
 
   async stop(): Promise<void> {
@@ -645,7 +694,9 @@ class PixooRuntime {
     const outbox = this.#outbox, store = this.#store;
     if (outbox === undefined || store === undefined) return;
     const changes = (records: Map<string, string>): {changed: [string, string][]; removed: string[]} =>
-      ({changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json), removed: [...this.#shown.keys()].filter(key => !records.has(key))});
+      ({changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json
+        || key === `${FAMILIES.display}/${this.#device}` && this.#detailVersion !== this.#publishedDetails),
+      removed: [...this.#shown.keys()].filter(key => !records.has(key))});
     if (work === undefined) {
       const {changed, removed} = changes(this.#records());
       if (changed.length === 0 && removed.length === 0) {
@@ -654,13 +705,14 @@ class PixooRuntime {
       }
     }
     const applied: [string, Shown | undefined][] = [];
-    let transmission = this.#lastTransmission, revision = this.#servedRevision;
+    let transmission = this.#lastTransmission, revision = this.#servedRevision, detailVersion = this.#publishedDetails;
     await outbox.transaction(add => {
       // This publish takes every change so far; one after this point waits for the next.
       this.#changedAt = undefined;
       work?.before?.();
       transmission = this.#transmission(work?.transmission ?? this.#lastTransmission);
       const {changed, removed} = changes(this.#records(transmission));
+      detailVersion = this.#detailVersion;
       const parent = work?.parent === undefined ? {} : {parent: work.parent};
       if (changed.length > 0 || removed.length > 0) {
         revision = store.nextRevision();
@@ -686,6 +738,7 @@ class PixooRuntime {
       else this.#shown.set(key, shown);
     }
     this.#servedRevision = revision;
+    this.#publishedDetails = detailVersion;
     this.#lastTransmission = transmission;
   }
 
@@ -925,6 +978,10 @@ class PixooRuntime {
     if (catalog) await this.#readCatalog('command');
     try {
       await this.#complete(command, family, completion);
+      if (family === FAMILIES.assetChange) {
+        const {change} = command.data as AssetChangeRequest;
+        if (change.operation === 'import' && 'staged' in change.content) await this.#uploads?.completed(command.source, command.data.requestId, change.content.staged.file);
+      }
     } catch (error) {
       this.#failedWrite(error);
     }

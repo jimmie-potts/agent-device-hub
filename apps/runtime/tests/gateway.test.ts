@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, type BunnyModule,
+  MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, traceFields, type BunnyModule,
 } from '@jimmie-potts/sdk';
 import {
   CONFIG_SCHEMA, MAX_CREDENTIALS, RETIRED_ROUTES, RuntimeError, convertHubEdge, credentialsDocument, grantCredential, requestBrowserLaunch, retiredRoute,
@@ -31,12 +31,13 @@ const token = (): string => `${MARKER}_${randomBytes(24).toString('base64url')}`
 type Answer = {status: number; headers: Headers; text: string; body: unknown};
 
 /** One HTTP call to the runtime's listener. */
-async function call(url: string, path: string, init: {method?: string; token?: string; headers?: Record<string, string>; body?: unknown} = {}): Promise<Answer> {
+async function call(url: string, path: string, init: {method?: string; token?: string; headers?: Record<string, string>; body?: unknown; redirect?: RequestRedirect} = {}): Promise<Answer> {
   const headers: Record<string, string> = {...init.headers};
   if (init.token !== undefined) headers.authorization = `Bearer ${init.token}`;
   if (init.body !== undefined) headers['content-type'] ??= 'application/json';
   const response = await fetch(new URL(path, url), {
-    method: init.method ?? 'GET', headers, ...(init.body === undefined ? {} : {body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body)}),
+    method: init.method ?? 'GET', headers, ...(init.redirect === undefined ? {} : {redirect: init.redirect}),
+    ...(init.body === undefined ? {} : {body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body)}),
   });
   const text = await response.text();
   let body: unknown;
@@ -94,6 +95,185 @@ function assertNoToken(g: Gateway): void {
 const READER = (): EdgePart => ({id: 'reader', source: 'bunny/parts/reader', token: token(), scopes: ['read']});
 const OPERATOR = (): EdgePart => ({id: 'operator', source: 'bunny/parts/operator', token: token(), scopes: ['read', 'control']});
 const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', source: 'bunny/parts/hook', token: token(), scopes: ['ingest']});
+
+it('binary uploads require control and dispatch one retained command through the core', async context => {
+  const operator = OPERATOR(), reader = READER();
+  const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
+  let commandTrace: string | undefined;
+  let stages = 0, commands = 0, finishes = 0;
+  let beforeStage: (() => Promise<void>) | undefined;
+  let finishCode: string | undefined;
+  const module: BunnyModule = {manifest: {name: 'uploader', apiVersion: '1.3', upload: {
+    family: 'power-set', maxBytes: 4,
+    stage: async request => {
+      stages++;
+      assert.deepEqual([...request.bytes], [1, 2, 3]);
+      if (request.name === 'refuse') return errorBody('invalid-request', {detail: '/private/fixture/input'});
+      await beforeStage?.();
+      return {data: {on: true}, finish: reply => {finishes++; finishCode = 'error' in reply ? reply.error.code : undefined;}};
+    },
+  }}, start: async ({sdk}) => {
+    await sdk.respond('bunny.cmd.power-set.upload-target', command => {commands++; commandTrace = command.traceparent; return {status: 'accepted'};});
+  }, stop: () => {}};
+  const g = await gateway(context, [operator, reader], {modules: [createCoreModule(), module]});
+  const upload = (part: EdgePart | undefined, fields: Record<string, string> = {}, bytes = new Uint8Array([1, 2, 3]), origin?: string) => fetch(
+    `${g.url}/api/v2/modules/uploader/upload?${new URLSearchParams({family: 'power-set', target: 'upload-target', requestId: 'upload-one', name: 'Synthetic', ...fields})}`,
+    {method: 'POST', headers: {'content-type': 'application/octet-stream', ...parent, ...part === undefined ? {} : {authorization: `Bearer ${part.token}`},
+      ...origin === undefined ? {} : {origin}}, body: bytes});
+  assert.equal((await upload(undefined)).status, 401);
+  assert.equal((await upload(reader)).status, 403);
+  assert.equal((await upload(operator, {}, undefined, 'http://other.invalid')).status, 403);
+  assert.equal((await upload(operator, {family: 'brightness-set'})).status, 400);
+  assert.equal((await upload(operator, {extra: 'x'})).status, 400);
+  assert.equal((await upload(operator, {}, new Uint8Array(5))).status, 413);
+  assert.equal(stages, 0, 'refused HTTP admission never reaches upload preparation');
+  const accepted = await upload(operator);
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(await accepted.json(), {schema: 'command-reply/2.0', status: 'accepted', requestId: 'upload-one'});
+  assert.deepEqual([stages, commands, finishes], [1, 1, 1]);
+  assert.equal((await upload(operator)).status, 200);
+  assert.deepEqual([stages, commands, finishes], [2, 1, 2], 'same identity finishes staging without another command');
+  const refused = await upload(operator, {name: 'refuse', requestId: 'upload-refused'});
+  assert.equal(refused.status, 400);
+  assert.equal((await refused.text()).includes('/private/fixture'), false);
+  assert.equal(commands, 1);
+  let prepared!: () => void, resume!: () => void;
+  const reached = new Promise<void>(resolve => {prepared = resolve;});
+  const held = new Promise<void>(resolve => {resume = resolve;});
+  context.after(() => {resume();});
+  beforeStage = async () => {prepared(); await held;};
+  const pending = upload(operator, {requestId: 'revoked-during-upload'});
+  await reached;
+  await revokeCredential(g.files.credentials, operator.id ?? '');
+  await g.runtime.reload();
+  resume();
+  assert.equal((await pending).status, 401);
+  assert.deepEqual([commands, finishes, finishCode], [1, 3, 'unauthenticated'], 'revocation during preparation refuses dispatch and finalizes the input');
+  const refusals = g.logs.filter(record => record.event_name === 'runtime.edge.refused'
+    && record.attributes['http.route'] === '/api/v2/modules/{module}/upload'
+    && record.attributes['bunny.participant'] === operator.source && record.attributes['bunny.code'] === 'unauthenticated');
+  assert.deepEqual({continuedTrace: commandTrace !== undefined && traceFields({traceparent: commandTrace})?.traceId === traceFields(parent)?.traceId,
+    admissionRefusals: refusals.length}, {continuedTrace: true, admissionRefusals: 1}, 'the new upload boundary preserves correlation and records its own late refusal');
+  assert.equal(refusals[0]?.trace_id, traceFields(parent)?.traceId);
+  assert.equal(refusals[0]?.severity_text, 'WARN');
+  assertNoToken(g);
+});
+
+it('modern content receives bounded query values while legacy content still refuses queries', async context => {
+  const reader = READER();
+  const heard: unknown[] = [];
+  const modern: BunnyModule = {manifest: {name: 'modern', apiVersion: '1.3', content: (ref: string, ...extras: unknown[]) => {
+    if (ref === 'missing') return errorBody('not-found', {detail: 'private fixture path must not be returned'});
+    const request = extras[0] as {query?: unknown; signal?: AbortSignal} | undefined;
+    heard.push(request);
+    return {type: 'application/json', bytes: Buffer.from(JSON.stringify({ref, query: request?.query}))};
+  }}, start: () => {}, stop: () => {}};
+  const legacy: BunnyModule = {...modern, manifest: {...modern.manifest, name: 'legacy', apiVersion: '1.2'}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), modern, legacy]});
+  const result = await g.ask(g.url, '/modules/modern/content/catalog?offset=25&limit=25&q=desk', {token: reader.token});
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, {ref: 'catalog', query: {offset: '25', limit: '25', q: 'desk'}});
+  assert.equal((heard[0] as {signal: AbortSignal}).signal.aborted, true, 'the read signal ends with the contribution');
+  for (const path of ['/modules/legacy/content/catalog?offset=25', '/modules/modern/content/catalog?q=a&q=b',
+    `/modules/modern/content/catalog?q=${'x'.repeat(513)}`, `/modules/modern/content/catalog?${'x'.repeat(65)}=a`,
+    `/modules/modern/content/catalog?${Array.from({length: 17}, (_, i) => `q${i}=x`).join('&')}`]) {
+    assert.equal((await g.ask(g.url, path, {token: reader.token})).status, 400);
+  }
+  assert.equal(heard.length, 1, 'refused queries never reach a reader');
+  assert.equal((await g.ask(g.url, '/modules/legacy/content/catalog', {token: reader.token})).status, 200);
+  const missing = await g.ask(g.url, '/modules/modern/content/missing', {token: reader.token});
+  assert.deepEqual([missing.status, codeOf(missing)], [404, 'not-found']);
+  assert.equal(missing.text.includes('private fixture path'), false, 'module refusal details never leave the gateway');
+  assert.equal((await g.ask(g.url, '/modules/legacy/content/missing', {token: reader.token})).status, 500, 'legacy content has no returned-refusal contract');
+  assert.equal((await g.ask(g.url, '/modules/modern/content/catalog', {token: reader.token})).status, 200, 'expected refusals do not fail the module');
+});
+
+it('trusted frontend pages and assets require read authority and cause no device change', async context => {
+  const reader = READER();
+  const transport = new SimulatedSigns({online: true});
+  const sign = createSignModule({transport});
+  let renders = 0;
+  let assetReads = 0;
+  const script = 'document.querySelector("#editor").textContent = "Ready";';
+  const module: BunnyModule = {...sign, manifest: {...sign.manifest, apiVersion: '1.3', pages: [
+    ...(sign.manifest.pages ?? []),
+    {id: 'library', title: 'Library', presentation: 'react'},
+    {id: 'editor', title: 'Editor', presentation: 'trusted-editor', scripts: ['editor.js'], styles: ['editor.css'],
+      render: () => { renders += 1; return '<div id="editor">Loading</div>'; }},
+  ], assets: [
+    {id: 'editor.js', type: 'text/javascript; charset=utf-8', read: () => { assetReads += 1; return Buffer.from(script); }},
+    {id: 'editor.css', type: 'text/css; charset=utf-8', read: () => Buffer.from('#editor { color: green; }')},
+  ]}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), module], browserAccess: 'trusted-loopback'});
+  await waitFor(() => transport.state().attempts === 1, 5000, 'the fixture finished its initial render');
+  const before = transport.state();
+  const pagePath = '/modules/sign/editor';
+  const assetPath = '/modules/sign/assets/editor.js';
+  for (const path of [pagePath, assetPath]) {
+    assert.equal((await g.ask(g.url, path)).status, 401, 'anonymous callers cannot load the editor');
+    assert.equal((await g.ask(g.url, path, {token: reader.token, headers: {origin: 'http://other.invalid'}})).status, 403);
+  }
+  assert.deepEqual([renders, assetReads], [0, 0], 'admission precedes the contribution');
+  const catalog = await g.ask(g.url, '/api/v2/modules', {token: reader.token});
+  const pages = (catalog.body as {modules: {name: string; pages: {id: string; presentation: string}[]}[]}).modules.find(item => item.name === 'sign')?.pages;
+  assert.deepEqual(pages?.map(page => [page.id, page.presentation]), [['preview', 'passive'], ['library', 'react'], ['editor', 'trusted-editor']]);
+  const component = await g.ask(g.url, '/modules/sign/library', {token: reader.token, redirect: 'manual'});
+  assert.equal(component.status, 303);
+  assert.equal(component.headers.get('location'), '/#/module/sign/library');
+  assert.equal(renders, 0, 'a component URL invokes no renderer');
+  const editor = await g.ask(g.url, pagePath, {token: reader.token});
+  assert.equal(editor.status, 200);
+  assert.ok(editor.text.includes('<script type="module" src="/modules/sign/assets/editor.js"></script>'));
+  assert.ok(editor.text.includes('<link rel="stylesheet" href="/modules/sign/assets/editor.css">'));
+  assert.equal(editor.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const policy = editor.headers.get('content-security-policy') ?? '';
+  for (const directive of ["default-src 'none'", "script-src 'self'", "connect-src 'self'", "frame-ancestors 'self'", "form-action 'none'", "base-uri 'none'"]) {
+    assert.ok(policy.includes(directive), directive);
+  }
+  assert.equal(policy.includes('unsafe-eval'), false);
+  const passive = await g.ask(g.url, '/modules/sign/preview', {token: reader.token});
+  assert.equal((passive.headers.get('content-security-policy') ?? '').includes('script-src'), false, 'passive scripts still inherit default-src none');
+  const asset = await g.ask(g.url, assetPath, {token: reader.token});
+  assert.equal(asset.status, 200);
+  assert.equal(asset.text, script);
+  assert.equal(asset.headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.equal(asset.headers.get('cache-control'), 'no-store');
+  assert.equal(asset.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal((await g.ask(g.url, '/modules/sign/assets/other.js', {token: reader.token})).status, 404);
+  const edit = await g.ask(g.url, '/api/v2/commands/sign-show', {token: reader.token, method: 'POST', body: {}});
+  assert.deepEqual([edit.status, codeOf(edit)], [403, 'forbidden'], 'reading executable assets grants no control');
+  const signed = await g.ask(g.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: g.url, 'bunny-request': '1'}});
+  const cookie = (signed.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  assert.equal((await g.ask(g.url, assetPath, {headers: {cookie, 'sec-fetch-site': 'same-origin'}})).status, 200);
+  await g.ask(g.url, '/api/v2/browser/logout', {method: 'POST', body: {}, headers: {cookie, origin: g.url, 'bunny-request': '1'}});
+  assert.equal((await g.ask(g.url, assetPath, {headers: {cookie}})).status, 401, 'ended sessions cannot keep reading the bundle');
+  assert.deepEqual(transport.state(), before, 'page, asset and catalog reads never command a device');
+  assertNoToken(g);
+});
+
+it('trusted assets keep secret, size, reader failure and running-module boundaries', async context => {
+  const reader = READER();
+  const sign = createSignModule({transport: new SimulatedSigns({online: true})});
+  const module: BunnyModule = {...sign, manifest: {...sign.manifest, apiVersion: '1.3', pages: [
+    {id: 'library', title: 'Library', presentation: 'react'},
+  ], assets: [
+    {id: 'secret.js', type: 'text/javascript; charset=utf-8', read: () => Buffer.from(SYNTHETIC_TOKEN)},
+    {id: 'wrong.js', type: 'text/javascript; charset=utf-8', read: () => 'not bytes' as unknown as Uint8Array},
+    {id: 'large.css', type: 'text/css; charset=utf-8', read: () => Buffer.alloc(16 * 1024 * 1024 + 1)},
+    {id: 'throw.js', type: 'text/javascript; charset=utf-8', read: () => { throw new Error('private editor path'); }},
+  ]}};
+  const g = await gateway(context, [reader], {modules: [createCoreModule(), module]});
+  for (const id of ['secret.js', 'wrong.js', 'large.css', 'throw.js']) {
+    const answer = await g.ask(g.url, `/modules/sign/assets/${id}`, {token: reader.token});
+    assert.deepEqual([answer.status, codeOf(answer)], [500, 'internal'], id);
+    assert.equal(answer.text.includes('private editor path'), false);
+  }
+  for (const path of ['/modules/sign/assets/secret.js', '/modules/sign/library']) {
+    const answer = await g.ask(g.url, path, {token: reader.token, redirect: 'manual'});
+    assert.deepEqual([answer.status, codeOf(answer)], [503, 'unavailable'], 'a failed module has no active frontend');
+  }
+  assertNoToken(g);
+});
 
 it('every refusal is the shared error body with a registry code: a malformed request, a made-up token, a scope or key outside the grant', async context => {
   const reader = READER(), operator = OPERATOR(), hook = HOOK();
@@ -593,7 +773,7 @@ it('no grant limits a reader to some devices: it reads every device\'s records a
   const links = await call(url, '/api/v2/links', {token: reader.token});
   assert.deepEqual((links.body as {editors: object}).editors, {'gadget-1': 'http://127.0.0.1:9100/', 'gadget-2': 'http://127.0.0.1:9101/'});
   const listed = ((await call(url, '/api/v2/modules', {token: reader.token})).body as {modules: {name: string}[]}).modules.find(module => module.name === 'gadget');
-  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status'}], tools: ['gadget_list'], settings: true});
+  assert.deepEqual(listed, {name: 'gadget', apiVersion: '1.2', state: 'running', serves: ['gadget'], pages: [{id: 'status', title: 'Gadgets', path: '/modules/gadget/status', presentation: 'passive'}], tools: ['gadget_list'], settings: true});
   for (const path of ['/modules/gadget/status', '/modules/gadget/content/note', '/api/v2/modules/gadget/settings']) {
     assert.equal((await call(url, path, {token: reader.token})).status, 200, path);
   }

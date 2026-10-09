@@ -151,13 +151,23 @@ export class Library {
    * reads no frames: a multi-frame rendition the hosted profile has not checked yet is listed with `compatible` undefined.
    */
   async catalogMedia(profile:Readonly<MediaProfile>,stillDelayMs=100):Promise<CatalogMedia[]> {
-    return this.run(()=>this.db.prepare('SELECT a.id AS asset_id,a.name,r.id,r.manifest_json FROM renditions r JOIN assets a ON a.id=r.asset_id ORDER BY a.created_at,a.id,r.id').all().map(row=>{
-      const rendition=json<Rendition>(row.manifest_json);
-      let compatible:boolean|undefined=true;
-      try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
-      if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,profile.name);
-      return {assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible};
-    }));
+    return this.run(()=>this.db.prepare('SELECT a.id AS asset_id,a.name,r.id,r.manifest_json FROM renditions r JOIN assets a ON a.id=r.asset_id ORDER BY a.created_at,a.id,r.id').all().map(row=>this.cachedMedia(row,profile,stillDelayMs)));
+  }
+  private cachedMedia(row:Row,profile:Readonly<MediaProfile>,stillDelayMs:number):CatalogMedia {
+    const rendition=json<Rendition>(row.manifest_json);
+    let compatible:boolean|undefined=true;
+    try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
+    if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,profile.name);
+    return {assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible};
+  }
+  /** SQL pages with the same kept compatibility evidence as catalogMedia; never validates frames or writes checks. */
+  async queryMediaCached(input:CatalogQuery,profile:Readonly<MediaProfile>,stillDelayMs=100,signal?:AbortSignal){
+    const {q,offset,limit}=validate(catalogQuery,input);
+    return this.run(()=>{
+      const total=Number(one(this.db,'SELECT count(*) AS n FROM renditions r JOIN assets a ON a.id=r.asset_id WHERE instr(lower(a.name),lower(?))>0',q).n);
+      const rows=this.db.prepare('SELECT a.id AS asset_id,a.name,r.id,r.manifest_json FROM renditions r JOIN assets a ON a.id=r.asset_id WHERE instr(lower(a.name),lower(?))>0 ORDER BY a.created_at,a.id,r.id LIMIT ? OFFSET ?').all(q,limit,offset);
+      return {items:rows.map(row=>this.cachedMedia(row,profile,stillDelayMs)),total,offset,limit,catalogRevision:this.catalogRevision};
+    },signal);
   }
   /** Whether the catalog holds this rendition, read at once rather than after queued work, as a command's admission needs. */
   renditionExists(id:string):boolean {
@@ -194,6 +204,21 @@ export class Library {
   }
   get catalogRevision():number {return Number(one(this.db,'SELECT revision FROM catalog_revision WHERE slot=1').revision);}
   async catalogPlaylist(id:string,signal?:AbortSignal){validate(idSchema,id);return this.run(()=>({catalogRevision:this.catalogRevision,playlist:this.playlist(id)}),signal);}
+  /** Asset selection lists rendition facts/references; selected rendition and preview reads carry the frame manifests. */
+  async catalogAsset(id:string,signal?:AbortSignal){
+    validate(idSchema,id);
+    return this.run(()=>{
+      const asset=this.asset(this.db.prepare('SELECT * FROM assets WHERE id=?').get(id));
+      const rows=this.db.prepare(`SELECT id,json_extract(manifest_json,'$.transform') AS transform_json,
+        json_extract(manifest_json,'$.profile') AS profile_json,json_extract(manifest_json,'$.source.format') AS format,
+        json_array_length(manifest_json,'$.frames') AS frame_count,json_extract(manifest_json,'$.effectiveDurationMs') AS duration_ms
+        FROM renditions WHERE asset_id=? ORDER BY id`).all(id);
+      return {catalogRevision:this.catalogRevision,asset,renditions:rows.map(row=>({
+        id:String(row.id),transform:json<Rendition['transform']>(row.transform_json),profile:json<MediaProfile>(row.profile_json),
+        format:String(row.format),frameCount:Number(row.frame_count),durationMs:row.duration_ms===null?null:Number(row.duration_ms),
+      }))};
+    },signal);
+  }
   async preview(id:string,index:number|null,signal?:AbortSignal):Promise<{rendition:Rendition;bytes?:Buffer}>{
     validate(hashSchema,id);
     return this.run(async()=>{const rendition=this.manifest(id);return this.media.readPreview(rendition,index,signal);},signal);

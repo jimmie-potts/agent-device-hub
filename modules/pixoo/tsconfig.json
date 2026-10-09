@@ -4,6 +4,7 @@
     "target": "ES2023",
     "rootDir": ".",
     "outDir": "dist",
+    "jsx": "react-jsx",
     "verbatimModuleSyntax": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -11,6 +12,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "tests/**/*.ts"
   ]
 }

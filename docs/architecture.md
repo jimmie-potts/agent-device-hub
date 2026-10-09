@@ -83,6 +83,28 @@ Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
 
+## Module frontend ownership
+
+The owner selected React and TypeScript for new module interfaces on 2026-10-08.
+One shared dashboard shell owns navigation, common components, styling,
+connection handling and authenticated API access. Modules own feature-specific
+frontend source, compiled into the shared application from explicit browser-only
+entries for the fixed shipped modules. Browser code does not import Node-side
+module implementations. This adds no framework, runtime plugin loader or service.
+
+Reviewed separately bundled editors remain a migration option where they avoid
+an unnecessary rewrite. Their declared assets, content types, content security
+policy and iframe configuration form one contract. Same-origin scripted frames
+are trusted application code, not isolation for untrusted extensions. User content
+never becomes executable code; passive HTML pages may retain restrictive policy.
+The existing Nanoleaf editor can use this path without a full React conversion.
+
+Backend storage, authorization, automation and device ownership remain independent
+of React. UI reads use authenticated runtime interfaces, and commands use existing
+tracking and device writers. Opening a page does not change a device, media or
+scene. The frontend stories own implementation and acceptance of this decision;
+it grants no installed or physical authority.
+
 ## Event and messaging platform
 
 [ADR 0012](decisions/0012-bunny-event-platform.md), as amended on 2026-10-06,

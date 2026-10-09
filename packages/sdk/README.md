@@ -417,7 +417,7 @@ export const sign: BunnyModule<SignConfig> = {
   SQLite file, its private folder, its section of the runtime's configuration
   file and its log records. `apiVersion` is the module API version the module
   was written for, `<major>.<minor>`. `MODULE_API_VERSION` is the current one,
-  `1.2`. The runtime refuses a module with another major version or a newer
+  `1.3`. The runtime refuses a module with another major version or a newer
   minor one. Write the version as a literal, so a later major version refuses
   the module until it is updated. `checkManifest(manifest)`,
   `checkModuleName(name)` and `checkApiVersion(declared)` return the runtime's
@@ -450,12 +450,31 @@ export const sign: BunnyModule<SignConfig> = {
     serves `render()`'s HTML at `/modules/<name>/<id>`, in a document whose
     policy allows no script, frame, form or base, to a browser session or a
     credential with `read`. An ID is lowercase letters and digits with single
-    hyphens, at most 64 characters, distinct, and never `content`
-    (`CONTENT_PATH`).
-  - `content(ref)`: content by reference, `{type, bytes}` or undefined, served
+    hyphens, at most 64 characters, distinct, and never `content` or `assets`
+    (`CONTENT_PATH` and `ASSETS_PATH`). Omitted `presentation` means passive
+    HTML; `presentation: 'passive'` is equivalent. API 1.3 adds the two
+    interactive shapes below.
+  - `content(ref, request?)`: content by reference, `{type, bytes}` or undefined, served
     at `/modules/<name>/content/<ref>`, such as the preview a page shows with
-    `<img src="content/preview.png">`. The gateway serves images, plain text and
+    `<img src="content/preview.png">`. API 1.3 supplies `request.query` and
+    `request.signal`, aborted on completion or the five-second deadline, and
+    accepts returned `ErrorBody` refusals with fixed gateway text. Queries have
+    at most 16 distinct keys (1–64 characters) and values of at most 512
+    characters; the module validates its own fields. Earlier versions refuse
+    queries. Reads change no owner state. The gateway serves images, plain text and
     JSON of at most 16 MiB.
+  - `upload` (1.3): one `{family, maxBytes, stage}` declaration, with a limit
+    from 1 byte through `MAX_UPLOAD_BYTES` (10 MiB). The gateway requires
+    control authority and passes `{target, requestId, name, bytes, signal}` to
+    `stage`, without a credential or caller-selected path. It returns a safe
+    `ErrorBody` or `{data, finish(reply)}`. The gateway dispatches that data
+    through the existing core command tracker with the supplied request ID,
+    then calls `finish` with its accepted or refused reply. Preparation ends
+    within five seconds. The module owns temporary input and its cleanup:
+    release refused or completed input, retain input that uncertain work may
+    still need, and reconcile abandoned input during startup without replay.
+    A cleanup failure cannot replace a known command reply. The ordinary
+    command JSON limit remains 16 KiB.
   - `tools`: at most `MAX_TOOLS` (16) read tools, each `{name, description,
     input, output, read}`, which MCP publishes as `<module>_<name>` to a
     credential with `read`. `input` is an object schema that allows no other
@@ -477,6 +496,65 @@ export const sign: BunnyModule<SignConfig> = {
   settings or tool answer that holds a secret the module read is never served.
   `checkContributions(manifest)`, within `checkManifest`, returns the runtime's
   own reason for refusing them.
+- **Trusted frontends (1.3, Hub #932).** New interfaces use module-owned React
+  and TypeScript compiled into the shared dashboard. Declare a page as
+  `{id, title, presentation: 'react'}`, with no `render`, `scripts` or `styles`.
+  The shell matches its identity to a shipped browser contribution; the page's
+  direct URL redirects to `/#/module/<name>/<id>` without running a renderer.
+  Backend storage, permissions and device ownership remain independent of React.
+
+  An existing editor may instead declare `{id, title,
+  presentation: 'trusted-editor', render, scripts, styles}`. `render()` supplies
+  markup; the gateway adds module script tags and stylesheet links from the
+  named assets. `scripts` and `styles` are distinct IDs in the manifest's
+  `assets` list, with the corresponding JavaScript or CSS type. No inline script
+  or event handler runs. Same-origin scripted frames are trusted application
+  code, not an isolation boundary for untrusted extensions.
+
+  `assets` holds at most `MAX_ASSETS` (64) declarations, each `{id, type, read}`.
+  An ID starts with a letter or digit and contains only letters, digits, dots,
+  underscores or hyphens, at most 128 characters. The closed type list is
+  `text/javascript; charset=utf-8`, `text/css; charset=utf-8`, `image/png`,
+  `image/jpeg`, `image/gif`, `image/webp` and `image/svg+xml`.
+  `read()` returns bytes without effects. Each declared asset is served at
+  `/modules/<name>/assets/<id>`, requires `read`, must fit `MAX_ASSET_BYTES`
+  (16 MiB) and cannot hold a module secret. Asset declarations name reviewed
+  build inputs; user uploads remain non-executable content references. The
+  gateway never resolves a caller's filesystem path. Malformed declarations,
+  mismatched asset references and interactive declarations before API 1.3 are
+  refused before the module starts.
+
+  Page access adds no command permission. Editors use the authenticated tracked
+  command path, and opening or drafting on a page changes no device or library.
+
+  For a React page, add an explicit package export such as
+  `"./frontend": "./frontend/index.tsx"`. That browser entry exports a named
+  `frontend` value typed as `FrontendContribution` from
+  `@jimmie-potts/sdk/frontend`: `{module, pages: [{id, Component}]}`. The existing
+  dashboard build collects these static imports. Components take a `context`
+  prop; they do not import the module's Node registration or open a connection.
+  The SDK frontend entry contains types only.
+
+  `context.api.read(path)` reads runtime JSON with the browser session; the
+  feature validates the returned document. `api.image(path)` reads this module's
+  content as a PNG, JPEG, GIF or WebP Blob, using the same authentication and
+  page lifetime; executable responses are refused. `api.sync(families, changed)` syncs
+  only this module's declared families on the shared participant. Close a copy
+  when finished; the shell also closes active and late copies when the page or
+  session ends. `api.command(action)` sends once through the existing dispatcher.
+  `api.upload({family, target, requestId, upload: {name, file}})` sends one
+  bounded binary request to this module's upload contribution. `file` is a
+  browser Blob; no file or draft is retained across reloads. Both forms use
+  the same `Command.run` callback and tracked result display.
+  `connected`, `control`, `operations` and `operationsLive` describe current
+  shell evidence. They do not turn an accepted command into a completed one.
+
+  `context.ui` supplies `Badge`, `Facts`, `InfoTip`, `Select` and `Command` with
+  the shell's styling. A feature wraps its form in
+  `<Command context={context} target={target}>` and renders from its child
+  callback's `{text, locked, requestId, run}`. This reuses the existing command
+  attempt retention, tracked results and reload behavior; no command values or
+  credentials are stored, and an uncertain command is never resent by recovery.
 - **`start(context)`** subscribes, responds and opens local resources: its
   database, its private folder and its secrets. A throw, a rejection or a start
   that outlasts the runtime's start deadline fails the module.

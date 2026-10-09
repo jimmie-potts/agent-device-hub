@@ -8,7 +8,7 @@ it('refuses a module whose API version does not match, and starts the others', a
   const started: string[] = [];
   const track = (name: string, apiVersion: string) => fixture(name, () => { started.push(name); }, apiVersion);
   const modules = [
-    track('newer-major', '2.0'), track('newer-minor', '1.3'), track('older-major', '0.9'), track('malformed', 'one'), track('current', '1.2'),
+    track('newer-major', '2.0'), track('newer-minor', '1.4'), track('older-major', '0.9'), track('malformed', 'one'), track('current', '1.3'),
     track('older-minor', '1.0'),
   ];
   const {runtime, logs} = await run(context, {modules});
@@ -19,14 +19,14 @@ it('refuses a module whose API version does not match, and starts the others', a
   assert.equal(body.status, 'degraded');
   const mismatch = (apiVersion: string) => ({
     apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
-    reason: {code: 'unsupported-version', detail: `module API ${apiVersion} does not match this runtime's 1.2`},
+    reason: {code: 'unsupported-version', detail: `module API ${apiVersion} does not match this runtime's 1.3`},
   });
   assert.deepEqual(body.modules, [
     {name: 'newer-major', ...mismatch('2.0')},
-    {name: 'newer-minor', ...mismatch('1.3')},
+    {name: 'newer-minor', ...mismatch('1.4')},
     {name: 'older-major', ...mismatch('0.9')},
     {name: 'malformed', apiVersion: 'one', state: 'refused', healthy: false, syncRestarts: 0, reason: {code: 'invalid-request', detail: 'apiVersion must be <major>.<minor>'}},
-    {name: 'current', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0},
+    {name: 'current', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0},
     {name: 'older-minor', apiVersion: '1.0', state: 'running', healthy: true, syncRestarts: 0},
   ]);
   assert.equal(modules.reduce((stops, module) => stops + module.stops, 0), 0, 'a refused module is never stopped, and the running one not yet');
@@ -53,7 +53,7 @@ it('refuses a module whose pages, tools or settings the runtime would not serve,
   assert.deepEqual(started, ['current']);
   assert.deepEqual(runtime.health().modules.map(module => [module.name, module.state, module.reason?.detail]), [
     ['older', 'refused', 'pages, content, tools and settings need module API 1.2'],
-    ['reserved', 'refused', 'each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content'],
+    ['reserved', 'refused', 'each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content or assets'],
     ['unconfigured', 'refused', 'settings show what configure accepted, so they need configure'],
     ['current', 'running', undefined],
   ]);
