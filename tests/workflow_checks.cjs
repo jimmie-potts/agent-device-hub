@@ -737,6 +737,16 @@ test('shared module names stay within the approved fixture exception, and other 
     assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file: shared, line, name: 'desk-probe'}], shared);
     fs.writeFileSync(path.join(scratch, shared), saved);
   }
+  const plugin = 'apps/runtime/verify/plugin.ts';
+  const pluginSource = fs.readFileSync(path.join(scratch, plugin), 'utf8');
+  const pluginLine = pluginSource.split('\n').length + 1;
+  for (const text of ["'packages/wispr-contracts/dist'; // wispr", "'modules/wispr/dist/src'", "'packages/wispr-contracts/unapproved'"]) {
+    fs.writeFileSync(path.join(scratch, plugin), `${pluginSource}\n${text}\n`);
+    assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file: plugin, line: pluginLine, name: 'wispr'}], text);
+  }
+  fs.writeFileSync(path.join(scratch, plugin), pluginSource);
+  fs.writeFileSync(path.join(scratch, file), `${original}\n'packages/wispr-contracts/dist'\n`);
+  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file, line: lines + 1, name: 'wispr'}], 'contract-path exception stays in build identity');
   // The core and a fixture module are not device modules, and a longer word that holds a name is not the name.
   fs.writeFileSync(path.join(scratch, file), `${original}\n// core lamp chime sign ${modules[0]}s x${modules[0]}\n`);
   assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), []);

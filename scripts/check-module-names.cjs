@@ -37,6 +37,12 @@ const FIXTURE_REFERENCES = Object.freeze({
   'apps/runtime/verify/seed.ts': ['wispr'],
 });
 
+// These exact build-identity literals name a shared contract package, not a device-module registration.
+const BUILD_CONTRACT_PATHS = [
+  'packages/wispr-contracts/dist', ':(glob)packages/wispr-contracts/src/**',
+  'packages/wispr-contracts/dist/index.js', 'packages/wispr-contracts/dist/query.js',
+];
+
 /** The device modules: each folder under `modules/` that holds a `package.json`, in name order. */
 function moduleNames(root) {
   const modules = path.join(root, 'modules');
@@ -60,6 +66,9 @@ function findModuleNames(root, files = SHARED_FILES) {
   for (const file of files) {
     const lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n');
     lines.forEach((text, index) => {
+      if (file === 'apps/runtime/verify/plugin.ts') {
+        for (const contractPath of BUILD_CONTRACT_PATHS) text = text.replaceAll(`'${contractPath}'`, "''");
+      }
       for (const {name, pattern} of names) if (pattern.test(text) && !FIXTURE_REFERENCES[file]?.includes(name)) found.push({file, line: index + 1, name});
     });
   }

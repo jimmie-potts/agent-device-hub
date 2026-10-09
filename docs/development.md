@@ -1633,7 +1633,7 @@ fidelity stays with the native check and the owner's installed checks.
 
 ## Wispr runtime module checks
 
-The selected-file scenario fixture is wired explicitly into the memory and disposable harnesses. `check-module-names.cjs` permits only `wispr` in the four named fixture/seed files; it continues to reject other module names there and all module references in production discovery. This is the bounded #927 integration permitted while generic fixture discovery in #999 is deferred, not a new loader or service.
+The selected-file scenario fixture is wired explicitly into the memory and disposable harnesses. `check-module-names.cjs` permits only `wispr` in the four named fixture/seed files; it continues to reject other module names there and all module references in production discovery. The verification plugin separately lists the exact `wispr-contracts` package paths in its source, output and artifact identity; those literals are exempt, while module references on the same line and other paths remain checked. This is the bounded #927 integration permitted while generic fixture discovery in #999 is deferred, not a new loader or service.
 
 
 The root build and typecheck include `modules/wispr`. Run
