@@ -40,7 +40,7 @@ test('the strict rules cover new code and skip old code', async () => {
 });
 
 // The profile block's reach is fixed: the strict globs and module JavaScript, minus staged code and the test globs that
-// docs/development.md "Safe-error rules" lists. Widening `ignores` or narrowing `files` needs this test changed too.
+// docs/static-analysis.md "Safe-error rules" lists. Widening `ignores` or narrowing `files` needs this test changed too.
 test('the safe-error profile block covers exactly the documented files', () => {
   const profile = config.find(block => block.name === 'bunny/safe-errors');
   assert.deepEqual(profile.files, [...strictGlobs, 'modules/**/*.{js,mjs}']);
@@ -73,7 +73,7 @@ test('the safe-error rules cover production code under the profile, not its test
 });
 
 // An exception is a config block named bunny/safe-errors/<reason>, after the profile blocks, and listed in
-// docs/development.md's exception table. Scripts and the stream owners lift only `bunny/no-console`, and the contracts
+// docs/static-analysis.md's exception table. Scripts and the stream owners lift only `bunny/no-console`, and the contracts
 // package only `bunny/error-body-from-registry`; every other exception names existing files, so a renamed file cannot
 // leave a stale entry behind.
 const exceptions = config.filter(block => block.name?.startsWith('bunny/safe-errors/'));
@@ -94,7 +94,7 @@ test('each exception to the safe-error rules names files that exist and lifts on
 });
 
 test('only a named exception in the docs table lifts or reconfigures a safe-error rule', () => {
-  const docs = readFileSync(join(root, 'docs/development.md'), 'utf8');
+  const docs = readFileSync(join(root, 'docs/static-analysis.md'), 'utf8');
   const section = docs.slice(docs.indexOf('### Safe-error rules'));
   const end = section.slice(1).search(/\n(?:#{1,3} |<a id=)/);
   const rows = section.slice(0, end === -1 ? undefined : end + 1).split('\n').filter(line => line.startsWith('|'));
@@ -104,7 +104,7 @@ test('only a named exception in the docs table lifts or reconfigures a safe-erro
       const where = block.name ?? `an unnamed block for ${JSON.stringify(block.files)}`;
       assert.match(block.name ?? '', /^bunny\/safe-errors\/[\w-]+$/, `${where} sets ${rule}; name it bunny/safe-errors/<reason>`);
       assert.ok(isOff(block.rules[rule]), `${where} reconfigures ${rule}; only bunny/safe-errors sets its options`);
-      assert.ok(documented.has(block.name), `${where} lifts ${rule} but is not in docs/development.md's exception table`);
+      assert.ok(documented.has(block.name), `${where} lifts ${rule} but is not in docs/static-analysis.md's exception table`);
     }
   }
   assert.deepEqual([...documented].sort(), exceptions.map(block => block.name).sort(), 'the table lists exactly the exception blocks');

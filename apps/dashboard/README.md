@@ -1,5 +1,7 @@
 # B.U.N.N.Y. integration dashboard
 
+See [Development and verification](DEVELOPMENT.md) for the canonical detailed procedures.
+
 **Legacy 1.x reference.** The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
 stopped and disabled the old writers. These files remain for manual return and
 separately authorized retirement, not as the current setup entry point.

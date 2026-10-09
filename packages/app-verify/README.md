@@ -1,5 +1,9 @@
 # @jimmie-potts/app-verify
 
+See [App verification operation contract](OPERATIONS.md) for the canonical detailed procedures.
+
+See [Verification checks](TESTING.md) for the canonical detailed procedures.
+
 The shared lifecycle core for disposable app verification runs. It implements
 the operations, receipt, storage roots, supervisor, lease, doctor, frozen
 proof, capture harness and preview card of the Hub's
@@ -182,110 +186,14 @@ What the core guarantees to every plug-in callback:
 
 ## Operations
 
-`runCli(plugin, argv)` implements the contract's operations. Each prints one
-JSON result line on stdout and progress, including the preview card, on
-stderr, and returns the exit code: `0` when an operation completed (not runtime
-qualification for `prerequisites`), `1` for a failed outcome, `2` for a usage
-error and `3` when required local tooling or a prerequisite is missing.
-
-```text
-help
-prerequisites
-start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...
-doctor [<run-id>]
-scenario <run-id> <name> [--input <name>=<value>]...
-capture <run-id> <step>
-handoff <run-id> [--reset <scenario>]
-extend <run-id> [--lease <minutes>]
-stop <run-id>
-restart <run-id>
-```
-
-The default lease is 120 minutes. `--lease` takes minutes, fractions allowed,
-from 0.05 to 1440. Main result fields:
-
-| Operation | Result |
-| --- | --- |
-| `help` | `app`, `command`, `coreVersion`, `operations` (with `[--input <name>=<value>]...` on `start` and `scenario` only when the plug-in declares inputs), `inputs` (each with `description` and `required`), `scenarioInputs` (each scenario's `requiredInputs`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
-| `prerequisites` (1.3) | `scope: local-read-only`, individual `checks`, and separate `launch`, `capture`, `handoff` phase summaries. Each phase's operation stays `unproven`: no unit, socket, browser, video or Windows handoff is attempted. A missing observed requirement exits 3; unknown and unsupported checks do not turn into a ready claim. Use `prerequisitesSupport(help)` to distinguish an older adapter's absent operation from malformed help |
-| `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `inputs` (when the plug-in declares any), `endpoints` (when the ready line names any), `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
-| `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
-| `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |
-| `stop` retried after `receipt-locked` | Records the cleanup and state of the refused attempt: an item it removed counts as `removed`, not a missing runtime directory's `partial` |
-| `handoff` after an interrupted one | Finishes the freeze. It rebuilds from `verified.partial/`, or commits an uncommitted `verified/` only when its digest and time match this run's `frozen` event and its copy matches the live receipt. It rebuilds if a later capture exists, and otherwise refuses with `proof-conflict`, changing nothing |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `inputs` (when recorded), `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one and, under `endpoints`, each recorded endpoint's port; any missing one is `listener-mismatch`), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
-| `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
-| `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card`; opt-in `proofUrls` (1.2) |
-| `scenario`, `extend`, `stop` | The new scenario, port, `inputs` and `endpoints`; the new expiry and timer; or the final state and `cleanup` |
-
-An error that stops an operation before it acts prints
-`{"operation", "error", "detail"}` and the shared `errorBody` (see
-[Refusal error body](#refusal-error-body)), for example `run-not-running`, or
-`receipt-locked` when another live operation holds the run's receipt for
-more than 10 s. The lock is created atomically with its holder's PID, start
-time and a nonce. A lock left by a killed operation breaks at once, one
-breaker at a time, so a live lock is never displaced. A dead lock or dead
-breaker is renamed to a name derived from its holder record, so an operation
-that read the same record late moves nothing. That
-`.receipt.lock.dead-<hash>/` directory stays until an update at least a minute
-later sweeps it; one left by a run's last operation stays in the proof
-directory, outside `verified/`, where nothing reads it. An operation suspended
-for over a minute while acquiring the lock, whose prepared directory another
-operation's sweep removed, prepares a new one and restarts its 10 s wait,
-because a suspension is not a wait on a holder. The receipt is written only while the lock still names
-the writer, so a race can refuse an update but never lose one silently.
+`runCli(plugin, argv)` implements the [operation contract](OPERATIONS.md#operations).
+Its [CLI result reference](OPERATIONS.md#cli-result-reference) owns command syntax,
+exit codes, receipt fields and lease/proof semantics. The [caller walkthrough](../../docs/app-verification.md#caller-walkthrough)
+owns the start → exercise → handoff → cleanup procedure.
 
 ### Refusal error body
 
-Every refusal line also carries `errorBody`, the shared 2.0 error body of
-[ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)
-([Hub #921](https://github.com/jimmie-potts/agent-device-hub/issues/921)). It
-sits beside the 1.x `error` and `detail`, which do not change:
-
-```json
-{"operation":"extend","error":"run-not-running","detail":"hub-20260927T060259Z-3f9a1c is stopped","errorBody":{"error":{"code":"invalid-state","retryable":false,"detail":"run-not-running: hub-20260927T060259Z-3f9a1c is stopped"}}}
-```
-
-A refusal line is one that prints `error`: the `{"operation", "error",
-"detail"}` line above, and a `stop` that reports `receipt-locked` with its
-cleanup, which `restart` passes on. Failed outcomes, such as a `start` with
-`state: failed` and a `cause`, are unchanged. Receipts stay
-`app-verification/1`, and the exit codes stay the same.
-
-- `code` is the registry code for the 1.x refusal in the table below, and
-  `retryable` is that code's registry flag.
-- `detail` is `<error>: <detail>`, cut to 1024 characters, so the body still
-  names the 1.x refusal.
-- The package still has no runtime dependencies. It copies the registry codes
-  it uses and their flags from `@jimmie-potts/event-contracts`, and
-  `tests/error-body.test.mjs` checks that each body equals that package's
-  `errorBody`. In an isolated consumer, where that package is not installed,
-  the check skips with a printed reason.
-
-When 1.x retires ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)),
-a refusal line becomes `{"operation", "error": {"code", "retryable", "detail"}}`:
-the string `error`, the 1.x `detail` and `errorBody` are removed, and `error`
-holds the body that `errorBody` holds now.
-
-| 1.x `error` | 2.0 `code` | Retryable |
-| --- | --- | --- |
-| `usage` | `invalid-request` | no |
-| `unknown-scenario` | `invalid-request` | no |
-| `unknown-run` | `not-found` | no |
-| `invalid-receipt` | `invalid-state` | no |
-| `run-not-running` | `invalid-state` | no |
-| `scenario-mismatch` | `invalid-state` | no |
-| `already-frozen` | `invalid-state` | no |
-| `proof-conflict` | `invalid-state` | no |
-| `proof-irregular` | `invalid-state` | no |
-| `proof-root-unusable` | `invalid-state` | no |
-| `runtime-root-unusable` | `invalid-state` | no |
-| `capture-in-progress` | `capacity` | yes |
-| `receipt-locked` | `capacity` | yes |
-| `run-active` | `capacity` | yes |
-| `lease-failed` | `unavailable` | yes |
-| `internal` | `internal` | no |
-| Any other | `internal` | no |
+See the [canonical refusal shape and mapping](OPERATIONS.md#refusal-error-body).
 
 ## One run at a time
 

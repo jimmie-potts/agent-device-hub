@@ -1,5 +1,16 @@
 # Development setup
 
+Use Node 24 from `.nvmrc` and run `npm ci` at the repository root. Read the
+[delivery workflow](sdlc.md) before implementation. For current product work,
+start with [runtime development](../apps/runtime/DEVELOPMENT.md); use the owning
+module guide for its checks. Retained Hub/dashboard procedures are explicitly
+legacy.
+
+Build once, run the affected checks, then follow [app verification](app-verification.md)
+for disposable acceptance and proof. Scenario selection and full-suite triggers
+are in [runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs).
+The headings below preserve existing links and route component detail to its owner.
+
 ## Current architecture diagram
 
 The current runtime view is authored in `docs/runtime-architecture.json` and
@@ -58,7 +69,8 @@ three existing SQLite schemas. Keep `docs/system-design/reference/` together
 when copying the HTML. Bundled assets allow offline browsing. Request controls
 are disabled here; the owning services retain their origin and credential rules.
 The database reports are generated from fresh empty schema fixtures, never live
-controller files. The proposed B.U.N.N.Y. store still has no delivered table schema.
+controller files. This dated reference does not describe the current runtime store; its schema
+is owned by the [runtime guide](../apps/runtime/README.md#state).
 
 `check.py` also verifies reference generation, the REST/SSE route inventory,
 all 28 table definitions, source pins, local links and bundled asset receipts.
@@ -304,286 +316,27 @@ and keep the waits that test safety behavior.
 
 ## Static analysis
 
-`npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).
-Run `npm run build` first. Typed rules read the workspace packages' built
-declaration files, so missing or stale `dist/` output changes the results. The
-core CI job runs it right after the build and typecheck, and never fixes files.
-
-Coverage is every tracked `.js`, `.mjs`, `.cjs`, `.ts` and `.tsx` file outside the
-exclusions below.
-
-- **All files** get ESLint's recommended rules.
-- **TypeScript files** also get typescript-eslint's type-checked recommended
-  rules, including `no-floating-promises` and `no-misused-promises`.
-  - Each file uses its nearest `tsconfig.json`.
-  - The config lists the few files that belong to no project; they use the
-    default project.
-  - JavaScript files get no type-aware rules.
-- **Dashboard files** also get the React Hooks rules `rules-of-hooks` and
-  `exhaustive-deps`.
-- **Globals:**
-  - Page code gets browser globals.
-  - Node scripts that pass callbacks to Playwright get browser and Node globals.
-  - ES modules get Node's built-in globals.
-  - `.cjs` files also get the CommonJS globals.
-
-The excluded categories are:
-
-- everything the root `.gitignore` lists, including dependencies, build output,
-  local data and agent worktrees, plus the firmware build trees;
-- the Work guide's published releases (`docs/work-guide/outputs/`);
-- vendored reference assets (`docs/system-design/reference/assets/` and
-  `docs/system-design/reference/database/`);
-- saved source copies from other repositories
-  (`docs/work-guide/work/architecture/sources/`).
-
-Add a category only with its reason. Do not exclude maintained source to hide
-findings.
-
-The config adjusts some rule options to match existing idioms rather than
-defects:
-- empty `catch` blocks are allowed for best-effort cleanup;
-- a leading underscore marks a deliberately unused name;
-- side-effect ternaries are allowed;
-- a promise may be rejected with a caught error of unknown type;
-- `prefer-const` ignores a handle that signal handlers read before its single
-  assignment.
-
-For a deliberate exception elsewhere, outside the strict profile, use
-`// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
+See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
 
 ### Adoption baseline
 
-[`eslint-suppressions.json`](../eslint-suppressions.json) records how many
-findings each file had for each rule when the gate was adopted.
-
-ESLint fails when a file exceeds its recorded count for a rule. It also fails
-when a linted file has fewer findings than recorded, until you run
-`npx eslint . --prune-suppressions` and commit the smaller file. After deleting
-or renaming a file, run the same prune, because entries for files ESLint no
-longer lints are not reported.
-
-Never use `--suppress-all` or `--suppress-rule` to pass new findings. Fix the
-code instead. The one exception is existing code moved in from another
-repository as a snapshot, as the Pixoo's was until its module story cleared it
-(#843). Pass only the imported files to `--suppress-all`, and fix findings in
-code written for the move.
-
-| Baselined rules | Why they remain | Triage owner |
-| --- | --- | --- |
-| `no-unsafe-*`, `no-explicit-any`, `restrict-*`, `no-base-to-string`, `unbound-method`, `no-redundant-type-constituents` | Untyped parsed or external data passes through code that predates the rules. Typing it means a refactor in each module, not a mechanical fix. | [#770](https://github.com/jimmie-potts/agent-device-hub/issues/770). Code that the B.U.N.N.Y. runtime replaces drops its entries when retired. |
-| `require-await`, `preserve-caught-error` | Fixes change a function's return type or an error's shape. Each needs review in its module. | #770 |
-| Every rule in `apps/chompi-bridge/` | The owner's CHOMPI work is active there, so adoption did not edit it. | The CHOMPI bridge owner, then [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837) |
+See [Adoption baseline](static-analysis.md#adoption-baseline) for the authoritative procedure.
 
 ### Strict profile for new code
 
-New code for the runtime follows a stricter profile from its first commit
-([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
-`apps/runtime/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
-`packages/event-contracts/src/v2/`, and starts with no baseline entries. Staged
-imported code keeps the shared rules until its module story converts it; none
-is staged now, since the Pixoo module joined the profile
-([#843](https://github.com/jimmie-potts/agent-device-hub/issues/843)). To cover another path, add its glob to `strict` in
-`eslint.config.mjs`; the guard tests read that list.
-
-- **Lint (`bunny/strict`):**
-  - switches over a union must handle every member, and a catch-all `default`
-    does not count;
-  - conditions must be explicit: strings, numbers and nullable primitives are
-    compared, never tested for truthiness, so `undefined` is never confused
-    with zero, `false` or an empty string. A nullable object may still be
-    tested directly;
-  - no non-null assertions.
-- **No inline ESLint comments:** covered files, including JavaScript under
-  `modules/`, set `noInlineConfig`. ESLint ignores every `eslint-disable`,
-  `eslint` or `global` comment there and reports it as a warning, which
-  `lint:js` fails. An exception is a config entry after the profile blocks in
-  `eslint.config.mjs`, scoped to its files, with a comment giving the reason.
-- **Module boundary (`bunny/module-boundary`):** a file under `modules/<name>/`
-  imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
-  Node built-ins and third-party packages. Workspace packages are those in
-  `workspaceScopes` (`@jimmie-potts/`); every workspace package must use one of
-  them. The Wispr module alone also imports the pure `@jimmie-potts/wispr-contracts`
-  package to validate its unchanged collector-file handoff (#927); it may not
-  import the collector, old Hub or another module. It checks static, re-export, type and
-  literal dynamic imports, including `file:` URLs, and rejects non-literal
-  dynamic imports. Paths resolve from the repository root, so the rule works
-  from any directory. `createRequire` and `.cjs` files are not checked.
-- **Safe errors:** production code keeps off the console and keeps exception
-  text and hand-built error bodies out of what it builds. See
-  [Safe-error rules](#safe-error-rules).
-- **Compiler:** new packages extend `tsconfig.strict.json`, which adds
-  `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
-  `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
-  to the shared settings.
-
-The local rules live in `scripts/eslint/bunny-rules.mjs`.
-`tests/strict_profile.test.mjs`, run by `npm run test:workflow`, checks:
-- which paths the profile covers, the exact rule options and that inline
-  comments fail lint there;
-- the module boundary rule, including type imports;
-- each safe-error rule's valid and invalid shapes and where the rules apply;
-  that only a named exception listed in the table below lifts one, and only
-  the profile block sets its options; and that each file exception names files
-  that exist and still hides a finding of every rule it lifts;
-- that every TypeScript project compiling covered code keeps the five compiler
-  settings, as `tsc --showConfig` reports them;
-- that covered paths have no lint baseline entries;
-- that every workspace package uses a scope listed in `workspaceScopes`;
-- that the compiler base rejects an unchecked index and an explicit `undefined`
-  optional property.
-
-Guide-only revisions skip the core job under the
-[SDLC exception](sdlc.md#guide-only-ci-exception). Run
-`npx eslint docs/work-guide` for them. It needs no build, because the guide has
-no linted TypeScript.
+See [Strict profile for new code](static-analysis.md#strict-profile-for-new-code) for the authoritative procedure.
 
 ### Safe-error rules
 
-Three rules apply ADR 0012's
-[Safe errors](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
-and [Observability](decisions/0012-bunny-event-platform.md#observability) rules
-to production code under the profile
-([#953](https://github.com/jimmie-potts/agent-device-hub/issues/953)): the
-`strict` globs and JavaScript under `modules/`, without staged code or tests.
-Each message names the ADR rule and the safe alternative. The rules read syntax
-only, so they also check JavaScript. They catch the mechanical cases; the SDK's
-and the runtime's tests cover the rest.
-
-- **`bunny/no-console`:** no global `console`, `node:console`, `process.stdout`
-  or `process.stderr`, also through `node:process`. Record through the
-  module's logger; the SDK reports through `onDiagnostic`, which the runtime
-  connects to its sink.
-  - Reading `process.stdout.isTTY` also counts, so a command-line check belongs
-    in a listed entry point.
-  - It also catches `stdout` or `stderr` destructured from `process` or from
-    the default `node:process` import (`const {stdout} = process`), and
-    `globalThis.process.stdout` (#954).
-  - It misses `process.emitWarning`, writes to file descriptors 1 and 2, an
-    alias of `process` and `await import('node:console')`; see
-    [the misses](#lint-misses-and-their-reasons).
-- **`bunny/no-raw-error-text`:** no reading an exception's `message`, `stack`
-  or `cause`, directly or by destructuring, and no turning it into text with a
-  template literal, `String()`, `+`, `+=`, `JSON.stringify`, `toString()` or
-  `node:util`'s `inspect` or `format`. Keep the exception as a `cause`, and
-  report its registry code, its type (the SDK's `errorType`) and fixed text.
-  - An exception is a catch binding; the first parameter of an inline `.catch`
-    handler, a `.then` rejection handler, or an `error`, `uncaughtException` or
-    `unhandledRejection` listener; a parameter whose type names an error class
-    (a name ending in `Error` or `Exception`); or a variable or a simple member
-    chain, such as `r.reason`, `event.error` or `this.#failure`, inside an
-    `instanceof` test against an error class.
-  - A value narrowed by `instanceof Error` counts wherever it came from, so
-    `error instanceof Error ? error.message : 'unknown'` fails in a helper or a
-    callback too. The cost is that a message check such as
-    `error.message.includes('ECONNRESET')` fails; test `error.code` or the
-    class instead.
-  - An error class this repository declares holds fixed text from the code that
-    raised it: one declared in the file, or imported by a relative path or from
-    a `workspaceScopes` package. Its message and text may be read where an
-    `instanceof` test, an early exit or the parameter's type proves the value
-    is one. Its `stack` and `cause` may not, nor may `inspect` or `format`,
-    which print the stack. The rule checks where foreign text is wrapped in an
-    own class instead, so an own class built from text the rule does not track
-    passes. It cannot tell an own class whose message carries input: Nanoleaf's
-    `ValueError` quotes the text it could not parse in `compat.ts` and the
-    address it refused in `transport.ts`.
-  - It also catches ``String.raw`${error}` ``, an exception in an array
-    literal that is joined (`[label, error].join(' ')`), and one concatenated
-    onto a string literal (`'failed: '.concat(error)`) (#954).
-  - It misses an alias (`const failure = error`), a helper the exception is
-    passed to, a custom type guard, an untyped callback parameter outside these
-    shapes, a value typed `any`, a computed member or a call inside an
-    `instanceof` test (`r[key] instanceof Error`), any other tag, a variable's
-    `join` or `concat`, and a narrowed catch binding that is later reassigned;
-    see [the misses](#lint-misses-and-their-reasons).
-- **`bunny/error-body-from-registry`:** no object literal with an `error`
-  property whose value is an object literal with its own `code`, as in
-  `{error: {code, ...}}`. This includes the error block inside a reply or an
-  outcome. Build the body with `errorBody(code, {detail})` from
-  `@jimmie-potts/event-contracts`, so its code and `retryable` flag come from the
-  registry. Passing on a body or its `error` member, or spreading it, as in
-  `{error: {...refused.error, requestId}}`, is allowed; overriding its `code` is
-  not. It misses an error block built in a separate variable and a body written
-  as JSON text.
-
-Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
-profile blocks, never inline comments, and each is listed here.
-`tests/strict_profile.test.mjs` fails on a block that lifts a rule without that
-name or this listing, and on a file exception that no longer hides a finding.
-
-| Block | Where | Rules lifted | Why | Owner and conversion |
-| --- | --- | --- | --- | --- |
-| `ignores` in `bunny/safe-errors` | Tests: `**/tests/**` and `*.test.*` | All three | Tests read errors to report failures and spell out the bodies they expect. | Permanent |
-| `bunny/safe-errors/scripts` | `apps/runtime/scripts/` | `no-console` | Scripts write their results to the terminal. | Permanent |
-| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The runtime's journal sink (`log.ts`) and process entry (`process.ts`), the Pixoo library migration's entry point (`migrate-pixoo.ts`, #931), the Nanoleaf migration's entry point (`migrate-nanoleaf.ts`, #933), and the verification run's supervisor and network guard, own the process's standard streams. | Permanent. A new entry point is added by name. |
-| `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
-| `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message, which repeats only the operator's own argument, in the usage output before the runtime starts. ADR 0012's surfaces do not include usage output. | Permanent ([#954](https://github.com/jimmie-potts/agent-device-hub/issues/954)) |
-
-The verification run's harness, run adapter and scenario runner follow the
-rules since #954. The supervisor's refusals come from `errorBody`: a malformed
-body is `invalid-request`, an oversized one `too-large`, and any other failure
-`internal` with fixed text. The adapter's reports and a failed step's detail,
-which a capture's proof keeps, name a failure by its own text, a refusal's
-registry code or the exception's type (`failureOf` in the scenario catalog).
+See [Safe-error rules](static-analysis.md#safe-error-rules) for the authoritative procedure.
 
 ### ADR 0012 rules and their checks
 
-Each rule in ADR 0012's
-[Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
-and [Observability](decisions/0012-bunny-event-platform.md#observability)
-maps to the check that fails when code breaks it, or to the reason no
-mechanical check can (#954). Reviewers check the last column under
-[docs/sdlc.md](sdlc.md#review-and-merge) step 3. A module story adopts the
-module test kit and these lint rules; it does not copy this table. A file name
-is a test file in the named package's `tests/` directory.
-
-| Rule | Checks that fail | Not checked mechanically |
-| --- | --- | --- |
-| One registry: codes and their `retryable` flags | Event contracts `v2.test.mjs` (registry parity, unregistered codes refused); SDK `registry.test.ts` (an unregistered code fails to compile), `remote.test.ts` and `request.test.ts` (refusals rebuilt from the registry); lint `bunny/error-body-from-registry` | |
-| Typed refusals; an exception mapped once where the effect is known | Kit check `refuses a command with the shared error body`; SDK `request.test.ts` and `configuration.test.ts` | That an error is mapped once and then passed on unchanged: the Specification review |
-| A rejection proves no effect | SDK `conformance.test.ts` on both transports (a responder that fails after it started is `uncertain-result` and nothing sends it again), `workers.test.ts`; catalog scenario `end-to-end` | |
-| `accepted` after durable state; a full disk refuses; a restart reports and never reruns | Kit check `keeps the outcome in its outbox and sends it again after a restart`; runtime `core.test.ts`, `core-store.test.ts` and `full-disk.test.ts` (full disk); the LIFX, Pixoo, playback and Nanoleaf restart tests | A full disk in each module: the kit cannot fill a disk, so each module story tests its own store (LIFX does) |
-| Retries: nothing resends a command; one owner and capped backoff per loop | SDK `expiry.test.ts`, `remote.test.ts` and `grants.test.ts` (`duplicate-conflict`, the responder runs once); runtime `core.test.ts` (capped backoff, one record and a summary) | That `retryable` never permits a resend and each loop has one owner: the Specification review. A module's write budget: its own tests |
-| Each observation or sync attempt has a deadline | SDK `sync.test.ts` (a sync past its deadline is `unavailable`; `timeoutMs` is required); the kit check `starts while its device never answers, and reports it unavailable` (a module whose device never answers must report it within the kit's timeout) | A module whose kit description gives no `offline`: the core reaches no device, and every shipped device module gives one |
-| Deadlines: queued is `expired`, held is `uncertain` | SDK `expiry.test.ts`; LIFX `queue.test.ts` | Partial effects kept in an outcome: each module's tests |
-| Cancellation is not undo | SDK `workers.test.ts` (a call aborted after its worker started is `uncertain`, one aborted before is `cancelled`) and `diagnostics.test.ts` (a command cancelled while it waits is one cancellation) | That a module's own cancellation keeps the effects already made: each module story |
-| Committed is not published | SDK `outbox.test.ts`; runtime `core-store.test.ts`; the kit's outbox check | |
-| Acknowledging outcomes | SDK `outbox.test.ts` (an acknowledged outcome is forgotten); runtime `lamp.test.ts` (the stand-in refuses a reused `(source, id)`) | The core's acknowledgment, after its commit and only from the authenticated core: [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) |
-| Late and conflicting outcomes | None yet | [#782](https://github.com/jimmie-potts/agent-device-hub/issues/782) and [#923](https://github.com/jimmie-potts/agent-device-hub/issues/923) build the tracker and inbox rules with their tests |
-| Safe errors | The [safe-error rules](#safe-error-rules); the kit's secret and record checks (`checkModuleRecord`); runtime `safe-errors.test.ts`, `log.test.ts` and the gateway tests' token scan; scenario `runner.test.ts`; verify `supervisor.test.ts` and `adapter.test.ts` | [The lint misses](#lint-misses-and-their-reasons): the Standards review |
-| Correlation: `traceparent` on every message and call, trace IDs on every record | The profile 2.0 validator in `v2.test.mjs`, the SDK tests and every kit check; the kit's `accepts` check (each record carries the command's trace); runtime `diagnostics.test.ts`, `context.test.ts` and `tracing.test.ts` | `traceparent` on HTTP calls other than the edge's: the Standards review |
-| Recorded spans through the host adapter, with registered names | Runtime `tracing.test.ts` and `span-file.test.ts`; observability `host.test.mjs`; every kit check (no span loses its parent) | |
-| Context stays inside B.U.N.N.Y. | SDK `trace.test.ts`; runtime `tracing.test.ts` (only authenticated context continues); the kit's outbox check (a replay is linked, never reparented); LIFX `module.test.ts` (no trace context to the bulb) | No trace context to other devices: each module story. No span open across downtime: the Standards review |
-| Records at decision points, once | The kit's `accepts` and `refuses` checks (the bus's records); SDK `diagnostics.test.ts`; runtime `isolation.test.ts` and `lamp.test.ts` | Tracker steps: #782. A catch that only passes an error on logs nothing: the Standards review |
-| Levels | SDK `diagnostics.test.ts` (each registry code's level); runtime `process.test.ts` and `core.test.ts` | A module record's level: the kit checks its event and attributes only, so the Standards review |
-| Repetition: transitions, then bounded summaries | Runtime `isolation.test.ts` (a dropped delivery at once, then a count a minute); SDK `availability.test.ts`; each module's outage and polling tests | One degradation and one recovery per outage: each module polls its own way, so each module story tests it, as every shipped device module does |
-| Logs are not history | `checkModuleRecord` (registered attributes only); the kit's outbox check (one publication record) | A payload in a registered attribute: the Standards review |
-| Bounds | SDK `diagnostics.test.ts` (a throwing callback changes no result); runtime `log.test.ts`; the observability package's tests | Request and trace IDs as metric labels: there are no metrics before #813 |
-| Telemetry is never acknowledged; loss is visible | Runtime `log.test.ts` and `tracing.test.ts` (`runtime.stopped` counts what was lost) | |
-| Following one request | Verify `follow.test.ts` and `supervisor.test.ts`; capture steps `follow-one-request` and `control-follow-fails` | |
+See [ADR 0012 rules and their checks](static-analysis.md#adr-0012-rules-and-their-checks) for the authoritative procedure.
 
 #### Lint misses and their reasons
 
-The safe-error rules read syntax only, so they cannot follow a value through
-code. #954 added checks for five misses at the coordinator's request, beyond
-the owner's scope note on #954, which gave known misses a stated reason unless a
-real finding needed a check. Each has an invalid case in
-`tests/strict_profile.test.mjs` that fails without it. The rest stay unchecked
-for these reasons:
-
-| Miss | Status | Reason |
-| --- | --- | --- |
-| `stdout` or `stderr` destructured from `process`, and `globalThis.process` | Checked (`no-console`) | |
-| ``String.raw`${error}` `` | Checked (`no-raw-error-text`) | |
-| `[label, error].join()` and `'failed: '.concat(error)` | Checked on array literals and string literals | A variable's `join` or `concat` may be an array's, which keeps the value whole; a syntax rule cannot tell |
-| Any other tag | Not checked | The tag decides what it does with each value |
-| An own error class whose message carries input | Not checked | The rule cannot see what a caller passes to the constructor. Nanoleaf's `ValueError` quotes input in `compat.ts` and `transport.ts`; its message never goes into a record or body (#844) |
-| `process.emitWarning` | Not checked | Its only use is the SDK's default `onError`, with fixed text and the error as `cause`. The runtime passes its own `onError`, and every module's outbox gets its `log`, so the default never runs in the runtime. A check would need an exception for exactly those two files |
-| Writes to file descriptors 1 and 2, an alias of `process`, `await import('node:console')` | Not checked | No covered code does this, and a syntax rule cannot follow an alias or a computed descriptor |
-| An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
-
-<a id="depot-diagnostic-access"></a>
+See [Lint misses and their reasons](static-analysis.md#lint-misses-and-their-reasons) for the authoritative procedure.
 
 ## CI diagnostic access
 
@@ -967,289 +720,19 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 
 ## Runtime checks
 
-The Automation browser journey uses the existing runtime harness with the real
-Nanoleaf module over `SimulatedNanoleaf`. It checks explicit disabled creation,
-enable/settings/edit/delete, passive drafts, one page-closed tracked moment,
-named Free scene/brightness restoration, keyboard and axe. Read-only UI uses an
-intercepted authority response; the gateway suite separately checks real reader
-refusal. The `automation-lines-moment` catalog scenario adds reader resync and
-restart without replay over both existing transports. No physical proof is claimed.
-
-Automation gateway checks (`apps/runtime/tests/automation-gateway.test.ts`) cover
-read/control admission, the required write header, bounded bodies, credential
-revocation during a pending write and safe error/trace records. The route helper
-tests preserve the existing CRUD/settings shapes. Both are discovered by
-`npm run test:runtime:built` after the normal build and by the existing core CI
-job; the Automation page's unit checks join `test:runtime-dashboard:built`.
-
-`apps/runtime` is the current runtime and module host from
-[ADR 0012](decisions/0012-bunny-event-platform.md); its
-[README](../apps/runtime/README.md) covers running it, health, state, failure
-isolation and the event-loop lag check. It follows the
-[strict profile](#strict-profile-for-new-code), tests included.
-
-For the module frontend contract (Hub #932), the existing SDK manifest/kit
-checks and runtime `gateway.test.ts` cover API 1.3 declarations, trusted asset
-authentication and response policy, passive-page compatibility, read-only
-command refusal and reads without device effects. After the root build, run
-`node --test apps/runtime/dist/tests/gateway.test.js` for the gateway boundary.
-These tests are already discovered by the core CI SDK/runtime commands below;
-they do not replace the browser interaction or disposable Acceptance checks.
-`frontend-build.test.ts` uses the production build plugin to bundle a synthetic
-module's explicit browser entry and rejects one that imports its Node-side
-implementation. Run it after the root build with
-`node --test apps/runtime/dist/tests/frontend-build.test.js`; core CI's existing
-runtime test discovery includes it. It starts no listener and keeps temporary
-workspaces under the checkout's ignored `.local/scratch/frontend-build/`.
-
-Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
-`npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
-`test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The core
-CI job runs `npm run test:runtime:built` after its fresh build. The tests use
-in-test fixture modules, port 0 on loopback and private state directories under
-the system temporary directory, which must be outside every Git checkout. Some
-start the runtime in child processes, as the service manager would; one kills it
-between the fixture lamp's commit and publish. The fixture lamp and chime run the
-module test kit. Some start the runtime with `--edge` and `--simulate`: a remote
-part with a run-generated credential reaches its gateway (#835), and
-configurations without an edge section, and credentials files that are missing,
-not private, malformed or that act as the core or a module, are refused. The
-gateway tests cover each caller's grant, browser sign-in and its Origin checks,
-credential reloads, MCP through `packages/mcp`, module pages and settings, the
-route map against the old Hub's sources and the cutover's credential
-conversion, and scan every record, answer, health document and span for the
-synthetic token prefix `tok_SYNTHETIC835`. The
-runtime's records must pass the diagnostic contract's validator (#903), as
-maintenance intake reads them, and `runtime.stopped` must count no lost record or
-span. The decision-record and tracing tests read the runtime's records and the
-spans its host adapter hands a test sink (#949). The Pixoo library migration's
-tool (#931) runs in process and as its entry point, against a synthetic library
-it writes with the Pixoo module's code, starts the runtime in a child process to
-show each one refusing the other's lease, and interrupts the entry point with
-SIGINT and SIGTERM. Its full-disk test mounts small private tmpfs file systems
-in a user and mount namespace (`unshare -rm`); a host that refuses one skips it
-and says why. The Nanoleaf migration's tool
-(#933) runs in process and as its entry point, against a synthetic bridge state
-it writes with the Nanoleaf module's code, and starts the runtime in a child
-process to show each one refusing the other's lease. Its full-disk test fills a
-4 MiB tmpfs in a user and mount namespace (`unshare -rm`) at each stage of the
-write, and skips with the reason where the host refuses that. The agent hook tests (#926) run `apps/runtime/bin/monitor-hook.mjs`
-as child processes with synthetic 1.x producer files and synthetic Claude Code
-payloads, against the runtime's gateway, a closed port and a listener that never
-answers; they strip any `CLAUDE_CODE_*` variable and `CODEX_HOME` from the hook's
-environment. The Codex Desktop tests
-run the module's real reader process on a synthetic marker in a temporary Codex home, and make the marker a FIFO with `mkfifo` to stand in for a stalled mount.
-No test reads a real client's hook settings or Codex files. They need no device
-or network.
-`node apps/runtime/scripts/measure-memory.mjs` measures the
-zero-module memory for #123, and `measure-edge-memory.mjs` the edge under a
-stalled reader; the README's Memory section says how.
-`node apps/runtime/scripts/measure-commits.mjs` measures the SQLite commits,
-blocked time and event-loop delay of the core's intake, a LIFX command and the
-outbox (#972, #123); the README's Commits section says how.
-`node apps/runtime/scripts/measure-hook.mjs` measures the agent hook from its
-start to its exit against a disposable runtime's edge (#926); the README's
-[Agent hooks](../apps/runtime/README.md#agent-hooks) section says how.
+See [Runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) for the authoritative procedure.
 
 ### Runtime test layers
 
-Every runtime story is tested at four layers
-([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
-The core CI job runs the first three after its fresh build, on every PR that
-runs the Checks workflow; Markdown-only changes skip them. The App verification
-job judges the fourth layer's capture steps without a user manager.
-
-| Layer | Command | What it runs |
-| --- | --- | --- |
-| Unit | Each package's own: `npm run test:sdk:built`, `npm run test:runtime:built`, `npm run test:nanoleaf:built`, `npm run test:pixoo:built`, `npm run test:playback:built`, `npm run test:lifx-module:built`, `npm run test:tidbyt-module:built`, `npm run test:codex-desktop:built` | The package's and its modules' own tests, moved tests included |
-| Contract and conformance | `npm run test:events:built` | The profile 2.0 and core family fixtures. The SDK's transport conformance suite runs within `test:sdk:built`, and each module runs the module test kit within its own suite, as the fixture modules do in `test:runtime:built` |
-| End-to-end | `npm run test:runtime:scenarios:built` | The runtime's scenario catalog in the in-memory harness, over both transports (tier 1) |
-| Acceptance | `npm run -s verify:runtime -- <operation>`, with `npm run test:runtime:verify:built` in CI | The same catalog in disposable runs, for the Acceptance reviewer (tier 2) |
-
-`npm run test:runtime:scenarios` builds, then runs
-`test:runtime:scenarios:built`: the compiled tests in
-`apps/runtime/dist/tests/scenarios/`. To run some scenarios only, name them
-after a build, for example
-`node --test --test-name-pattern=end-to-end apps/runtime/dist/tests/scenarios/*.test.js`.
-Each catalog scenario runs twice in the runtime's module host, on a manual
-clock: once with its parts on the host's bus, and once through a `RemoteEdge`
-on 127.0.0.1 with run-generated tokens. The harness never listens on an
-installed service's port (8765, 8787, 8788, 8791 or 41231), keeps its state in
-a private directory under the system temporary directory, which must be
-outside every Git checkout, and checks every message against profile 2.0. It
-needs no device. The [runtime README](../apps/runtime/README.md#scenario-catalog)
-describes the catalog and how a story adds to it.
-
-The fixed Hub mode checks (#924) use synthetic Nanoleaf/Pixoo participants.
-After the root build, use Node 24 and an outside-checkout `TMPDIR`:
-
-```bash
-node --test --test-concurrency=1 apps/runtime/dist/tests/mode.test.js apps/runtime/dist/tests/mode-participants.test.js apps/runtime/dist/tests/mode-runtime.test.js
-node --test --test-concurrency=1 --test-name-pattern='MCP lists|Hub mode HTTP|a core the configuration refuses' apps/runtime/dist/tests/gateway.test.js apps/runtime/dist/tests/config.test.js
-node --test --test-concurrency=1 --test-name-pattern='hub-mode over' apps/runtime/dist/tests/scenarios/catalog.test.js
-```
-
-These checks cover the durable selection, independent device outcomes, failed
-saves, duplicates, explicit reapply, authorization and restart without replay.
-The existing runtime and catalog CI suites discover them. The inbox-dependent
-Acceptance journey uses the real inbox in a disposable run.
+See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.
 
 ### Runtime verification runs
 
-Hub #920 adds the runtime adapter for the
-[app verification contract](app-verification.md),
-`npm run -s verify:runtime -- <operation>`. A run serves the runtime from the
-checkout with `--simulate`, `--edge`, `--config` and `--environment test`,
-either with the shipped module list or with the fixture modules, over simulated
-devices, on loopback. The
-[adapter README](../apps/runtime/verify/README.md) lists its run scenarios,
-capture steps and boundary checks. After `npm run build`, with Node 24 from the
-worktree root:
-
-```bash
-npm run -s verify:runtime -- help
-npm run test:runtime:verify:built   # full suite, when the local scope below requires it
-```
-
-Choose local verification by the behavior changed, including its direct
-consumers, rather than by file paths (owner decision, 2026-10-08):
-
-- For a feature, fixture or catalog change, run focused tests for the changed
-  behavior and its direct consumers, then exercise the affected catalog
-  scenario or scenarios in a disposable run. Reuse those scenarios for the
-  independent Acceptance review where it applies. Editing runtime source or a
-  scenario file alone does not require the full local verification suite.
-- Run `test:runtime:verify:built` locally when the change alters shared
-  supervisor, isolation, lifecycle or run-adapter behavior across scenarios.
-  This includes shared boundary guards and build-freshness checks. Run it alone,
-  because it starts real runs; do not overlap it with another verification or
-  Acceptance run.
-- Documentation-only changes need no product run. Keep the applicable workflow
-  and specification checks.
-
-Build once from the candidate before its local `:built` checks and disposable
-runs. Record the candidate revision, selected tests and scenarios, why they
-cover the affected behavior, their results and any skips or evidence limits.
-Required checks must pass. The [Acceptance review policy](sdlc.md#acceptance-review)
-still requires an independent reviewer and at most one run at a time on this
-host. All runs keep synthetic data, simulated devices and an outside-checkout
-`TMPDIR`; they grant no installed-system or physical-device authority.
-
-The App verification CI job still runs the full `test:runtime:verify:built`
-suite on every PR that runs the Checks workflow. Focused local verification
-does not waive an applicable failed or missing CI job, contract check, browser
-or accessibility check, or independent review.
-
-`test:runtime:verify:built` starts runs without a user manager and judges every
-capture step through `runCaptureStep`: one per catalog scenario, so the same
-scenarios pass in the in-memory harness and in a run. It also starts each
-boundary negative control and shows its check fails, shows the network guard
-refuses `net`, `http`, `https`, `fetch` and `dgram` in a worker thread and a
-child Node process too, and checks that `build-current` watches every source
-the run loads. It also judges the follow query of Hub #950, which reads one request's or trace's journal
-records and spans in a run (see [Follow one request](../apps/runtime/verify/README.md#follow-one-request)),
-and the runtime tests (`test:runtime:built`) cover the bounded, private span file that the
-run's runtime writes. It starts the `nanoleaf-migrated` run (#933), whose seed migrates a synthetic Nanoleaf bridge
-state into the run, and reads the migrated preferences through the run's gateway. It also checks that `start` and
-`doctor` judge the runtime's own health as the in-memory harness does, and that the harness's refusals come from the
-registry (#954). The host route takes the runtime as `--app runtime`. Its lifecycle tests drive
-real transient units and skip with a printed reason without a user manager; the
-App verification CI job runs the rest. It needs Playwright Chromium and an
-outside-checkout `TMPDIR`, as the app verification tests do.
+See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
 
-`apps/runtime/dashboard` is the B.U.N.N.Y. dashboard on the runtime (Hub #922),
-copied from `apps/dashboard`; its [README](../apps/runtime/dashboard/README.md)
-covers what it has and [PROVENANCE.md](../apps/runtime/dashboard/PROVENANCE.md)
-what was copied and changed. It follows the
-[strict profile](#strict-profile-for-new-code), tests included: `src/`
-type-checks for the browser with its own `tsconfig.json`, and `tests/` for Node
-with `tests/tsconfig.json`. Node 24 runs the tests' TypeScript as it is, with no
-build step of their own.
-
-Use Node 24 from the worktree root. `npm run build` builds the page into
-`apps/runtime/dist/dashboard/`, after the SDK and the event contracts, and
-`npm run typecheck` checks both projects.
-
-The module-page tests cover catalog/build agreement and reuse of the shell's
-connection, including read-only refusal and cleanup of active or late syncs.
-The normal dashboard build also compiles the fixed frontend imports for the
-browser. Real feature interactions and trusted iframe execution are verified
-by the owning story's focused browser and disposable Acceptance checks.
-
-```bash
-npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
-npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
-npm run test:runtime-dashboard:browser   # the full browser suite, local only
-node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
-node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
-node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
-node apps/runtime/dashboard/tests/automation.browser.ts # fresh rules, one simulated moment and safe restoration
-node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
-node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
-node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
-node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition rendering and media deletion without display writes
-node apps/runtime/dashboard/tests/pixoo-player.browser.ts # frozen sessions, playback controls and explicit restart with changes
-node apps/runtime/dashboard/tests/pixoo-monitor.browser.ts # title refresh, passive reads, presentation controls and Pixoo-only dismissal
-node apps/runtime/dashboard/tests/pixoo-settings.browser.ts # safe setup projection and explicit brightness/screen commands
-node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts # retained wall editor through authenticated tracked commands
-```
-
-The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
-
-The core CI job runs `test:runtime-dashboard:built`. The browser checks use
-Playwright Chromium against the built runtime in the test's own process, with
-the core, its gateway on a free loopback port, a private state directory under
-the system temporary directory, which must be outside every Git checkout, and a
-synthetic hook that publishes lifecycle observations through the SDK edge. They
-contact no device and no installed service. `smoke.ts` checks that the gateway
-serves the built page, which signs in without a form, shows a synthetic
-session's finished turn unread with the Hub mode and inbox panels, passes axe at
-1,280 px and sends no command while it loads. The full suite (`browser.ts` and
-`trusted.ts`) adds sessions appearing, an approval raised and cleared, a
-finished turn that stays unread until the record clears it, a resync after a
-lost stream with no replayed command, positive read evidence and a synthetic
-device acknowledgment clearing rows without a page command, routes,
-Places, axe at 1,440 and 390 px, a session that ends with a restart, Disconnect,
-the launcher's code, the bookmark on either loopback name, a reload and a
-second tab, and another local app's link, frame and hostile re-navigation
-(Hub #561). The focused `controls.browser.ts` journey adds a simulated LIFX
-control that shows accepted before completion, an uncertain write locked across
-reload and read-only refresh without replay, a manifest-declared sign page in the
-shell, Connections build identity, keyboard activation and desktop/phone axe.
-It also runs directly with `node apps/runtime/dashboard/tests/controls.browser.ts`
-after a build when the accepted local scope calls for only that changed journey.
-The focused `inbox-history.browser.ts` journey checks explicit resend, dashboard
-dismissal visible through MCP, timeline filters, keyboard and read-only access,
-reload without replay, and desktop/phone axe scans.
-Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
-page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
-a directory to keep their screenshots.
-
-The focused `hub-mode.browser.ts` journey uses synthetic participants to check
-keyboard selection, the saved choice and each device's result, same-mode
-reapply, a lost reply, read-only controls and reconnect/reload/restart without
-replay. It runs axe on the changed panel and writes a screenshot to its optional
-private evidence directory. It contacts no physical device.
-
-The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
-fresh synthetic library and simulated display. It checks a revision-bound name
-save through the shared shell, owner-confirmed state, read-only refusal,
-reload without resend, no display write and accessibility. It also executes a
-separately bundled trusted editor fixture while retaining passive-page script
-refusal. The full local browser command includes this journey and the Library,
-Playlists, Player, Monitor and Settings journeys. They cover saved renditions,
-referenced previews, explicit controls, read-only access and accessibility.
-Monitor's synthetic Desktop module publishes metadata through its own SDK;
-no provider files are read. This proves a title-only update reaches the page
-without a manual refresh or a new command.
-
-The `pixoo-pages` catalog scenario exercises declared React pages, passive
-bounded reads and previews, one tracked playlist edit and a forged read-only
-refusal. Run it in both catalog transports and through the disposable adapter;
-independent Acceptance also uses the pages interactively. These are source and
-simulator checks, not physical-display acceptance.
+See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.
 
 ## Agent lifecycle contract checks
 
@@ -1408,260 +891,19 @@ and integrated performance remain separately evidenced downstream gates.
 
 ## Standalone hub checks
 
-Hub #5 targets Node 24 on Linux in WSL. Run `npm ci`, `npm run build`,
-`npm run typecheck`, `npm run test:hub` and `npm run test:hub:package` from the worktree root, alongside
-the shared controller/lifecycle/state/MCP and workflow suites. Both are
-[old system checks](#old-system-checks) that run locally, not in CI. Tests use disposable private Linux state, synthetic credentials and
-fake loopback controllers. They do not start installed services or operate
-devices. The source includes supervised child release, fenced import, route readiness,
-interrupted coordinator recovery and rollback tests. Full integrated performance
-qualification remains #30; source checks do not install or activate personal hooks.
-The hub and setup suites refuse a `TMPDIR` inside any Git checkout and fail
-with `store-in-checkout`, so a task-scoped `.local/scratch` folder does not
-work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/` with a
-short name, such as `~/.cache/agent-device-hub/gh916t`, before `npm run test:hub`
-or `npm run test:setup`. Keep the `TMPDIR` path at most 48 bytes: a Hub test
-binds a Unix socket 59 bytes below it, and a socket path stops at 107 bytes, so
-a longer one fails with `listen EINVAL`.
-
-Running build identity is covered by `apps/hub/tests/build.test.mjs` in the
-Hub and extracted-package suites: metadata failures (including linked manifests), read authorization,
-unhealthy status, manifest replacement and a real process restart across a
-current-link switch. `test:hub:package` also runs
-`scripts/hub-build-identity.test.mjs` against disposable Git repositories to
-verify clean, dirty, missing and equal-version/different-commit provenance.
-The extracted manifest must carry the package command's captured source identity.
-The running packaged Hub must report that identity in health and dashboard context.
-Complete dependency inventories and the 8 MiB manifest boundary are covered;
-oversized or invalid metadata still reports unknown.
-
-Hub upgrade command checks use `apps/hub/tests/install-*.test.mjs` through
-`npm run test:hub` and `npm run test:hub:package`, which run locally, not in CI.
-Use the private test TMPDIR
-above. Fixtures cover approval drift, package/dependency inventories, compatible
-latest-state recovery, both shared-layout adoption orders, interruption,
-receipt finalization and owned retention. They use synthetic state and fake
-service control; installed upgrade acceptance follows the exact-plan checkpoint
-under [applicable authority](sdlc.md#installation-and-evidence), including standing
-authorization without a renewed human approval.
-`install-service-contract.test.mjs` covers systemd omitting an empty
-`EnvironmentFiles` property, binds a configured list and still rejects a missing
-freeze capability. Its fake `systemctl` runs in an isolated child process.
-`install-plan.test.mjs` also covers large protected Codex executables: streaming
-fingerprints detect changed bytes, enforce a 256 MiB protected-file limit and
-retain the 64 MiB default limit for release inventories.
-
-Controller contract 1.1 reads for #576 are covered by
-`apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
-`apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
-packaged hub tests already include. They run over
-loopback HTTP against the shared fake controller in
-`apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
-`'1.0'`, `'1.0-negotiating'` and `'1.0-unknown-route'` (Nanoleaf's 404 refusal), epoch restarts, injected timeouts and 5xx answers,
-and a log of every request and command). Import it from a test instead of writing
-another ad hoc server; it is not a `*.test.mjs` suite. The cases cover negotiation
-and the `1.0-only` verdict per controller epoch, unchanged 1.0 readers, the strict
-`apiVersion` parameter on the snapshot route, MCP `status` and zero command POSTs.
-No registered controller serves 1.1 yet, so these checks are fake-controller
-evidence only; installed and controller-adoption acceptance stay with
-codex-nanoleaf#158 and divoom-app-upgrade#92.
-
-The moment sender for #335 is covered by `apps/hub/tests/moment-sender.test.mjs`,
-the slot-wait cases in `apps/hub/tests/controllers.test.mjs` and the moment command
-cases in `apps/hub/tests/controller-versions.test.mjs`, which the same hub suites
-already include. The shared fake now admits commands
-through the contract's reference `admit`, and its `answerNext`, `hold` and
-`moments()` script a device's answer, stall a request and list the moment POSTs.
-The cases inject the hub-monotonic clock and cover the bounded slot wait, the
-request built from the snapshot, the not-sent reasons with no POST, ambiguous
-answers with exactly one POST, independent devices and no command after a hub
-restart. They are fake-controller evidence; a live moment needs a controller that
-serves 1.1 and a caller such as #336 or #358.
-
-The owner moment route for #336, `POST /api/controllers/v1/:id/moment`, is covered
-by `apps/hub/tests/moment-route.test.mjs`, which `test:hub:built` and the packaged
-hub tests already include. It runs against the shared
-fake and covers:
-
-- `forbidden` for `read` scope, another device grant and a missing mutation header;
-- 400 `invalid-request` for a palette, an extra field, a bad mood ID or an
-  out-of-range duration, with no controller request;
-- `not-sent` with no command for an undeclared mood, a duration above the device
-  limit, a 1.0-only controller and a controller without moments;
-- exactly one POST with a fresh `momentId`, `event` and no palette for a valid press;
-- failed receipts, a lost answer and a typed refusal passed through as typed;
-- a controller that stalls past the route's 2.5 s bound, answered `uncertain`
-  inside the 3 s cap with one request;
-- a press that waits for the device slot and still sends once.
-
-Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
-`test:hub`, `test:hub:built` and the packaged hub tests already include through
-the `apps/hub/tests/*.test.mjs` pattern. It runs the
-shared playback module against fake sources with no speaker code, the Sony
-module against a fake loopback receiver and the Sonos module against a fake
-loopback AVTransport service. Freshness checks use a controlled clock. The #233
-cases cover two sources under one playback ID: independent freshness, the
-preference rule (Move alone, grouped, Sony alone, a Move that goes silent
-mid-song staying stale and then yielding to the Sony), a command checked after
-the presented source changed, and the rejected `selected` configuration form.
-Route checks cover authentication, the configured target, unsupported controls,
-duplicate and concurrent commands, failed/uncertain results and a hub with both
-sources. The dashboard browser fixture and `mcp.test.mjs` use the same
-configuration shape. These tests do not contact a speaker or phone. Installed
-playback acceptance with a real iPhone, HT-A9 and Move needs separately
-authorized speaker addresses and is recorded on the issue.
-
-For owning-service acceptance, prepare the immutable revisions in
-`apps/hub/fixtures/pixoo-source.json` and `nanoleaf-source.json` in disposable
-checkouts. Build Pixoo with its Node 24 `npm ci` and `npm run build`.
-Run from this hub worktree after building:
-
-```bash
-node scripts/check-hub-pixoo.mjs /absolute/prepared/pixoo
-node scripts/check-hub-nanoleaf.mjs /absolute/prepared/nanoleaf
-```
-
-Both helpers verify pinned source hashes and use temporary simulator/test state.
-Pixoo exercises native settings plus its actual producer, selected-source facade,
-browser label/acknowledgment routes and renderer through cutover and fresh-store
-rollback. Nanoleaf exercises the real HTTP settings service with a disposable
-worker fixture. Native tokens never enter the printed receipt. These local
-cross-repository checks complement CI's pinned fixtures and isolated package tests;
-CI does not fetch another private repository with broader credentials.
+See [Standalone hub checks](../apps/hub/DEVELOPMENT.md#standalone-hub-checks) for the authoritative procedure.
 
 ## CHOMPI controller checks
 
-Hub #741 adds the [CHOMPI HID protocol](../packages/chompi-protocol/README.md),
-the [controller firmware](../firmware/chompi-controller/README.md) and the
-[bridge transport core](../apps/chompi-bridge/README.md). Both sides test
-against `packages/chompi-protocol/fixtures/v1.json`.
-
-Firmware, from the repository root:
-
-```bash
-npm run test:firmware
-npm run test:firmware:arm
-```
-
-`test:firmware` builds and runs the pure C++ host tests with a C++17 compiler,
-AddressSanitizer and UndefinedBehaviorSanitizer: protocol vectors, debounce,
-encoder turn and click separation, the bounded queue, session `hello`, host
-timeout, two-part light frames, LED chain encoding and USB restart timing and
-back-off. `test:firmware:arm` downloads GNU Arm Embedded Toolchain
-10.3-2021.10 once into the user cache and verifies its SHA-256 (or uses
-`ARM_GCC_BIN`), fetches the pinned upstream sources into the ignored
-`firmware/chompi-controller/.upstream/`, builds `04_AGENT.bin` and runs the
-artifact check: memory regions, `boot_info` at `0x38800000`, the controller USB
-identity and the absence of MIDI, CDC and SD code. The Firmware CI job runs
-both. Neither flashes or opens a device; installation and physical behavior
-belong to #743.
-
-Bridge, with Node 24 from the assigned worktree root:
-
-```bash
-npm ci
-npm run build
-npm run typecheck
-npm run test:chompi-bridge
-```
-
-The suite runs every protocol vector and tests the connection manager against
-a fake transport and a manual clock: hello gating, epoch and sequence rules,
-synthetic releases on disconnect, stale handling, light frame split and resend,
-and bounded subscriptions. It also covers a simulator roundtrip, the
-single-instance lock across processes, the node-hid adapter against a stand-in
-module, and the CLI. No test loads node-hid or touches USB. The contracts CI job
-runs `npm run test:chompi-bridge:built` after the shared build.
-
-Run `npm run test:chompi-bridge:native:built` separately under native Windows
-Node 24 after a build, using an isolated runtime rather than changing the
-global Windows Node. It fails on other platforms. Before running it, have Codex
-show one ordinary task with the sidebar expanded and the selected row visible:
-Codex exposes only on-screen rows, so the selected-thread probe otherwise fails
-with `selected-row-count` or `document-count`. On a `\\wsl.localhost`
-checkout installed from Linux, run `npm ci` on Windows first so the
-`@koromix/koffi-win32-x64` prebuild sits beside koffi. The check enumerates
-HID devices read-only, checks that the matcher rejects the stock CHOMPI ID,
-checks that the named-pipe lock refuses a second holder and is released on
-exit and on kill, and runs the Windows OS adapter's read-only observations:
-the koffi FFI load, the foreground window identity, a ping to the UI
-Automation helper, the composer, Codex selected-thread, approval-card and
-card-button observations, the read-only model and effort picker reads (#906) with the UI Automation patterns each
-client's controls expose, the read-only shape of Claude's next-step band and composer (#907: counts, focus, the
-level where the band was found and emptiness, never text), and the installed client versions. Its Win32 surface replaces `SendInput` and `ShellExecute`
-with throwing guards, so it types nothing and opens no link. It checks the volume, client-tap and chord key tables and
-that malformed volume requests and client taps are refused before any attempt, without sending a key. It
-reads card buttons only; it never focuses or presses one, calls no model or effort setting action, and focuses or
-invokes no next-step suggestion.
-It then reruns the portable suites except the codec fixtures, which need the
-protocol workspace link. It opens no device. Linux CI does not qualify
-Windows HID, named pipes, FFI or UI Automation.
+See [CHOMPI controller checks](../apps/chompi-bridge/DEVELOPMENT.md#chompi-controller-checks) for the authoritative procedure.
 
 ### CHOMPI task routing checks
 
-Hub #742 adds the routing core under `apps/chompi-bridge/src/routing/`. The
-same `npm run test:chompi-bridge` runs its `routing-*.test.mjs` suites with
-a scripted fake OS adapter, a fake Hub `fetch`, `ManualClock` and the device
-simulator: profile validation and reload, the read-only feed client (GET-only,
-refetch on change, timeouts, size limits, stale handling, the 1.2 fallback and
-token-file privacy), slot assignment, release and persistence across task pages (#822: the version 1 to 2
-file migration, interrupted writes, corrupt files and rollback), knob-4 paging, state lights and the page LED,
-each row of the no-misrouting matrix, press-time Send gating, Record, big-wheel scrolling and card
-answers (#821: detents, click stillness, wheel-chosen presses, refusal flashes and unknown card states), the
-Attention click on knob 4 and volume knob (#865: first-seen order across pages, repeat cycling, refusal, volume detents, mute and
-Record), the model and effort knobs (#906, `routing-knobs.test.mjs`: per-detent UI Automation steps, selection only
-of a confirmed focused option, readback outcomes, range ends, unsupported effort, Codex chords first and the Power
-fallback, a single Codex Escape even with every read lagging, no stray key, refusals and closing before other
-controls), the next-step knob (#907, the same suite: per-detent suggestion focus stopping at the ends, a still click
-invoking only the confirmed highlighted suggestion into an empty composer, one Right arrow for the ghost text into a
-focused empty composer, no suggestion text in logs, refusals, lagging reads and closing to the composer), loss handling,
-exit and uncaught-error key release, adapter warm-up, profile-version reload and an end-to-end
-`run --profile` session. The fake adapter models the
-qualified app behavior; the tests do not open links, type keys, read Codex or
-Claude data or contact a Hub. `windows-adapter.test.mjs` checks how the
-Windows adapter reads the helper's approval-card counts and card-button
-replies for each client, and `windows-uia-helper.test.mjs` checks the helper
-operations' scope statically, including that only the two card operations and
-the eight setting actions change UI state, each with one kind of change after a
-fresh read, and that the picker read is read-only and returns only the qualified
-controls' model and effort labels. Live focus, dictation placement, card answers, model
-and effort menus and lights on the device belong to the installed trials (#743,
-#821, and #745 for #906).
+See [CHOMPI task routing checks](../apps/chompi-bridge/DEVELOPMENT.md#chompi-task-routing-checks) for the authoritative procedure.
 
 ### CHOMPI bridge verification runs
 
-Hub #853 adds a simulated desktop (`src/sim/desktop.ts`, selected only by
-`run --desktop sim`), a synthetic Hub feed (`src/sim/hub.ts`) and a shared
-scenario catalog (`src/sim/scenarios.ts`). After `npm run build`, with Node 24
-from the worktree root:
-
-```bash
-npm run test:chompi-bridge:built          # adapter contract, synthetic feed, flag gating, runner tests
-npm run -s test:chompi-bridge:scenarios   # Tier 1: every catalog scenario in memory
-npm run test:chompi-bridge:verify:built   # boundary checks and every capture step
-npm run test:chompi-bridge:browser        # control page browser and accessibility check
-```
-
-Tier 1 runs each scenario against the real CLI (`run --simulate --desktop sim`)
-on a manual clock, with the synthetic feed in memory. It takes about a second,
-opens no port and touches no device or desktop. Name scenarios to run only
-those, or pass `--list` or `--json`. The contracts CI job runs it after
-`test:chompi-bridge:built`.
-
-`test:chompi-bridge:verify:built` starts runs without a user manager. It starts
-the three negative-control runs and shows that each boundary check fails, and
-judges every capture step through `runCaptureStep`. `test:chompi-bridge:browser`
-drives the control page with the keyboard and runs axe (WCAG 2.1 A and AA) at
-1440 px and phone width. Both need Playwright Chromium. The App verification
-CI job runs them. Use an outside-checkout `TMPDIR` locally, as for
-the app verification tests.
-
-A disposable run (Tier 2) uses the app verification lifecycle:
-`npm run -s verify:chompi -- start`, `capture <run-id> <step>`, `stop <run-id>`.
-The run serves the bridge, the control page and the synthetic feed on one
-loopback port. The [adapter README](../apps/chompi-bridge/verify/README.md)
-lists its steps and boundaries. Runs prove routing behavior only; Windows client
-fidelity stays with the native check and the owner's installed checks.
+See [CHOMPI bridge verification runs](../apps/chompi-bridge/DEVELOPMENT.md#chompi-bridge-verification-runs) for the authoritative procedure.
 
 ## Wispr runtime module checks
 
@@ -1745,391 +987,27 @@ collection and personal-data validation require their own authorization.
 
 ## Dashboard checks
 
-Hub #471 adds `apps/dashboard/tests/wispr.test.mjs` to the unit glob and
-`apps/dashboard/tests/wispr.mjs` to the existing browser matrix.
-After `npm run build`, run `node apps/dashboard/tests/wispr.mjs` for the focused
-real synthetic SQLite collector → aggregate files → authenticated Hub → browser
-check. Use the outside-checkout `TMPDIR` documented under Standalone hub checks;
-this fixture uses the real private Hub store. `DASHBOARD_RECEIPTS` retains synthetic
-screenshots. The check covers hand-calculated totals, stages, separate edit pairs,
-numeric downloads, independent home/page filters, permission retirement and
-responsive accessibility. Unit tests cover preset coverage, missing values and
-in-flight snapshot/opt-out guards. No personal database or installed service is used.
-
-Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
-`npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`
-and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
-synthetic state and fake controllers. No check installs a personal service,
-opens live state or contacts hardware. A change to
-`apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
-[Hub verification](../apps/hub/verify/README.md) step drives also runs
-`npm run test:hub:verify`.
-
-Since #827, CI runs only the unit tests (`npm run test:dashboard`, in the core
-job) and a smoke check (`npm run test:dashboard:smoke`, in the App verification
-job). The full browser suite took 500 s in CI, so it runs
-locally: run `npm run test:dashboard:browser` when a change touches
-`apps/dashboard`, its fixture or fakes, or the Hub code they drive, and when
-#922 copies the dashboard into the runtime.
-
-`apps/dashboard/tests/smoke.mjs` opens one trusted-loopback page on the
-fixture's Hub and checks that:
-
-- the Hub serves the built dashboard, which opens signed in without a login form;
-- the home renders the fixture's session and its `wall` and `pixel` widgets
-  without sending a device command;
-- axe finds no WCAG 2.1 A or AA violation on the home at 1,280 px;
-- choosing Quiet in the `wall` widget's mode select sends exactly one guarded
-  `mode.set` command with the snapshot's request ID, configuration revision and
-  generation.
-
-It takes about 2 s locally. The runtime's copy (#922) follows the same pattern:
-a short smoke check in CI and its full browser suite as a local check; see
-[Runtime dashboard checks](#runtime-dashboard-checks).
-
-The browser matrix's `running Hub build` cases check Connections with synthetic
-known metadata and an older context without a build field. They cover read-only
-inspection, full revision copying and clipboard failure, unknown fallback,
-desktop/mobile accessibility and zero device commands. Set `DASHBOARD_SCENARIO`
-to `running Hub build` to run these cases alone; set `DASHBOARD_RECEIPTS` to an
-evidence directory to retain their screenshots. Actual process identity is
-verified separately by the Hub tests described above.
-
-Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
-`npm run test:hub:package` with disposable owner-launch and browser-session
-checks. Cover single-use and expired codes, rejected cross-origin exchanges,
-read/control alias bounds without ingest/admin/MCP access, disconnect, reload
-and inspection without device writes. They run on Node 24 and do not use the
-installed Hub.
-
-Hub #276 adds `apps/hub/tests/trusted-loopback.test.mjs` to `npm run test:hub`
-and `apps/dashboard/tests/trusted.mjs` to `npm run test:dashboard:browser`.
-They cover the session route off by default, invalid `browserAccess` values,
-refused Host, Origin, fetch-metadata, header and body cases, the `localhost`
-alias, launcher-equivalent grants without ingest/admin/MCP, the shared session
-limit and retirement, and in Chromium sign-in on load, reload, second tab,
-`pagehide` logout, eviction recovery, Disconnect, a failed request and the
-unchanged page without the option. They do not use the installed Hub.
-
-Hub #561 adds `apps/hub/tests/linked-navigation.test.mjs` to `npm run test:hub`
-and the packaged hub tests, and a linked-navigation block to
-`apps/dashboard/tests/trusted.mjs`. The hub test covers the page route's
-fetch-metadata cases. A same-site top-level document navigation loads `/` on
-either loopback name. Every page response refuses framing and sends
-`Cross-Origin-Opener-Policy: same-origin`. Cross-site, framed, fetched,
-Origin-carrying and foreign-Host requests are refused. The assets, the API
-routes, the session route and the launch exchange refuse same-site requests.
-In Chromium, another loopback app's link opens the dashboard signed in in a new
-tab, while a link from another host name and an iframe are refused. A negative
-control has a page on another loopback port re-navigate a window it opened to
-the Hub every 10 to 30 ms. The owner's session must survive and the Hub must
-hold at most two sessions; without the opener policy the owner is evicted
-within about two seconds.
-
-Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
-`apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
-tests. They repeat launch, monitor read, command and logout, then cover expiry
-and oldest-session eviction. Session, ledger, stream and replay counts must
-return to the configured-credential bound. A configured credential's logout
-keeps its tickets and streams. A monitor, controller or integration write whose
-body arrives after logout is refused before any controller call, as is a late
-write from a configured credential rotated in the meantime.
-Deferred fake operations cover a pending command that resolves, rejects or
-outlives its caller after retirement.
-
-Hub #151 extends the matrix with general-control scenarios: one guarded command
-per control in Media, Monitor gating with the explicit Media switch and a pending
-mode, concurrent edits with typed conflicts and locked uncertain actions, and
-read-only or undeclared capabilities with named reasons. The hub dashboard test
-checks that general commands are schema-validated and scoped before any
-controller request. The fake Pixoo declares the capabilities of Pixoo `main`
-`c81bc31`, with controller v1 modes unsupported; the dashboard README records
-the mapping. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #323 adds a read-only Nanoleaf scenario to the same matrix, using the
-fixture's optional `panels` component. `apps/hub/tests/integration.test.mjs`
-checks that a read-only extension snapshot validates and passes through the
-integration route.
-
-Hub #153 adds Nanoleaf scenarios to the same matrix: power and brightness in
-Work with the override hint, Work gating with the explicit Free switch through
-the controller v1 mode command, one guarded scene command with a preserved
-selection and focus across reconnect, keyboard focus kept through the Free
-switch, a scene activation and a locked draft form, and a controller-side scene
-rejection, revision conflict and uncertain result with no retry. The fake Nanoleaf declares
-the capabilities of Nanoleaf `main` `8062849` and rejects a scene outside Free
-with `unsupported-capability` before any write; the hub route test checks that
-scene commands are schema-validated before forwarding. Client unit tests cover
-the scene availability order, name-or-ID labelling from the integration snapshot
-and the Work/Quiet/pending/unknown gating. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #355 adds `apps/dashboard/tests/art.test.mjs` to `npm run test:dashboard`
-and `apps/dashboard/tests/art.mjs` to `npm run test:dashboard:browser`. The fake
-Nanoleaf controller serves a 15-Line, 12-connector layout and, with the
-`panels` option, an 18-triangle NL22 layout on the read-only geometry route, or
-an explicit empty layout, a 404 like an owner that predates the route, a
-hub-valid layout the renderer rejects, or one transport failure before the
-layout. The browser check covers the drawn Lines with reservation colors and
-labels, keyboard selection shared with the mapping form, pending marks, one
-geometry read per session, a stale controller, the Panels with their controller
-offline, the schematic fallbacks, the retried read, reads only and axe at
-1280 px and 390 px, then drives status, activity, mode, the opening assembly and
-reduced motion through a component harness bundled from `tests/art-harness.tsx`.
-Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #231 adds matrix scenarios for fresh guards and one-step settings:
-- A controller generation advance between render and activation sends one
-  command with current guards, and an open draft shows no conflict.
-- A generation advance after the fresh read is shown as `stale-generation` and
-  is not resubmitted.
-- Accepted brightness and power changes leave their forms ready for the next
-  change. Uncertain results still lock until an explicit reload, with keyboard
-  focus on the reload button.
-- Reapply Work sends one Nanoleaf mode command that ends an override, and a
-  same-mode command with nothing to reapply is shown as already in effect.
-- Start Monitor sends one Pixoo integration Monitor command, names the
-  screen-off reason and leaves no empty block once Monitor is presenting.
-
-The fake controllers reject a generation mismatch as `stale-generation`. The
-fake Nanoleaf follows Nanoleaf `main` `08b6b83` same-mode handling, including
-the configuration revision advance on admission, and the fake Pixoo reports
-participation like Pixoo `main` `01da65d`. Client unit tests cover the status
-wording and lock rules, including that only a same-mode reapply reports a
-cancel as already in effect. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #245 moves the command lifecycle shared by draft forms and one-click actions
-into `apps/dashboard/src/lifecycle.ts`. `apps/dashboard/tests/lifecycle.test.mjs`
-runs under `npm run test:dashboard` and applies each case to both consumers:
-- blocked and failed preparation;
-- accepted, queued and terminal receipts;
-- definite rejection, where another client's receipt is never adopted;
-- uncertain and partial locks with explicit reload;
-- a failed refresh after a result, and a stale read reaching the controller once.
-
-A matrix scenario checks end to end that user-visible behaviour is unchanged on
-the Pixoo brightness form and the Pause action. A failed device read before
-sending sends nothing, recovery sends one command with current guards, a failed
-read after an accepted command keeps its receipt, and a double click sends one
-command. The app's reads resolve with an error record rather than rejecting, so
-the rejected-promise paths are covered by the unit tests.
-
-Hub #37 adds a now-playing matrix scenario with a fake Sony receiver behind the
-fixture's hub. It covers only declared controls (no Play), one Next command,
-paused Next/Previous with the stale-title note, a receiver refusal, an uncertain
-result that locks without retry, a read-only credential, stale and unavailable
-snapshots, and the view disappearing with no further playback reads once the
-grant is removed. Client unit tests cover the button and reason rules, the
-fresh-read command builder and the receipt mapping. The hub's `playback.test.mjs`
-covers the launcher session's playback grant, the context field and the paused
-Sony declaration. `mcp.test.mjs` covers the source-bound playback tools:
-discovery by scope and grant, `hub_devices`, duplicate request IDs, typed
-rejections, uncertain results, credential changes and a staged hub. None
-contacts a receiver. The
-owner's 2026-09-25 paused-state live check is recorded in the issue's refined
-acceptance and in PR #275. Installed browser and Codex MCP acceptance come after
-merge under the applicable [installation authority](sdlc.md#installation-and-evidence)
-and are recorded on the issue. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #277 makes the dashboard a dense control surface. `apps/dashboard/tests/routes.test.mjs`
-and `widgets.test.mjs` run under `npm run test:dashboard`; the browser suite
-adds the first-screen, width-reach, route, alias-collision, unknown-address and
-1,280 px height checks, and the matrix and local-controllers suites address
-navigation links and open the Details disclosure where a fact moved behind it.
-Hub #444 extends the existing Dashboard browser check with six registered
-components. Their full widget bounds must fit the first screen at the owner's
-2,133 × 1,200 viewport, 1,440 × 900 and 1,280 × 720; merely starting in view
-is insufficient. The check also looks for text overlap at all three desktop
-sizes and keeps the 390 px Home check. It uses disposable Hub and fake-controller
-fixtures and contacts no physical device.
-The owner's design decision on the candidate removes the Apply buttons: the
-suites drive a select, slider, text field or Power button directly, a matrix
-scenario checks the home widget's quick actions, the shared lock and running
-state between the widget and the page, the surviving session draft and the skip
-link, and the lifecycle unit test carries the form wording. The overlap check ignores closed disclosures. Full-page height at
-1,280 px is recorded in the browser receipt. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Hub #336 adds the Moments card. `apps/dashboard/tests/moments.test.mjs` runs
-under `npm run test:dashboard` and covers the capability, mood, preset and
-undeclared-line rules, every result line, the live line in the controller clock
-and the lifecycle's `interpret` and `describe` hooks. `apps/dashboard/tests/moments.mjs`
-joins `npm run test:dashboard:browser`. It drives the fixture's `moments` option,
-a wall that serves controller contract 1.1 and uses the contract's reference
-`admit` and `moment` operations as its admission and writer on a live device
-clock. The suite covers:
-
-- card presence and the home widget;
-- the menu, presets and switch;
-- one send per press, menu choice and preset, with a keyboard menu step that
-  sends nothing until Enter;
-- blocked, missed and 1.0-only lines;
-- the uncertain lock with focus on the reload;
-- supersede;
-- the live line from scheduled to playing to each ending;
-- the faster refresh stopping within 5 s of the end and never on a hidden page;
-- axe at 1,280 px and 390 px.
-
-The existing matrix and local-controller suites now expect moments in the
-undeclared line. The device page reads `?apiVersion=1.1`, which 1.0 fakes answer
-unchanged. Hub verification adds the three moment steps above. Record current-candidate UI evidence under the
-[UI verification policy](sdlc.md#ui-approval-scope).
-
-Browser suite gotchas, learned in #277:
-
-- Chromium compiles the `pattern` attribute with the `v` flag, so an unescaped
-  hyphen at the end of a class such as `[A-Za-z0-9_.-]` makes the pattern fail
-  to compile, and the browser silently skips it. Write `[A-Za-z0-9_.\-]`. The
-  Project ID field had this since #151 and the hub's own validation masked it.
-- The suites use `page.locator('section:visible')` and expect exactly one
-  match, so a page must never nest a `<section>`; panels are
-  `div[role=group]`. Every page except Connections stays mounted and hidden, so
-  an unscoped exact-text lookup can match the hidden home. Scope it to the
-  visible section.
-- `textOverlaps` in `apps/dashboard/tests/layout.mjs` must skip the content of a
-  closed `<details>`, which Chromium still reports with boxes.
-- Playwright's `fill()` on a range input dispatches only `input` and `change`,
-  with no pointer or key events. `getByLabel('X', {exact: true})` fails for
-  `<label>X<select>` because the option text joins the label; use
-  `getByRole('combobox', {name})`.
+See [Dashboard checks](../apps/dashboard/DEVELOPMENT.md#dashboard-checks) for the authoritative procedure.
 
 ## Shared monitoring setup checks
 
-Hub #8 adds local setup operations to the hub package. `npm run test:setup`
-builds and runs isolated configuration, credential and hook tests, which
-`test:hub:built` also runs. The hub package check also
-executes these tests in the offline installed archive. Use Node 24 on Linux/WSL.
-These tests also refuse a `TMPDIR` inside a Git checkout; see
-[Standalone hub checks](#standalone-hub-checks).
-Temporary synthetic settings and fake transports never qualify personal hooks.
-
-For the optional cross-repository source check, build the exact Pixoo archive
-revision in `apps/hub/fixtures/pixoo-source.json`, extract the Nanoleaf revision
-in `apps/hub/fixtures/nanoleaf-shared-source.json`, then run:
-
-```bash
-node scripts/check-hub-shared-consumers.mjs /absolute/pixoo-source /absolute/nanoleaf-source
-```
-
-The command verifies pinned source hashes and uses disposable state plus a
-suppressed physical worker launch. It covers setup/revocation, two consumer
-projections, fenced handoff, legacy selection and latest-state rollback.
-It also runs ordinary unordered start/stop/next-start hooks, rejects late retired
-activity and exercises Nanoleaf's actual manual acknowledgment without clearing
-Pixoo's notice. The actual Pixoo pager and Nanoleaf stored projection receive
-the same selected activity while retaining their independent presentation rules.
-The existing `check-hub-pixoo.mjs` additionally verifies labels/notices,
-acknowledgment and renderer continuity. These require separately available
-source archives; neither is a personal installation or a physical check.
-
-For Hub #137, `test:agent-state:built` includes current-status policy, retirement
-eviction, old-export recovery, freshness/restart and TypeScript/Python snapshot
-compatibility. The original ordinary-provider regression failed before the fix.
-`test:setup:built` runs the packaged Desktop hook against the real host and reopens
-the same synthetic store. `test:hub:package:built` repeats that check after an
-offline archive installation. Both run locally, not in CI; `test:hub:built`
-includes the setup tests. Run the pinned consumer check above locally as well. Publish new state
-2.0.0 and Hub 0.2.0 archives with hashes and the merged source revision; preserve
-previous release bytes. Package version changes do not change snapshot/storage 1.0.
+See [Shared monitoring setup checks](../apps/hub/DEVELOPMENT.md#shared-monitoring-setup-checks) for the authoritative procedure.
 
 ## Standalone hub MCP checks
 
-`npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. The broader hub and installed archive tests also include these scenarios; all of them run locally, not in CI. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
-
-The media cases cover alias-bound playlist start and controller v1 playback
-actions, strict inputs, current control/device permissions, typed owner
-rejections, replay and ambiguous results without automatic retries. The Hub
-suites run these cases directly and in the offline hub archive.
+See [Standalone hub MCP checks](../apps/hub/DEVELOPMENT.md#standalone-hub-mcp-checks) for the authoritative procedure.
 
 ## Hub automation checks
 
-Hub #358 adds event rules, the interrupt set, event intake, arbitration and the
-automation log. `npm run test:hub:automation` builds and runs
-`apps/hub/tests/automation.test.mjs` on its own. The file also runs in
-`npm run test:hub` and in the packaged hub tests through the
-`apps/hub/tests/*.test.mjs` pattern. Set `TMPDIR` outside any Git checkout, as for the
-[standalone hub checks](#standalone-hub-checks).
-
-The tests use disposable private stores, synthetic credentials, a fake event
-source, an injected target reader and a fake moment sender with the #335
-single-device shape. They cover restart persistence and one-time seeding,
-route scopes and typed errors, duplicate and replayed events, each arbitration
-block, independent per-target hand-off with no retry, and the lifecycle
-source. The shared fake controller scenarios run the composed reader and the
-real `sendMoment`: blocked targets get no controller command, the capable
-target gets exactly one 1.1 moment, and a typed refusal is logged without a
-resend. No test starts an installed service or contacts a device. Also run the standalone hub, hub MCP and shared
-monitoring setup checks above, plus the shared build, type, contract and
-workflow checks.
-
-Hub #426 adds `automation-metadata.test.mjs` to the same hub and offline-package
-test patterns. It exercises the real intake and SQLite log with the PR and
-meeting fixtures in `apps/hub/fixtures/moment-title-events.json`: bounded
-Unicode display fields, credential rejection before deduplication, legacy log
-rows, restart readback, blocked moments and duplicate/replay protection. The
-fixture cases in `automation.test.mjs` also read the metadata through the
-authenticated log route and verify that controller intents retain their strict
-1.1 shape. The existing hub suites run both files.
+See [Hub automation checks](../apps/hub/DEVELOPMENT.md#hub-automation-checks) for the authoritative procedure.
 
 ## Bounded cross-device compatibility
 
-Hub #9 adds verification tooling for the standalone Linux/WSL setup. Build this
-Hub worktree with Node 24 using `npm ci` and `npm run build`. Prepare Pixoo at
-`apps/hub/fixtures/pixoo-source.json` and Nanoleaf at
-`apps/hub/fixtures/compatibility-nanoleaf-source.json` in disposable source
-archives. Build Pixoo with Node 24 `npm ci` and `npm run build`; use system
-Python 3.12 or 3.14 for Nanoleaf and installed Playwright Chromium for the browser.
-Run from the Hub worktree:
-
-```bash
-node scripts/check-hub-compatibility.mjs /absolute/pixoo-source /absolute/nanoleaf-source /tmp/new-compatibility-report.json
-```
-
-The report path must be new. The runner records preflight failures, verifies the listed owning-source hashes,
-and rebuilds Hub/Pixoo before importing their build output. It
-starts disposable local services with fake physical boundaries, and drives the
-real dashboard and MCP. It tests shared lifecycle semantics, labels, monitor
-acknowledgment, native settings/modes, duplicate/late events, one disconnected
-consumer and host restart. The JSON report records tested revisions, scenarios,
-failures and cleanup. Retain failed reports; do not overwrite them on reruns.
-To check whether one of its services or another node process is still running,
-do not use `pgrep -f <pattern>`: it also matches the agent's own shell, whose
-command line contains the pattern. Read `/proc/<pid>/cmdline` for each
-candidate node process instead.
-
-This local cross-repository check needs explicit prepared private sources; ordinary
-CI retains its existing component, contract, browser and package tests without
-adding private repository credentials. Run `npm run typecheck`,
-`npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
-`npm run check:workflow` and `npm run test:workflow` alongside the source check.
-The Hub command includes `tests/compatibility_process.test.mjs`, which checks
-forced process cleanup and failed preflight reports without private source
-access.
-No product code or contract changes are intended. The #30 performance report is
-a separate required completion input. Source compatibility does not install
-hooks, start an actual agent client or establish visible-device behavior.
+See [Bounded cross-device compatibility](../apps/hub/DEVELOPMENT.md#bounded-cross-device-compatibility) for the authoritative procedure.
 
 ## Everyday standalone qualification
 
-Hub #30 adds `npm run test:performance:standalone` for report completeness,
-negative acceptance and PID/network/mount confinement, including timeout and
-detached-child cleanup. Use Node 24 and system Python 3.12/3.14 with bubblewrap.
-The existing Ubuntu workflow job runs these checks after its namespace preflight.
-They do not benchmark timing or fetch private consumer repositories. Run the
-shared build/type, contract/lifecycle/state, MCP, hub, dashboard and workflow
-checks alongside them; the actual specification inventory also includes
-`standalone-monitor-qualification` once synchronized.
-
-The separately authorized local command is `npm run qualify:standalone --` with
-the arguments in [the qualification runbook](performance-standalone.md). It
-prepares pinned consumer sources, then measures only inside a disposable isolated
-Linux namespace. Setup/build time is excluded from runtime timings. No installed
-hook, agent client, physical device or live state is used. The report retains
-failures and is not a substitute for installed or physical acceptance.
+See [Everyday standalone qualification](../apps/hub/DEVELOPMENT.md#everyday-standalone-qualification) for the authoritative procedure.
 
 ## LIFX controller checks
 
@@ -2432,299 +1310,27 @@ power and brightness stay mode-independent throughout.
 
 ## Session retirement checks
 
-Hub #218 added focused cases to the existing `test:agent-state`, `test:hub` and their packaged suites. Hub #241 parameterizes the owner, Tidbyt and dashboard cases over Codex Desktop, Codex CLI and Claude Code, and adds mixed-path and upgraded-store cases. Run their Python snapshot fixtures as well. The existing CI jobs include these paths; no new device job is needed. Cover atomic tree removal, one revision, released capacity, other paths preserved, old ends/events across restart and resume, history bounds, legacy import, stored accepted ends settled on startup, failed commits, archive admission with unavailable evidence, default snapshot 1.0 and opt-in 1.1. Existing fake-clock retention tests preserve the 24-hour fallback.
-
-Run the focused Nanoleaf companion checks against its owning service, plus Pixoo/Tidbyt current-snapshot, empty-idle, reconnect and dashboard-removal scenarios. A consumer that retains task-specific state needs snapshot 1.1 generations to detect recreation between reads. Source checks do not establish installed-client timing or visible Line release.
-
-The #218 source acceptance harness uses the existing Pixoo source pin and the Nanoleaf candidate pin in `apps/hub/fixtures/retirement-nanoleaf-source.json`. Prepare those exact sources on disk, install their declared dependencies, and build Pixoo. Then run:
-
-```bash
-node scripts/check-session-retirement.mjs /absolute/pixoo-source /absolute/nanoleaf-source /absolute/retirement-report.json
-```
-
-Set `RETIREMENT_PATH` to `codex/desktop` (the default), `codex/cli` or `claude/code` and run it once per path. It supplies actual owner snapshots to both consumers, checks the shared fixture corpus through Nanoleaf, and distinguishes healthy-empty reconnect from unavailable retained state. It launches no device worker. The existing Tidbyt publisher and dashboard browser jobs also exercise retirement on every path. Keep the standalone harness receipts alongside required CI; they are source evidence, not installed or physical acceptance.
+See [Session retirement checks](../apps/hub/DEVELOPMENT.md#session-retirement-checks) for the authoritative procedure.
 
 ## Shared title and project checks
 
-Hub #424 adds lifecycle 1.1 and snapshot 1.2 corpora to the existing TypeScript
-and Python checks. New state tests cover rename ordering, label provenance,
-legacy projections and synthetic restart. Hook tests cover explicit version
-selection, bounded Codex/Claude title reads, missing sources and content
-exclusion. HTTP tests exercise the configured Desktop index and Unicode labels;
-MCP and browser checks cover metadata exposure. The existing glob-based suites
-include these tests; the Hub's run locally since #827. `test:dashboard:browser` also runs
-`apps/dashboard/tests/session-metadata.mjs` for desktop/mobile candidates.
-
-Run build/type, controller, lifecycle, state, agent-status, Tidbyt, LIFX,
-local-controller, MCP, Hub, setup, dashboard and workflow checks, including both
-language corpora and isolated packages. The local source-consumer compatibility
-checks retain their pinned historical source revisions. Record installed and
-physical acceptance separately; these fixtures establish neither.
-
-The lifecycle 1.1.0 archive is built from the candidate source and bundled in
-agent-state 3.4.0 with archive/manifest hashes. Hub 0.4.1 bundles those artifacts. Its controller-contracts 1.1.0 and Device MCP
-1.0.1 dependencies come from their published archives in `vendor/`, checked
-against fixed archive and manifest hashes; their original receipts are retained.
-The Hub package check rejects a changed archive or rebuilt manifest, then runs
-the installed package tests with the published dependencies.
-Publication follows the reviewed merged revision, with immutable source/checksum
-receipts and preserved prior release bytes. Packaging scratch is disk-backed
-under `.local/scratch/package-archives`; runtime fixtures keep their small
-private stores outside Git checkouts.
+See [Shared title and project checks](../apps/hub/DEVELOPMENT.md#shared-title-and-project-checks) for the authoritative procedure.
 
 ## Owner capacity checks
 
-Hub #807 lets a new root task displace a finished child subtree without attention
-when the owner is full. `packages/agent-state/tests/capacity.test.mjs` covers
-displacement with descendants and two revisions, ranking by subtree evidence,
-protection of running (`active`), real-hook `unknown` and attended subtrees,
-rejection of a new child, events that create no root (acknowledgment, guarded
-retired root, old observation, archived Codex Desktop conversation) and a failed
-displacement commit. The glob-based `npm run test:agent-state` and the existing CI
-jobs run it, so no new command or CI job is needed. Run the agent-state check set
-listed above. Live admission while the installed owner is full is an installed
-observation.
+See [Owner capacity checks](../apps/hub/DEVELOPMENT.md#owner-capacity-checks) for the authoritative procedure.
 
 ## Claude Desktop host session checks
 
-Hub #784 adds lifecycle 1.2 (`packages/lifecycle-contracts/fixtures/lifecycle-v1.2.json`,
-validated in TypeScript through the `/v1.2` subpath while the root module keeps rejecting 1.2)
-and snapshot 1.3 (`packages/agent-state/fixtures/snapshots-v1.3.json`) corpora to
-the existing TypeScript and Python checks. `host-session-provider.test.mjs` covers
-Desktop, CLI, missing, malformed, oversized, throwing, child, Codex and
-older-version environments. `host-session.test.mjs` in agent-state covers the
-memory-only owner map, `/clear`, retirement, expiry, failed commits, restart and
-durable 2.1 exports. The Hub's `host-session.test.mjs` reads the
-on-disk store and checks it against the stored durable 2.1 schema. The setup,
-setup-hook and MCP suites cover the 1.2 selection. The existing
-glob-based suites run all of them, so no new command is needed. CI runs the
-agent-state suites; the Hub's run locally since #827.
-
-Run the build/type, contract, lifecycle, state, Hub, setup, MCP, package and
-workflow checks listed above. Synthetic environments prove the mapping only;
-whether installed Desktop hooks inherit the variables is installed-observation
-evidence.
+See [Claude Desktop host session checks](../apps/hub/DEVELOPMENT.md#claude-desktop-host-session-checks) for the authoritative procedure.
 
 ## App verification and preview runs
 
-[App verification](app-verification.md) defines the operations, receipt,
-storage, supervisor and failure behavior for disposable application runs with
-synthetic data, and [ADR 0009](decisions/0009-app-verification-runs.md) records
-the decisions. Runs use transient `systemd --user` units, keep runtime state
-under `~/.local/state/app-verify/` and proof under the canonical checkout's
-`.local/evidence/verify/`, and never use the installed ports or services.
-
-Hub #494 implements the lifecycle once in the private workspace package
-[`packages/app-verify`](../packages/app-verify/README.md)
-(`@jimmie-potts/app-verify`), which the Hub, Nanoleaf and Pixoo adapters
-consume through one plug-in each. Use Node 24 from the worktree root and run
-`npm run build`, `npm run typecheck` (which also type-checks the package's
-caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
-The `verify`, `verify:compose`, `verify:chompi` and `verify:runtime` scripts set
-`APP_VERIFY_SINGLE_RUN=1`, so a second `start` beside a live run is refused
-([one run at a time](app-verification.md#one-run-at-a-time)); the test suites
-do not set it.
-`npm run -s verify -- prerequisites` is the Hub's read-only local inspection;
-it never qualifies launch, capture or Windows browser handoff. Pinned Nanoleaf
-and Pixoo adapters remain on core 1.1.0 and report the operation unsupported.
-Set `TMPDIR` outside every Git checkout, for example
-`~/.cache/agent-device-hub/<task>-tmp`: the tests' runtime roots live under
-it, and the core refuses runtime state inside a checkout.
-
-The suite has two parts:
-
-- **Everywhere, including CI:** receipt validation, `help`, `start` refusing
-  without a user manager (exit 3, nothing created; forced locally by hiding
-  the user bus), `tests/lock.test.mjs` (concurrent receipt updates against a
-  lock left by a killed writer lose nothing, and a stuck or holder-less lock
-  breaker ends in `receipt-locked` or is cleared), and
-  `tests/unsupervised.test.mjs`. That file judges capture
-  steps through `runCaptureStep`: the reference passes, and a `control-*`
-  wrong expectation, predicates that return `false`, a known-broken app and a
-  step without assertions fail. Missing Playwright, Chromium or ffmpeg is
-  `unavailable`, and an encoder that writes nothing or a truncated WebM is
-  `failed`, as is a step whose served artifact changed before or during it.
-  The lock file also forces a prepared lock directory swept
-  mid-acquire and a stale dead-breaker record, and `tests/inputs.test.mjs`
-  runs its input refusals and `runCaptureStep` inputs test here.
-  `tests/error-body.test.mjs` checks the shared error body on each refusal
-  that needs no run, and checks every body against
-  `@jimmie-potts/event-contracts`' `errorBody` (Hub #921).
-  `tests/single-run.test.mjs` checks the one-run guard's refusal wording
-  against the README's example, and that a guarded `start` without a user
-  manager still exits 3 (Hub #944).
-- **Only on a host with a user manager** (`systemctl --user
-  is-system-running` answering `running`, `degraded`, `starting` or
-  `initializing`): every lifecycle test. These start real transient units
-  named `app-verify-avt-*` with leases of seconds and a fixture counter
-  application, and stop every unit they created. They cover start order,
-  failed and interrupted starts, concurrency and reseeds, extend (including a
-  refused timer and a stray one), expiry, doctor staleness, restart, frozen
-  proof, attachments, interrupted captures, receipt-less stop and a stop
-  retried after `receipt-locked`, and, for 1.1, inputs kept across every
-  relaunch, scenario-specific inputs, redacted failure details and extra
-  endpoints (`tests/endpoints.test.mjs`), and the one-run guard: a second
-  `start` with `APP_VERIFY_SINGLE_RUN=1` is refused beside a live run of any
-  app and leaves that run untouched, two starts begun together cannot both
-  pass, a held claim refuses a start, and failed units, stray timers and the
-  host route's command unit never block it. Without a
-  manager they skip, each with the printed reason, unless
-  `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
-  records them from the owner's WSL host.
-
-The package check installs the packed archive into an isolated consumer under
-`TMPDIR`, outside every checkout, that supplies its own Playwright. It verifies
-every file hash, checks that no other `@jimmie-potts` package resolves there,
-runs the packaged suite and repeats any skip reason. The error body's registry
-check prints its skip reason there. Neither check touches installed services,
-personal state or devices, and neither contacts Windows: the tests set
-`APP_VERIFY_WINDOWS_CHECK=off`.
-
-The App verification CI job runs both after a fresh build and Chromium
-install. Depot's Ubuntu runner, which ran CI until #870, was not booted with
-systemd: on PR #552, `systemctl --user is-system-running` answered `offline` and
-`loginctl enable-linger` failed with "System has not been booted with systemd
-as init system (PID 1)". GitHub-hosted runners do have a user manager, but under
-their systemd 255 the lease timer does not read back
-([run](https://github.com/jimmie-potts/agent-device-hub/actions/runs/37464802851), [#873](https://github.com/jimmie-potts/agent-device-hub/issues/873)).
-The App verification job therefore hides the user bus, the lifecycle tests skip,
-and CI proves the first part only.
-`npm run package:app-verify` writes
-`artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
-release; other repositories vendor that archive.
-
-The Hub adapter ([`apps/hub/verify`](../apps/hub/verify/README.md)) runs the
-real hub and dashboard with the dashboard fixture's fake controllers. Its
-entry point is `npm run -s verify -- <operation>` after `npm run build`, and
-its README keeps the feature map of steps, UI entries, driver actions,
-scenarios and expected observations. Run `npm run test:hub:verify` with the
-checks above and the Standalone hub and Dashboard checks, because the adapter
-reuses `apps/dashboard/tests/fixture.mjs`. It is an
-[old system check](#old-system-checks) that runs locally, not in CI. It covers:
-
-- its unsupervised step test judges the seven reference steps on the correct
-  app and under each seeded fault (`write-on-read`, `duplicate-forward`,
-  `replay-on-recovery`), plus the two `control-*` steps. Three of them are
-  the Hub #336 moment steps (`moment-plays`, `moment-blocked-on-status`,
-  `moment-uncertain-no-replay`) on the `moments` scenario;
-- its build test checks the build-freshness sources against esbuild's
-  dashboard inputs;
-- its wrapper test checks the unbuilt core's single JSON result and exit 3,
-  built delegation, and distinct reporting of a broken core dependency;
-- its proof test checks both verification launchers, the unchanged installed
-  CLI, same-port reuse, retained proof after shutdown and Chromium image/video
-  loading. Core `tests/proof.test.mjs` checks commitment, checksum and path
-  confinement, symlink refusal, methods, origins, ranges, later captures and
-  failed captures. Both existing test globs include these cases;
-- its run tests use real user units and skip there with the printed reason.
-
-For #559, the real-manager run test also checks handoff URLs after reseed,
-repeat handoff and stop. The focused expiry test proves that a frozen proof
-URL closes when the run's own lease expires. Use `APP_VERIFY_REQUIRE_SYSTEMD=1`
-on the owner host so these checks cannot pass by skipping. These are disposable
-verification runs; no installed Hub or device is involved.
-
-The Nanoleaf and Pixoo adapters document theirs in their own repositories.
-
-Hub #495 composes one preview from the three adapters with
-`npm run -s verify:compose -- <operation>`; see
-[Composed previews](app-verification.md#composed-previews). The composition
-tests (`apps/hub/verify/tests/compose.test.mjs`) run in
-`npm run test:hub:verify`. They use real user units with stand-in consumer
-adapters in disposable pinned Git checkouts and skip without a user manager.
-They also check that a composition is
-refused beside a live run and starts its own three runs under the one-run
-guard (Hub #944). The safety-thaw cases also change a run's own lease
-without updating the composition, expire it during a freeze, and verify stop
-removes the timer and service after an interrupted injection.
-`apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command
-ordering without a manager; it does not replace those real-unit cases.
-
-Hub #557 adds portable pause/identity and operation-interruption checks in
-`feed-pause.test.mjs` and `reset.test.mjs`, covered by the same CI test glob and
-verify type check. Its additional `compose.test.mjs` cases cover reset success,
-each failed phase and interrupted owner reseeding with real user units. Run
-those with `APP_VERIFY_REQUIRE_SYSTEMD=1` on the owner host; a skipped case is
-not qualification. The recorded qualification also retains the actual failing
-held-ack mutation and orphan-adapter regression, so the checks can detect the
-unsafe behavior they protect against.
-
-Hub #649 adds core-written receipt regressions for default runtime labels and
-ordinary shareable proof permissions. These run in the same portable test glob.
-They preserve private runtime/control checks and reject unsafe proof ownership,
-links, write permissions, oversized files and mismatched identity. Lease checks
-use the same bounded receipt snapshot already checked by the reset guard.
-
-The cross-repository check with the real consumers runs locally from this
-worktree after `npm run build`:
-
-1. Prepare each consumer at its pin in
-   [`compose.json`](../apps/hub/verify/compose.json) as a detached worktree
-   under disk-backed scratch:
-   - codex-nanoleaf: `npm ci`, and a Python 3.12 or later virtual
-     environment with `requirements-controller.txt`, exported as `PYTHON`;
-   - divoom-app-upgrade: its Node 24.5 or later `npm ci`. Its adapter builds
-     on `start`.
-2. Run `start` with both `--checkout` paths, then
-   `capture <id> integrated-lifecycle`, `capture <id> integrated-command`,
-   `capture <id> one-owner`, `inject <id> consumer-loss pixoo`,
-   `handoff <id>`, `reset <id>`, `doctor <id>`, another `reset <id>` and
-   `stop <id>`. After each reset, require current feeds at the initial owner
-   revision, unchanged run ids/ports/pairing tokens and frozen proof hashes.
-   Read all three pages to confirm the changed session and device settings have
-   returned to their seeded state.
-3. Run the controls in a separate composition, so they never freeze or
-   reseed the Pixoo of a preview already handed to the owner; otherwise run
-   them after `handoff`:
-   - `inject <id> consumer-loss pixoo --step control-replay-after-recovery`
-     must hold at "nothing but the loss-time command reached a writer, and
-     that at most once";
-   - `inject <id> second-owner pixoo` must hold at "the Pixoo reads its
-     sessions only from the Hub: current at the owner's revision, with
-     exactly the Hub's sessions".
-
-   `compose` exits 0 only for a held control and records the expected
-   assertion. A control that exits 1 did not hold, whatever its reason.
-
-For the reset qualification, `node apps/hub/verify/tests/qualify-reset.mjs
-<nanoleaf-checkout> <pixoo-checkout> <new-evidence-directory>` automates the
-three captures, handoff, two resets, page screenshots, feed/identity/token/hash
-checks, the loss/replay/second-owner injections above, and owner-first stop.
-Use a short disk-backed `TMPDIR` outside Git and
-run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
-must all pass; screenshots alone are not a pass. This driver uses disposable
-runs and the manifest pins, and preserves evidence after cleanup.
-Append `--host-defaults`, with absolute `PYTHON` and `FNM_BIN` environment
-paths, to qualify the documented `verify:host --host` route using the core's
-default runtime and canonical proof roots. This mode requires the same explicit
-host authority as preview launches. It records command-unit cleanup, verifies
-unchanged lease expiries, and copies each frozen proof set into its evidence
-directory. It stops only the recorded composition; it never deletes the shared
-runtime root. This default-storage case is required for receipt compatibility
-changes; a private temporary-root fixture alone does not cover it.
-It requests snapshot 1.2 for the shared session titles, confirms a changed title
-is visible on each page before reset, then checks those titles are absent after
-each reset. A portable real-Hub HTTP test covers that version negotiation;
-the default snapshot 1.0 route continues to omit shared titles.
-
-The delivery evidence records the composition id, its `composition.json`,
-each run's verified set and the consumer revisions. Only the delivery
-composition's runs are delivery receipts; a controls composition's runs are
-not. A composition proves
-simulated cross-service behavior only, not installed or physical
-acceptance.
+See [App verification and preview runs](../packages/app-verify/TESTING.md#app-verification-and-preview-runs) for the authoritative procedure.
 
 ### Host routing checks
 
-Run `npm run test:verify-host` with Node 24 from the Hub worktree. CI runs this
-in the App verification job. It checks explicit selection, named adapter and
-checkout identity, literal arguments, minimal environment, denied supervisor,
-command-only cleanup, timeout/abort, preserved nonzero adapter results, and
-unknown outcomes without a start retry. The transport test starts only a
-disposable Node subprocess; supervisor fixtures start no systemd units.
-These source checks do not qualify the named host or Windows browser. Keep
-shared build/type, controller-contract and workflow checks for this source
-change; unchanged app lifecycle/consumer behavior keeps its existing CI checks.
+See [Host routing checks](../packages/app-verify/TESTING.md#host-routing-checks) for the authoritative procedure.
 
 ## Pixoo module checks
 
@@ -2827,180 +1433,35 @@ contract/workflow checks as well. CI runs these browser tests with pinned Chromi
 
 ## Shared observability contract checks
 
-The source contract in `packages/observability` uses Node 24 and Python 3.14. From the assigned worktree, run `npm ci`, install
-`requirements-contracts.txt` in an isolated Python environment, then run
-`npm run build`, `npm run typecheck`, `npm run test:observability`,
-`npm run test:observability:python`, `npm run test:observability:query` and
-`npm run test:observability:package` and `npm run test:observability:browser`
-(with Chromium in the shared Playwright cache). The browser check runs in the
-App verification CI job, where Chromium is already installed. The core CI job
-runs the built conformance, Python, query and archive-consumer checks. Keep
-the shared controller/lifecycle/workflow and affected consumer checks required
-by the final change.
-
-Fixtures cover safe canonical records, exact OTLP mappings, strict version
-projections, privacy, context isolation and bounded sink failures. Profile 1.2
-fixtures cover the runtime's records and their negative controls, profile 1.3
-fixtures its decision, outbox and device records and theirs (#949), profile 1.4
-fixtures the gateway's route, method and credentials reload and theirs (#835),
-profile 1.5 fixtures the core's costly-save records and theirs (#976), and
-`tests/profile.test.mjs` checks that the schema and catalog agree, that every
-earlier profile rejects each profile's additions, and the runtime scopes'
-rules. `tests/host.test.mjs` checks that a host records only its profile's span
-names, which `test_host.py` checks for the Python helper, and records spans
-through the host adapter's bounded local span sink with no collector.
-The package check verifies immutable archive contents and independent TypeScript/Python
-consumers. These checks use synthetic records, no collector, device or live
-state. Real ingestion and Grafana queries belong to the separately bounded functional
-pilot; passing fixtures do not establish adoption. Performance is unqualified.
+See [Shared observability contract checks](../packages/observability/TESTING.md#shared-observability-contract-checks) for the authoritative procedure.
 
 ## Shared observability pilot checks
 
-The functional pilot in [#704](https://github.com/jimmie-potts/agent-device-hub/issues/704)
-checks real ingestion, trace/log correlation and representative failure behavior.
-The owner-approved scope revision of 2026-10-02 defers paired performance
-qualification. A supported functional result does not claim acceptable overhead,
-installed coverage or physical-device behavior.
+See [Shared observability pilot checks](../packages/observability/TESTING.md#shared-observability-pilot-checks) for the authoritative procedure.
 
 ### Source validation
 
-Use Node 24 and Python 3.14. Run `npm ci`, the shared build/type/contract
-and workflow checks, the owning Hub/Hub MCP/package checks, and
-`npm run test:observability:pilot`. CI runs the pilot tests in the core
-job. The source tests use synthetic inputs and no Docker.
-
-Hub synthetic state must be outside every Git checkout. On this host use:
-
-```bash
-TMPDIR=/home/jimmie/projects/.local/scratch/o704 fnm exec --using=.nvmrc -- npm run test:observability:pilot
-```
-
-Keep npm and browser downloads in the shared caches. Put durable evidence in
-the main checkout's `.local/evidence/`, never only inside a removable worktree.
-The pilot consumes the checksum-verified observability 1.0.0 archive from
-`vendor/`; Node and Python packaged-consumer checks reject damaged inputs.
-Public dependencies use the consumer lock
-matching the root lock; run root `npm ci` first to populate their exact tarballs.
-Consumer setup needs no cached registry metadata.
+See [Source validation](../packages/observability/TESTING.md#source-validation) for the authoritative procedure.
 
 ### Local synthetic qualification
 
-The existing local Docker engine is required. Do not install or reconfigure it
-as part of these commands. The pinned backend is
-`grafana/otel-lgtm:0.34.0@sha256:c6a56be719990e78b1d32e879988a219904300ecde1b9bfeec472831a56a922b`.
-The run requires that image already present and verifies its identity and size.
-
-The profile uses a fresh task-owned ordinary bridge and volume, exact loopback
-port bindings, two CPUs and 4 GiB RAM with no extra swap. Keep at least 8 GiB
-host-available RAM, at most 10 GiB image space and 2 GiB run data. The resource
-watchdog stops the owned stack on a cap breach or missing required evidence.
-No privileged mode, physical device, host networking, daemon or firewall change
-is permitted. An ordinary bridge allows outbound traffic; all producer state is
-synthetic and backend analytics/plugin downloads are disabled.
-
-Supply a new evidence directory and an existing disk-backed state parent outside
-Git. Choose free ports; the example uses 43000–43004:
-
-```bash
-fnm exec --using=.nvmrc -- npm run qualify:observability -- ingestion \
-  --evidence-dir /home/jimmie/projects/agent-device-hub/.local/evidence/gh-706-observability/final-ingestion \
-  --state-parent /home/jimmie/projects/.local/scratch/o704 \
-  --endpoint unix:///var/run/docker.sock \
-  --ports 43000,43001,43002,43003,43004
-```
-
-`ingestion` performs one authenticated Hub brightness command through the fake
-controller, plus a Python contract fixture. Expect seven Node logs/six spans and
-one Python log/span. Saved queries compare canonical identities and fields in
-Loki/Tempo within a 30-second visibility window; export acknowledgment alone
-cannot pass. The Python fixture proves compatible ingestion, not complete Python
-application instrumentation. The backend stops and its confirmed run-owned resources/state are removed before the command returns.
-
-Other supported modes use the same arguments:
-
-- `backend-smoke`: readiness and resource checks, with no application workload.
-- `delivery-smoke`: three commands with prequeue identities and loss accounting.
-- `command-faults`: ten representative command, context and error scenarios.
-- `paused-collector` and `absent-collector`: retained bounded fault procedures,
-  each using 200 sequential commands per mode. They are available for relevant
-  regressions; routinely repeating them is not required for the practical pilot.
-
-The application uses the real Hub route and native ticket semantics. The fake
-controller has an independent execution oracle; admission is not execution and
-a timeout after admission remains uncertain. No command is automatically retried.
-Pino has one Collector log path. Manual and narrowly scoped outgoing HTTP spans
-use the shared fields. No incoming pre-authentication instrumentation, device
-endpoint tracing, baggage or tracestate is enabled. Host-owned queues remain
-bounded to 1,024 records/4 MiB per signal, with 8 KiB records and drop-newest
-counters. Flush is bounded to one second; the pilot reserves 50 ms of that for
-finalization. Preserve the failed original flush attempt in historical evidence.
+See [Local synthetic qualification](../packages/observability/TESTING.md#local-synthetic-qualification) for the authoritative procedure.
 
 ### Cleanup and retained evidence
 
-Each run saves exact ownership manifests and lifecycle results. A failed or
-partial allocation must be inspected before cleanup; never retry ambiguous
-start/stop/removal effects or use Docker prune. After a confirmed stop, the command automatically invokes the receipt-based
-`cleanupQualification` helper in `scripts/observability/qualification-cleanup.mjs`
-verifies stopped containers and application absence, removes only the recorded
-container/network/volume and synthetic state, and retains evidence. Cleanup
-refuses foreign resources, running applications and unknown state. Preserve its
-receipt and verify that unrelated containers remain untouched. The container
-teardown budget is 30 seconds.
+See [Cleanup and retained evidence](../packages/observability/TESTING.md#cleanup-and-retained-evidence) for the authoritative procedure.
 
 ### Existing Grafana viewer
 
-Keep the backend inside a monitored `withReadyBackend` action while inspecting
-it; standalone qualification stops it on return. Do not restart a stopped run
-merely to inspect its UI. Existing applicable screenshots and queries may be
-reused with their source revision and limitations recorded.
-
-1. Read the Node `trace_id` from `ingestion-producer.json`. Open the selected
-   loopback Grafana port and choose **Explore → Loki**.
-2. Select the recorded time range and query
-   `{service_namespace="bunny",deployment_environment_name="test"} | trace_id="<trace_id>"`.
-   Inspect `event_name`, `severity_text`, `bunny_operation`, `bunny_outcome`,
-   `bunny_ticket_epoch`, `bunny_ticket_sequence`, `span_id` and service fields.
-3. Open **Explore → Tempo** and look up the same trace ID. The fixture has six
-   Node spans across Hub, controller and worker, including queue/execution.
-4. Retain the exact queries, time range and screenshots. Manual trace-ID lookup
-   is the initial workflow; no automatic log-to-trace link is claimed.
-
-The pinned Collector copies OTLP event names to the queryable `event_name`
-attribute for Loki. Loki normalizes attribute dots to underscores; the query
-reader preserves typed values. Request/ticket/trace identities remain metadata,
-not high-cardinality stream labels. Python uses the same mapping.
+See [Existing Grafana viewer](../packages/observability/TESTING.md#existing-grafana-viewer) for the authoritative procedure.
 
 ### Functional disposition and deferred work
 
-A supported recommendation needs applicable ingestion/viewer, command/failure
-and cleanup evidence plus normal independent reviews, tests and CI. Run a short
-final-candidate functional check and rerun tests affected by changes. Reuse
-existing valid evidence instead of repeating every experiment. Missing or failed
-functional evidence remains a blocker; source tests alone do not prove ingestion.
-
-The original paired harness is recoverable from
-`archive/gh-704-full-qualification-20261002` at `3e2f363`. Both attempted suites
-remain inconclusive; neither produced a qualified measured pair. Original
-threshold bytes and raw results remain evidence. They are not relabeled passing
-under the new scope. Numerical overhead qualification, exhaustive browser/hook/
-helper coverage and production backend operation are deferred. Revisit budgets
-if real use exposes drops, resource problems or materially greater volume.
-
-No command here installs a daily-use service, changes personal hooks/settings,
-migrates live state or operates a physical device. Practical source adoption and
-its enable/disable configuration are separate from an explicitly authorized
-installation.
+See [Functional disposition and deferred work](../packages/observability/TESTING.md#functional-disposition-and-deferred-work) for the authoritative procedure.
 
 ## Shared host diagnostics checks
 
-`npm run test:observability:built` includes the explicit Node host runtime
-checks against a loopback fake OTLP endpoint. `npm run test:observability:python`
-and `npm run test:observability:package:built` cover the Python host and external
-immutable consumer; both run in the core CI job with Python 3.14.
-Run build/type first and install the pinned contract and host requirements.
-Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
-adoption is covered by the existing Hub/MCP/setup checks. These are synthetic
-source checks; they do not install services or qualify physical devices.
+See [Shared host diagnostics checks](../packages/observability/TESTING.md#shared-host-diagnostics-checks) for the authoritative procedure.
 
 ## Maintenance intake checks
 

@@ -1,5 +1,7 @@
 # B.U.N.N.Y. runtime
 
+See [Development and verification](DEVELOPMENT.md) for the canonical detailed procedures.
+
 Private workspace package `@jimmie-potts/runtime`. It is the one runtime process
 that [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md) describes. It
 hosts a fixed list of modules on the SDK's in-process bus and serves health,
