@@ -35,7 +35,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | Path | Contents |
 | --- | --- |
 | `src/module` | The runtime module: `module.ts` (`createPixooModule`, `pixooFactory`), `control.ts` (command handling, `PixooControl`), `configuration.ts` (`configurePixoo`, `convertPixooSettings`), `transport.ts` (the HTTP transport and `SimulatedPixoo`), `schemas.ts` (its 2.0 families), `store.ts` (its own rows) and `render-worker.ts` |
-| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog and playlist names in the shared dashboard (#932) |
+| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/previews and playlist editing in the shared dashboard (#932) |
 | `src/core` | Shared schemas for requests, presentation settings, Monitor filters and Now Playing |
 | `src/device` | The fake (simulator) adapter, the HTTP adapter and its transport, hosted GIF files, and the device qualification functions |
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
@@ -59,9 +59,12 @@ Save sends one `pixoo-playlist-change` with the draft's captured playlist
 revision. The saved owner name and revision stay separate from acceptance and
 the tracked command result. Invalid, unchanged, stale or locked drafts cannot
 save; read-only callers get no editing controls. Reload and reconnect send no
-commands. The Library page adds bounded ordinary uploads and paged catalog reads;
-remaining library editing, media preview,
-creation and playback views remain under #932.
+commands. Create, duplicate, delete, repeat/shuffle options and item changes
+use the same revision-checked command path. Options and item order/timing are
+drafts until explicitly saved; a changed owner revision requires reloading.
+The media picker reads bounded catalog pages and referenced thumbnails.
+Larger item edits that exceed the existing HTTP command limit are refused
+before sending. Read-only callers can inspect saved playlists and thumbnails.
 
 Choose a PNG, JPEG or GIF up to 10 MiB, then use Add media. Choosing the file
 changes only the browser draft. The shared command component retains the
@@ -71,9 +74,19 @@ catalog, whose search and pages use the existing content reader without
 changing compatibility evidence. Importing media does not start playback.
 Read-only users can browse but have no upload form.
 
+Inspect loads the selected rendition's preview metadata and PNG frames by
+reference. Preview animation is explicit and illustrative; it never starts
+device playback. The canvas renderer reuses `apps/dashboard/src/pixoo-media.tsx`
+at `bf11587c`, decoding authenticated image bytes and releasing owned bitmaps
+when the view changes. The dashboard's image content policy remains unchanged.
+Library rendering/deletion and the player, Monitor and settings views remain
+under #932.
+
 `src/frontend/library.tsx` adapts the original `apps/web/src/library.tsx` at
 `0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Runtime reads and tracked commands
 replace its local API; upload now requires an explicit Add media action.
+`playlists.tsx` and `preview.tsx` adapt the corresponding source views at that
+same revision, replacing their local API with the shared authenticated context.
 
 This page reuses the playlist-selection and saved-owner-detail pattern from
 `apps/dashboard/src/pixoo-media.tsx` at `bf11587c`, plus this module's existing

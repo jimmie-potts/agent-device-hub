@@ -103,7 +103,7 @@
     "test:runtime:verify": "npm run build && npm run test:runtime:verify:built",
     "test:runtime-dashboard": "npm run build && npm run test:runtime-dashboard:built",
     "test:runtime-dashboard:built": "node --test apps/runtime/dashboard/tests/*.test.ts",
-    "test:runtime-dashboard:browser": "node apps/runtime/dashboard/tests/browser.ts && node apps/runtime/dashboard/tests/trusted.ts && node apps/runtime/dashboard/tests/controls.browser.ts && node apps/runtime/dashboard/tests/notice-clear.browser.ts && node apps/runtime/dashboard/tests/pixoo-pages.browser.ts && node apps/runtime/dashboard/tests/pixoo-upload.browser.ts",
+    "test:runtime-dashboard:browser": "node apps/runtime/dashboard/tests/browser.ts && node apps/runtime/dashboard/tests/trusted.ts && node apps/runtime/dashboard/tests/controls.browser.ts && node apps/runtime/dashboard/tests/notice-clear.browser.ts && node apps/runtime/dashboard/tests/pixoo-pages.browser.ts && node apps/runtime/dashboard/tests/pixoo-upload.browser.ts && node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts",
     "test:runtime-dashboard:smoke": "node apps/runtime/dashboard/tests/smoke.ts",
     "test:runtime:verify:built": "node --test --test-concurrency=1 apps/runtime/dist/verify/tests/*.test.js",
     "build:wispr": "tsc -p packages/wispr-contracts/tsconfig.json && tsc -p apps/wispr-collector/tsconfig.json",

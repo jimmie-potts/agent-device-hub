@@ -31,6 +31,15 @@ try {
     await page.getByRole('cell', {name: 'Synthetic upload.png', exact: true}).waitFor();
     const saved = await world.pixooMedia(); assert.equal(saved.items.length, 1);
     assert.equal(sent.length, 1); assert.equal(world.pixooState().sent, 0);
+    await page.getByRole('button', {name: 'Inspect Synthetic upload.png', exact: true}).click();
+    const preview = page.getByRole('img', {name: 'Effective preview', exact: true});
+    await preview.waitFor();
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLCanvasElement>('canvas[aria-label="Effective preview"]');
+      return image?.width === 64 && image.height === 64 && image.getContext('2d')?.getImageData(0, 0, 1, 1).data[3] === 255;
+    });
+    assert.equal(sent.length, 1, 'selection and referenced preview send no command');
+    assert.equal(world.pixooState().sent, 0);
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.reload(); await feed(page, 'connected');
     await file.waitFor(); assert.equal(await file.inputValue(), ''); assert.equal(sent.length, 1, 'reload never resends or retains a file');

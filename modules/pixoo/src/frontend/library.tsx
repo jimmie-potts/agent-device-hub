@@ -2,6 +2,7 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {Preview} from './preview.js';
 
 type Media = {assetId: string; renditionId: string; name: string; format: string; frameCount: number; compatible?: boolean};
 type Catalog = {items: Media[]; total: number; offset: number; limit: number; catalogRevision: number};
@@ -66,6 +67,7 @@ export function LibraryPage({context, device, live}: {
   const [offset, setOffset] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [catalog, setCatalog] = useState<Catalog>();
+  const [selected, setSelected] = useState<Media>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const completions = context.operations.filter(operation => operation.family === 'pixoo-asset-change' && operation.status === 'completed')
@@ -99,10 +101,11 @@ export function LibraryPage({context, device, live}: {
     {!loading && error === undefined && catalog !== undefined && <>
       {catalog.items.length === 0 ? <p>No matching media.</p> : <table>
         <caption>Saved media</caption>
-        <thead><tr><th scope="col">Name</th><th scope="col">Format</th><th scope="col">Frames</th><th scope="col">Compatibility</th></tr></thead>
+        <thead><tr><th scope="col">Name</th><th scope="col">Format</th><th scope="col">Frames</th><th scope="col">Compatibility</th><th scope="col">Preview</th></tr></thead>
         <tbody>{catalog.items.map(item => <tr key={item.renditionId}>
           <td>{item.name}</td><td>{item.format}</td><td>{item.frameCount}</td>
           <td>{item.compatible === undefined ? 'Not checked' : item.compatible ? 'Compatible' : 'Incompatible'}</td>
+          <td><button type="button" className="secondary" aria-label={`Inspect ${item.name}`} onClick={() => { setSelected(item); }}>Inspect</button></td>
         </tr>)}</tbody>
       </table>}
       <p>{catalog.total === 0 ? '0 items' : `${catalog.offset + 1}–${catalog.offset + catalog.items.length} of ${catalog.total}`}</p>
@@ -111,5 +114,12 @@ export function LibraryPage({context, device, live}: {
         <button type="button" className="secondary" disabled={offset + LIMIT >= catalog.total} onClick={() => { setOffset(offset + LIMIT); }}>Next media</button>
       </div>
     </>}
+    {selected !== undefined && <aside aria-label="Selected media">
+      <h3>{selected.name}</h3>
+      <Preview key={selected.renditionId} api={context.api} renditionId={selected.renditionId} active={context.connected}/>
+      <p className="hint">{selected.compatible === undefined ? 'Playback compatibility has not been checked.'
+        : selected.compatible ? 'Within the active playback profile.' : 'Not qualified for device playback. The full preview is available.'}</p>
+      <button type="button" className="secondary" onClick={() => { setSelected(undefined); }}>Close preview</button>
+    </aside>}
   </section>;
 }

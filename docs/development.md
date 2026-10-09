@@ -1157,6 +1157,7 @@ node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # f
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
+node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
