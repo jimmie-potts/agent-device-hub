@@ -24,6 +24,7 @@ None.
 
 ### Modified Capabilities
 
+- `guide-records`: retire the earlier Guide record capability.
 - `epic-guide`: retire this capability from the Hub source tree.
 - `shared-places-navigation`: remove the retired Guide destination.
 
