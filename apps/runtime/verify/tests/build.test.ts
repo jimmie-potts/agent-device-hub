@@ -22,6 +22,7 @@ void test('a newer source of the runtime, its run or a workspace package it load
     const sources = [
       'apps/runtime/src/runtime.ts', 'apps/runtime/verify/supervisor.ts', 'apps/runtime/tests/fixtures/lamp.ts', 'apps/runtime/tests/scenarios/catalog.ts',
       'packages/sdk/src/index.ts', 'packages/app-verify/src/index.ts', 'packages/event-contracts/src/v2/index.ts',
+      'packages/wispr-contracts/src/index.ts', 'packages/wispr-contracts/src/query.ts',
       'packages/observability/src/catalog.json', 'apps/runtime/build/registry.ts',
       ...modules.flatMap(folder => [`modules/${folder}/src/index.ts`, `modules/${folder}/package.json`]),
     ];
@@ -85,7 +86,7 @@ void test('build-current watches every source the run loads, and the served cand
     else if (!watched.has(path)) unwatched.push(path);
   }
   assert.deepEqual(unwatched, [], 'every runtime source the run loads is a build source');
-  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', ...modules.map(folder => `modules/${folder}`)]) {
+  for (const name of ['packages/event-contracts', 'packages/sdk', 'packages/app-verify', 'packages/observability', 'packages/wispr-contracts', ...modules.map(folder => `modules/${folder}`)]) {
     assert.ok(packages.has(name), `the run loads ${name}: ${[...packages].join(', ')}`);
   }
   const candidate = artifactFiles();

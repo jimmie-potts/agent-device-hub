@@ -7,6 +7,7 @@ import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {shippedModules, type ModuleFactory} from '../src/index.js';
 import {simulatedSections} from '../tests/fixtures/simulated.js';
+import {prepareWisprFixture} from '../tests/fixtures/wispr.js';
 import {MODULE_FILES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, producerToken, writeConfiguration} from '../tests/scenarios/parts.js';
 import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, type Fault, type RunFile, type RunRuntime} from './paths.js';
@@ -24,6 +25,7 @@ export {
 export type RunScenario = {
   description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
   prepare?: (dataDir: string) => Promise<void>; refused?: readonly string[];
+  wisprFixture?: Seed['wisprFixture'];
 };
 
 /** The shipped modules that take a section: a run that gives no sections, as the shipped controls do, has them refused. */
@@ -42,6 +44,7 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
+    ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
   } satisfies RunScenario])),
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',
@@ -73,8 +76,10 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
   const tokens = partTokens();
   const producer = producerToken();
   const dir = configDirOf(dataDir);
+  const modules = scenario.wisprFixture === undefined ? scenario.config
+    : {...scenario.config, wispr: await prepareWisprFixture(dir, Date.now(), scenario.wisprFixture)};
   const config = await writeConfiguration(dir, {
-    ...(scenario.config === undefined ? {} : {modules: scenario.config}),
+    ...(modules === undefined ? {} : {modules}),
     ...(scenario.simulated === undefined ? {} : {sections: await simulatedSections(dir, scenario.simulated)}), tokens, producer,
   });
   await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer})}\n`, {mode: 0o600});

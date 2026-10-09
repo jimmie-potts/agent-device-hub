@@ -390,7 +390,9 @@ is staged now, since the Pixoo module joined the profile
   imports only its own files, `@jimmie-potts/sdk`, `@jimmie-potts/event-contracts`,
   Node built-ins and third-party packages. Workspace packages are those in
   `workspaceScopes` (`@jimmie-potts/`); every workspace package must use one of
-  them. It checks static, re-export, type and
+  them. The Wispr module alone also imports the pure `@jimmie-potts/wispr-contracts`
+  package to validate its unchanged collector-file handoff (#927); it may not
+  import the collector, old Hub or another module. It checks static, re-export, type and
   literal dynamic imports, including `file:` URLs, and rejects non-literal
   dynamic imports. Paths resolve from the repository root, so the rule works
   from any directory. `createRequire` and `.cjs` files are not checked.
@@ -1631,6 +1633,27 @@ The run serves the bridge, the control page and the synthetic feed on one
 loopback port. The [adapter README](../apps/chompi-bridge/verify/README.md)
 lists its steps and boundaries. Runs prove routing behavior only; Windows client
 fidelity stays with the native check and the owner's installed checks.
+
+## Wispr runtime module checks
+
+The selected-file scenario fixture is wired explicitly into the memory and disposable harnesses. `check-module-names.cjs` permits only `wispr` in the four named fixture/seed files; it continues to reject other module names there and all module references in production discovery. The verification plugin separately lists the exact `wispr-contracts` package paths in its source, output and artifact identity; those literals are exempt, while module references on the same line and other paths remain checked. This is the bounded #927 integration permitted while generic fixture discovery in #999 is deferred, not a new loader or service.
+
+
+The root build and typecheck include `modules/wispr`. Run
+`npm run test:wispr-module:built` after the build; the core CI job runs the same
+suite. It exercises the unchanged collector file contract through fresh private
+synthetic aggregate/diagnostic files and the module's worker. It covers numeric
+queries, text opt-in, missing/stale/cleared files, bounded reads, cancellation and
+privacy/lifecycle delivery fences. It reads no installed collector files or
+database. Gateway, React and disposable runtime checks qualify integration
+separately; package tests alone do not establish those paths or installation.
+
+The runtime dashboard browser command includes `wispr.browser.ts` for the module
+port. It uses the actual reader on private synthetic collector files: numeric
+widget and page, retained filters, numeric downloads, explicit browser exposure
+and text-sharing opt-out, keyboard and accessibility. Inspection sends no
+commands. The two read-scoped caller cases and missing/stale inputs also run in
+the module's shared catalog scenarios; no installed collector or service is used.
 
 ## Wispr Hub checks
 

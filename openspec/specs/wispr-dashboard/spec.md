@@ -7,14 +7,14 @@ Present private Wispr usage, timing, vocabulary and observed edits in the existi
 ## Requirements
 
 ### Requirement: Granted source navigation and independent home summary
-The dashboard SHALL offer a distinct Wispr source route and catalogued read-only home widget only for a source granted by dashboard context. The page SHALL preserve four preset and app/category filters in session memory independently of home's today/all-apps totals and seven-day trend. Inspection SHALL send no commands.
+The shared runtime dashboard SHALL offer a module-owned React and TypeScript Wispr page and catalogued read-only home widget only when Wispr browser exposure is enabled. Authentication with read scope alone SHALL NOT bypass disabled exposure. The page SHALL preserve four preset and app/category filters in session memory independently of home's today/all-apps totals and seven-day trend. Inspection SHALL send no commands.
 
 #### Scenario: Navigate away and return
 - **WHEN** the owner selects 30 days and an app, opens Home and returns
 - **THEN** the page retains that selection while Home shows today's words and speaking minutes across all apps, collection age and a page link
 
 #### Scenario: No granted source
-- **WHEN** no source is configured or the credential lacks its grant
+- **WHEN** no source is configured or Wispr browser exposure is disabled
 - **THEN** no Wispr navigation or widget is exposed and a source deep link displays an unavailable address without analytics reads
 
 ### Requirement: Coherent presets and honest numeric evidence
@@ -40,15 +40,15 @@ The page SHALL show recognized speech, Flow output and observed-text vocabulary 
 - **THEN** the two tables show their own pairs and compared/changed denominators, and missing later observation is unknown rather than unchanged
 
 ### Requirement: Sensitive response retirement
-The dashboard SHALL keep analytics only in memory. Logout, grant loss, source identity/generation changes and observed opt-out SHALL retire sensitive content and pending reads. A late response SHALL NOT restore retired text. Failed refreshes MAY retain same-selection numeric last-good evidence with its original collection time, but SHALL remove language content until positively revalidated. Hidden page DOM SHALL NOT retain language text after navigation or opt-out.
+The dashboard SHALL keep analytics only in memory. Logout, loss of read access, source identity/generation changes and observed opt-out SHALL retire sensitive content and pending reads. A late response SHALL NOT restore retired text. Failed refreshes MAY retain same-selection numeric last-good evidence with its original collection time, but SHALL remove language content until positively revalidated. Hidden page DOM SHALL NOT retain language text after navigation or opt-out.
 
 #### Scenario: Opt-out while language is in flight
 - **WHEN** opt-out is observed before an earlier language read completes
 - **THEN** no text from that read enters the page or hidden DOM
 
 #### Scenario: Logout or removed grant
-- **WHEN** the session ends or its source grant disappears
-- **THEN** displayed data and pending analytics reads are retired and polling stops for that source
+- **WHEN** the session ends, its runtime read scope ends, or browser exposure is disabled
+- **THEN** displayed data and pending analytics reads are retired; no late reply can restore them
 
 #### Scenario: Stale or replaced source
 - **WHEN** a source is malformed, cleared, replaced or unavailable

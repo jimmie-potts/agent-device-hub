@@ -41,6 +41,7 @@ export function artifactFiles(at = root): string[] {
     ...built('apps/runtime/dist/src'), ...built('apps/runtime/dist/verify', file => !file.startsWith('tests/')),
     ...built('apps/runtime/dist/tests/fixtures'), ...built('apps/runtime/dist/tests/scenarios', file => !file.endsWith('.test.js')),
     ...built('packages/sdk/dist/src'), ...built('packages/event-contracts/dist'),
+    ...built('packages/wispr-contracts/dist'),
     // MCP on the gateway (Hub #835): the reused MCP package and the device contracts it validates with.
     ...built('packages/mcp/dist'), ...built('packages/contracts/dist'),
     ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'),
@@ -64,6 +65,7 @@ export const BUILD_SOURCES = [
   ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
+  ':(glob)packages/wispr-contracts/src/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
   ':(glob)modules/*/src/**', ':(glob)modules/*/package.json',
   // The dashboard's page (Hub #922), built from its sources and the Places manifest it reads.
@@ -74,6 +76,7 @@ export const buildOutputs = (at = root): string[] => [
   'apps/runtime/dist/src/main.js', 'apps/runtime/dist/src/registry.js', 'apps/runtime/dist/verify/supervisor.js', 'apps/runtime/dist/verify/child.js',
   'apps/runtime/dist/tests/scenarios/catalog.js', 'packages/sdk/dist/src/index.js', 'packages/app-verify/dist/index.js',
   'packages/event-contracts/dist/v2/index.js', 'packages/observability/dist/index.js', 'packages/observability/dist/validator.js',
+  'packages/wispr-contracts/dist/index.js', 'packages/wispr-contracts/dist/query.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
   ...moduleFolders(at).map(folder => `modules/${folder}/dist/src/index.js`),
   'apps/runtime/dist/dashboard/dashboard.js',

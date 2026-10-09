@@ -8,15 +8,19 @@ Expose private Wispr aggregate analytics through the existing Hub with source-sp
 
 ### Requirement: Configured source authorization
 
-The Hub SHALL read only the owner's configured aggregate and diagnostics JSON files. It MUST require read scope and the configured Wispr source grant for every analytics response. Source IDs MUST not collide with controller, playback or reserved host identities. Exposure and text sharing SHALL default off. Browser sessions SHALL receive this source only when exposure is enabled. The routes SHALL retain existing Host, Origin and Fetch-Metadata checks and SHALL NOT add analytics to MCP or global agent snapshots.
+The runtime SHALL read only the owner's configured aggregate and diagnostics JSON files. Every analytics response MUST require an authenticated caller with runtime read scope; no separate Wispr client allowlist or source grant SHALL be required. Browser sessions SHALL receive analytics and page discovery only when dashboard exposure is enabled. Exposure and text sharing SHALL default off independently. Source IDs SHALL be neutral and SHALL NOT collide with reserved host identities. Existing Host, Origin and Fetch-Metadata checks SHALL remain. Analytics SHALL NOT enter MCP, agent-session snapshots or general broadcasts. Released old Hub routes SHALL retain their existing authorization until cutover.
 
 #### Scenario: Generic and wrong-source credentials
-- **WHEN** a caller has no credential, read without the source grant, another source grant, or a retired browser session
-- **THEN** no Wispr metric or text payload is returned
+- **WHEN** two authenticated runtime clients with read scope and no extra Wispr grant request analytics
+- **THEN** both receive permitted numeric analytics, including while browser exposure is disabled
+
+#### Scenario: Refused callers and disabled browser exposure
+- **WHEN** a caller is anonymous, revoked, lacks read scope, has a retired browser session, or is a browser while exposure is disabled
+- **THEN** no Wispr analytics payload is delivered; disabled exposure also hides the browser page and widget
 
 #### Scenario: Late revocation
-- **WHEN** a session or source grant is retired while an asynchronous read or export is pending
-- **THEN** the pending response is rejected before payload delivery
+- **WHEN** a credential, read scope or session is revoked, browser exposure is disabled for a browser, or text sharing is disabled while a read/export is pending
+- **THEN** the pending response is refused before delivering data whose permission ended
 
 ### Requirement: Bounded immutable file observations
 

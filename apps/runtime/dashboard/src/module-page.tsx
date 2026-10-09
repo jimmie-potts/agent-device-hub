@@ -18,14 +18,18 @@ export function ModulePageView(props: Props): React.JSX.Element {
   if (!props.connected || view === undefined || view.kind === 'unavailable') return <p role="status">This module page is unavailable.</p>;
   if (view.kind === 'frame') return <iframe className="module-page" title={props.page.title} src={view.path}
     sandbox={view.trusted ? undefined : 'allow-same-origin'}/>;
-  return <ReactModulePage {...props} Component={view.Component}/>;
+  return <ModuleFrontend module={props.module.name} connection={props.connection} connected={props.connected} control={props.control}
+    operations={props.operations} operationsLive={props.operationsLive} Component={view.Component}/>;
 }
 
-function ReactModulePage({module, connection, Component, connected, control, operations, operationsLive}: Props & {
+/** The same shell-owned scope serves a module page or a fixed module widget. */
+export function ModuleFrontend({module, connection, Component, connected, control, operations, operationsLive}: {
+  module: string; connection: DashboardConnection; connected: boolean; control: boolean;
+  operations: readonly OperationRecord[]; operationsLive: boolean;
   Component: FrontendContribution['pages'][number]['Component'];
 }): React.JSX.Element {
-  const scope = useMemo(() => connection.openModule(module.name), [connection, module.name]);
+  const scope = useMemo(() => connection.openModule(module), [connection, module]);
   useEffect(() => () => { void scope.close(); }, [scope]);
-  const context: FrontendContext = {module: module.name, api: scope.api, ui, connected, control, operations, operationsLive};
+  const context: FrontendContext = {module, api: scope.api, ui, connected, control, operations, operationsLive};
   return <Component context={context}/>;
 }
