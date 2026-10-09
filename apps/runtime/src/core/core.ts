@@ -206,7 +206,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 }
 
 class Core {
-  readonly #automation = new AutomationPart();
+  readonly #automation: AutomationPart;
   get automation(): AutomationControls {return this.#automation.controls;}
   readonly #mode: ModePart;
   readonly #sdk: Sdk;
@@ -246,6 +246,7 @@ class Core {
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
+    this.#automation = new AutomationPart(context.scheduler,context.signal);
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
     this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
     this.#mode = new ModePart({

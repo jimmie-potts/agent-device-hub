@@ -131,7 +131,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 void test('owner-qualified device copies sync initially and recover a dropped available state without replay',async context=>{
   const bus=new InProcessBus(),core=bus.connect('bunny/core'),owner=bus.connect('bunny/modules/nanoleaf');
   const foreign=bus.connect('bunny/modules/pixoo');
-  const part=new AutomationPart(),db=new DatabaseSync(':memory:'),sent:unknown[]=[];
+  const part=new AutomationPart(manualClock().scheduler,new AbortController().signal),db=new DatabaseSync(':memory:'),sent:unknown[]=[];
   let revision=1,syncs=0;
   let release:()=>void=()=>{};
   const initial=new Promise<void>(resolve=>{release=resolve;});
@@ -181,6 +181,59 @@ void test('owner-qualified device copies sync initially and recover a dropped av
   assert.equal(part.controls.log(10)[0]?.outcome,'receipt');
 });
 
+for (const failedAt of ['initial', 'gap'] as const) void test(`device sync recovers after a ${failedAt} refusal with bounded retries and no replay`, async context => {
+  const clock=manualClock(1700000000000),bus=new InProcessBus({now:clock.now,scheduler:clock.scheduler});
+  const core=bus.connect('bunny/core'),owner=bus.connect('bunny/modules/nanoleaf');
+  const part=new AutomationPart(clock.scheduler,new AbortController().signal),db=new DatabaseSync(':memory:'),sent:unknown[]=[];
+  let syncs=0,revision=1,refusing=failedAt==='initial';
+  const record=()=>{
+    const value=deviceRecord('wall',revision,'nanoleaf','available');
+    value.desired.mode={status:'known',value:'free'};
+    value.capabilities.moments={supported:true,moods:['celebrate'],maxDurationMs:10000,coversStatus:true};
+    return value;
+  };
+  await owner.serveSync(['device'],()=>{
+    syncs++;
+    return refusing ? {error:{code:'unavailable',retryable:true,detail:'synthetic unavailable snapshot'}} : {revision,states:[deviceState(record())]};
+  });
+  await part.start({sdk:core,clock:{now:clock.now},ready:Promise.resolve(),received:()=> 'new',
+    log:{debug:()=>{},info:()=>{},warn:()=>{},error:()=>{}},transaction:()=>Promise.reject(new Error('unexpected test transaction')),
+    dispatch:action=>{assert.ok(action.requestId!==undefined);sent.push(action);return Promise.resolve({requestId:action.requestId,status:'accepted'});},
+    operation:()=>undefined});
+  part.open(db);part.setParticipants([{id:'wall',kind:'nanoleaf'}]);
+  context.after(async()=>{await part.close();await core.close();await owner.close();db.close();});
+  part.controls.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  const fire=async(id:string)=>{
+    const message:Message={specversion:'1.0',bunnyprofile:'2.0',id,source:core.source,kind:'occurrence',type:'org.bunny.turn.ended',subject:SESSION_ID,
+      time:'2023-11-14T22:13:20.000Z',datacontenttype:'application/json',dataschema:'https://bunny.invalid/events/turn-ended/2.0',
+      traceparent:'00-0123456789abcdef0123456789abcdef-0123456789abcdef-01',data:{identity:IDENTITY,session:SESSION_ID,turn:{status:'known',id}}};
+    part.committed({revision:1,messages:[message]});part.publishing(message);
+    await core.publishMessage(`bunny.event.turn-ended.${SESSION_ID}`,message);await flush();await part.controls.settled();return message;
+  };
+  const overflow=async()=>{
+    const pending=[];
+    for(let i=0;i<1025;i++){revision++;pending.push(owner.publish('bunny.state.device.wall',{kind:'state',...deviceState(record())}));}
+    await Promise.all(pending);await flush();
+  };
+  await flush();
+  if(failedAt==='gap'){refusing=true;await overflow();}
+  const failedSyncs=syncs,old=await fire(`blocked-${failedAt}`);
+  assert.equal(sent.length,0);assert.equal(part.controls.log(1)[0]?.reason,'unavailable');
+  clock.advance(999);await flush();assert.equal(syncs,failedSyncs,'retry waits one second');
+  clock.advance(1);await flush();assert.equal(syncs,failedSyncs+1,'failed copy is retried without participant reassignment');
+  refusing=false;
+  clock.advance(1999);await flush();assert.equal(syncs,failedSyncs+1,'successive refusal doubles the wait');
+  clock.advance(1);await flush();assert.equal(syncs,failedSyncs+2);
+  assert.equal(sent.length,0,'recovery itself dispatches no occurrence');
+  await core.publishMessage(`bunny.event.turn-ended.${SESSION_ID}`,old);await flush();await part.controls.settled();
+  assert.equal(sent.length,0,'the blocked old occurrence stays consumed after recovery');
+  await fire(`fresh-${failedAt}`);assert.equal(sent.length,1,'a recovered owner admits a fresh live occurrence');
+  refusing=true;await overflow();const beforeRemoval=syncs;
+  part.setParticipants([]);clock.advance(60000);await flush();assert.equal(syncs,beforeRemoval,'removing the owner cancels its pending retry');
+  part.setParticipants([{id:'wall',kind:'nanoleaf'}]);await flush();const beforeClose=syncs;
+  await part.close();clock.advance(60000);await flush();assert.equal(syncs,beforeClose,'closing cancels the pending retry');
+});
+
 void test('automation controls can be captured before start and follow the current core lifecycle',async context=>{
   const directory=await stateDir(context),core=createCoreModule();
   // Hosts and fixtures copy a module before its start hook runs.
@@ -197,6 +250,7 @@ void test('automation controls can be captured before start and follow the curre
   assert.equal(controls.rule(created.id)?.name,rule.name);
   assert.equal(controls.settings().noFlourishes,true);
   await harness.stop();
+  assert.deepEqual(harness.failures,[],'module stop must release the owner even when device sync is pending');
   assert.throws(()=>controls.rules(),unavailable);
   assert.throws(()=>controls.replaceSettings(DEFAULT_SETTINGS),unavailable);
   harness=new ModuleHarness(hosted,{stateDir:directory,bus:new InProcessBus()});

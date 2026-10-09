@@ -4,7 +4,8 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {SyncedCopy} from '@jimmie-potts/sdk';
+import type {Cancel, ModuleScheduler, SyncedCopy} from '@jimmie-potts/sdk';
+import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import {AutomationStore} from './automation-store.js';
 import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, type Automation, type LogEntry} from './automation.js';
@@ -19,12 +20,17 @@ const KINDS = new Map([
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
 export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
 
+type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
+
 export class AutomationPart implements CorePart {
+  readonly #scheduler: ModuleScheduler;
+  readonly #signal: AbortSignal;
+  constructor(scheduler: ModuleScheduler, signal: AbortSignal) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
-  readonly #devices = new Map<string, {copy?: SyncedCopy<DeviceRecord>; pending: Promise<void>}>();
+  readonly #devices = new Map<string, DeviceFollower>();
   readonly #sessions = new Map<string, SessionRecord>();
   // Only a committed live reduction can mint eligibility. Consumed on first publication; not reconstructed at start.
   readonly #live = new Set<string>();
@@ -36,31 +42,49 @@ export class AutomationPart implements CorePart {
   /** One SDK copy per qualified owner supplies the initial snapshot and resyncs after gaps. */
   #followDevices(): void {
     const handle=this.#handle;
-    if(handle===undefined || this.#closed) return;
+    if(handle===undefined || this.#closed || this.#signal.aborted) return;
     const owners=new Set(this.#participants.map(participant=>`bunny/modules/${participant.kind}`));
     for(const [owner,follow] of this.#devices) if(!owners.has(owner)) {
       this.#devices.delete(owner);
+      follow.cancel?.();
       void follow.pending.then(()=>follow.copy?.close());
     }
     for(const owner of owners) if(!this.#devices.has(owner)) {
-      const follow:{copy?:SyncedCopy<DeviceRecord>;pending:Promise<void>}={pending:Promise.resolve()};
+      const follow:DeviceFollower={pending:Promise.resolve(),retry:new Backoff(1000,30000)};
       this.#devices.set(owner,follow);
-      follow.pending=handle.sdk.sync<DeviceRecord>(['device'],change=>{
-        if(change.type==='failed' && this.#devices.get(owner)===follow) this.#devices.delete(owner);
-      },{owner,timeoutMs:5000}).then(async result=>{
-        if(result.status!=='synced') {
-          if(this.#devices.get(owner)===follow) this.#devices.delete(owner);
-        }else if(this.#closed || this.#devices.get(owner)!==follow) await result.copy.close();
-        else follow.copy=result.copy;
-      },()=>{if(this.#devices.get(owner)===follow) this.#devices.delete(owner);});
+      this.#syncDevice(owner,follow);
     }
   }
+  #syncDevice(owner:string,follow:DeviceFollower): void {
+    const handle=this.#handle;
+    if(handle===undefined || this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow) return;
+    follow.pending=handle.sdk.sync<DeviceRecord>(['device'],change=>{
+      if(change.type==='failed') this.#retryDevice(owner,follow);
+    },{owner,timeoutMs:5000}).then(async result=>{
+      if(result.status!=='synced') this.#retryDevice(owner,follow);
+      else if(this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow) await result.copy.close();
+      else {follow.copy=result.copy;follow.retry.reset();}
+    },()=>{this.#retryDevice(owner,follow);});
+  }
+  #retryDevice(owner:string,follow:DeviceFollower): void {
+    if(this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow || follow.cancel!==undefined) return;
+    delete follow.copy;
+    const handle=this.#handle;
+    if(handle===undefined) return;
+    const now=handle.clock.now();
+    follow.retry.failed(now);
+    follow.cancel=this.#scheduler.after(follow.retry.next-now,()=>{
+      delete follow.cancel;
+      this.#syncDevice(owner,follow);
+    });
+  }
+
   open(database: DatabaseSync): void {
     const handle=this.#handle;
     if (handle===undefined) throw new Error('automation-not-started');
     const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
       {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
-    this.#automation=createAutomation({store,clock:()=>handle.clock.now(),monotonic:()=>handle.clock.now(),active:()=>!this.#closed,
+    this.#automation=createAutomation({store,clock:()=>handle.clock.now(),monotonic:()=>handle.clock.now(),active:()=>!this.#closed && !this.#signal.aborted,
       routed:()=>this.#participants.map(p=>p.id),
       targets:id=>{
         const participant=this.#participants.find(p=>p.id===id);
@@ -134,7 +158,7 @@ export class AutomationPart implements CorePart {
   }
   async close(): Promise<void> {
     this.#closed=true;this.#live.clear();this.#publishing.clear();
-    await Promise.all([...this.#devices.values()].map(async follow=>{await follow.pending;await follow.copy?.close();}));
+    await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
     await this.#automation?.close();
   }
