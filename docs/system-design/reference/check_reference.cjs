@@ -83,8 +83,8 @@ async function check(browser, output) {
 module.exports={check};
 if (require.main===module) {
   (async()=>{
-    const {chromium}=require(process.env.GUIDE_PLAYWRIGHT_MODULE || 'playwright');
-    const browser=await chromium.launch({headless:true,executablePath:process.env.GUIDE_CHROMIUM_PATH,args:['--no-sandbox']});
+    const {chromium}=require(process.env.DOCS_PLAYWRIGHT_MODULE || 'playwright');
+    const browser=await chromium.launch({headless:true,executablePath:process.env.DOCS_CHROMIUM_PATH,args:['--no-sandbox']});
     try {await check(browser,process.env.BUNNY_DESIGN_RECEIPTS || fs.mkdtempSync(path.join(os.tmpdir(),'bunny-reference-')));}
     finally {await browser.close();}
   })().catch(error=>{console.error(error);process.exitCode=1;});
