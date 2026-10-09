@@ -80,7 +80,7 @@ const wallBrightness = (requestId: string, percent: number): {key: string; draft
 
 /**
  * The Nanoleaf module (Hub #844), as a person uses the wall: it follows the agent session the hook reports onto a Line,
- * shows its finished turn, takes Work, Quiet and Free from the operator with tracked outcomes, refuses a moment and an
+ * shows its finished turn, takes Work, Quiet and Free from the operator with tracked outcomes, refuses an unsupported moment mood and an
  * animation outside Free, reports the power the wall itself reports, and shows the wall unavailable while it does not
  * answer, logging the outage once each way. A mode is the module's own state, so a mode command completes as observed
  * even while the wall does not answer, holds nothing, and the wall shows the mode and a new session once it answers; a
@@ -124,7 +124,7 @@ const nanoleafWall: Scenario = {
       key: 'bunny.cmd.moment-play.wall', draft: {type: 'org.bunny.moment.play.requested', subject: 'wall', dataschema: 'https://bunny.invalid/events/moment-play/2.0',
         data: {momentId: 'moment-1', mood: 'calm', durationMs: 1000, priorityClass: 'event', coversStatus: false, startAtMs: h.now(), toleranceMs: 100}},
     }, 'req-moment')),
-    expect('the moment is refused: the wall plays no moments', h => answered(h, 'moment', 'unsupported-capability')),
+    expect('the moment is refused: calm is not a supported mood', h => answered(h, 'moment', 'unsupported-capability')),
     act('the operator sets the wall to Work as req-work', h => dispatchOnce(h, 'operator', 'work', wallMode('req-work', 'work'), 'req-work')),
     expect('the Lines show the task again', h => desiredMode(h, 'work') === true ? theLines(h)?.effect === 'custom' && theLines(h)?.select === '*Dynamic*' ||
       `the Lines show ${String(theLines(h)?.select)}` : desiredMode(h, 'work'), 5000),

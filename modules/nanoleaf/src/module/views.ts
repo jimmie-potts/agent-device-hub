@@ -4,6 +4,7 @@
 // the device record and the wall view hold no favorite or preset name, which only the animation options list. The saved
 // layout, its geometry and the remembered scene are read again only when their file changed, since the views are built
 // on the event loop whenever a device request settles.
+import {MOMENT_MOODS, MOMENT_DURATION_MS} from '../moments.js';
 import {readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import type {Capabilities, CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -92,11 +93,11 @@ export function savedLayout(directory: string, device: string): DeviceProjection
 const tagged = <T>(value: T | null | undefined): {status: 'unknown'} | {status: 'known'; value: T} =>
   value === null || value === undefined ? {status: 'unknown'} : {status: 'known', value};
 
-/** What a Nanoleaf controller offers. Moments are not supported (codex-nanoleaf#158); each device lists its own scenes. */
+/** What a Nanoleaf controller offers. Bounded moments play on Lines; each device lists its own scenes. */
 export function capabilities(db: Db, device: string): Capabilities {
   return {
     power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: [...MODES]},
-    moments: {supported: false}, media: {supported: false}, scenes: {supported: true, sceneIds: sceneList(db, device).map(scene => scene.id)},
+    moments: device===DEFAULT?{supported:true,moods:[...MOMENT_MOODS],maxDurationMs:MOMENT_DURATION_MS,coversStatus:true}:{supported:false}, media: {supported: false}, scenes: {supported: true, sceneIds: sceneList(db, device).map(scene => scene.id)},
     zones: {supported: false}, preview: {supported: false},
   };
 }

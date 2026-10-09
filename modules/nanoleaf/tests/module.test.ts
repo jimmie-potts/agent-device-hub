@@ -64,7 +64,7 @@ suite('the device record', () => {
     world.verify();
   });
 
-  test('a moment is refused with unsupported-capability', async context => {
+  test('an unsupported moment mood is refused before effects', async context => {
     const world = await ModuleWorld.open(context);
     await world.start();
     const {key, draft} = deviceCommand('moment-play', {momentId: 'm1', mood: 'calm', durationMs: 1000, priorityClass: 'event', coversStatus: false,

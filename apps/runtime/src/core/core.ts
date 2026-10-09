@@ -22,6 +22,8 @@ import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
+import {AutomationError} from './automation.js';
+import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
@@ -158,6 +160,7 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
 /** The core as the runtime hosts it: a module, with its dispatcher for the gateway's action routes (#782). */
 export interface CoreModule extends BunnyModule {
   readonly actions: CoreActions;
+  readonly automation: AutomationControls;
   readonly operatorActions: CoreOperatorActions;
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
@@ -170,6 +173,10 @@ export const isCoreModule = (module: BunnyModule): module is CoreModule => modul
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
+  const automation = (): AutomationControls => {
+    if (core === undefined) throw new AutomationError('unavailable', 503);
+    return core.automation;
+  };
   return {
     manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
@@ -179,6 +186,16 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
+    // Hosts may capture controls before start; calls resolve the currently serving core.
+    automation: {
+      rules: () => automation().rules(), rule: id => automation().rule(id),
+      create: (value, owner, authorize) => automation().create(value, owner, authorize),
+      update: (id, value, authorize) => automation().update(id, value, authorize),
+      setEnabled: (id, enabled) => automation().setEnabled(id, enabled), remove: id => automation().remove(id),
+      interruptSet: () => automation().interruptSet(), replaceInterruptSet: value => automation().replaceInterruptSet(value),
+      settings: () => automation().settings(), replaceSettings: value => automation().replaceSettings(value),
+      settled: () => automation().settled(), log: (limit, before) => automation().log(limit, before),
+    },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     setModeParticipants: participants => {
@@ -189,6 +206,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 }
 
 class Core {
+  readonly #automation: AutomationPart;
+  get automation(): AutomationControls {return this.#automation.controls;}
   readonly #mode: ModePart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
@@ -227,6 +246,7 @@ class Core {
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
+    this.#automation = new AutomationPart(context.scheduler,context.signal);
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
     this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
     this.#mode = new ModePart({
@@ -234,7 +254,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, this.#automation, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -245,7 +265,15 @@ class Core {
     // A start that fails leaves the handlers waiting on `ready` to fail with it, not an unhandled rejection.
     this.#ready.catch(() => {});
     this.#store = new CoreStore({
-      database: context.database(), sdk: context.sdk, clock: context.clock,
+      database: context.database(), clock: context.clock,
+      sdk: {source:context.sdk.source,publishMessage:async(key,message)=>{
+        const failed=this.#automation.publishing(message);
+        try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();throw error;}
+      }},
+      committed: change => {
+        this.#automation.committed(change);
+        return ()=>this.#automation.publicationEnded(change);
+      },
       derivers: parts.flatMap(part => part.derive ?? []),
       open: [
         (database: DatabaseSync) => { this.#tracker.open(database); },
@@ -327,6 +355,7 @@ class Core {
     await this.#starting?.catch(() => {});
     this.#timer?.();
     await this.#queue;
+    await this.#automation.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
@@ -579,6 +608,7 @@ class Core {
   /** Assigns qualified mode participants once, without sending a command. */
   setModeParticipants(participants: readonly ModeParticipant[]): void {
     this.#mode.setParticipants(participants);
+    this.#automation.setParticipants(participants);
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }

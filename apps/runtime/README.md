@@ -237,7 +237,7 @@ and exits 1, and the service manager restarts it whole.
   restart with the same message IDs, and the command is never sent again.
 - **Action dispatcher and tracker** (#782, `src/core/tracker.ts`). Every device
   command, moment and mode change goes through one dispatcher: the gateway's
-  [action routes](#routes) and MCP's `core_send_command`, and later automation,
+  [action routes](#routes) and MCP's `core_send_command`, and core automation,
   moments and the Hub mode, through `CoreHandle.dispatch`. It records the action
   as `sent` in the core store before it sends anything, so a full disk refuses
   it with `unavailable` and detail `storage-full` before any reply could say
@@ -330,6 +330,26 @@ and exits 1, and the service manager restarts it whole.
   action's change (`tracked`) in that change's transaction, and runs its own
   intake through the core's transactions and outbox. History keeps what a part
   publishes too.
+
+## Core automation
+
+The core owns event automation ([#925](https://github.com/jimmie-potts/agent-device-hub/issues/925)) in fresh private tables. It reuses the legacy Hub's event-rule definitions, interrupt set, quiet hours and budgets without transferring old rules or settings. `CoreModule.automation` exposes rule controls, settings, the interrupt set and the log for the authenticated gateway. A rule created without owner enabling stays disabled. The core runs independently of the page.
+
+Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `turn-ended` or `session-ended`. Intake accepts only an occurrence marked by its new committed reduction in this run. Sync, outbox republication, a duplicate and a restart acquire no such mark and start no moment. Deduplication is stored before evaluation; queued evaluations are not recovered or retried.
+
+Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
+
+The shared dashboard's Automation page manages these fresh rules and settings.
+The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
+(GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
+`interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
+1–500 and `before` sequence). Success responses use schema `automation/2.0`.
+Reads require read scope; all mutations require control and `bunny-request: 1`,
+including client credentials. Rule bodies and interrupt sets are bounded to
+8 KiB, settings to 1 KiB, and enable/disable bodies to 16 bytes. The gateway
+rechecks the original request's authority immediately before changing state;
+expected refusal codes leave the core running. A lost reply is never retried
+automatically. Inspect the current rules/settings before another edit.
 
 ## Agent hooks
 
@@ -1635,7 +1655,7 @@ The catalog holds:
 - the Nanoleaf wall (#844): the core and the Nanoleaf module with a simulated
   Lines controller, read by owner, `device` alone included, following an agent
   session onto a Line and its finished turn,
-  taking Work, Quiet and Free with tracked outcomes, refusing a moment and an
+  taking Work, Quiet and Free with tracked outcomes, refusing an unsupported moment and an
   animation outside Free, showing the power the wall reports, and showing the
   wall unavailable while it does not answer, logged once each way. Quiet sent
   meanwhile succeeds as observed, since a mode is the module's own state, and holds

@@ -101,6 +101,14 @@ There is no enrollment command yet (owner decision, 2026-10-07): it waits until 
 `src/enrollment.ts`, the port's enrollment, is ready for it. Until then, a new address is a one-line edit of the
 device's `address` in the module's section; the device keeps its ID, and with it its preferences and scenes.
 
+## Bounded moments
+
+[Hub #925](https://github.com/jimmie-potts/agent-device-hub/issues/925) adds `moment-play` on Lines through the existing control journal and single locked writer. The required moods `celebrate`, `setback` and `reminder` reuse the `celebration`, `rain` and `focus` effect recipes. Duration is 1–10 seconds. Panels and Quiet refuse moments.
+
+Work admits an interlude only with `coversStatus`, set by the core for an owner-approved interrupt kind; an alert always preempts the effect. Completion follows restoration computed from the current Work state. In Free, admission reads the currently selected named scene and brightness, and the writer rechecks the selection before effects. Unknown, unnamed or externally controlled Free content refuses before any effect write. A newer mode, configuration, content choice or override takes precedence over restoration.
+
+The start window and persistent moment ID memory prevent a repeated or stale moment. At restart, an unfinished journal entry ends without replay. A lost write response uses the existing uncertain outcome and device hold, without retry. Accepted, transmitted, completed and physically visible remain separate claims.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
@@ -122,7 +130,8 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | The Lines' animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
-| `moment-play`, `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` (moments are codex-nanoleaf#158) |
+| `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
+| `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |
 | `nanoleaf-wall-edit` | command | One edit from the wall editor: settings and palette, element projects and halves, a task's project, a project's color, Locate, an eviction |
 | `nanoleaf-machine-edit` | command | One map edit from a machine, guarded by `expectedConfigurationRevision` |
 | `nanoleaf-animation-play` | command | A preset, a favorite or a recipe, on the Lines in Free |

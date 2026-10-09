@@ -1,5 +1,6 @@
 import {InboxPanel} from './inbox.tsx';
 import {Timeline} from './timeline.tsx';
+import {AutomationPage} from './automation.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
 // shell, its hash routes, the Places navigation, browser sign-in on the runtime's gateway and the agent sessions, which
 // the page syncs from the core and follows live (ADR 0012). Device cards, music and module pages join in the story's
@@ -245,7 +246,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'timeline' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (placement.widget === 'wispr') {
       const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics'));
@@ -272,6 +273,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <nav aria-label="Main navigation">
         <NavLink route={{kind: 'home'}} current={route}>Home <span>{rows.length}</span></NavLink>
         <NavLink route={{kind: 'timeline'}} current={route}>Timeline</NavLink>
+        <NavLink route={{kind: 'automation'}} current={route}>Automation</NavLink>
         <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
         {devices.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
         {playback.map(({record}) => <NavLink key={record.id} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
@@ -316,6 +318,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
       {route.kind === 'timeline' && <Timeline/>}
+      {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
       {!known && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>

@@ -4,6 +4,7 @@
 // accepted controls and requested animations, journaled with their outcomes (controls.ts); the runtime launches and
 // restarts the worker (PORTING.md).
 import {join} from 'node:path';
+import {MOMENT, playMoment} from './moments.js';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
 import {followRegistry, loadConfig, readRegisteredDevices, registeredDevices} from './configuration.js';
@@ -404,6 +405,25 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
       const applyControls = async (): Promise<void> => {
         // Native one-shot writes and requested animations, in admission order.
         for (const row of queuedContent(db, device, control.revision)) {
+          if(row.kind===MOMENT) {
+            active=null;
+            const current=():Indication[]=>transaction(db,()=>{
+              const latest=dashboard(db,config,now());
+              config._comet=currentComet(db,now(),device);
+              config._locate=locateState(db,config,now(),controlState(db,device).mode);
+              renderConfig(db,config,latest);sharedRenderConfig(db,config);
+              return latest;
+            });
+            await playMoment({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,
+              taken:()=>{scenes?.save({owned:true});if(scenes!==null) scenes.selected='*Dynamic*';},
+              restore:async(snapshot,momentExecution)=>{
+                active=momentExecution;
+                execute(db,'DELETE FROM display_v3 WHERE device=?',device);
+                await sender(config,snapshot,now(),true);
+              }});
+            execute(db,'DELETE FROM display_v3 WHERE device=?',device);
+            throw new Cancelled('Start a fresh display pass after a moment.');
+          }
           if (row.kind === ANIMATION) {
             // An animation journals its own one write, not as a native control's.
             active = null;

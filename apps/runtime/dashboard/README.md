@@ -234,10 +234,16 @@ Home keeps the existing mode/power quick controls; the device route exposes
 brightness, scenes, zones, media and manual moments only where declared. Each
 explicit general command includes the current configuration revision and generation.
 Playback uses its current revision. Nanoleaf content requires Free and Pixoo
-content requires Media; selecting content never changes mode. The four shipped
-device modules currently advertise moments unsupported. The capability-gated
-manual card is retained, but this dashboard does not implement a module's moment
-behavior.
+content requires Media; selecting content never changes mode. Nanoleaf Lines
+advertises bounded moments over supported Work rendering or a restorable named
+Free scene; other devices keep their declared capability limits. The module's
+existing single writer owns moment playback and safe restoration.
+
+Automation (`#/automation`) manages fresh event rules, the Work interrupt set,
+quiet hours and budgets, and shows the log beside current tracked outcomes.
+Creating a rule leaves it disabled until an explicit enable action. Reads on
+entry or refresh send no device command; edits require control scope and never
+retry after a lost reply. Rules run in the core even when the page is closed.
 
 The existing authenticated action route sends each attempt once. The card shows
 requested, then accepted, then the operation record's completion and effect

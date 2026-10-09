@@ -174,7 +174,7 @@ function insert(db: Db, admission: Admission, device: string, command: ControlCo
  * only ever queued on the Lines in Free, where Python's worker looked for one, since any mode command retires it.
  */
 export function queuedContent(db: Db, device: string, revision: number): JournalRow[] {
-  return journal(db, device, "AND phase='queued' AND ((kind IN (?, ?, ?) AND mode_revision=?) OR kind=?)", ...CONTROLS, revision, ANIMATION);
+  return journal(db, device, "AND phase='queued' AND ((kind IN (?, ?, ?, ?) AND mode_revision=?) OR kind=?)", ...CONTROLS, 'moment.play', revision, ANIMATION);
 }
 
 /** The queued mode command this revision applies, if one was admitted (Python's Execution without a sequence). */

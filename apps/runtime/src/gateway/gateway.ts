@@ -1,4 +1,6 @@
 import {historyFilter, type HistoryFilter, type HistoryRow} from '../core/history.js';
+import type {AutomationControls} from '../core/automation-part.js';
+import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
 // modules' pages and content, the dashboard's page (#922) and browser sign-in,
@@ -108,6 +110,8 @@ export type GatewayOptions = {
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
   history?: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /** Fresh rules/settings owned by the runtime core; no legacy store is opened. */
+  automation?: AutomationControls;
   /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
   wispr?: Pick<WisprModule, 'read' | 'browserExposed' | 'deliveryGuard'>;
   /** The authenticated control route alone uses this capability for tracked core operator actions. */
@@ -282,6 +286,53 @@ export class Gateway {
     return principal;
   }
 
+  /** Bounded rule CRUD runs in the existing core flow; request errors never fail that owner. */
+  async #automation(request: IncomingMessage, url: URL, principal: Principal): Promise<Answer> {
+    const method = request.method ?? 'GET', controls = this.#options.automation;
+    const authorize = (): void => {
+      const current = this.#admit(request); // Recheck the original token too: same-ID rotation ends a pending request.
+      if (!this.access.live(principal) || current.id !== principal.id) throw refuse('unauthenticated', 'the caller has ended');
+      if (!current.scopes.has(method === 'GET' ? 'read' : 'control')) throw refuse('forbidden', 'the route requires its scope');
+      if (method !== 'GET' && request.headers[REQUEST_HEADER] !== '1') throw refuse('forbidden', 'a change carries bunny-request: 1');
+    };
+    authorize();
+    if (controls === undefined) throw refuse('unavailable', 'no core automation is available');
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, method === 'GET' ? 'bunny.feed.read' : 'bunny.command.request', {
+      parent, kind: 'server', attributes: {'http.route': templateOf(url.pathname) ?? '/api/v2/automation', 'http.request.method': methodOf(method)},
+    });
+    this.#dashboardTraces.set(request, span.context);
+    try {
+      const answer = await this.#options.host.invoke(CORE_MODULE, async () => {
+        try {
+          return await automationRoute(controls, {method, url, authorize, body: async maximum => {
+            try {return await readBody(request, maximum);} catch (error) {
+              if (error instanceof Refused) throw error;
+              throw refuse('invalid-request', 'the request body could not be read');
+            }
+          }});
+        } catch (error) {
+          if (error instanceof Refused) return {status: statusOf(error.body.error.code), body: error.body};
+          throw error;
+        }
+      });
+      if (answer === undefined) throw refuse('not-found', 'no such automation route');
+      if ('error' in answer.body) {
+        const body = answer.body as ErrorBody;
+        throw refuse(body.error.code, 'the automation request was refused');
+      }
+      if (method === 'GET') authorize();
+      if (this.#options.redactions.holds(JSON.stringify(answer.body))) throw refuse('internal', 'automation holds a secret');
+      return json(answer.status, answer.body);
+    } catch (error) {
+      if (error instanceof ModuleUnavailable) throw refuse('unavailable', 'the core is not running');
+      if (!(error instanceof Refused)) span.end('error');
+      throw error;
+    } finally {span.end();}
+  }
+
   /** The SDK edge's routes: the gateway admits the caller, and the edge checks each call against its permissions. */
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
@@ -302,6 +353,10 @@ export class Gateway {
     const query = [...url.searchParams.keys()];
     const noQuery = (): void => { if (query.length > 0) throw refuse('invalid-request', 'this route takes no query'); };
     const needs = (scope: Scope): void => { if (!principal.scopes.has(scope)) throw refuse('forbidden', `this route needs the ${scope} scope`); };
+    if (path.startsWith(AUTOMATION_PREFIX)) {
+      needs(method === 'GET' ? 'read' : 'control');
+      return this.#automation(request, url, principal);
+    }
     const uploadModule = /^\/api\/v2\/modules\/([^/]+)\/upload$/.exec(path)?.[1];
     if (method === 'POST' && uploadModule !== undefined) {
       needs('control');
@@ -982,6 +1037,9 @@ function templateOf(path: string): string | undefined {
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
   if (path === '/api/v2/history' || path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
+  if (/^\/api\/v2\/automation\/(rules|interrupt-set|settings|log)$/.test(path)) return path;
+  if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}$/.test(path)) return '/api/v2/automation/rules/{id}';
+  if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}\/(enable|disable)$/.test(path)) return '/api/v2/automation/rules/{id}/{action}';
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
@@ -1038,13 +1096,13 @@ async function readUpload(request: IncomingMessage, maxBytes: number): Promise<U
 }
 
 /** Reads a JSON object body of at most 16 KiB, sent as `application/json`. */
-async function readBody(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readBody(request: IncomingMessage, maximumBytes = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
   if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/json') throw refuse('invalid-request', 'the body is application/json');
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request as AsyncIterable<Buffer>) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw refuse('too-large', `the body is over ${MAX_BODY_BYTES} bytes`);
+    if (size > maximumBytes) throw refuse('too-large', `the body is over ${maximumBytes} bytes`);
     chunks.push(chunk);
   }
   let parsed: unknown;
