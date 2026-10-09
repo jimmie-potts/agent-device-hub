@@ -1616,6 +1616,8 @@ The catalog holds:
 - the Pixoo (#843), with its simulated Pixoo and the playback module (#929),
   whose record Now Playing follows, so none of the Pixoo's syncs is refused:
   - Monitor following the core's sessions (`pixoo-monitor`);
+  - declared React pages, passive bounded catalog/preview/settings reads, a
+    tracked playlist edit and read-only refusal (`pixoo-pages`);
   - a media command accepted, then completed once the media reached the device
     (`pixoo-media`);
   - a Now Playing card from the playback module's presented speaker, popping up

@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
+import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 
-const world = await startWorld({pixooPages: true});
+// Metadata-only title updates belong to Codex Desktop and carry no turn or ordering evidence.
+const identity: Identity = {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop', sessionId: 'pixoo-monitor-sim'};
+const world = await startWorld({pixooPages: true, desktopMetadata: true});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
@@ -16,8 +19,8 @@ try {
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const sent = changes(page), requests = (): number => sent.length;
     await page.goto(`${world.url}/#/module/pixoo/playlists`); await feed(page, 'connected');
-    await world.observe(sessionStarted, {title: {value: 'Synthetic monitor task', source: 'provider'}});
-    await world.observe(turnStarted); await world.observe(turnEnded);
+    await world.observe(sessionStarted, {identity, title: {value: 'Synthetic monitor task', source: 'provider'}});
+    await world.observe(turnStarted, {identity}); await world.observe(turnEnded, {identity});
     await page.getByRole('link', {name: 'Monitor', exact: true}).click();
     await page.getByRole('heading', {name: 'Agent monitor', exact: true, level: 2}).waitFor();
     assert.equal(await page.getByRole('link', {name: 'Edit session labels', exact: true}).getAttribute('href'), '#/sessions');
@@ -36,8 +39,19 @@ try {
         activity: sessions.items[0]?.activity, notices: sessions.items[0]?.notices.length};
     });
     const beforeTitle = await readCoarseState();
-    await world.observe({kind: 'metadata-observed'}, {title: {value: 'Synthetic monitor renamed', source: 'provider'}});
-    await page.getByRole('heading', {name: 'Synthetic monitor renamed', exact: true, level: 3}).waitFor();
+    await world.desktopTitle(identity, 'Synthetic monitor renamed');
+    try {
+      await page.getByRole('heading', {name: 'Synthetic monitor renamed', exact: true, level: 3}).waitFor();
+    } catch (error) {
+      const diagnostic = await page.evaluate(async () => {
+        const response = await fetch('/modules/pixoo/content/monitor-sessions');
+        const value = await response.json() as {items: {title?: {value: string}; identity: {provider: string; client: string}; activity: string}[]};
+        return {status: response.status, owner: value.items.map(row => ({title: row.title?.value, provider: row.identity.provider,
+          client: row.identity.client, activity: row.activity})), visible: Array.from(document.querySelectorAll('section[aria-label="Pixoo monitor"] h3')).map(node => node.textContent)};
+      });
+      process.stdout.write(`${JSON.stringify({titleRefreshDiagnostic: diagnostic})}\n`);
+      throw error;
+    }
     assert.equal(await page.getByRole('heading', {name: 'Synthetic monitor task', exact: true, level: 3}).count(), 0, 'title-only owner update refreshes without Refresh');
     assert.deepEqual(await readCoarseState(), beforeTitle, 'title-only update preserves activity, count, mode and notice count');
     assert.equal(requests(), 0, 'opening and cached reads send no command');
@@ -45,7 +59,9 @@ try {
     await page.getByRole('textbox', {name: 'Session search', exact: true}).fill('Synthetic');
     await page.getByRole('spinbutton', {name: 'Monitor cadence', exact: true}).fill('2000');
     assert.equal(requests(), 0, 'drafting filter and cadence sends nothing');
-    await page.getByRole('button', {name: 'Apply monitor view', exact: true}).click();
+    assert.equal(world.pixooState().sent, 0, 'drafting does not paint');
+    const apply = page.getByRole('button', {name: 'Apply monitor view', exact: true});
+    await apply.focus(); await apply.press('Enter');
     await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
     assert.equal(requests(), 1); assert.equal(world.pixooState().sent, 0);
     await page.getByRole('button', {name: 'Show monitor', exact: true}).click();
@@ -81,6 +97,7 @@ try {
     await page.reload(); await feed(page, 'connected'); await page.getByText('Read-only access.', {exact: true}).waitFor();
     for (const label of ['Show monitor', 'Select Media', 'Apply monitor view', 'Set now playing']) assert.equal(await page.getByRole('button', {name: label, exact: true}).count(), 0);
     assert.equal(requests(), 5); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-monitor', requests: requests(), consumerOnlyDismissal: true, noOpenEffect: true, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-monitor', requests: requests(), consumerOnlyDismissal: true,
+      titleOnlyRefresh: true, noOpenEffect: true, noDraftEffect: true, keyboard: true, readOnlyControls: true, noReplay: true, axe: 'passed'})}\n`);
   } finally { await context.close(); }
 } finally { try { await browser?.close(); } finally { await world.close(); } }

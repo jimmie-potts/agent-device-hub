@@ -8,10 +8,10 @@ import {randomBytes} from 'node:crypto';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
-import {connectRemote, type RemoteParticipant} from '@jimmie-potts/sdk';
+import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
@@ -29,6 +29,8 @@ export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 export type WorldOptions = {
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
+  /** A synthetic module principal for Desktop metadata; reads no provider files. */
+  desktopMetadata?: boolean;
   /** Qualified scripted Nanoleaf/Pixoo native responders; Nanoleaf fails and Pixoo succeeds independently. */
   modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
@@ -56,6 +58,8 @@ export type World = {
   readonlyPlaylistCommand(data: object): Promise<number>;
   /** Publishes one hook observation of `event` now, and resolves once the edge took it. */
   observe(event: LifecycleEvent, options?: ObservationOptions): Promise<void>;
+  /** Publishes a synthetic title from the trusted Desktop module's SDK. */
+  desktopTitle(identity: Identity, title: string): Promise<void>;
   /** How many browser sessions the runtime holds. */
   browserSessions(): number;
   /** A synthetic Nanoleaf consumer acknowledges its notice through the real core command. */
@@ -120,9 +124,16 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const panel = new SimulatedPixoo();
   const editor = options.pixooPages === true ? await editorFixture() : undefined;
+  let desktopSdk: Sdk | undefined;
+  const desktopMetadata: BunnyModule = {
+    manifest: {name: 'codex-desktop', apiVersion: '1.3'},
+    start: context => { desktopSdk = context.sdk; },
+    stop: () => { desktopSdk = undefined; },
+  };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
-      ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor])],
+      ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
+      ...(options.desktopMetadata === true ? [desktopMetadata] : [])],
     port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
@@ -171,6 +182,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observe: async (event, observed = {}) => {
       const {key, draft} = observation(event, Date.now(), observed);
       await (await connected()).publish(key, draft);
+    },
+    desktopTitle: async (identity, title) => {
+      assert.ok(desktopSdk, 'the synthetic Desktop module is running');
+      const {key, draft} = observation({kind: 'metadata-observed'}, Date.now(), {identity, turn: null, title: {value: title, source: 'provider'}});
+      await desktopSdk.publish(key, draft);
     },
     acknowledge: async session => {
       const consumer = await connectRemote({url: runtime.url, source: 'bunny/parts/nanoleaf', token: consumerToken});

@@ -35,7 +35,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | Path | Contents |
 | --- | --- |
 | `src/module` | The runtime module: `module.ts` (`createPixooModule`, `pixooFactory`), `control.ts` (command handling, `PixooControl`), `configuration.ts` (`configurePixoo`, `convertPixooSettings`), `transport.ts` (the HTTP transport and `SimulatedPixoo`), `schemas.ts` (its 2.0 families), `store.ts` (its own rows) and `render-worker.ts` |
-| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/rendering/previews, playlist editing and Player controls in the shared dashboard (#932) |
+| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/rendering/previews, playlist editing, Player, Monitor and Settings controls in the shared dashboard (#932) |
 | `src/core` | Shared schemas for requests, presentation settings, Monitor filters and Now Playing |
 | `src/device` | The fake (simulator) adapter, the HTTP adapter and its transport, hosted GIF files, and the device qualification functions |
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
@@ -91,14 +91,28 @@ authenticated `player` content reference. The read accepts no query and changes
 no playback state. Playback, display mode and restart-with-changes use the
 existing tracked commands and device generation guards. Saved playlist changes
 stay separate from the active session until an explicit restart. The remaining
-time is a local estimate, with no polling or physical-telemetry claim. Monitor
-and settings views remain under #932.
+time is a local estimate, with no polling or physical-telemetry claim.
+
+Monitor reads copied session facts and cached preview frames through bounded
+content references. Search, filters, cadence and Now Playing choices stay local
+until explicitly applied. Show monitor and Select Media use the existing mode
+commands; reading the page never activates presentation. Dismissal acknowledges
+only the Pixoo consumer. Session labels link to the shared Sessions page. A
+title-only or cached-preview change advances the display record revision even
+when its small summary is unchanged, refreshing the page without polling.
+
+Settings shows the safe configuration projection and current device facts.
+Address, profile and hosted-GIF setup use the runtime configuration file and a
+restart; the page provides no second configuration writer. Brightness and screen
+controls use tracked commands. Requested brightness is distinct from observed
+telemetry. Read-only callers can inspect both pages without mutation controls.
 
 `src/frontend/library.tsx` adapts the original `apps/web/src/library.tsx` at
 `0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Runtime reads and tracked commands
 replace its local API; upload now requires an explicit Add media action.
-`playlists.tsx`, `player.tsx` and `preview.tsx` adapt the corresponding source views at that
-same revision, replacing their local API with the shared authenticated context.
+`playlists.tsx`, `player.tsx`, `preview.tsx`, `monitor.tsx` and `settings.tsx`
+adapt the corresponding source views at that same revision, replacing their
+local API with the shared authenticated context.
 
 This page reuses the playlist-selection and saved-owner-detail pattern from
 `apps/dashboard/src/pixoo-media.tsx` at `bf11587c`, plus this module's existing

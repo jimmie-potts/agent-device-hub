@@ -80,6 +80,13 @@ catalog refreshes from the completed owner operation. Files remain in page
 memory and are not restored or resent on reload. Read-only callers can browse
 the catalog but have no upload controls.
 
+Pixoo also contributes Playlists, Player, Monitor and Settings. Referenced
+previews stay within the feature pages. Draft edits and page opens send no
+command; explicit saves and controls use tracked outcomes. Monitor dismissal
+is Pixoo-only, and session labels use the shared Sessions page. Settings exposes
+the safe configuration for inspection and keeps file-based setup separate from
+brightness and screen commands.
+
 Passive pages keep their script-free frame. A declared trusted editor uses an
 application frame under the gateway's trusted asset policy. It is reviewed
 same-origin application code, not an untrusted extension sandbox. User media

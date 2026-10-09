@@ -1160,6 +1160,8 @@ node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary impo
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
 node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition rendering and media deletion without display writes
 node apps/runtime/dashboard/tests/pixoo-player.browser.ts # frozen sessions, playback controls and explicit restart with changes
+node apps/runtime/dashboard/tests/pixoo-monitor.browser.ts # title refresh, passive reads, presentation controls and Pixoo-only dismissal
+node apps/runtime/dashboard/tests/pixoo-settings.browser.ts # safe setup projection and explicit brightness/screen commands
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
@@ -1202,7 +1204,18 @@ fresh synthetic library and simulated display. It checks a revision-bound name
 save through the shared shell, owner-confirmed state, read-only refusal,
 reload without resend, no display write and accessibility. It also executes a
 separately bundled trusted editor fixture while retaining passive-page script
-refusal. The full local browser command includes this journey.
+refusal. The full local browser command includes this journey and the Library,
+Playlists, Player, Monitor and Settings journeys. They cover saved renditions,
+referenced previews, explicit controls, read-only access and accessibility.
+Monitor's synthetic Desktop module publishes metadata through its own SDK;
+no provider files are read. This proves a title-only update reaches the page
+without a manual refresh or a new command.
+
+The `pixoo-pages` catalog scenario exercises declared React pages, passive
+bounded reads and previews, one tracked playlist edit and a forged read-only
+refusal. Run it in both catalog transports and through the disposable adapter;
+independent Acceptance also uses the pages interactively. These are source and
+simulator checks, not physical-display acceptance.
 
 ## Agent lifecycle contract checks
 
