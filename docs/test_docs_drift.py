@@ -50,10 +50,10 @@ class DocumentationTests(unittest.TestCase):
         self.assertEqual(result[0]['status'], 'not checked')
 
     def test_rename_and_incomplete_compare(self):
-        data = {'files': [{'filename': 'new', 'previous_filename': 'old'}]}
+        data = {'status': 'ahead', 'files': [{'filename': 'new', 'previous_filename': 'old'}]}
         self.assertEqual(drift.compare_files(data), {'old', 'new'})
         with self.assertRaises(ValueError):
-            drift.compare_files({'files': [{'filename': str(i)} for i in range(300)]})
+            drift.compare_files({'status': 'ahead', 'files': [{'filename': str(i)} for i in range(300)]})
         with self.assertRaises(ValueError):
             drift.compare_files({})
 
@@ -88,6 +88,44 @@ class DocumentationTests(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(paths, {'scripts/real.py', 'scripts/renamed.py'})
         self.assertIsNotNone(compare(drift.HUB, 'missing-revision')[2])
+
+    def test_unsupported_ancestry_and_malformed_file_responses(self):
+        for data in [None, [], 'invalid', {'status': 'behind', 'files': []},
+                     {'status': 'diverged', 'files': []}, {'status': 'ahead', 'files': [None]},
+                     {'status': 'ahead', 'files': [{'filename': None}]},
+                     {'status': 'ahead', 'files': [{'filename': 'a', 'previous_filename': []}]}]:
+            with self.subTest(data=data), self.assertRaises(ValueError):
+                drift.compare_files(data)
+        self.assertEqual(drift.compare_files({'status': 'identical', 'files': []}), set())
+
+    def test_malformed_repository_and_head_are_not_checked(self):
+        for responses in [[None], [[]], [{}], [{'default_branch': 'main'}, None],
+                          [{'default_branch': 'main'}, {'sha': []}],
+                          [{'default_branch': 'main'}, {'sha': 'not-a-sha'}]]:
+            compare = drift.Comparisons(self.root)
+            responses = iter(responses)
+            compare.api = lambda route: next(responses)
+            self.assertIsNotNone(compare('codex-nanoleaf', 'a' * 40)[2])
+
+    def test_revision_cannot_be_a_git_option(self):
+        compare = drift.Comparisons(self.root)
+        self.assertIsNotNone(compare(drift.HUB, '--output=unexpected')[2])
+        self.assertFalse((self.root / 'unexpected').exists())
+
+    def test_flagged_commands_and_command_globs(self):
+        self.assertEqual(len(self.check('`node --test scripts/missing.mjs`')), 1)
+        self.assertEqual(self.check('`python3 scripts/*.py`'), [])
+        self.assertEqual(len(self.check('`python3 scripts/*.missing`')), 1)
+        self.assertEqual(len(self.check('node --test --test-name-pattern "two words" scripts/missing.mjs')), 1)
+        self.assertEqual(self.check('node --eval "console.log(1)"\npython3 -m unittest'), [])
+        self.assertEqual(self.check('python3 scripts/real.py scripts/output.json'), [])
+
+    def test_malformed_compare_reaches_not_checked_boundary(self):
+        for data in [None, [], {'status': 'ahead', 'files': [None]}, {'status': 'behind', 'files': []}]:
+            compare = drift.Comparisons(self.root)
+            responses = iter([{'default_branch': 'main'}, {'sha': 'b' * 40}, data])
+            compare.api = lambda route: next(responses)
+            self.assertIsNotNone(compare('codex-nanoleaf', 'a' * 40)[2])
 
 
 if __name__ == '__main__':
