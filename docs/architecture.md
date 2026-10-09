@@ -349,7 +349,9 @@ with pruning on writes, startup and an idle timer. The in-memory reference store
 is a test adapter. The current runtime supplies its private core SQLite adapter;
 Pixoo #31 records the retained embedded owner's durability and access controls.
 Observation age and restart uncertainty remain separate from collector health.
-The core sends no device commands, regardless of Media/Free modes.
+The agent-state reducer sends no device commands, regardless of Media/Free modes.
+The runtime core's separate action dispatcher admits and routes tracked commands
+through the SDK to the owning module; it never writes a physical device itself.
 
 Agent-state 2.0.0 calculates best-effort current activity for ordinary unordered
 provider hooks. An eligible unseen turn start selects active; its matching stop

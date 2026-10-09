@@ -15,4 +15,3 @@ The runtime SHALL serve a copy of the B.U.N.N.Y. dashboard (`apps/runtime/dashbo
 #### Scenario: Fixed attention colors
 - **WHEN** a session needs approval or input, or reports a continuing question
 - **THEN** approval/input dots and chips use the fixed blocked token, and the continuing question uses the separate question token
-

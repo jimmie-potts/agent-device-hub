@@ -6,7 +6,7 @@ records accepted Windows/client and device checks for its exact versions; it doe
 not qualify other hosts or every later feature. New runtime integration remains
 separately scoped under [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837).
 
-The source The transport core is from [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741);
+The transport core is from [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741);
 task routing (Hub feed, slots, lights, focus, Wispr and Send) is from [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742),
 and press-time Send with big-wheel card answers is from [#821](https://github.com/jimmie-potts/agent-device-hub/issues/821).
 The source commands do not install or start a persistent service. Installation,
