@@ -22,6 +22,8 @@ import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
+import {AutomationError} from './automation.js';
+import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
@@ -158,6 +160,7 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
 /** The core as the runtime hosts it: a module, with its dispatcher for the gateway's action routes (#782). */
 export interface CoreModule extends BunnyModule {
   readonly actions: CoreActions;
+  readonly automation: AutomationControls;
   readonly operatorActions: CoreOperatorActions;
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
@@ -179,6 +182,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
+    get automation() { if(core===undefined) throw new AutomationError('unavailable',503); return core.automation; },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     setModeParticipants: participants => {
@@ -189,6 +193,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 }
 
 class Core {
+  readonly #automation = new AutomationPart();
+  get automation(): AutomationControls {return this.#automation.controls;}
   readonly #mode: ModePart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
@@ -234,7 +240,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, this.#automation, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -245,7 +251,15 @@ class Core {
     // A start that fails leaves the handlers waiting on `ready` to fail with it, not an unhandled rejection.
     this.#ready.catch(() => {});
     this.#store = new CoreStore({
-      database: context.database(), sdk: context.sdk, clock: context.clock,
+      database: context.database(), clock: context.clock,
+      sdk: {source:context.sdk.source,publishMessage:async(key,message)=>{
+        const failed=this.#automation.publishing(message);
+        try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();throw error;}
+      }},
+      committed: change => {
+        this.#automation.committed(change);
+        return ()=>this.#automation.publicationEnded(change);
+      },
       derivers: parts.flatMap(part => part.derive ?? []),
       open: [
         (database: DatabaseSync) => { this.#tracker.open(database); },
@@ -327,6 +341,7 @@ class Core {
     await this.#starting?.catch(() => {});
     this.#timer?.();
     await this.#queue;
+    await this.#automation.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
@@ -579,6 +594,7 @@ class Core {
   /** Assigns qualified mode participants once, without sending a command. */
   setModeParticipants(participants: readonly ModeParticipant[]): void {
     this.#mode.setParticipants(participants);
+    this.#automation.setParticipants(participants);
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }

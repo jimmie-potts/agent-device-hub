@@ -20,7 +20,7 @@ import {randomBytes} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
-import {sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type MomentPlayRequest, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
   DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange,
@@ -32,6 +32,8 @@ import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
+import {admitMoment, initMoments, momentRevision, type FreeBase} from '../moments.js';
+import {isObject} from '../compat.js';
 import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
@@ -80,10 +82,11 @@ const NATIVE = {
   'scene-activate': {kind: 'scene.activate', completed: 'org.bunny.scene.activate.completed'},
 } as const;
 type NativeFamily = keyof typeof NATIVE;
-/** The general device families a Nanoleaf controller does not offer; moments are codex-nanoleaf#158. */
-const UNSUPPORTED = ['zone-power-set', 'media-start', 'media-control', 'moment-play'] as const;
+/** The general device families a Nanoleaf controller does not offer. */
+const UNSUPPORTED = ['zone-power-set', 'media-start', 'media-control'] as const;
 const completedType = (requested: string): string => requested.replace(/\.requested$/, '.completed');
 const OUTCOME_TYPES: Readonly<Record<string, string>> = {
+  'moment-play':'org.bunny.moment.play.completed',
   ...Object.fromEntries(Object.entries(NATIVE).map(([family, {completed}]) => [family, completed])),
   ...Object.fromEntries(Object.values(NANOLEAF_FAMILIES).filter(family => family.kind === 'command').map(family => [family.family, completedType(family.type)])),
 };
@@ -93,7 +96,7 @@ const SERVED = ['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.anima
  * is. A mode command is not one: it completes as its mode commits, and the worker's paints that follow are its own.
  */
 const WRITE_OPERATIONS: Readonly<Record<string, string>> = {
-  'power-set': 'power', 'brightness-set': 'brightness', 'scene-activate': 'media', [NANOLEAF_FAMILIES.animationPlay.family]: 'media',
+  'moment-play':'media', 'power-set': 'power', 'brightness-set': 'brightness', 'scene-activate': 'media', [NANOLEAF_FAMILIES.animationPlay.family]: 'media',
 };
 
 type Accepted = {status: 'accepted'};
@@ -170,6 +173,7 @@ export class NanoleafRuntime {
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
     db.exec(MODULE_TABLES);
+    initMoments(db);
     execute(db, "INSERT OR IGNORE INTO nanoleaf_module VALUES ('epoch', ?)", randomBytes(16).toString('hex'));
     for (const device of config.devices) execute(db, 'INSERT OR IGNORE INTO nanoleaf_devices (device) VALUES (?)', device.id);
     writeJson(join(directory, 'config.json'), registryFile(config));
@@ -689,6 +693,7 @@ export class NanoleafRuntime {
       await sdk.respond<Guards>(`bunny.cmd.${family}.${device}`, command =>
         errorBody('unsupported-capability', {requestId: command.data.requestId, detail: 'a Nanoleaf controller does not take this command'}));
     }
+    await sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${device}`, command=>this.#moment(device,command));
     const {wallEdit, machineEdit, animationPlay, favoriteEdit: favorite, acknowledge} = NANOLEAF_FAMILIES;
     await sdk.respond<{requestId: string; edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
     await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${machineEdit.family}.${device}`, command => this.#machineEdit(device, command));
@@ -768,6 +773,34 @@ export class NanoleafRuntime {
       admitCommand(this.#db, this.#directory, {id: requestId, device, command: {kind: NATIVE[family].kind, ...fields}, instant: this.#seconds(),
         expires: expiresMs(command, this.#context.clock.now()) / 1000}, report);
     }, () => { this.#accepted(device, family === 'device-mode-set' ? undefined : command); });
+  }
+
+  async #moment(device:string,command:Command<MomentPlayRequest>):Promise<Reply> {
+    const {requestId}=command.data, revision=momentRevision(this.#db,device), mode=controlState(this.#db,device).mode;
+    const link=this.#links.get(device);
+    if(link===undefined) return errorBody('not-found',{requestId});
+    if(!commandSupported(capabilities(this.#db,device),{family:'moment-play',data:command.data}) || mode==='quiet') return errorBody('unsupported-capability',{requestId});
+    let freeBase:FreeBase|undefined;
+    if(mode==='free') {
+      try {
+        const listing=await link.request({ip:'',token:''},'GET','/effects');
+        const state=await link.request({ip:'',token:''},'GET','/state');
+        if(!isObject(listing) || typeof listing.select!=='string' || listing.select.startsWith('*') || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(listing.select) ||
+            !isObject(state) || !isObject(state.brightness) || typeof state.brightness.value!=='number' || !Number.isInteger(state.brightness.value) ||
+            state.brightness.value<0 || state.brightness.value>100) return errorBody('unsupported-capability',{requestId});
+        freeBase={name:listing.select,brightness:state.brightness.value};
+      } catch { return errorBody('unavailable',{requestId}); }
+    }
+    return this.#admit(command,()=>{
+      if(momentRevision(this.#db,device)!==revision || controlState(this.#db,device).mode!==mode) throw new CommandRefused('revision-conflict','the device choice changed during the read');
+      if(savedLayout(this.#directory,device)===undefined) throw new CommandRefused('invalid-state','the saved Lines layout is not available yet');
+      this.#record(command,device,'moment-play');
+      admitMoment(this.#db,this.#directory,device,{...command.data,kind:'moment.play',configurationRevision:revision,...(freeBase===undefined?{}:{freeBase})},this.#context.clock.now());
+    },()=>{
+      this.#accepted(device);
+      this.#context.scheduler.after(Math.max(0,command.data.startAtMs+command.data.toleranceMs-this.#context.clock.now())+1,
+        ()=>this.#transact(report=>{expireQueued(this.#db,device,this.#seconds(),report);}).catch(()=>{}));
+    });
   }
 
   #animation(device: string, command: Command<{requestId: string; animation: Record<string, unknown>}>): Promise<Reply> {

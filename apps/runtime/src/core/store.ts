@@ -96,6 +96,8 @@ export type StoreOptions = {
   open?: readonly ((database: DatabaseSync) => void)[];
   /** Runs right after each commit that has messages to publish, before any goes out. A crash test kills the process here. */
   beforePublish?: () => void;
+  /** New commits only; returned cleanup runs when their original publication batch ends. Never called by republication or sync. */
+  committed?: (change: CoreChange) => void | (() => void);
   /** When a save is costly: `SAVE_COST` by default. */
   saveCost?: SaveCost;
   /** Monotonic milliseconds that saves are timed with: `performance.now` by default. */
@@ -609,10 +611,14 @@ export class CoreStore implements Storage {
     for (const id of plan.removed) this.#records.delete(id);
     this.#restarted = plan.restarted;
     this.#hostSessions = plan.hostSessions;
+    const publicationEnded=this.#options.committed?.({revision:this.#revision,messages:added});
     if (adds > 0) this.#options.beforePublish?.();
     const sending = sent.catch(() => {});
     this.#sending.add(sending);
-    void sending.finally(() => { this.#sending.delete(sending); });
+    void sending.finally(() => {
+      this.#sending.delete(sending);
+      if(typeof publicationEnded==='function') publicationEnded();
+    });
     return committedAt;
   }
 
