@@ -243,7 +243,7 @@ test('explicit affected links are read and require criterion-specific remaining 
 test('canonical recommendation tooling renders and parses separately prepared public text',async()=>{
  const f=await fixture();try{
   const root=new URL('../../../',import.meta.url).pathname;
-  const config={deadline:f.input.deadline,planning:{python:'/usr/bin/python3',policyRevision:'a'.repeat(40),recommendations:join(root,'docs/work-guide/work/recommendations.py'),helper:join(root,'apps/maintenance/closeout/recommendation.py')}};
+  const config={deadline:f.input.deadline,planning:{python:'/usr/bin/python3',policyRevision:'a'.repeat(40),recommendations:join(root,'apps/maintenance/recommendations/recommendations.py'),helper:join(root,'apps/maintenance/closeout/recommendation.py')}};
   const entry=recommendationEntry(f.issue,{...advice,action:'refresh'},config,f.input);
   const rendered=await canonical(config,'render',f.issue.body,entry);assert.equal(rendered.parsed.state,'recommended');
   assert.match(rendered.body,/## Execution recommendation/);assert.match(rendered.body,/Two fresh read-only/);
@@ -303,9 +303,9 @@ test('selected changes during related updates stop before acceptance publication
 test('concrete bounded planner independently reads current public acceptance without raw installation evidence',async()=>{
  const {fixture:toolsFixture}=await import('./fixture.mjs');const f=await fixture(),tools=await toolsFixture();
  try{
-  const root=new URL('../../../',import.meta.url).pathname,planning={timeoutSeconds:3,codex:tools.config.tools.codex,python:await realpath('/usr/bin/python3'),checkout:tools.config.checkout,planWork:tools.config.planWork,recommendationPolicy:tools.config.planWork,recommendations:join(root,'docs/work-guide/work/recommendations.py'),helper:join(root,'apps/maintenance/closeout/recommendation.py'),model:'gpt-6-astra',policyRevision:'a'.repeat(40),files:{}};
+  const root=new URL('../../../',import.meta.url).pathname,planning={timeoutSeconds:3,codex:tools.config.tools.codex,python:await realpath('/usr/bin/python3'),checkout:tools.config.checkout,planWork:tools.config.planWork,recommendationPolicy:tools.config.planWork,recommendations:join(root,'apps/maintenance/recommendations/recommendations.py'),helper:join(root,'apps/maintenance/closeout/recommendation.py'),model:'gpt-6-astra',policyRevision:'a'.repeat(40),files:{}};
   for(const key of ['codex','python','planWork','recommendationPolicy','recommendations','helper'])planning.files[planning[key]]=hash(await readFile(planning[key]));
-  planning.files[join(root,'docs/work-guide/work/story_sections.py')]=hash(await readFile(join(root,'docs/work-guide/work/story_sections.py')));
+  planning.files[join(root,'apps/maintenance/recommendations/story_sections.py')]=hash(await readFile(join(root,'apps/maintenance/recommendations/story_sections.py')));
   const config={...f.config,planning};await pinAcceptance(config);
   const result=await executeCloseout(f.input,config,f.api,validateInstallReceipt);
   assert.equal(result.status,'complete',result.reason);assert.deepEqual(f.calls,['comment','close']);

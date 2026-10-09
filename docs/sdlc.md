@@ -100,7 +100,7 @@ in the [diagnostic contract](observability-contract.md). For each item, name
 the rule it follows or the exception it needs and why; do not copy the rule.
 The Work item template asks for this in its "Boundaries and outcomes" prompt;
 the answer goes in "Behavior and protections to preserve", with a `###`
-subheading at most, because a new `##` heading ends that section for the Guide.
+subheading at most, because a new `##` heading ends that section for the section parser.
 A story that crosses no boundary may say so in one line.
 
 Prefer existing components and explicit manual steps where practical. Avoid
@@ -184,7 +184,7 @@ prerequisites or success claims to fill the five bullets. Keep the opening
 visible, outside tables, code fences and collapsed details.
 
 Preserve the five recognized detailed headings in their existing order and the
-strict `## Guide` fields, plus applicable assessment and execution advice. The
+applicable assessment and execution advice. The
 opening summarizes the detailed scope, dependencies, acceptance and evidence;
 it does not replace them or become a new parsed scope or readiness field.
 
@@ -196,7 +196,7 @@ unchanged. Existing stories remain valid without it.
 The GitHub chooser uses a Markdown template so the author's headline can appear
 first at level two. YAML forms add fixed field headings and cannot substitute
 an answer as the headline. The Work item template retains the labels, recognized detailed headings and
-Guide guidance; Markdown does not enforce required inputs.
+scope guidance; Markdown does not enforce required inputs.
 Complete outcome and acceptance, fill the other detailed sections when relevant,
 and replace all opening prompts before filing.
 For CLI or agent-created issues, write the same structure directly without
@@ -251,26 +251,6 @@ type checks in docs/development.md and CI. Use a meaningful failing scenario
 before its fix; imported bootstrap workflow fixtures do not establish a product
 red/green result. Do not widen scope to satisfy a test or rewrite device behavior
 as incidental cleanup.
-
-## Work guide updates
-
-The [cross-project work guide](work-guide/README.md) is a dated publication, not
-a live delivery ledger; a successful browser read of GitHub can show a story's
-current topic placement, note and highlight for that repository, but topic
-prose, history and the roadmap stay dated regardless. Refresh its saved inputs and generated output when the
-authorized task intentionally updates or publishes it. An unrelated planning,
-source or acceptance task does not require a guide refresh, no-impact entry,
-companion PR or public-currency check. Closing such a task does not claim that
-the dated guide or public edition reflects its latest state.
-
-For an intentional guide update, follow the guide procedure and record changed
-sections, snapshot time, validation and source revision in its PR. A
-cross-repository update may use a linked Hub companion PR with one coordinator.
-Keep source completion, guide revision, public publication and live verification
-as separate claims. Publishing remains a distinct authorized step with its own
-review and verification gates. Explicit `plan-work` and `deliver-work` use
-their applicable checkpoints within the user's authority; ordinary work does
-not implicitly invoke those skills.
 
 ## Tracker reconciliation
 
@@ -414,7 +394,7 @@ permission to replace an owner.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
-   prevent merge except for the verified guide-only filtering described below.
+   prevent merge.
    Apply the UI verification policy below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
@@ -428,7 +408,7 @@ permission to replace an owner.
    but reconcile a requirement that both changed into one paragraph; a stacked
    resolution was a P2 finding on PR #421.
 6. Read back the main merge revision and verify its CI evidence using the same
-   rules, or record the guide-only exception evidence below. Close the delivered
+   rules. Close the delivered
    issue only after its acceptance is met, clear workflow labels and verify
    closure, with stderr visible as [tracker writes](tracker-reconciliation.md)
    require. Apply [tracker reconciliation](#tracker-reconciliation) to affected
@@ -445,15 +425,13 @@ device output, and the code, configuration or assets that serve them, including
 refactors of those paths. A change has **no observable behavior** only when it
 cannot alter any of that. Examples: prose documentation, contracts or library
 code that no running application serves yet, test-only changes, and logging
-that changes no user-facing or device-facing output. A change entirely under
-`docs/work-guide/` keeps the guide's own browser checks and needs no Acceptance
-review.
+that changes no user-facing or device-facing output.
 
 Verification has three tiers.
 
 1. **Automatic.** Once an application has a shared scenario catalog, every PR
    that runs the Checks workflow runs it in CI through the in-memory end-to-end
-   harness. Markdown-only and guide-only changes skip it.
+   harness. Markdown-only changes skip it.
    [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
    adds both for the new runtime that
    [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
@@ -533,8 +511,8 @@ Verification has three tiers.
 
 ### Cleanup after delivery
 
-Start once step 6 has confirmed that the merged revision's CI jobs succeeded,
-or recorded its guide-only exception evidence, and read back the issue state.
+Start once step 6 has confirmed that the merged revision's CI jobs succeeded
+and read back the issue state.
 Cleanup does not wait for installation or physical acceptance unless that work
 still uses the worktree. Clean up only what this delivery created:
 
@@ -612,13 +590,12 @@ authorization; the commands are in the
 the first attempt's failure and the retry in the PR evidence instead of pushing
 an empty commit, which would change the reviewed head.
 If required diagnostic evidence is unavailable, report that gap and keep the
-merge or completion gate pending. Preserve the separate guide-only exception,
-independent reviews, head guard and post-merge verification.
+merge or completion gate pending. Preserve independent reviews, the head guard and post-merge verification.
 
 ### UI approval scope
 
 No project UI requires human approval, including new or materially changed Hub,
-dashboard, device-facing, Guide and Ask interfaces. Record the affected UI and
+dashboard and device-facing interfaces. Record the affected UI and
 applicable automated, browser, visual and accessibility evidence in the PR.
 Independent Standards and Specification reviews, an
 [Acceptance review](#acceptance-review) for observable behavior, applicable CI
@@ -631,44 +608,6 @@ and separately scoped acceptance. Reconcile active tracker wording during
 authorized updates; do not rewrite historical approval evidence. Publication and
 physical device operations retain their own authority requirements.
 
-Assess the guide-only CI exception separately against every changed path.
-Changes outside `docs/work-guide/`, including this policy, require normal CI as
-the workflows route it; see [Markdown-only CI routing](#markdown-only-ci-routing).
-The heading retains its existing anchor for links from older records.
-
-### Guide-only CI exception
-
-All CI workflows exclude changes entirely under `docs/work-guide/`. This includes
-its generators and tests. For a guide-only PR and its main merge, the coordinator
-may accept intentionally absent runs only after recording all of the following:
-
-- The exact base/head or before/after merge revisions, the complete changed-file
-  list, and the workflow triggers at the candidate revision. Use the PR's full
-  comparison and the push's comparison separately; include deletions and both
-  paths of renames. Every path must remain under `docs/work-guide/`.
-- Successful local guide generation, generated-output consistency, maintenance
-  tests and browser checks from the exact candidate using the guide procedure,
-  plus a zero exit from `npx eslint docs/work-guide`. Retain the HTML hash,
-  screenshots, print check and verification receipt outside Git. Validate the merged tree and repeat checks if its guide content differs.
-- CI event/head associations and GitHub check readbacks consistent with those
-  filters, plus the current protection and merge-state inspection. Missing runs
-  alone, failed API reads or a cancelled run do not establish intentional filtering.
-
-Independent Standards and Specification reviews and guarded squash merge still
-apply. Follow the separate [UI verification policy](#ui-approval-scope). Required checks
-that remain pending block merge; never bypass protections or emit dummy success
-checks. Record unavailable protection reads and inspect the PR's authoritative
-merge/check state.
-Any changed path outside the guide folder requires normal CI, including a
-rename out of the folder. If path scope or filter applicability is uncertain,
-retain the normal gate until resolved. Changes to workflows, CI scripts or the
-delivery preflight receive full CI and cannot use their proposed exception to
-approve their own delivery.
-
-For issue closure and later authorized publication, the verified guide-only
-receipt replaces only the absent Hub CI evidence. All other acceptance and
-publication requirements remain in force. Record this distinction explicitly.
-
 The initial GitHub-generated README commit only creates the default branch.
 Subsequent bootstrap and product changes use PRs. Do not assume private-plan
 branch protection is available or absent; honor configured protections and retain
@@ -677,7 +616,7 @@ these procedural gates.
 ### Markdown-only CI routing
 
 The Checks workflow ignores `**/*.md`. A revision whose every changed path is a
-Markdown file runs only the Workflow and Work guide jobs. Those jobs must
+Markdown file runs the Workflow checks and Retained documentation checks jobs. Those jobs must
 succeed, and the delivery preflight derives that expected set from the
 workflows. The Workflow job still runs OpenSpec validation, the issue-template
 and fixture tests and the delivery preflight fixtures. Markdown-only edits to
@@ -692,11 +631,7 @@ That guard checks only that the files exist. Package scripts may copy the
 guarded files, but no Checks test may depend on Markdown content. A test that
 does must run in the Workflow job, which still runs for Markdown-only changes.
 
-The `docs/work-guide/` and `**/*.md` filters combine. A revision that changes
-only guide files and other Markdown therefore skips Checks too, and it needs
-the [guide-only evidence](#guide-only-ci-exception) for its guide files; the
-delivery preflight requires it. If a change's file list or filter behavior is
-uncertain, keep the full gate.
+If a change's file list or filter behavior is uncertain, keep the full gate.
 
 ## Installation and evidence
 

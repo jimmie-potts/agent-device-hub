@@ -2,13 +2,6 @@
   "version": 1,
   "places": [
     {
-      "id": "guide",
-      "label": "Guide",
-      "group": "Public",
-      "publicUrl": "https://jimmie-potts.github.io/agent-device-guide/",
-      "localPath": "docs/work-guide/outputs/agent-device-work-guides.html"
-    },
-    {
       "id": "architecture",
       "label": "Architecture",
       "group": "Public",

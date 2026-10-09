@@ -4,15 +4,15 @@ const {pathToFileURL} = require('url');
 const crypto = require('crypto');
 const {screenshot} = require('../skins/screenshot.cjs');
 let modulePath;
-for (const p of [process.env.GUIDE_PLAYWRIGHT_MODULE, 'playwright'].filter(Boolean)) {
+for (const p of [process.env.DOCS_PLAYWRIGHT_MODULE, 'playwright'].filter(Boolean)) {
   try {modulePath = require.resolve(p); break;} catch {}
 }
-assert(modulePath, 'Set GUIDE_PLAYWRIGHT_MODULE to an installed Playwright module.');
+assert(modulePath, 'Set DOCS_PLAYWRIGHT_MODULE to an installed Playwright module.');
 const {chromium} = require(modulePath);
 const cache = process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), '.cache/ms-playwright');
 const installed = fs.existsSync(cache) ? fs.readdirSync(cache).sort((a,b) => b.localeCompare(a,undefined,{numeric:true})) : [];
-const executablePath = [process.env.GUIDE_CHROMIUM_PATH, chromium.executablePath(), ...installed.filter(n=>n.startsWith('chromium-')).map(n=>path.join(cache,n,'chrome-linux64/chrome'))].find(p=>p && fs.existsSync(p));
-assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executable.');
+const executablePath = [process.env.DOCS_CHROMIUM_PATH, chromium.executablePath(), ...installed.filter(n=>n.startsWith('chromium-')).map(n=>path.join(cache,n,'chrome-linux64/chrome'))].find(p=>p && fs.existsSync(p));
+assert(executablePath, 'Set DOCS_CHROMIUM_PATH to an installed Chromium executable.');
 (async () => {
   const root = __dirname;
   const out = process.env.BUNNY_DESIGN_RECEIPTS || fs.mkdtempSync(path.join(os.tmpdir(), 'bunny-design-'));

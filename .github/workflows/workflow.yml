@@ -1,11 +1,9 @@
-# The workflow checks run for every change outside docs/work-guide/, Markdown-only changes included (#861).
+# Workflow and retained documentation checks run for every change, including Markdown.
 name: Workflow
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/work-guide/**']
-  pull_request:
-    paths-ignore: ['docs/work-guide/**']
+  pull_request: {}
 permissions:
   contents: read
 concurrency:
@@ -30,10 +28,6 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
-      - name: Validate guide record contract fixtures
-        run: node --test docs/work-guide/contracts/records.test.mjs
-      - name: Validate epic Guide contract fixtures
-        run: node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs
       - run: npm run test:preflight
       # Hosted runners sometimes stall in apt-get update until the job's limit (#862). The step takes 15 to 133 s, its
       # slowest apt install about 2 minutes; each attempt of the two apt commands gets 180 s, and a stalled or failed
@@ -47,3 +41,45 @@ jobs:
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
           npm run test:performance:linux
           npm run test:performance:standalone
+  documents:
+    name: Retained documentation checks
+    runs-on: ubuntu-latest
+    # The job takes 3 to 9 minutes; the limit leaves room for two stalled browser-install attempts and their cleanups (#862).
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Validate retained diagrams, atlas and maintenance parser
+        run: |
+          python3 docs/diagrams/check.py
+          python3 docs/diagrams/test_independence.py
+          python3 docs/system-design/build.py --check
+          python3 docs/system-design/check.py
+          python3 docs/skins/test_places.py
+          python3 docs/skins/check_tokens.py
+          python3 apps/maintenance/tests/test_recommendations.py
+      # Hosted runners sometimes stall in apt downloads during --with-deps until the job's limit (#862). The script gives
+      # each attempt 300 s, above the slowest successful install so far (293 s, on #987's own run), and retries a stalled
+      # or failed attempt twice. An install that runs past 300 s costs a retry, which resumes from apt's cache, not a failure.
+      - name: Prepare the pinned browser checker
+        timeout-minutes: 20
+        run: |
+          npm install --prefix "$RUNNER_TEMP/docs-browser" --no-save --no-package-lock playwright@1.63.0
+          bash scripts/apt-retry.sh 300 node "$RUNNER_TEMP/docs-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Check system design navigation and print output
+        run: DOCS_PLAYWRIGHT_MODULE="$RUNNER_TEMP/docs-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs
+      - name: Check shared Places on mobile
+        run: DOCS_PLAYWRIGHT_MODULE="$RUNNER_TEMP/docs-browser/node_modules/playwright" BUNNY_PLACES_RECEIPTS="$RUNNER_TEMP/bunny-places-review" node docs/skins/check_places.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retained-documents-review
+          path: |
+            ${{ runner.temp }}/bunny-places-review/
+            ${{ runner.temp }}/bunny-design-review
+          if-no-files-found: error
+          retention-days: 14

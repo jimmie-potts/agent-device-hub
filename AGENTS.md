@@ -92,13 +92,10 @@ blocking findings or any missing/unsuccessful applicable CI job prevents
 automatic merge.
 Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
-Only changes entirely under docs/work-guide/ may use the intentional CI-filter
-exception in docs/sdlc.md; read its evidence requirements before merge or closure.
 Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
 Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
-Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
-for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
+Never use --admin. Read all applicable merged-revision main CI jobs before issue closure.
 No project UI requires human approval. Preserve applicable automated, browser
 and accessibility validation, independent reviews and CI under the
 [UI verification policy](docs/sdlc.md#ui-approval-scope).
@@ -242,18 +239,3 @@ the activated control, the action precedes its result and labels remain readable
 For an interactive version, also check takeover and reduced motion. Videos that
 do not demonstrate UI interactions do not need a cursor. This guidance does not
 require a preview for every change.
-
-## Work guide maintenance
-
-Use `plan-work` and `deliver-work` only when explicitly invoked. Their shared
-documentation checkpoints consume the procedure below; ordinary repository
-planning and delivery also follow it within the user's authority.
-
-Read [the guide maintenance procedure](docs/work-guide/README.md) when a task
-intentionally changes or publishes the cross-project guide. Refresh its saved
-inputs, regenerate the HTML and run the required checks for that guide revision.
-Ordinary planning and delivery do not refresh the guide or create a companion PR
-solely to record status; no no-impact ledger entry is required. Read-only tasks
-do not authorize writes. Keep source completion, guide revision, public
-publication and live verification distinct. Public publication requires the
-user's applicable finish line.

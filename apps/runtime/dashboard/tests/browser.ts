@@ -47,10 +47,9 @@ try {
   // Places: a run is a preview (Hub #495), so Wall leads to the paired run named in the runtime's links.
   const places = page.getByRole('navigation', {name: 'Places'});
   await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
-  assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Guide', 'Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local', 'WallLocal']);
+  assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local', 'WallLocal']);
   assert.equal(await places.getByRole('link', {name: 'Wall Local'}).getAttribute('href'), PAIRED);
-  assert.equal(await places.getByRole('link', {name: 'Guide'}).getAttribute('href'), 'https://jimmie-potts.github.io/agent-device-guide/');
-  checks.push('Places link Wall to the paired run and keep the public guide');
+  checks.push('Places link Wall to the paired run and keep retained public documents');
 
   // Sessions appear as the hook observes them.
   await world.observe(sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});

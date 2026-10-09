@@ -73,7 +73,7 @@ try {
     // A run names no place, so its Places lead nowhere local but here: a preview never links to an installed service.
     const places = page.getByRole('navigation', {name: 'Places'});
     await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
-    assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Guide', 'Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local']);
+    assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local']);
     await page.reload();
     await signedIn(page);
     const second = await open(context, `${world.url}/#/connections`);

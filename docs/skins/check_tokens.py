@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that guide and atlas styles take their colors from the token files.
+"""Check that diagram and atlas styles take their colors from the token files.
 
 Fails, naming file:line, on any hex, color-function or named color in the authored
 style sources outside docs/skins/*.css, and on a token file that breaks the skin
@@ -65,10 +65,9 @@ WORD = re.compile(r'(?<![\w-])[A-Za-z]+(?![\w-])')
 
 
 def sources():
-    """Authored style sources of the guide and atlas generators (token CSS files excluded)."""
-    guide, atlas = DOCS / 'work-guide' / 'work', DOCS / 'system-design'
-    guide_sources = ([guide / 'build_guide.py', *sorted(guide.glob('guide_*.css')), guide / 'guide_overview.js', guide / 'timeline.py'] if guide.is_dir() else [])
-    return [*guide_sources,
+    """Authored style sources of the diagram and atlas generators (token CSS files excluded)."""
+    atlas = DOCS / 'system-design'
+    return [
             *sorted((atlas / 'assets').glob('*.css')), *sorted((atlas / 'assets').glob('*.js')), atlas / 'build.py',
             SKINS / 'skin.py']
 

@@ -58,8 +58,7 @@ historical diagrams descriptions of today's runtime.
 | --- | --- |
 | Atlas `build.py` and `check.py` | This directory's definitions, SVGs, classes and receipts; `design.json` owns atlas links |
 | Shared Places browser checks | `legacy/rendered/*.html` plus atlas/reference pages |
-| Separate public export | Retained diagram viewers; its Guide-root publication dependency is retirement work, not publication authority |
-| Retiring Work Guide | Temporary forwarding import at its old definition path, removed with that application |
+| Separate public export | Retained diagram viewers and atlas/reference only; staging grants no publication authority |
 
 For an intentional revision to a dated diagram, use the installed Archify skill
 through `ARCHIFY_DIR=/path/to/archify python3 docs/diagrams/architecture_diagrams.py`,

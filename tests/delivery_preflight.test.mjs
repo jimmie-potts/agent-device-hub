@@ -16,9 +16,9 @@ import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
 import {
-  ACTIONS, BASE, DEPOT, EXPECTED_JOBS, GUIDE_HTML, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
-  checkRun, cleanWorld, comment, declaration, fakeTransport, guideRecordBody, job, mergeWorld, reviewReport, sha256, suite,
-  writeGuideEvidence, writeProof,
+  ACTIONS, BASE, DEPOT, EXPECTED_JOBS, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
+  checkRun, cleanWorld, comment, declaration, fakeTransport, job, mergeWorld, reviewReport, suite,
+  writeProof,
 } from './delivery-preflight/world.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -87,8 +87,8 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.match(report.notice, new RegExp(HEAD));
 });
 
-test('the real GitHub Actions configuration enumerates the five expected jobs and filters guide-only and Markdown-only changes', () => {
-  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'guide.yml', 'workflow.yml']);
+test('the real GitHub Actions configuration enumerates the five expected jobs and routes Markdown-only changes', () => {
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
@@ -97,7 +97,7 @@ test('the real GitHub Actions configuration enumerates the five expected jobs an
     'App verification on ubuntu-latest',
     'Build, lint and core tests on ubuntu-latest',
     'Firmware host tests and ARM build on ubuntu-latest',
-    'Work guide build and browser checks',
+    'Retained documentation checks',
     'Workflow checks on ubuntu-latest',
   ]);
   // The keys match the check names Depot reported, so coverage compares across the move.
@@ -105,18 +105,15 @@ test('the real GitHub Actions configuration enumerates the five expected jobs an
     'Checks / App verification on ubuntu-latest',
     'Checks / Build, lint and core tests on ubuntu-latest',
     'Checks / Firmware host tests and ARM build on ubuntu-latest',
-    'Work guide / Work guide build and browser checks',
+    'Workflow / Retained documentation checks',
     'Workflow / Workflow checks on ubuntu-latest',
   ]);
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
-  // Hub #861: a Markdown-only change skips Checks but still runs the workflow and Guide jobs.
-  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Work guide build and browser checks', 'Workflow checks on ubuntu-latest']);
+  // Hub #861: a Markdown-only change skips Checks but still runs the workflow and retained documentation jobs.
+  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Retained documentation checks', 'Workflow checks on ubuntu-latest']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
   assert.equal(mixed.jobs.length, 5, 'one non-Markdown path keeps every job expected');
-  const guide = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/outputs/agent-device-work-guides.html'], filesComplete: true }, ACTIONS);
-  assert.deepEqual(guide.jobs, []);
-  assert.equal(guide.filtered.length, 3);
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
   assert.equal(incomplete.jobs.length, 5, 'an incomplete file list keeps every job expected');
   const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true }, ACTIONS);
@@ -222,7 +219,7 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
 });
 
 // Hub #870: Depot-era revisions keep Depot's workflows and check names; the move compares coverage by job key.
-const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'work-guide.yml': WORKFLOW_FILES['guide.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
+const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
 const moveWorld = () => {
   const world = cleanWorld();
   // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.
@@ -258,7 +255,7 @@ test('CI: a Depot-era revision expects Depot check runs under "<workflow> / <job
   const world = cleanWorld();
   world.workflows[HEAD] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
   world.checkSuites[HEAD] = [suite(9400, HEAD, 'claude/gh-700-example', { app: { slug: DEPOT.app } })];
-  const depotNames = EXPECTED_JOBS.map(name => (name.startsWith('Workflow checks') ? `Workflow / ${name}` : name.startsWith('Work guide') ? `Work guide / ${name}` : `Checks / ${name}`));
+  const depotNames = EXPECTED_JOBS.map(name => ((name.startsWith('Workflow checks') || name.startsWith('Retained documentation')) ? `Workflow / ${name}` : `Checks / ${name}`));
   world.checkRuns[HEAD] = depotNames.map(name => checkRun(name, HEAD, 9400, { app: { slug: DEPOT.app } }));
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
@@ -282,24 +279,20 @@ test('CI: a revision without any workflow directory is unresolved', async () => 
   assertUnresolved(await preflight(world), 'ci-pr', /has no workflow in \.depot\/workflows or \.github\/workflows/);
 });
 
-test('CI: filters that skip non-guide paths leave the change without CI, never under the guide exception', async t => {
+test('CI: filters that skip every job leave the candidate unresolved', async () => {
   const world = cleanWorld();
-  const files = world.workflows[HEAD][ACTIONS.directory];
-  for (const file of Object.keys(files)) files[file] = files[file].replaceAll(/paths-ignore: \[[^\]]*\]/g, "paths-ignore: ['docs/**']");
-  world.files = [{ filename: 'docs/sdlc.md', status: 'modified' }];
+  world.workflows[HEAD][ACTIONS.directory] = {'filtered.yml': "name: Filtered\non:\n  pull_request:\n    paths-ignore: ['docs/**']\njobs:\n  check:\n    name: Check\n    runs-on: ubuntu-latest\n    steps: [{run: 'true'}]\n"};
+  world.files = [{filename: 'docs/sdlc.md', status: 'modified'}];
   world.compares[`${BASE}...${HEAD}`].files = world.files;
   world.checkRuns[HEAD] = [];
-  const receipt = writeGuideEvidence(scratch(t));
-  const record = comment(`Guide evidence for ${HEAD}, HTML sha256 ${sha256(GUIDE_HTML)}.`);
-  world.comments.push(record);
-  assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /no configured job applies and no exception covers this change/);
+  assertUnresolved(await preflight(world), 'ci-pr', /no configured job applies to this change/);
 });
 
-test('CI: a Markdown-only change needs only the workflow and Guide jobs (Hub #861)', async () => {
+test('CI: a Markdown-only change needs only the workflow and retained documentation jobs (Hub #861)', async () => {
   const world = cleanWorld();
   world.files = [{ filename: 'docs/development.md', status: 'modified' }, { filename: 'README.md', status: 'modified' }];
   world.compares[`${BASE}...${HEAD}`].files = world.files;
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow checks|Work guide build) /.test(run.name));
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow checks|Retained documentation) /.test(run.name));
   assert.equal(world.checkRuns[HEAD].length, 2);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
@@ -360,23 +353,11 @@ test('identity: a missing or ambiguous work issue is unresolved, never not-appli
   assert.equal((await preflight(two, { issue: ISSUE })).result, 'satisfied');
 });
 
-test('identity: the bot-opened nightly guide refresh is the only PR without a work issue', async () => {
-  const world = guideOnlyWorld();
-  world.pr.user = { login: 'github-actions[bot]', type: 'Bot' };
+test('identity: a bot candidate still requires a work issue', async () => {
+  const world = cleanWorld();
+  world.pr.user = {login: 'github-actions[bot]', type: 'Bot'};
   world.pr.head.ref = 'guide/nightly-refresh';
-  world.pr.body = 'Nightly guide refresh.';
-  const refresh = await preflight(world);
-  assert.equal(gate(refresh, 'identity').status, 'satisfied', JSON.stringify(gate(refresh, 'identity').reasons));
-  assert.match(gate(refresh, 'identity').reasons.join(), /not required for the bot-opened nightly guide refresh/);
-  assert.equal(gate(refresh, 'counterparts').status, 'not-applicable');
-  world.pr.head.ref = 'guide/other';
-  assertUnresolved(await preflight(world), 'identity', /no work issue/);
-  world.pr.head.ref = 'guide/nightly-refresh';
-  world.pr.user = { login: OWNER, type: 'User' };
-  assertUnresolved(await preflight(world), 'identity', /no work issue/);
-  world.pr.user = { login: 'github-actions[bot]', type: 'Bot' };
-  world.pr.head.ref = 'guide/nightly-refresh';
-  world.files.push({ filename: 'README.md', status: 'modified' });
+  world.pr.body = 'Retired automation must not bypass issue identity.';
   assertUnresolved(await preflight(world), 'identity', /no work issue/);
 });
 
@@ -803,7 +784,9 @@ test('pagination: a failed later page, an off-host next link and too many pages 
 });
 
 test('an incomplete changed-file list keeps path-filtered jobs expected', async () => {
-  const world = guideOnlyWorld();
+  const world = cleanWorld();
+  world.files = [{filename: 'README.md', status: 'modified'}];
+  world.checkRuns[HEAD] = [];
   world.pr.changed_files = world.files.length + 1;
   const report = await preflight(world);
   assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
@@ -813,8 +796,8 @@ test('an incomplete changed-file list keeps path-filtered jobs expected', async 
 
 // ---- UI verification without human approval ----
 
-test('UI changes pass without human approval for Guide, dashboard and new device UI', async () => {
-  for (const file of ['docs/work-guide/work/guide_overview.css', 'apps/dashboard/src/main.tsx',
+test('UI changes pass without human approval for documents, dashboard and new device UI', async () => {
+  for (const file of ['docs/system-design/assets/atlas.css', 'apps/dashboard/src/main.tsx',
     'scripts/build-dashboard.mjs', 'controllers/tidbyt/src/newframe.ts',
     'controllers/tidbyt/fixtures/golden/status-bar.webp']) {
     const world = cleanWorld();
@@ -898,175 +881,10 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
   }
 });
 
-// ---- Guide-only CI exception ----
-
-function guideOnlyWorld() {
-  const world = cleanWorld();
-  world.files = [
-    { filename: 'docs/work-guide/work/backlogs/snapshot.json', status: 'modified' },
-    { filename: 'docs/work-guide/outputs/agent-device-work-guides.html', status: 'modified' },
-  ];
-  world.compares[`${BASE}...${HEAD}`].files = world.files;
-  world.checkRuns[HEAD] = [];
-  world.checkSuites[HEAD] = [];
-  world.blobs[`${HEAD}:docs/work-guide/outputs/agent-device-work-guides.html`] = GUIDE_HTML;
-  return world;
-}
-
-function guideRecord(world, options = {}, sha = HEAD) {
-  const record = comment(guideRecordBody(sha, options));
-  world.comments.push(record);
-  return record.html_url;
-}
-
-test('guide-only: the exception passes only with its documented evidence', async t => {
-  const world = guideOnlyWorld();
-  const receipt = writeGuideEvidence(scratch(t));
-  const report = await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] });
-  const ci = gate(report, 'ci-pr');
-  assert.equal(ci.status, 'satisfied', JSON.stringify(ci));
-  assert.equal(ci.evidence.mode, 'guide-only-exception');
-  assert.equal(ci.evidence.guideReceipt.htmlSha256, sha256(GUIDE_HTML));
-  assert.equal(report.result, 'satisfied');
-  assert.equal(gate(report, 'ui-approval').status, 'not-applicable');
-});
-
-test('guide-only: missing runs alone never establish the exception', async () => {
-  assertUnresolved(await preflight(guideOnlyWorld()), 'ci-pr', /guide-only exception needs the guide verification receipt/);
-});
-
-test('guide files with other Markdown skip Checks and need the guide evidence (Hub #861)', async t => {
-  const mixed = () => {
-    const world = guideOnlyWorld();
-    world.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
-    world.compares[`${BASE}...${HEAD}`].files = world.files;
-    world.checkRuns[HEAD] = cleanWorld().checkRuns[HEAD].filter(run => /^(Workflow checks|Work guide build) /.test(run.name));
-    world.checkSuites[HEAD] = cleanWorld().checkSuites[HEAD];
-    return world;
-  };
-  const missing = await preflight(mixed());
-  assertUnresolved(missing, 'ci-pr', /needs the guide verification receipt/);
-  assert.match(gate(missing, 'ci-pr').reasons.join(), /skip checks\.yml; docs\/sdlc\.md#markdown-only-ci-routing requires the guide evidence/);
-  const world = mixed();
-  const receipt = writeGuideEvidence(scratch(t));
-  const ci = gate(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] }), 'ci-pr');
-  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
-});
-
-test('guide-only: mixed changes, renames out of the folder and inconsistent runs cannot use it', async t => {
-  const directory = scratch(t);
-  const receipt = writeGuideEvidence(directory);
-  const mixed = guideOnlyWorld();
-  mixed.files.push({ filename: 'scripts/check-workflow.cjs', status: 'modified' });
-  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
-  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: scripts\/check-workflow\.cjs/);
-
-  const renamed = guideOnlyWorld();
-  renamed.files.push({ filename: 'docs/build_guide.py', previous_filename: 'docs/work-guide/work/build_guide.py', status: 'renamed' });
-  assertUnresolved(await preflight(renamed, { guideReceipts: [receipt], guideRecords: [guideRecord(renamed)] }), 'ci-pr', /missing/);
-
-  const ran = guideOnlyWorld();
-  ran.checkRuns[HEAD] = [checkRun(job(/Workflow checks/), HEAD, 9001)];
-  ran.checkSuites[HEAD] = [suite(9001, HEAD, 'claude/gh-700-example')];
-  assertUnresolved(await preflight(ran, { guideReceipts: [receipt], guideRecords: [guideRecord(ran)] }), 'ci-pr', /GitHub Actions runs exist/);
-});
-
-test('guide-only: a receipt for other HTML, a failed check or missing retained files are unresolved', async t => {
-  const other = writeGuideEvidence(scratch(t), { html: Buffer.from('other') });
-  const world = guideOnlyWorld();
-  assertUnresolved(await preflight(world, { guideReceipts: [other], guideRecords: [guideRecord(world)] }), 'ci-pr', /no guide receipt's HTML hash matches the candidate's committed guide HTML/);
-  const failed = writeGuideEvidence(scratch(t), { overrides: { navigation: 'failed' } });
-  assertUnresolved(await preflight(world, { guideReceipts: [failed], guideRecords: [guideRecord(world)] }), 'ci-pr', /navigation: failed/);
-  const errors = writeGuideEvidence(scratch(t), { errors: ['broken link'] });
-  assertUnresolved(await preflight(world, { guideReceipts: [errors], guideRecords: [guideRecord(world)] }), 'ci-pr', /errors/);
-  const bare = writeGuideEvidence(scratch(t), { screenshots: false, print: false });
-  assertUnresolved(await preflight(world, { guideReceipts: [bare], guideRecords: [guideRecord(world)] }), 'ci-pr', /screenshots.*print check/);
-  const good = writeGuideEvidence(scratch(t));
-  assertUnresolved(await preflight(world, { guideReceipts: [good] }), 'ci-pr', /record/);
-  const vague = comment('Guide checks passed.');
-  world.comments.push(vague);
-  assertUnresolved(await preflight(world, { guideReceipts: [good], guideRecords: [vague.html_url] }), 'ci-pr', /no guide record from jimmie-potts names [0-9a-f]{12} in full/);
-});
-
-test('guide-only: the record must show passing build, maintenance, Places and drift checks', async t => {
-  const receipt = writeGuideEvidence(scratch(t));
-  const unverified = check => new RegExp(`does not show ${check.replace(/[.-]/g, '\\$&')} in the form "<command>: exit 0" or "<command>: passed"; it remains unverified`);
-  const cases = [
-    [{ maintenance: 'FAILED (2 failures)' }, unverified('test_maintenance.py')],
-    [{ maintenance: '2 failures, 40 passed' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'did not pass' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'not passed' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'would have passed' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'never passed' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'exit 0.' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'exit 0 (2 skipped)' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'exit 1; rerun: exit 0' }, unverified('test_maintenance.py')],
-    [{ maintenance: 'FAILED; second run: passed' }, unverified('test_maintenance.py')],
-    [{ drift: 'exit 1' }, unverified('git diff --exit-code')],
-    [{ places: null }, unverified('check_places.cjs')],
-    [{ build: 'ran' }, unverified('build_guide.py')],
-    [{ build: null, maintenance: null, places: null, drift: null }, unverified('test_maintenance.py')],
-  ];
-  for (const [options, reason] of cases) {
-    const world = guideOnlyWorld();
-    assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world, options)] }), 'ci-pr', reason);
-  }
-  const contradicted = guideOnlyWorld();
-  const twice = comment(`${guideRecordBody(HEAD)}\n- python3 docs/work-guide/work/build_guide.py: exit 1`);
-  contradicted.comments.push(twice);
-  assertUnresolved(await preflight(contradicted, { guideReceipts: [receipt], guideRecords: [twice.html_url] }), 'ci-pr', unverified('build_guide.py'));
-  const passedForm = guideOnlyWorld();
-  const passed = comment(guideRecordBody(HEAD, { build: 'passed', maintenance: 'passed', places: 'passed', drift: 'passed' }));
-  passedForm.comments.push(passed);
-  assert.equal(gate(await preflight(passedForm, { guideReceipts: [receipt], guideRecords: [passed.html_url] }), 'ci-pr').status, 'satisfied');
-  const hashless = guideOnlyWorld();
-  const record = comment(guideRecordBody(HEAD).replace(sha256(GUIDE_HTML), 'unknown'));
-  hashless.comments.push(record);
-  assertUnresolved(await preflight(hashless, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /does not name the HTML sha256/);
-});
-
-test('guide-only: records from bots, other accounts or with markers do not count', async t => {
-  const receipt = writeGuideEvidence(scratch(t));
-  for (const overrides of [{ user: { login: 'github-actions[bot]', type: 'Bot' } }, { user: { login: 'someone-else', type: 'User' } }]) {
-    const world = guideOnlyWorld();
-    const record = comment(guideRecordBody(HEAD), overrides);
-    world.comments.push(record);
-    assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /not the delivery account|a bot/);
-  }
-  const marked = guideOnlyWorld();
-  const record = comment(`<!-- deliver-work note -->\n${guideRecordBody(HEAD)}`);
-  marked.comments.push(record);
-  assertUnresolved(await preflight(marked, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /automation marker/);
-});
-
-test('guide-only: a merged PR needs its own record for the head and for the merge commit', async t => {
-  const receipt = writeGuideEvidence(scratch(t));
-  const world = mergeWorld(guideOnlyWorld());
-  world.checkRuns[MERGE] = [];
-  world.checkSuites[MERGE] = [];
-  world.blobs[`${MERGE}:docs/work-guide/outputs/agent-device-work-guides.html`] = GUIDE_HTML;
-  const headRecord = guideRecord(world);
-  const report = await preflight(world, { guideReceipts: [receipt], guideRecords: [headRecord] });
-  assert.equal(gate(report, 'ci-pr').status, 'satisfied', JSON.stringify(gate(report, 'ci-pr').reasons));
-  assertUnresolved(report, 'ci-main', new RegExp(`no guide record from jimmie-potts names ${MERGE.slice(0, 12)} in full`));
-  const mainRecord = guideRecord(world, {}, MERGE);
-  const both = await preflight(world, { guideReceipts: [receipt], guideRecords: [headRecord, mainRecord] });
-  assert.equal(both.result, 'satisfied', JSON.stringify(both.gates.filter(g => g.status !== 'satisfied' && g.status !== 'not-applicable')));
-  assert.equal(gate(both, 'ci-main').evidence.guideRecord.url, mainRecord);
-});
-
-test('guide-only: a branch-rule check keeps normal CI and the note says why', async t => {
-  const world = guideOnlyWorld();
-  world.branchRules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Security scan' }] } }];
-  const report = await preflight(world, { guideReceipts: [writeGuideEvidence(scratch(t))], guideRecords: [guideRecord(world)] });
-  assertUnresolved(report, 'ci-pr', /Security scan: missing/);
-  assert.match(gate(report, 'ci-pr').reasons.join(), /the guide-only exception does not apply: branch rules require Security scan/);
-});
-
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
-  const workflows = ['checks.yml', 'guide.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
+  const workflows = ['checks.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
-  assert.deepEqual(dotfile.jobs, []);
+  assert.equal(dotfile.jobs.length, 5);
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
@@ -1235,13 +1053,10 @@ test('the live transport repeats the read-only gate before any network use', asy
 test('every scenario issues only GET requests and GraphQL queries', async t => {
   const directory = scratch(t);
   const proof = writeProof(directory);
-  const guideReceipt = writeGuideEvidence(directory);
   const worlds = [];
   const run = async (world, overrides) => { worlds.push(world); await preflight(world, overrides); };
   await run(cleanWorld(), { receipts: [proof], finishLine: 'physical', counterparts: [`${OWNER}/codex-nanoleaf#189`] });
   await run(mergeWorld(cleanWorld()));
-  const guide = guideOnlyWorld();
-  await run(guide, { guideReceipts: [guideReceipt], guideRecords: [guideRecord(guide)] });
   const ui = cleanWorld();
   ui.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
   await run(ui);
@@ -1262,20 +1077,19 @@ test('every scenario issues only GET requests and GraphQL queries', async t => {
 test('under Node permissions the preflight runs with no file writes or child processes', t => {
   const directory = scratch(t);
   const proof = writeProof(directory);
-  const guideReceipt = writeGuideEvidence(directory);
   const harness = path.join(root, 'tests', 'delivery-preflight', 'harness.mjs');
   const flags = ['--permission', `--allow-fs-read=${root}`, `--allow-fs-read=${directory}`];
-  const result = spawnSync(process.execPath, [...flags, harness, proof, guideReceipt], { encoding: 'utf8', timeout: 60000 });
+  const result = spawnSync(process.execPath, [...flags, harness, proof], { encoding: 'utf8', timeout: 60000 });
   assert.equal(result.status, 0, result.stderr);
   const outcomes = JSON.parse(result.stdout);
-  assert.deepEqual(outcomes, { clean: 'satisfied', guideOnly: 'satisfied', physical: 'unresolved', unavailable: 'read-failure', writeAttempt: 'ERR_ACCESS_DENIED', spawnAttempt: 'ERR_ACCESS_DENIED' });
+  assert.deepEqual(outcomes, { clean: 'satisfied', physical: 'unresolved', unavailable: 'read-failure', writeAttempt: 'ERR_ACCESS_DENIED', spawnAttempt: 'ERR_ACCESS_DENIED' });
 });
 
 // ---- Output ----
 
 test('the text report is concise, names full revisions and hides credentials', async () => {
   const world = cleanWorld();
-  world.checkRuns[HEAD].pop();
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !run.name.startsWith("Workflow checks"));
   const report = await preflight(world);
   const text = renderText(report);
   assert.match(text, new RegExp(`head ${HEAD}`));
@@ -1290,7 +1104,7 @@ test('the CLI reports usage errors with their own exit status', () => {
   const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /--pr <number>/);
-  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat'], ['--pr', '1', '--guide-record', 'https://example.com/x']]) {
+  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat'], ['--pr', '1', '--guide-record', 'https://example.com/x'], ['--pr', '1', '--guide-receipt', 'retired.json']]) {
     const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, GH_TOKEN: '' } });
     assert.equal(result.status, 3, `${args.join(' ')}: ${result.stderr}`);
   }

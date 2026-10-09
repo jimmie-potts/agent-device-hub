@@ -42,9 +42,6 @@ const browser = [
   'modules/*/src/frontend/**',
   'apps/chompi-bridge/verify/page/**',
   'docs/system-design/assets/**',
-  'docs/work-guide/browser/renderer.mjs',
-  'docs/work-guide/browser/runtime/**',
-  'docs/work-guide/work/guide_overview.js',
 ];
 // Node scripts that drive Playwright and pass callbacks that run in the page.
 const pageDrivers = [
@@ -55,8 +52,6 @@ const pageDrivers = [
   'docs/skins/screenshot.cjs',
   'docs/system-design/check.cjs',
   'docs/system-design/reference/check_reference.cjs',
-  'docs/work-guide/browser/tests/**',
-  'docs/work-guide/work/check_guide.cjs',
   '**/*.browser.mjs',
   'scripts/check-hub-compatibility.mjs',
   'scripts/performance/standalone-worker.mjs',
@@ -70,12 +65,9 @@ export default defineConfig(
     ignores: [
       // Firmware build trees, ignored by the firmware folder's own .gitignore.
       'firmware/chompi-controller/build/**', 'firmware/chompi-controller/.upstream/**',
-      // Committed generated output: the Work guide's published releases.
-      'docs/work-guide/outputs/**',
       // Vendored third-party reference assets: the Scalar bundle and SchemaSpy's generated pages and theme.
       'docs/system-design/reference/assets/**', 'docs/system-design/reference/database/**',
       // Saved source copies from other repositories, kept as architecture evidence.
-      'docs/work-guide/work/architecture/sources/**',
       'docs/diagrams/legacy/sources/**',
     ],
   },

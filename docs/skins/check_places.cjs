@@ -6,10 +6,10 @@ const os=require('node:os');
 const crypto=require('node:crypto');
 const {pathToFileURL}=require('node:url');
 let playwright;
-for(const candidate of [process.env.GUIDE_PLAYWRIGHT_MODULE,'playwright'].filter(Boolean)){
+for(const candidate of [process.env.DOCS_PLAYWRIGHT_MODULE,'playwright'].filter(Boolean)){
  try{playwright=require(candidate);break;}catch{}
 }
-assert(playwright,'Set GUIDE_PLAYWRIGHT_MODULE to installed Playwright.');
+assert(playwright,'Set DOCS_PLAYWRIGHT_MODULE to installed Playwright.');
 const root=path.resolve(__dirname,'../..');
 const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'places.json'),'utf8')).places;
 const expected=manifest.map(p=>p.label);
@@ -55,7 +55,7 @@ fs.mkdirSync(out,{recursive:true});
    assert.deepEqual(labels.map(s=>s.replace(/Local/g,'').trim()),expected,file);
    assert.equal(await nav.locator('[aria-current=page]').count(),1,file);
    assert.equal(await nav.getAttribute('data-current'),current,file);
-   assert.equal(await nav.locator('a').count(),5,file);
+   assert.equal(await nav.locator('a').count(),expected.length-1,file);
    assert.equal(await nav.locator('.places-nav__tag').count(),2,file);
    assert(await nav.evaluate(el=>el.scrollWidth<=el.clientWidth&&el.getBoundingClientRect().right<=innerWidth+1),`Places overflow at 390px: ${file}`);
    await nav.screenshot({path:path.join(out,`${current}${file.endsWith('/state-and-actions.html')?'-state':''}-390.png`)});

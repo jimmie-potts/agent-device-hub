@@ -23,10 +23,6 @@ and local proof files; it never merges, comments, labels, approves or installs.
   --receipt <path>          app-verification/1 proof directory or receipt.json (repeatable)
   --ui                      deprecated; accepted and ignored
   --ui-approval <value>     deprecated; accepted and ignored (no approval record is read)
-  --guide-receipt <path>    guide-verification.json for the guide-only CI exception (repeatable)
-  --guide-record <url>      PR comment recording that exception's evidence for one revision
-                            (repeatable: a merged guide-only PR needs one for its head and
-                            one for its merge commit)
   --json                    print the machine-readable report instead of text
   --help                    show this help
 
@@ -54,8 +50,6 @@ function parse(argv) {
         receipt: { type: 'string', multiple: true, default: [] },
         ui: { type: 'boolean', default: false },
         'ui-approval': { type: 'string' },
-        'guide-receipt': { type: 'string', multiple: true, default: [] },
-        'guide-record': { type: 'string', multiple: true, default: [] },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -75,10 +69,6 @@ function parse(argv) {
   for (const ref of values.counterpart) {
     if (!/^[\w.-]+\/[\w.-]+#\d+$/.test(ref)) fail(`--counterpart ${ref} must look like owner/repository#number`);
   }
-  const record = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+#(?:issuecomment-\d+|pullrequestreview-\d+|discussion_r\d+)$/;
-  for (const [key, urls] of [['guide-record', values['guide-record']]]) {
-    if (urls.some(url => !record.test(url))) fail(`--${key} must be a PR comment or review URL`);
-  }
   return {
     json: values.json,
     declaration: {
@@ -92,8 +82,6 @@ function parse(argv) {
       receipts: values.receipt,
       ui: values.ui,
       uiApproval: values['ui-approval'],
-      guideReceipts: values['guide-receipt'],
-      guideRecords: values['guide-record'],
     },
   };
 }

@@ -315,7 +315,7 @@ Closeout configuration contains `schemaVersion: 1`, `repository`, absolute `gh`,
 plus `model`,
 `policyRevision`, `timeoutSeconds` (1–1800) and `files`. Use the installed shared
 execution-recommendation policy, the owning
-`docs/work-guide/work/recommendations.py`, its adjacent `story_sections.py`, and
+`apps/maintenance/recommendations/recommendations.py`, its adjacent `story_sections.py`, and
 the packaged `recommendation.py` helper. Pin all these files, the resolved tools
 and inspected policy/control dependencies by SHA-256 in `files`; the supervisor
 also pins `gh`, the package and configuration. `policyRevision` is the accepted

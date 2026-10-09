@@ -3,15 +3,14 @@
 // missing, pending, skipped, failed or stale evidence stays unresolved, and a
 // failed read is a read failure, never success.
 import { evaluateCi } from './ci.mjs';
-import { COMPARE_FILE_LIMIT, Gate, GUIDE_ROOT, SDLC, createReader, short, touchedPaths } from './context.mjs';
+import { COMPARE_FILE_LIMIT, Gate, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
-import { isBot } from './records.mjs';
 import { POLICY_PATHS, REVIEW_FORMAT, collectReports, judgeRound, policyComponents, requirementReference } from './reviews.mjs';
 
+const isBot = user => Boolean(user) && (user.type === 'Bot' || String(user.login || '').endsWith('[bot]'));
+
 export const FINISH_LINES = ['source', 'installed', 'real-client', 'physical'];
-// The one bot-opened delivery: the nightly guide refresh, which carries no work issue.
-export const GUIDE_REFRESH_BRANCH = 'guide/nightly-refresh';
 const PR_FILE_LIMIT = 3000;
 
 function issueReferences(body) {
@@ -34,8 +33,6 @@ function publicDeclaration(declaration) {
     // Ignored legacy inputs carry no evidence and are not echoed.
     ui: false,
     uiApproval: null,
-    guideReceipts: (declaration.guideReceipts || []).map(describeLocal),
-    guideRecords: declaration.guideRecords || [],
   };
 }
 
@@ -60,7 +57,7 @@ export async function runPreflight({ github, declaration, now = () => new Date()
     schema: 1,
     readAt,
     notice: '',
-    formats: { reviewReports: REVIEW_FORMAT, receipt: RECEIPT_VERSION, guideReceipt: 'docs/work-guide/work/check_guide.cjs guide-verification.json' },
+    formats: { reviewReports: REVIEW_FORMAT, receipt: RECEIPT_VERSION },
     declared: publicDeclaration(declaration),
     candidate: null,
     finishLine: declaration.finishLine,
@@ -150,9 +147,6 @@ async function loadCandidate(ctx) {
   ctx.paths = files.ok ? touchedPaths(files.value) : [];
   ctx.filesComplete = files.ok && files.value.length === pr.changed_files && files.value.length < PR_FILE_LIMIT;
   if (files.ok && !ctx.filesComplete) gates.ciPr.note(`the changed-file list is incomplete (${files.value.length} of ${pr.changed_files})`);
-  ctx.guideRefresh = isBot(pr.user) && pr.head.ref === GUIDE_REFRESH_BRANCH
-    && ctx.filesComplete && ctx.paths.length > 0 && ctx.paths.every(file => file.startsWith(GUIDE_ROOT));
-
   const references = issueReferences(pr.body);
   ctx.references = references;
   const number = declaration.issue ?? (references.length === 1 ? references[0] : null);
@@ -198,8 +192,7 @@ function evaluateIdentity(ctx) {
     const problem = ctx.references.length
       ? `the work issue is ambiguous: the PR body references ${ctx.references.map(n => `#${n}`).join(', ')}; declare --issue`
       : 'no work issue: the PR body has no Refs #<issue>; declare --issue';
-    if (ctx.guideRefresh) identity.note(`${problem} (not required for the bot-opened nightly guide refresh)`);
-    else identity.unresolved(problem);
+    identity.unresolved(problem);
   } else if (declaration.issue && !ctx.references.includes(declaration.issue)) {
     identity.note(`the PR body does not reference the declared #${declaration.issue}`);
   }
@@ -252,8 +245,7 @@ async function evaluateReview(ctx, comments) {
   review.evidence.rounds = rounds.map(round => ({ round: `final ${round.round}`, head: round.head, url: round.url }));
   if (ignored.length) review.evidence.ignoredReports = ignored;
   if (!ctx.work) {
-    if (ctx.guideRefresh) review.note('no work issue for the nightly guide refresh; the review Work row is not matched');
-    else review.unresolved('the review cannot be matched to a work issue; declare --issue');
+    review.unresolved('the review cannot be matched to a work issue; declare --issue');
   }
   if (!rounds.length) {
     review.unresolved(`no retained final review report in the agent-skills#54 format (a PR comment from ${ctx.publisher} starting with a deliver-work report marker)`);
@@ -443,9 +435,7 @@ async function evaluateCounterparts(ctx) {
       }
       if (!blockers.value.length && !declared.length) counterparts.note(`${ctx.work.reference} has no native blockers and no counterpart is declared`);
     }
-  } else if (ctx.guideRefresh && !declared.length) {
-    counterparts.notApplicable('the nightly guide refresh has no work issue and no counterpart is declared');
-  } else if (!ctx.guideRefresh) {
+  } else {
     counterparts.unresolved('blockers were not read: no single work issue; declare --issue');
   }
   for (const ref of declared) {

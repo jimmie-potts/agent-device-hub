@@ -24,7 +24,6 @@ export const CI_PROVIDERS = Object.freeze([
   Object.freeze({ id: 'depot', title: 'Depot CI', directory: '.depot/workflows', app: 'depot-code-access', qualifiedNames: true }),
   Object.freeze({ id: 'github-actions', title: 'GitHub Actions', directory: '.github/workflows', app: 'github-actions', qualifiedNames: false }),
 ]);
-export const GUIDE_ROOT = 'docs/work-guide/';
 export const COMPARE_FILE_LIMIT = 300;
 
 /** First 12 characters of a revision, or `unknown`. */
