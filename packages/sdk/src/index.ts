@@ -21,9 +21,11 @@ export {
   type SyncOptions, type SyncProvider, type SyncRequest, type SyncResult,
 } from './sync.js';
 export {
-  CONTENT_PATH, MAX_PAGES, MAX_SECRETS, MAX_TOOLS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkContributions,
+  ASSETS_PATH, CONTENT_PATH, MAX_ASSETS, MAX_ASSET_BYTES, MAX_PAGES, MAX_SECRETS, MAX_TOOLS, MAX_WORKER_CALLS, MODULE_API_VERSION, checkApiVersion, checkConfiguration, checkContributions,
   checkManifest, checkModuleName, type BunnyModule, type ConfigurationCheck, type Configure, type Configured, type JsonObjectSchema,
-  type ManifestProblem, type LogFields, type Logger, type ModuleContent, type ModuleContext, type ModuleManifest, type ModulePage,
+  type ManifestProblem, type LogFields, type Logger, type ModuleAsset, type ModuleAssetType, type ModuleContent, type ModuleContentRequest, type ModuleContext, type ModuleManifest, type ModulePage,
+  type PassiveModulePage, type ReactModulePage, type TrustedEditorModulePage,
+  MAX_UPLOAD_BYTES, type ModuleUpload, type ModuleUploadRequest, type ModuleUploadReply, type ModuleStagedUpload,
   type ModuleScheduler, type ModuleSettings, type ModuleTool, type Secrets, type Tracing, type WorkerCallOptions, type Workers,
 } from './module.js';
 export {WorkerCalls, type WorkerCallsOptions} from './workers.js';

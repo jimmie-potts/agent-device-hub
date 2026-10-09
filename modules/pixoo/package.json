@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./frontend": {
+      "types": "./dist/src/frontend/index.d.ts",
+      "import": "./dist/src/frontend/index.js"
     }
   },
   "dependencies": {

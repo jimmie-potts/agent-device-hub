@@ -158,8 +158,16 @@ try {
   await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
   assert.equal(new URL(page.url()).hash, '#/connections');
   assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Connections']);
+  assert.deepEqual(await page.locator('.cards.two>.card>h2').allTextContents(), ['Connection', 'Running build', 'Operator tools', 'Observed sources']);
   const cards = await page.locator('.cards.two>.card').evaluateAll(all => all.map(card => card.getBoundingClientRect().toJSON() as DOMRect));
-  assert.ok(cards.length === 2 && (cards[1]?.left ?? 0) > (cards[0]?.right ?? 0), 'the connection cards sit side by side at 1440');
+  assert.equal(cards.length, 4);
+  assert.ok((cards[1]?.left ?? 0) > (cards[0]?.right ?? 0), 'connection cards sit side by side at 1440');
+  for (const [index, card] of cards.entries()) {
+    for (const other of cards.slice(index + 1)) {
+      assert.ok(other.left >= card.right || other.right <= card.left || other.top >= card.bottom || other.bottom <= card.top,
+        'connection cards do not overlap when the grid wraps');
+    }
+  }
   await page.getByText('claude / host-sim / claude-code', {exact: true}).waitFor();
   await shot(page, 'runtime-connections');
   await page.goBack();

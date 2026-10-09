@@ -9,10 +9,10 @@ import {randomUUID} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {
-  CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
+  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
   type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
@@ -80,6 +80,8 @@ const PAGE_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
   'content-security-policy': 'default-src \'none\'; img-src \'self\'; style-src \'self\' \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'; frame-ancestors \'none\'',
 };
+/** Reviewed same-origin application code; passive pages and user content retain PAGE_HEADERS. */
+const EDITOR_POLICY = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, char => `&#${char.charCodeAt(0)};`);
 
 export type GatewayOptions = {
@@ -294,6 +296,11 @@ export class Gateway {
     const query = [...url.searchParams.keys()];
     const noQuery = (): void => { if (query.length > 0) throw refuse('invalid-request', 'this route takes no query'); };
     const needs = (scope: Scope): void => { if (!principal.scopes.has(scope)) throw refuse('forbidden', `this route needs the ${scope} scope`); };
+    const uploadModule = /^\/api\/v2\/modules\/([^/]+)\/upload$/.exec(path)?.[1];
+    if (method === 'POST' && uploadModule !== undefined) {
+      needs('control');
+      return this.#upload(request, uploadModule, url.searchParams, principal);
+    }
     if (method === 'GET' && path === '/api/v2/authority') {
       const scope = url.searchParams.get('scope');
       if (query.length !== 1 || scope === null || !['read', 'control', 'ingest', 'admin'].includes(scope)) throw refuse('invalid-request', 'name one scope: read, control, ingest or admin');
@@ -350,10 +357,14 @@ export class Gateway {
       noQuery();
       return this.#settings(settings);
     }
+    const asset = /^\/modules\/([^/]+)\/assets\/([^/]+)$/.exec(path);
+    if (asset !== null) {
+      noQuery();
+      return this.#asset(asset[1] ?? '', asset[2] ?? '');
+    }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
-      noQuery();
-      return this.#content(content[1] ?? '', content[2] ?? '');
+      return this.#content(content[1] ?? '', content[2] ?? '', url.searchParams);
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
@@ -373,7 +384,7 @@ export class Gateway {
     const serves = this.#options.bus.served(sourceOf(name));
     return {
       name, apiVersion: manifest.apiVersion, state, ...(serves.length === 0 ? {} : {serves}),
-      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
+      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`, presentation: page.presentation ?? 'passive'})) : [],
       tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,
     };
@@ -514,25 +525,124 @@ export class Gateway {
   async #page(name: string, id: string): Promise<Answer> {
     const module = this.#module(name);
     const page = (module.manifest.pages ?? []).find(candidate => candidate.id === id);
-    if (page === undefined || id === CONTENT_PATH) throw refuse('not-found', 'no such page');
+    if (page === undefined || id === CONTENT_PATH || id === ASSETS_PATH) throw refuse('not-found', 'no such page');
+    if (page.presentation === 'react') {
+      // Enforce the same running-module boundary without calling feature code.
+      await this.#call(name, () => undefined);
+      return {status: 303, body: '', headers: {...PAGE_HEADERS, location: `/#/module/${name}/${id}`}};
+    }
     const html = await this.#call(name, () => page.render());
     if (typeof html !== 'string') throw refuse('internal', 'the module\'s page is not HTML text');
     if (this.#options.redactions.holds(html)) throw refuse('internal', 'the module\'s page holds a secret, which the gateway never serves');
+    const trusted = page.presentation === 'trusted-editor';
+    const assets = trusted
+      ? page.styles.map(asset => `<link rel="stylesheet" href="/modules/${name}/assets/${asset}">`).join('')
+        + page.scripts.map(asset => `<script type="module" src="/modules/${name}/assets/${asset}"></script>`).join('')
+      : '';
     const document = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
-      + `<title>${escapeHtml(page.title)}</title></head><body>\n${html}\n</body></html>\n`;
+      + `<title>${escapeHtml(page.title)}</title>${assets}</head><body>\n${html}\n</body></html>\n`;
+    if (trusted && Buffer.byteLength(document) > MAX_ASSET_BYTES) throw refuse('internal', 'the module\'s editor page exceeds 16 MiB');
     return {status: 200, body: document, headers: {'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS,
-      'x-frame-options': 'SAMEORIGIN', 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
+      'x-frame-options': 'SAMEORIGIN', 'content-security-policy': trusted ? EDITOR_POLICY : PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
     }};
   }
 
+  /** A reviewed build asset resolved only from its finite declaration, never a caller's filesystem path. */
+  async #asset(name: string, id: string): Promise<Answer> {
+    const module = this.#module(name);
+    const asset = module.manifest.assets?.find(candidate => candidate.id === id);
+    if (asset === undefined) throw refuse('not-found', 'no such asset');
+    const bytes = await this.#call(name, () => asset.read());
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_ASSET_BYTES) {
+      throw refuse('internal', 'the module\'s asset is not bytes of at most 16 MiB');
+    }
+    if (this.#options.redactions.holdsBytes(bytes)) throw refuse('internal', 'the module\'s asset holds a secret, which the gateway never serves');
+    return {status: 200, body: bytes, headers: {'content-type': asset.type, ...PAGE_HEADERS}};
+  }
+
+  /** Prepare binary input, then use the unchanged tracked dispatcher and its exact reply. */
+  async #upload(request: IncomingMessage, name: string, params: URLSearchParams, principal: Principal): Promise<Answer> {
+    const {upload} = this.#module(name).manifest;
+    if (upload === undefined) throw refuse('not-found', 'the module accepts no upload');
+    const keys = [...params.keys()];
+    const label = params.get('name');
+    const family = params.get('family');
+    const requestId = params.get('requestId');
+    if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !['name', 'family', 'requestId', 'target'].includes(key))
+      || label === null || label.trim().length === 0 || label.length > 120 || family !== upload.family || requestId === null) {
+      throw refuse('invalid-request', 'an upload names its declared family, target, requestId and display name');
+    }
+    const input = actionInput({target: params.get('target'), requestId, data: {}});
+    const bytes = await readUpload(request, upload.maxBytes);
+    this.#admit(request);
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, 'bunny.command.request', {parent, kind: 'server',
+      attributes: {'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST'}});
+    this.#dashboardTraces.set(request, span.context);
+    try {
+      const controller = new AbortController();
+      let prepared;
+      try {
+        prepared = await this.#call(name, () => upload.stage({target: input.target, requestId, name: label, bytes, signal: controller.signal}));
+      } finally {controller.abort();}
+      if (typeof prepared !== 'object' || prepared === null) throw refuse('internal', 'the module returned invalid upload preparation');
+      if ('error' in prepared) {
+        const code = prepared.error?.code;
+        throw refuse(isErrorCode(code) ? code : 'internal', 'the module refused upload preparation');
+      }
+      if (typeof prepared.finish !== 'function') throw refuse('internal', 'the upload has no preparation cleanup');
+      let answer: ActionAnswer;
+      let dispatching = false;
+      try {
+        this.#admit(request);
+        const action = actionInput({target: input.target, requestId, data: prepared.data});
+        const encoded = JSON.stringify(action);
+        if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw refuse('too-large', 'the prepared command exceeds the JSON command limit');
+        if (this.#options.redactions.holds(encoded)) throw refuse('internal', 'the prepared command holds a secret');
+        dispatching = true;
+        answer = await this.#dispatch(principal, family, action, request);
+      } catch (error) {
+        answer = error instanceof Refused ? error.body : errorBody(dispatching ? 'uncertain-result' : 'internal', {
+          requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
+        });
+        const code = 'error' in answer ? answer.error.code : 'internal';
+        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST',
+          'bunny.participant': principal.source, 'bunny.code': code}, levelOf(code), span.context);
+      }
+      try {await this.#call(name, () => prepared.finish(answer));}
+      catch {
+        // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
+        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error', span.context);
+      }
+      return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
+    } finally {span.end();}
+  }
+
   /** A module's content by reference, such as a preview frame its page shows. */
-  async #content(name: string, ref: string): Promise<Answer> {
+  async #content(name: string, ref: string, params: URLSearchParams): Promise<Answer> {
     const module = this.#module(name);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (content === undefined) throw refuse('not-found', 'the module serves no content');
-    const found = await this.#call(name, () => content(ref));
+    const modern = Number(module.manifest.apiVersion.split('.')[1]) >= 3;
+    const keys = [...params.keys()];
+    if ((!modern && keys.length > 0) || keys.length > 16 || new Set(keys).size !== keys.length
+      || [...params].some(([key, value]) => key.length === 0 || key.length > 64 || value.length > 512)) {
+      throw refuse('invalid-request', 'content query fields must be distinct and within the module API limits');
+    }
+    const controller = new AbortController();
+    let found;
+    try {found = await this.#call(name, () => content(ref, modern ? {query: Object.freeze(Object.fromEntries(params)), signal: controller.signal} : undefined));}
+    finally {controller.abort();}
     if (found === undefined) throw refuse('not-found', 'no such content');
+    if ('error' in found) {
+      const error: unknown = found.error;
+      if (!modern || typeof error !== 'object' || error === null || !('code' in error) || !isErrorCode(error.code)
+        || this.#options.redactions.holds(JSON.stringify(found))) throw refuse('internal', 'the module returned invalid content');
+      throw refuse(error.code, 'the module refused the content read');
+    }
     if (!CONTENT_TYPES.has(found.type) || !(found.bytes instanceof Uint8Array) || found.bytes.byteLength > MAX_CONTENT_BYTES) {
       throw refuse('internal', 'the module\'s content is not an image, text or JSON of at most 16 MiB');
     }
@@ -629,10 +739,11 @@ export class Gateway {
     }
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
-    // The validated mode handoff continues the browser trace in the tracker's existing request span.
+    // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
     const incoming = family === 'mode-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
-    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
+      ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);
     try {
       return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
         ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({
@@ -810,7 +921,9 @@ function templateOf(path: string): string | undefined {
   if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
   if (/^\/api\/v2\/modules\/[^/]+\/settings$/.test(path)) return '/api/v2/modules/{module}/settings';
+  if (/^\/api\/v2\/modules\/[^/]+\/upload$/.test(path)) return '/api/v2/modules/{module}/upload';
   if (/^\/modules\/[^/]+\/content\/[^/]+$/.test(path)) return '/modules/{module}/content/{ref}';
+  if (/^\/modules\/[^/]+\/assets\/[^/]+$/.test(path)) return '/modules/{module}/assets/{asset}';
   if (/^\/modules\/[^/]+\/[^/]+$/.test(path)) return '/modules/{module}/{page}';
   return undefined;
 }
@@ -843,6 +956,20 @@ function actionInput(input: Record<string, unknown>): ActionInput {
     throw refuse('invalid-request', 'an action is {target, data, requestId?}: the device\'s routing ID, the command\'s payload without a request ID, and an identifier');
   }
   return {target, data: data as Record<string, unknown>, ...(typeof requestId === 'string' ? {requestId} : {})};
+}
+
+/** Reads bounded binary media without raising the JSON command limit or accepting multipart paths. */
+async function readUpload(request: IncomingMessage, maxBytes: number): Promise<Uint8Array> {
+  if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/octet-stream') throw refuse('invalid-request', 'the upload body is application/octet-stream');
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request.iterator({destroyOnReturn: false}) as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size > maxBytes) {request.resume(); throw refuse('too-large', 'the upload exceeds the declared byte limit');}
+    chunks.push(chunk);
+  }
+  if (size === 0) throw refuse('invalid-request', 'the upload is empty');
+  return Buffer.concat(chunks);
 }
 
 /** Reads a JSON object body of at most 16 KiB, sent as `application/json`. */
