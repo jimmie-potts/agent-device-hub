@@ -13,7 +13,8 @@ them **not checked**. Neither mode modifies pins, diagrams or generated pages.
 
 The Retained documentation checks job in Workflow runs this on every PR and
 main push, including Markdown-only changes. It puts the report in the job summary
-and emits warning/error annotations. Its token has only `contents: read`.
+and emits warning/error annotations. The same report is retained in the
+`retained-documents-review` artifact. Its token has only `contents: read`.
 The same job runs the atlas generation check and the API/database reference
 checker through `docs/system-design/check.py`.
 

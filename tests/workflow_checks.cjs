@@ -664,6 +664,7 @@ test('documentation drift has full local history and read-only summary reporting
   assert.ok(report.run.includes('>> "$GITHUB_STEP_SUMMARY"'));
   assert.ok(report.run.includes('exit "$result"'));
   assert.equal(report['continue-on-error'], undefined);
+  assert.ok(steps.find(step => step.uses?.startsWith('actions/upload-artifact@')).with.path.includes('/docs-drift.md'));
 });
 
 // Each runtime module registers itself from its own folder, so the files every module story would otherwise edit name

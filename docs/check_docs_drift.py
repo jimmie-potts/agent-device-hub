@@ -257,8 +257,9 @@ def markdown(results, errors):
     return '\n'.join(lines) + '\n'
 
 
-def escape(value):
-    return str(value).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A').replace(',', '%2C').replace(':', '%3A')
+def escape(value, property_value=False):
+    result = str(value).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+    return result.replace(',', '%2C').replace(':', '%3A') if property_value else result
 
 
 def main():
@@ -282,7 +283,7 @@ def main():
             if row['status'] != 'unchanged':
                 print('::warning::' + escape(f"{row['document']} ({row['repo']}): {row['status']}; " + ', '.join(row['changed'])))
         for error in errors:
-            print(f"::error file={escape(error['file'])},line={error['line']}::{escape(error['message'])}")
+            print(f"::error file={escape(error['file'], True)},line={error['line']}::{escape(error['message'])}")
     return bool(errors)
 
 

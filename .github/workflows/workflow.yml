@@ -91,6 +91,7 @@ jobs:
         with:
           name: retained-documents-review
           path: |
+            ${{ runner.temp }}/docs-drift.md
             ${{ runner.temp }}/bunny-places-review/
             ${{ runner.temp }}/bunny-design-review
           if-no-files-found: error

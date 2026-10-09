@@ -127,6 +127,10 @@ class DocumentationTests(unittest.TestCase):
             compare.api = lambda route: next(responses)
             self.assertIsNotNone(compare('codex-nanoleaf', 'a' * 40)[2])
 
+    def test_annotation_text_and_properties_use_distinct_escaping(self):
+        self.assertEqual(drift.escape('changed: a, b\n100%'), 'changed: a, b%0A100%25')
+        self.assertEqual(drift.escape('a,b:c', True), 'a%2Cb%3Ac')
+
 
 if __name__ == '__main__':
     unittest.main()
