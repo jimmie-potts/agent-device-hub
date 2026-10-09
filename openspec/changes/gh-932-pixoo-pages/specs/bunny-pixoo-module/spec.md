@@ -19,6 +19,14 @@ The Pixoo module SHALL contribute its existing library, playlist, player, previe
 - **WHEN** the library, playlists, player, preview, Monitor and settings views are exercised with fresh synthetic media and a simulated Pixoo
 - **THEN** their existing supported flows work through the runtime, keyboard and accessibility checks pass, and device effects occur only after explicit authorized commands
 
+#### Scenario: Saved renditions and frozen player session
+- **WHEN** the user renders a different preview, selects a saved playlist and explicitly starts it
+- **THEN** existing originals and renditions remain, the Player page reads its frozen session and estimated timing through a bounded authenticated content reference, and later saved playlist edits wait for an explicit restart with changes
+
+#### Scenario: Player reads are passive
+- **WHEN** a caller reads the player content reference or opens the Player page
+- **THEN** it receives existing state, session and sample time within 256 KiB, no query is accepted, and no playback or device command is sent
+
 #### Scenario: Ordinary upload and staging cleanup
 - **WHEN** a user uploads synthetic media larger than the JSON command limit and the import completes, fails or its accepted request is repeated
 - **THEN** one original import is tracked, no duplicate import is sent, and every terminal or definitively refused upload releases its private staged input without changing the display

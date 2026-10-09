@@ -27,6 +27,7 @@ import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
 import {readPixooContent} from './content.js';
+import {playerContent} from './player-content.js';
 import {PixooUploads} from './upload.js';
 import type {RenderRequest} from './render-worker.js';
 import {
@@ -98,7 +99,8 @@ export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfi
   return {
     manifest: {
       name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
-      pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}, {id: 'library', title: 'Library', presentation: 'react'}],
+      pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}, {id: 'library', title: 'Library', presentation: 'react'},
+        {id: 'player', title: 'Player', presentation: 'react'}],
       content: (ref, request) => running?.content(ref, request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'}),
       upload: {family: FAMILIES.assetChange, maxBytes: MAX_UPLOAD_BYTES,
         stage: request => running?.stage(request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'})},
@@ -325,9 +327,15 @@ class PixooRuntime {
   }
 
   /** Reads the private catalog or a referenced preview; expected read refusals never change owner state. */
-  content(ref: string, request?: ModuleContentRequest): Promise<ModuleContent | ErrorBody> | ErrorBody {
+  content(ref: string, request?: ModuleContentRequest): Promise<ModuleContent | ErrorBody> | ModuleContent | ErrorBody {
     const library = this.#library;
     if (library === undefined || this.#stopping) return errorBody('unavailable', {detail: 'the Pixoo is not running'});
+    if (ref === 'player') {
+      if (Object.keys(request?.query ?? {}).length !== 0) return errorBody('invalid-request', {detail: 'the content read takes no query'});
+      if (request?.signal.aborted === true) return errorBody('cancelled', {detail: 'the content read was cancelled'});
+      return this.#player === undefined ? errorBody('unavailable', {detail: 'the Pixoo player is not running'})
+        : playerContent(this.#player, this.#deviceClock.now(), this.#options.transport.simulated);
+    }
     return readPixooContent(library, this.#config.device.profile, ref, request, this.#options.transport.simulated ? 100 : 500);
   }
 

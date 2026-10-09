@@ -1158,6 +1158,8 @@ node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actio
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
+node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition rendering and media deletion without display writes
+node apps/runtime/dashboard/tests/pixoo-player.browser.ts # frozen sessions, playback controls and explicit restart with changes
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use

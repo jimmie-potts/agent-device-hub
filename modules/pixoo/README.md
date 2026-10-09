@@ -35,7 +35,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | Path | Contents |
 | --- | --- |
 | `src/module` | The runtime module: `module.ts` (`createPixooModule`, `pixooFactory`), `control.ts` (command handling, `PixooControl`), `configuration.ts` (`configurePixoo`, `convertPixooSettings`), `transport.ts` (the HTTP transport and `SimulatedPixoo`), `schemas.ts` (its 2.0 families), `store.ts` (its own rows) and `render-worker.ts` |
-| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/previews and playlist editing in the shared dashboard (#932) |
+| `src/frontend` | The browser-only `./frontend` contribution: Library uploads/catalog/rendering/previews, playlist editing and Player controls in the shared dashboard (#932) |
 | `src/core` | Shared schemas for requests, presentation settings, Monitor filters and Now Playing |
 | `src/device` | The fake (simulator) adapter, the HTTP adapter and its transport, hosted GIF files, and the device qualification functions |
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
@@ -79,13 +79,25 @@ reference. Preview animation is explicit and illustrative; it never starts
 device playback. The canvas renderer reuses `apps/dashboard/src/pixoo-media.tsx`
 at `bf11587c`, decoding authenticated image bytes and releasing owned bitmaps
 when the view changes. The dashboard's image content policy remains unchanged.
-Library rendering/deletion and the player, Monitor and settings views remain
-under #932.
+The selected media view lists saved renditions and keeps fit, scaling and padding
+as drafts until Render preview. Rendering preserves the original and existing
+renditions; Delete media requires confirmation and uses the owner's existing
+reference-preserving deletion. Upload, render and delete share one command
+attempt. Use in playlist opens the existing playlist editor; its media picker
+selects the saved rendition explicitly.
+
+Player reads a bounded frozen-session snapshot and timing through the module's
+authenticated `player` content reference. The read accepts no query and changes
+no playback state. Playback, display mode and restart-with-changes use the
+existing tracked commands and device generation guards. Saved playlist changes
+stay separate from the active session until an explicit restart. The remaining
+time is a local estimate, with no polling or physical-telemetry claim. Monitor
+and settings views remain under #932.
 
 `src/frontend/library.tsx` adapts the original `apps/web/src/library.tsx` at
 `0777479c2fd7fbaca12d93e724ce8a2c15129b92`. Runtime reads and tracked commands
 replace its local API; upload now requires an explicit Add media action.
-`playlists.tsx` and `preview.tsx` adapt the corresponding source views at that
+`playlists.tsx`, `player.tsx` and `preview.tsx` adapt the corresponding source views at that
 same revision, replacing their local API with the shared authenticated context.
 
 This page reuses the playlist-selection and saved-owner-detail pattern from

@@ -2,7 +2,7 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
-import {Preview} from './preview.js';
+import {MediaEditor} from './media-editor.js';
 
 type Media = {assetId: string; renditionId: string; name: string; format: string; frameCount: number; compatible?: boolean};
 type Catalog = {items: Media[]; total: number; offset: number; limit: number; catalogRevision: number};
@@ -61,7 +61,17 @@ function AddMedia({context, device, live, command}: {
 export function LibraryPage({context, device, live}: {
   context: FrontendContext; device: DeviceRecord | undefined; live: boolean;
 }): React.JSX.Element {
-  const {Badge, Command} = context.ui;
+  const {Command} = context.ui;
+  return device === undefined ? <section className="widget" aria-label="Pixoo library"><h2>Library</h2><p role="status">The Pixoo owner has no device record.</p></section>
+    : <Command context={context} target={device.id} key={device.id}>{command =>
+      <LibraryContents context={context} device={device} live={live} command={command}/>
+    }</Command>;
+}
+
+function LibraryContents({context, device, live, command}: {
+  context: FrontendContext; device: DeviceRecord; live: boolean; command: FrontendCommand;
+}): React.JSX.Element {
+  const {Badge} = context.ui;
   const id = useId();
   const [query, setQuery] = useState('');
   const [offset, setOffset] = useState(0);
@@ -89,10 +99,7 @@ export function LibraryPage({context, device, live}: {
   return <section className="widget" aria-label="Pixoo library">
     <header className="widget-head"><h2>Library</h2><Badge warning={!live}>{live ? 'Current' : 'Stale'}</Badge></header>
     <p className="hint">Add an original and its default rendition to the library. This does not start playback.</p>
-    {device === undefined ? <p role="status">The Pixoo owner has no device record.</p>
-      : <Command context={context} target={device.id} key={device.id}>{command =>
-        <AddMedia context={context} device={device} live={live} command={command}/>
-      }</Command>}
+    <AddMedia context={context} device={device} live={live} command={command}/>
     <label htmlFor={id}>Search media</label>
     <input id={id} type="search" value={query} maxLength={120} onChange={event => { setQuery(event.target.value); setOffset(0); }}/>
     <div className="actions"><button type="button" className="secondary" disabled={loading} onClick={() => { setRefresh(value => value + 1); }}>Refresh library</button></div>
@@ -114,12 +121,7 @@ export function LibraryPage({context, device, live}: {
         <button type="button" className="secondary" disabled={offset + LIMIT >= catalog.total} onClick={() => { setOffset(offset + LIMIT); }}>Next media</button>
       </div>
     </>}
-    {selected !== undefined && <aside aria-label="Selected media">
-      <h3>{selected.name}</h3>
-      <Preview key={selected.renditionId} api={context.api} renditionId={selected.renditionId} active={context.connected}/>
-      <p className="hint">{selected.compatible === undefined ? 'Playback compatibility has not been checked.'
-        : selected.compatible ? 'Within the active playback profile.' : 'Not qualified for device playback. The full preview is available.'}</p>
-      <button type="button" className="secondary" onClick={() => { setSelected(undefined); }}>Close preview</button>
-    </aside>}
+    {selected !== undefined && <MediaEditor key={selected.renditionId} context={context} device={device} live={live}
+      assetId={selected.assetId} renditionId={selected.renditionId} completions={completions} command={command} close={() => { setSelected(undefined); }}/>}
   </section>;
 }

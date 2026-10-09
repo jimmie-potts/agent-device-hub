@@ -3,16 +3,17 @@ import React, {useEffect, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendApi, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
-import type {PlaylistRecord} from '../module/schemas.js';
+import type {DisplayRecord, PlaylistRecord} from '../module/schemas.js';
 import {LibraryPage} from './library.js';
 import {PlaylistsPage} from './playlists.js';
+import {PlayerPage} from './player.js';
 
-type Record = DeviceRecord | PlaylistRecord;
-type Catalog = {live: boolean; device: DeviceRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined};
+type Record = DeviceRecord | PlaylistRecord | DisplayRecord;
+type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined};
 
 /** Follow owned device and playlist facts on the shell participant; media reads use bounded content pages. */
-function useCatalog(api: FrontendApi, includePlaylists = true): Catalog {
-  const [catalog, setCatalog] = useState<Catalog>({live: false, device: undefined, playlists: [], error: undefined});
+function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = false): Catalog {
+  const [catalog, setCatalog] = useState<Catalog>({live: false, device: undefined, display: undefined, playlists: [], error: undefined});
   useEffect(() => {
     let disposed = false;
     let copy: SyncedCopy<Record> | undefined;
@@ -23,6 +24,7 @@ function useCatalog(api: FrontendApi, includePlaylists = true): Catalog {
       setCatalog({
         live, error,
         device: values.find((value): value is DeviceRecord => 'kind' in value && value.kind === 'pixoo'),
+        display: values.find((value): value is DisplayRecord => 'monitor' in value && 'nowPlaying' in value),
         playlists: values.filter((value): value is PlaylistRecord => 'playlistRevision' in value)
           .sort((a, b) => {
             const order = a.name.localeCompare(b.name);
@@ -52,20 +54,20 @@ function useCatalog(api: FrontendApi, includePlaylists = true): Catalog {
           break;
       }
     };
-    void api.sync<Record>(includePlaylists ? ['device', 'pixoo-playlist'] : ['device'], changed).then(result => {
+    void api.sync<Record>(['device', ...includePlaylists ? ['pixoo-playlist'] : [], ...includeDisplay ? ['pixoo-display'] : []], changed).then(result => {
       if (result.status === 'rejected') { show(false, result.error.error.code); return; }
       if (disposed) { void result.copy.close(); return; }
       copy = result.copy;
       records.clear();
       for (const state of copy.states()) {
-        const family = 'playlistRevision' in state.data ? 'pixoo-playlist' : 'device';
+        const family = 'playlistRevision' in state.data ? 'pixoo-playlist' : 'monitor' in state.data ? 'pixoo-display' : 'device';
         records.set(`${family}/${state.data.id}`, state.data);
       }
       live = true;
       show(true);
     }).catch(() => { show(false, 'unavailable'); });
     return () => { disposed = true; void copy?.close(); };
-  }, [api, includePlaylists]);
+  }, [api, includePlaylists, includeDisplay]);
   return catalog;
 }
 
@@ -79,6 +81,11 @@ function Library({context}: {context: FrontendContext}): React.JSX.Element {
   return <LibraryPage context={context} device={catalog.device} live={catalog.live}/>;
 }
 
+function Player({context}: {context: FrontendContext}): React.JSX.Element {
+  const catalog = useCatalog(context.api, true, true);
+  return <PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/>;
+}
+
 export const frontend: FrontendContribution = {module: 'pixoo', pages: [
-  {id: 'library', Component: Library}, {id: 'playlists', Component: Playlists},
+  {id: 'library', Component: Library}, {id: 'playlists', Component: Playlists}, {id: 'player', Component: Player},
 ]};

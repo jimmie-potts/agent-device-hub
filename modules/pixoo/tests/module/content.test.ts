@@ -98,6 +98,11 @@ void it('resolves selected media and a referenced synthetic PNG without changing
     const before = json<{catalogRevision: number; items: {renditionId: string; compatible: boolean}[]}>(await read('catalog-media', request()));
     assert.equal(before.items[0]?.renditionId, renditionId);
     assert.equal(before.items[0]?.compatible, true);
+    const player = json<{state: {state: string}; session: unknown; sampledAtMs: number; simulated: boolean}>(await read('player', request()));
+    assert.equal(player.state.state, 'idle');
+    assert.equal(player.session, null);
+    assert.equal(player.simulated, true);
+    assert.ok(Number.isFinite(player.sampledAtMs));
     const asset = json<{asset: {id: string}; renditions: {id: string; transform: object}[]}>(await read(`asset.${assetId}`, request()));
     assert.equal(asset.asset.id, assetId);
     assert.equal(asset.renditions[0]?.id, renditionId);
@@ -129,6 +134,7 @@ void it('returns safe invalid/not-found refusals and remains usable after bad re
     assert.ok(read);
     for (const [ref, query, code] of [
       ['catalog-media', {extra: 'x'}, 'invalid-request'],
+      ['player', {extra: 'x'}, 'invalid-request'],
       ['catalog-playlists', {limit: '101'}, 'invalid-request'],
       ['catalog-playlists', {offset: '-1'}, 'invalid-request'],
       ['catalog-playlists', {offset: '1e2'}, 'invalid-request'],
@@ -150,6 +156,9 @@ void it('returns safe invalid/not-found refusals and remains usable after bad re
     const result = await read('catalog-media', {query: {}, signal: stopped.signal});
     assert.ok(result !== undefined && 'error' in result);
     assert.equal(result.error.code, 'cancelled');
+    const cancelledPlayer = await read('player', {query: {}, signal: stopped.signal});
+    assert.ok(cancelledPlayer !== undefined && 'error' in cancelledPlayer);
+    assert.equal(cancelledPlayer.error.code, 'cancelled');
     assert.equal(json<{playlist: {id: string}}>(await read(`playlist.${playlistId}`, request())).playlist.id, playlistId);
     assert.deepEqual(world.harness.failures, []);
   } finally { await world.close(); }
