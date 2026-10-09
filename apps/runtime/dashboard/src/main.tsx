@@ -12,7 +12,8 @@ import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
-import {ModulePageView} from './module-page.tsx';
+import {ModuleFrontend, ModulePageView} from './module-page.tsx';
+import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
@@ -246,6 +247,12 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
   const known = route.kind === 'timeline' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
+    if (placement.widget === 'wispr') {
+      const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics'));
+      if (route.kind !== 'home' || state.feed !== 'connected' || exposed !== true) return null;
+      return <ModuleFrontend key="wispr" module="wispr" connection={connection} connected={true} control={false}
+        operations={operations} operationsLive={operationsLive} Component={WisprWidget}/>;
+    }
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       devices={devices.map(({record}) => record)}/></Widget>;

@@ -18,6 +18,8 @@ import {observation, type ObservationOptions} from '../../dist/tests/fixtures/ag
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {playbackFactory} from '@jimmie-potts/playback';
+import {createWisprModule} from '@jimmie-potts/wispr';
+import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
 
 /** The synthetic marker of the hook's token: no record, answer or page may carry it (Hub #835). */
@@ -27,6 +29,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** The actual file reader on explicitly selected private synthetic collector files. */
+  wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
   /** A synthetic module principal for Desktop metadata; reads no provider files. */
@@ -53,6 +57,9 @@ export type World = {
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
+  /** Changes only the disposable module's internal privacy settings, never a product configuration route. */
+  wisprPrivacy(expose: boolean, text: boolean): void;
+  readonlyWispr(ref: string): Promise<{status: number; text: string}>;
   readonlyUpload(bytes: Uint8Array): Promise<number>;
   createPlaylist(name: string): Promise<void>;
   readonlyPlaylistCommand(data: object): Promise<number>;
@@ -110,7 +117,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   })};
   const signToken = join(configDir, 'sign-token');
   if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
-  const moduleConfig = {...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
+  const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, Date.now(), {
+    observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
+  });
+  const moduleConfig = {
+    ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config, playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
@@ -120,6 +131,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   }}));
   const logs: LogRecord[] = [];
   let core = createCoreModule();
+  let wispr = createWisprModule();
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const panel = new SimulatedPixoo();
@@ -131,7 +143,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     stop: () => { desktopSdk = undefined; },
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+    modules: [core = createCoreModule(), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : [])],
     port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
@@ -144,6 +156,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   return {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
     pixooState: () => panel.state(),
+    wisprPrivacy: (expose, text) => { wispr.privacy(expose, text); },
+    readonlyWispr: async ref => {
+      const response = await fetch(`${runtime.url}/modules/wispr/content/${ref}`, {headers: {authorization: `Bearer ${readerToken}`}});
+      return {status: response.status, text: await response.text()};
+    },
     pixooPlaylists: async () => {
       const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
       try {

@@ -4,7 +4,10 @@
   "private": true,
   "description": "Read-only Wispr published-file analytics for the B.U.N.N.Y. runtime",
   "type": "module",
-  "exports": {".": {"types": "./dist/src/index.d.ts", "import": "./dist/src/index.js"}},
+  "exports": {
+    ".": {"types": "./dist/src/index.d.ts", "import": "./dist/src/index.js"},
+    "./frontend": {"types": "./dist/src/frontend/index.d.ts", "import": "./src/frontend/index.tsx"}
+  },
   "dependencies": {
     "@jimmie-potts/event-contracts": "1.0.0",
     "@jimmie-potts/sdk": "0.1.0",

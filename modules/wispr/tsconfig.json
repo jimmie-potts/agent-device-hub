@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.strict.json",
-  "compilerOptions": {"rootDir": ".", "outDir": "dist"},
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "compilerOptions": {"rootDir": ".", "outDir": "dist", "jsx": "react-jsx"},
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
 }

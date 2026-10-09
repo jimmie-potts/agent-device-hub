@@ -7,8 +7,8 @@
 
 ## 2. Coordinator integration
 
-- [ ] 2.1 Attach the read adapter to the coordinator-owned API1.3 content/exposure contract and workspace/CI; verify read-scoped access, browser-off deep-link refusal and late HTTP revocation using synthetic files.
-- [ ] 2.2 Port the module-owned React page and preserved numeric widget into the shared shell; verify filters, freshness, text retirement, numeric downloads, browser and accessibility checks.
+- [x] 2.1 Attach the read adapter to the coordinator-owned API1.3 content/exposure contract and workspace/CI; verify read-scoped access, browser-off deep-link refusal and late HTTP revocation using synthetic files.
+- [x] 2.2 Port the module-owned React page and preserved numeric widget into the shared shell; verify filters, freshness, text retirement, numeric downloads, browser and accessibility checks.
 - [ ] 2.3 Update shared ADR/setup/contract documentation and add Tier 1 catalog cases; verify workflow, strict specs and existing in-memory scenarios.
 
 ## 3. Qualification and closeout

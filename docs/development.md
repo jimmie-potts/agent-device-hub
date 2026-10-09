@@ -1642,6 +1642,13 @@ privacy/lifecycle delivery fences. It reads no installed collector files or
 database. Gateway, React and disposable runtime checks qualify integration
 separately; package tests alone do not establish those paths or installation.
 
+The runtime dashboard browser command includes `wispr.browser.ts` for the module
+port. It uses the actual reader on private synthetic collector files: numeric
+widget and page, retained filters, numeric downloads, explicit browser exposure
+and text-sharing opt-out, keyboard and accessibility. Inspection sends no
+commands. The two read-scoped caller cases and missing/stale inputs also run in
+the module's shared catalog scenarios; no installed collector or service is used.
+
 ## Wispr Hub checks
 
 `apps/hub/tests/wispr.test.mjs` exercises #470 through the real HTTP server with

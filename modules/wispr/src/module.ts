@@ -27,9 +27,10 @@ export function createWisprModule(options: WisprModuleOptions = {}): WisprModule
   let reader: ReturnType<typeof createWispr> | undefined;
   let lifetime: AbortSignal | undefined;
   const ended = (): boolean => lifetime?.aborted === true;
-  return {
-    // API1.3 page/content attachment belongs to the coordinator once its shared contract is integrated.
-    manifest: {name: WISPR_MODULE, apiVersion: '1.2', configure: configureWispr,
+  const module: WisprModule = {
+    manifest: {name: WISPR_MODULE, apiVersion: '1.3', configure: configureWispr,
+      pages: [{id: 'analytics', title: 'Wispr', presentation: 'react'}],
+      content: (ref, request) => module.read(ref, new URLSearchParams(request?.query).toString(), request?.signal),
       settings: {schema: settingsSchema, show: config => showWisprSettings(reader?.config ?? config)}},
     start(context: ModuleContext<WisprConfig>): void {
       if (context.config === undefined) throw new Error('the Wispr module started without its configuration');
@@ -66,4 +67,5 @@ export function createWisprModule(options: WisprModuleOptions = {}): WisprModule
       }
     },
   };
+  return module;
 }

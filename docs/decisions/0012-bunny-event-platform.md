@@ -81,7 +81,11 @@ Existing formats move in one offline cutover:
   up. There is no broker.
   Wispr retains its manually selected published-file handoff as an owner-approved
   exception (2026-10-07, #927); the collector and file contract stay unchanged,
-  and a later messaging conversion is deferred to #977.
+  and a later messaging conversion is deferred to #977. The owner decision of
+  2026-10-08 admits every authenticated read-scoped client without an extra Wispr
+  grant. Browser exposure and text sharing stay separate and off by default;
+  revocation or opt-out fences reads until their final delivery. Analytics stay
+  outside MCP, agent snapshots and general broadcasts.
 - A module imports only the SDK and the contracts packages, never another
   module.
 - **Failure isolation:** a device's errors and timeouts are not module

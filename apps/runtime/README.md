@@ -41,6 +41,13 @@ name, and writes the configuration file. The `shipped` disposable run, the
 runtime's process tests, the maintenance journal test and the memory script's
 `simulated` variant configure the shipped modules with it.
 
+Wispr is the read-only file-handoff module. Its selected aggregate and diagnostics
+files are entered manually in the private configuration; no collector or database
+is moved. The module starts lazily and owns no analytics store or broadcast family.
+Its [guide](../../modules/wispr/README.md) documents the separate browser exposure
+and text-sharing choices. All authenticated read-scoped clients may read its
+analytics routes; browser exposure remains off until explicitly enabled.
+
 ## Adding a module
 
 A module registers itself from its own folder (#999), so adding runtime and
@@ -73,7 +80,7 @@ The shipped list holds the core first, by construction, then each shipped
 registration, after the modules its `after` names, and otherwise by `order`,
 then by name. The list does not assemble when a registration is named `core`,
 two share a name, an `after` names a module that does not ship, or modules wait
-on each other. The current modules use the orders 100 to 600 in steps of 100;
+on each other. The current modules use the orders 100 to 700 in steps of 100;
 a new module takes a free number.
 
 The in-memory harness, the disposable run's supervisor and child, and the run's

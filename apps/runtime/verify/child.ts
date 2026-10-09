@@ -10,6 +10,7 @@
 // stream at the edge, which `runMain` hands over once it serves.
 import http from 'node:http';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
+import {createWisprModule} from '@jimmie-potts/wispr';
 import {registrations, runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
@@ -143,6 +144,7 @@ const harness = fixture('harness', () => ({
 }));
 
 const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
+  wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => createWisprModule()},
   core: fixture('core', () => createCoreModule()),
   lamp: fixture('lamp', () => createLampModule({
     transport: lamps,

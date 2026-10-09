@@ -13,3 +13,10 @@ The source port starts at Hub main `bf11587c1a2c575c0da155725a386a209836eed9` fo
 `@jimmie-potts/wispr-contracts` is reused unchanged. Collector schema `1.0`, algorithms, Windows collector code and its publication files are unchanged. Runtime JSON adds the `wispr-analytics/2.0` document wrapper and shared ErrorBody; this does not change the producer format.
 
 The collector file handoff is the owner-approved exception to ADR 0012's usual state ownership rule. Only manually selected published files are read. No database sharing, service, scheduler, migration, source discovery, MCP analytics or analytics broadcast is introduced.
+
+The frontend port uses `apps/dashboard/src/wispr.tsx`, `wispr-data.ts` and the
+Wispr styles as read at `fd0bec36e2e4ade77fcf193739e3f35e8b9d280b`. The module
+keeps the numeric calculations, tables, coverage, language views and widget.
+It replaces source-list grants and polling with the shell's scoped read API,
+explicit refresh, the selected runtime access rule and local read cancellation.
+Filters remain in session memory; no analytics are persisted by the browser.

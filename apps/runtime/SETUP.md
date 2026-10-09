@@ -35,7 +35,10 @@ Use the module guides for the selected [Pixoo](../../modules/pixoo/README.md),
 [Nanoleaf](../../modules/nanoleaf/README.md),
 [playback](../../modules/playback/README.md), [LIFX](../../modules/lifx/README.md),
 [Tidbyt](../../modules/tidbyt/README.md) and
-[Codex Desktop](../../modules/codex-desktop/README.md) sections. An omitted or
+[Codex Desktop](../../modules/codex-desktop/README.md) and
+[Wispr](../../modules/wispr/README.md) sections. For Wispr, manually select the
+collector's existing aggregate and diagnostics JSON files; leave the collector
+and its published files unchanged. Browser exposure and text sharing start off. An omitted or
 invalid section can refuse a module; a listening gateway alone does not prove
 the desired modules started. Existing selected reader files remain read in
 place within their permissions. Do not convert old rules, media, layouts,
