@@ -14,10 +14,10 @@
 
 - [x] 3.1 Reuse existing catalog/media behavior with bounded pagination, referenced previews and authenticated staging for ordinary uploads; verify an oversized catalog splits below 256 KiB, a preview resolves by reference and the import outcome cleans its staged input, using fresh synthetic media.
 - [x] 3.2 Port the remaining library, playlists, player, preview, Monitor and settings flows with provenance; verify their supported interactions through runtime reads and existing commands, preserving Monitor/Media policy and consumer-only dismissal.
-- [ ] 3.3 Add the affected catalog scenarios and focused keyboard/browser/accessibility journey; verify those scenarios in memory and through the existing disposable adapter with simulated Pixoo and no installed endpoints.
+- [x] 3.3 Add the affected catalog scenarios and focused keyboard/browser/accessibility journey; verify those scenarios in memory and through the existing disposable adapter with simulated Pixoo and no installed endpoints.
 
 ## 4. Validate and prepare delivery
 
-- [ ] 4.1 Run the applicable build, type, lint, SDK/runtime/Pixoo, shared contract-consumer and workflow checks from this worktree; retain command/revision evidence and fix failures this change causes.
-- [ ] 4.2 Obtain independent disposable Acceptance for the runnable candidate, covering the real edit and required Pixoo views with fresh synthetic state; preserve its evidence and clean the owned run before releasing the host slot.
-- [ ] 4.3 With implementation and Acceptance complete, synchronize every affected specification after successful current CLI lookups; verify workflow checks and report the actual spec inventory. This evidence permits the coordinator to archive before final independent Standards/Specification review, then enforce PR/main CI, guarded merge and native closeout.
+- [x] 4.1 Run the applicable build, type, lint, SDK/runtime/Pixoo, shared contract-consumer and workflow checks from this worktree; retain command/revision evidence and fix failures this change causes.
+- [x] 4.2 Obtain independent disposable Acceptance for the runnable candidate, covering the real edit and required Pixoo views with fresh synthetic state; preserve its evidence and clean the owned run before releasing the host slot.
+- [x] 4.3 With implementation and Acceptance complete, synchronize every affected specification after successful current CLI lookups; verify workflow checks and report the actual spec inventory. This evidence permits the coordinator to archive before final independent Standards/Specification review, then enforce PR/main CI, guarded merge and native closeout.
