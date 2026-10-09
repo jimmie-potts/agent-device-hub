@@ -6,33 +6,32 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import test, {after} from 'node:test';
 import {build} from 'esbuild';
+import {createElement, type ComponentType} from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {DashboardState} from '../src/connection.ts';
+import {parseRuleInput} from '../../dist/src/core/automation.js';
 
-// Node's native TS runner cannot import TSX. The existing compiler bundles the page and React server renderer together.
+// Node's native TS runner cannot import TSX. Bundle the page as browser code, keeping the built core validator outside it.
 const directory = await mkdtemp(join(tmpdir(), '925ui-'));
 after(() => rm(directory, {recursive: true, force: true}));
 const output = join(directory, 'automation.cjs');
-const lifecycle = fileURLToPath(new URL('../../../../packages/lifecycle-contracts/dist/index.js', import.meta.url));
+const require = createRequire(import.meta.url);
+// The Node renderer and browser component must share the same React instance.
+const react = require.resolve('react'), jsxRuntime = require.resolve('react/jsx-runtime');
 await build({stdin: {contents: `
-  import {createElement} from 'react';
-  import {renderToStaticMarkup} from 'react-dom/server';
-  import {AutomationPage} from './src/automation.tsx';
   export * from './src/automation.tsx';
-  export {parseRuleInput} from '../src/core/automation.ts';
-  export const render = props => renderToStaticMarkup(createElement(AutomationPage, props));
 `, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'automation-test.ts'},
-  bundle: true, platform: 'node', format: 'cjs', outfile: output, logLevel: 'silent',
-  alias: {'@jimmie-potts/agent-lifecycle-contracts': lifecycle}, external: [lifecycle]});
+  bundle: true, platform: 'browser', format: 'cjs', outfile: output, logLevel: 'silent',
+  alias: {react, 'react/jsx-runtime': jsxRuntime}, external: [react, jsxRuntime]});
 type Page = {
   automationRuleInput(draft: typeof rule, creating: boolean): typeof rule;
-  parseRuleInput(value: unknown, targets: readonly string[], enabledAllowed: boolean): unknown;
   automationOutcome(entry: {requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
-  render(props: {connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}): string;
+  AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
 };
-const page = createRequire(import.meta.url)(output) as Page;
+const page = require(output) as Page;
 const rule = {name: 'Finished turn', kind: 'event' as const, enabled: true,
   trigger: {source: 'core', kind: 'turn-ended', alias: 'selected'},
   action: {mood: 'celebrate', priorityClass: 'event' as const, durationMs: 1000, palette: ['#123456'], targets: ['wall']}};
@@ -41,8 +40,8 @@ void test('creation is disabled until explicit enable; editing retains the defin
   const created = page.automationRuleInput(rule, true), edited = page.automationRuleInput(rule, false);
   assert.equal(created.enabled, false); assert.equal(Object.hasOwn(edited, 'enabled'), false);
   assert.deepEqual(edited.trigger, rule.trigger); assert.deepEqual(edited.action, rule.action);
-  assert.deepEqual(page.parseRuleInput(created, ['wall'], true), created);
-  assert.deepEqual(page.parseRuleInput(edited, ['wall'], false), edited);
+  assert.deepEqual(parseRuleInput(created, ['wall'], true), created);
+  assert.deepEqual(parseRuleInput(edited, ['wall'], false), edited);
   const configured = {...rule, trigger: {source: 'github', kind: 'pull-request.merged', alias: 'repo-one'}, action: {...rule.action, palette: ['#123456', '#abcdef']}};
   const preserved = page.automationRuleInput(configured, false);
   assert.deepEqual(preserved.trigger, configured.trigger); assert.deepEqual(preserved.action, configured.action);
@@ -118,7 +117,8 @@ void test('read-only server markup has a labelled Automation page and disabled f
   context.mock.method(globalThis, 'fetch', () => { calls += 1; throw new Error('render must not fetch'); });
   const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
     runtime: {modules: [], control: false, copies: [], catalogFailed: false}};
-  const html = page.render({connection: {subscribe: () => () => {}, getState: () => state}, live: true, control: false});
+  const html = renderToStaticMarkup(createElement(page.AutomationPage,
+    {connection: {subscribe: () => () => {}, getState: () => state}, live: true, control: false}));
   assert.match(html, /aria-label="Automation"/); assert.match(html, /<h1>Automation<\/h1>/);
   assert.match(html, /read-only/); assert.match(html, /fieldset disabled/);
   for (const label of ['Rule name', 'Occurrence', 'Quiet hours start', 'Per agent task', 'Interrupt kinds']) assert.ok(html.includes(label), label);
