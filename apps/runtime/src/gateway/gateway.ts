@@ -9,8 +9,9 @@ import {randomUUID} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {coreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {MAX_DETAIL, SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {McpHandler} from '@jimmie-potts/device-mcp';
+import {MAX_RESPONSE_BYTES as WISPR_MAX_BYTES, type WisprModule} from '@jimmie-potts/wispr';
 import {
   CALLS, CONTENT_PATH, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
   type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
@@ -105,6 +106,8 @@ export type GatewayOptions = {
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
   history?: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
+  wispr?: Pick<WisprModule, 'read' | 'browserExposed' | 'deliveryGuard'>;
   /** The authenticated control route alone uses this capability for tracked core operator actions. */
   operatorActions?: CoreOperatorActions;
   /** The built dashboard's folder (#922), `DASHBOARD_DIR` by default; tests give their own. */
@@ -125,6 +128,8 @@ export class Gateway {
   readonly #admitted = new WeakMap<IncomingMessage, Principal>();
   /** Only validated dashboard handoffs receive a context; a later refusal keeps that request's trace. */
   readonly #dashboardTraces = new WeakMap<IncomingMessage, TraceContext>();
+  /** Rechecked synchronously after all route awaits, immediately before HTTP emission. */
+  readonly #wisprDelivery = new WeakMap<IncomingMessage, () => void>();
   readonly #participants = new Map<string, Participant>();
   readonly #copies = new Map<string, Promise<SyncedCopy<Record<string, unknown>>>>();
   readonly #repeats = new Map<string, Repeats>();
@@ -245,6 +250,7 @@ export class Gateway {
         principal = this.#admit(request);
         answer = await this.#route(request, url, principal);
       }
+      this.#wisprDelivery.get(request)?.();
       this.#write(response, answer);
     } catch (error) {
       const body = error instanceof Refused ? error.body : errorBody('internal', {detail: 'the gateway failed'});
@@ -332,7 +338,7 @@ export class Gateway {
     }
     if (path === '/api/v2/modules') {
       noQuery();
-      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module))});
+      return json(200, {schema: 'module-list/2.0', moduleApiVersion: MODULE_API_VERSION, modules: this.#options.host.modules().map(module => this.#describe(module, principal))});
     }
     if (path === '/api/v2/links') {
       noQuery();
@@ -352,12 +358,14 @@ export class Gateway {
     }
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
+      if (content[1] === 'wispr') return this.#wisprRead(request, principal, content[2] ?? '', url.searchParams);
       noQuery();
       return this.#content(content[1] ?? '', content[2] ?? '');
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
       noQuery();
+      if (page[1] === 'wispr') this.#wisprExposure(principal);
       return this.#page(page[1] ?? '', page[2] ?? '');
     }
     throw refuse('not-found', 'no such route');
@@ -368,12 +376,13 @@ export class Gateway {
    * them, for a browser, which cannot read health: Hub #922), and what it contributes, which is nothing until it is
    * admitted.
    */
-  #describe(module: HostedModule): object {
+  #describe(module: HostedModule, principal: Principal): object {
     const {name, manifest, state, admitted} = module;
     const serves = this.#options.bus.served(sourceOf(name));
     return {
       name, apiVersion: manifest.apiVersion, state, ...(serves.length === 0 ? {} : {serves}),
-      pages: admitted ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
+      pages: admitted && (name !== 'wispr' || principal.kind !== 'browser' || this.#options.wispr?.browserExposed() === true)
+        ? (manifest.pages ?? []).map((page: ModulePage) => ({id: page.id, title: page.title, path: `/modules/${name}/${page.id}`})) : [],
       tools: admitted ? [...(manifest.tools ?? []).map(tool => `${name}_${tool.name}`), ...(name === 'core' ? ['core_recover_approval', 'core_send_command'] : [])] : [],
       settings: admitted && manifest.settings !== undefined,
     };
@@ -523,6 +532,62 @@ export class Gateway {
     return {status: 200, body: document, headers: {'content-type': 'text/html; charset=utf-8', ...PAGE_HEADERS,
       'x-frame-options': 'SAMEORIGIN', 'content-security-policy': PAGE_HEADERS['content-security-policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'"),
     }};
+  }
+
+  #wisprExposure(principal: Principal): void {
+    if (principal.kind === 'browser' && this.#options.wispr?.browserExposed() !== true)
+      throw refuse('forbidden', 'Wispr browser exposure is off');
+  }
+
+  /** The fixed Wispr file handoff, with caller and privacy checks through the final HTTP handoff. */
+  async #wisprRead(request: IncomingMessage, principal: Principal, ref: string, query: URLSearchParams): Promise<Answer> {
+    this.#module('wispr');
+    const reader = this.#options.wispr;
+    if (reader === undefined) throw refuse('unavailable', 'Wispr is unavailable');
+    this.#wisprExposure(principal);
+    if (!['status', 'summary', 'series', 'heatmap', 'apps', 'language', 'export'].includes(ref))
+      throw refuse('not-found', 'no such Wispr read');
+    const keys = [...query.keys()];
+    if (keys.length > 16 || new Set(keys).size !== keys.length ||
+        [...query].some(([key, value]) => key.length === 0 || key.length > 64 || value.length > 512))
+      throw refuse('invalid-request', 'invalid Wispr query fields');
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, 'bunny.feed.read', {
+      parent: candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined, kind: 'server',
+      attributes: {'http.route': '/modules/{module}/content/{ref}', 'http.request.method': 'GET'},
+    });
+    this.#dashboardTraces.set(request, span.context);
+    const current = reader.deliveryGuard();
+    const deliver = (): void => {
+      const admitted = this.#admit(request);
+      if (admitted.id !== principal.id || admitted.kind !== principal.kind || admitted.source !== principal.source || !this.access.live(principal))
+        throw refuse('unauthenticated', 'the original Wispr caller is no longer admitted');
+      if (!admitted.scopes.has('read')) throw refuse('forbidden', 'Wispr requires read scope');
+      this.#wisprExposure(admitted);
+      if (request.aborted) throw refuse('cancelled', 'the Wispr read was cancelled');
+      if (this.#closed || !current()) throw refuse('unavailable', 'the Wispr read is no longer current');
+    };
+    this.#wisprDelivery.set(request, deliver);
+    const controller = new AbortController(), aborted = (): void => {controller.abort();};
+    request.once('aborted', aborted);
+    if (request.aborted) controller.abort();
+    try {
+      const found = await this.#call('wispr', () => reader.read(ref, query.toString(), controller.signal));
+      deliver();
+      if ('error' in found) {
+        if (!isErrorCode(found.error.code) || this.#options.redactions.holds(JSON.stringify(found)))
+          throw refuse('internal', 'Wispr returned an invalid refusal');
+        throw refuse(found.error.code, 'the Wispr read was refused');
+      }
+      if (!['application/json', 'text/csv; charset=utf-8'].includes(found.type) || !(found.bytes instanceof Uint8Array) ||
+          found.bytes.byteLength > WISPR_MAX_BYTES || this.#options.redactions.holdsBytes(found.bytes))
+        throw refuse('internal', 'Wispr returned invalid content');
+      return {status: 200, body: found.bytes, headers: {...PAGE_HEADERS, 'content-type': found.type,
+        ...(found.type === 'text/csv; charset=utf-8' ? {'content-disposition': 'attachment; filename="wispr-analytics.csv"'} : {})}};
+    } catch (error) {
+      span.end(error instanceof Refused ? 'unset' : 'error'); throw error;
+    } finally {request.off('aborted', aborted); controller.abort(); span.end();}
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */

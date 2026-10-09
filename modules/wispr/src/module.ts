@@ -15,6 +15,10 @@ export type WisprModule = BunnyModule<WisprConfig> & {
   privacy(exposeToDashboard: boolean, shareTextAggregates: boolean): void;
 };
 export type WisprModuleOptions = {workerFactory?: WisprWorkerFactory};
+/** Selects the fixed module's private file-read adapter, never an arbitrary contribution. */
+export const isWisprModule = (module: BunnyModule): module is WisprModule => module.manifest.name === WISPR_MODULE &&
+  'read' in module && typeof module.read === 'function' && 'browserExposed' in module && typeof module.browserExposed === 'function' &&
+  'deliveryGuard' in module && typeof module.deliveryGuard === 'function';
 const settingsSchema = {type: 'object' as const, additionalProperties: false, required: ['sourceId', 'freshnessMs', 'exposeToDashboard', 'shareTextAggregates'],
   properties: {sourceId: {type: 'string'}, freshnessMs: {type: 'integer'}, exposeToDashboard: {type: 'boolean'}, shareTextAggregates: {type: 'boolean'}}};
 

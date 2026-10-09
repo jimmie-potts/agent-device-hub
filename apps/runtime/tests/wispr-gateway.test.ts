@@ -20,11 +20,17 @@ type Caller = {token?: string; cookie?: string};
 async function boundary(context: TestContext) {
   const clock = {now: () => 1_700_000_000_000}, scheduler: Scheduler = {after: () => () => {}};
   const logs: LogRecord[] = [], writer = new LogWriter(record => {logs.push(record);}, 'debug', clock), spans = new RecordedSpans();
-  let exposed = false, epoch = 0, reads = 0, afterRead: (() => void) | undefined;
+  let exposed = false, epoch = 0, reads = 0, afterRead: (() => void) | undefined, afterFirstCheck: (() => void) | undefined;
   let gate: Promise<void> | undefined, release = (): void => {}, reading = (): void => {};
   const wispr = {
     browserExposed: () => exposed,
-    deliveryGuard: () => {const captured = epoch; return () => captured === epoch;},
+    deliveryGuard: () => {
+      const captured = epoch; let checked = false;
+      return () => {
+        if (!checked && afterFirstCheck !== undefined) queueMicrotask(afterFirstCheck);
+        checked = true; return captured === epoch;
+      };
+    },
     read: async (ref: string) => {
       reads++; reading(); await gate;
       if (ref === 'export') return {type: 'text/csv; charset=utf-8', bytes: Buffer.from('words\n120\n')};
@@ -57,6 +63,7 @@ async function boundary(context: TestContext) {
   };
   return {gateway, call, logs, spans, reads: () => reads, expose: (value: boolean) => {exposed = value; epoch++;},
     retire: () => {epoch++;}, afterRead: (action: () => void) => {afterRead = action;},
+    afterFirstCheck: (action: () => void) => {afterFirstCheck = action;},
     hold: () => {gate = new Promise(resolve => {release = resolve;}); return new Promise<void>(resolve => {reading = resolve;});},
     release: () => {release();}, browser: () => ({cookie: `bunny-session=${gateway.access.openSession()}`}),
   };
@@ -85,7 +92,7 @@ void test('a pending Wispr read is refused after same-ID credential rotation, wi
   assert.equal(answer.status, 401); assert.equal(answer.body.includes('120'), false);
   const refusal = w.logs.find(record => record.attributes['bunny.code'] === 'unauthenticated');
   assert.ok(refusal); assert.equal(refusal.trace_id, traceFields(parent)?.traceId);
-  assert.equal(refusal.attributes['http.route'], '/modules/:module/content/:ref');
+  assert.equal(refusal.attributes['http.route'], '/modules/{module}/content/{ref}');
   for (const token of [...tokens, 'synthetic-rotated-wispr']) assert.equal(JSON.stringify([answer, w.logs, w.spans.spans]).includes(token), false);
 });
 
@@ -97,6 +104,10 @@ void test('privacy opt-out after resolved content still prevents HTTP delivery, 
   browser.afterRead(() => {browser.expose(false);});
   const hidden = await browser.call('/modules/wispr/content/summary', caller);
   assert.equal(hidden.status, 403); assert.equal(hidden.body.includes('120'), false);
+  const emission = await boundary(context); emission.afterFirstCheck(emission.retire);
+  const final = await emission.call('/modules/wispr/content/language');
+  assert.equal(final.status, 503, 'privacy is checked again after route awaits, at final emission');
+  assert.equal(final.body.includes('120'), false);
 });
 
 void test('Wispr CSV is a bounded inert download with a fixed filename and the same read gate', async context => {
