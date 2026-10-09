@@ -195,7 +195,7 @@ export function deviceRecord(db: Db, link: DeviceLink, epoch: string, presence: 
 
 export type WallTask = {
   id: string; title: string; project: SqlValue; status: string; startedAtMs?: number; element: string | null; manualProject: SqlValue;
-  evictionToken?: string; statusEvidence: 'current' | 'uncertain';
+  evictionToken?: string; codexUrl?: string; statusEvidence: 'current' | 'uncertain';
 };
 
 const text = (value: SqlValue | undefined): string | null => (typeof value === 'string' && value !== '' ? value : null);
@@ -218,8 +218,16 @@ export function wallView(db: Db, copy: SharedCopy, directory: string, device: st
   const details = new Map(rows(db, 'SELECT session,title,manual_project,started FROM task_info').map(row => [row[0] ?? null, row]));
   const current = sharedState(db);
   const tokens = new Map<string, string>();
+  const codexLinks = new Map<string, string>();
   if (shared && copy.envelope !== null) {
-    for (const [key, [root]] of presented(copy.envelope.snapshot)) tokens.set(key, evictionToken(current, root));
+    for (const [key, [root]] of presented(copy.envelope.snapshot)) {
+      tokens.set(key, evictionToken(current, root));
+      const {provider, client, sessionId} = root.identity;
+      // Preserve wall_server.codex_thread_url: only qualified Desktop UUID identity, never a title or arbitrary URL.
+      if (provider === 'codex' && client === 'desktop' && /^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/.test(sessionId)) {
+        codexLinks.set(key, `codex://threads/${sessionId}`);
+      }
+    }
   }
   const stale = new Set(rows(db, current.connection !== 'current' ? 'SELECT id FROM sessions' : 'SELECT session FROM shared_stale').map(row => row[0] ?? null));
   const tasks = visibleTasks(db, device).map(([id, , status]): WallTask => {
@@ -231,6 +239,8 @@ export function wallView(db: Db, copy: SharedCopy, directory: string, device: st
     if (typeof started === 'number' && Number.isFinite(started) && started >= 0) task.startedAtMs = Math.round(started * 1000);
     const token = tokens.get(id);
     if (token !== undefined) task.evictionToken = token;
+    const codexUrl = codexLinks.get(id);
+    if (codexUrl !== undefined) task.codexUrl = codexUrl;
     return task;
   });
   const shapes = layout === undefined ? [] : drawnOnce(layout);

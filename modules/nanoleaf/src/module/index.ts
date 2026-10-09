@@ -3,6 +3,7 @@
 // (#846): the Nanoleaf HTTP client (`lightRequest`), or a simulated controller in tests and disposable runs. The devices'
 // addresses and tokens come through the module's configuration and secrets (#919), never through the factory.
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {lightRequest, type LightRequest} from '../transport.js';
 import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
@@ -53,13 +54,20 @@ export const nanoleafMessageSchemas: Readonly<Record<string, object>> = {
 export function createNanoleafModule({transport}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
   let running: NanoleafRuntime | undefined;
   return {
-    manifest: {name: NANOLEAF_MODULE, apiVersion: '1.1', configure: configureNanoleaf},
+    manifest: {
+      name: NANOLEAF_MODULE, apiVersion: '1.3', configure: configureNanoleaf,
+      pages: [{id: 'wall', title: 'Wall', presentation: 'react'}],
+      content: (ref, request) => running === undefined
+        ? errorBody('unavailable', {detail: 'The Nanoleaf module is not running.'}) : running.content(ref, request),
+    },
     async start(context) {
       if (context.config === undefined) throw new Error('the Nanoleaf module started without its configuration');
       running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport);
     },
     async stop() {
-      await running?.stop();
+      const current = running;
+      running = undefined;
+      await current?.stop();
     },
   };
 }

@@ -57,6 +57,9 @@ function linesLayout(count: number): object {
   const positionData = Array.from({length: count}, (_, line) => [
     {panelId: 100 + line * 2, x: line * 100, y: 0, o: 0, shapeType: 18},
     {panelId: 101 + line * 2, x: line * 100, y: 20, o: 0, shapeType: 18},
+    // Connector housings at the two ends of the same unchanged zone pair (Hub #934).
+    {panelId: 1000 + line * 2, x: line * 100, y: -10, o: 0, shapeType: 20},
+    {panelId: 1001 + line * 2, x: line * 100, y: 30, o: 0, shapeType: 20},
   ]).flat();
   return {layout: {numPanels: positionData.length, sideLength: 0, positionData}, globalOrientation: {value: 0, max: 360, min: 0}};
 }

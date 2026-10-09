@@ -79,7 +79,8 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
         task: nullable(TASK), points: nullable(list(POINT, 3, 3))}), 0, 300),
       tasks: list(closed({id: TASK, title: text(512), project: nullable(PROJECT), status: {enum: ['blocked', 'question', 'working', 'unread', 'idle']},
         startedAtMs: block('instantMs'), element: nullable(ELEMENT), manualProject: nullable(PROJECT), evictionToken: {type: 'string', pattern: '^[0-9a-f]{64}$'},
-        statusEvidence: {enum: ['current', 'uncertain']}}, ['startedAtMs', 'evictionToken']), 0, 1024),
+        codexUrl: {type: 'string', pattern: '^codex://threads/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'},
+        statusEvidence: {enum: ['current', 'uncertain']}}, ['startedAtMs', 'evictionToken', 'codexUrl']), 0, 1024),
     }),
   },
   [schemaOf('nanoleaf-animations')]: {

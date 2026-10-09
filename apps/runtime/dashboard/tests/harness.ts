@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import type {Identity, LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
-  SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
+  LINES_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
 import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
@@ -37,7 +37,7 @@ export type WorldOptions = {
   modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
   devices?: boolean;
-  /** Adds the real Nanoleaf module over synthetic Lines for the Automation journey. */
+  /** Adds the real Nanoleaf module over synthetic Lines for module editor and Automation journeys. */
   nanoleaf?: boolean;
   inbox?: boolean;
   /** Lets a trusted loopback page sign a browser in without a code (Hub #276). On by default. */
@@ -79,6 +79,11 @@ export type World = {
   inboxViaMcp(): Promise<unknown[]>;
   /** Actual synthetic controller writes and selections, including across runtime restarts. */
   nanoleafState(): SimulatedState;
+  /** Changes only the simulated controller, as its physical switch would. */
+  nanoleafPower(on: boolean): void;
+  readonlyNanoleafEdit(data: object): Promise<number>;
+  nanoleafWall(): Promise<{id: string; configurationRevision: number; settings: {rotation: number; flipX: number; flipY: number; style: string};
+    tasks: {id: string; title: string; codexUrl?: string}[]; elements: {id: string; number: number; signature: number; project: string | null}[]}>;
   close(): Promise<void>;
 };
 
@@ -121,7 +126,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const nanoleafToken = join(configDir, 'nanoleaf-token');
   if (options.nanoleaf === true) await writePrivate(nanoleafToken, NANOLEAF_TOKEN);
   const moduleConfig = {...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
-    ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, secrets: {token: nanoleafToken}}} : {},
+    ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
+      {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
     ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config, playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
@@ -155,6 +161,23 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   return {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
     nanoleafState: () => lines.state(),
+    nanoleafPower: on => { lines.setPower(LINES_ADDRESS, on); },
+    nanoleafWall: async () => {
+      const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
+      try {
+        const answer = await reader.sync<Awaited<ReturnType<World['nanoleafWall']>>>(['nanoleaf-wall'], () => {}, {owner: 'bunny/modules/nanoleaf', timeoutMs: 5000});
+        assert.equal(answer.status, 'synced');
+        const wall = answer.copy.states().find(message => message.data.id === 'wall')?.data;
+        assert.ok(wall !== undefined); return wall;
+      } finally { await reader.close(); }
+    },
+    readonlyNanoleafEdit: async data => {
+      const response = await fetch(`${runtime.url}/api/v2/commands/nanoleaf-wall-edit`, {
+        method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'},
+        body: JSON.stringify({target: 'wall', data, requestId: 'readonly-nanoleaf-denied'}),
+      });
+      await response.arrayBuffer(); return response.status;
+    },
     pixooState: () => panel.state(),
     pixooPlaylists: async () => {
       const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
