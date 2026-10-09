@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
-import {createAutomation, DEFAULT_SETTINGS, DEFAULT_INTERRUPT_SET} from '../src/core/automation.js';
+import {AutomationError, createAutomation, DEFAULT_SETTINGS, DEFAULT_INTERRUPT_SET} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 
 const rule = {name:'Turn complete',kind:'event',enabled:true,trigger:{source:'core',kind:'turn-ended'},
@@ -57,6 +57,33 @@ import {deviceRecord,deviceState} from './fixtures/device.js';
 import {observation,sessionStarted,turnStarted,turnEnded} from './fixtures/agents.js';
 import {manualClock,stateDir,flush} from './support.js';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+
+void test('automation controls can be captured before start and follow the current core lifecycle',async context=>{
+  const directory=await stateDir(context),core=createCoreModule();
+  // Hosts and fixtures copy a module before its start hook runs.
+  const hosted={...core},controls=hosted.automation;
+  const unavailable=(error:unknown):boolean=>error instanceof AutomationError && error.code==='unavailable' && error.status===503;
+  assert.throws(()=>controls.rules(),unavailable);
+  assert.throws(()=>controls.create(rule,true),unavailable);
+  let harness=new ModuleHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
+  context.after(()=>harness.stop());
+  await harness.start();
+  hosted.setModeParticipants([{id:'lines',kind:'nanoleaf'}]);
+  const created=controls.create(rule,true);
+  controls.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});
+  assert.equal(controls.rule(created.id)?.name,rule.name);
+  assert.equal(controls.settings().noFlourishes,true);
+  await harness.stop();
+  assert.throws(()=>controls.rules(),unavailable);
+  assert.throws(()=>controls.replaceSettings(DEFAULT_SETTINGS),unavailable);
+  harness=new ModuleHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
+  await harness.start();
+  hosted.setModeParticipants([{id:'lines',kind:'nanoleaf'}]);
+  assert.equal(controls.rule(created.id)?.name,rule.name);
+  assert.equal(controls.settings().noFlourishes,true);
+  controls.remove(created.id);
+  assert.deepEqual(controls.rules(),[]);
+});
 
 void test('actual core commit and bus intake dispatch once; old publication, sync and restart remain inert',async context=>{
   const clock=manualClock(),directory=await stateDir(context),bus=new InProcessBus({now:clock.now});

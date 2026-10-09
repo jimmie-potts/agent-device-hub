@@ -173,6 +173,10 @@ export const isCoreModule = (module: BunnyModule): module is CoreModule => modul
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
+  const automation = (): AutomationControls => {
+    if (core === undefined) throw new AutomationError('unavailable', 503);
+    return core.automation;
+  };
   return {
     manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
@@ -182,7 +186,16 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
-    get automation() { if(core===undefined) throw new AutomationError('unavailable',503); return core.automation; },
+    // Hosts may capture controls before start; calls resolve the currently serving core.
+    automation: {
+      rules: () => automation().rules(), rule: id => automation().rule(id),
+      create: (value, owner, authorize) => automation().create(value, owner, authorize),
+      update: (id, value, authorize) => automation().update(id, value, authorize),
+      setEnabled: (id, enabled) => automation().setEnabled(id, enabled), remove: id => automation().remove(id),
+      interruptSet: () => automation().interruptSet(), replaceInterruptSet: value => automation().replaceInterruptSet(value),
+      settings: () => automation().settings(), replaceSettings: value => automation().replaceSettings(value),
+      settled: () => automation().settled(), log: (limit, before) => automation().log(limit, before),
+    },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     setModeParticipants: participants => {

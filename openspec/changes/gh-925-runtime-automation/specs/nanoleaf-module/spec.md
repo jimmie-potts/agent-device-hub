@@ -57,4 +57,3 @@ The Lines moment capability SHALL advertise the required `celebrate`, `setback` 
 #### Scenario: A full store at admission
 - **WHEN** a wall edit and a machine edit meet a full store, and later a read-only one
 - **THEN** each edit on the full store is refused with `capacity`, which the bus records at WARN, with no transaction left open and nothing changed, and both are accepted once there is room; the edit on the read-only store is refused with `internal`, which the module logs once at ERROR with the error's type, and no record holds SQLite's text
-
