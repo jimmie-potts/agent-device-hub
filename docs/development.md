@@ -973,6 +973,20 @@ job; the Automation page's unit checks join `test:runtime-dashboard:built`.
 isolation and the event-loop lag check. It follows the
 [strict profile](#strict-profile-for-new-code), tests included.
 
+For the module frontend contract (Hub #932), the existing SDK manifest/kit
+checks and runtime `gateway.test.ts` cover API 1.3 declarations, trusted asset
+authentication and response policy, passive-page compatibility, read-only
+command refusal and reads without device effects. After the root build, run
+`node --test apps/runtime/dist/tests/gateway.test.js` for the gateway boundary.
+These tests are already discovered by the core CI SDK/runtime commands below;
+they do not replace the browser interaction or disposable Acceptance checks.
+`frontend-build.test.ts` uses the production build plugin to bundle a synthetic
+module's explicit browser entry and rejects one that imports its Node-side
+implementation. Run it after the root build with
+`node --test apps/runtime/dist/tests/frontend-build.test.js`; core CI's existing
+runtime test discovery includes it. It starts no listener and keeps temporary
+workspaces under the checkout's ignored `.local/scratch/frontend-build/`.
+
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
 `test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The core
@@ -1143,6 +1157,12 @@ Use Node 24 from the worktree root. `npm run build` builds the page into
 `apps/runtime/dist/dashboard/`, after the SDK and the event contracts, and
 `npm run typecheck` checks both projects.
 
+The module-page tests cover catalog/build agreement and reuse of the shell's
+connection, including read-only refusal and cleanup of active or late syncs.
+The normal dashboard build also compiles the fixed frontend imports for the
+browser. Real feature interactions and trusted iframe execution are verified
+by the owning story's focused browser and disposable Acceptance checks.
+
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
@@ -1151,6 +1171,13 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # fresh rules, one simulated moment and safe restoration
+node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
+node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
+node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
+node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition rendering and media deletion without display writes
+node apps/runtime/dashboard/tests/pixoo-player.browser.ts # frozen sessions, playback controls and explicit restart with changes
+node apps/runtime/dashboard/tests/pixoo-monitor.browser.ts # title refresh, passive reads, presentation controls and Pixoo-only dismissal
+node apps/runtime/dashboard/tests/pixoo-settings.browser.ts # safe setup projection and explicit brightness/screen commands
 ```
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
@@ -1187,6 +1214,24 @@ keyboard selection, the saved choice and each device's result, same-mode
 reapply, a lost reply, read-only controls and reconnect/reload/restart without
 replay. It runs axe on the changed panel and writes a screenshot to its optional
 private evidence directory. It contacts no physical device.
+
+The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
+fresh synthetic library and simulated display. It checks a revision-bound name
+save through the shared shell, owner-confirmed state, read-only refusal,
+reload without resend, no display write and accessibility. It also executes a
+separately bundled trusted editor fixture while retaining passive-page script
+refusal. The full local browser command includes this journey and the Library,
+Playlists, Player, Monitor and Settings journeys. They cover saved renditions,
+referenced previews, explicit controls, read-only access and accessibility.
+Monitor's synthetic Desktop module publishes metadata through its own SDK;
+no provider files are read. This proves a title-only update reaches the page
+without a manual refresh or a new command.
+
+The `pixoo-pages` catalog scenario exercises declared React pages, passive
+bounded reads and previews, one tracked playlist edit and a forged read-only
+refusal. Run it in both catalog transports and through the disposable adapter;
+independent Acceptance also uses the pages interactively. These are source and
+simulator checks, not physical-display acceptance.
 
 ## Agent lifecycle contract checks
 

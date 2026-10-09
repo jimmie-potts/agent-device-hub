@@ -21,17 +21,35 @@ export function moduleFolders(root: string): string[] {
     .sort();
 }
 
+function modulePackages(root: string): {name: string; exports?: unknown}[] {
+  return moduleFolders(root).map(folder => {
+    const {name, exports} = JSON.parse(readFileSync(join(root, 'modules', folder, 'package.json'), 'utf8')) as {name?: unknown; exports?: unknown};
+    if (typeof name !== 'string' || !PACKAGE.test(name)) throw new Error(`modules/${folder}/package.json names no workspace package`);
+    return {name, exports};
+  });
+}
+
 /** The registry's source: one import of each module folder's package's `registration`, and the frozen list of them. */
 export function registrySource(root: string): string {
-  const packages = moduleFolders(root).map(folder => {
-    const {name} = JSON.parse(readFileSync(join(root, 'modules', folder, 'package.json'), 'utf8')) as {name?: unknown};
-    if (typeof name !== 'string' || !PACKAGE.test(name)) throw new Error(`modules/${folder}/package.json names no workspace package`);
-    return name;
-  });
+  const packages = modulePackages(root).map(({name}) => name);
   return [
     '// Written by apps/runtime/build/registry.ts from modules/*/package.json when the runtime is built; do not edit.',
     ...packages.map((name, index) => `import {registration as m${index}} from ${JSON.stringify(name)};`),
     `export const REGISTRATIONS = Object.freeze([${packages.map((_, index) => `m${index}`).join(', ')}]);`,
+    '',
+  ].join('\n');
+}
+
+/** Browser imports for modules that explicitly export `./frontend`; never imports their Node registrations. */
+export function frontendSource(root: string): string {
+  const packages = modulePackages(root)
+    .filter(entry => typeof entry.exports === 'object' && entry.exports !== null && !Array.isArray(entry.exports)
+      && Object.hasOwn(entry.exports, './frontend'))
+    .map(({name}) => `${name}/frontend`);
+  return [
+    '// Collected from explicit module package frontend exports at build time; do not edit.',
+    ...packages.map((name, index) => `import {frontend as f${index}} from ${JSON.stringify(name)};`),
+    `export const FRONTENDS = Object.freeze([${packages.map((_, index) => `f${index}`).join(', ')}]);`,
     '',
   ].join('\n');
 }

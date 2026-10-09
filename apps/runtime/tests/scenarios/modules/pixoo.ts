@@ -14,7 +14,7 @@ import {runPixooMigration} from '../../../src/index.js';
 import {migrationOf, stateDirOf} from '../../../verify/paths.js';
 import {approvalPrompt, approvalResolved, sessionStarted} from '../../fixtures/agents.js';
 import {
-  CORE_FAMILIES, StepFailure, act, answered, deviceState, dispatchOnce, expect, holds, logged, publish, running, show, type Follow, type Harness,
+  CORE_FAMILIES, StepFailure, act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, logged, publish, refusedWith, running, show, type Follow, type Harness,
   type ModuleRun, type Outcome, type Scenario, type Seed, type Step,
 } from '../framework.js';
 import {PLAYBACK_SECTION} from './playback.js';
@@ -111,6 +111,55 @@ const startPlaylist = (h: Harness, label: string, requestId: string): Promise<st
   const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
   if (list === undefined) throw new StepFailure('no playlist');
   return h.dispatch('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), requestId);
+};
+
+/** The shared pages' authenticated reads and one tracked editor command, reused by both catalog adapters (#932). */
+const pixooPages: Scenario = {
+  id: 'pixoo-pages',
+  title: 'Pixoo page reads stay passive and a permitted editor change reaches the tracked owner',
+  seed: PIXOO_SEED,
+  steps: [
+    expect('the Pixoo contributes its React pages and read-only settings', answers({as: 'reader', method: 'GET', path: '/api/v2/modules'}, answer => {
+      const module = bodyOf<{modules: {name: string; pages: {id: string; presentation?: string}[]; settings: boolean}[]}>(answer)?.modules.find(item => item.name === 'pixoo');
+      return (answer.status === 200 && module?.settings === true && ['library', 'playlists', 'player', 'monitor', 'settings'].every(id =>
+        module.pages.some(page => page.id === id && page.presentation === 'react'))) || 'the declared Pixoo pages are incomplete';
+    })),
+    ...pixooPlaylist(),
+    expect('catalog and selected preview load by bounded references', async h => {
+      const catalog = await h.gateway({as: 'reader', method: 'GET', path: '/modules/pixoo/content/catalog-media?limit=1'});
+      const media = bodyOf<{items: {renditionId: string}[]}>(catalog)?.items[0];
+      if (catalog.status !== 200 || Buffer.byteLength(catalog.text) > 256 * 1024 || media === undefined) return 'catalog read failed';
+      const preview = await h.gateway({as: 'reader', method: 'GET', path: `/modules/pixoo/content/preview.${media.renditionId}`});
+      return (preview.status === 200 && bodyOf<{renditionId: string}>(preview)?.renditionId === media.renditionId) || 'referenced preview read failed';
+    }),
+    expect('player, Monitor and settings reads do not start display output', async h => {
+      for (const path of ['/modules/pixoo/content/player', '/modules/pixoo/content/monitor', '/api/v2/modules/pixoo/settings']) {
+        const answer = await h.gateway({as: 'reader', method: 'GET', path});
+        if (answer.status !== 200) return `${path} refused ${answer.status}`;
+      }
+      return pixooState(h).sent === 0 || 'a passive read sent display output';
+    }),
+    act('the editor explicitly saves a revised playlist name', h => {
+      const list = h.reader.states<PlaylistRecord>(PIXOO.playlist)[0]?.data;
+      if (list === undefined) throw new StepFailure('the playlist is missing');
+      return dispatchOnce(h, 'operator', 'pixoo-page-rename', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+        change: {operation: 'rename', playlistId: list.id, revision: list.playlistRevision, name: 'Page edit'},
+      }), 'pixoo-page-rename-1');
+    }),
+    expect('the command completes and the owner confirms the saved name', h =>
+      completedAs(h, 'pixoo-page-rename-1', 'succeeded', 'observed') === true
+      && h.reader.states<PlaylistRecord>(PIXOO.playlist)[0]?.data.name === 'Page edit' || 'the tracked name change is incomplete'),
+    expect('a read-only caller cannot forge the editor change', async h => {
+      const list = h.reader.states<PlaylistRecord>(PIXOO.playlist)[0]?.data;
+      if (list === undefined) return 'the playlist is missing';
+      return refusedWith(await h.gateway({as: 'reader', method: 'POST', path: '/api/v2/commands/pixoo-playlist-change', body: {
+        target: PIXOO_ID, requestId: 'pixoo-page-forbidden', data: {change: {operation: 'rename', playlistId: list.id, revision: list.playlistRevision, name: 'Forbidden'}},
+      }}), 403, 'forbidden');
+    }),
+    expect('the refused change and completed library edit leave the display alone', h =>
+      pixooState(h).sent === 0 && h.reader.states<PlaylistRecord>(PIXOO.playlist)[0]?.data.name === 'Page edit' || 'unexpected owner or display change'),
+    followsItsOwners(),
+  ],
 };
 
 /** A media command: imported media in a playlist, started, accepted at once and completed once the media reached the Pixoo. */
@@ -239,7 +288,7 @@ async function migratePixoo(dataDir: string): Promise<void> {
   }
 }
 
-export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooOffline];
+export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooOffline, pixooPages];
 
 export const runs: Readonly<Record<string, ModuleRun>> = {
   'pixoo-migrated': {

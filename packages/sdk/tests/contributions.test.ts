@@ -22,8 +22,8 @@ const sign: ModuleManifest<Sign> = {
 };
 const problem = (manifest: ModuleManifest<Sign>): string | undefined => checkContributions(manifest)?.detail;
 
-it('the module API is 1.2, and a 1.2 module with pages, content, tools and settings is accepted', () => {
-  assert.equal(MODULE_API_VERSION, '1.2');
+it('the module API is 1.3, and a 1.2 module with pages, content, tools and settings is accepted', () => {
+  assert.equal(MODULE_API_VERSION, '1.3');
   assert.equal(checkManifest(sign as ModuleManifest), undefined);
   assert.equal(checkContributions({name: 'plain', apiVersion: '1.0'}), undefined, 'a module that contributes nothing needs no 1.2');
   assert.equal(problem({...sign, apiVersion: '1.3'}), undefined, 'a later minor version may contribute too');
@@ -41,13 +41,13 @@ it('a 1.0 or 1.1 module that declares a contribution is refused, and still runs 
 });
 
 it('pages need distinct IDs other than content, a title and a render', () => {
-  const ids = 'each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content';
-  for (const id of ['Preview', 'pre_view', '-preview', 'content', 'x'.repeat(65), '']) assert.equal(problem({...sign, pages: [{...page, id}]}), ids, id);
+  const ids = 'each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content or assets';
+  for (const id of ['Preview', 'pre_view', '-preview', 'content', 'assets', 'x'.repeat(65), '']) assert.equal(problem({...sign, pages: [{...page, id}]}), ids, id);
   assert.equal(problem({...sign, pages: [page, page]}), ids, 'a repeated ID');
   const titled = 'each page needs a title of at most 80 characters and a render';
   assert.equal(problem({...sign, pages: [{...page, title: ''}]}), titled);
   assert.equal(problem({...sign, pages: [{...page, title: 'x'.repeat(81)}]}), titled);
-  assert.equal(problem({...sign, pages: [{...page, render: 'html' as unknown as ModulePage['render']}]}), titled);
+  assert.equal(problem({...sign, pages: [{...page, render: 'html' as unknown as NonNullable<ModulePage['render']>}]}), titled);
   const many = Array.from({length: MAX_PAGES + 1}, (_, index) => ({...page, id: `page-${index}`}));
   assert.equal(problem({...sign, pages: many}), `pages must be a list of at most ${MAX_PAGES}`);
   assert.equal(problem({...sign, content: 'frames' as unknown as NonNullable<ModuleManifest['content']>}), 'content must be a function');
@@ -74,4 +74,3 @@ it('settings show what configure accepted, so they need configure, an object sch
   assert.equal(problem({...sign, settings: {schema: {type: 'array'} as unknown as ModuleTool['input'], show: () => ({})}}), 'settings need an object schema and a show');
   assert.equal(problem({...sign, settings: {schema: {type: 'object'}, show: undefined as unknown as () => Record<string, unknown>}}), 'settings need an object schema and a show');
 });
-

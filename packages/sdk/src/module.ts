@@ -12,12 +12,14 @@ import type {SpanRecorder} from './spans.js';
  * major version or a newer minor one. A module states the version it was written for as a literal, not this constant,
  * so that a later major version refuses it until it is updated.
  */
-export const MODULE_API_VERSION = '1.2';
+export const MODULE_API_VERSION = '1.3';
 
 const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 /** The module API version that brought pages, content, tools and settings (Hub #835). */
 const CONTRIBUTIONS_VERSION = '1.2';
+/** The module API version that adds frontend presentations and trusted assets (Hub #932). */
+const FRONTEND_VERSION = '1.3';
 /** A routing ID (ADR 0012): the last token of an entity's routing keys, so a device's command key is `bunny.cmd.<family>.<id>`. */
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_ROUTING_ID = 128;
@@ -59,6 +61,16 @@ export const MAX_PAGES = 16;
 export const MAX_TOOLS = 16;
 /** The page ID the gateway keeps for a module's content, `/modules/<name>/content/<ref>`. */
 export const CONTENT_PATH = 'content';
+/** The reserved route for reviewed build assets, separate from user content. */
+export const ASSETS_PATH = 'assets';
+export const MAX_ASSETS = 64;
+/** The gateway's per-asset response bound; admission never invokes an asset reader. */
+export const MAX_ASSET_BYTES = 16 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ASSET_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+const SCRIPT_TYPE = 'text/javascript; charset=utf-8';
+const STYLE_TYPE = 'text/css; charset=utf-8';
+const ASSET_TYPES = new Set<string>([SCRIPT_TYPE, STYLE_TYPE, 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);
 const contributionProblem = (detail: string): ManifestProblem => ({code: 'invalid-request', detail});
 const isText = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
 /** An object schema whose arguments or results the gateway checks: a JSON object with `type: "object"`. */
@@ -66,28 +78,70 @@ const isObjectSchema = (value: unknown): value is JsonObjectSchema =>
   typeof value === 'object' && value !== null && !Array.isArray(value) && (value as {type?: unknown}).type === 'object';
 
 /**
- * Why the runtime would refuse a manifest's pages, content, tools or settings (module API 1.2, Hub #835), or undefined.
- * A module that declares any of them must be written for module API 1.2 or later. Pages have distinct IDs, none of them
- * `content`, a title and a `render`; tools have distinct names, a description, object schemas whose arguments allow no
- * other member, and a `read`; settings need `configure`, an object schema and a `show`.
+ * Why the runtime would refuse a manifest's contributions, or undefined. Pages, content, tools and settings need
+ * module API 1.2; interactive pages and reviewed assets need 1.3 (Hub #932). Pages have distinct IDs, never `content`
+ * or `assets`; editor script/style links resolve declared assets. Checks invoke no renderer or asset reader.
  */
 export function checkContributions(manifest: ModuleManifest): ManifestProblem | undefined {
-  const {pages, content, tools, settings} = manifest;
-  if (pages === undefined && content === undefined && tools === undefined && settings === undefined) return undefined;
+  const {pages, content, tools, settings, assets, upload} = manifest;
+  if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined && upload === undefined) return undefined;
+  const frontendVersion = checkApiVersion(FRONTEND_VERSION, manifest.apiVersion) === undefined;
+  if (assets !== undefined && !frontendVersion) return contributionProblem(`frontend pages and assets need module API ${FRONTEND_VERSION}`);
+  if (upload !== undefined) {
+    if (!frontendVersion) return contributionProblem(`uploads need module API ${FRONTEND_VERSION}`);
+    if (!isObject(upload) || typeof upload.family !== 'string' || upload.family.length > 64
+      || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(upload.family)
+      || !Number.isSafeInteger(upload.maxBytes) || upload.maxBytes < 1 || upload.maxBytes > MAX_UPLOAD_BYTES
+      || typeof upload.stage !== 'function' || Object.keys(upload).some(key => !['family', 'maxBytes', 'stage'].includes(key))) {
+      return contributionProblem('an upload needs a command family, a byte limit within 10 MiB and a stage callback');
+    }
+  }
   // The module must be written for 1.2 or a later minor version of the same major.
   if (checkApiVersion(CONTRIBUTIONS_VERSION, manifest.apiVersion) !== undefined) {
     return contributionProblem(`pages, content, tools and settings need module API ${CONTRIBUTIONS_VERSION}`);
+  }
+  const assetTypes = new Map<string, string>();
+  if (assets !== undefined) {
+    const given: unknown = assets;
+    if (!Array.isArray(given) || assets.length > MAX_ASSETS) return contributionProblem(`assets must be a list of at most ${MAX_ASSETS}`);
+    for (const asset of assets) {
+      if (!isObject(asset)) return contributionProblem('each asset needs a distinct routing ID, an allowed media type and a read');
+      const {id, type, read} = asset;
+      if (typeof id !== 'string' || !ASSET_ID.test(id) || id === CONTENT_PATH || id === ASSETS_PATH || assetTypes.has(id)
+          || typeof type !== 'string' || !ASSET_TYPES.has(type) || typeof read !== 'function'
+          || Object.keys(asset).some(key => !['id', 'type', 'read'].includes(key))) {
+        return contributionProblem('each asset needs a distinct routing ID, an allowed media type and a read');
+      }
+      assetTypes.set(id, type);
+    }
   }
   if (pages !== undefined) {
     const given: unknown = pages;
     if (!Array.isArray(given) || pages.length > MAX_PAGES) return contributionProblem(`pages must be a list of at most ${MAX_PAGES}`);
     const ids = new Set<string>();
     for (const page of pages) {
-      const {id, title, render} = page as Partial<ModulePage>;
-      if (typeof id !== 'string' || !PAGE_ID.test(id) || id.length > 64 || id === CONTENT_PATH || ids.has(id)) {
-        return contributionProblem('each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content');
+      if (!isObject(page)) return contributionProblem('each page must be an object');
+      const {id, title, render, presentation} = page;
+      if (typeof id !== 'string' || !PAGE_ID.test(id) || id.length > 64 || id === CONTENT_PATH || id === ASSETS_PATH || ids.has(id)) {
+        return contributionProblem('each page needs a distinct ID of lowercase letters and digits with single hyphens, at most 64, other than content or assets');
       }
-      if (!isText(title, 80) || typeof render !== 'function') return contributionProblem('each page needs a title of at most 80 characters and a render');
+      if (presentation === undefined || presentation === 'passive') {
+        if (!isText(title, 80) || typeof render !== 'function') return contributionProblem('each page needs a title of at most 80 characters and a render');
+        if (Object.hasOwn(page, 'scripts') || Object.hasOwn(page, 'styles')) return contributionProblem('a passive page declares no scripts or styles');
+      } else if (presentation === 'react' || presentation === 'trusted-editor') {
+        if (!frontendVersion) return contributionProblem(`frontend pages and assets need module API ${FRONTEND_VERSION}`);
+        if (!isText(title, 80)) return contributionProblem('each page needs a title of at most 80 characters');
+        if (presentation === 'react') {
+          if (Object.hasOwn(page, 'render') || Object.hasOwn(page, 'scripts') || Object.hasOwn(page, 'styles')) {
+            return contributionProblem('a React page declares no renderer, scripts or styles');
+          }
+        } else {
+          if (typeof render !== 'function') return contributionProblem('a trusted editor needs a render');
+          if (!checkAssetLinks(page.scripts, SCRIPT_TYPE, assetTypes) || !checkAssetLinks(page.styles, STYLE_TYPE, assetTypes)) {
+            return contributionProblem('a trusted editor needs distinct declared script and style asset IDs with matching media types');
+          }
+        }
+      } else return contributionProblem('each page needs a supported presentation');
       ids.add(id);
     }
   }
@@ -114,6 +168,17 @@ export function checkContributions(manifest: ModuleManifest): ManifestProblem | 
     if (!isObjectSchema(schema) || typeof show !== 'function') return contributionProblem('settings need an object schema and a show');
   }
   return undefined;
+}
+
+/** A bounded, unique list of references to declared assets of the expected type. */
+function checkAssetLinks(value: unknown, type: string, assets: ReadonlyMap<string, string>): boolean {
+  if (!Array.isArray(value) || value.length > MAX_ASSETS) return false;
+  const ids = new Set<string>();
+  for (const id of value) {
+    if (typeof id !== 'string' || assets.get(id) !== type || ids.has(id)) return false;
+    ids.add(id);
+  }
+  return true;
 }
 
 /** What a module's `configure` accepts: its configuration, and the devices it controls. */
@@ -144,14 +209,20 @@ export type JsonObjectSchema = {readonly type: 'object'; readonly [keyword: stri
 /**
  * A page the module contributes to the runtime's gateway (module API 1.2, Hub #835), served at
  * `/modules/<name>/<id>` to a browser session or a credential with the `read` scope. Its HTML may refer to the module's
- * content by reference, as `content/<ref>`, such as a preview frame. The gateway serves it with a policy that allows no
- * script, frame or form, and only images and styles from the runtime itself.
+ * content by reference, as `content/<ref>`, such as a preview frame. Passive pages retain their restrictive policy;
+ * module API 1.3 adds browser components and reviewed bundled editors. Renderers and readers change no state.
  */
-export type ModulePage = {
+type PageIdentity = {
   /** Lowercase letters and digits with single hyphens, at most 64 characters, and not `content`. */
   readonly id: string;
   /** A short title for a list of pages, at most 80 characters. */
   readonly title: string;
+};
+
+export type PassiveModulePage = PageIdentity & {
+  readonly presentation?: 'passive';
+  readonly scripts?: never;
+  readonly styles?: never;
   /**
    * The page's HTML. It reads the module's own state and changes nothing. An exception that escapes it fails the
    * module, as one from a handler does.
@@ -159,8 +230,54 @@ export type ModulePage = {
   readonly render: () => string | Promise<string>;
 };
 
+/** A component compiled from the module's separate browser entry, never its Node implementation. */
+export type ReactModulePage = PageIdentity & {
+  readonly presentation: 'react';
+  readonly render?: never;
+  readonly scripts?: never;
+  readonly styles?: never;
+};
+
+/** Trusted same-origin application code; the gateway injects only the declared build scripts and styles. */
+export type TrustedEditorModulePage = PageIdentity & {
+  readonly presentation: 'trusted-editor';
+  readonly render: () => string | Promise<string>;
+  readonly scripts: readonly string[];
+  readonly styles: readonly string[];
+};
+export type ModulePage = PassiveModulePage | ReactModulePage | TrustedEditorModulePage;
+
+export type ModuleAssetType = 'text/javascript; charset=utf-8' | 'text/css; charset=utf-8'
+  | 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/svg+xml';
+/** A reviewed build asset, never user uploads or a requested filesystem path. */
+export type ModuleAsset = {
+  readonly id: string;
+  readonly type: ModuleAssetType;
+  readonly read: () => Uint8Array | Promise<Uint8Array>;
+};
+
 /** Content the module serves by reference, such as a preview frame: its media type and bytes. */
 export type ModuleContent = {readonly type: string; readonly bytes: Uint8Array};
+/** API 1.3 content parameters. The reader validates its own query fields and remains read-only. */
+export type ModuleContentRequest = {readonly query: Readonly<Record<string, string>>; readonly signal: AbortSignal};
+
+/** One ordinary upload preparation, before dispatch through the existing tracked command boundary. */
+export type ModuleUploadRequest = {
+  readonly target: string; readonly requestId: string; readonly name: string;
+  readonly bytes: Uint8Array; readonly signal: AbortSignal;
+};
+export type ModuleUploadReply = {status: 'accepted'; requestId: string} | ErrorBody;
+/** The module owns staged input until a definitive refusal or terminal outcome; uncertainty is not cancellation. */
+export type ModuleStagedUpload = {
+  readonly data: Record<string, unknown>;
+  /** Called once with the dispatcher reply. Never replace a known command reply with a cleanup failure. */
+  readonly finish: (reply: ModuleUploadReply) => void | Promise<void>;
+};
+export type ModuleUpload = {
+  readonly family: string;
+  readonly maxBytes: number;
+  readonly stage: (request: ModuleUploadRequest) => ModuleStagedUpload | ErrorBody | Promise<ModuleStagedUpload | ErrorBody>;
+};
 
 /**
  * A read tool the module contributes to MCP (module API 1.2, Hub #835). The gateway publishes it as
@@ -210,11 +327,16 @@ export type ModuleManifest<Config = unknown> = {
   readonly configure?: Configure<Config>;
   /** Its pages, at most `MAX_PAGES` (module API 1.2). */
   readonly pages?: readonly ModulePage[];
+  /** Finite reviewed build assets (module API 1.3), served on the separate reserved asset route. */
+  readonly assets?: readonly ModuleAsset[];
   /**
    * Its content by reference (module API 1.2): what `ref`, an ID of 1 to 128 letters, digits, underscores, dots or
-   * hyphens, names, or undefined when there is no such content. It reads and changes nothing else.
+   * hyphens, names, or undefined when there is no such content. It reads and changes nothing else. API 1.3 adds
+   * bounded query parameters, a signal aborted on completion or timeout, and safe returned ErrorBody refusals.
    */
-  readonly content?: (ref: string) => ModuleContent | undefined | Promise<ModuleContent | undefined>;
+  readonly content?: (ref: string, request?: ModuleContentRequest) => ModuleContent | ErrorBody | undefined | Promise<ModuleContent | ErrorBody | undefined>;
+  /** One bounded binary preparation for an existing tracked command (module API 1.3). */
+  readonly upload?: ModuleUpload;
   /** Its read tools, at most `MAX_TOOLS` (module API 1.2). */
   readonly tools?: readonly ModuleTool[];
   /** What the gateway shows of its configuration (module API 1.2). */
