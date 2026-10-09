@@ -91,12 +91,20 @@ try {
     for (let attempt = 0; (await world.pixooPlaylists())[0]?.name !== 'Saved player changes' && attempt < 100; attempt++) await delay(20);
     assert.equal((await readPlayer()).session?.playlist.name, 'Synthetic player', 'the session retains its frozen saved snapshot');
     await page.getByText('Saved changes are waiting for the next session. Restart with changes applies them now.', {exact: true}).waitFor();
+    // Restart while already playing keeps the coarse display fields unchanged. Detailed frozen metadata must still refresh.
+    await page.getByRole('button', {name: 'Restart with changes', exact: true}).click();
+    let liveRestart = await waitState('playing');
+    for (let attempt = 0; liveRestart.session?.id === started.session.id && attempt < 100; attempt++) { await delay(20); liveRestart = await readPlayer(); }
+    assert.ok(liveRestart.session); assert.notEqual(liveRestart.session.id, started.session.id);
+    assert.equal(liveRestart.session.playlist.name, 'Saved player changes');
+    await page.getByRole('heading', {name: 'Saved player changes', exact: true, level: 3}).waitFor();
+    await page.getByText(`Session revision ${saved.playlistRevision + 1} · Saved revision ${saved.playlistRevision + 1}`, {exact: true}).waitFor();
     await page.getByRole('button', {name: 'Stop', exact: true}).click();
     const stopped = await waitState('idle'); assert.equal(stopped.state.intent, 'stopped'); assert.ok(stopped.session);
     const afterStop = world.pixooState().sent;
     await page.reload(); await feed(page, 'connected');
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
-    assert.equal(sent.length, setupRequests + 7, 'reload never resends'); assert.equal(world.pixooState().sent, afterStop);
+    assert.equal(sent.length, setupRequests + 8, 'reload never resends'); assert.equal(world.pixooState().sent, afterStop);
     await page.getByRole('button', {name: 'Restart with changes', exact: true}).click();
     const restarted = await waitState('playing'); assert.ok(restarted.session);
     assert.notEqual(restarted.session.id, started.session.id);
@@ -119,7 +127,7 @@ try {
     await page.reload(); await feed(page, 'connected'); await page.getByText('Read-only access.', {exact: true}).waitFor();
     assert.equal(await play.count(), 0);
     const readerRequests = sent.length; await readPlayer(); assert.equal(sent.length, readerRequests);
-    assert.equal(sent.length, 13); assert.deepEqual(errors, []);
+    assert.equal(sent.length, 14); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-player-controls', requests: sent.length, simulatedWrites: world.pixooState().sent,
       frozenSession: true, restartWithChanges: true, noReplay: true, readOnlyControls: true, axe: 'passed'})}\n`);
   } finally {await context.close();}

@@ -7,6 +7,8 @@ import type {DisplayRecord, PlaylistRecord} from '../module/schemas.js';
 import {LibraryPage} from './library.js';
 import {PlaylistsPage} from './playlists.js';
 import {PlayerPage} from './player.js';
+import {SettingsPage} from './settings.js';
+import {MonitorPage} from './monitor.js';
 
 type Record = DeviceRecord | PlaylistRecord | DisplayRecord;
 type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined};
@@ -86,6 +88,18 @@ function Player({context}: {context: FrontendContext}): React.JSX.Element {
   return <PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/>;
 }
 
+function Settings({context}: {context: FrontendContext}): React.JSX.Element {
+  const catalog = useCatalog(context.api, false);
+  return <SettingsPage context={context} device={catalog.device} live={catalog.live}/>;
+}
+
+function Monitor({context}: {context: FrontendContext}): React.JSX.Element {
+  const catalog = useCatalog(context.api, false, true);
+  return <MonitorPage context={context} device={catalog.device} display={catalog.display} live={catalog.live}/>;
+}
+
 export const frontend: FrontendContribution = {module: 'pixoo', pages: [
   {id: 'library', Component: Library}, {id: 'playlists', Component: Playlists}, {id: 'player', Component: Player},
+  {id: 'settings', Component: Settings},
+  {id: 'monitor', Component: Monitor},
 ]};

@@ -72,6 +72,11 @@ export class MonitorPresentation {
  }
  status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
  rendition(){return this.dashboard.status();}
+ /** Current cached card only. Reading never starts a render or substitutes the previous track's pixels. */
+ cachedCard():Uint8Array|null{
+  const card=this.card;
+  return this.playback.view.card&&card?.key==='card:'+JSON.stringify(this.playback.view)&&card.rgb!==null?card.rgb.slice():null;
+ }
  /** The dashboard's latest layout, rendered or not, not copied: the sessions, matches and page the display record reports. */
  layout():Readonly<DashboardLayout>|null{return this.dashboard.layout();}
  /** The dashboard renders only while Monitor participates; its layout follows every input. */

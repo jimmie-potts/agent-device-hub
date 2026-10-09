@@ -27,6 +27,16 @@ The Pixoo module SHALL contribute its existing library, playlist, player, previe
 - **WHEN** a caller reads the player content reference or opens the Player page
 - **THEN** it receives existing state, session and sample time within 256 KiB, no query is accepted, and no playback or device command is sent
 
+#### Scenario: Inspect settings and explicitly control the display
+- **WHEN** a caller opens the Pixoo settings page
+- **THEN** the page shows the safe configuration projection and current device facts without a device command
+- **AND** configuration changes use the runtime configuration file and restart, while explicit brightness and screen controls use the existing tracked commands
+
+#### Scenario: Monitor details follow their owner
+- **WHEN** a session title, cached preview or player detail changes while the small display summary remains equal
+- **THEN** the owner advances the existing display record revision so the page refreshes its referenced details without polling or a second connection
+- **AND** Monitor reads only copied session facts and cached pixels; dismissal acknowledges only the Pixoo consumer through the existing command
+
 #### Scenario: Ordinary upload and staging cleanup
 - **WHEN** a user uploads synthetic media larger than the JSON command limit and the import completes, fails or its accepted request is repeated
 - **THEN** one original import is tracked, no duplicate import is sent, and every terminal or definitively refused upload releases its private staged input without changing the display

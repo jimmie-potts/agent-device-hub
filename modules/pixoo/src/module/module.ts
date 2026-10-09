@@ -25,9 +25,12 @@ import {Library} from '../library/index.js';
 import {Player, LibraryPlaybackStore} from '../playback/index.js';
 import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
+import {pixooSettings} from './settings.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
 import {readPixooContent} from './content.js';
 import {playerContent} from './player-content.js';
+import {readMonitorContent} from './monitor-content.js';
+import type {PlaybackSourceStatus} from '../presentation/sources.js';
 import {PixooUploads} from './upload.js';
 import type {RenderRequest} from './render-worker.js';
 import {
@@ -100,7 +103,9 @@ export function createPixooModule(options: PixooOptions): BunnyModule<PixooConfi
     manifest: {
       name: PIXOO_MODULE, apiVersion: '1.3', configure: section => configurePixoo(section, {simulated: options.transport.simulated}),
       pages: [{id: 'playlists', title: 'Playlists', presentation: 'react'}, {id: 'library', title: 'Library', presentation: 'react'},
-        {id: 'player', title: 'Player', presentation: 'react'}],
+        {id: 'player', title: 'Player', presentation: 'react'}, {id: 'monitor', title: 'Monitor', presentation: 'react'},
+        {id: 'settings', title: 'Settings', presentation: 'react'}],
+      settings: pixooSettings(options.transport.simulated),
       content: (ref, request) => running?.content(ref, request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'}),
       upload: {family: FAMILIES.assetChange, maxBytes: MAX_UPLOAD_BYTES,
         stage: request => running?.stage(request) ?? errorBody('unavailable', {detail: 'the Pixoo is not running'})},
@@ -171,6 +176,9 @@ class PixooRuntime {
   #catalogRecords = new Map<string, string>();
   /** The revision of the records last committed and applied to `#shown`, which a sync is answered at. */
   #servedRevision = 0;
+  /** Referenced player/Monitor details may change while their small display summary stays equal. */
+  #detailVersion = 0;
+  #publishedDetails = 0;
   /** Admissions and publishes run one at a time, so each compares against what the one before it committed. */
   #serial: Promise<unknown> = Promise.resolve();
   /** The Now Playing view last given to the presentation, so an unchanged one is not given again. */
@@ -275,8 +283,8 @@ class PixooRuntime {
     await uploads.recover();
     await this.#serve();
     await this.#respond();
-    player.subscribe(() => { this.#changed(); });
-    monitor.onChange = () => { this.#changed(); };
+    player.subscribe(() => { this.#detailVersion += 1; this.#changed(); });
+    monitor.onChange = () => { this.#detailVersion += 1; this.#changed(); };
     // The copies of the core's sessions and of the playback record, rebuilt by sync and never stored.
     await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); });
     await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); });
@@ -335,6 +343,12 @@ class PixooRuntime {
       if (request?.signal.aborted === true) return errorBody('cancelled', {detail: 'the content read was cancelled'});
       return this.#player === undefined ? errorBody('unavailable', {detail: 'the Pixoo player is not running'})
         : playerContent(this.#player, this.#deviceClock.now(), this.#options.transport.simulated);
+    }
+    if (ref === 'monitor' || ref === 'monitor-sessions' || ref.startsWith('monitor-frame.') || ref === 'now-playing-frame') {
+      return this.#monitor === undefined ? errorBody('unavailable', {detail: 'the Pixoo presentation is not running'})
+        : readMonitorContent({monitor: this.#monitor, sessions: [...this.#sessions.records.values()],
+          playback: this.#nowPlaying === '' ? {source: 'unavailable', view: {card: false}}
+            : JSON.parse(this.#nowPlaying) as PlaybackSourceStatus}, ref, request);
     }
     return readPixooContent(library, this.#config.device.profile, ref, request, this.#options.transport.simulated ? 100 : 500);
   }
@@ -680,7 +694,9 @@ class PixooRuntime {
     const outbox = this.#outbox, store = this.#store;
     if (outbox === undefined || store === undefined) return;
     const changes = (records: Map<string, string>): {changed: [string, string][]; removed: string[]} =>
-      ({changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json), removed: [...this.#shown.keys()].filter(key => !records.has(key))});
+      ({changed: [...records].filter(([key, json]) => this.#shown.get(key)?.json !== json
+        || key === `${FAMILIES.display}/${this.#device}` && this.#detailVersion !== this.#publishedDetails),
+      removed: [...this.#shown.keys()].filter(key => !records.has(key))});
     if (work === undefined) {
       const {changed, removed} = changes(this.#records());
       if (changed.length === 0 && removed.length === 0) {
@@ -689,13 +705,14 @@ class PixooRuntime {
       }
     }
     const applied: [string, Shown | undefined][] = [];
-    let transmission = this.#lastTransmission, revision = this.#servedRevision;
+    let transmission = this.#lastTransmission, revision = this.#servedRevision, detailVersion = this.#publishedDetails;
     await outbox.transaction(add => {
       // This publish takes every change so far; one after this point waits for the next.
       this.#changedAt = undefined;
       work?.before?.();
       transmission = this.#transmission(work?.transmission ?? this.#lastTransmission);
       const {changed, removed} = changes(this.#records(transmission));
+      detailVersion = this.#detailVersion;
       const parent = work?.parent === undefined ? {} : {parent: work.parent};
       if (changed.length > 0 || removed.length > 0) {
         revision = store.nextRevision();
@@ -721,6 +738,7 @@ class PixooRuntime {
       else this.#shown.set(key, shown);
     }
     this.#servedRevision = revision;
+    this.#publishedDetails = detailVersion;
     this.#lastTransmission = transmission;
   }
 
