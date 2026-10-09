@@ -44,3 +44,21 @@ The Pixoo module SHALL contribute its existing library, playlist, player, previe
 #### Scenario: Abandoned upload after restart
 - **WHEN** Pixoo restarts with an abandoned uploader-owned hash file
 - **THEN** unfinished commands are reported uncertain, the temporary file is removed, and no import or display command is replayed
+
+## MODIFIED Requirements
+
+### Requirement: Pixoo module and its configuration
+
+The Pixoo SHALL run in the runtime as the module `pixoo`, created by `createPixooModule({transport})` with module API 1.3, from the package `@jimmie-potts/pixoo` under `modules/pixoo`, which imports only the SDK, the contracts package, its own files, Node built-ins and third-party packages. Its manifest's `configure` SHALL accept a section with `device` (a routing ID, a private IPv4 address, a profile the transport accepts, and an optional label, model and firmware), `hostedGif` (bind, port and origin), the starting `presentation` and `nowPlaying` settings, and `playback` (the playback record to follow), and SHALL name the device as the module's device. It SHALL refuse any other section with `invalid-request` and fixed text that repeats no value. A real transport SHALL accept only the observed device profiles and SHALL need `hostedGif` for the hosted profile; a simulated one SHALL also accept the simulator's profile. The module SHALL read no secret. `convertPixooSettings` SHALL turn the Pixoo service's `device.json`, `hosted-gif.json`, `presentation.json` and `now-playing.json` into a section the module accepts, with the Hub's device ID `pixoo-local` unless told another, or a refusal.
+
+#### Scenario: A valid section
+- **WHEN** the runtime admits a section naming device `pixoo-1` at a private address with an observed profile
+- **THEN** the module is accepted with `pixoo-1` as its device, and without a section it is refused with `not-found`
+
+#### Scenario: Sections the module refuses
+- **WHEN** a section has a device ID with a space, a public or malformed address, an unknown profile, an unknown member, a hosted origin that is not http, a presentation or Now Playing setting of another version, or a malformed playback ID, or names the hosted profile without `hostedGif` for a real device
+- **THEN** each is refused with `invalid-request`, and no refusal repeats a value from the section
+
+#### Scenario: The service's settings converted
+- **WHEN** the conversion reads a version 1 device file with the hosted profile, the hosted listener's file and the presentation and Now Playing files
+- **THEN** it returns a section with device `pixoo-local` that the module accepts and that names no secret, and a device file of another version, a hosted profile without the listener or a device ID that is not a routing ID gives a refusal

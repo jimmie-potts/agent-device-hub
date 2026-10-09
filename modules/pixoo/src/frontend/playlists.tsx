@@ -3,7 +3,7 @@ import React, {useEffect, useId, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {PlaylistChangeRequest, PlaylistRecord, Policy} from '../module/schemas.js';
-import {PreviewFrame} from './preview.js';
+import {Preview, PreviewFrame} from './preview.js';
 
 type Change = PlaylistChangeRequest['change'];
 type Item = {id?: string; key: string; renditionId: string; playback: Policy};
@@ -31,17 +31,25 @@ function mediaPage(value: unknown): MediaPage {
   return value as MediaPage;
 }
 
+function mediaLabel(media: Media, items: readonly Media[]): string {
+  let length = 10;
+  while (length < media.renditionId.length && items.some(item => item.renditionId !== media.renditionId
+    && item.renditionId.startsWith(media.renditionId.slice(0, length)))) length++;
+  return `${media.name} · rendition ${media.renditionId.slice(0, length)}`;
+}
+
 function MediaPicker({context, disabled, add}: {context: FrontendContext; disabled: boolean; add: (media: Media) => void}): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [offset, setOffset] = useState(0);
   const [catalog, setCatalog] = useState<MediaPage>();
   const [selected, setSelected] = useState('');
+  const [previewReady, setPreviewReady] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const id = useId();
   useEffect(() => {
     let disposed = false;
-    setLoading(true); setError(undefined); setCatalog(undefined); setSelected('');
+    setLoading(true); setError(undefined); setCatalog(undefined); setSelected(''); setPreviewReady(false);
     const params = new URLSearchParams({q: query, offset: String(offset), limit: String(LIMIT)});
     void context.api.read(`/modules/pixoo/content/catalog-media?${params}`).then(value => {
       const page = mediaPage(value);
@@ -57,11 +65,15 @@ function MediaPicker({context, disabled, add}: {context: FrontendContext; disabl
     <input id={id} type="search" value={query} maxLength={120} onChange={event => { setQuery(event.target.value); setOffset(0); }}/>
     {loading && <p role="status">Loading media…</p>}
     {error !== undefined && <p role="status">Media unavailable ({error}). Change the search to try again.</p>}
-    <Select label="Media to add" value={selected} onChange={setSelected}
-      options={[{value: '', label: 'Choose…'}, ...(catalog?.items ?? []).map(item => ({value: item.renditionId, label: item.name}))]}/>
+    <Select label="Media to add" value={selected} onChange={value => { setPreviewReady(false); setSelected(value); }}
+      options={[{value: '', label: 'Choose…'}, ...(catalog?.items ?? []).map(item => ({value: item.renditionId, label: mediaLabel(item, catalog?.items ?? [])}))]}/>
+    {media !== undefined && <div role="group" aria-label="Selected rendition to add">
+      <p>{media.name}</p><p>{media.renditionId}</p>
+      <Preview key={media.renditionId} api={context.api} renditionId={media.renditionId} active={context.connected} onReady={setPreviewReady}/>
+    </div>}
     <div className="actions">
-      <button type="button" disabled={loading || media === undefined || media.compatible === false}
-        onClick={() => { if (media !== undefined && media.compatible !== false) add(media); }}>Add selected media</button>
+      <button type="button" disabled={loading || media === undefined || media.compatible === false || !previewReady}
+        onClick={() => { if (media !== undefined && media.compatible !== false && previewReady) add(media); }}>Add selected media</button>
       <button type="button" className="secondary" disabled={loading || offset === 0} onClick={() => { setOffset(Math.max(0, offset - LIMIT)); }}>Previous media to add</button>
       <button type="button" className="secondary" disabled={loading || catalog === undefined || offset + LIMIT >= catalog.total}
         onClick={() => { setOffset(offset + LIMIT); }}>Next media to add</button>

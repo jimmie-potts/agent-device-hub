@@ -102,7 +102,7 @@ export function MediaEditor({context, device, live, assetId, renditionId, comple
       </fieldset>}
       <p className="hint">Rendering preserves the original and saved renditions. Playlist items keep their selected rendition.</p>
       <a href="#/module/pixoo/playlists">Use in playlist</a>
-      <p className="hint">Choose saved media on Playlists, then save its items.</p>
+      <p className="hint">On Playlists, choose the exact saved rendition and inspect its preview before adding it, then save its items.</p>
     </>}
     {failure !== undefined && <p role="alert">{failure}</p>}
     <button type="button" className="secondary" onClick={close}>Close preview</button>

@@ -16,7 +16,22 @@ try {
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     page.on('dialog', dialog => {void dialog.accept();});
     const sent = changes(page);
+    let refusedSyncs = 0;
+    await page.route('**/api/sdk/v1/sync', async route => {
+      const body = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
+      if (refusedSyncs === 0 && body.request?.data?.families?.includes('pixoo-playlist') === true) {
+        refusedSyncs++;
+        await route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"unavailable","retryable":true}}'});
+      } else await route.continue();
+    });
     await page.goto(`${world.url}/#/module/pixoo/playlists`); await feed(page, 'connected');
+    await page.getByRole('alert').filter({hasText: 'Pixoo records unavailable (unavailable).'}).waitFor();
+    assert.equal(refusedSyncs, 1); assert.equal(sent.length, 0, 'a failed catalog observation sends no mutation');
+    await page.getByRole('button', {name: 'Retry Pixoo records', exact: true}).click();
+    await page.getByRole('textbox', {name: 'New playlist name', exact: true}).waitFor();
+    await page.waitForFunction(() => document.querySelector('input[autocomplete="off"]')?.hasAttribute('disabled') === false);
+    assert.equal(await page.getByRole('alert').filter({hasText: 'Pixoo records unavailable'}).count(), 0);
+    assert.equal(sent.length, 0, 'explicit sync recovery never retries a command');
     await page.getByRole('textbox', {name: 'New playlist name', exact: true}).fill('Synthetic sequence');
     assert.equal(sent.length, 0, 'opening and drafting sends no command');
     assert.deepEqual(await world.pixooPlaylists(), []);
@@ -49,8 +64,10 @@ try {
     await page.getByRole('link', {name: 'Playlists', exact: true}).click();
     await page.getByRole('combobox', {name: 'Playlist', exact: true}).selectOption(created.id);
     const media = page.getByRole('combobox', {name: 'Media to add', exact: true});
-    await page.getByRole('option', {name: 'Sequence still.png', exact: true}).waitFor({state: 'attached'});
-    await media.selectOption({label: 'Sequence still.png'});
+    const addedMedia = (await world.pixooMedia()).items[0]; assert.ok(addedMedia);
+    await media.locator('option').filter({hasText: `Sequence still.png · rendition ${addedMedia.renditionId.slice(0, 10)}`}).waitFor({state: 'attached'});
+    await media.selectOption(addedMedia.renditionId);
+    await page.getByRole('group', {name: 'Selected rendition to add', exact: true}).getByRole('img', {name: 'Effective preview', exact: true}).waitFor();
     await page.getByRole('button', {name: 'Add selected media', exact: true}).click();
     await page.getByRole('button', {name: 'Add selected media', exact: true}).click();
     const thumbnail = page.getByRole('img', {name: 'Item 1 preview', exact: true});

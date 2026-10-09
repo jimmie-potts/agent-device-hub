@@ -575,38 +575,49 @@ export class Gateway {
     const input = actionInput({target: params.get('target'), requestId, data: {}});
     const bytes = await readUpload(request, upload.maxBytes);
     this.#admit(request);
-    const controller = new AbortController();
-    let prepared;
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, 'bunny.command.request', {parent, kind: 'server',
+      attributes: {'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST'}});
+    this.#dashboardTraces.set(request, span.context);
     try {
-      prepared = await this.#call(name, () => upload.stage({target: input.target, requestId, name: label, bytes, signal: controller.signal}));
-    } finally {controller.abort();}
-    if (typeof prepared !== 'object' || prepared === null) throw refuse('internal', 'the module returned invalid upload preparation');
-    if ('error' in prepared) {
-      const code = prepared.error?.code;
-      throw refuse(isErrorCode(code) ? code : 'internal', 'the module refused upload preparation');
-    }
-    if (typeof prepared.finish !== 'function') throw refuse('internal', 'the upload has no preparation cleanup');
-    let answer: ActionAnswer;
-    let dispatching = false;
-    try {
-      this.#admit(request);
-      const action = actionInput({target: input.target, requestId, data: prepared.data});
-      const encoded = JSON.stringify(action);
-      if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw refuse('too-large', 'the prepared command exceeds the JSON command limit');
-      if (this.#options.redactions.holds(encoded)) throw refuse('internal', 'the prepared command holds a secret');
-      dispatching = true;
-      answer = await this.#dispatch(principal, family, action, request);
-    } catch (error) {
-      answer = error instanceof Refused ? error.body : errorBody(dispatching ? 'uncertain-result' : 'internal', {
-        requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
-      });
-    }
-    try {await this.#call(name, () => prepared.finish(answer));}
-    catch {
-      // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
-      this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error');
-    }
-    return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
+      const controller = new AbortController();
+      let prepared;
+      try {
+        prepared = await this.#call(name, () => upload.stage({target: input.target, requestId, name: label, bytes, signal: controller.signal}));
+      } finally {controller.abort();}
+      if (typeof prepared !== 'object' || prepared === null) throw refuse('internal', 'the module returned invalid upload preparation');
+      if ('error' in prepared) {
+        const code = prepared.error?.code;
+        throw refuse(isErrorCode(code) ? code : 'internal', 'the module refused upload preparation');
+      }
+      if (typeof prepared.finish !== 'function') throw refuse('internal', 'the upload has no preparation cleanup');
+      let answer: ActionAnswer;
+      let dispatching = false;
+      try {
+        this.#admit(request);
+        const action = actionInput({target: input.target, requestId, data: prepared.data});
+        const encoded = JSON.stringify(action);
+        if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw refuse('too-large', 'the prepared command exceeds the JSON command limit');
+        if (this.#options.redactions.holds(encoded)) throw refuse('internal', 'the prepared command holds a secret');
+        dispatching = true;
+        answer = await this.#dispatch(principal, family, action, request);
+      } catch (error) {
+        answer = error instanceof Refused ? error.body : errorBody(dispatching ? 'uncertain-result' : 'internal', {
+          requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
+        });
+        const code = 'error' in answer ? answer.error.code : 'internal';
+        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST',
+          'bunny.participant': principal.source, 'bunny.code': code}, levelOf(code), span.context);
+      }
+      try {await this.#call(name, () => prepared.finish(answer));}
+      catch {
+        // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
+        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error', span.context);
+      }
+      return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
+    } finally {span.end();}
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
@@ -728,10 +739,11 @@ export class Gateway {
     }
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
-    // The validated mode handoff continues the browser trace in the tracker's existing request span.
+    // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
     const incoming = family === 'mode-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
-    const parent = candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined;
+    const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
+      ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);
     try {
       return await this.#options.host.invoke(CORE_MODULE, () => !this.access.live(principal)
         ? Promise.resolve(errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'})) : actions.dispatch({

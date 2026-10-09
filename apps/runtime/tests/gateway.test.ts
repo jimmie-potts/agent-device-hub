@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, type BunnyModule,
+  MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, traceFields, type BunnyModule,
 } from '@jimmie-potts/sdk';
 import {
   CONFIG_SCHEMA, MAX_CREDENTIALS, RETIRED_ROUTES, RuntimeError, convertHubEdge, credentialsDocument, grantCredential, requestBrowserLaunch, retiredRoute,
@@ -98,6 +98,8 @@ const HOOK = (): EdgePart => ({id: 'hub-0123456789abcdef0123456789abcdef', sourc
 
 it('binary uploads require control and dispatch one retained command through the core', async context => {
   const operator = OPERATOR(), reader = READER();
+  const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
+  let commandTrace: string | undefined;
   let stages = 0, commands = 0, finishes = 0;
   let beforeStage: (() => Promise<void>) | undefined;
   let finishCode: string | undefined;
@@ -111,12 +113,12 @@ it('binary uploads require control and dispatch one retained command through the
       return {data: {on: true}, finish: reply => {finishes++; finishCode = 'error' in reply ? reply.error.code : undefined;}};
     },
   }}, start: async ({sdk}) => {
-    await sdk.respond('bunny.cmd.power-set.upload-target', () => {commands++; return {status: 'accepted'};});
+    await sdk.respond('bunny.cmd.power-set.upload-target', command => {commands++; commandTrace = command.traceparent; return {status: 'accepted'};});
   }, stop: () => {}};
   const g = await gateway(context, [operator, reader], {modules: [createCoreModule(), module]});
   const upload = (part: EdgePart | undefined, fields: Record<string, string> = {}, bytes = new Uint8Array([1, 2, 3]), origin?: string) => fetch(
     `${g.url}/api/v2/modules/uploader/upload?${new URLSearchParams({family: 'power-set', target: 'upload-target', requestId: 'upload-one', name: 'Synthetic', ...fields})}`,
-    {method: 'POST', headers: {'content-type': 'application/octet-stream', ...part === undefined ? {} : {authorization: `Bearer ${part.token}`},
+    {method: 'POST', headers: {'content-type': 'application/octet-stream', ...parent, ...part === undefined ? {} : {authorization: `Bearer ${part.token}`},
       ...origin === undefined ? {} : {origin}}, body: bytes});
   assert.equal((await upload(undefined)).status, 401);
   assert.equal((await upload(reader)).status, 403);
@@ -147,6 +149,14 @@ it('binary uploads require control and dispatch one retained command through the
   resume();
   assert.equal((await pending).status, 401);
   assert.deepEqual([commands, finishes, finishCode], [1, 3, 'unauthenticated'], 'revocation during preparation refuses dispatch and finalizes the input');
+  const refusals = g.logs.filter(record => record.event_name === 'runtime.edge.refused'
+    && record.attributes['http.route'] === '/api/v2/modules/{module}/upload'
+    && record.attributes['bunny.participant'] === operator.source && record.attributes['bunny.code'] === 'unauthenticated');
+  assert.deepEqual({continuedTrace: commandTrace !== undefined && traceFields({traceparent: commandTrace})?.traceId === traceFields(parent)?.traceId,
+    admissionRefusals: refusals.length}, {continuedTrace: true, admissionRefusals: 1}, 'the new upload boundary preserves correlation and records its own late refusal');
+  assert.equal(refusals[0]?.trace_id, traceFields(parent)?.traceId);
+  assert.equal(refusals[0]?.severity_text, 'WARN');
+  assertNoToken(g);
 });
 
 it('modern content receives bounded query values while legacy content still refuses queries', async context => {

@@ -167,7 +167,7 @@ export function MonitorPage(props: Props): React.JSX.Element {
       ['Matching sessions', display?.monitor.matched ?? 'Unknown'], ['Attention', display?.monitor.attention ?? 'Unknown'],
       ['Display page', display === undefined ? 'Unknown' : `${display.monitor.page + 1} of ${display.monitor.pages}`], ['Pending mode', display?.pendingMode ?? 'none'],
     ]}/>
-    <p><a href="#/sessions">Edit session labels</a></p>
+    <p><a href="#/home">Edit session labels</a></p>
     {reading?.status.lastOutcome !== null && reading?.status.lastOutcome !== undefined && <p>Last monitor transport: {reading.status.lastOutcome.status}. This does not prove visible output.</p>}
     {reading !== undefined && <Pixels context={context} refs={reading.rendition.frames} delay={reading.rendition.frameDelayMs} revision={undefined} label="Exact monitor preview"/>}
     {device === undefined ? <p role="status">The Pixoo owner has no device record.</p>

@@ -251,10 +251,11 @@ automatically retries or replays. Read-only sessions have no write controls.
 
 ## Module pages, build and disposable preview
 
-Navigation takes only exact same-origin page paths from module declarations. A
-sandboxed frame keeps the page inside the shell. The gateway permits same-origin
-framing of module HTML only; scripts and forms stay forbidden, content policies
-stay unchanged, and the shell itself cannot be framed. Unknown pages show not
+Navigation takes only exact same-origin page paths from module declarations.
+React pages use the shared shell context. Passive HTML uses a sandboxed frame
+with scripts and forms forbidden. Trusted editor frames run reviewed, declared
+application scripts under their separate content policy; they are trusted
+same-origin code. The shell itself cannot be framed. Unknown pages show not
 found. No private file or installed-service fallback is used.
 
 Connections reads `/api/v2/build`: the serving process's frozen package version,

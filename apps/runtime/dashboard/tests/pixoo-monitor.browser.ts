@@ -23,7 +23,12 @@ try {
     await world.observe(turnStarted, {identity}); await world.observe(turnEnded, {identity});
     await page.getByRole('link', {name: 'Monitor', exact: true}).click();
     await page.getByRole('heading', {name: 'Agent monitor', exact: true, level: 2}).waitFor();
-    assert.equal(await page.getByRole('link', {name: 'Edit session labels', exact: true}).getAttribute('href'), '#/sessions');
+    await page.getByRole('link', {name: 'Edit session labels', exact: true}).click();
+    await page.getByRole('button', {name: 'Edit label for Synthetic monitor task', exact: true}).click();
+    await page.getByRole('textbox', {name: 'Session label', exact: true}).fill('Unsaved synthetic label');
+    assert.equal(requests(), 0, 'the Monitor link reaches the real LabelEditor; opening and drafting sends nothing');
+    await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+    await page.getByRole('link', {name: 'Monitor', exact: true}).click();
     await page.getByRole('heading', {name: 'Synthetic monitor task', exact: true, level: 3}).waitFor();
     const readCoarseState = () => page.evaluate(async () => {
       const responses = await Promise.all([fetch('/modules/pixoo/content/monitor'), fetch('/modules/pixoo/content/monitor-sessions')]);

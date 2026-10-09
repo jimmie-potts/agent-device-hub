@@ -52,7 +52,7 @@ export type World = {
   runtime(): Runtime;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
-  pixooMedia(): Promise<{items: {name: string}[]; catalogRevision: number}>;
+  pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
   readonlyUpload(bytes: Uint8Array): Promise<number>;
   createPlaylist(name: string): Promise<void>;
   readonlyPlaylistCommand(data: object): Promise<number>;
@@ -162,7 +162,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     pixooMedia: async () => {
       const response = await fetch(`${runtime.url}/modules/pixoo/content/catalog-media`, {headers: {authorization: `Bearer ${readerToken}`}});
       assert.equal(response.status, 200);
-      return await response.json() as {items: {name: string}[]; catalogRevision: number};
+      return await response.json() as {items: {name: string; renditionId: string}[]; catalogRevision: number};
     },
     readonlyUpload: async bytes => {
       const query = new URLSearchParams({family: 'pixoo-asset-change', target: PIXOO_SECTION.config.device.id, requestId: 'readonly-upload', name: 'Denied'});

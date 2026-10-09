@@ -1,5 +1,5 @@
 // Module-owned Library and Playlists pages through the shared browser context (Hub #932).
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendApi, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
@@ -11,20 +11,27 @@ import {SettingsPage} from './settings.js';
 import {MonitorPage} from './monitor.js';
 
 type Record = DeviceRecord | PlaylistRecord | DisplayRecord;
-type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined};
+const object = (value: unknown): value is {body: unknown} => typeof value === 'object' && value !== null && 'body' in value;
+const codeOf = (error: unknown): string => object(error) && typeof error.body === 'object' && error.body !== null && 'error' in error.body
+  && typeof error.body.error === 'object' && error.body.error !== null && 'code' in error.body.error && typeof error.body.error.code === 'string'
+  ? error.body.error.code : 'unavailable';
+type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined; pending: boolean; retry: () => void};
 
 /** Follow owned device and playlist facts on the shell participant; media reads use bounded content pages. */
 function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = false): Catalog {
-  const [catalog, setCatalog] = useState<Catalog>({live: false, device: undefined, display: undefined, playlists: [], error: undefined});
+  const [catalog, setCatalog] = useState<Omit<Catalog, 'retry'>>({live: false, device: undefined, display: undefined, playlists: [], error: undefined, pending: true});
+  const [attempt, setAttempt] = useState(0);
+  const kept = useRef(new Map<string, Record>());
   useEffect(() => {
     let disposed = false;
     let copy: SyncedCopy<Record> | undefined;
-    const records = new Map<string, Record>();
+    const records = kept.current;
+    setCatalog(previous => ({...previous, live: false, pending: true, error: undefined}));
     const show = (live: boolean, error?: string): void => {
       if (disposed) return;
       const values = [...records.values()];
       setCatalog({
-        live, error,
+        live, error, pending: false,
         device: values.find((value): value is DeviceRecord => 'kind' in value && value.kind === 'pixoo'),
         display: values.find((value): value is DisplayRecord => 'monitor' in value && 'nowPlaying' in value),
         playlists: values.filter((value): value is PlaylistRecord => 'playlistRevision' in value)
@@ -67,35 +74,45 @@ function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = 
       }
       live = true;
       show(true);
-    }).catch(() => { show(false, 'unavailable'); });
+    }).catch((error: unknown) => {
+      show(false, codeOf(error));
+    });
     return () => { disposed = true; void copy?.close(); };
-  }, [api, includePlaylists, includeDisplay]);
-  return catalog;
+  }, [api, includePlaylists, includeDisplay, attempt]);
+  return {...catalog, retry: () => { setAttempt(value => value + 1); }};
+}
+
+function CatalogStatus({catalog}: {catalog: Catalog}): React.JSX.Element | null {
+  if (catalog.error === undefined) return null;
+  return <div>
+    <p role="alert">Pixoo records unavailable ({catalog.error}). Saved records remain stale until sync succeeds.</p>
+    <button type="button" disabled={catalog.pending} onClick={catalog.retry}>Retry Pixoo records</button>
+  </div>;
 }
 
 function Playlists({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useCatalog(context.api);
-  return <PlaylistsPage context={context} device={catalog.device} live={catalog.live} playlists={catalog.playlists}/>;
+  return <><CatalogStatus catalog={catalog}/><PlaylistsPage context={context} device={catalog.device} live={catalog.live} playlists={catalog.playlists}/></>;
 }
 
 function Library({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useCatalog(context.api, false);
-  return <LibraryPage context={context} device={catalog.device} live={catalog.live}/>;
+  return <><CatalogStatus catalog={catalog}/><LibraryPage context={context} device={catalog.device} live={catalog.live}/></>;
 }
 
 function Player({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useCatalog(context.api, true, true);
-  return <PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/>;
+  return <><CatalogStatus catalog={catalog}/><PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/></>;
 }
 
 function Settings({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useCatalog(context.api, false);
-  return <SettingsPage context={context} device={catalog.device} live={catalog.live}/>;
+  return <><CatalogStatus catalog={catalog}/><SettingsPage context={context} device={catalog.device} live={catalog.live}/></>;
 }
 
 function Monitor({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useCatalog(context.api, false, true);
-  return <MonitorPage context={context} device={catalog.device} display={catalog.display} live={catalog.live}/>;
+  return <><CatalogStatus catalog={catalog}/><MonitorPage context={context} device={catalog.device} display={catalog.display} live={catalog.live}/></>;
 }
 
 export const frontend: FrontendContribution = {module: 'pixoo', pages: [

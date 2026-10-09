@@ -35,7 +35,9 @@ export function PreviewFrame({bitmap, label}: {bitmap: ImageBitmap | undefined; 
 }
 
 /** The preview is local and illustrative. Loading or animating it never sends a device command. */
-export function Preview({api, renditionId, active}: {api: FrontendApi; renditionId: string; active: boolean}): React.JSX.Element {
+export function Preview({api, renditionId, active, onReady}: {
+  api: FrontendApi; renditionId: string; active: boolean; onReady?: (ready: boolean) => void;
+}): React.JSX.Element {
   const [preview, setPreview] = useState<PreviewData>();
   const [frame, setFrame] = useState(0);
   const [animate, setAnimate] = useState(false);
@@ -66,6 +68,7 @@ export function Preview({api, renditionId, active}: {api: FrontendApi; rendition
     const timer = window.setTimeout(() => { setFrame(value => (value + 1) % preview.frameCount); }, preview.frames[frame]?.delayMs ?? 100);
     return () => { window.clearTimeout(timer); };
   }, [active, animate, failure, frame, preview]);
+  useEffect(() => { onReady?.(image !== undefined && failure === undefined); }, [image, failure, onReady]);
   return <div>
     {image === undefined ? failure === undefined && <p role="status">Loading preview…</p>
       : <PreviewFrame bitmap={image} label="Effective preview"/>}
