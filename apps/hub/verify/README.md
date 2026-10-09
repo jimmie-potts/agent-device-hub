@@ -1,5 +1,9 @@
 # Hub verification runs
 
+[Verification checks](TESTING.md) cover this adapter and composition qualification.
+
+See [Composed legacy previews](COMPOSE.md) for the canonical detailed procedures.
+
 The Hub adapter ([#494](https://github.com/jimmie-potts/agent-device-hub/issues/494))
 for the [app verification contract](../../../docs/app-verification.md). The
 lifecycle comes from [`@jimmie-potts/app-verify`](../../../packages/app-verify/README.md);
@@ -13,6 +17,8 @@ and synthetic lifecycle events. It never uses the installed hub, its
 `browserAccess: "trusted-loopback"`, so its URL carries no token. API checks
 use run-generated credentials that `seed` writes with mode 0600 into the
 run's private data directory; `stop` deletes them with the runtime directory.
+
+The retained [caller example](WALKTHROUGH.md) keeps Hub-specific preview and recovery details.
 
 ## Entry points
 

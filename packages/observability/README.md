@@ -1,5 +1,7 @@
 # B.U.N.N.Y. observability contract
 
+See [Verification checks](TESTING.md) for the canonical detailed procedures.
+
 This private artifact defines canonical diagnostics for TypeScript, Python and
 browser producers. Imports do not start an exporter or instrument a component.
 Read `CONTRACT.md` in the archive (source: `docs/observability-contract.md`)

@@ -1,5 +1,7 @@
 # CHOMPI bridge
 
+See [Development and verification](DEVELOPMENT.md) for the canonical detailed procedures.
+
 Source, installed-client and physical evidence have separate owners. The
 [#743 trial](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747)
 records accepted Windows/client and device checks for its exact versions; it does

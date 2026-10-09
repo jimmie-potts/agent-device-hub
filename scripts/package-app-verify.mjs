@@ -5,7 +5,7 @@
 import {cp,mkdir,mkdtemp,readFile,readdir,realpath,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
-import {dirname,join,resolve} from 'node:path';
+import {dirname,join,resolve,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -35,9 +35,33 @@ const scratchRoot=join(root,'.local/scratch/package-archives');await mkdir(scrat
 const scratch=await mkdtemp(join(scratchRoot,'app-verify-'));
 try{
  const stage=join(scratch,'stage');await mkdir(stage);
- for(const entry of ['package.json','README.md','src','dist','examples','tests'])await cp(join(packageDir,entry),join(stage,entry),{recursive:true});
+ for(const entry of ['package.json','README.md','OPERATIONS.md','TESTING.md','src','dist','examples','tests'])await cp(join(packageDir,entry),join(stage,entry),{recursive:true});
  await cp(join(root,'docs/app-verification.md'),join(stage,'app-verification.md'));
  await cp(join(root,'docs/decisions/0009-app-verification-runs.md'),join(stage,'adr-0009-app-verification-runs.md'));
+ // Keep shipped documentation links valid in the archive layout. Repository-only
+ // references use the exact source revision; no copied release procedure is needed.
+ const revision=run('git',['rev-parse','HEAD'],root).trim();
+ const documents=new Map([
+  ['packages/app-verify/README.md','README.md'],
+  ['packages/app-verify/OPERATIONS.md','OPERATIONS.md'],
+  ['packages/app-verify/TESTING.md','TESTING.md'],
+  ['docs/app-verification.md','app-verification.md'],
+  ['docs/decisions/0009-app-verification-runs.md','adr-0009-app-verification-runs.md'],
+ ]);
+ for(const [source,destination] of documents){
+  const text=await readFile(join(root,source),'utf8');
+  const linked=text.replace(/\]\(([^\s)]+)\)/g,(match,url)=>{
+   if(/^(?:[a-z]+:|#|\/)/i.test(url))return match;
+   const [path,...fragment]=url.split('#');
+   const target=relative(root,resolve(root,dirname(source),path));
+   const suffix=fragment.length?'#'+fragment.join('#'):'';
+   if(documents.has(target))return ']('+documents.get(target)+suffix+')';
+   const packagePath=relative(packageDir,resolve(root,target));
+   if(!packagePath.startsWith('..'))return ']('+packagePath+suffix+')';
+   return '](https://github.com/jimmie-potts/agent-device-hub/blob/'+revision+'/'+target+suffix+')';
+  });
+  await writeFile(join(stage,destination),linked);
+ }
  const hashes={};for(const file of await files(stage))hashes[file]=sha256(await readFile(join(stage,file)));
  await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:name,version,receiptVersion:'app-verification/1',node:'>=22',peer:{playwright:'>=1.50.0 (optional, consumer-provided)'},files:hashes},null,2)+'\n');
  const destination=join(root,'artifacts');await mkdir(destination,{recursive:true});
@@ -57,6 +81,14 @@ try{
    const installed=join(consumer,'node_modules/@jimmie-potts/app-verify');
    const manifest=JSON.parse(await readFile(join(installed,'manifest.json'),'utf8'));
    for(const [file,expected] of Object.entries(manifest.files))assert.equal(sha256(await readFile(join(installed,file))),expected,`Package integrity: ${file}`);
+   for(const doc of ['OPERATIONS.md','TESTING.md'])assert.ok(manifest.files[doc],`Package documentation: ${doc}`);
+   for(const doc of documents.values()){
+    const text=await readFile(join(installed,doc),'utf8');
+    for(const [,url] of text.matchAll(/\]\(([^\s)]+)\)/g)){
+     if(/^(?:[a-z]+:|#|\/)/i.test(url))continue;
+     assert.ok(manifest.files[url.split('#')[0]],`Packaged ${doc} links to missing ${url}`);
+    }
+   }
    assert.deepEqual(await readdir(join(installed,'node_modules')).catch(()=>[]),[],'the archive installs no dependency of its own');
    assert.deepEqual((await readdir(join(consumer,'node_modules'))).sort(),['.package-lock.json','@jimmie-potts','playwright','playwright-core']);
    const imported=run(process.execPath,['--input-type=module','-e','import {VERSION,RECEIPT_VERSION,runCli,definePlugin,validateReceipt} from "@jimmie-potts/app-verify"; if(VERSION!=="'+version+'"||RECEIPT_VERSION!=="app-verification/1"||typeof runCli!=="function"||typeof definePlugin!=="function"||validateReceipt({}).ok)process.exit(1);'],consumer);
