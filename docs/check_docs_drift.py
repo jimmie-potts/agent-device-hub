@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HUB = 'agent-device-hub'
 OWNER = 'jimmie-potts'
 DOCUMENTS = ['AGENTS.md', 'README.md', 'docs/development.md', 'docs/sdlc.md',
-             'docs/application-ui-style-guide.md', 'docs/app-verification.md']
+             'docs/application-ui-style-guide.md', 'docs/app-verification.md', 'docs/documentation-checks.md']
 GENERATED = ('.local/', 'dist/', 'node_modules/', 'artifacts/')
 
 
