@@ -1,7 +1,7 @@
 // Hub #925: a bounded curated Lines moment, executed only by the existing locked worker.
 // Uses effects.ts' recipes/frame encoder and controls.ts' journaled Execution; never retries a device write.
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
-import {Execution, Refused, savedGeometry} from './controls.js';
+import {Cancelled, Execution, Refused, savedGeometry} from './controls.js';
 import {DEFAULT} from './devices.js';
 import {PRESETS, Rejected, render, type Display} from './effects.js';
 import {finish, held, journal, journalRow, type JournalRow, type Transact} from './journal.js';
@@ -84,7 +84,16 @@ export async function playMoment(options:MomentPlayback):Promise<void> {
   }
   if(stale()) {await end('retired');return;}
   if(now()>command.startAtMs+command.toleranceMs) {await end('expired');return;}
-  const execution=new Execution(db,row.revision,row.id,device,transact,now);
+  let restoring=false;
+  const execution=new class extends Execution {
+    override async call<T>(send:()=>Promise<T>|T):Promise<T> {
+      // Work restoration uses this same execution inside the renderer; guard each write, not just its outer call.
+      if(restoring && stale()) throw new Cancelled();
+      const result=await super.call(send);
+      if(restoring && stale()) throw new Cancelled();
+      return result;
+    }
+  }(db,row.revision,row.id,device,transact,now);
   await execution.call(()=>request(target,'PUT','/effects',momentPayload(command,config)));
   options.taken();
   const until=now()+command.durationMs;
@@ -100,15 +109,21 @@ export async function playMoment(options:MomentPlayback):Promise<void> {
   }
   if(stale()) {await end('retired');return;}
   const freeBase=command.freeBase;
-  if(freeBase!==undefined) {
-    const listing=await request(target,'GET','/effects') as {select?:unknown;effectsList?:unknown};
-    if(listing.select!=='*Dynamic*' || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(freeBase.name) || !await sameBrightness()) {await end('retired');return;}
-    if(stale()) {await end('retired');return;}
-    await execution.call(()=>request(target,'PUT','/state',{brightness:{value:freeBase.brightness,duration:0}}));
-    await execution.call(()=>request(target,'PUT','/effects',{select:freeBase.name}));
-  } else {
-    // The worker supplies a current Work rendering, and routes every restoration write through this execution.
-    await restore(current(),execution);
+  restoring=true;
+  try {
+    if(freeBase!==undefined) {
+      const listing=await request(target,'GET','/effects') as {select?:unknown;effectsList?:unknown};
+      if(listing.select!=='*Dynamic*' || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(freeBase.name) || !await sameBrightness()) {await end('retired');return;}
+      if(stale()) {await end('retired');return;}
+      await execution.call(()=>request(target,'PUT','/state',{brightness:{value:freeBase.brightness,duration:0}}));
+      await execution.call(()=>request(target,'PUT','/effects',{select:freeBase.name}));
+    } else {
+      // The worker supplies a current Work rendering, and routes every restoration write through this execution.
+      await restore(current(),execution);
+    }
+  }catch(error) {
+    if(error instanceof Cancelled && stale()) {await end('retired');return;}
+    throw error;
   }
   if(interrupted) {await end('retired');return;}
   await execution.complete();

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
-import {AutomationError, createAutomation, DEFAULT_SETTINGS, DEFAULT_INTERRUPT_SET} from '../src/core/automation.js';
+import {AutomationError, createAutomation, DEFAULT_SETTINGS, DEFAULT_INTERRUPT_SET, parseEvent} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 
 const rule = {name:'Turn complete',kind:'event',enabled:true,trigger:{source:'core',kind:'turn-ended'},
@@ -15,6 +15,33 @@ function world(db = new DatabaseSync(':memory:'), uncertain=false,presentation:'
     sender:(target,moment)=>{sent.push({target,moment});return Promise.resolve(uncertain?{kind:'uncertain',momentId:moment.momentId,requestId:'req-one'}:{kind:'receipt',momentId:moment.momentId,requestId:'req-one',status:'accepted'});}});
   return {db,sent,automation};
 }
+
+void test('queued trace context is validated, copied per event and excluded from public event and moment data',async()=>{
+  const db=new DatabaseSync(':memory:');
+  const store=new AutomationStore(db,()=>{}, {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+  const sent:{moment:unknown;parent:string|undefined}[]=[];
+  let release:()=>void=()=>{},reads=0;
+  const target={presentation:'content',alert:'none',moments:'supported'} as const;
+  const pending=new Promise<typeof target>(resolve=>{release=()=>{resolve(target);};});
+  const automation=createAutomation({store,routed:()=>['lines'],targets:()=>++reads===1?pending:Promise.resolve(target),
+    clock:()=>1700000000000,monotonic:()=>1700000000000,active:()=>true,sender:(_target,moment,parent)=>{
+      sent.push({moment,parent:parent?.traceparent});return Promise.resolve({kind:'receipt',momentId:moment.momentId,status:'accepted',requestId:`req-${sent.length}`});
+    }});
+  const first={traceparent:'00-0123456789abcdef0123456789abcdef-0123456789abcdef-01'};
+  const second={traceparent:'00-123456789abcdef0123456789abcdef0-123456789abcdef0-01'},secondTrace=second.traceparent;
+  try {
+    automation.create({...rule,action:{...rule.action,priorityClass:'event'}},true);
+    assert.equal(automation.submit(event,first).accepted,true);
+    assert.equal(automation.submit({...event,id:'queued-two'},second).accepted,true);
+    second.traceparent='invalid';
+    assert.equal(automation.submit({...event,id:'queued-invalid'},{traceparent:'invalid'}).accepted,true);
+    release();await automation.settled();
+    assert.deepEqual(sent.map(item=>item.parent),[first.traceparent,secondTrace,undefined]);
+    assert.equal(JSON.stringify(sent.map(item=>item.moment)).includes(first.traceparent),false);
+    assert.equal(JSON.stringify(automation.log(10)).includes(secondTrace),false);
+    assert.equal(parseEvent({...event,traceparent:first.traceparent}),null,'trace metadata does not extend the event contract');
+  }finally {release();await automation.close();db.close();}
+});
 
 void test('one matching rule dispatches once, keeps acceptance distinct, and restart/replay cannot redispatch',async()=>{
   const w=world();
@@ -50,7 +77,7 @@ void test('policy retains quiet-hours and task budget, and non-owner rules start
   }finally {w.db.close();}
 });
 
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {InProcessBus, traceFields} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule,type CoreHandle} from '../src/core/core.js';
 import {deviceRecord,deviceState} from './fixtures/device.js';
@@ -113,6 +140,8 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   assert.equal(moments.length,1);
   assert.equal(core.automation.log(10)[0]?.operation?.status,'accepted');
   const occurrence=occurrences[0];assert.ok(occurrence);assert.ok(handle);
+  const dispatched=moments[0];assert.ok(dispatched);
+  assert.equal(traceFields(dispatched)?.traceId,traceFields(occurrence)?.traceId,'the dispatched moment continues its live occurrence trace');
   await handle.sdk.publishMessage(`bunny.event.turn-ended.${occurrence.subject}`,occurrence);await flush();
   const synced=await watch.sync(['session'],()=>{}, {owner:harness.source,timeoutMs:1000});
   if(synced.status==='synced') await synced.copy.close();

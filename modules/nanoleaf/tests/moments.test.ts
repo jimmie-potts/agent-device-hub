@@ -2,8 +2,63 @@ import assert from 'node:assert/strict';
 import {test} from './support.js';
 import {deviceCommand, ModuleWorld} from './module-support.js';
 import {LINES_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
+import {DatabaseSync} from 'node:sqlite';
+import {admitCommand, discovered, sceneList} from '../src/controls.js';
+import {initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
+import {playMoment, type MomentCommand} from '../src/moments.js';
+import {transaction} from '../src/sqlite.js';
+import {isObject} from '../src/compat.js';
+import {initialize} from '../src/database.js';
+import type {LightRequest} from '../src/transport.js';
 const moment=(world:ModuleWorld,id:string,start=world.clock.now())=>deviceCommand('moment-play',
   {requestId:id,momentId:`moment-${id}`,mood:'celebrate',durationMs:1000,priorityClass:'flourish',coversStatus:false,startAtMs:start,toleranceMs:1000});
+
+for(const choice of ['none','scene','configuration','mode','work-configuration'] as const) {
+  test(`restoration rechecks a newer ${choice} choice between awaited writes`,async()=>{
+    const db=new DatabaseSync(':memory:'),work=choice==='work-configuration';
+    try {
+      initialize(db,()=>10);
+      db.exec(`INSERT OR REPLACE INTO meta VALUES('mode','${work?'work':'free'}');
+        CREATE TABLE nanoleaf_devices(device TEXT PRIMARY KEY,configuration_revision INTEGER); INSERT INTO nanoleaf_devices VALUES('wall',0)`);
+      initJournal(db);discovered(db,['Ocean','New scene'],'wall',()=>{});
+      const newer=sceneList(db,'wall').find(scene=>scene.name==='New scene');assert.ok(newer);
+      const command:MomentCommand={kind:'moment.play',requestId:'moment-one',momentId:'one',mood:'celebrate',durationMs:1000,
+        priorityClass:'event',coversStatus:work,startAtMs:10000,toleranceMs:1000,configurationRevision:0,
+        ...(work?{}:{freeBase:{name:'Ocean',brightness:50}})};
+      db.prepare("INSERT INTO control_journal(id,device,kind,command,mode_revision,phase,accepted,expires) VALUES(?,?,?,?,0,'queued',10,11)")
+        .run(command.requestId,'wall',command.kind,JSON.stringify(command));
+      const outcomes:Outcome[]=[],writes:{endpoint:string;payload:unknown}[]=[];
+      const transact:Transact=action=>Promise.resolve(transaction(db,()=>action(message=>{if(message.type==='outcome') outcomes.push(message);})));
+      let now=10000,selected='Ocean';
+      const request:LightRequest=(_target,method,endpoint,payload)=>{
+        if(method==='GET') return Promise.resolve(endpoint==='/effects'?{select:selected,effectsList:['Ocean','New scene']}:{brightness:{value:50}});
+        writes.push({endpoint:endpoint??'',payload});
+        if(endpoint==='/effects' && isObject(payload)) selected=typeof payload.select==='string'?payload.select:'*Dynamic*';
+        if(endpoint==='/state') {
+          if(choice==='scene') transaction(db,()=>admitCommand(db,'unused',{id:'owner-new-scene',device:'wall',
+            command:{kind:'scene.activate',sceneId:newer.id},instant:now/1000,expires:now/1000+5},()=>{}));
+          if(choice==='configuration' || choice==='work-configuration') db.exec("UPDATE nanoleaf_devices SET configuration_revision=1 WHERE device='wall'");
+          if(choice==='mode') transaction(db,()=>admitCommand(db,'unused',{id:'owner-mode',device:'wall',command:{kind:'mode.set',mode:'quiet'},
+            instant:now/1000,expires:now/1000+5},message=>{if(message.type==='outcome') outcomes.push(message);}));
+        }
+        return Promise.resolve({});
+      };
+      const row=journalRow(db,'moment-one');assert.ok(row);
+      await playMoment({db,device:'wall',row,config:{line_groups:[[1,2],[3,4]],line_positions:[[0,0],[1,0]]},transact,request,now:()=>now,
+        sleep:seconds=>{now+=seconds*1000;return Promise.resolve();},current:()=>[],taken:()=>{},restore:async(_snapshot,execution)=>{
+          await execution.call(()=>request({ip:'synthetic',token:'synthetic'},'PUT','/state',{brightness:{value:50,duration:0}}));
+          await execution.call(()=>request({ip:'synthetic',token:'synthetic'},'PUT','/effects',{write:{animType:'static'}}));
+        }});
+      const restored=writes.filter(write=>write.endpoint==='/effects' && isObject(write.payload) &&
+        (write.payload.select==='Ocean' || isObject(write.payload.write) && write.payload.write.animType==='static'));
+      const outcome=outcomes.find(message=>message.requestId==='moment-one');assert.ok(outcome);
+      assert.equal(restored.length,choice==='none'?1:0,'a newer choice prevents every remaining restoration write');
+      assert.equal(outcome.result,choice==='none'?'succeeded':'failed');assert.equal(outcome.evidence,'transmitted');
+      if(choice!=='none') assert.equal(outcome.error?.code,'cancelled');
+      if(choice==='scene') assert.ok(journalRow(db,'owner-new-scene'),'the newer scene remains queued');
+    }finally {db.close();}
+  });
+}
 
 test('bounded moment restores a named Free base and restart does not replay it',async context=>{
   const world=await ModuleWorld.open(context);await world.start();

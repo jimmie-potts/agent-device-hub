@@ -4,6 +4,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {traceFields, type TraceContext} from '@jimmie-potts/sdk';
 export type MomentInput = Omit<MomentPlayRequest, 'requestId'|'startAtMs'|'toleranceMs'> & {startAtHubMs?:number};
 export type MomentResult = {kind:'receipt'; momentId:string; requestId:string; status:'accepted'} | {kind:'not-sent';momentId:string;reason:string;requestId?:string} | {kind:'uncertain';momentId:string;requestId?:string};
 // Small validators copied from apps/hub/src/common.ts at the same revision.
@@ -32,7 +33,7 @@ export type MomentIntent = Omit<MomentInput,'startAtHubMs'|'toleranceMs'>;
 /**
  * One tracked runtime dispatch per target, without a direct device write or retry.
  */
-export type MomentSender = (target:string, moment:MomentInput) => Promise<MomentResult>;
+export type MomentSender = (target:string, moment:MomentInput, parent?:TraceContext) => Promise<MomentResult>;
 /**
  * Device-neutral evidence for a target. The runtime adapter blocks unavailable or held targets before dispatch.
  */
@@ -197,7 +198,7 @@ export function createAutomation(options:AutomationOptions) {
   let settings: AutomationSettings;
   try { settings = parseSettings(store.settings()); } catch { throw new Error('invalid-state'); }
   const recent = new Set<string>();
-  const queue: {event:HubEvent; matched:Rule[]}[] = [];
+  const queue: {event:HubEvent; matched:Rule[]; parent?:TraceContext}[] = [];
   let running: Promise<void> | undefined, closed = false;
   const reload = () => { rules = store.rules().map(ruleFromRow); };
   const stopped = () => closed || !options.active();
@@ -267,7 +268,7 @@ export function createAutomation(options:AutomationOptions) {
     return logRow(rule,event,moment,target,'uncertain','invalid-result',null);
   };
 
-  async function evaluate(rule:Rule, event:HubEvent) {
+  async function evaluate(rule:Rule, event:HubEvent, parent?:TraceContext) {
     const moment = intent(rule,event), now = options.clock();
     const blocked = momentBlock(moment,event,now);
     if (blocked !== null) { store.appendLog(rule.action.targets.map(target => logRow(rule,event,moment,target,'blocked',blocked,null))); return; }
@@ -285,21 +286,21 @@ export function createAutomation(options:AutomationOptions) {
     if (handed.length === 0 || !options.sender || stopped()) return;
     // One runtime-clock start instant for every target; devices are independent, and nothing is retried.
     const startAt = options.monotonic() + START_LEAD_MS, sender = options.sender;
-    const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender(target,{...structuredClone(moment),startAtHubMs:startAt}))));
+    const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender(target,{...structuredClone(moment),startAtHubMs:startAt},parent))));
     store.appendLog(handed.map((target,index) => logged(rule,event,moment,target,results[index] ?? {status:'rejected',reason:undefined})));
   }
   async function drain() {
     while (queue.length > 0) {
       // After a release or during shutdown, waiting events are dropped rather than evaluated by a retiring owner.
       if (stopped()) { queue.length = 0; return; }
-      const next = queue.shift();if(next===undefined) return;const {event,matched}=next;
+      const next = queue.shift();if(next===undefined) return;const {event,matched,parent}=next;
       for (const queued of matched) {
         if (stopped()) { queue.length = 0; return; }
         // The owner may have disabled, edited or deleted the rule while the event waited: use its current definition.
         const rule = rules.find(current => current.id === queued.id);
         if (rule === undefined || !rule.enabled || !matching(event).includes(rule)) continue;
         // A store released during shutdown ends evaluation. Any other failure drops this rule's moment; nothing is retried.
-        try { await evaluate(rule,event); }
+        try { await evaluate(rule,event,parent); }
         catch { if (closed) return; }
       }
     }
@@ -318,7 +319,7 @@ export function createAutomation(options:AutomationOptions) {
 
   return {
     /** The intake called by the live core occurrence adapter. Synchronous: sources never wait for arbitration or devices. */
-    submit(value:unknown): IntakeResult {
+    submit(value:unknown, parent?:TraceContext): IntakeResult {
       const event = parseEvent(value);
       if (!event) return {accepted:false,reason:'invalid-event'};
       if (event.delivery === 'replay') return {accepted:false,reason:'replay'};
@@ -338,7 +339,9 @@ export function createAutomation(options:AutomationOptions) {
         try { store.appendLog(rows); } catch {}
         return {accepted:true,matched:matched.length};
       }
-      queue.push({event,matched});schedule();
+      // Context belongs only to this in-memory handoff; it never enters the event, rule, device payload or log.
+      const context=parent===undefined || traceFields(parent)===undefined?{}:{parent:{traceparent:parent.traceparent}};
+      queue.push({event,matched,...context});schedule();
       return {accepted:true,matched:matched.length};
     },
     /** Resolves once every accepted event has been evaluated. */

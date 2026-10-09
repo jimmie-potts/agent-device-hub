@@ -46,10 +46,10 @@ export class AutomationPart implements CorePart {
           alert:[...this.#sessions.values()].some(s=>s.attention.length>0)?'active':'none',
           moments:record.capabilities.moments.supported?'supported':'unsupported'});
       },
-      sender:async(target,moment)=>{
+      sender:async(target,moment,parent)=>{
         const {startAtHubMs=handle.clock.now(),...data}=moment;
         const requestId=`automation-${opaque(`${moment.momentId}\0${target}`)}`;
-        const answer=await handle.dispatch({requestId,key:`bunny.cmd.moment-play.${target}`,requestedBy:'bunny/core',
+        const answer=await handle.dispatch({requestId,key:`bunny.cmd.moment-play.${target}`,requestedBy:'bunny/core',...(parent===undefined?{}:{parent}),
           draft:{type:'org.bunny.moment.play.requested',subject:target,dataschema:'https://bunny.invalid/events/moment-play/2.0',
             data:{...data,startAtMs:startAtHubMs,toleranceMs:10000}}});
         return 'error' in answer ? (answer.error.code==='uncertain-result' || answer.error.code==='internal') ? {kind:'uncertain',momentId:moment.momentId,requestId} : {kind:'not-sent',momentId:moment.momentId,reason:answer.error.code,requestId}
@@ -90,7 +90,7 @@ export class AutomationPart implements CorePart {
         if(this.#closed || message.source!==handle.sdk.source || !this.#publishing.delete(message.id)) return;
         const data=message.data;
         this.#automation?.submit({id:message.id,source:'core',kind,delivery:'live',agent:opaque(JSON.stringify(data.identity)),
-          ...(data.turn.status==='known'?{task:opaque(`${data.session}\0${data.turn.id}`)}:{})});
+          ...(data.turn.status==='known'?{task:opaque(`${data.session}\0${data.turn.id}`)}:{})},{traceparent:message.traceparent});
       },{onOverflow:()=>{this.#publishing.clear();this.#live.clear();}})),
     ]);
   }
