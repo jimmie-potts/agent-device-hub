@@ -219,7 +219,61 @@ async function migrateNanoleaf(dataDir: string): Promise<void> {
   await run('verify', config);
 }
 
-export const scenarios: readonly Scenario[] = [nanoleafWall];
+/** The editor reads the existing owner and sends one explicit tracked edit; it owns no controller or state. */
+const editorReads = new WeakMap<Harness, {writes: number; revision: number}>();
+const editorRecord = (h: Harness): {configurationRevision: number; settings: {rotation: number}} | undefined =>
+  h.reader.states<{id: string; configurationRevision: number; settings: {rotation: number}}>(NANOLEAF_FAMILIES.wall.family, NANOLEAF_OWNER)
+    .find(state => state.data.id === 'wall')?.data;
+const editorMutation = {target: 'wall', requestId: 'req-editor-rotate', data: {edit: {kind: 'settings', settings: {rotation: 90}}}};
+const nanoleafEditor: Scenario = {
+  id: 'nanoleaf-editor', title: 'the wall editor reads cached geometry, tracks one edit and retains observed power',
+  seed: {modules: ['core', 'nanoleaf'], follows: [CORE_FAMILIES, NANOLEAF_FAMILIES_FOLLOWED], config: {nanoleaf: NANOLEAF_SECTION}},
+  steps: [
+    expect('the wall is available with observed power on', h => wallAvailability(h, 'available') === true ? observedPower(h, true) : wallAvailability(h, 'available'), 10_000),
+    expect('the authenticated module catalog declares the React Wall page', async h => {
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/modules'});
+      return answer.status === 200 && answer.text.includes('"presentation":"react"') && answer.text.includes('"id":"wall"')
+        || `the module catalog answered ${answer.status}`;
+    }),
+    act('the reader records controller writes and owner revision before opening the editor', h => {
+      editorReads.set(h, {writes: theLines(h)?.writes ?? -1, revision: editorRecord(h)?.configurationRevision ?? -1});
+    }),
+    expect('the cached configured-device geometry read succeeds without exposing secrets', async h => {
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: '/modules/nanoleaf/content/editor-layout?device=wall'});
+      const value = JSON.parse(answer.text) as {schema?: string; device?: string; geometry?: {lines?: unknown[]}};
+      return answer.status === 200 && value.schema === 'nanoleaf-editor-layout/2.0' && value.device === 'wall'
+        && (value.geometry?.lines?.length ?? 0) > 0 && !/tok_SYNTHETIC|192\.0\.2|"token"/.test(answer.text)
+        || `the cached geometry read answered ${answer.status}`;
+    }),
+    expect('page reads changed no controller write or owner configuration', h => {
+      const before = editorReads.get(h);
+      return before !== undefined && before.writes === theLines(h)?.writes && before.revision === editorRecord(h)?.configurationRevision
+        || 'a passive editor read changed controller or configuration state';
+    }),
+    expect('a read-only credential cannot edit the wall', async h => {
+      const answer = await h.gateway({as: 'reader', method: 'POST', path: '/api/v2/commands/nanoleaf-wall-edit', body: editorMutation});
+      return answer.status === 403 || `read-only edit answered ${answer.status}`;
+    }),
+    expect('a foreign Origin cannot use the browser session to edit', async h => {
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/nanoleaf-wall-edit', origin: 'other',
+        headers: {'bunny-request': '1'}, body: editorMutation});
+      return answer.status === 403 || `foreign-Origin edit answered ${answer.status}`;
+    }),
+    expect('one explicit authenticated editor command is accepted', async h => {
+      const answer = await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/nanoleaf-wall-edit', body: editorMutation});
+      return answer.status === 200 && (JSON.parse(answer.text) as {status?: string}).status === 'accepted' || `the editor command answered ${answer.status}`;
+    }),
+    expect('the owner record contains the selected rotation', h => editorRecord(h)?.settings.rotation === 90 || 'the owner has not selected 90 degrees'),
+    expect('the command completes with observed owner-state evidence', h => recorded(h, 'req-editor-rotate', 'succeeded', 'observed'), 5000),
+    act('the simulator power switch turns the wall off', h => { h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
+    expect('the owner reports the observed off state', h => observedPower(h, false), 15_000),
+    act('the simulator power switch turns the wall on', h => { h.simulate({device: 'nanoleaf', action: 'power-on'}); }),
+    expect('the owner reports the observed on state', h => observedPower(h, true), 15_000),
+    expect('synthetic credentials appear in no record or message', noToken),
+  ],
+};
+
+export const scenarios: readonly Scenario[] = [nanoleafWall, nanoleafEditor];
 
 export const runs: Readonly<Record<string, ModuleRun>> = {
   'nanoleaf-migrated': {

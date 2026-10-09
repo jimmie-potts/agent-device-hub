@@ -8,9 +8,10 @@ maps it) and the runtime module that runs it,
 the runtime's shipped modules under
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md). The module shows agent
 sessions on the Nanoleaf Lines and NL22 Light Panels, takes Work, Quiet and Free and the
-wall's controls as commands, and publishes each controller's state. Nothing installs it
-yet; the cutover (#840) does. The wall pages are #934, and the [migration](#migration) of the
-bridge's state is #933.
+wall's controls as commands, and publishes each controller's state. Its Wall page
+integrates the retained editor into the shared React dashboard (#934). This is source-only
+delivery; installation remains at the owner-present cutover (#840). Fresh setup does not
+use the optional [migration](#migration) tool.
 
 ## Factory
 
@@ -127,6 +128,47 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-animation-play` | command | A preset, a favorite or a recipe, on the Lines in Free |
 | `nanoleaf-favorite-edit` | command | Save, rename or forget a Lines favorite |
 | `nanoleaf-notice-acknowledge` | command | Acknowledge a finished turn the wall shows, for consumer `nanoleaf` |
+
+## Wall editor
+
+The API 1.3 manifest declares a React `wall` page. The module's `./frontend` export
+contains a thin React host around the retained wall controller and Prism; it shares the
+dashboard's authenticated API, connection and tracked Command component. Browser source,
+reference artwork and exact upstream hashes are in [src/frontend/README.md](src/frontend/README.md).
+No backend implementation is imported into the browser.
+
+The page syncs only `device` and `nanoleaf-wall` from this owner. It keeps Lines and Panels
+selection, the task/project inspector, map controls, keyboard selection, local assembly
+and number preferences. A stale sync disables editing and offers an explicit read retry.
+Read-only users can inspect the wall and change local display preferences; mutations
+still require the runtime's control authority and browser Origin checks.
+
+| Editor action | Existing owner command |
+| --- | --- |
+| Classic/Project, coverage, rotation, flips and palette | `nanoleaf-wall-edit`, `settings` |
+| Reserved/shared element assignment and signature swap | `nanoleaf-wall-edit`, `assign` |
+| Project color | `nanoleaf-wall-edit`, `project-color` |
+| Locate and device-only eviction | `nanoleaf-wall-edit`, `locate` or `evict` |
+| Work, Quiet and Free | `device-mode-set` |
+
+Each action keeps the selected device and uses the shared request identity and operation
+tracker. Acceptance remains separate from completion. Reload and reconnection do not
+resend an action, and an uncertain command stays locked. Selection does not acknowledge
+an unread task. A qualified Codex Desktop task may expose `codex://threads/<UUID>` from
+its source identity; titles, other clients and malformed IDs cannot supply a link.
+
+`/modules/nanoleaf/content/editor-layout?device=<id>` reads cached connector geometry for
+one configured Lines device. The JSON document is `nanoleaf-editor-layout/2.0`, with a
+device ID and sanitized graph, limited to 256 KiB, 300 Lines and 600 nodes. Panels use the
+wall record's saved triangle outlines. Opening or refreshing this read never discovers
+geometry, contacts a controller or changes a scene/file. Missing geometry has an honest
+unavailable notice; a standard outline remains usable when saved outlines exist.
+The page does not read animation favorites or private stores.
+
+The shared dashboard's existing device card reports observed power independently of
+requested mode or power. This page adds no power observation or second device writer.
+A full React editor rewrite, enrollment, geometry discovery, legacy-data transfer and
+physical-device qualification are outside this port.
 
 ## Commands and outcomes
 

@@ -23,7 +23,7 @@ import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contract
 import {sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
   DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
-  type SyncChange,
+  type SyncChange, type ModuleContent, type ModuleContentRequest,
 } from '@jimmie-potts/sdk';
 import {admitCommand, Refused as PortRefused} from '../controls.js';
 import {initialize} from '../database.js';
@@ -44,6 +44,7 @@ import {
 import {CONSUMER, LINES, SessionFeed, sharedConfig, waitsForComet} from './feed.js';
 import {DeviceLink, DeviceUnreachable, LinkStopped, refusesToken, type CommandWrite, type Transmission} from './link.js';
 import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA} from './schemas.js';
+import {editorContent} from './editor-content.js';
 import {
   animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, STATE_TYPES, storeEpoch,
   wallView, type Presence, type ShownTransmission,
@@ -239,6 +240,11 @@ export class NanoleafRuntime {
       this.#ensureSupervisor(id);
       this.#context.scheduler.after(0, () => this.#observe(id, 0));
     }
+  }
+
+  /** Authenticated module content reads use saved state only; the host owns admission and secret exclusion. */
+  content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    return editorContent(this.#directory, this.#ids, ref, request);
   }
 
   /** Stops following, ends each supervisor at its next wait, and waits for them. */
