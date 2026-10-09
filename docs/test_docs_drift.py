@@ -1,6 +1,7 @@
 """Synthetic documentation drift checks; no network or installed services."""
 import tempfile
 import unittest
+import subprocess
 from pathlib import Path
 import check_docs_drift as drift
 
@@ -21,13 +22,16 @@ class DocumentationTests(unittest.TestCase):
         errors = self.check('npm run missing\npython3 scripts/gone.py\nnode scripts/gone.mjs')
         self.assertEqual([e['line'] for e in errors], [1, 2, 3])
         self.assertTrue(all(e['file'] == 'README.md' for e in errors))
+        self.assertEqual(len(self.check('python3 missing.py\nnode missing.mjs')), 2)
+        self.assertEqual(self.check('python3 -m unittest\nnode --test'), [])
 
     def test_existing_commands_and_paths(self):
         self.assertEqual(self.check('`npm run build`\npython3 scripts/real.py\n`scripts/real.py`'), [])
 
     def test_globs_placeholders_generated_and_retired(self):
         self.assertEqual(self.check('`scripts/*.py` `.local/output.json` `scripts/<name>.py` '
-                                   '`scripts/old.py` (retired) `https://example.test/x`'), [])
+                                   '`scripts/old.py` (retired) `scripts/output/` (generated) '
+                                   '`https://example.test/x`'), [])
         self.assertEqual(len(self.check('`scripts/*.missing`')), 1)
 
     def test_missing_inline_path(self):
@@ -61,6 +65,29 @@ class DocumentationTests(unittest.TestCase):
         pins = [{'document': 'current', 'repo': 'hub', 'pin': 'old', 'paths': ['src/']}]
         result = drift.evaluate(pins, lambda *args: ('new', {'src/a.ts', 'src-extra/b.ts'}, None))
         self.assertEqual(result[0]['changed'], ['src/a.ts'])
+
+    def test_relative_owner_path_and_flag_only_example(self):
+        self.assertEqual(drift.check_document(self.root, 'scripts/README.md',
+                         '`scripts/real.py` `real.py` `npm run -s`', {'scripts/'}), [])
+
+    def test_local_git_rename_and_missing_revision(self):
+        def git(*args):
+            return subprocess.check_output(['git', '-C', str(self.root), *args], text=True,
+                                           stderr=subprocess.DEVNULL).strip()
+        git('init')
+        git('config', 'user.email', 'fixture@example.invalid')
+        git('config', 'user.name', 'Documentation fixture')
+        git('add', '.')
+        git('commit', '-m', 'base')
+        pin = git('rev-parse', 'HEAD')
+        git('mv', 'scripts/real.py', 'scripts/renamed.py')
+        git('commit', '-m', 'rename')
+        compare = drift.Comparisons(self.root, offline=True)
+        head, paths, error = compare(drift.HUB, pin)
+        self.assertEqual(head, git('rev-parse', 'HEAD'))
+        self.assertIsNone(error)
+        self.assertEqual(paths, {'scripts/real.py', 'scripts/renamed.py'})
+        self.assertIsNotNone(compare(drift.HUB, 'missing-revision')[2])
 
 
 if __name__ == '__main__':

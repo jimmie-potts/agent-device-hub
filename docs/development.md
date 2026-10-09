@@ -11,6 +11,9 @@ for disposable acceptance and proof. Scenario selection and full-suite triggers
 are in [runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs).
 The headings below preserve existing links and route component detail to its owner.
 
+[Documentation checks](documentation-checks.md) report source-pin drift and validate
+current commands and paths in CI, including Markdown-only changes.
+
 ## Current architecture diagram
 
 The current runtime view is authored in `docs/runtime-architecture.json` and
@@ -590,7 +593,7 @@ TypeScript/Python/package and affected consumer checks remain required for
 compatibility. See [the event profile](event-contract.md).
 
 Profile 2.0 lives in the same package under `schemas/v2/`, `src/v2/` and
-`fixtures/v2/`. `test:events:built` also runs `tests/v2.test.mjs`, which
+`fixtures/v2/`. `test:events:built` also runs `packages/event-contracts/tests/v2.test.mjs`, which
 covers every message kind and building block, the size cap, expiry, retry
 identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
@@ -598,19 +601,19 @@ sources follow the [strict profile](#strict-profile-for-new-code).
 
 `test:events:built` also runs the core and device payload family tests (Hub #842,
 #918):
-- `tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
+- `packages/event-contracts/tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
   for every core family, each invalid case with its expected detail, and removal,
   expiry and sync scenarios through the reference consumer in
-  `tests/consumer.mjs`.
-- `tests/devices.test.mjs` runs `fixtures/v2/devices.json`: a valid message for
+  `packages/event-contracts/tests/consumer.mjs`.
+- `packages/event-contracts/tests/devices.test.mjs` runs `fixtures/v2/devices.json`: a valid message for
   every device family, a reply and an outcome for each command family, each
   invalid case with its registry code and detail, the capability rule, the
   routing-key subject of every command family, and the Hub-mode table for each
   participating device kind, which must equal the package README's.
-- `tests/status.test.mjs` runs the 2.0 status helper's copied cases against
+- `packages/event-contracts/tests/status.test.mjs` runs the 2.0 status helper's copied cases against
   valid `session/2.0` records, and checks its ranking and colors against the 1.x
   `@jimmie-potts/agent-status`.
-- `tests/mapping.test.mjs` checks that
+- `packages/event-contracts/tests/mapping.test.mjs` checks that
   [MAPPING.md](../packages/event-contracts/MAPPING.md) names every 1.x field,
   including every field of the controller snapshot, its capabilities and each
   kind of the general command union. It converts the 1.x lifecycle, snapshot,

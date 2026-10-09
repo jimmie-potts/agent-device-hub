@@ -653,6 +653,19 @@ test('retained documents keep static checks, browser checks and review artifacts
   for (const folder of ['bunny-places-review', 'bunny-design-review']) assert.ok(upload.with.path.includes(folder));
 });
 
+test('documentation drift has full local history and read-only summary reporting', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/workflow.yml'), 'utf8'));
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  const steps = workflow.jobs.documents.steps;
+  assert.equal(steps.find(step => step.uses?.startsWith('actions/checkout@')).with['fetch-depth'], 0);
+  assert.ok(steps.some(step => step.run === 'python3 -m unittest discover -s docs -p test_docs_drift.py'));
+  const report = steps.find(step => step.name === 'Report source pins and validate documented commands and paths');
+  assert.ok(report.run.includes('python3 docs/check_docs_drift.py --report'));
+  assert.ok(report.run.includes('>> "$GITHUB_STEP_SUMMARY"'));
+  assert.ok(report.run.includes('exit "$result"'));
+  assert.equal(report['continue-on-error'], undefined);
+});
+
 // Each runtime module registers itself from its own folder, so the files every module story would otherwise edit name
 // no device module (Hub #999). The core and the fixture modules live outside `modules/`, so their names are not module
 // names. The negative control reintroduces one module's name, in each spelling, into a copy of a shared file.

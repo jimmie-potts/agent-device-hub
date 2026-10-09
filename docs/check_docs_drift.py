@@ -51,12 +51,30 @@ def inventory(root):
         for (repo, pin), paths in groups.items():
             add('atlas/' + component['id'], repo, pin, paths)
     reference = read_json(root / 'docs/system-design/reference/sources.json')
+    # Keep every saved input visible, including shared API types and security
+    # helpers that are not direct route handlers. Also name the rendered views.
     for name, source in reference['files'].items():
-        add('reference/' + name, source['repository'], source['revision'], [source['path']])
+        add('reference/input/' + name, source['repository'], source['revision'], [source['path']])
+    routes = read_json(root / 'docs/system-design/reference/routes.json')
+    for service in sorted({route['service'] for route in routes}):
+        source = reference['pins']['pixoo' if service == 'pixoo' else 'nanoleaf']
+        add('reference/api/' + service, source['repository'], source['revision'],
+            [route['file'] for route in routes if route['service'] == service])
+    # These are the DDL owners in reference/extract.py; changes to other saved
+    # inputs remain separately reported above rather than attributed to a schema.
+    for schema, service, paths in [
+        ('pixoo-library', 'pixoo', ['packages/library/src/migrations.ts']),
+        ('pixoo-owner', 'pixoo', ['packages/library/src/files.ts']),
+        ('nanoleaf', 'nanoleaf', ['bridge/project_map.py', 'bridge/bridge.py', 'bridge/controller_state.py']),
+    ]:
+        source = reference['pins'][service]
+        add('reference/database/' + schema, source['repository'], source['revision'], paths)
     current = read_json(root / 'docs/diagrams/current/provenance.json')
     for diagram in current['diagrams']:
         add('current/' + diagram['id'], HUB, current['sourceRevision'], diagram['sources'])
     architecture = read_json(root / 'docs/runtime-architecture.sources.json')
+    if ('Source baseline: ' + architecture['revision'][:8]) not in (root / 'docs/runtime-architecture.json').read_text():
+        raise ValueError('runtime architecture pin differs from its source inventory')
     add('current/runtime-architecture', HUB, architecture['revision'], architecture['paths'])
     return pins
 
@@ -103,6 +121,8 @@ class Comparisons:
                 elif self.offline:
                     raise ValueError('external comparison disabled by --offline')
                 else:
+                    if repo not in {'codex-nanoleaf', 'divoom-app-upgrade'}:
+                        raise ValueError('repository outside the public documentation inputs')
                     if repo not in self.heads:
                         branch = self.api(repo)['default_branch']
                         self.heads[repo] = self.api(repo + '/commits/' + branch)['sha']
@@ -128,7 +148,8 @@ def evaluate(pins, compare):
 
 
 def is_example(path):
-    return bool(re.search(r'[<>${}]|\.\.\.', path)) or path.startswith(GENERATED) or '/dist/' in path or '/node_modules/' in path
+    return bool(re.search(r'[<>${}]|\.\.\.', path)) or path.startswith(GENERATED) or bool(
+        {'dist', 'node_modules'} & set(Path(path).parts))
 
 
 def check_document(root, name, text, prefixes):
@@ -141,13 +162,14 @@ def check_document(root, name, text, prefixes):
                 messages.add('unknown npm script: ' + match[1])
         for match in re.finditer(r'\b(?:python3|node)\s+([\w./*-]+)', line):
             path = match[1].rstrip('.,;')
-            if '/' in path and not is_example(path) and not path.startswith('/') and not (root / path).exists():
+            file_like = '/' in path or path.endswith(('.py', '.js', '.mjs', '.cjs', '.ts'))
+            if file_like and not path.startswith(('-', '/')) and not is_example(path) and not (root / path).exists():
                 messages.add('missing command file: ' + path)
         for match in re.finditer(r'`([^`\n]+)`', line):
-            path = match[1].split('#')[0].rstrip('.,;')
+            path = re.sub(r':\d+(?:-\d+)?$', '', match[1].split('#')[0].rstrip('.,;')).removeprefix('./')
             if '/' not in path or any(c.isspace() for c in path) or is_example(path):
                 continue
-            if line[match.end():].lstrip().startswith('(retired)'):
+            if line[match.end():].lstrip().startswith(('(retired)', '(generated)')):
                 continue
             if not any(path.startswith(prefix) for prefix in prefixes):
                 continue
@@ -177,7 +199,8 @@ def markdown(results, errors):
              '| --- | --- | --- | --- | --- |']
     for row in results:
         files = ', '.join('`' + path + '`' for path in row['changed']) or '—'
-        lines.append(f"| {row['document']} | {row['repo']} | `{row['pin']}` → `{row['head']}` | {row['status']} ({len(row['changed'])}) | {files} |")
+        status = row['status'] + (': ' + row['reason'] if row['reason'] else f" ({len(row['changed'])})")
+        lines.append(f"| {row['document']} | {row['repo']} | `{row['pin']}` → `{row['head']}` | {status} | {files} |")
     lines.extend(['', f'Command/path errors: {len(errors)}.'])
     lines.extend(f"- {e['file']}:{e['line']}: {e['message']}" for e in errors)
     return '\n'.join(lines) + '\n'
