@@ -352,7 +352,7 @@ The catalog SHALL cover an approval prompt reaching every module, a command with
 
 #### Scenario: The Nanoleaf wall on both transports
 - **WHEN** the nanoleaf-wall scenario runs the core and the Nanoleaf module with a simulated Lines controller, in process and through the edge, and the reader follows `device`, `nanoleaf-wall` and `nanoleaf-animations` from `bunny/modules/nanoleaf` by name
-- **THEN** health lists those three families in the Nanoleaf module's `serves`; the reader's sync of `device` alone from the module holds the wall's record only, and the module runs on; the reader's copy shows the wall available with the power it reported, the working session on a Line and then its finished turn unread; Quiet, Free and Work are accepted with outcomes history records as observed, since a mode is the module's own state, the Lines dim to the Quiet level and play their saved scene in Free; a moment and an animation in Work are refused with `unsupported-capability`; the wall switched off in its app shows observed power off; an unanswering wall shows unavailable while the module runs, then available, with one `device.unavailable` and one `device.available` record; Quiet sent meanwhile succeeds as observed and holds nothing, so once the wall answers it shows Quiet and a second session takes a Line; a brightness write whose answer is lost is uncertain in history and shows the wall held and `degraded` until the next mode command, its device record's `held` naming that write's request ID, which is the core's tracked operation with its uncertain inbox item, with the hold logged once; and no record, message, health entry or reader copy holds the synthetic token
+- **THEN** health lists those three families in the Nanoleaf module's `serves`; the reader's sync of `device` alone from the module holds the wall's record only, and the module runs on; the reader's copy shows the wall available with the power it reported, the working session on a Line and then its finished turn unread; Quiet, Free and Work are accepted with outcomes history records as observed, since a mode is the module's own state, the Lines dim to the Quiet level and play their saved scene in Free; a moment with an unsupported mood and an animation in Work are refused with `unsupported-capability`; the wall switched off in its app shows observed power off; an unanswering wall shows unavailable while the module runs, then available, with one `device.unavailable` and one `device.available` record; Quiet sent meanwhile succeeds as observed and holds nothing, so once the wall answers it shows Quiet and a second session takes a Line; a brightness write whose answer is lost is uncertain in history and shows the wall held and `degraded` until the next mode command, its device record's `held` naming that write's request ID, which is the core's tracked operation with its uncertain inbox item, with the hold logged once; and no record, message, health entry or reader copy holds the synthetic token
 
 ### Requirement: Simulated modules and the SDK edge
 
@@ -1304,3 +1304,35 @@ The runtime SHALL accept a bounded binary upload only for a running module with 
 #### Scenario: Upload admission and command outcome
 - **WHEN** an authorized upload is prepared, or a read-only, invalid or oversized upload is attempted
 - **THEN** only the admitted upload reaches the existing tracked command path, refused uploads cause no import, and acceptance remains distinct from the owner's terminal outcome
+
+### Requirement: Core event automation
+
+The core SHALL own fresh event rules, interrupt sets, quiet hours and budgets in its private database, retaining the legacy rule and settings shapes without transferring legacy data. Rules SHALL evaluate only new live attention-raised, attention-cleared, turn-ended and session-ended occurrences. Sync, restart, stored outbox republication and duplicate occurrences SHALL start no moment. Arbitration SHALL retain no-flourishes, quiet hours, per-agent/task and global budgets, device spacing, the Work interrupt set, mode and alert precedence. Each matching enabled rule SHALL hand at most one moment per target to the tracked dispatcher, with a shared runtime-clock start instant and no retry. Acceptance SHALL remain distinct from terminal completion, failure or uncertainty; the Automation log SHALL link to the current tracked operation and SHALL NOT infer readership or physical success.
+
+#### Scenario: A matching live occurrence
+- **WHEN** a new live occurrence matches an enabled rule and policy permits its target
+- **THEN** one tracked moment is dispatched for that rule and target and its acceptance and eventual outcome are separately inspectable
+
+#### Scenario: Restart, sync and duplicate delivery
+- **WHEN** the core restarts, synchronizes or republishes an older occurrence, or receives another copy of a live occurrence
+- **THEN** no second moment starts, including when a rule was created after the original occurrence
+
+#### Scenario: A policy blocks a moment
+- **WHEN** quiet hours, a budget, device spacing, Quiet mode or an active alert forbids the moment
+- **THEN** the log records the policy reason and no moment command is sent
+
+### Requirement: Automation controls
+
+The dashboard SHALL provide one Automation page for rules, interrupt set, budgets, quiet hours and logs through the authenticated gateway. Read calls SHALL require read scope; mutations SHALL require control scope and bunny-request:1. Rules created without explicit owner enabling SHALL remain disabled. No new rule kind, scheduler, model call or personal-content field SHALL be introduced.
+
+#### Scenario: Owner creates a rule
+- **WHEN** the owner creates and enables a valid event rule through the authenticated page
+- **THEN** its targets and shape are checked before storage and the core can evaluate it independently of the page
+
+#### Scenario: A pending write loses authority
+- **WHEN** an Automation mutation lacks control scope or bunny-request:1, or its original credential is revoked or rotated while its body is being read
+- **THEN** the gateway returns the shared refusal code without changing rules or settings, records the refusal without request data, and leaves the core running
+
+#### Scenario: Rule and log controls
+- **WHEN** the owner reads or edits rules, the interrupt set or settings and inspects the Automation log
+- **THEN** bounded authenticated routes preserve the existing shapes under automation/2.0, rules remain disabled unless explicitly enabled, and log entries identify admission separately from any tracked terminal outcome

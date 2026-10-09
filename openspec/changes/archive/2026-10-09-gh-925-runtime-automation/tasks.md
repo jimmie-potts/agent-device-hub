@@ -11,6 +11,6 @@
 
 ## 3. Coordinated integration and delivery
 
-- [ ] 3.1 Integrate the authenticated gateway and one Automation page; verify read/control scopes, bunny-request:1 and frontend checks.
-- [ ] 3.2 Update owning guides and validation commands; verify workflow inventory, type/build and focused product checks.
-- [ ] 3.3 Complete catalog and representative simulated Acceptance under the host slot, synchronize specifications and archive before independent committed-revision reviews.
+- [x] 3.1 Integrate the authenticated gateway and one Automation page; verify read/control scopes, bunny-request:1 and frontend checks.
+- [x] 3.2 Update owning guides and validation commands; verify workflow inventory, type/build and focused product checks.
+- [x] 3.3 Complete catalog and representative simulated Acceptance under the host slot, synchronize specifications and archive before independent committed-revision reviews.
