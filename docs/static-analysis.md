@@ -33,7 +33,7 @@ The excluded categories are:
 - vendored reference assets (`docs/system-design/reference/assets/` and
   `docs/system-design/reference/database/`);
 - saved source copies from other repositories
-  (`docs/work-guide/work/architecture/sources/`).
+  (`docs/diagrams/legacy/sources/`).
 
 Add a category only with its reason. Do not exclude maintained source to hide
 findings.
