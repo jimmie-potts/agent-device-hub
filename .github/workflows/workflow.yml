@@ -48,12 +48,24 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
+      - name: Check documentation drift fixtures
+        run: python3 -m unittest discover -s docs -p test_docs_drift.py
+      - name: Report source pins and validate documented commands and paths
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          result=0
+          python3 docs/check_docs_drift.py --report "$RUNNER_TEMP/docs-drift.md" || result=$?
+          cat "$RUNNER_TEMP/docs-drift.md" >> "$GITHUB_STEP_SUMMARY"
+          exit "$result"
       - name: Validate retained diagrams, atlas and maintenance parser
         run: |
           python3 docs/diagrams/check.py
@@ -79,6 +91,7 @@ jobs:
         with:
           name: retained-documents-review
           path: |
+            ${{ runner.temp }}/docs-drift.md
             ${{ runner.temp }}/bunny-places-review/
             ${{ runner.temp }}/bunny-design-review
           if-no-files-found: error

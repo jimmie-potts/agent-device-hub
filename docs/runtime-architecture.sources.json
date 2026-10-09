@@ -1,0 +1,12 @@
+{
+  "revision": "36fb7b99f11b47c2f95be3f892a13d7ca72c0b0d",
+  "basis": "Existing source baseline and owning boundaries in docs/architecture.md; no re-pin.",
+  "paths": [
+    "apps/runtime/src/gateway/",
+    "apps/runtime/src/modules.ts",
+    "apps/runtime/src/core/",
+    "apps/runtime/dashboard/",
+    "packages/sdk/src/",
+    "modules/"
+  ]
+}

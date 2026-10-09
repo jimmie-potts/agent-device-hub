@@ -21,7 +21,7 @@ Verified source revisions for this revision of the guide:
 | Source | Revision | What was read |
 | --- | --- | --- |
 | Hub `main` | `73166b2c6bc9b69a43650798684d73228483474d` | `apps/dashboard/src/style.css`, `apps/dashboard/src/main.tsx`, `apps/dashboard/src/client.ts`, `apps/dashboard/README.md`, `docs/architecture.md`, `docs/decisions/0004-local-first-personal-assistant.md` |
-| Nanoleaf `main` | `9e2c41313de3c69c32b8ddf5259b30517c14588f` | `bridge/wall.html`, `docs/decisions/0004-wall-map-visual-direction.md` |
+| Nanoleaf `main` | `9e2c41313de3c69c32b8ddf5259b30517c14588f` | `bridge/wall.html`, `codex-nanoleaf/docs/decisions/0004-wall-map-visual-direction.md` |
 
 The documentation skin files `docs/skins/fixed.css` and
 `docs/skins/neon-geometry-wars.css` were delivered by Hub #85

@@ -205,7 +205,7 @@ covers what it has and [PROVENANCE.md](dashboard/PROVENANCE.md)
 what was copied and changed. It follows the
 [strict profile](../../docs/development.md#strict-profile-for-new-code), tests included: `src/`
 type-checks for the browser with its own `tsconfig.json`, and `tests/` for Node
-with `tests/tsconfig.json`. Node 24 runs the tests' TypeScript as it is, with no
+with `apps/runtime/dashboard/tests/tsconfig.json`. Node 24 runs the tests' TypeScript as it is, with no
 build step of their own.
 
 Use Node 24 from the worktree root. `npm run build` builds the page into
