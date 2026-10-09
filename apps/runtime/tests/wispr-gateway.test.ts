@@ -31,9 +31,10 @@ async function boundary(context: TestContext) {
         checked = true; return captured === epoch;
       };
     },
-    read: async (ref: string) => {
+    read: async (ref: string, query: string) => {
       reads++; reading(); await gate;
-      if (ref === 'export') return {type: 'text/csv; charset=utf-8', bytes: Buffer.from('words\n120\n')};
+      if (ref === 'export' && new URLSearchParams(query).get('format') === 'csv')
+        return {type: 'text/csv; charset=utf-8', bytes: Buffer.from('words\n120\n')};
       return {type: 'application/json', bytes: Buffer.from('{"schema":"wispr-analytics/2.0","data":{"words":120}}')};
     },
   };
@@ -110,11 +111,21 @@ void test('privacy opt-out after resolved content still prevents HTTP delivery, 
   assert.equal(final.body.includes('120'), false);
 });
 
-void test('Wispr CSV is a bounded inert download with a fixed filename and the same read gate', async context => {
-  const w = await boundary(context), answer = await w.call('/modules/wispr/content/export?format=csv');
-  assert.equal(answer.status, 200); assert.equal(answer.body, 'words\n120\n');
-  assert.equal(answer.headers['content-type'], 'text/csv; charset=utf-8');
-  assert.equal(answer.headers['content-disposition'], 'attachment; filename="wispr-analytics.csv"');
-  assert.equal(answer.headers['cache-control'], 'no-store'); assert.equal(answer.headers['x-content-type-options'], 'nosniff');
-  assert.equal((await w.call('/modules/wispr/content/export?format=csv', w.browser())).status, 403);
+void test('Wispr exports are bounded inert downloads with fixed filenames for CSV and explicit/default JSON', async context => {
+  const w = await boundary(context);
+  for (const [query, format, type] of [
+    ['?format=csv', 'csv', 'text/csv; charset=utf-8'],
+    ['?format=json', 'json', 'application/json'],
+    ['', 'json', 'application/json'],
+  ] as const) {
+    const path = `/modules/wispr/content/export${query}`, answer = await w.call(path);
+    assert.equal(answer.status, 200);
+    assert.equal(answer.body, format === 'csv' ? 'words\n120\n' : '{"schema":"wispr-analytics/2.0","data":{"words":120}}');
+    assert.equal(answer.headers['content-type'], type);
+    assert.equal(answer.headers['content-disposition'], `attachment; filename="wispr-analytics.${format}"`);
+    assert.equal(answer.headers['cache-control'], 'no-store'); assert.equal(answer.headers['x-content-type-options'], 'nosniff');
+    assert.equal((await w.call(path, w.browser())).status, 403);
+  }
+  assert.equal((await w.call('/modules/wispr/content/summary')).headers['content-disposition'], undefined,
+    'ordinary JSON reads remain inline');
 });

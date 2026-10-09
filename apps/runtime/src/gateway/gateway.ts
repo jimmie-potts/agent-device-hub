@@ -606,7 +606,7 @@ export class Gateway {
           found.bytes.byteLength > WISPR_MAX_BYTES || this.#options.redactions.holdsBytes(found.bytes))
         throw refuse('internal', 'Wispr returned invalid content');
       return {status: 200, body: found.bytes, headers: {...PAGE_HEADERS, 'content-type': found.type,
-        ...(found.type === 'text/csv; charset=utf-8' ? {'content-disposition': 'attachment; filename="wispr-analytics.csv"'} : {})}};
+        ...(ref === 'export' ? {'content-disposition': `attachment; filename="wispr-analytics.${found.type === 'text/csv; charset=utf-8' ? 'csv' : 'json'}"`} : {})}};
     } catch (error) {
       span.end(error instanceof Refused ? 'unset' : 'error'); throw error;
     } finally {request.off('aborted', aborted); controller.abort(); span.end();}
