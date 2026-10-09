@@ -38,8 +38,3 @@ installation remain pending the owner's review of the findings.
 
 Live button testing, implementation and desk-preset requests need separately
 authorized follow-up work. Continue using existing controls in the meantime.
-
-## Guide
-
-**Topic:** desktop-controls
-**Note:** Local investigation sample; the implementation choice remains open.

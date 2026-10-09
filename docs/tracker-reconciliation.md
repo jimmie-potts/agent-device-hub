@@ -55,11 +55,11 @@ update as acceptance evidence.
 When scope, prerequisites or the next step changes, reassess the affected
 recommendation against current shared policy. Read the installed
 `plan-work/references/execution-recommendations.md` through host skill discovery
-and the repository's [recommendation mechanics](work-guide/README.md#execution-recommendations).
+and the repository's [recommendation mechanics](../apps/maintenance/recommendations/README.md).
 Reading that policy does not invoke the skill. If the policy or required inputs
 are unavailable, report the gap rather than claiming current advice.
 
-Use `docs/work-guide/work/recommendations.py`'s canonical parser and upsert.
+Use `apps/maintenance/recommendations/recommendations.py`'s canonical parser and upsert.
 The tool renders assessor input; it does not perform the assessment. Parse the
 current live body and review the intended recommendation before any write.
 Preserve `insufficient` with named missing inputs where no supported assessment
@@ -70,7 +70,7 @@ fingerprint is unchanged.
 Run the canonical dry run from the repository root:
 
 ```bash
-python3 docs/work-guide/work/recommendations.py upsert --input <entries.json> --dry-run
+python3 apps/maintenance/recommendations/recommendations.py upsert --input <entries.json> --dry-run
 ```
 
 Keep assessor input and receipts in the main checkout's ignored

@@ -22,7 +22,6 @@ export const OLD_HEAD = fakeSha('candidate-earlier');
 export const MERGE = fakeSha('squash-merge');
 export const NEWER_MAIN = fakeSha('main-after-another-merge');
 export const POLICY = fakeSha('policy-sources');
-export const GUIDE_HTML = Buffer.from('<!doctype html><title>Guide</title>\n');
 export const sha256 = data => createHash('sha256').update(data).digest('hex');
 
 // world.workflows[revision] maps a workflow directory to its {file: text}.
@@ -410,41 +409,4 @@ export function writeProof(directory, { runId = 'hub-20260927T070000Z-3f9a1c', s
     if (tamper) fs.writeFileSync(path.join(proofDir, 'verified', 'capture-1', 'after.png'), Buffer.from('changed'));
   }
   return proofDir;
-}
-
-/** The guide browser check's receipt (docs/work-guide/work/check_guide.cjs) and its retained files. */
-export function writeGuideEvidence(directory, { html = GUIDE_HTML, errors = [], screenshots = true, print = true, overrides = {} } = {}) {
-  const folder = path.join(directory, 'guide-check');
-  fs.mkdirSync(folder, { recursive: true });
-  const receipt = {
-    checkedAt: '2026-09-27T07:20:00Z',
-    htmlSha256: sha256(html),
-    htmlBytes: html.length,
-    issueStatusAndEvidence: 'passed',
-    navigation: 'passed',
-    printExpansionAndRestoration: 'passed',
-    errors,
-    consoleErrors: [],
-    ...overrides,
-  };
-  fs.writeFileSync(path.join(folder, 'guide-verification.json'), `${JSON.stringify(receipt, null, 2)}\n`);
-  if (screenshots) fs.writeFileSync(path.join(folder, 'guide-status-overview.png'), Buffer.from('png'));
-  if (print) fs.writeFileSync(path.join(folder, 'guide-print-check.pdf'), Buffer.from('pdf'));
-  return path.join(folder, 'guide-verification.json');
-}
-
-/**
- * A guide-only exception record in the form the preflight reads: the revision,
- * the HTML hash and one line per local check. Pass `null` to omit a check.
- */
-export function guideRecordBody(sha, { html = GUIDE_HTML, build = 'exit 0', maintenance = 'exit 0', places = 'exit 0', drift = 'exit 0' } = {}) {
-  return [
-    `Guide-only CI exception evidence for ${sha}; guide HTML sha256 ${sha256(html)}.`,
-    '',
-    build === null ? null : `- python3 docs/work-guide/work/build_guide.py: ${build}`,
-    maintenance === null ? null : `- python3 docs/work-guide/work/test_maintenance.py: ${maintenance}`,
-    places === null ? null : `- node docs/skins/check_places.cjs: ${places}`,
-    drift === null ? null : `- git diff --exit-code -- docs/work-guide/outputs: ${drift}`,
-    '- node docs/work-guide/work/check_guide.cjs: passed; receipt retained outside Git',
-  ].filter(line => line !== null).join('\n');
 }

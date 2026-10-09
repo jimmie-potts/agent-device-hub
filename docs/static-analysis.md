@@ -29,7 +29,6 @@ The excluded categories are:
 
 - everything the root `.gitignore` lists, including dependencies, build output,
   local data and agent worktrees, plus the firmware build trees;
-- the Work guide's published releases (`docs/work-guide/outputs/`);
 - vendored reference assets (`docs/system-design/reference/assets/` and
   `docs/system-design/reference/database/`);
 - saved source copies from other repositories
@@ -130,11 +129,6 @@ The local rules live in `scripts/eslint/bunny-rules.mjs`.
 - that every workspace package uses a scope listed in `workspaceScopes`;
 - that the compiler base rejects an unchecked index and an explicit `undefined`
   optional property.
-
-Guide-only revisions skip the core job under the
-[SDLC exception](sdlc.md#guide-only-ci-exception). Run
-`npx eslint docs/work-guide` for them. It needs no build, because the guide has
-no linted TypeScript.
 
 ### Safe-error rules
 

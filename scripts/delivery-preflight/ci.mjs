@@ -1,11 +1,6 @@
-// CI evidence (docs/sdlc.md#ci-evidence) and the guide-only CI exception
-// (docs/sdlc.md#guide-only-ci-exception) for one revision.
-import { createHash } from 'node:crypto';
-
-import { CI_PROVIDERS, GUIDE_ROOT, SDLC, short } from './context.mjs';
+// Exact-revision CI evidence; no path-specific evidence exceptions.
+import { CI_PROVIDERS, short } from './context.mjs';
 import { ReadFailure } from './github.mjs';
-import { GUIDE_HTML_PATH, readGuideReceipt } from './receipts.mjs';
-import { guideRecordResults, readRecord } from './records.mjs';
 import { expectedJobs, parseWorkflow } from './workflows.mjs';
 
 /** The revision's CI provider and parsed workflows: the first provider whose directory holds a workflow. */
@@ -78,31 +73,12 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     }
   }
 
-  const outside = paths.filter(file => !file.startsWith(GUIDE_ROOT));
-  const guideOnly = filesComplete && paths.length > 0 && outside.length === 0;
   if (!names.length && !expected.uncertain.length) {
-    if (guideOnly && expected.filtered.length) await evaluateGuideException(ctx, gate, { sha, provider });
-    else gate.unresolved('no configured job applies and no exception covers this change');
+    gate.unresolved('no configured job applies to this change');
     return;
   }
   gate.evidence.mode = provider.id;
-  // Hub #861: Checks also ignores Markdown, so guide files that change together with other Markdown skip its suites.
-  // The revision then needs the guide evidence, as a guide-only change does.
-  const guidePaths = paths.filter(file => file.startsWith(GUIDE_ROOT));
-  const guideRidesAlong = filesComplete && guidePaths.length > 0 && outside.length > 0 && expected.filtered.length > 0;
-  const { guideReceipts = [], guideRecords = [] } = ctx.declaration;
-  if (guideRidesAlong) {
-    gate.note(`changed paths under ${GUIDE_ROOT} skip ${expected.filtered.map(item => item.workflow).join(', ')}; ${SDLC}#markdown-only-ci-routing requires the guide evidence`);
-  } else if (guideReceipts.length || guideRecords.length) {
-    let why;
-    if (!filesComplete) why = 'the changed-file list is incomplete';
-    else if (outside.length) why = `not guide-only: ${outside.slice(0, 5).join(', ')}`;
-    else if (expected.jobs.length) why = 'configured jobs still run for this change';
-    else why = `branch rules require ${requiredContexts.join(', ')}`;
-    gate.note(`the guide-only exception does not apply: ${why}`);
-  }
   await evaluateChecks(ctx, gate, { sha, names, checkBranch, provider });
-  if (guideRidesAlong) await evaluateGuideEvidence(ctx, gate, { sha });
 }
 
 async function evaluateChecks(ctx, gate, { sha, names, checkBranch, provider }) {
@@ -165,78 +141,5 @@ async function evaluateChecks(ctx, gate, { sha, names, checkBranch, provider }) 
   for (const other of CI_PROVIDERS.filter(item => item.id !== provider.id)) {
     const count = evidence.value.runs.filter(run => run.app && run.app.slug === other.app).length;
     if (count) gate.note(`${count} ${other.title} check runs also exist for ${short(sha)}; they do not gate this revision`);
-  }
-}
-
-/**
- * The guide-only exception for one revision: no CI run, a guide receipt that
- * matches the committed guide HTML, and the delivery account's record naming
- * the revision, the HTML hash and passing local checks.
- */
-async function evaluateGuideException(ctx, gate, { sha, provider }) {
-  const { github, repo } = ctx;
-  gate.evidence.mode = 'guide-only-exception';
-  gate.note(`every changed path is under ${GUIDE_ROOT} and every workflow filters it; ${SDLC}#guide-only-ci-exception applies only with its evidence`);
-  const runs = await ctx.read(gate, () => github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'));
-  if (runs.ok && runs.value.some(run => run.app && run.app.slug === provider.app)) {
-    gate.unresolved(`${provider.title} runs exist for ${short(sha)} although the filters exclude this change; resolve that before using the exception`);
-  }
-  await evaluateGuideEvidence(ctx, gate, { sha });
-}
-
-/** The guide verification receipt and its PR record for the candidate's committed guide HTML. */
-async function evaluateGuideEvidence(ctx, gate, { sha }) {
-  const { github, repo, declaration } = ctx;
-  const receipts = declaration.guideReceipts || [];
-  const records = declaration.guideRecords || [];
-  if (!receipts.length || !records.length) {
-    gate.unresolved('the guide-only exception needs the guide verification receipt (--guide-receipt) and its PR record (--guide-record); missing runs alone do not establish it');
-    if (!receipts.length) return;
-  }
-  const html = await ctx.read(gate, async () => {
-    const item = await github.get(`/repos/${repo}/contents/${GUIDE_HTML_PATH}?ref=${sha}`);
-    if (item.encoding === 'base64' && item.content) return Buffer.from(item.content, 'base64');
-    const blob = await github.get(`/repos/${repo}/git/blobs/${item.sha}`);
-    return Buffer.from(blob.content || '', 'base64');
-  });
-  if (!html.ok) return;
-  const digest = createHash('sha256').update(html.value).digest('hex');
-  gate.evidence.committedHtmlSha256 = digest;
-
-  const readable = [];
-  for (const file of receipts) {
-    const receipt = await ctx.read(gate, async () => readGuideReceipt(file));
-    if (receipt.ok) readable.push(receipt.value);
-  }
-  const receipt = readable.find(item => item.evidence.htmlSha256 === digest);
-  if (!receipt) {
-    if (readable.length) gate.unresolved(`no guide receipt's HTML hash matches the candidate's committed guide HTML at ${short(sha)}`);
-    return;
-  }
-  gate.evidence.guideReceipt = receipt.evidence;
-  for (const reason of receipt.reasons) gate.unresolved(reason);
-  if (!records.length) return;
-
-  const naming = [];
-  const problems = [];
-  for (const url of records) {
-    const found = await readRecord(ctx, gate, url, 'guide record');
-    if (!found) continue;
-    if (!found.record.body.includes(sha)) continue;
-    if (found.problems.length) problems.push(...found.problems);
-    else naming.push(found.record);
-  }
-  if (!naming.length) {
-    for (const problem of problems) gate.unresolved(problem);
-    gate.unresolved(`no guide record from ${ctx.publisher} names ${short(sha)} in full; record the exception evidence for this revision`);
-    return;
-  }
-  const record = naming.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).at(-1);
-  gate.evidence.guideRecord = { url: record.url, author: record.author, createdAt: record.createdAt };
-  if (!record.body.includes(digest)) gate.unresolved(`the guide record for ${short(sha)} does not name the HTML sha256 ${short(digest)}`);
-  const results = guideRecordResults(record.body);
-  gate.evidence.guideRecord.checks = results;
-  for (const check of results.unverified) {
-    gate.unresolved(`the guide record does not show ${check} in the form "<command>: exit 0" or "<command>: passed"; it remains unverified`);
   }
 }

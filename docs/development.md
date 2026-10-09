@@ -33,10 +33,9 @@ human UI approval wording. Routine product delivery does not rebaseline it. For 
 edit `source/*.html` and `design.json`, then regenerate the overview, component
 pages and complete reading view. `assets/` holds the shared style and browser
 behavior. The inventory records the template set and source revision receipts.
-The atlas pages and the guide take their colors from the token files in
+The atlas pages take their colors from the token files in
 `docs/skins/`; `python3 docs/skins/check_tokens.py`, which `check.py` also runs,
-fails on a color literal in their styles (see the work guide README's "Skin and
-tokens" section). The API and database reference under `reference/` keeps its
+fails on a color literal in their styles. The API and database reference under `reference/` keeps its
 own stylesheet and bundled viewers and is outside that check.
 
 ```bash
@@ -56,12 +55,11 @@ docs/diagrams/architecture_diagrams.py`), rebuild the atlas and run the [indepen
 SVG no longer matches its definition or receipt.
 
 The generator and static check use Python's standard library. Browser checks use
-installed Playwright/Chromium, with the same `GUIDE_PLAYWRIGHT_MODULE` and
-`GUIDE_CHROMIUM_PATH` overrides as the work guide. `BUNNY_DESIGN_RECEIPTS` selects
+installed Playwright/Chromium, with `DOCS_PLAYWRIGHT_MODULE` and
+`DOCS_CHROMIUM_PATH` overrides. `BUNNY_DESIGN_RECEIPTS` selects
 an external screenshot/PDF/receipt directory; the default is a temporary folder.
-The retained document checks run independently of Work Guide. See the
-[diagram ownership and validation guide](diagrams/README.md); the retirement
-change moves their hosted execution into a retained workflow.
+The Retained documentation checks job runs these checks in Workflow. See the
+[diagram ownership and validation guide](diagrams/README.md).
 
 The API/database reference is linked from the design navigation. Its Scalar
 viewers embed three source-pinned OpenAPI documents; SchemaSpy reports cover the
@@ -90,7 +88,7 @@ with their existing owners. No new OpenSpec capability is introduced by the atla
 Hub #278 adds the shared Places manifest under `docs/skins/`. Run
 `python3 -m unittest docs/skins/test_places.py` for its order, destination and
 local/public link contract; `docs/system-design/check.py` includes that test in
-the Work guide CI job. Run the public exporter into a new disk-backed scratch
+the Retained documentation checks job. Run the public exporter into a new disk-backed scratch
 directory and inspect `atlas/manifest.json`'s `placesPages`: every exported HTML
 page must carry the public Places strip. The dashboard browser suite checks its
 sidebar destinations and that rendering them sends no controller request. The
@@ -102,41 +100,19 @@ dashboard's Local places through `placeLinks`.
 Hub-only preview with no Wall link and the unchanged unconfigured Hub.
 `apps/hub/tests/dashboard.test.mjs` covers the validation.
 Run `node docs/skins/check_places.cjs` after generation for the source-page
-inventory, 390 px navigation and screenshots. The Work guide CI job runs it with
-the pinned Chromium alongside the existing guide and atlas browser checks.
+inventory, 390 px navigation and screenshots. The Retained documentation checks job runs it with
+the pinned Chromium alongside the retained atlas browser checks.
 
 For an authorized public atlas publication, export from the exact validated Hub
 revision with `python3 docs/system-design/export_public.py /absolute/new/site-stage`.
-The exporter stages the generated guide as `site-stage/index.html`, its nine
-architecture viewers, and the atlas reading pages, bundled reference assets and
+The exporter stages nine architecture viewers and the atlas reading pages, bundled reference assets and
 downloadable schema/API metadata under `site-stage/atlas/`. It records atlas
-hashes in `atlas/manifest.json`, rewrites links for the public layout and adds
-return navigation to the work guide. Run it against a clean
+hashes in `atlas/manifest.json` and rewrites links for the public layout. It
+does not create a root landing page or change the separate deployed site. Run it against a clean
 `git archive` as well as the worktree; the archive check catches missing tracked
 SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 
 ## Workflow commands
-
-Guide record contract fixtures run with Node 24 after `npm ci`:
-`node --test docs/work-guide/contracts/records.test.mjs`. The Workflow CI
-job runs this check separately from OpenSpec validation. It exercises schema
-versions, identity, incomplete/stale evidence, operation gates and the public
-planning allowlist using synthetic records; it does not qualify the later
-normalizer, renderer, protected endpoint or a live provider. Contract delivery
-also runs shared build/type/controller/workflow checks and the guide's existing
-build, maintenance and browser checks. See the
-[field dictionary](work-guide/contracts/README.md).
-
-Epic Guide contract fixtures run the same way:
-`node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs`, as a
-separate step in the same Workflow job. They exercise `guide-records/2.0` placement,
-Project values, the seven-day Recently done window, prerequisite acceptance, the
-publication gate, order-aware identity, readiness and projection, the
-`guide-release/1.0` binding, and
-`guide-views/1.0` catalog and schema agreement, the shared issue card and epic
-component, coverage, reasons, boards, briefs and rejection codes, using synthetic
-records. They do not qualify the collector, browser, Project access or a
-provider. See the [epic Guide dictionary](work-guide/contracts/epic-guide/README.md).
 
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
 not report v24, prefix each command with `fnm exec --using=.nvmrc --`, for
@@ -175,11 +151,11 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-core and Workflow jobs' fifteen, the Work guide job's twenty-five and the App verification job's thirty. Branch pushes do not duplicate PR checks.
+core and Workflow jobs' fifteen, the retained documentation job's twenty-five and the App verification job's thirty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
-verification and Work guide, with 300 s per attempt, and the hook-qualification
+verification and retained documentation, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
 The runner image already makes apt drop a connection that receives nothing for
 15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
@@ -191,30 +167,14 @@ attempts in all. The step limits (20 minutes for the browser installs, 14 for th
 hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
 unless `GITHUB_ACTIONS` is `true`.
-The workflow files have new names (`checks.yml`, `workflow.yml` and `guide.yml`)
-because GitHub keeps the manually disabled state of the retired `ci.yml` and
-`work-guide.yml` copies, whose earlier billing-blocked runs do not validate a
-candidate. A branch that still has `.depot/workflows/` runs on Depot, so rebase
-it onto current main before pushing.
-The old nightly guide refresh was retired on 2026-09-30 at the owner's request.
-Its GitHub Actions workflow is disabled and removed from source; the rolling PR
-is closed without merge. Manual guide tooling and its regression tests remain
-until the replacement Guide's consumer audit retires them. This does not change
-the validation or merge gates. See the [guide procedure](work-guide/README.md#nightly-refresh).
-The guide maintenance suite includes the history/report, retired-term, staged
-input, validation and local-Git publisher tests. The publisher tests use a local
-bare repository and recorded API responses; actual dispatch evidence is separate.
+Active workflow files are `checks.yml` and `workflow.yml`. The Work Guide
+workflow and its path exceptions are removed. The existing Workflow workflow
+owns both Workflow checks and Retained documentation checks.
 
-
-All three workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and
-main pushes. Guide-only edits, including generators and tests, retain local guide
-validation under [the SDLC exception](sdlc.md#guide-only-ci-exception). The
-Checks workflow also ignores `**/*.md`. A change whose files are all Markdown
-runs only the Workflow and Work guide jobs, under the
-[Markdown-only rule](sdlc.md#markdown-only-ci-routing). Mixed changes require
-every configured job. Do not infer filtering from a missing
-run alone. Inspect the complete changed-file scope and hosted event and
-check records; keep the normal gate when scope or filter behavior is uncertain.
+Checks ignores `**/*.md`; both Workflow jobs still run for Markdown-only changes
+under the [Markdown-only rule](sdlc.md#markdown-only-ci-routing). Mixed changes
+require every configured job. Inspect the complete changed-file list and hosted
+event/check records; missing runs alone never establish filtering.
 Tag pushes are outside the main-only push trigger. Static tests verify workflow
 configuration; only hosted event evidence verifies actual scheduling.
 
@@ -240,7 +200,7 @@ Normal CI has five GitHub-hosted Linux jobs, and each suite runs in exactly one 
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
 | Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
-| Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
+| Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 
 The Checks workflow performs two full builds across its jobs. The Python
@@ -363,8 +323,7 @@ gh run view <run-id> --repo jimmie-potts/agent-device-hub --log-failed
 ```
 
 `--commit` needs the full 40-character SHA; an abbreviated one silently lists
-nothing. The retired `ci.yml` and `work-guide.yml` still appear, disabled, with
-the same workflow names as `checks.yml` and `guide.yml`, so select workflows by
+nothing. Retired workflow entries may still appear disabled, so select active workflows by
 file name. These are read operations; access does not itself authorize
 dispatch, rerun, cancellation or secret changes. A delivery authorized to rerun
 one failed job on the reviewed head runs `gh run rerun --job <job-id>`, with the
@@ -406,7 +365,6 @@ prints tokens, local paths or reviewer return text.
 | --- | --- | --- |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
 | CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
-| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no run from the revision's CI provider; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
@@ -434,27 +392,6 @@ same length) or a balanced double-quoted span outside code; a line with an
 unclosed backtick run or unbalanced quotes is read whole. The summary row
 never approves an axis on its own.
 
-A guide-only record is a comment or review on the PR written by
-the delivery account: the PR author, or the repository owner when a bot opened
-the PR. Bot comments, other accounts' comments and comments with an HTML marker,
-such as review reports and provider summaries, never count.
-
-A guide-only record names the full revision and the guide HTML SHA-256, and
-reports each of the four local checks in exactly this form: the command
-(without a colon), a colon, and `exit 0` or `passed` as the entire value.
-
-```text
-- python3 docs/work-guide/work/build_guide.py: exit 0
-- python3 docs/work-guide/work/test_maintenance.py: exit 0
-- node docs/skins/check_places.cjs: exit 0
-- git diff --exit-code -- docs/work-guide/outputs: exit 0
-```
-
-Every line that names one of these checks must have that form. Any other
-wording, such as `2 failures, 40 passed`, `did not pass` or
-`exit 1; rerun: exit 0`, leaves the check unverified and the exception
-unresolved.
-
 Exit status is 0 when every applicable gate is satisfied, 1 when any is
 unresolved, 2 when a read failed, and 3 for a usage or internal error. `--json`
 prints the machine-readable report.
@@ -469,20 +406,19 @@ changed head or base, stale, partial or self-contradicting review, multi-axis,
 aliased and malformed finding lines, unavailable API and paginated reads,
 UI changes without approval (including ignored legacy inputs), unchanged review/CI/proof
 failures on UI changes, open counterpart,
-missing work issue, both finish-line kinds, the guide-only exception with its
-evidence and with mixed paths, and dirty or failed-capture receipts. It also
+missing work issue, both finish-line kinds, removed-flag refusals, filtered paths
+and dirty or failed-capture receipts. It also
 covers the read-only guard and a run under Node's permission model, which
 denies file writes and child processes. CI runs it in the Workflow checks job.
 Fixtures do not qualify live GitHub state or installed clients.
 
 ## Execution recommendation generator
 
-When changing `docs/work-guide/work/recommendations.py`, run the focused prompt
+When changing `apps/maintenance/recommendations/recommendations.py`, run the focused prompt
 and parser regression suite from the assigned worktree root:
 
 ```bash
-python3 docs/work-guide/work/test_maintenance.py Recommendations
-python3 docs/work-guide/work/test_maintenance.py
+python3 apps/maintenance/tests/test_recommendations.py
 ```
 
 Retain a failing-before/passing-after result for changed prompt behavior. Check
@@ -494,10 +430,9 @@ separate, and missing observations must not become a mismatch. Observed required
 mismatches and unmet explicit verified-identity requirements still stop work.
 
 Also run the Node 24 workflow setup and checks above and report the actual
-OpenSpec inventory. Generator-only source maintenance does not refresh issue
-bodies, regenerate the dated guide or publish an edition. Intentional guide
-updates still follow the guide procedure; CI filtering and evidence requirements
-remain those in the SDLC.
+OpenSpec inventory. Parser-only source maintenance does not rewrite issue bodies.
+The [maintenance parser guide](../apps/maintenance/recommendations/README.md)
+owns fingerprint compatibility and safe upsert mechanics.
 
 ## Shared tooling provenance
 
@@ -1405,31 +1340,6 @@ contract/state/MCP and workflow checks.
 
 The Pixoo catalog browser regression `apps/dashboard/tests/pixoo-refresh.mjs` covers all declared playlist names across pagination and profile compatibility after a server restart with an unchanged catalog revision. It runs in the existing dashboard browser suite against synthetic controllers.
 
-## Epic Guide browser
-
-Hub #511 adds a separate static candidate; the legacy Guide remains available.
-Use Node 24 after `npm ci`, and the existing Python story parsers.
-
-```bash
-node --test docs/work-guide/browser/tests/*.test.mjs
-node docs/work-guide/browser/tests/browser.mjs
-node docs/work-guide/browser/tests/live.mjs
-node docs/work-guide/browser/build.mjs --collect
-# Use --collect --rest if GraphQL quota is unavailable; Search must reconcile completely.
-node docs/work-guide/browser/build.mjs --build
-node docs/work-guide/browser/build.mjs --check
-```
-
-Adapter checks cover terminal pagination, independent inventory reconciliation,
-whole-attempt consistency, required ancestry, optional metadata gaps, UTC
-completion boundaries, prerequisite outcomes and last-good preservation.
-Browser checks exercise the actual generator/renderer with a large epic, mobile,
-keyboard, Back/filter state, theme, reduced motion, per-page print, briefs and
-clipboard denial; negative controls reject mixed releases and unsafe projection.
-The build emits canonical records, release manifest and actionable inventory
-audit. Source candidate verification does not establish hosted/public acceptance.
-Run the existing Guide maintenance/build/browser and shared build/type/controller
-contract/workflow checks as well. CI runs these browser tests with pinned Chromium.
 
 ## Shared observability contract checks
 

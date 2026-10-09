@@ -1,4 +1,4 @@
-"""Shared skin assets for the generated work guide and the B.U.N.N.Y. atlas.
+"""Shared skin assets for the retained diagrams and the B.U.N.N.Y. atlas.
 
 Both generators inline stylesheet() ahead of their own CSS, mark <html> with
 HTML_ATTRIBUTES, put head_script() in <head> and run controls_script(). Each page
@@ -15,7 +15,7 @@ DIR = Path(__file__).resolve().parent
 REPO = DIR.parent.parent
 SKIN = 'neon-geometry-wars'
 HTML_ATTRIBUTES = f'data-skin="{SKIN}"'
-# Shared by the guide and the atlas so a reader's choice follows them between the two.
+# Shared by the diagrams and the atlas so a reader's choice follows them between the two.
 THEME_KEY = 'bunny-design-theme'
 # Stored by the retired Pause motion control; the head script removes it.
 RETIRED_KEYS = ('bunny-design-motion',)
@@ -35,10 +35,10 @@ def places():
     data = json.loads((DIR / 'places.json').read_text(encoding='utf-8'))
     result = data['places']
     assert data['version'] == 1 and [p['id'] for p in result] == [
-        'guide', 'architecture', 'atlas', 'reference', 'bunny', 'wall']
-    assert [p['group'] for p in result] == ['Public'] * 4 + ['Local'] * 2
+        'architecture', 'atlas', 'reference', 'bunny', 'wall']
+    assert [p['group'] for p in result] == ['Public'] * 3 + ['Local'] * 2
     assert [p['label'] for p in result] == [
-        'Guide', 'Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.', 'Wall']
+        'Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.', 'Wall']
     for place in result:
         if place['group'] == 'Public':
             url = urlsplit(place['publicUrl'])
@@ -71,7 +71,7 @@ def places_strip(current, output, public=False):
         else:
             if place['group'] == 'Local':
                 href = place['localUrl']
-            elif public or (place['id'] == 'guide' and current != 'guide'):
+            elif public:
                 href = place['publicUrl']
             else:
                 href = os.path.relpath(REPO / place['localPath'], output.parent).replace(os.sep, '/')

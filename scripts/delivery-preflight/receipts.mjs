@@ -10,7 +10,6 @@ import { LocalReadFailure, redactPaths, short } from './context.mjs';
 
 // The receipt format and its validator come from the shared app-verify core (Hub #494), never a second reader.
 export { RECEIPT_VERSION };
-export const GUIDE_HTML_PATH = 'docs/work-guide/outputs/agent-device-work-guides.html';
 
 const sha256 = data => createHash('sha256').update(data).digest('hex');
 
@@ -159,40 +158,5 @@ function checkAppReceipt(proofDir, label, { repository, head }) {
       simulated: components.filter(component => component.kind === 'simulated').map(component => component.id),
       failure: receipt.failure && receipt.failure.cause ? { cause: receipt.failure.cause, at: receipt.failure.at ?? null } : null,
     },
-  };
-}
-
-/**
- * Read the guide browser check's receipt (docs/work-guide/work/check_guide.cjs)
- * and confirm its retained screenshots and print check sit beside it.
- */
-export function readGuideReceipt(file) {
-  const label = `guide receipt ${describeLocal(file)}`;
-  return guarded(label, () => checkGuideReceipt(file, label));
-}
-
-function checkGuideReceipt(file, label) {
-  const receipt = readJson(file, label);
-  const reasons = [];
-  if (!/^[0-9a-f]{64}$/.test(String(receipt.htmlSha256))) reasons.push('the guide receipt has no HTML hash');
-  for (const [key, value] of Object.entries(receipt)) {
-    if (typeof value === 'string' && ['failed', 'skipped', 'unavailable', 'pending'].includes(value)) reasons.push(`guide check ${key}: ${value}`);
-  }
-  for (const key of ['errors', 'consoleErrors']) {
-    if (!Array.isArray(receipt[key])) reasons.push(`the guide receipt has no ${key} list`);
-    else if (receipt[key].length) reasons.push(`the guide receipt records ${receipt[key].length} ${key}`);
-  }
-  const passed = Object.values(receipt).filter(value => value === 'passed').length;
-  if (!passed) reasons.push('the guide receipt records no passed check');
-  const siblings = fs.readdirSync(path.dirname(file));
-  const screenshots = siblings.filter(name => /^guide-.*\.png$/.test(name)).length;
-  const printCheck = siblings.includes('guide-print-check.pdf');
-  if (!screenshots || !printCheck) {
-    const missing = [!screenshots && 'screenshots', !printCheck && 'print check'].filter(Boolean).join(' and ');
-    reasons.push(`the retained guide ${missing} are missing beside the receipt (screenshots and print check)`);
-  }
-  return {
-    reasons,
-    evidence: { htmlSha256: receipt.htmlSha256 ?? null, checkedAt: receipt.checkedAt ?? null, passedChecks: passed, screenshots, printCheck },
   };
 }

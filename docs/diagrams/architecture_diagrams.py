@@ -2,8 +2,8 @@
 
 Running this module renders every diagram through the locally installed
 Archify skill (no download, no CDN), extracts the self-contained SVG plus the
-CSS rules it needs, and records a receipt per diagram. build_guide.py reads
-the rendered files; it never calls Archify itself.
+CSS rules it needs, and records a receipt per diagram. The atlas reads the
+rendered files; it never calls Archify itself.
 
     python3 docs/diagrams/architecture_diagrams.py            # render + extract
     ARCHIFY_DIR=/path/to/archify python3 docs/diagrams/architecture_diagrams.py

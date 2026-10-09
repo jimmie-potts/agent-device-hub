@@ -20,13 +20,6 @@ item needs no model choice or Execution recommendation. See docs/issue-conventio
 Replace the opening headline and exactly five bullets with distinct, plain
 sentences. Investigations promise findings, not a working feature. This opening
 applies only to new stories; do not retrofit existing issues.
-Keep this Guide section while the legacy generator runs. Select a topic from
-shared-codex, bunny-controls, nanoleaf-presentation, nanoleaf-devices, pixoo-media,
-controls-music, desktop-controls, work-guide, assistant-access, hosting-migrations,
-development-workflow or steam-deck. Optional lines: **Note:** a short reading note;
-**Highlight:** next step | decision | later | idea, <reason>;
-**Extends:** H67, N47 (only alongside an idea highlight). These links do not create
-native parents or blockers. Preserve existing Guide metadata during migration.
 -->
 
 ## Outcome and real setup
@@ -55,7 +48,3 @@ Delivery target: source-only
 ## Meaningful deferrals
 
 <!-- If needed: name the omitted capability, consequence or manual alternative, and owner or revisit trigger. -->
-
-## Guide
-
-**Topic:** <topic id>

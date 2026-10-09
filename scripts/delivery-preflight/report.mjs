@@ -9,7 +9,6 @@ function summary(gate) {
   switch (gate.id) {
     case 'ci-pr':
     case 'ci-main':
-      if (e.mode === 'guide-only-exception') return `guide-only exception at ${short(e.revision)}`;
       if (Array.isArray(e.jobs)) {
         const passed = e.jobs.filter(job => job.result === 'success').length;
         return `${passed} of ${e.expected.length} expected jobs succeeded at ${short(e.revision)} (${e.event})`;

@@ -80,13 +80,6 @@ def public_html(name, content):
             r"\s*<!-- Async font load:.*?</noscript>", "", content, flags=re.DOTALL)
         if count != 1:
             raise ValueError("Expected one external font block in state/action viewer")
-    if name in ("index.html", "full-system-design.html") or name.startswith("components/"):
-        prefix = "../" if name.startswith("components/") else ""
-        needle = f'<a class="overview-link" href="{prefix}index.html">System overview</a>'
-        if content.count(needle) != 1:
-            raise ValueError(f"Missing atlas navigation anchor in {name}")
-        guide = "../../index.html" if prefix else "../index.html"
-        content = content.replace(needle, needle + f'\n<a class="overview-link" href="{guide}">Work guide</a>')
     return content
 
 
@@ -134,8 +127,8 @@ def check_links(atlas, files):
                 elif part != ".":
                     parts.append(part)
             resolved = PurePosixPath(*parts)
-            if str(resolved) in {"../index.html"} or str(resolved).startswith("../architecture/"):
-                continue  # supplied by the public guide at the site root
+            if str(resolved).startswith("../architecture/"):
+                continue  # architecture viewers are staged beside the atlas
             if ".." in resolved.parts or not (atlas / str(resolved)).exists():
                 raise ValueError(f"Broken public atlas link in {name}: {link}")
 
@@ -159,13 +152,6 @@ def export(source, site):
         output.write_bytes(content)
         manifest[name] = digest(content)
     check_links(target, files)
-    guide_root = source / "docs/work-guide/outputs"
-    guide = (guide_root / "agent-device-work-guides.html").read_text(encoding="utf-8")
-    local_link = 'class="atlas-link" href="../../system-design/index.html"'
-    if guide.count(local_link) != 1:
-        raise ValueError("Missing local atlas link in generated work guide")
-    (site / "index.html").write_text(
-        SKIN.inject_places(guide.replace(local_link, 'class="atlas-link" href="atlas/index.html"'), 'guide', site / 'index.html', public=True), encoding="utf-8")
     viewers = sorted((source / "docs/diagrams/legacy/rendered").glob("*.html"))
     if len(viewers) != 9 or any(path.is_symlink() for path in viewers):
         raise ValueError("Expected nine regular architecture viewers")
@@ -187,7 +173,7 @@ def export(source, site):
     (target / "manifest.json").write_text(
         json.dumps({"version": 1, "publicRoot": PUBLIC_ROOT + "atlas/", "files": manifest,
                     "placesPages": places_pages}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"Exported guide, {len(viewers)} viewers, {len(files)} atlas files and manifest to {site}")
+    print(f"Exported {len(viewers)} viewers, {len(files)} atlas files and manifest to {site}")
 
 
 if __name__ == "__main__":

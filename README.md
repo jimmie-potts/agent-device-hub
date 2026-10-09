@@ -57,14 +57,13 @@ shared presets follow the Codex-first milestone and general-control definition.
 | Development, verification and delivery policy | [Development](docs/development.md), [app verification](docs/app-verification.md) and [SDLC](docs/sdlc.md) |
 | Legacy operations and contracts | `apps/hub`, `apps/dashboard`, `apps/local-controllers`, `controllers/` and 1.x contract guides, explicitly scoped to the retained old system |
 | Qualification evidence | Dated qualification reports and linked acceptance records; record tested versions and unresolved limits |
-| Historical/generated documentation | The September atlas and saved Guide inputs/outputs; their dates and receipts describe their baselines |
+| Historical/generated documentation | The September atlas and retained diagram snapshots; their dates and receipts describe their baselines |
 
-The Work Guide application, generated pages, backlog snapshots and exclusive tests
-remain retirement work under [#892](https://github.com/jimmie-potts/agent-device-hub/issues/892).
-The [flow sequences and dated shared diagrams](docs/diagrams/README.md) now have
-an independent owner under `docs/diagrams/`; the atlas reads them there.
-The current runtime diagram is independent of Work Guide too. Do not refresh or expand the
-Guide to record ordinary delivery status.
+The Work Guide source was retired under [#892](https://github.com/jimmie-potts/agent-device-hub/issues/892).
+[Flow sequences and dated shared diagrams](docs/diagrams/README.md) are owned by
+`docs/diagrams/`; the atlas reads them there. Current runtime documentation stays
+independent. GitHub issues own delivery state. The separately hosted public site
+is not changed by this source retirement.
 
 ## System design documents
 
@@ -175,13 +174,6 @@ preview. The [`@jimmie-potts/app-verify`](packages/app-verify/README.md)
 package implements that lifecycle once; the Hub, Nanoleaf and Pixoo adapters
 each supply a plug-in. Run `npm run test:app-verify` and
 `npm run test:app-verify:package` with the shared build/type checks.
-
-## Cross-project work guide
-
-The [work guide](docs/work-guide/README.md) is a dated remaining-work map,
-delivery history and architecture guide for Hub, Nanoleaf and Pixoo. Its
-generator and saved inputs live here. Refresh them for an intentional guide
-update or publication; GitHub issues own current status.
 
 ## B.U.N.N.Y. frontend
 

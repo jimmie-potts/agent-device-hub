@@ -22,9 +22,8 @@ try {
  await page.getByRole('heading',{name:'Build the integration',exact:true}).waitFor();
  const places=page.getByRole('navigation',{name:'Places'});
  assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(),
-  ['Guide','Architecture','Atlas','Reference','B.U.N.N.Y.Local','WallLocal']);
+  ['Architecture','Atlas','Reference','B.U.N.N.Y.Local','WallLocal']);
  assert.equal(await places.getByRole('link',{name:'Wall Local'}).getAttribute('href'),'http://127.0.0.1:8765/');
- assert.equal(await places.getByRole('link',{name:'Guide'}).getAttribute('href'),'https://jimmie-potts.github.io/agent-device-guide/');
  assert.equal(f.writes.length,0,'Places are read-only navigation');
  // Hub #444: all six component widgets fit fully in the first desktop screen; quick actions and Sessions remain visible.
  await page.getByRole('heading',{name:'Home',exact:true}).waitFor();

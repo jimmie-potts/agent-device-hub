@@ -1,4 +1,4 @@
-# Markdown-only changes skip this workflow; the Workflow and Work guide workflows still run (#861).
+# Markdown-only changes skip this workflow; the Workflow checks and retained documentation checks still run (#861).
 # GitHub-hosted runners replaced Depot CI in #870.
 # The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
 
@@ -6,9 +6,9 @@ name: Checks
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/work-guide/**', '**/*.md']
+    paths-ignore: ['**/*.md']
   pull_request:
-    paths-ignore: ['docs/work-guide/**', '**/*.md']
+    paths-ignore: ['**/*.md']
 permissions:
   contents: read
 concurrency:

@@ -9,25 +9,15 @@ import path from 'node:path';
 import { createReadOnlyClient } from '../../scripts/delivery-preflight/github.mjs';
 import { runPreflight } from '../../scripts/delivery-preflight/preflight.mjs';
 import {
-  BASE, GUIDE_HTML, HEAD, cleanWorld, comment, declaration, fakeTransport, guideRecordBody,
+  cleanWorld, declaration, fakeTransport,
 } from './world.mjs';
 
-const [proof, guideReceipt] = process.argv.slice(2);
+const [proof] = process.argv.slice(2);
 const now = () => new Date('2026-09-27T08:00:00Z');
 const run = (world, overrides) => runPreflight({ github: createReadOnlyClient(fakeTransport(world)), declaration: declaration(overrides), now });
 
 const outcomes = {};
 outcomes.clean = (await run(cleanWorld(), { receipts: [proof] })).result;
-
-const guide = cleanWorld();
-guide.files = [{ filename: 'docs/work-guide/outputs/agent-device-work-guides.html', status: 'modified' }];
-guide.compares[`${BASE}...${HEAD}`].files = guide.files;
-guide.checkRuns[HEAD] = [];
-guide.checkSuites[HEAD] = [];
-guide.blobs[`${HEAD}:docs/work-guide/outputs/agent-device-work-guides.html`] = GUIDE_HTML;
-const record = comment(guideRecordBody(HEAD, { html: GUIDE_HTML }));
-guide.comments.push(record);
-outcomes.guideOnly = (await run(guide, { guideReceipts: [guideReceipt], guideRecords: [record.html_url] })).result;
 
 outcomes.physical = (await run(cleanWorld(), { receipts: [proof], finishLine: 'physical' })).result;
 const down = cleanWorld();

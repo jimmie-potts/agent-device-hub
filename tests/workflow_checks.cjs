@@ -178,7 +178,6 @@ const storyHeadings = [
   'Behavior and protections to preserve',
   'Observable acceptance and planned evidence',
   'Meaningful deferrals',
-  'Guide',
 ];
 
 function checkStoryOpening(body) {
@@ -211,58 +210,39 @@ for (const name of ['feature', 'investigation']) {
     const body = fs.readFileSync(path.join(root, `tests/fixtures/story-openings/${name}.md`), 'utf8');
     checkStoryOpening(body);
     assert.match(body, /Delivery target: source-only/);
-    assert.match(body, /\*\*Topic:\*\* desktop-controls/);
   });
 }
 
-const guideTriggers = {
-  push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
-  pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
-};
+const allTriggers = {push: {branches: ['main']}, pull_request: {}};
 // Hub #862: hosted runners sometimes stall in apt until a job's limit. scripts/apt-retry.sh runs a command that uses apt
 // in up to three attempts, each under the limit its first argument gives, and each step's limit sits above three
 // attempts and their cleanups: 20 minutes for 300 s browser installs, 14 for the hook step's 180 s apt commands.
 const aptRetry = (seconds, command) => `bash scripts/apt-retry.sh ${seconds} ${command}`;
 const browserInstallMinutes = 20;
 const playwrightInstall = aptRetry(300, 'npx playwright install --with-deps chromium');
-const guideBrowserInstall = 'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\n'
-  + aptRetry(300, 'node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium') + '\n';
 const hookAptScript = 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles';
 const hookAptMinutes = 14;
 // Hub #861: the heavy Checks workflow also skips Markdown-only changes.
 const expectedTriggers = {
-  push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
-  pull_request: { 'paths-ignore': ['docs/work-guide/**', '**/*.md'] },
+  push: { branches: ['main'], 'paths-ignore': ['**/*.md'] },
+  pull_request: { 'paths-ignore': ['**/*.md'] },
 };
 
-test('every workflow skips guide-only changes and Checks also skips Markdown-only changes', () => {
-  // [name, paths, skipped by the guide-only filter, skipped by the Checks filter]
-  const cases = [
-    ['guide addition', ['docs/work-guide/new.md'], true, true],
-    ['generator and test edits', ['docs/work-guide/work/build_guide.py', 'docs/work-guide/work/test_maintenance.py'], true, true],
-    ['output deletion', ['docs/work-guide/outputs/retired.html'], true, true],
-    ['source', ['docs/work-guide/work/backlogs/snapshot.json', 'packages/mcp/src/server.ts'], false, false],
-    ['root documentation', ['docs/work-guide/work/backlogs/snapshot.json', 'docs/development.md'], false, true],
-    ['dependency', ['docs/work-guide/work/backlogs/snapshot.json', 'package-lock.json'], false, false],
-    ['workflow', ['docs/work-guide/README.md', '.github/workflows/checks.yml'], false, false],
-    ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false, false],
-    ['similarly named folder', ['docs/work-guides/new.md'], false, true],
-    ['Markdown only', ['README.md', 'AGENTS.md', 'docs/sdlc.md', 'apps/hub/README.md', 'openspec/specs/unified-dashboard/spec.md'], false, true],
-    ['Markdown with source', ['docs/development.md', 'apps/hub/src/server.ts'], false, false],
-    ['Markdown-like name', ['docs/notes.md.txt'], false, false],
-  ];
-  for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', guideTriggers, false], ['guide.yml', guideTriggers, false]]) {
+test('Workflow checks every path while Checks skips only Markdown-only changes', () => {
+  for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', allTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
-    assert.deepEqual(workflow.on, triggers, file);
+    assert.deepEqual(workflow.on, triggers);
     for (const event of ['push', 'pull_request']) {
-      const patterns = workflow.on[event]['paths-ignore'];
-      // Exercise the configured simple glob against bounded path sets, not
-      // GitHub's hosted event scheduler or diff selection.
-      for (const [name, paths, guideSkip, checksSkip] of cases) {
-        assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), checks ? checksSkip : guideSkip, `${file} ${event}: ${name}`);
-      }
+      const patterns = workflow.on[event]['paths-ignore'] ?? [];
+      for (const [files, skipped] of [
+        [['README.md', 'docs/development.md'], checks],
+        [['docs/diagrams/check.py'], false],
+        [['docs/notes.md.txt'], false],
+        [['docs/work-guide/retired.html'], false],
+        [['README.md', 'apps/runtime/src/main.ts'], false],
+      ]) assert.equal(files.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), skipped);
     }
-    assert.deepEqual(workflow.permissions, { contents: 'read' });
+    assert.deepEqual(workflow.permissions, {contents: 'read'});
     assert.deepEqual(workflow.concurrency, {
       group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
       'cancel-in-progress': true,
@@ -272,18 +252,18 @@ test('every workflow skips guide-only changes and Checks also skips Markdown-onl
 
 test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
-  const checks = read('checks.yml'), guide = read('guide.yml'), workflowChecks = read('workflow.yml');
+  const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'guide.yml', 'workflow.yml']);
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
-  assert.deepEqual(Object.keys(workflowChecks.jobs), ['workflow']);
-  const ci = { ...checks, jobs: { ...checks.jobs, ...workflowChecks.jobs } };
+  assert.deepEqual(Object.keys(workflowChecks.jobs), ['workflow', 'documents']);
+  const ci = { ...checks, jobs: { ...checks.jobs, workflow: workflowChecks.jobs.workflow } };
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 5, 'normal CI must run exactly five jobs');
+  assert.equal(coreJobs + 1, 5, 'normal CI must run exactly five jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -291,8 +271,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
   });
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
-      'node --test docs/work-guide/contracts/records.test.mjs',
-      'node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs', 'npm run test:preflight'],
+      'npm run test:preflight'],
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
@@ -652,43 +631,26 @@ test('an attempt that stalls on one mirror is retried from the next mirror', (t)
   }
 });
 
-// Keep guide build, browser and retained review evidence under regression coverage.
-test('guide CI retains its validation and review artifacts', () => {
-  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide.yml'), 'utf8'));
-  assert.deepEqual(workflow.jobs, { guide:
-     { name: 'Work guide build and browser checks',
-       'runs-on': 'ubuntu-latest',
-       // The job takes 3 to 9 minutes; 25 leave room for two stalled browser-install attempts (#862).
-       'timeout-minutes': 25,
-       steps:
-        [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
-          { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
-          { uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-            with: { 'python-version': '3.12' } },
-          { run: 'python3 docs/work-guide/work/build_guide.py' },
-          { run: 'git diff --exit-code -- docs/work-guide/outputs' },
-          { run: 'python3 docs/work-guide/work/test_maintenance.py' },
-          { name: 'Check system design documents',
-            run: 'python3 docs/system-design/check.py' },
-          { name: 'Prepare the pinned browser checker', 'timeout-minutes': browserInstallMinutes, run: guideBrowserInstall },
-          { name: 'Check epic browser adapters and generated fixtures',
-            run: 'npm ci\nnode --test docs/work-guide/browser/tests/*.test.mjs\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/browser.mjs\nnode docs/work-guide/browser/build.mjs --check\nGUIDE_BROWSER_EVIDENCE="$RUNNER_TEMP/epic-browser-review" node docs/work-guide/browser/tests/live.mjs\n' },
-          { name: 'Check the guide and capture review evidence',
-            run:
-             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
-          { name: 'Check system design navigation and print output',
-            run:
-             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs' },
-          { name: 'Check shared Places on mobile',
-            run:
-             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_PLACES_RECEIPTS="$RUNNER_TEMP/bunny-places-review" node docs/skins/check_places.cjs' },
-          { uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
-            with:
-             { name: 'work-guide-review',
-               path:
-                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n${{ runner.temp }}/epic-browser-review/\n',
-               'if-no-files-found': 'error',
-               'retention-days': 14 } } ] } });
+test('retained documents keep static checks, browser checks and review artifacts', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/workflow.yml'), 'utf8'));
+  const job = workflow.jobs.documents;
+  assert.equal(job.name, 'Retained documentation checks');
+  assert.equal(job['runs-on'], 'ubuntu-latest');
+  assert.equal(job['timeout-minutes'], 25);
+  const commands = job.steps.map(step => step.run ?? '').join('\n');
+  for (const command of ['python3 docs/diagrams/check.py', 'python3 docs/diagrams/test_independence.py',
+    'python3 docs/system-design/build.py --check', 'python3 docs/system-design/check.py',
+    'python3 docs/skins/test_places.py', 'python3 docs/skins/check_tokens.py',
+    'python3 apps/maintenance/tests/test_recommendations.py',
+    'node docs/system-design/check.cjs', 'node docs/skins/check_places.cjs']) assert.ok(commands.includes(command), command);
+  assert.ok(commands.includes('playwright@1.63.0'));
+  assert.ok(commands.includes('bash scripts/apt-retry.sh 300'));
+  assert.ok(!commands.includes('docs/work-guide/'));
+  const upload = job.steps.find(step => step.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(upload.with.name, 'retained-documents-review');
+  assert.equal(upload.with['if-no-files-found'], 'error');
+  assert.equal(upload.with['retention-days'], 14);
+  for (const folder of ['bunny-places-review', 'bunny-design-review']) assert.ok(upload.with.path.includes(folder));
 });
 
 // Each runtime module registers itself from its own folder, so the files every module story would otherwise edit name

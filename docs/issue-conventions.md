@@ -15,8 +15,7 @@ without inventing irrelevant requirements. Hub's [new-story opening](sdlc.md#new
 still applies to new feature, maintenance, investigation and child stories;
 existing bodies are not reformatted at pickup.
 
-The templates use Markdown so authored level-two headings reach the existing
-Guide parser unchanged. Their frontmatter is YAML chooser metadata, not issue
+The templates use Markdown to preserve authored headings. Their frontmatter is YAML chooser metadata, not issue
 content. GitHub cannot enforce required fields in a Markdown template: replace
 prompts, remove instructional comments and inspect outcome and acceptance before
 filing. Bug drafts also need actual/expected behavior, setup, reproduction or its
@@ -33,7 +32,7 @@ required release open. Phase remains unassigned until the owner selects it.
 ## Classify and connect
 
 - `epic` explicitly classifies a bounded outcome. A title containing “Epic” or
-  an issue with children alone is insufficient for the epic Guide.
+  an issue with children alone is insufficient for epic classification.
 - `idea` identifies an uncommitted possibility that needs refinement before
   delivery selection. It may coexist with `epic` for a deferred concept. Remove
   it only through an authorized refinement/selection decision; do not infer
@@ -83,32 +82,10 @@ avoid making every backlog item a required child just to eliminate orphans.
 Preserve Project visibility, fields and existing views unless their change is
 authorized. Publication of private planning data is separate work.
 
-## Existing Guide adapter mapping
+## Validate drafts
 
-The [records 2.0 contract](work-guide/contracts/epic-guide/README.md) and
-[production parser](work-guide/browser/parse.py) already consume these inputs.
-This intake change adds no schema or parser behavior.
-
-| Authored/native input | Existing record mapping |
-| --- | --- |
-| Epic, Work item or Bug outcome heading | `story.outcome`, from `## Outcome and real setup` |
-| Observable acceptance heading | `story.acceptance`, from `## Observable acceptance and planned evidence` |
-| Conditional implementation/protections/deferrals | Corresponding `story` sections, using the existing recognized headings |
-| Required/optional children within the epic's implementation section | Authored scope; native membership still comes from GitHub relationships |
-| `epic` label and native parent chain | Explicit epic identity and nearest containing epic placement |
-| `idea` label | Idea hold in delivery eligibility; no inferred Project assignment |
-| Legacy `Outcome and scope` / `Acceptance criteria` | Existing aliases; conflicting duplicate sections remain unsupported |
-| Older bodies without recognized sections | Remain browseable with missing evidence; never fabricated as ready |
-| Existing `## Guide` fields | Retained for the legacy generator; inert body text in records 2.0 |
-
-Keep the legacy Guide section and its valid Topic/Note/Highlight/Extends grammar
-until the authorized cutover retires it. Do not mutate approved 1.0/2.0 contracts
-or backfill old stories to fit the templates. Optional section absence is not a
-new readiness blocker in records 2.0; actual scope, prerequisites and acceptance
-still govern delivery.
-
-Validate drafts by parsing YAML frontmatter, removing template instructions and
-running the completed body through the existing parser. Inspect the preserved
-Guide section separately. Include a compact work item, a reproducible bug and an
-epic distinguishing required/optional work and source/installed/physical evidence.
-Run the repository's workflow checks; do not create issues solely to test intake.
+Parse YAML frontmatter, remove template instructions and inspect the completed
+body's outcome, scope and acceptance. Keep native membership and blockers separate
+from authored prose. Run the repository's workflow checks; do not create issues
+solely to test intake. New stories need no Guide metadata. Historical issue bodies
+remain valid without a bulk rewrite.

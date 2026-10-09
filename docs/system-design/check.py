@@ -41,7 +41,7 @@ if __name__ == "__main__":
     before = hashes(sources)
     subprocess.run([sys.executable, str(ROOT / "build.py"), "--check"], check=True)
     subprocess.run([sys.executable, str(ROOT / "reference/check_reference.py")], check=True)
-    # Atlas and guide colors come only from the shared token files.
+    # Atlas and diagram colors come only from the shared token files.
     subprocess.run([sys.executable, str(ROOT.parent / "skins/check_tokens.py")], check=True)
     subprocess.run([sys.executable, '-m', 'unittest', str(ROOT.parent / 'skins/test_places.py')], check=True)
     assert before == hashes(sources), "Source documents changed during verification"

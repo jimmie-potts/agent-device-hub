@@ -36,8 +36,3 @@ installation and a real-client trial require separate authorization and evidence
 
 Opening remote desktops and selecting multiple Hub installations are excluded.
 Use the existing browser bookmark for other installations; revisit if needed.
-
-## Guide
-
-**Topic:** desktop-controls
-**Note:** Local feature sample for the new-story opening.
