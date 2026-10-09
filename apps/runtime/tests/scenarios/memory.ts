@@ -13,6 +13,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {createWisprModule, isWisprModule} from '@jimmie-potts/wispr';
 import {
   connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
 } from '@jimmie-potts/sdk';
@@ -30,6 +31,7 @@ import {createCoreModule} from '../fixtures/core.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
+import {prepareWisprFixture} from '../fixtures/wispr.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
   type Seed, type Simulation, type TransportName,
@@ -171,9 +173,11 @@ class Memory implements MemoryHarness {
     // A tracing start that fails is the first generation's record, as the runtime writes it before its modules start.
     const opening = new LogWriter(record => { this.#logs.push({generation: 1, record}); }, 'info', {now: this.#clock.now}).logger(RUNTIME_SCOPE);
     this.#tracing = await startTracing(runtimeResource('development', INSTANCE_ID), span => { this.#spans.push(span); }, opening);
-    const {config} = this.#seed;
-    this.#config = await readRuntimeConfig(await writeConfiguration(join(this.stateDir, 'config'), {
-      ...(config === undefined ? {} : {modules: config}), tokens: this.#tokens, producer: this.#producer,
+    const {config, wisprFixture} = this.#seed;
+    const configDir = join(this.stateDir, 'config');
+    const modules = wisprFixture === undefined ? config : {...config, wispr: await prepareWisprFixture(configDir, this.#clock.now(), wisprFixture)};
+    this.#config = await readRuntimeConfig(await writeConfiguration(configDir, {
+      ...(modules === undefined ? {} : {modules}), tokens: this.#tokens, producer: this.#producer,
     }));
     const edge = this.#config.edge;
     if (edge === undefined) throw new Error('the harness wrote no edge section');
@@ -453,6 +457,7 @@ class Memory implements MemoryHarness {
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
     const core = modules.find(isCoreModule);
+    const wispr = modules.find(isWisprModule);
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) core?.setModeParticipants(modeParticipants(hosted));
     const actions = core?.actions, operatorActions = core?.operatorActions;
@@ -461,6 +466,7 @@ class Memory implements MemoryHarness {
       log: logs.logger(RUNTIME_SCOPE), redactions: logs.redactions, clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir,
       onDiagnostic: diagnostic => { this.#edgeLog.push(diagnostic); }, ...(actions === undefined ? {} : {actions}),
       ...(operatorActions === undefined ? {} : {operatorActions}), ...(core === undefined ? {} : {history: core.history, automation: core.automation}),
+      ...(wispr === undefined ? {} : {wispr}),
     });
     await gateway.start(this.url ?? '', [new URL(this.url ?? 'http://127.0.0.1').host]);
     this.#generations.push({host, gateway, watcher, logs, databases});
@@ -470,6 +476,8 @@ class Memory implements MemoryHarness {
   /** Each module with its simulated transport: the core and the fixture modules here, every other one through its registration. */
   #build(name: ModuleName): BunnyModule {
     switch (name) {
+      case 'wispr':
+        return createWisprModule();
       case 'core':
         return createCoreModule();
       case 'lamp':

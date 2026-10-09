@@ -160,6 +160,19 @@ test('the strict rules keep their intended options', async () => {
   }
 });
 
+test('only Wispr may import its published-file contract, without importing another implementation', async () => {
+  const eslint = new ESLint({cwd: root});
+  for (const [file, imported, allowed] of [
+    ['modules/wispr/src/probe.mjs', '@jimmie-potts/wispr-contracts', true],
+    ['modules/example/src/probe.mjs', '@jimmie-potts/wispr-contracts', false],
+    ['modules/wispr/src/probe.mjs', '@jimmie-potts/agent-state', false],
+    ['modules/wispr/src/probe.mjs', '../../../apps/hub/src/wispr.js', false],
+  ]) {
+    const [result] = await eslint.lintText(`export {value} from '${imported}';`, {filePath: join(root, file)});
+    assert.equal(result.messages.some(message => message.ruleId === 'bunny/module-boundary'), !allowed, `${file}: ${imported}`);
+  }
+});
+
 // Guards for conventions the lint rules alone cannot enforce. They cover the directories of the `strict` and
 // `staged` globs in eslint.config.mjs.
 const directory = glob => glob.slice(0, glob.indexOf('*')).replace(/\/$/, '');

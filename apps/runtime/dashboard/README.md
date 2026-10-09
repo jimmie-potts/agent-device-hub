@@ -22,7 +22,9 @@ The runtime copy includes:
   decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
   (#923).
 
-The Wispr page comes with #927 and the automation pages with #925. Device-specific
+The module-owned Wispr page and numeric home widget read selected collector files
+on demand when browser exposure is enabled (#927). They do not subscribe to an
+analytics event family. The Automation page comes with #925. Device-specific
 feature pages remain their own module stories.
 
 ## Pages, routes and widgets
@@ -41,9 +43,10 @@ code.
 
 `src/widgets.ts` is the widget catalog. Each widget declares an ID, a name, a
 description, its sizes, its source kind (`core`, `module` or `external`), the
-families it syncs, and whether it offers commands. `homeLayout` places the Hub
+families it syncs or private content it reads, and whether it offers commands. `homeLayout` places the Hub
 mode and the agent sessions in the wide column, and the inbox and the attention
-summary in the narrow one. The Hub mode offers Work, Free and Quiet controls;
+summary in the narrow one. Wispr adds its numeric widget there when exposed;
+its page and widget share the shell connection and make no device commands. The Hub mode offers Work, Free and Quiet controls;
 the inbox shows failed, uncertain and conflicting commands until handled.
 
 The mode panel syncs the core's `mode` and `operation` records. It shows the

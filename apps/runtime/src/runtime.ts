@@ -6,6 +6,7 @@ import {createServer, type IncomingMessage, type Server, type ServerResponse} fr
 import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {isWisprModule} from '@jimmie-potts/wispr';
 import {isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
@@ -280,6 +281,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   await host.start();
   const core = modules.find(isCoreModule);
+  const wispr = modules.find(isWisprModule);
   const hosted = host.modules();
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) core?.setModeParticipants(modeParticipants(hosted));
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
@@ -289,6 +291,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
       clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}), ...(actions === undefined ? {} : {actions}),
       ...(operatorActions === undefined ? {} : {operatorActions}), ...(core === undefined ? {} : {history: core.history, automation: core.automation}),
+      ...(wispr === undefined ? {} : {wispr}),
       ...(options.edge.dashboard === undefined ? {} : {dashboard: options.edge.dashboard}),
       ...(tracing === undefined ? {} : {trace: tracing.recorder(RUNTIME_SCOPE)}),
     });

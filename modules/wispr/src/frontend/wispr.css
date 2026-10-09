@@ -1,0 +1,16 @@
+/* Reused Wispr layout, scoped to module contributions; colors and sizes use shared skin tokens. */
+.wispr-page>.card{margin-bottom:var(--space-m)}
+:is(.wispr-page,.wispr-widget) .wispr-filters{display:flex;flex-wrap:wrap;gap:var(--space-m);margin-bottom:var(--space-m)}
+:is(.wispr-page,.wispr-widget) .wispr-filters label{flex:1;min-width:min(100%,160px)}
+:is(.wispr-page,.wispr-widget) .wispr-downloads{display:flex;flex-wrap:wrap;gap:var(--space-s)}
+:is(.wispr-page,.wispr-widget) .wispr-table{max-width:100%;overflow-x:auto;margin:var(--space-s) 0}
+:is(.wispr-page,.wispr-widget) .wispr-table table{width:100%;border-collapse:collapse;font-size:var(--type-small);table-layout:fixed}
+:is(.wispr-page,.wispr-widget) .wispr-table caption{text-align:left;color:var(--muted-dense);padding:var(--space-s) 0}
+:is(.wispr-page,.wispr-widget) .wispr-table th,:is(.wispr-page,.wispr-widget) .wispr-table td{text-align:left;padding:var(--space-s);border-bottom:1px solid var(--edge-faint);overflow-wrap:anywhere;vertical-align:top}
+:is(.wispr-page,.wispr-widget) .wispr-table th{font-weight:600;color:var(--muted-dense)}
+:is(.wispr-page,.wispr-widget) .wispr-trend svg{width:100%;height:140px;color:var(--accent)}
+:is(.wispr-page,.wispr-widget) .wispr-trend.compact svg{height:64px}
+:is(.wispr-page,.wispr-widget) .wispr-trend polyline{fill:none;stroke:currentColor;stroke-width:2}
+:is(.wispr-page,.wispr-widget) .wispr-trend circle{fill:currentColor}
+:is(.wispr-page,.wispr-widget) .wispr-trend summary,:is(.wispr-page,.wispr-widget) .wispr-coverage>summary{cursor:pointer;padding:var(--space-s) 0}
+:is(.wispr-page,.wispr-widget) .wispr-trend details[open]{max-height:280px;overflow:auto}

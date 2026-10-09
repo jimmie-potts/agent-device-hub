@@ -296,7 +296,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
-      'npm run test:codex-desktop:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
+      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'npm run test:observability:browser'],
@@ -695,7 +695,7 @@ test('guide CI retains its validation and review artifacts', () => {
 // names. The negative control reintroduces one module's name, in each spelling, into a copy of a shared file.
 const moduleNamesCheck = require('../scripts/check-module-names.cjs');
 
-test('no shared file names a device module, and a shared file that does fails the check', (t) => {
+test('shared module names stay within the approved fixture exception, and other references fail', (t) => {
   assert.deepEqual(moduleNamesCheck.findModuleNames(root), []);
   const modules = moduleNamesCheck.moduleNames(root);
   assert.ok(modules.length > 0, 'the checkout has module folders');
@@ -709,7 +709,7 @@ test('no shared file names a device module, and a shared file that does fails th
     fs.mkdirSync(path.join(scratch, 'modules', name), { recursive: true });
     fs.writeFileSync(path.join(scratch, 'modules', name, 'package.json'), '{}\n');
   }
-  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [], 'the copy names no module');
+  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [], 'the copy has no unapproved module reference');
   const [file] = moduleNamesCheck.SHARED_FILES;
   const original = fs.readFileSync(path.join(scratch, file), 'utf8');
   const lines = original.split('\n').length;
@@ -725,6 +725,28 @@ test('no shared file names a device module, and a shared file that does fails th
     fs.writeFileSync(path.join(scratch, file), `${original}\n// ${spelling}\n`);
     assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{ file, line: lines + 1, name }], spelling);
   }
+  // #927 is an explicit four-file fixture exception, not permission for another module or production registration.
+  fs.writeFileSync(path.join(scratch, file), original);
+  for (const shared of moduleNamesCheck.SHARED_FILES) {
+    const saved = fs.readFileSync(path.join(scratch, shared), 'utf8');
+    const line = saved.split('\n').length + 1;
+    fs.writeFileSync(path.join(scratch, shared), `${saved}\n// wispr\n`);
+    assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), moduleNamesCheck.FIXTURE_REFERENCES[shared]?.includes('wispr')
+      ? [] : [{file: shared, line, name: 'wispr'}], shared);
+    fs.writeFileSync(path.join(scratch, shared), `${saved}\n// desk-probe\n`);
+    assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file: shared, line, name: 'desk-probe'}], shared);
+    fs.writeFileSync(path.join(scratch, shared), saved);
+  }
+  const plugin = 'apps/runtime/verify/plugin.ts';
+  const pluginSource = fs.readFileSync(path.join(scratch, plugin), 'utf8');
+  const pluginLine = pluginSource.split('\n').length + 1;
+  for (const text of ["'packages/wispr-contracts/dist'; // wispr", "'modules/wispr/dist/src'", "'packages/wispr-contracts/unapproved'"]) {
+    fs.writeFileSync(path.join(scratch, plugin), `${pluginSource}\n${text}\n`);
+    assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file: plugin, line: pluginLine, name: 'wispr'}], text);
+  }
+  fs.writeFileSync(path.join(scratch, plugin), pluginSource);
+  fs.writeFileSync(path.join(scratch, file), `${original}\n'packages/wispr-contracts/dist'\n`);
+  assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), [{file, line: lines + 1, name: 'wispr'}], 'contract-path exception stays in build identity');
   // The core and a fixture module are not device modules, and a longer word that holds a name is not the name.
   fs.writeFileSync(path.join(scratch, file), `${original}\n// core lamp chime sign ${modules[0]}s x${modules[0]}\n`);
   assert.deepEqual(moduleNamesCheck.findModuleNames(scratch), []);

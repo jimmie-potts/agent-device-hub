@@ -30,7 +30,11 @@
     "@jimmie-potts/playback": "0.1.0",
     "@jimmie-potts/sdk": "0.1.0",
     "@jimmie-potts/tidbyt": "0.1.0",
+    "@jimmie-potts/wispr": "0.1.0",
     "@opentelemetry/api": "1.9.1",
     "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@jimmie-potts/wispr-contracts": "1.0.0"
   }
 }

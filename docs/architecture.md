@@ -135,7 +135,13 @@ transport and the module API, and the runtime skeleton with its module host
 - **Conventions.** Every message uses profile 2.0: one CloudEvents envelope, one
   error body and code registry, and shared payload building blocks.
 - **Edges.** Remote parts (hooks, the dashboard, MCP clients, the CHOMPI bridge
-  and the Wispr collector) use the same SDK calls over SSE down and HTTP up.
+  and the Wispr collector) use the same SDK calls over SSE down and HTTP up,
+  except Wispr's owner-approved published-file handoff (#927, ADR 0012).
+  Its read-only module uses the existing pure Wispr contract package, without
+  importing the collector or another component's implementation. Every authenticated
+  read-scoped client may read its analytics routes; browser exposure and text
+  sharing remain separate, off-by-default choices. Analytics stay outside MCP,
+  agent snapshots and general broadcasts.
 - **No replay.** Past occurrences or effects are never redelivered to views or
   devices.
 

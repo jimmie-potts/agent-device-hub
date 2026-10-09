@@ -2,7 +2,7 @@
  * The widget catalog (Hub #277). A widget is one placeable block over one source: the core's families, a module's
  * families, or a read-only external source (Hub #287). A widget renders identically wherever it is placed, so moving one
  * between pages is a placement change. Placement is a developer decision here; Hub #366 makes it the owner's from this
- * catalog. On the runtime (Hub #922) a widget names the families it reads through sync, never a polled route.
+ * catalog. On the runtime (Hub #922) widgets read named families through sync. Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
 export type SourceKind = 'core' | 'module' | 'external';
 /** small takes one grid column, medium two and large the whole row; narrow screens collapse every size to one column. */
@@ -14,8 +14,8 @@ export type WidgetDefinition = {
   description: string;
   /** The sizes the widget renders well at. */
   sizes: readonly WidgetSize[];
-  /** The source kind and the families the widget reads. */
-  source: {kind: SourceKind; families: readonly string[]};
+  /** The source kind and its synced families or explicit private content reads. */
+  source: {kind: SourceKind; families: readonly string[]; content?: readonly string[]};
   /** true when the widget offers explicit command actions; a read-only widget has none. */
   commands: boolean;
   /**
@@ -26,6 +26,10 @@ export type WidgetDefinition = {
 };
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
+  {
+    id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
+    sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
+  },
   {
     id: 'hub-mode', name: 'Hub mode', description: 'The Hub mode and the result of each device\'s mode command.',
     sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
@@ -50,13 +54,13 @@ export const widgetDefinition = (id: string): WidgetDefinition | undefined => wi
 
 /**
  * The home, as the owner-approved mockup lays it out ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode and
- * the agent sessions in the wide column, the inbox and the attention summary in the narrow one. Every placement names a
+ * the agent sessions in the wide column, the inbox and the attention summary in the narrow one. The Wispr port adds its numeric widget there when exposed. Every placement names a
  * catalog widget at one of its declared sizes.
  */
 export function homeLayout(): {wide: Placement[]; narrow: Placement[]} {
   return {
     wide: [{widget: 'hub-mode', size: 'medium'}, {widget: 'sessions', size: 'medium'}],
-    narrow: [{widget: 'inbox', size: 'small'}, {widget: 'attention', size: 'small'}],
+    narrow: [{widget: 'inbox', size: 'small'}, {widget: 'attention', size: 'small'}, {widget: 'wispr', size: 'small'}],
   };
 }
 

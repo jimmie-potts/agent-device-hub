@@ -45,6 +45,8 @@ export type Seed = {
    * and starts the runtime with it (`writeConfiguration`).
    */
   readonly config?: Readonly<Record<ModuleName, object>>;
+  /** Private collector files selected explicitly by Wispr's bounded file-handoff scenarios. */
+  readonly wisprFixture?: {readonly observation: 'fresh' | 'stale' | 'missing'; readonly exposeToDashboard?: boolean};
   /**
    * The modules the runtime should refuse at start, such as one the seed configures badly. A harness refuses to start a
    * scenario in which any other module is unhealthy.
