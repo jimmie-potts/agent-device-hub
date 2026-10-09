@@ -5030,7 +5030,9 @@
         <rect width="100%" height="100%" fill="url(#grid)" />
 
         <!-- Time Segments -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="0" x="48" y="153" width="1084" height="197" rx="10" class="c-lane" stroke-width="1"/>
 
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="1" x="48" y="375" width="1084" height="290" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
         <path d="M 157 142 L 157 695" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
@@ -5042,88 +5044,95 @@
 
 
         <!-- Messages -->
-        <g data-edge-from="control" data-edge-to="router" data-edge-label="Fresh selection or Send press" data-edge-key="0" data-edge-id="step-1">
+        <g data-edge-from="control" data-edge-to="router" data-edge-label="Select a session slot" data-edge-key="0" data-edge-id="step-1">
           <path data-composition-edge-from="control" data-composition-edge-to="router" data-composition-edge-id="step-1" data-composition-points="164,185;446,185" d="M 164 185 L 446 185" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="223.6" y="165" width="162.8" height="16" rx="3" class="c-mask"/>
-          <text x="305" y="175" class="t-backend" font-size="9" text-anchor="middle">Fresh selection or Send press</text>
+          <rect x="244.4" y="165" width="121.2" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="175" class="t-backend" font-size="9" text-anchor="middle">Select a session slot</text>
         </g>
         </g>
 
-        <g data-edge-from="router" data-edge-to="adapter" data-edge-label="Check qualified client and fresh target" data-edge-key="1" data-edge-id="step-2">
+        <g data-edge-from="router" data-edge-to="adapter" data-edge-label="Navigate and verify exact session" data-edge-key="1" data-edge-id="step-2">
           <path data-composition-edge-from="router" data-composition-edge-to="adapter" data-composition-edge-id="step-2" data-composition-points="460,233;742,233" d="M 460 233 L 742 233" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="493.6" y="213" width="214.8" height="16" rx="3" class="c-mask"/>
-          <text x="601" y="223" class="t-security" font-size="9" text-anchor="middle">Check qualified client and fresh target</text>
+          <rect x="509.2" y="213" width="183.6" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="223" class="t-security" font-size="9" text-anchor="middle">Navigate and verify exact session</text>
         </g>
         </g>
 
-        <g data-edge-from="adapter" data-edge-to="app" data-edge-label="Selection: navigate exact session" data-edge-key="2" data-edge-id="step-3">
+        <g data-edge-from="adapter" data-edge-to="app" data-edge-label="Selection only: focus target composer" data-edge-key="2" data-edge-id="step-3">
           <path data-composition-edge-from="adapter" data-composition-edge-to="app" data-composition-edge-id="step-3" data-composition-points="756,281;1038,281" d="M 756 281 L 1038 281" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="805.2" y="261" width="183.6" height="16" rx="3" class="c-mask"/>
-          <text x="897" y="271" class="t-backend" font-size="9" text-anchor="middle">Selection: navigate exact session</text>
+          <rect x="794.8" y="261" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="897" y="271" class="t-backend" font-size="9" text-anchor="middle">Selection only: focus target composer</text>
         </g>
         </g>
 
-        <g data-edge-from="app" data-edge-to="adapter" data-edge-label="Observe target and composer/card" data-edge-key="3" data-edge-id="step-4">
-          <path data-composition-edge-from="app" data-composition-edge-to="adapter" data-composition-edge-id="step-4" data-composition-points="1038,329;756,329" d="M 1038 329 L 756 329" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="adapter" data-edge-to="router" data-edge-label="Verified target or refuse input" data-edge-key="3" data-edge-id="step-4">
+          <path data-composition-edge-from="adapter" data-composition-edge-to="router" data-composition-edge-id="step-4" data-composition-points="742,329;460,329" d="M 742 329 L 460 329" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="807.8" y="309" width="178.4" height="16" rx="3" class="c-mask"/>
-          <text x="897" y="319" class="t-muted" font-size="9" text-anchor="middle">Observe target and composer/card</text>
+          <rect x="514.4" y="309" width="173.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="319" class="t-muted" font-size="9" text-anchor="middle">Verified target or refuse input</text>
         </g>
         </g>
 
-        <g data-edge-from="adapter" data-edge-to="router" data-edge-label="Known target or failure/unknown" data-edge-key="4" data-edge-id="step-5">
-          <path data-composition-edge-from="adapter" data-composition-edge-to="router" data-composition-edge-id="step-5" data-composition-points="742,377;460,377" d="M 742 377 L 460 377" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="control" data-edge-to="router" data-edge-label="Separate Send press: current foreground" data-edge-key="4" data-edge-id="step-5">
+          <path data-composition-edge-from="control" data-composition-edge-to="router" data-composition-edge-id="step-5" data-composition-points="164,401;446,401" d="M 164 401 L 446 401" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="514.4" y="357" width="173.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="601" y="367" class="t-muted" font-size="9" text-anchor="middle">Known target or failure/unknown</text>
+          <rect x="197.6" y="381" width="214.8" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="391" class="t-backend" font-size="9" text-anchor="middle">Separate Send press: current foreground</text>
         </g>
         </g>
 
-        <g data-edge-from="router" data-edge-to="adapter" data-edge-label="Send: check composer; refuse approval/unknown" data-edge-key="5" data-edge-id="step-6">
-          <path data-composition-edge-from="router" data-composition-edge-to="adapter" data-composition-edge-id="step-6" data-composition-points="460,425;742,425" d="M 460 425 L 742 425" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+        <g data-edge-from="router" data-edge-to="adapter" data-edge-label="Check version, composer and approval" data-edge-key="5" data-edge-id="step-6">
+          <path data-composition-edge-from="router" data-composition-edge-to="adapter" data-composition-edge-id="step-6" data-composition-points="460,449;742,449" d="M 460 449 L 742 449" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="478" y="405" width="246" height="16" rx="3" class="c-mask"/>
-          <text x="601" y="415" class="t-security" font-size="9" text-anchor="middle">Send: check composer; refuse approval/unknown</text>
+          <rect x="501.4" y="429" width="199.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="439" class="t-security" font-size="9" text-anchor="middle">Check version, composer and approval</text>
         </g>
         </g>
 
-        <g data-edge-from="adapter" data-edge-to="app" data-edge-label="Recheck foreground/composer before input" data-edge-key="6" data-edge-id="step-7">
-          <path data-composition-edge-from="adapter" data-composition-edge-to="app" data-composition-edge-id="step-7" data-composition-points="756,473;1038,473" d="M 756 473 L 1038 473" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+        <g data-edge-from="adapter" data-edge-to="router" data-edge-label="Known eligible or refuse" data-edge-key="6" data-edge-id="step-7">
+          <path data-composition-edge-from="adapter" data-composition-edge-to="router" data-composition-edge-id="step-7" data-composition-points="742,497;460,497" d="M 742 497 L 460 497" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="787" y="453" width="220" height="16" rx="3" class="c-mask"/>
-          <text x="897" y="463" class="t-security" font-size="9" text-anchor="middle">Recheck foreground/composer before input</text>
+          <rect x="532.6" y="477" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="487" class="t-muted" font-size="9" text-anchor="middle">Known eligible or refuse</text>
         </g>
         </g>
 
-        <g data-edge-from="app" data-edge-to="adapter" data-edge-label="Input result or uncertainty" data-edge-key="7" data-edge-id="step-8">
-          <path data-composition-edge-from="app" data-composition-edge-to="adapter" data-composition-edge-id="step-8" data-composition-points="1038,521;756,521" d="M 1038 521 L 756 521" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="adapter" data-edge-to="app" data-edge-label="If eligible: recheck foreground, send once" data-edge-key="7" data-edge-id="step-8">
+          <path data-composition-edge-from="adapter" data-composition-edge-to="app" data-composition-edge-id="step-8" data-composition-points="756,545;1038,545" d="M 756 545 L 1038 545" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="820.8" y="501" width="152.4" height="16" rx="3" class="c-mask"/>
-          <text x="897" y="511" class="t-muted" font-size="9" text-anchor="middle">Input result or uncertainty</text>
+          <rect x="781.8" y="525" width="230.4" height="16" rx="3" class="c-mask"/>
+          <text x="897" y="535" class="t-security" font-size="9" text-anchor="middle">If eligible: recheck foreground, send once</text>
         </g>
         </g>
 
         <g data-edge-from="adapter" data-edge-to="router" data-edge-label="Sent, refused or uncertain" data-edge-key="8" data-edge-id="step-9">
-          <path data-composition-edge-from="adapter" data-composition-edge-to="router" data-composition-edge-id="step-9" data-composition-points="742,569;460,569" d="M 742 569 L 460 569" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+          <path data-composition-edge-from="adapter" data-composition-edge-to="router" data-composition-edge-id="step-9" data-composition-points="742,593;460,593" d="M 742 593 L 460 593" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="527.4" y="549" width="147.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="601" y="559" class="t-muted" font-size="9" text-anchor="middle">Sent, refused or uncertain</text>
+          <rect x="527.4" y="573" width="147.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="601" y="583" class="t-muted" font-size="9" text-anchor="middle">Sent, refused or uncertain</text>
         </g>
         </g>
 
         <g data-edge-from="router" data-edge-to="control" data-edge-label="Report result; never retry uncertain Send" data-edge-key="9" data-edge-id="step-10">
-          <path data-composition-edge-from="router" data-composition-edge-to="control" data-composition-edge-id="step-10" data-composition-points="446,617;164,617" d="M 446 617 L 164 617" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+          <path data-composition-edge-from="router" data-composition-edge-to="control" data-composition-edge-id="step-10" data-composition-points="446,641;164,641" d="M 446 641 L 164 641" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g data-detail="context">
-          <rect x="192.39999999999998" y="597" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="305" y="607" class="t-muted" font-size="9" text-anchor="middle">Report result; never retry uncertain Send</text>
+          <rect x="192.39999999999998" y="621" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="305" y="631" class="t-muted" font-size="9" text-anchor="middle">Report result; never retry uncertain Send</text>
         </g>
         </g>
 
         <!-- Segment Labels -->
-
+        <g data-graph-role="segment-label" data-segment-id="0">
+          <rect x="56" y="131" width="138.8" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="144" class="t-dim" font-size="9" font-weight="600">Selection: exact session</text>
+        </g>
+        <g data-graph-role="segment-label" data-segment-id="1">
+          <rect x="56" y="353" width="211.6" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="366" class="t-dim" font-size="9" font-weight="600">Independent Send: no remembered target</text>
+        </g>
 
         <!-- Participants -->
         <g id="node-control" data-node-id="control" data-node-label="Desk control" tabindex="0" role="button" aria-label="Focus Desk control, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-context="Sequence participant">
@@ -5377,7 +5386,16 @@
 
     <!-- Info Cards -->
     <div class="cards">
-
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>Input loss stops pending work</h3>
+        </div>
+        <ul>
+          <li>&bull; Stale/disconnected input clears pending controls and invalidates work.</li>
+          <li>&bull; Unknown targeting refuses input; an uncertain Send is never retried.</li>
+        </ul>
+      </div>
     </div>
 
   </div>

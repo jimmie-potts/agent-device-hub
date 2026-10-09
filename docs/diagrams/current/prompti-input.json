@@ -38,81 +38,103 @@
       "id": "step-1",
       "from": "control",
       "to": "router",
-      "y": 185,
-      "label": "Fresh selection or Send press",
-      "variant": "emphasis"
+      "label": "Select a session slot",
+      "variant": "emphasis",
+      "y": 185
     },
     {
       "id": "step-2",
       "from": "router",
       "to": "adapter",
-      "y": 233,
-      "label": "Check qualified client and fresh target",
-      "variant": "security"
+      "label": "Navigate and verify exact session",
+      "variant": "security",
+      "y": 233
     },
     {
       "id": "step-3",
       "from": "adapter",
       "to": "app",
-      "y": 281,
-      "label": "Selection: navigate exact session",
-      "variant": "default"
+      "label": "Selection only: focus target composer",
+      "variant": "default",
+      "y": 281
     },
     {
       "id": "step-4",
-      "from": "app",
-      "to": "adapter",
-      "y": 329,
-      "label": "Observe target and composer/card",
-      "variant": "return"
+      "from": "adapter",
+      "to": "router",
+      "label": "Verified target or refuse input",
+      "variant": "return",
+      "y": 329
     },
     {
       "id": "step-5",
-      "from": "adapter",
+      "from": "control",
       "to": "router",
-      "y": 377,
-      "label": "Known target or failure/unknown",
-      "variant": "return"
+      "label": "Separate Send press: current foreground",
+      "variant": "emphasis",
+      "y": 401
     },
     {
       "id": "step-6",
       "from": "router",
       "to": "adapter",
-      "y": 425,
-      "label": "Send: check composer; refuse approval/unknown",
-      "variant": "security"
+      "label": "Check version, composer and approval",
+      "variant": "security",
+      "y": 449
     },
     {
       "id": "step-7",
       "from": "adapter",
-      "to": "app",
-      "y": 473,
-      "label": "Recheck foreground/composer before input",
-      "variant": "security"
+      "to": "router",
+      "label": "Known eligible or refuse",
+      "variant": "return",
+      "y": 497
     },
     {
       "id": "step-8",
-      "from": "app",
-      "to": "adapter",
-      "y": 521,
-      "label": "Input result or uncertainty",
-      "variant": "return"
+      "from": "adapter",
+      "to": "app",
+      "label": "If eligible: recheck foreground, send once",
+      "variant": "security",
+      "y": 545
     },
     {
       "id": "step-9",
       "from": "adapter",
       "to": "router",
-      "y": 569,
       "label": "Sent, refused or uncertain",
-      "variant": "return"
+      "variant": "return",
+      "y": 593
     },
     {
       "id": "step-10",
       "from": "router",
       "to": "control",
-      "y": 617,
       "label": "Report result; never retry uncertain Send",
-      "variant": "return"
+      "variant": "return",
+      "y": 641
+    }
+  ],
+  "segments": [
+    {
+      "from": 153,
+      "to": 350,
+      "label": "Selection: exact session"
+    },
+    {
+      "from": 375,
+      "to": 665,
+      "label": "Independent Send: no remembered target"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Input loss stops pending work",
+      "items": [
+        "Stale/disconnected input clears pending controls and invalidates work.",
+        "Unknown targeting refuses input; an uncertain Send is never retried."
+      ]
     }
   ]
 }

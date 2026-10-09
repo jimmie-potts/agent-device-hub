@@ -20,8 +20,8 @@
         "apps/runtime/src/core/operations.ts",
         "packages/sdk/src/outbox.ts"
       ],
-      "specificationSha256": "b1a8b5adbb9b9006577abda3b41442be4a99daef8adda199e5b5f3a14cc56a31",
-      "artifactSha256": "bbd026b15d57daa7757fc6d6acb48d5619450ac3ad67ef22d88cca039f09ed6f"
+      "specificationSha256": "03c6ad144112e57d9b055d88306f89f67794b8d8b5615bd6d77ac16fc8bae890",
+      "artifactSha256": "94d170ce7656f9354d6f7b216c7ea3531c72b2e1e17e214c239ad66381eaf023"
     },
     {
       "id": "prompti-input",
@@ -29,8 +29,8 @@
         "apps/chompi-bridge/src/routing/router.ts",
         "apps/chompi-bridge/README.md"
       ],
-      "specificationSha256": "d2bdcfbcf05a176c95beb237dc9d251616a7125e7774ad4878f3c9be8fc4562b",
-      "artifactSha256": "8516108aebf7eab03f2240d6099ef7ebeeaf84d6d266fd94fb035b056eabfd7b"
+      "specificationSha256": "cf78fb2d31b44ca6ea4de67465de9503ec6e85c80c0da321d90d77e5550bc97e",
+      "artifactSha256": "7b51ca894dd7827df54160d84dafd9adab8d956910d9da4be8b7a23b5c5f0f8a"
     }
   ]
 }

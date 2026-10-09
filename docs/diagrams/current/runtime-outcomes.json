@@ -8,7 +8,7 @@
     "column_fit": "spread",
     "viewBox": [
       1180,
-      760
+      740
     ],
     "legend": {
       "entries": {
@@ -116,10 +116,28 @@
     {
       "id": "step-10",
       "from": "core",
-      "to": "client",
+      "to": "module",
       "y": 617,
-      "label": "Deduplicate by source and message ID",
+      "label": "Commit/deduplicate, then acknowledge",
       "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Expiry and effects",
+      "items": [
+        "Still queued: expired, no effect. Handler started, lost reply or missing outcome: uncertain-result.",
+        "Cancellation ends waiting, not prior effects. retryable never permits resending a command."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Stored outcome, same identity",
+      "items": [
+        "Keep message ID, time, request and trace context across publication and restart.",
+        "Record safe codes at the deciding boundary. Core acknowledges only after durable intake."
+      ]
     }
   ]
 }
