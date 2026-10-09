@@ -41,8 +41,13 @@ async function titles(home: string): Promise<DesktopMetadata['titles']> {
       const info = await file.stat();
       if (!info.isFile()) return [];
       const start = Math.max(0, info.size - MAX_BYTES), buffer = Buffer.alloc(Math.min(info.size, MAX_BYTES));
-      const {bytesRead} = await file.read(buffer, 0, buffer.length, start);
-      let bytes = buffer.subarray(0, bytesRead);
+      let length = 0;
+      while (length < buffer.length) {
+        const {bytesRead} = await file.read(buffer, length, buffer.length - length, start + length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      let bytes = buffer.subarray(0, length);
       if (start > 0) { const newline = bytes.indexOf(10); if (newline < 0) return []; bytes = bytes.subarray(newline + 1); }
       const lines = new TextDecoder('utf-8', {fatal: true}).decode(bytes).split('\n');
       if (lines.length > MAX_LINES) return [];
