@@ -1164,7 +1164,10 @@ node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition ren
 node apps/runtime/dashboard/tests/pixoo-player.browser.ts # frozen sessions, playback controls and explicit restart with changes
 node apps/runtime/dashboard/tests/pixoo-monitor.browser.ts # title refresh, passive reads, presentation controls and Pixoo-only dismissal
 node apps/runtime/dashboard/tests/pixoo-settings.browser.ts # safe setup projection and explicit brightness/screen commands
+node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts # retained wall editor through authenticated tracked commands
 ```
+
+The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with
