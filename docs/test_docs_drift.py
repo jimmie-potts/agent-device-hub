@@ -121,7 +121,7 @@ class DocumentationTests(unittest.TestCase):
         self.assertEqual(self.check('python3 scripts/real.py scripts/output.json'), [])
 
     def test_malformed_compare_reaches_not_checked_boundary(self):
-        for data in [None, [], {'status': 'ahead', 'files': [None]}, {'status': 'behind', 'files': []}]:
+        for data in [None, [], {'status': [], 'files': []}, {'status': 'ahead', 'files': [None]}, {'status': 'behind', 'files': []}]:
             compare = drift.Comparisons(self.root)
             responses = iter([{'default_branch': 'main'}, {'sha': 'b' * 40}, data])
             compare.api = lambda route: next(responses)

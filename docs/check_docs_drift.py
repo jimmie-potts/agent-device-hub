@@ -81,7 +81,7 @@ def inventory(root):
 
 
 def compare_files(data):
-    if not isinstance(data, dict) or data.get('status') not in {'ahead', 'identical'}:
+    if not isinstance(data, dict) or data.get('status') not in ('ahead', 'identical'):
         raise ValueError('comparison does not establish a pin-to-head ancestry')
     files = data.get('files')
     # GitHub returns at most 300 files, on the first compare page only. At the
