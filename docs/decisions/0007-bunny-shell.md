@@ -1,5 +1,13 @@
 # ADR 0007: B.U.N.N.Y. is the shell; the wall map is Nanoleaf's editor
 
+Current applicability: the one-shell and shared-art decisions remain. The shared
+art (#355), dense dashboard (#277), Places (#278) and runtime editor (#934)
+have owning delivery records; "not yet filed" below describes the original
+September 25 decision. The runtime's shell now lives under
+`apps/runtime/dashboard`; [ADR 0012](0012-bunny-event-platform.md) and the
+[architecture guide](../architecture.md#module-frontend-ownership) own its current
+module boundary. Preserve the original follow-up list as history, not a current queue.
+
 Status: Accepted direction under [hub #271](https://github.com/jimmie-potts/agent-device-hub/issues/271),
 2026-09-25. The owner chose the dashboard shell on 2026-09-25. Implementation,
 UI verification, installation and the wall map's retirement belong to follow-up

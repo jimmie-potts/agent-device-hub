@@ -7,8 +7,9 @@ module owns both the Sony HT-A9 and the Sonos Move, because the presented-source
 rule ([#233](https://github.com/jimmie-potts/agent-device-hub/issues/233)) needs
 both sources in one owner, and modules cannot import each other
 ([ADR 0012](../../docs/decisions/0012-bunny-event-platform.md)). It is in the
-runtime's shipped list (`apps/runtime/src/modules.ts`). Nothing installs it until
-the cutover ([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+runtime's shipped list (`apps/runtime/src/modules.ts`). The accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+owns installation and representative playback evidence.
 The old Hub keeps its own copy until the retirement
 ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
 

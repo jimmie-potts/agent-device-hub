@@ -1,9 +1,16 @@
 # CHOMPI bridge
 
-Status: source only. The transport core is from [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741);
+Source, installed-client and physical evidence have separate owners. The
+[#743 trial](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747)
+records accepted Windows/client and device checks for its exact versions; it does
+not qualify other hosts or every later feature. New runtime integration remains
+separately scoped under [#837](https://github.com/jimmie-potts/agent-device-hub/issues/837).
+
+The transport core is from [#741](https://github.com/jimmie-potts/agent-device-hub/issues/741);
 task routing (Hub feed, slots, lights, focus, Wispr and Send) is from [#742](https://github.com/jimmie-potts/agent-device-hub/issues/742),
 and press-time Send with big-wheel card answers is from [#821](https://github.com/jimmie-potts/agent-device-hub/issues/821).
-Nothing installs or starts it. Installation, live client focus, dictation placement and optical results belong to
+The source commands do not install or start a persistent service. Installation,
+live client focus, dictation placement and optical evidence belong to
 [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743).
 
 `@jimmie-potts/chompi-bridge` is the one Windows process that owns the CHOMPI controller's USB connection. It speaks

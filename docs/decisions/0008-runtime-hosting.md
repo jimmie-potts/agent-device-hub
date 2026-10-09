@@ -1,5 +1,13 @@
 # ADR 0008: Keep the runtime in WSL and start it at boot; a Linux server is the target
 
+Current applicability: WSL remains the host choice. The accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+replaced the separate writer services with `bunny-runtime.service`, enabled for
+the existing WSL startup setup with user linger. No Windows task or host setting
+changed in that cutover. The six-service topology below is the September 25
+baseline, not the running topology; its proposed keep-alive/server work retains
+its own scope. [ADR 0012](0012-bunny-event-platform.md) owns the single-process target.
+
 Status: Accepted direction under [hub #44](https://github.com/jimmie-potts/agent-device-hub/issues/44),
 2026-09-25. The owner answered three questions on 2026-09-25: accept one
 Windows scheduled task with the recommended keep-alive, fold #42 into #44 as

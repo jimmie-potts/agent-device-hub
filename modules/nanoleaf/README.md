@@ -9,8 +9,9 @@ the runtime's shipped modules under
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md). The module shows agent
 sessions on the Nanoleaf Lines and NL22 Light Panels, takes Work, Quiet and Free and the
 wall's controls as commands, and publishes each controller's state. Its Wall page
-integrates the retained editor into the shared React dashboard (#934). This is source-only
-delivery; installation remains at the owner-present cutover (#840). Fresh setup does not
+integrates the retained editor into the shared React dashboard (#934). Source
+validation and the [accepted #840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+remain separate evidence; that record states the selected installation and physical scope. Fresh setup does not
 use the optional [migration](#migration) tool.
 
 ## Factory

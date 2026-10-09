@@ -1,17 +1,21 @@
 # Tidbyt controller
 
+**Legacy 1.x controller.** Current runtime operation belongs to
+[the module](../../modules/tidbyt/README.md). The old host is stopped after #840;
+this package remains for manual return until separately authorized retirement.
+
 Status: the source for a fake-tested cloud controller is here as the private
 workspace package `@jimmie-potts/tidbyt-controller` 0.1.0. It is an in-process
-TypeScript library. It has no network listener or service and isn't installed
-anywhere. Since #19 it includes a fake-tested agent status publisher, and
+TypeScript library. It has no listener or service of its own; historical runner
+installation and physical evidence are recorded in [#21](https://github.com/jimmie-potts/agent-device-hub/issues/21). Since #19 it includes a fake-tested agent status publisher, and
 since #38 a now-playing publisher. The opt-in Linux runner connects them to an
 existing hub; installation and visible-device acceptance remain separate from
 these source tests.
 
 The runtime's [Tidbyt module](../../modules/tidbyt/README.md) (#930), a copy of
 this package converted to ADR 0012, replaces the runner at the cutover (#840).
-This package and its checks stay for the installed local controller host until
-#839 removes them.
+This package and its checks stay for the retained, stopped local controller host
+until separately authorized #839 retirement. Current operation belongs to the module.
 
 This controller displays automatic agent status through Tidbyt's official
 cloud. It consumes the feed of the selected shared agent-state owner. It can

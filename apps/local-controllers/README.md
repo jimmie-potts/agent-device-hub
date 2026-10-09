@@ -1,6 +1,11 @@
 # Local controller host
 
-Status: source only, from [#289](https://github.com/jimmie-potts/agent-device-hub/issues/289). Nothing installs or starts it. The tests use fake Tidbyt and LIFX transports and never contact a device, the Tidbyt cloud or the LAN.
+**Legacy 1.x reference.** The accepted [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840)
+stopped and disabled the old writers. These files remain for manual return and
+separately authorized retirement, not as the current setup entry point.
+Read [the runtime guide](../runtime/README.md) for the current system.
+
+The legacy host came from [#289](https://github.com/jimmie-potts/agent-device-hub/issues/289). Its source commands do not install or start a service; the issue owns its historical installation evidence. The tests use fake Tidbyt and LIFX transports and never contact a device, the Tidbyt cloud or the LAN.
 
 `@jimmie-potts/local-controllers` is one Linux Node 24 process that owns the in-process [Tidbyt](../../controllers/tidbyt/README.md) and [LIFX](../../controllers/lifx/README.md) controllers. It serves each configured device over the unchanged [controller v1 contract](../../docs/controller-contract.md) on one loopback port, so the [hub](../hub/README.md) can route to them like the Pixoo and Nanoleaf services. B.U.N.N.Y. then shows both components, and `hub_devices` lists them over MCP.
 

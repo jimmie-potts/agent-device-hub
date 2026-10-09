@@ -1,9 +1,61 @@
 # Shared architecture
 
-This document records accepted ownership, state and command boundaries. The
-[package](../packages/agent-state/README.md), [host](../apps/hub/README.md) and
-[dashboard](../apps/dashboard/README.md) guides describe their implementations;
-GitHub issues hold current delivery and acceptance status.
+## Current runtime and evidence
+
+B.U.N.N.Y. uses one TypeScript process under `apps/runtime`, with a fixed shipped
+module list, an authoritative core and the SDK's in-process bus. The
+[accepted fresh cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records the established installation;
+it transferred no old data. Old writers are stopped and disabled, with their
+units, code, releases and stores retained for manual return. Retention does not
+mean both systems run. Read [runtime setup](../apps/runtime/SETUP.md) before
+installation work; its fresh setup/manual return procedure is distinct from the
+legacy Hub installer and does not establish routine upgrade automation.
+
+[Open the current architecture diagram](runtime-architecture.html), authored in
+[runtime-architecture.json](runtime-architecture.json). It maps these source owners:
+
+| Boundary | Owning source |
+| --- | --- |
+| Authenticated remote HTTP/SSE and MCP | `apps/runtime/src/gateway/` and the runtime [gateway guide](../apps/runtime/README.md#gateway) |
+| Fixed shipped modules | `apps/runtime/src/modules.ts`, static registration build and module-owned registrations |
+| Publish, subscribe, sync, request and respond | `packages/sdk/src/` and its [guide](../packages/sdk/README.md) |
+| Sessions, inbox, history and action tracking | `apps/runtime/src/core/` and the [core guide](../apps/runtime/README.md#agent-session-core) |
+| Per-device writers and private state/outboxes | `modules/` and their owning READMEs |
+| Browser shell and module feature pages | `apps/runtime/dashboard/` and browser-only module entries |
+
+**Connect/reconnect:** a remote client authenticates, syncs current membership
+from its owner, then follows live events. A sync replaces membership, so removed
+entities disappear. A bounded-buffer overflow restarts the sync rather than
+combining partial snapshots. Reconnect never replays old commands or effects.
+
+**Commands:** the owning service admits a live request with expiry. An accepted
+reply records responsibility for a later outcome, not successful device output.
+Core state, tracker, inbox and history changes commit together. A module commits
+its outcome in its own outbox before publication and can report that outcome
+again after restart; the core deduplicates it by source and ID. This reporting
+retry never sends the command again. Failed and uncertain outcomes remain distinct
+from succeeded, and transmitted evidence is distinct from a physical observation.
+
+The diagram's source baseline is `36fb7b99f11b47c2f95be3f892a13d7ca72c0b0d`,
+reviewed October 9, 2026. The installed evidence is the linked #840 record, not
+this render. That release accepted Wispr as unconfigured and CHOMPI integration
+as deferred; module inclusion or a health HTTP response does not prove every
+feature is installed or every device physically qualified. GitHub owns subsequent
+status and exact acceptance scope.
+
+Review this view when gateway transport, module registration, state ownership,
+sync/recovery, outcome persistence, device writers or hosting changes. A semantic
+review may conclude "reviewed; no architecture change" without regeneration.
+When it changes, validate and deliver the JSON with the installed archify skill,
+then inspect the exact HTML in a browser. Keep deterministic receipts, browser
+measurements and visual review separate. The new files have no Work Guide imports.
+The dated atlas and its nine shared legacy diagrams retain their pinned baselines;
+#890 owns extraction and the remaining flow views before #892 retires the Guide.
+
+This document records current and retained legacy ownership, state and command
+boundaries. The [runtime](../apps/runtime/README.md), its [dashboard](../apps/runtime/dashboard/README.md)
+and module guides own current implementation details. Sections labeled Legacy
+refer to the retained 1.x system. GitHub issues hold delivery and acceptance status.
 
 The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
 September 19, 2026 design snapshot. Its labels and open decisions reflect that
@@ -15,8 +67,8 @@ baseline, not the current implementation.
 local-first assistant direction. Preserve the Codex-first milestone before
 general device controls and Apple Music integration. Container migration and
 remote voice access remain later work; [ADR 0008](decisions/0008-runtime-hosting.md)
-decides that the runtime stays in WSL, to be started at boot by a keep-alive
-still to be installed, until a triggered server migration.
+keeps WSL as the host choice. Its proposed keep-alive and server migration are
+separate from the accepted runtime service cutover; see that ADR's current-applicability note.
 
 The shared application's user-facing name is B.U.N.N.Y. The
 [application UI style guide](application-ui-style-guide.md) owns that spelling,
@@ -61,22 +113,21 @@ that dashboard draws ([ADR 0007](decisions/0007-bunny-shell.md)).
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
 Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
 light-writing worker, geometry, Line allocation, spatial effects,
-Work/Quiet/Free policy, scene restoration and advanced wall editor. The legacy
-installation runs on Windows. The Nanoleaf processes and private state can run
-in Ubuntu WSL without transferring repository ownership.
+Work/Quiet/Free policy, scene restoration and advanced wall editor. The retained legacy Nanoleaf implementation uses separate Python services in WSL;
+the earlier Windows installation and Linux transition are historical boundaries.
+The current TypeScript module owns the runtime's Nanoleaf writer and private state.
 [Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) holds
 the installed acceptance record. Common code must not import a device
 application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
-queues. These new controllers belong in this repository. The Tidbyt cloud
-controller exists as a fake-tested in-process package; its status integration and
-installation remain separate. LIFX provides a fake-tested in-process LAN controller;
-its status integration and installation remain separate. The
-[local controller host](../apps/local-controllers/README.md) (#289) is the single
-process that owns both libraries and serves them to the hub over controller v1.
-It runs the Tidbyt runner in-process and holds a writer lease per bulb. The shared core interprets
+queues. These new controllers belong in this repository. The current [Tidbyt](../modules/tidbyt/README.md) and [LIFX](../modules/lifx/README.md)
+modules run inside `apps/runtime`. Their source tests and installed/physical
+acceptance are separate evidence. The retained
+[local controller host](../apps/local-controllers/README.md) (#289) owned the old
+controller libraries over controller v1; it is stopped after #840 and retained
+for manual return. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the
@@ -107,20 +158,20 @@ it grants no installed or physical authority.
 
 ## Event and messaging platform
 
-[ADR 0012](decisions/0012-bunny-event-platform.md), as amended on 2026-10-06,
-selects how every component will communicate, and supersedes ADR 0010's staged
+[ADR 0012](decisions/0012-bunny-event-platform.md), including its later amendments,
+selects how components communicate and supersedes ADR 0010's staged
 adoption. These parts exist as source: the message profile 2.0 contract
 (`@jimmie-potts/event-contracts/v2`), its core payload families
 (`@jimmie-potts/event-contracts/v2/families`), its device families with the
 Hub-mode table (`@jimmie-potts/event-contracts/v2/devices`), the shared
 agent-status helper (`@jimmie-potts/event-contracts/v2/status`), the SDK
 (`@jimmie-potts/sdk`): its in-process bus with sync, its SSE/HTTP remote
-transport and the module API, and the runtime skeleton with its module host
-(`apps/runtime`), which runs with zero modules, and its agent-session core
-(#831). The 1.x field mapping is in
+transport and the module API, and the runtime with its agent-session core and
+fixed shipped modules (`apps/runtime`). It also supports core-only disposable
+runs without device modules. The 1.x field mapping is in
 [MAPPING.md](../packages/event-contracts/MAPPING.md).
 
-- **Runtime.** One TypeScript runtime, `apps/runtime`, will host the core and
+- **Runtime.** One TypeScript runtime, `apps/runtime`, hosts the core and
   every device as a module from a fixed, shipped list. Modules talk through the
   SDK's in-process bus; there is no broker.
 - **Publishing.** Owners publish full-record state events, removal events and
@@ -145,12 +196,12 @@ transport and the module API, and the runtime skeleton with its module host
 - **No replay.** Past occurrences or effects are never redelivered to views or
   devices.
 
-[Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)
-delivers the rebuild and one offline cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). Until
-the cutover, each component's released 1.x contract and the
-[event profile 1.0](event-contract.md) stay authoritative for the installed
-system. A component may extend them only additively.
+[Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) and
+[#840](https://github.com/jimmie-potts/agent-device-hub/issues/840) record the
+accepted rebuild and fresh cutover. The [event profile 1.0](event-contract.md)
+and released 1.x contracts remain authoritative for retained legacy consumers,
+not the new runtime. Extend them only additively while those consumers remain;
+separately authorized retirement owns their removal.
 
 ## Installed release ownership
 
@@ -160,7 +211,9 @@ verified release identity, compatible recovery preserving latest durable state
 and private operation receipts. Consumer commands and live acceptance remain
 separately owned; the contract adds no installer or deployment service.
 
-## Agent observation and commands
+<a id="agent-observation-and-commands"></a>
+
+## Legacy agent observation and commands
 
 Provider emitters send small validated lifecycle observations to the active state
 owner. Codex Desktop, Codex CLI and Claude Code remain distinct compatibility
@@ -198,7 +251,9 @@ Hooks remain bounded, observational and fail-open. Device/collector failure must
 not deny an agent action, change permissions or hold work waiting. MCP is the
 separate deliberate command interface. Its tools call the same services as the UI.
 
-## Controller boundary
+<a id="controller-boundary"></a>
+
+## Legacy controller boundary
 
 A controller exposes configured identity, capabilities, validated commands and
 revisioned observations. Use an authenticated machine API instead of borrowing
@@ -224,7 +279,9 @@ previews. Nanoleaf timelines and Pixoo pixel buffers remain device-specific
 payloads. Renderer contracts carry clock domains, epochs and update outcomes;
 browsers must not create another scheduler for physical effects.
 
-## Fresh Nanoleaf Linux runtime
+<a id="fresh-nanoleaf-linux-runtime"></a>
+
+## Legacy fresh Nanoleaf Linux runtime
 
 The delivered installer supports the existing Nanoleaf runtime as separate Linux
 processes in Ubuntu WSL. Linux Python hooks, the CLI, the wall map and the
@@ -260,18 +317,18 @@ source migration keep their existing owners and dependency paths.
 
 Use this repository as the monorepo for new controllers and shared packages,
 as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
-The existing Pixoo and Nanoleaf repositories keep running their installed
-services until the cutover. Pixoo's domain packages and presentation are staged
+The existing Pixoo and Nanoleaf repositories retain old source and manual-return
+installations after the accepted cutover; their old writers are stopped and disabled. Pixoo's domain packages and presentation are staged
 under modules/pixoo. Use TypeScript for new shared services, Tidbyt/LIFX/PC
-lighting controllers and the React dashboard. The installed Nanoleaf worker stays
-Python until the cutover; its domain logic is ported to TypeScript under
+lighting controllers and the React dashboard. The retained old Nanoleaf worker is
+Python; the current runtime uses the TypeScript port under
 `modules/nanoleaf` ([#26](https://github.com/jimmie-potts/agent-device-hub/issues/26)).
 Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
-Implemented shared packages are packages/contracts, packages/mcp, packages/agent-state
-and the pure packages/lifecycle-contracts validators. The [lifecycle contract](agent-lifecycle-contract.md)
+Shared packages include packages/contracts, packages/mcp, packages/agent-state,
+packages/lifecycle-contracts, packages/event-contracts and packages/sdk. The [lifecycle contract](agent-lifecycle-contract.md)
 and [provider matrix](provider-qualification.md) establish metadata and source evidence,
 without claiming installed producer qualification. Provider normalizers and bounded
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
@@ -289,9 +346,12 @@ export/import. Its host storage boundary requires an exclusive lease and atomic
 revision-checked commits. Current records, chosen labels and notices survive
 journal retention. The journal retains the newest 10,000 events within 24 hours,
 with pruning on writes, startup and an idle timer. The in-memory reference store
-is a test adapter; Pixoo #31 supplies production durability and access controls.
+is a test adapter. The current runtime supplies its private core SQLite adapter;
+Pixoo #31 records the retained embedded owner's durability and access controls.
 Observation age and restart uncertainty remain separate from collector health.
-The core sends no device commands, regardless of Media/Free modes.
+The agent-state reducer sends no device commands, regardless of Media/Free modes.
+The runtime core's separate action dispatcher admits and routes tracked commands
+through the SDK to the owning module; it never writes a physical device itself.
 
 Agent-state 2.0.0 calculates best-effort current activity for ordinary unordered
 provider hooks. An eligible unseen turn start selects active; its matching stop
@@ -303,7 +363,8 @@ identities use a bounded 256-entry FIFO; completion notices provide additional
 identity retention. Saved ambiguity can recover on a fresh eligible start using
 the unchanged version 1.0 store. The diagnostic journal is neither a raw-event
 archive nor a complete history. See the [state policy and limits](../packages/agent-state/README.md#state-and-uncertainty)
-and [installed update procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
+and [legacy installed update procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).
+The current runtime setup and upgrade boundary is at the top of this guide.
 
 The MCP module exports an HTTP handler and configured service/tool registration.
 The owning application enables and mounts it; the module never opens a listener
@@ -314,13 +375,12 @@ contract. Both paths retain fixed configured targets, current read/control scope
 bounded authentication and response delivery, and no automatic write retries.
 See [the MCP module](../packages/mcp/README.md) for its API and evidence boundary.
 
-Pixoo's embedded owner and the standalone hub compose the same core. Nanoleaf
-can opt into the versioned shared feed while retaining its device worker and
-Work/Quiet/Free behavior. The legacy route uses the Windows worker. The fresh
-Linux installation path supports placing that writer in WSL independently of
-shared monitoring.
+In the retained legacy system, Pixoo's embedded owner and the standalone Hub
+compose the same core. Its Nanoleaf shared-feed path retains the Python writer
+and Work/Quiet/Free policy. The current runtime's core and TypeScript Nanoleaf
+module replace that running topology after #840.
 
-Moving the state owner is explicit and quiesced. Preserve source identities,
+Legacy owner migration is explicit and quiesced. Preserve source identities,
 session/notice state, revisions and producer configuration with a versioned
 export/import and rollback. Pixoo's session-source facade switches its renderer,
 browser feed and shared label/acknowledgment operations to the selected owner.
@@ -330,8 +390,9 @@ against the same state simultaneously. Controller databases stay private; Window
 processes do not coordinate through a mounted SQLite database.
 
 The Nanoleaf shared-input cutover is complete: its legacy hooks are removed, and
-the runtime port keeps shared input only (#26). Until #840, rollback is the old
-Python installation. Only one selected ingestion path updates each session. Shared-input consumers
+the runtime port keeps shared input only (#26). Before #840, rollback used the old
+Python installation; after the accepted cutover it remains the manual-return
+option. Only one selected ingestion path updates each session. Shared-input consumers
 can cache presentation state; they do not become independent status authorities.
 Loss of the hub has a documented recovery/rollback path and never blocks agents
 or ordinary media use.
@@ -353,7 +414,8 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-The shared frontend in apps/dashboard is B.U.N.N.Y.'s central interface. It uses
+The current shared frontend in apps/runtime/dashboard is B.U.N.N.Y.'s central interface.
+The retained apps/dashboard implementation supplies the historical #6 pattern below. It uses
 the approved Nanoleaf visual language and interaction patterns. Each current
 and future user-facing component joins the same navigation and reusable views
 for its available status, settings and supported controls, with specialized
@@ -410,7 +472,9 @@ Broader Home Assistant/MQTT adoption remains deferred under #11.
 Generic device support does not establish custom animation fidelity. Home
 Assistant must delegate to an existing writer or use an explicit ownership handoff.
 
-## Tidbyt and LIFX delivery
+<a id="tidbyt-and-lifx-delivery"></a>
+
+## Legacy Tidbyt and LIFX delivery
 
 Automatic agent status is the first feature priority for these new controllers.
 Qualify their connections, implement fake-backed controllers, then consume the
@@ -483,7 +547,7 @@ record the limitation and defer the adapter. Do not introduce custom protocol
 research, simulated key shortcuts or firmware replacement. Preserve normal typing,
 key mappings, macros and lock indicators, and never capture keystrokes.
 
-Automatic status consumes the shared core initially hosted in Pixoo. It does not
+Automatic status consumes the authoritative shared core, now hosted by apps/runtime. It does not
 add a collector or wait for general controls, the dashboard or standalone hosting.
 Strimer and Varmilo each have separate qualification, adapter and physical acceptance
 work, so neither blocks a verified Corsair release. Keyboard support also cannot
@@ -558,9 +622,9 @@ couple new clients to Codex-specific read behavior. A single shared core avoids
 that drift, at the cost of explicit package/API compatibility and state-owner
 migration work.
 
-Moving the existing controllers now would couple this bootstrap to Windows
-installation, active feature work and physical revalidation. Start new controllers
-in the monorepo and defer the existing source moves to their own issues.
+The original bootstrap deferred existing source moves to avoid coupling them to
+active installations. The later TypeScript rebuild superseded that source-layout
+choice; the original installation boundaries remain historical context.
 
 MCP remains reusable infrastructure with device registrations. The reusable local
 transport and device tools in [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7)
@@ -588,7 +652,9 @@ Exact schemas, SDK/package versions, controller reachability, client signals and
 physical timing will be settled by their bounded issues. These unknowns do not
 authorize guessed telemetry or deployment changes.
 
-## Standalone Linux host
+<a id="standalone-linux-host"></a>
+
+## Legacy standalone Linux host
 
 The [host](../apps/hub/README.md) under `apps/hub` targets native Linux in WSL.
 Native Windows runtime qualification is separate. The application composes the
@@ -653,10 +719,13 @@ In the new runtime ([ADR 0012](decisions/0012-bunny-event-platform.md)), the
 ([#929](https://github.com/jimmie-potts/agent-device-hub/issues/929)) is that one
 owner. It keeps the Hub's rule, cadence and thresholds, publishes the presented
 source as the core `playback` record, and answers `playback-control` with a reply
-and an outcome. The Hub's copy serves the installed system until the cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)).
+and an outcome. The Hub's old copy is stopped after the accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840) and
+retained for manual return.
 
-## Linux host handoff implementation
+<a id="linux-host-handoff-implementation"></a>
+
+## Legacy Linux host handoff implementation
 
 The [host API and migration guide](../apps/hub/README.md) define the delivered
 source boundary. A directly supervised source quiesces and saves its versioned
@@ -672,7 +741,9 @@ and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
 
-## B.U.N.N.Y. frontend, Hub #6
+<a id="bunny-frontend-hub-6"></a>
+
+## Legacy B.U.N.N.Y. frontend, Hub #6
 
 The implementation in `apps/dashboard` provides React/TypeScript activity, component
 and connection views served by `apps/hub` at the same origin. A dedicated scoped
@@ -701,6 +772,8 @@ controller v1 mode command, and scene names only from the
 `nanoleaf.integration/1.0` snapshot. Installation, physical acceptance and full
 editor migration remain separately owned work.
 
-## Standalone MCP composition
+<a id="standalone-mcp-composition"></a>
+
+## Legacy standalone MCP composition
 
 The optional host `/mcp` route composes the reusable transport with the existing state owner and controller clients. It adds no listener, reducer, replay ledger or device writer. Global session tools retain the HTTP command ledger. Configured aliases bind device tools while native snapshots and receipts keep their original identities. Read/control permissions are checked on every request; disconnect never resubmits or cancels admitted owner work. Pixoo catalog/player handlers remain owned by its separate application. See [the host tool contract](../apps/hub/README.md#optional-local-mcp) for supported commands and source-only evidence.

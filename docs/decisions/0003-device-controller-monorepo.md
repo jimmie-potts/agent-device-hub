@@ -1,5 +1,11 @@
 # ADR 0003: Device controllers in the hub monorepo
 
+Current applicability: the monorepo and one-writer decisions remain. The
+[ADR 0012 rebuild](0012-bunny-event-platform.md) and source ports #25/#26
+superseded the deferred source-move and separate Python-worker target below.
+Current modules live under `modules/` and the accepted #840 cutover stopped the
+old services. Retain the original bootstrap text as dated decision history.
+
 Status: Accepted for documentation and backlog initialization under
 [hub #14](https://github.com/jimmie-potts/agent-device-hub/issues/14).
 Product implementation remains in separate issues.

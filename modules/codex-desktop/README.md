@@ -6,11 +6,11 @@ against the [module API](../../packages/sdk/README.md#modules) 1.2 under
 [ADR 0012](../../docs/decisions/0012-bunny-event-platform.md). It turns Codex
 Desktop's read marker into read evidence for the core's sessions, as the old Hub's
 reader did (Hub #191), and replaces that reader at the cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). Until then
-the installed Hub keeps `apps/hub/src/codex-desktop.ts`, which stays unchanged
-until the retirement story ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
-Nothing installs this module yet, and its tests and disposable runs use a
-synthetic or simulated marker only.
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)), whose
+accepted record owns installed producer/reader evidence. The old Hub reader at
+`apps/hub/src/codex-desktop.ts` remains in the stopped installation for manual
+return until separately authorized retirement (#839). Tests and disposable runs
+use a synthetic or simulated marker only.
 
 The runtime ships it last, after the Nanoleaf module (`apps/runtime/src/modules.ts`):
 it only syncs from the core and publishes to it, so no module waits on it.

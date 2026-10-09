@@ -5,8 +5,11 @@ part of [epic #738](https://github.com/jimmie-potts/agent-device-hub/issues/738)
 Evidence collected October 3, 2026 UTC.
 
 **A non-MIDI controller is feasible and both Desktop clients have a usable,
-fail-closed routing design. Nothing here has passed on the device or in a live
-client yet.** The selected route is a controller firmware in launcher slot 04
+fail-closed routing design.** This opening describes the October 3 investigation,
+before the live trial. Later dated rows and the
+[#743 accepted trial](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747)
+record Windows/client and physical evidence separately; they do not qualify other
+versions or every later feature. New runtime integration remains #837. The selected route is a controller firmware in launcher slot 04
 that talks vendor-defined HID to one Windows bridge. The bridge reads the Hub's
 session feed, keeps task slots, opens tasks by deep link, verifies the result
 and sends keystrokes only after verification. Claude routing depends on an
@@ -14,7 +17,7 @@ undocumented Claude Desktop link, which the owner accepted with fail-closed
 checks. [#743](https://github.com/jimmie-potts/agent-device-hub/issues/743)
 owns the device and live-client trial.
 
-This was a read-only investigation. No firmware was flashed, no USB device was
+The October 3 investigation was read-only. No firmware was flashed, no USB device was
 opened, no link was launched, no keystroke was sent and no setting changed.
 Bundle inspection read code, key names and schemas, never task content.
 
@@ -23,8 +26,8 @@ Bundle inspection read code, key names and schemas, never task content.
 `D` means official documentation, `S` inspected source, built output,
 installed bundle, local configuration or filesystem artifact, `O` owner
 decision or report, and `L` an authorized live
-observation; the only `L` rows come from the #743 trial. `?` marks an unverified
-point that #743 must observe.
+observation; each dated `L` row cites its live trial or follow-up. `?` marks an
+unverified point, not a current blocker inferred from the original plan.
 
 | Item | Checked revision or version |
 | --- | --- |
@@ -220,7 +223,7 @@ observation before anything depends on it in installed use.
 | Lifecycle and attention feed | Supported | The Hub already receives activity, `attention.approval` (no request ID) and unread for Codex Desktop | `S`: `providers.ts`, `apps/hub/src/codex-desktop.ts`; installed since #191 |
 | Archive signal | Supported | `SessionEnd` retires the session on archive or delete, but also on normal close and after 30 minutes idle and unopened in any connected client, so it is not an archive signal by itself. Archived threads appear as `archived_sessions/rollout-<timestamp>-<id>.jsonl` filenames in the Codex home | `D`, `S`: [provider qualification](provider-qualification.md); archive end accepted in #218 |
 | Composer focus | Supported | `Alt+L` moves focus to the main composer | `S`: bundle command table |
-| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run. Since #821 Send no longer reads the Hub marker, which could outlive the request | `D`, `S`, `L` |
+| Pending-approval guard | Unverified | Enter approves and Esc declines an open approval card. In the #743 trial the escalation card replaced the composer and took keyboard focus, so the bridge treats approval as absent only while exactly one composer exists ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed Codex guard refusal remains unverified by that receipt; its question-card refusal was in Claude. Later card-answer behavior is separately owned. Since #821 Send no longer reads the Hub marker, which could outlive the request | `D`, `S`, `L` |
 | Send | Supported | Keystroke only: Enter sends (`composerEnterBehavior = "enter"` in the owner's Codex config); mid-turn Enter queues. No non-keystroke send route exists | `S` |
 | Model change | Supported | The picker button (`<model> <effort>` while collapsed, `Select effort` while expanded) supports ExpandCollapse; its "Select model" entry supports Invoke and opens the model list, whose options support SelectionItem; `Select()` applies a model and returns to the picker, which stays open. `Collapse` does not close the picker; one Escape into it does. `Ctrl+Shift+M` also opens it. Knob 1 uses the UI Automation route (#906) | `D`, `S`, `L` (2026-10-06, [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6027688512)) |
 | Effort change | Supported | The owner bound "Increase reasoning effort" and "Decrease reasoning effort" to `Ctrl+Alt+=` and `Ctrl+Alt+-` on 2026-10-06; both are app-scoped and unused elsewhere, except that `Ctrl+Alt+-` splits a Claude Desktop pane. In the picker, the "Power" entry (Invoke only, no RangeValue) steps the level with Right and Left. Knob 2 uses the chords, sent only with Codex in front, no card and the picker closed (owner decision on #906); Power with arrows only when no chords are configured | `S`, `O` ([chords](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6023061003)), `L` (2026-10-06, #906) |
@@ -235,13 +238,13 @@ observation before anything depends on it in installed use.
 | Opening an existing session by undocumented link | Supported, undocumented | `claude://code/continue?session=local_<id>` opens that exact session if it exists and is not archived; otherwise it silently shows the Code home. The app builds this link itself for its taskbar Jump List. Any Desktop update can change it | `S`: main-process URL handler in the installed bundle. Accepted by the owner with fail-closed checks |
 | Unsafe undocumented links | Unsupported | `code/needs-input` opens a different waiting session when the ID is absent. `claude://resume` imports or unarchives sessions. Never use either | `S` |
 | Desktop session identity | Supported, undocumented | Desktop's `local_<uuid>` differs from the hook `session_id`, which changes on `/clear`; the Desktop ID survives `/clear` | `S`: Desktop session store |
-| Desktop ID available to hooks | Unverified | Desktop-hosted Code processes carry `CLAUDE_CODE_HOST_SESSION_ID=local_<uuid>` and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Hook processes are expected to inherit them; the installed observation planned in [#784](https://github.com/jimmie-potts/agent-device-hub/issues/784) will check it. If they do not, Claude routing stays disabled | `S`: Code process environment |
-| Lifecycle and attention feed | Supported | Desktop-hosted Code sessions load the WSL user settings that run the installed Hub producer for every hooked event, so activity, `attention.approval` for permission prompts and session ends reach the Hub like other Claude Code sessions. A live Desktop session in the feed is still to be observed | `S`: user hook configuration, `providers.ts`; [provider qualification](provider-qualification.md) |
+| Desktop ID available to hooks | Observed on the installed path | [#784 closeout](https://github.com/jimmie-potts/agent-device-hub/issues/784#issuecomment-5975964904) confirmed hook inheritance with a matching Desktop `hostSessionId` in snapshot 1.3 and no field on an interactive CLI root. Missing or invalid evidence still disables exact routing | `S`, installed observation (2026-10-04) |
+| Lifecycle and attention feed | Supported | Desktop-hosted Code sessions load the WSL user settings that run the installed Hub producer for every hooked event, so activity, `attention.approval` for permission prompts and session ends reach the Hub like other Claude Code sessions. The #784 installed observation confirmed a live Desktop root in the feed; later client versions require their own qualification | `S`: user hook configuration, `providers.ts`; [provider qualification](provider-qualification.md) |
 | Hub distinguishes Desktop from CLI | Unsupported | Both use client `code` and one source today | `S`: `providers.ts`, provider qualification |
 | Selected-session verification | Supported, undocumented | When a session becomes visible the app stamps its `lastFocusedAt` and saves its record under `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude-code-sessions\`. The window title is always "Claude". Split panes and pop-out windows are unverified | `S` |
 | Archive signal | Supported, undocumented | The same private store records `isArchived` and an `archived-sessions.idx` index. Archiving stops the Code process; whether that emits `SessionEnd` is unverified | `S` |
-| Composer focus | Unverified | Composer state is not stored locally; a UIA keyboard-focus check is the planned route | `S` |
-| Pending-permission guard | Unverified | The Hub's `attention.approval` covers permission prompts, but since #821 Send relies on the bridge's own card check instead. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the installed guard check is still to run | `S`, `L` |
+| Composer focus | Observed in the #743 trial | Composer state is not stored locally; the Windows UIA adapter verifies keyboard focus before input. The [trial receipt](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747) records drafts placed in both clients | `S`, `L` (2026-10-04/05) |
+| Pending-permission guard | Observed for the #743 Claude question card | The Hub's `attention.approval` covers permission prompts, but since #821 Send relies on the bridge's own card check instead. In the #743 trial, permission and question cards each carried the class token `epitaxy-approval-card` while the composer kept focus, so the bridge blocks Send while any element carries it ([UIA notes](../apps/chompi-bridge/src/windows/UIA-NOTES.md#approval-cards)); the [#743 receipt](https://github.com/jimmie-potts/agent-device-hub/issues/743#issuecomment-5998042747) records Send refused with `approvalCards: 1` and the question card untouched, then one Send after the owner answered with the mouse. This bounds the installed result to that Claude trial, not every card or later client version | `S`, `L` (2026-10-04/05) |
 | Send | Supported | Enter sends | `D`: [Claude Code Desktop](https://code.claude.com/docs/en/desktop) |
 | Model and effort change | Supported | The `Model: <name>` button supports ExpandCollapse (Expand opens the menu, Collapse closes it unchanged); model options support SelectionItem, and `Select()` applies one and closes the menu. The `Effort: <level>` button supports ExpandCollapse, and its `Effort` slider supports RangeValue (0-5, SmallChange 1), where `SetValue` applies a level at once. A model without an effort setting (Haiku 4.5) shows no Effort button. `Ctrl+Shift+I` and `Ctrl+Shift+E` also open them. Knobs 1 and 2 use the UI Automation route (#906) | `D`, `L` (2026-10-06, [#906](https://github.com/jimmie-potts/agent-device-hub/issues/906#issuecomment-6027688512)) |
 | Model and effort readback | Supported, undocumented | The composer's `Model: <name>` and `Effort: <level>` buttons, and the session record's `model` and `effort`, which updated within about 1 s of a change | `S`, `L` (2026-10-06, #906) |

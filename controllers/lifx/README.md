@@ -1,5 +1,9 @@
 # LIFX controller
 
+**Legacy 1.x controller.** Current runtime operation belongs to
+[the module](../../modules/lifx/README.md). The old host is stopped after #840;
+this package remains for manual return until separately authorized retirement.
+
 `@jimmie-potts/lifx-controller` is an in-process TypeScript controller with direct
 UDP transport and fake-tested per-bulb queues. The
 [local controller host](../../apps/local-controllers/README.md) (#289) owns one
@@ -7,7 +11,8 @@ instance, holds a writer lease per bulb address and serves it to the hub: contro
 v1 for power, brightness and mode, and this package's `lifx-light` profile for color
 and color temperature. Since #20, a qualified bulb in Work or Quiet also shows
 automatic agent status, painted internally through the same controller (see
-[Automatic agent status](#automatic-agent-status)). Neither is installed yet.
+[Automatic agent status](#automatic-agent-status)). Historical installation and
+physical evidence belong to [#22](https://github.com/jimmie-potts/agent-device-hub/issues/22).
 Source validation sends no bulb traffic.
 
 The runtime's [LIFX module](../../modules/lifx/README.md) (#928) is a copy of this

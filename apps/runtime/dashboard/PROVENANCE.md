@@ -1,8 +1,10 @@
 # Provenance of the runtime dashboard
 
 Hub #922 copies the B.U.N.N.Y. dashboard into the runtime instead of moving it,
-so the old Hub keeps serving `apps/dashboard` and its tests keep passing until
-the retirement story (#839). Each story slice copies the files it converts. The
+preserving the old `apps/dashboard` source and tests for manual return until
+separately authorized retirement (#839). The old Hub stopped after the accepted
+[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585).
+Each story slice copied the files it converted. The
 copy commit holds the files exactly as they were; the commits after it convert
 them, so `git diff <copy commit> -- apps/runtime/dashboard` shows every change.
 

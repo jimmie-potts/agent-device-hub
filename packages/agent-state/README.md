@@ -67,8 +67,8 @@ enables collection. Any supported hook carrying `agent_id` identifies that child
 and its parent. The normalizer does not reuse the parent's turn ID for the child.
 
 Activity, continuing questions, blocked attention, completion notices, read
-evidence and unavailable evidence remain separate. An interruption or runtime
-end retains notices. A selected new turn clears prior known-turn completion
+evidence and unavailable evidence remain separate. An interruption retains
+notices; an accepted runtime end retires the record and removes its notices. A selected new turn clears prior known-turn completion
 notices only for consumers configured with `clearOnNewTurn`. Attention resolution
 requires matching known turn and attention IDs, including after that turn retires.
 An unordered attention event does not select a different current turn.
@@ -273,7 +273,7 @@ Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generat
 Package 3.2.0 retires accepted ends on every supported path and settles stored `ended` records at startup without changing the schemas. Its Claude Code and Codex CLI retirement guards are rejected by the 3.0 and 3.1 validators regardless of age, so those owners fail closed (`invalid-storage`) on a store or export holding one. A guard expires 24 hours after its retirement, but only a running or reopened 3.2.0 owner prunes it; run or reopen 3.2.0 after that point before rolling back, or use an explicitly reconciled export.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
-resetting state. Older packages can read the legacy 1.0 shape, but cannot read durable 2.0. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)
+resetting state. Older packages can read the legacy 1.0 shape, but cannot read durable 2.0. The [Hub update procedure](../../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub)
 keeps owner/source configuration and the existing store.
 If cutover fails, first stop/release the new owner before restarting the old
 store. Rollback after new writes requires an explicit reconciled export, because

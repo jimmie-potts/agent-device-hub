@@ -3,23 +3,27 @@
 Shared local agent status and device integration contracts for Codex, Claude Code,
 Nanoleaf, Pixoo, Tidbyt and LIFX.
 
-This repository contains versioned controller contracts with TypeScript and Python
-conformance checks, an embeddable authenticated MCP module, a shared agent-state
-package with bounded provider emitters, accepted architecture and development
-workflow tooling, a [Linux standalone host](apps/hub/README.md) with bounded
-controller routing and supervised state-owner migration, and a
-[React dashboard](apps/dashboard/README.md). Installation and new device
-adapters have separate owners and acceptance gates.
+B.U.N.N.Y. runs as one [TypeScript runtime](apps/runtime/README.md) on the
+established WSL host. Its core and fixed device modules communicate through the
+[SDK](packages/sdk/README.md) using [message profile 2.0](packages/event-contracts/README.md).
+The runtime serves the [React dashboard](apps/runtime/dashboard/README.md),
+authenticated remote clients and MCP. Start with [architecture](docs/architecture.md)
+for boundaries and [runtime setup](apps/runtime/SETUP.md) for the fresh setup and
+manual return procedure.
 
-New Tidbyt and LIFX controllers live in this monorepo. The
-[Tidbyt](controllers/tidbyt/README.md) directory holds a fake-tested in-process
-cloud controller package; the [LIFX](controllers/lifx/README.md) directory
-holds the fake-tested in-process LAN controller. The
-[local controller host](apps/local-controllers/README.md) serves both to the hub
-over controller v1, so B.U.N.N.Y. and MCP can reach them. The first
-feature priority for these devices is automatic agent status. Tidbyt starts with
-the official cloud and leaves a connection boundary for future Tronbyt support;
-LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
+The [accepted cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records installed and representative physical
+evidence separately from source checks. Old services are stopped and disabled;
+their code, releases and stores remain for manual return. Legacy Hub/controller
+packages and 1.x contracts stay available until separately authorized retirement.
+Do not use the old Hub installer to update the new runtime.
+
+The current [Tidbyt](modules/tidbyt/README.md), [LIFX](modules/lifx/README.md),
+[Pixoo](modules/pixoo/README.md), [Nanoleaf](modules/nanoleaf/README.md),
+[playback](modules/playback/README.md) and [Codex Desktop](modules/codex-desktop/README.md)
+guides own their module behavior and configuration. Tidbyt uses the official cloud;
+LIFX uses configured LAN addresses. The [Wispr module](modules/wispr/README.md)
+retains its selected-file handoff; activation and browser/text exposure have their
+own scope. The runtime guide describes configuration refusals and health.
 
 The planned [PC lighting controller](controllers/pc-lighting/README.md) covers
 Corsair RAM and supported H150i cooler lighting, plus optional Lian Li Strimer and
@@ -40,6 +44,27 @@ profiles and later desk presets. These integrations remain future work. Keyboard
 A/B and the attached Super Buttons are configured directly on the keyboard and
 are outside B.U.N.N.Y. Local shortcuts can ship independently of the hub;
 shared presets follow the Codex-first milestone and general-control definition.
+
+## Documentation owners
+
+| Question or category | Canonical owner |
+| --- | --- |
+| Delivery status, acceptance and dependencies | GitHub issues and their evidence; source or CI alone does not establish installed acceptance |
+| Current architecture and flows | [Architecture](docs/architecture.md), the [current runtime diagram](docs/runtime-architecture.html) and owning code |
+| Lasting decisions and amendments | [ADRs](docs/decisions/); retain original rationale and explicit supersession notes |
+| Capability requirements and scenarios | [Current OpenSpec specs](openspec/specs/); archived changes retain historical intent |
+| Runtime setup, API and module operations | [Runtime](apps/runtime/README.md), [setup](apps/runtime/SETUP.md) and module READMEs |
+| Development, verification and delivery policy | [Development](docs/development.md), [app verification](docs/app-verification.md) and [SDLC](docs/sdlc.md) |
+| Legacy operations and contracts | `apps/hub`, `apps/dashboard`, `apps/local-controllers`, `controllers/` and 1.x contract guides, explicitly scoped to the retained old system |
+| Qualification evidence | Dated qualification reports and linked acceptance records; record tested versions and unresolved limits |
+| Historical/generated documentation | The September atlas and saved Guide inputs/outputs; their dates and receipts describe their baselines |
+
+The Work Guide application, generated pages, backlog snapshots and exclusive tests
+remain retirement work under [#892](https://github.com/jimmie-potts/agent-device-hub/issues/892).
+Shared diagram definitions/renderings used by the atlas must be extracted under
+[#890](https://github.com/jimmie-potts/agent-device-hub/issues/890) before removal.
+The new runtime diagram is independent of that tree. Do not refresh or expand the
+Guide to record ordinary delivery status.
 
 ## System design documents
 
@@ -102,9 +127,9 @@ Read-only or explicitly source-only work does not authorize runtime effects.
 
 ## Related repositories
 
-- [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) runs the installed
+- [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) retains the old
   Pixoo service with its media, persistence, playback and physical-device
-  operation queue. It takes only bug fixes now, each mirrored in
+  operation queue for manual return after #840. It takes only bug fixes now, each mirrored in
   [`modules/pixoo`](modules/pixoo/README.md).
 - [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
@@ -112,13 +137,13 @@ Read-only or explicitly source-only work does not authorize runtime effects.
   it takes only bug fixes, apart from what CHOMPI work needs, and each fix is
   translated in [`modules/nanoleaf`](modules/nanoleaf/PORTING.md).
 
-The shared core can run in Pixoo's existing backend or the standalone Linux hub.
-Its supervised handoff preserves one active state owner. Installed Nanoleaf
-shared-input migration remains a separate acceptance step.
+The retained 1.x shared core can run in Pixoo's backend or the old standalone Hub.
+Its supervised handoff is a legacy operation, not the new runtime's fresh setup.
 Pixoo's domain packages and presentation are staged in `modules/pixoo` as a
 snapshot ([#25](https://github.com/jimmie-potts/agent-device-hub/issues/25)).
 The Nanoleaf port is [#26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
-Both current repositories keep running their installed services until the cutover.
+Their old services are stopped and disabled after the accepted cutover; code and
+private stores remain for manual return until separately authorized retirement.
 [ADR 0008](docs/decisions/0008-runtime-hosting.md) decides where the runtime
 runs: in the Ubuntu WSL distribution, with linger, an idle timeout and one
 Windows scheduled task still to be installed, until the dedicated Linux server
@@ -133,8 +158,8 @@ schemas, shared TypeScript/Python fixtures and private archive packaging.
 artifact evidence from documented and live capabilities. The
 [agent-state package](packages/agent-state/README.md) supplies the reducer,
 host storage boundary, snapshots, independent subscriptions, migration exports
-and source emitters. Installed-path qualification remains Hub #8; Pixoo #31
-owns the production host and its durable storage adapter.
+and source emitters. The completed Hub #8 and Pixoo #31 records own the legacy producer/host
+qualification; the runtime guide owns the new core and hooks.
 
 Run `npm run test:lifecycle`, `npm run test:lifecycle:python` and
 `npm run test:lifecycle:package` with the shared build/type checks.
@@ -159,6 +184,9 @@ generator and saved inputs live here. Refresh them for an intentional guide
 update or publication; GitHub issues own current status.
 
 ## B.U.N.N.Y. frontend
+
+The current shell is [the runtime dashboard](apps/runtime/dashboard/README.md).
+The following records describe the original Hub dashboard and its 1.x controls.
 
 The [integration dashboard](apps/dashboard/README.md) implements Hub #6
 for activity, components and connections. It uses the existing protected hub and

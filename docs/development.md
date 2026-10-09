@@ -1,5 +1,17 @@
 # Development setup
 
+## Current architecture diagram
+
+The current runtime view is authored in `docs/runtime-architecture.json` and
+rendered to `docs/runtime-architecture.html`, independently of Work Guide.
+Read [architecture](architecture.md#current-runtime-and-evidence) for its source
+baseline, semantic review triggers and evidence limits. Using the centrally
+installed archify skill, run its `validate architecture` and `deliver architecture`
+commands with `--quality showcase --json`, then `visual-check` on the exact HTML.
+Require nine artifact checks, no errors or warnings, and browser containment.
+Inspect both themes visually. Keep screenshots and receipts outside Git.
+A passing render does not establish source alignment or installed acceptance.
+
 ## System design documents
 
 The HTML under `docs/system-design/` preserves the September 19, 2026 design
@@ -229,7 +241,7 @@ changes must add their own issue-appropriate checks.
 
 The old system is the old Hub (`apps/hub`), its dashboard (`apps/dashboard`),
 the old controllers and services, and the 1.x controller contracts. It keeps
-running on the owner's machine until the cutover (#840), receives no further
+retained for manual return after the accepted cutover (#840), receives no further
 changes, and #839 deletes it. Since #827, CI no longer runs the checks below,
 and the owner accepts that the old system may break in source. Their npm scripts
 stay until #839, so run them locally when a change touches that code:
@@ -778,7 +790,7 @@ The development direction is Node 24, TypeScript and npm workspaces for shared
 packages, applications and new Tidbyt/LIFX controllers. Existing packages and
 applications have executable commands documented below. Each new controller
 implementation must add its build, type, test and consumer checks here and in
-CI. The installed Nanoleaf worker is Python until the cutover; its domain logic is
+CI. The retained old Nanoleaf worker is Python; the current runtime's domain logic is
 ported to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
 
 Reserve shared contracts, root package/lockfile changes and CI for the coordinating
@@ -969,7 +981,7 @@ tests preserve the existing CRUD/settings shapes. Both are discovered by
 `npm run test:runtime:built` after the normal build and by the existing core CI
 job; the Automation page's unit checks join `test:runtime-dashboard:built`.
 
-`apps/runtime` is the runtime skeleton and module host from
+`apps/runtime` is the current runtime and module host from
 [ADR 0012](decisions/0012-bunny-event-platform.md); its
 [README](../apps/runtime/README.md) covers running it, health, state, failure
 isolation and the event-loop lag check. It follows the
