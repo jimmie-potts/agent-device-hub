@@ -30,18 +30,13 @@ const answer = <T>(value: T) => Promise.resolve(value);
 const refuse = (message: string) => Promise.reject(new Error(message));
 
 /**
- * Bounds one composed case as the per-case subprocess timeout did, so a hang fails in 10 s, not at the job's limit. A hang
- * that holds a handle would still keep this test process alive, so after the failure has had time to reach the runner the
- * process ends; the unreferenced timer never delays a process that ends by itself.
+ * Bounds one composed case as the per-case subprocess timeout did, so a hang fails in 10 s. A hang that also holds a handle
+ * keeps this test process alive until the CI job's limit. The process is not forced to exit: that would orphan a CLI child
+ * that a later test owns and skip its cleanup (#1081 review).
  */
 async function bounded<T>(scenario: string, work: Promise<T>): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
-  const limit = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`${scenario} did not settle within 10 s`));
-      setTimeout(() => { process.exit(1); }, 5000).unref();
-    }, 10_000);
-  });
+  const limit = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`${scenario} did not settle within 10 s`)); }, 10_000); });
   try {
     return await Promise.race([work, limit]);
   } finally {
