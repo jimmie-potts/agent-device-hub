@@ -29,7 +29,8 @@ bounded and serialized. These policy intervals do not establish push support.
 The reader has a 9-second deadline within the collector's 10-second fallback
 fence, so transport timeouts can report degradation before cancellation. Slow
 serialized work records missed observation intervals, including status reads
-that bracket a candidate map capture.
+that bracket a candidate map capture. Requests admitted on time preserve their
+observed samples; ordinary bounded reply latency is not a missed poll.
 A docked `clean_time` or `clean_area` may describe the previous run; it does not
 start or complete an episode. Unavailable replies and downtime create gaps,
 never synthetic battery samples or inferred completion.

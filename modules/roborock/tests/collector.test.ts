@@ -246,6 +246,28 @@ void test('cadence follows observed activity and never overlaps transport reads'
     assert.equal(w.transport.calls.filter(call => call === 'status').length, active + 1);
     assert.equal(w.transport.maximumActive, 1);
 });
+void test('on-time bounded status replies preserve observed battery samples without missed polls', async (context) => {
+    const w = await world(context);
+    w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
+    w.transport.statusHook = async () => {
+        await new Promise<void>(resolve => { w.clock.scheduler.after(100, resolve); });
+        return { ok: true, value: w.transport.status, observedAt: new Date(w.clock.now()).toISOString() };
+    };
+    w.collector.startlocal();
+    for (const elapsed of [101, 15100, 15100]) await w.clock.advance(elapsed);
+    w.transport.status = { state: 8, battery: 85, in_cleaning: 0, in_returning: 0 };
+    w.transport.summary = { records: [BEGIN] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 45, complete: 1 });
+    await w.clock.advance(15300);
+    const page = w.store.listSamples(BEGIN);
+    assert.equal(w.store.counts().samples, 4);
+    assert.deepEqual(page.samples.map(sample => sample.observedAtMs), [START + 101, START + 15201, START + 30301]);
+    assert.deepEqual(page.gaps, []);
+    assert.equal(page.next, null);
+    assert.equal(w.transport.maximumActive, 1);
+    assert.equal(w.collector.state().availability, 'available');
+    assert.equal(w.collector.storageFailure(), undefined);
+});
 for (const cleaning of [true, false]) {
     void test(`slow serialized reads retain the missed ${cleaning ? 'active' : 'idle'} poll deadline`, async (context) => {
         const w = await world(context);

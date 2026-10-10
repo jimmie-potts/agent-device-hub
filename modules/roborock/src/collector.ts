@@ -28,6 +28,7 @@ type Guarded<T> = {
 };
 type Entry<T> = {
     observation: Observation;
+    requestedAt: number;
     value: T | undefined;
     at: number;
     ok: boolean;
@@ -507,7 +508,7 @@ export class Collector {
         };
         const failure = (code: ErrorCode): Entry<T> => ({
             observation: { ...context, observedAtMs: this.#now(), failureCode: code },
-            value: undefined, at: this.#now(), ok: false, code, episodeId, gapId,
+            requestedAt: started, value: undefined, at: this.#now(), ok: false, code, episodeId, gapId,
         });
         if (!this.#alive())
             return failure('cancelled');
@@ -566,7 +567,7 @@ export class Collector {
                 value: operation === 'map'
                     ? { decodedBytes: (value as Buffer).length } : value,
             },
-            value, at, ok: validTime,
+            requestedAt: started, value, at, ok: validTime,
             code: validTime ? undefined : 'invalid-request',
             episodeId, gapId,
         };
@@ -600,14 +601,15 @@ export class Collector {
             }
             return;
         }
-        // Every successful status read is an observation, including map fences.
+        // Poll admission applies to ordinary status reads and map fences alike.
+        // A bounded successful response is not a missed request deadline.
         // Unavailable/restart/storage recovery has its own interval evidence.
         if (control.status.availability === 'available' && control.openGapId === null
             && control.status.observedAtMs.status === 'known') {
             const cadence = control.status.activity === 'cleaning' || control.status.activity === 'returning'
                 ? 15000 : 60000;
             const expected = control.status.observedAtMs.value + cadence;
-            if (entry.at > expected + 1) {
+            if (entry.requestedAt > expected + 1) {
                 this.#store.appendGap({
                     id: entry.gapId, episodeId: control.activeId,
                     startAtMs: expected, endAtMs: entry.at, reason: 'missed-poll',
