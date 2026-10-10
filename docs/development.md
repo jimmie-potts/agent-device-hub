@@ -115,6 +115,27 @@ does not create a root landing page or change the separate deployed site. Run it
 `git archive` as well as the worktree; the archive check catches missing tracked
 SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 
+## BB-8 qualification and future product checks
+
+[The original BB-8 qualification](bb8-controller-qualification.md) records the
+selected Windows Bluetooth route, protocol sources, module/transport boundaries,
+verification map and finite physical briefs. Its documentation-only delivery
+introduces no product behavior or OpenSpec delta. Validate it using the workflow
+commands below and the documentation drift fixtures:
+
+```bash
+python3 -m unittest discover -s docs -p test_docs_drift.py
+python3 docs/check_docs_drift.py --offline
+```
+
+Product implementation must first register the reserved BB-8 module/helper checks
+from that verification map in package scripts and CI, document their exact
+commands in this guide and the owning module/Windows guides, and link its exact
+OpenSpec change from the owning issue. Retain the listed shared SDK/event/runtime,
+both-transport, browser/accessibility and disposable Acceptance checks. A passive
+native binary load proves packaging compatibility only; radio access and physical
+acceptance use their separate explicitly selected briefs.
+
 ## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
