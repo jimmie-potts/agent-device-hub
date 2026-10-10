@@ -37,6 +37,11 @@ const admission={schema:'runtime-proof-admission/1.0',admissionSha256:'d'.repeat
 const configured=['codex-desktop','lifx','nanoleaf','pixoo','playback','tidbyt'];
 const health={schema:'runtime-health/1.0',status:'degraded',moduleApiVersion:MODULE_API_VERSION,startedAtMs:1000,lagCheck:{status:'active',limitMs:10000},
  modules:[...['core',...configured].map(name=>({name,apiVersion:MODULE_API_VERSION,state:'running',healthy:true,reasonCode:null})),{name:'wispr',apiVersion:MODULE_API_VERSION,state:'refused',healthy:false,reasonCode:'not-found'}].sort((a,b)=>a.name.localeCompare(b.name))};
+if(scenario.startsWith('bb8-') || scenario==='configured-bb8') {
+ health.modules.push({name:'bb8',apiVersion:MODULE_API_VERSION,state:scenario==='bb8-running'?'running':'refused',healthy:scenario==='bb8-healthy',reasonCode:scenario==='bb8-wrong-reason'?'unavailable':'not-found'});
+ if(scenario==='bb8-wrong-status') health.status='ok';
+ if(scenario==='configured-bb8') configured.push('bb8');
+}
 if(scenario==='configured-refusal') {health.modules.find(row=>row.name==='pixoo').state='refused';health.modules.find(row=>row.name==='pixoo').healthy=false;}
 if(scenario==='unknown-module') health.modules.push({name:'onn',apiVersion:MODULE_API_VERSION,state:'refused',healthy:false,reasonCode:'not-found'});
 if(scenario==='stopped-watchdog') health.lagCheck.status='stopped';
@@ -76,12 +81,13 @@ catch(error){process.stdout.write(JSON.stringify({code:error.message,counters}))
   const inspect = (scenario: string) => run(process.execPath, ['--input-type=module', '-e', script, root, scenario], {cwd: process.cwd(), timeout: 10000});
   const first = JSON.parse((await inspect('adoption')).stdout) as {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}};
   assert.ok(!(await inspect('adoption')).stdout.includes('synthetic-secret-never-public'));
+  assert.equal((JSON.parse((await inspect('bb8-absent')).stdout) as {plan: {operation: string}}).plan.operation, 'adoption');
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
   assert.equal((JSON.parse((await inspect('upgrade')).stdout) as {plan: {operation: string}}).plan.operation, 'upgrade');
   assert.equal((JSON.parse((await inspect('locked')).stdout) as {counters: {lock: number}}).counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       await assert.rejects(inspect(scenario), (error: unknown) => {
         const result = JSON.parse((error as {stdout: string}).stdout) as {code: string; counters: {owner: number; http: number; lock: number}};

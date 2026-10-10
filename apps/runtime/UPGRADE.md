@@ -339,10 +339,13 @@ leave an incomplete file; retain it as failed evidence and do not use it. The
 preflight requires coordinator admission and current baseline/hook protection;
 it cannot derive acceptance from a supplied flag. It pins configuration,
 credential and read-token file hashes without including their contents. Keep
-the plan private, including these hashes. The only accepted degraded-health
-exception is #840's intentionally unconfigured Wispr refusal with `not-found`;
-the state/configuration inspection must establish its absence. Unknown or new
-module refusals require separate qualification.
+the plan private, including these hashes. Accepted degraded-health exceptions
+are the intentionally unconfigured Wispr (#840) and BB-8 modules, each refused
+with `not-found`. State/configuration inspection must establish absence;
+configured or retained BB-8 state remains outside this qualified profile and
+refuses. BB-8's production registration was checked with no configuration: it
+refuses before start and creates no state. Other module refusals require separate
+qualification.
 
 During initial qualified setup, create `install.lock` once as an owned regular
 file with mode 600. Creation must refuse an existing path. Never delete,
