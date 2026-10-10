@@ -55,21 +55,21 @@ const PLAY: readonly number[] = [0b100, 0b110, 0b111, 0b110, 0b100];
 const PAUSE: readonly number[] = [0b101, 0b101, 0b101, 0b101, 0b101];
 
 /** Wraps at spaces, splits words longer than a line, and ends cut-off text with `.`. */
-function wrap(value: string, lines: number): string[] {
+function wrap(value: string, lines: number, columns: number): string[] {
   const out: string[] = [];
   let current = '';
   for (let word of value.split(' ').filter(part => part !== '')) {
-    while (word.length > CARD_COLUMNS) {
+    while (word.length > columns) {
       if (current !== '') {
         out.push(current);
         current = '';
       }
-      out.push(word.slice(0, CARD_COLUMNS));
-      word = word.slice(CARD_COLUMNS);
+      out.push(word.slice(0, columns));
+      word = word.slice(columns);
     }
     if (word === '') continue;
     if (current === '') current = word;
-    else if (current.length + 1 + word.length <= CARD_COLUMNS) current += ` ${word}`;
+    else if (current.length + 1 + word.length <= columns) current += ` ${word}`;
     else {
       out.push(current);
       current = word;
@@ -80,17 +80,18 @@ function wrap(value: string, lines: number): string[] {
   if (lines < 1) return [];
   const kept = out.slice(0, lines);
   const last = kept[lines - 1] ?? '';
-  kept[lines - 1] = (last.length < CARD_COLUMNS ? last : last.slice(0, CARD_COLUMNS - 1)) + '.';
+  kept[lines - 1] = (last.length < columns ? last : last.slice(0, columns - 1)) + '.';
   return kept;
 }
 
 export type CardLine = {text: string; role: 'title' | 'artist'};
 
 /** The card's text rows: the title first, on up to two rows when there is an artist, then the artist. */
-export function cardLines(view: NowPlayingView): CardLine[] {
+export function cardLines(view: NowPlayingView, artwork = false): CardLine[] {
   if (!view.card) return [];
-  const title = wrap(view.title, view.artist === '' ? CARD_ROWS : 2);
-  const artist = wrap(view.artist, CARD_ROWS - title.length);
+  const columns = artwork ? 9 : CARD_COLUMNS;
+  const title = wrap(view.title, view.artist === '' ? CARD_ROWS : 2, columns);
+  const artist = wrap(view.artist, CARD_ROWS - title.length, columns);
   return [...title.map(line => ({text: line, role: 'title' as const})), ...artist.map(line => ({text: line, role: 'artist' as const}))];
 }
 
@@ -99,14 +100,14 @@ export const NOW_PLAYING_COLORS: Readonly<Record<'PLAYING' | 'PAUSED' | 'TITLE' 
 });
 
 /** Draws a card as a 64x32 RGB frame: a marker, then up to four 8-pixel text rows. */
-export function nowPlayingFrame(view: CardView): Frame {
+export function nowPlayingFrame(view: CardView, artwork = false): Frame {
   const rgb = new Uint8Array(FRAME_BYTES);
   const shade = (color: Rgb): Rgb => view.stale ? dim(color) : color;
   const baseline = (row: number): number => row * 8 + Math.floor((8 - GLYPH_HEIGHT) / 2);
   const marker = shade(view.status === 'playing' ? NOW_PLAYING_COLORS.PLAYING : NOW_PLAYING_COLORS.PAUSED);
   bits(rgb, 0, baseline(0), view.stale ? glyph('?') : view.status === 'playing' ? PLAY : PAUSE, marker);
-  cardLines(view).forEach((line, row) => {
-    text(rgb, TEXT_X, baseline(row), line.text, shade(line.role === 'title' ? NOW_PLAYING_COLORS.TITLE : NOW_PLAYING_COLORS.ARTIST));
+  cardLines(view, artwork).forEach((line, row) => {
+    text(rgb, artwork ? 27 : TEXT_X, baseline(row), line.text, shade(line.role === 'title' ? NOW_PLAYING_COLORS.TITLE : NOW_PLAYING_COLORS.ARTIST));
   });
   return {width: FRAME_WIDTH, height: FRAME_HEIGHT, rgb};
 }

@@ -397,9 +397,13 @@ runtime has no staged host.
 ### Synthetic artwork scenario
 
 The `speaker-artwork` runtime scenario selects a tiny synthetic Sony PNG through
-the explicit `artwork` simulation action. Normal `play` actions remain text-only.
-All simulation factories inject a fixture-only byte fetcher; the production
-worker still decodes the bytes. The scenario follows shared SDK state from
-missing to ready, preserves pause and freshness behavior, and verifies an
-identical-title Sonos handoff clears Sony artwork. It provides synthetic runtime
-evidence, independently of installed or physical-device acceptance.
+the explicit `artwork` simulation action. Without that selection, `play` actions
+remain text-only. All simulation factories inject a fixture-only byte fetcher;
+the production worker still decodes the bytes. The simulator counts actual byte
+acquisitions only while the fixture is selected. A disposable remote run serves
+only its fixed inert fixture marker and synthetic bytes, never a candidate URL.
+The scenario follows shared SDK state from missing to ready, verifies that one
+acquisition feeds both real display workers and fake queues, preserves pause and
+freshness behavior, and clears Sony artwork on an identical-title Sonos handoff.
+It provides synthetic runtime evidence, independently of installed or
+physical-device acceptance.

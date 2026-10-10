@@ -2,9 +2,10 @@
 // harnesses simulate its speakers. A disposable run's supervisor holds the simulated speakers, and the runtime's module
 // reaches them one call at a time over its link; no address crosses it.
 import type {DeviceAction, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
-import {simulatedArtworkFetch, simulatedArtworkReply} from './simulated-artwork.js';
+import {createSimulatedArtworkFetch, SIMULATED_ARTWORK_BASE64, SIMULATED_ARTWORK_MARKER, simulatedArtworkCandidate, simulatedArtworkReply} from './simulated-artwork.js';
 import {createPlaybackModule, playbackFactory} from './module.js';
 import {SimulatedSpeakers, type SimulatedKind} from './simulated.js';
+import {artworkFailure} from './artwork-fetch.js';
 import type {SonosReply, SonyReply} from './transport.js';
 
 const KINDS: readonly string[] = ['sony', 'sonos'] satisfies SimulatedKind[];
@@ -64,13 +65,18 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
     state: speakers => speakers.state(),
     act,
     // Freshness follows the harness's clock, so a silent speaker ages in virtual time.
-    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, artwork: {fetch: simulatedArtworkFetch}}),
+    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, artwork: {fetch: createSimulatedArtworkFetch(() => speakers.artworkAcquired())}}),
   },
   run: {
     create: () => new SimulatedSpeakers(),
     state: speakers => speakers.state(),
     act: (speakers, simulation) => { act(speakers, simulation); },
     serve: (speakers, {method, args, signal}) => {
+      if (method === 'artwork-fixture') {
+        if (signal.aborted || args !== SIMULATED_ARTWORK_MARKER || !speakers.state().sony.syntheticArtwork) return null;
+        speakers.artworkAcquired();
+        return SIMULATED_ARTWORK_BASE64;
+      }
       if (method === 'sony') {
         const {method: rpc, version} = args as SonyCall;
         return speakers.sony('', rpc, version, signal);
@@ -88,7 +94,14 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
       return createPlaybackModule({transport: {
         sony: async (endpoint, method, version, signal) => simulatedArtworkReply(await call('sony', {method, version}, signal) as SonyReply, endpoint),
         sonos: async (_endpoint, action, args, signal) => await call('sonos', {action, args}, signal) as SonosReply,
-      }, artwork: {fetch: simulatedArtworkFetch}});
+      }, artwork: {fetch: async (candidate, endpoint, signal) => {
+        if (signal.aborted) return artworkFailure('unavailable');
+        if (!simulatedArtworkCandidate(candidate, endpoint)) return artworkFailure('unsupported');
+        const answer = await link.call('artwork-fixture', SIMULATED_ARTWORK_MARKER, signal);
+        return answer.status === 'answered' && answer.value === SIMULATED_ARTWORK_BASE64
+          ? {ok: true, value: new Uint8Array(Buffer.from(answer.value, 'base64'))}
+          : artworkFailure('unavailable');
+      }}});
     },
   },
 };

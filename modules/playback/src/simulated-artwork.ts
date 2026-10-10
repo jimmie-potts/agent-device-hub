@@ -3,14 +3,23 @@ import {artworkFailure, artworkUrl, type ArtworkFetch} from './artwork-fetch.js'
 import type {SonyReply} from './transport.js';
 export const SIMULATED_ARTWORK_MARKER = 'synthetic-playback-artwork';
 export const SIMULATED_ARTWORK_PATH = '/synthetic/playback-artwork.png';
-const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg==', 'base64');
+export const SIMULATED_ARTWORK_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg==';
 
-export const simulatedArtworkFetch: ArtworkFetch = (candidate, endpoint, signal) => {
-  if (signal.aborted) return Promise.resolve(artworkFailure('unavailable'));
+/** Candidate validation stays local: only an explicit synthetic marker may cross the simulation link. */
+export function simulatedArtworkCandidate(candidate: string, endpoint: string): boolean {
   const url = artworkUrl(candidate, endpoint);
-  if (url === undefined || new URL(url).pathname !== SIMULATED_ARTWORK_PATH || new URL(url).search !== '') return Promise.resolve(artworkFailure('unsupported'));
-  return Promise.resolve({ok: true, value: new Uint8Array(PNG)});
-};
+  return url !== undefined && new URL(url).pathname === SIMULATED_ARTWORK_PATH && new URL(url).search === '';
+}
+
+export function createSimulatedArtworkFetch(acquired: () => void = () => {}): ArtworkFetch {
+  return (candidate, endpoint, signal) => {
+    if (signal.aborted) return Promise.resolve(artworkFailure('unavailable'));
+    if (!simulatedArtworkCandidate(candidate, endpoint)) return Promise.resolve(artworkFailure('unsupported'));
+    acquired();
+    return Promise.resolve({ok: true, value: new Uint8Array(Buffer.from(SIMULATED_ARTWORK_BASE64, 'base64'))});
+  };
+}
+export const simulatedArtworkFetch = createSimulatedArtworkFetch();
 
 /** The supervisor passes an inert marker; the client binds it to its configured Sony origin. */
 export function simulatedArtworkReply(reply: SonyReply, endpoint: string): SonyReply {

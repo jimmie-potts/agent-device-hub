@@ -20,6 +20,7 @@ import {SdkError, type Cancel, type ModuleScheduler} from '@jimmie-potts/sdk';
 import type {ListResult, TidbytCloudConnection, WriteResult} from './cloud.js';
 import type {TileRequest} from './tiles.js';
 
+export type CurrentTarget = () => boolean;
 export type CallKind = 'push' | 'remove' | 'list';
 /** A call that never went out: a hold refused it, or the module stopped first. */
 export type NotSent = {outcome: 'held'; failure: 'unauthenticated' | 'forbidden'} | {outcome: 'cancelled'};
@@ -64,12 +65,12 @@ export class CloudQueue {
   }
 
   /** Pushes a frame. `sending` hears the moment the request goes out, after any wait in the queue. */
-  push(webp: Uint8Array, installation: string | undefined, sending?: () => void): Promise<WriteResult | NotSent> {
-    return this.#enqueue(signal => this.#connection.push(webp, signal, installation), result => { this.#holdAfter(result); }, sending);
+  push(webp: Uint8Array, installation: string | undefined, sending?: () => void, current?: CurrentTarget): Promise<WriteResult | NotSent> {
+    return this.#enqueue(signal => this.#connection.push(webp, signal, installation), result => { this.#holdAfter(result); }, sending, current);
   }
 
-  remove(installation: string | undefined, sending?: () => void): Promise<WriteResult | NotSent> {
-    return this.#enqueue(signal => this.#connection.remove(signal, installation), result => { this.#holdAfter(result); }, sending);
+  remove(installation: string | undefined, sending?: () => void, current?: CurrentTarget): Promise<WriteResult | NotSent> {
+    return this.#enqueue(signal => this.#connection.remove(signal, installation), result => { this.#holdAfter(result); }, sending, current);
   }
 
   /** Reads the installation list. It never resubmits a write. */
@@ -90,25 +91,27 @@ export class CloudQueue {
     if (result.failure === 'capacity') this.#rateLimitedUntilMs = this.#now() + result.retryAfterMs;
   }
 
-  #enqueue<T extends object>(send: (signal: AbortSignal) => Promise<T>, after: (result: T) => void, sending: (() => void) | undefined): Promise<T | NotSent> {
-    const run = this.#tail.then(() => this.#attempt(send, after, sending));
+  #enqueue<T extends object>(send: (signal: AbortSignal) => Promise<T>, after: (result: T) => void, sending: (() => void) | undefined, current?: CurrentTarget): Promise<T | NotSent> {
+    const run = this.#tail.then(() => this.#attempt(send, after, sending, current));
     this.#tail = run.catch(() => undefined);
     return run;
   }
 
-  async #attempt<T extends object>(send: (signal: AbortSignal) => Promise<T>, after: (result: T) => void, sending: (() => void) | undefined): Promise<T | NotSent> {
+  async #attempt<T extends object>(send: (signal: AbortSignal) => Promise<T>, after: (result: T) => void, sending: (() => void) | undefined, current?: CurrentTarget): Promise<T | NotSent> {
     for (;;) {
-      if (this.closed) return {outcome: 'cancelled'};
+      if (this.closed || current?.() === false) return {outcome: 'cancelled'};
       if (this.#authentication !== undefined) return {outcome: 'held', failure: this.#authentication};
       const wait = (this.#rateLimitedUntilMs ?? 0) - this.#now();
       if (wait <= 0) break;
       await this.#sleep(wait);
     }
     this.#rateLimitedUntilMs = undefined;
+    if (this.closed || current?.() === false) return {outcome: 'cancelled'};
     const deadline = new AbortController();
     const cancel = this.#after(this.#timeoutMs, () => { deadline.abort(); });
-    sending?.();
     try {
+      if (this.closed || current?.() === false) return {outcome: 'cancelled'};
+      sending?.();
       const result = await send(AbortSignal.any([deadline.signal, this.#closing.signal]));
       after(result);
       return result;
@@ -143,7 +146,7 @@ export class CloudQueue {
 }
 
 /** What a tile should show: a frame, identified by its view, nothing, or nothing new until what it shows is known. */
-export type TileTarget = {kind: 'show'; key: string; request: TileRequest} | {kind: 'remove'} | {kind: 'hold'};
+export type TileTarget = ({kind: 'show'; key: string; request: TileRequest} | {kind: 'remove'} | {kind: 'hold'}) & {observation?: string; association?: string};
 /** What the module keeps of a tile across restarts. */
 export type TileMemory = {key?: string; sentAtMs?: number; lastWriteAtMs?: number; presence: 'present' | 'absent' | 'unknown'};
 /** One call a tile made, and how it ended, for the module's device record, records and spans. */
@@ -175,6 +178,8 @@ export type TileWriterOptions = {
   pollMs: number;
   now: () => number;
   restored?: TileMemory;
+  /** Pure synchronous check of the captured target's association and eligibility; omission preserves old callers. */
+  current?: (target: TileTarget) => boolean;
 };
 
 /**
@@ -209,6 +214,12 @@ export class TileWriter {
   async write(target: TileTarget): Promise<number> {
     const {queue, installation, render, stopped, refreshMs, pollMs, now: clock} = this.#options;
     if (stopped() || target.kind === 'hold') return pollMs;
+    let superseded = false;
+    const current = (): boolean => {
+      if (this.#options.current?.(target) === false) superseded = true;
+      return !superseded;
+    };
+    if (!current()) return 1;
     const now = clock();
     // A time in the future, after the wall clock was set back, counts as now.
     if (this.#sent !== undefined && this.#sent.atMs > now) this.#sent = {...this.#sent, atMs: now};
@@ -228,7 +239,14 @@ export class TileWriter {
     // request reaches the cloud before its call ends, however long it took on the way, so two writes of this tile reach
     // the cloud at least `minIntervalMs` apart. It is set now, and again as the request goes out, which is the time a stop
     // or a crash before the answer leaves stored.
+    const previousWriteAtMs = this.#lastWriteAtMs;
     this.#lastWriteAtMs = now;
+    let began = false;
+    const discard = (): number => {
+      if (!began) this.#lastWriteAtMs = previousWriteAtMs;
+      else this.#remember(); // A real listing retains its completed end-based gate.
+      return 1; // Reevaluate the newest target without a failure backoff.
+    };
     /** What ends the call that went out, once it has an answer; undefined while nothing went out. */
     let ended: ((succeeded: boolean) => void) | undefined;
     /** The call that went out has ended, answered or not: the gate runs from now. Nothing happens if none went out. */
@@ -239,6 +257,7 @@ export class TileWriter {
       ended = undefined;
     };
     const sending = (sent: CallKind) => (): void => {
+      began = true;
       this.#lastWriteAtMs = clock();
       ended = this.#options.begin(sent);
       if (sent === 'list') {
@@ -253,13 +272,15 @@ export class TileWriter {
       // Read the installation list first, so an installation that is already gone is not deleted again.
       const listing = await queue.list(installation, sending('list'));
       end('ok' in listing && listing.ok);
+      if (!began && !current()) return discard();
       this.#options.report({call: 'list', result: listing});
       if ('ok' in listing && listing.ok && !listing.present) {
         this.#presence = 'absent';
         this.#failures = 0;
         this.#remember();
-        return pollMs;
+        return current() ? pollMs : discard();
       }
+      if (!current()) return discard();
     }
     if (stopped()) return pollMs;
     let result: WriteResult | NotSent;
@@ -269,6 +290,7 @@ export class TileWriter {
         webp = await render(target.request);
       } catch (error) {
         if (stopped()) return pollMs;
+        if (!current()) return discard();
         // A failed render sent nothing and is no evidence about the device; it counts as a write not confirmed sent.
         this.#failures += 1;
         this.#options.report({call: 'render', failed: true, code: error instanceof SdkError ? error.body.error.code : 'internal'});
@@ -276,12 +298,16 @@ export class TileWriter {
       }
       // The render was a wait: nothing goes out once the module stops.
       if (stopped()) return pollMs;
-      result = await queue.push(webp, installation, sending('push'));
+      if (!current()) return discard();
+      result = await queue.push(webp, installation, sending('push'), current);
+      if (result.outcome === 'cancelled' && superseded) return discard();
       end(result.outcome === 'sent');
       this.#options.report({call: 'push', result});
       this.#record('push', result, target.key, this.#lastWriteAtMs);
     } else {
-      result = await queue.remove(installation, sending('remove'));
+      if (!current()) return discard();
+      result = await queue.remove(installation, sending('remove'), current);
+      if (result.outcome === 'cancelled' && superseded) return discard();
       end(result.outcome === 'sent');
       this.#options.report({call: 'remove', result});
       this.#record('remove', result, undefined, this.#lastWriteAtMs);

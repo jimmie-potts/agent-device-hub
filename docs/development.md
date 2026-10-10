@@ -1121,6 +1121,17 @@ in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical
 check belong to the cutover (#840).
 
+For artwork, after the root build, focus the real-worker and diagnostic checks
+with `node --test modules/tidbyt/dist/tests/artwork-render.test.js` and
+`node --test --test-name-pattern='artwork|playback/2.1' modules/tidbyt/dist/tests/module.test.js`.
+The full writer suite includes superseded queued push/remove and rate-hold
+cases. The integrated `speaker-artwork` scenario runs both display modules and
+their real workers over in-process and remote transports:
+`node --test --test-name-pattern=speaker-artwork apps/runtime/dist/tests/scenarios/catalog.test.js`.
+It counts producer fixture acquisitions and compares current display frames
+with independent fixture expectations. The existing core CI discovery runs
+these tests. Physical artwork acceptance remains under #1054's separate trial.
+
 ## Codex Desktop module checks
 
 Hub #926 ports the old Hub's Codex Desktop reader (`apps/hub/src/codex-desktop.ts`)
@@ -1372,6 +1383,17 @@ Vitest suite took about 8 s locally for 31 files and 310 tests, and the module's
 node:test suites about 35 s for 37 tests.
 
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
+
+For artwork, after the root build, run from `modules/pixoo`:
+`npx vitest run --config vitest.config.mjs dist/tests/unit/now-playing-artwork.test.js dist/tests/unit/artwork-admission.test.js`.
+These checks cover full RGB expectations, bounded decoding, delayed/queued
+association changes, no-effect cancellation versus partial uncertainty,
+attention and Media `off`/`popup`/`whole` deadlines. The module's
+`node --test --test-name-pattern='artwork|playback/2.1' modules/pixoo/dist/tests/module/module.test.js`
+check runs from the root, using real workers and the simulated device. Run the
+shared `speaker-artwork` scenario above and retain its disposable capture under
+[Runtime verification runs](#runtime-verification-runs). All are discovered by
+the existing CI suites; no check contacts an installed service or device.
 
 ## Pixoo catalog and preview checks
 
