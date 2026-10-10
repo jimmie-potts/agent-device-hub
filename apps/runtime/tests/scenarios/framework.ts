@@ -45,6 +45,8 @@ export type Seed = {
    * and starts the runtime with it (`writeConfiguration`).
    */
   readonly config?: Readonly<Record<ModuleName, object>>;
+  /** Complete sections for modules that use no secret file; no synthetic secret is injected. */
+  readonly sections?: Readonly<Record<ModuleName, object>>;
   /** Private collector files selected explicitly by Wispr's bounded file-handoff scenarios. */
   readonly wisprFixture?: {readonly observation: 'fresh' | 'stale' | 'missing'; readonly exposeToDashboard?: boolean};
   /**

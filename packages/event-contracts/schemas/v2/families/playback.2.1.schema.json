@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback/2.1",
+  "description": "Playback state with optional bounded artwork for the presented observation (Hub #229). Earlier 2.0 remains registered unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "availability",
+    "playback"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "stale",
+        "unavailable"
+      ]
+    },
+    "observedAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "playback": {
+      "oneOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "player",
+            "controls"
+          ],
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "player": {
+              "enum": [
+                "playing",
+                "paused",
+                "stopped",
+                "inactive",
+                "unknown"
+              ]
+            },
+            "title": {
+              "$ref": "#/$defs/text"
+            },
+            "artist": {
+              "$ref": "#/$defs/text"
+            },
+            "album": {
+              "$ref": "#/$defs/text"
+            },
+            "controls": {
+              "type": "array",
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/action"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "artwork": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "missing",
+                "unsupported"
+              ]
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "mediaType",
+            "width",
+            "height",
+            "base64"
+          ],
+          "properties": {
+            "status": {
+              "const": "ready"
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "mediaType": {
+              "const": "image/png"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "base64": {
+              "type": "string",
+              "minLength": 44,
+              "maxLength": 87384,
+              "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "playback": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "stale"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "observedAtMs"
+        ],
+        "properties": {
+          "observedAtMs": true
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "artwork"
+        ],
+        "properties": {
+          "artwork": true
+        }
+      },
+      "then": {
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "stale"
+            ]
+          },
+          "playback": {
+            "properties": {
+              "status": {
+                "const": "known"
+              },
+              "player": {
+                "enum": [
+                  "playing",
+                  "paused"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "player"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "action": {
+      "enum": [
+        "play",
+        "pause",
+        "next",
+        "previous"
+      ]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import {createBb8Module, SimulatedLink, bb8Schemas, type SimulatedState as Bb8SimulatedState} from '@jimmie-potts/bb8';
 import {Gadget, gadgetSchemas, setGadget} from '../../dist/tests/fixtures/gadget.js';
 // The runtime dashboard's browser suites' world (Hub #922): the built runtime in this process with the core and its
 // gateway on a free loopback port, a private state directory under the system temporary directory, which lies outside
@@ -31,6 +32,7 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  bb8?: boolean;
   /** The actual file reader on explicitly selected private synthetic collector files. */
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
@@ -58,6 +60,10 @@ export type World = {
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
   runtime(): Runtime;
+  bb8State(): Bb8SimulatedState;
+  bb8Online(online: boolean): void;
+  bb8Next(result: 'failed' | 'uncertain'): void;
+  readonlyBb8(data: object): Promise<number>;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
@@ -115,6 +121,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
   ]}));
+  const bb8 = new SimulatedLink();
   const bulbs = new SimulatedLifx();
   const lines = new SimulatedNanoleaf();
   const gadget = new Gadget();
@@ -136,6 +143,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
+    ...options.bb8 === true ? {bb8: {id: 'bb8', configurationRevision: 0}} : {},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
     ...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
@@ -161,10 +169,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     stop: () => { desktopSdk = undefined; },
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+    modules: [core = createCoreModule(), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -173,6 +181,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
+    bb8State: () => bb8.snapshot(), bb8Online: value => {bb8.online(value);}, bb8Next: result => {bb8.next(result);},
+    readonlyBb8: async data => {const result = await fetch(`${runtime.url}/api/v2/commands/bb8-connect`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'bb8', data, requestId: 'readonly-bb8'})}); await result.arrayBuffer(); return result.status;},
     nanoleafState: () => lines.state(),
     nanoleafPower: on => { lines.setPower(LINES_ADDRESS, on); },
     nanoleafWall: async () => {

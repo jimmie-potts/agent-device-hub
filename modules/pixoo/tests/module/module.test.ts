@@ -20,7 +20,7 @@ import {monitorView} from '../../src/presentation/sources.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
-import {DEVICE, FAST, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackState, sleep, waitFor} from './support.js';
+import {DEVICE, FAST, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, sleep, waitFor} from './support.js';
 
 const FAILING_WORKER = new URL('./fixtures/failing-render-worker.js', import.meta.url);
 const HEAP_WORKER = new URL('./fixtures/heap-worker.js', import.meta.url);
@@ -272,6 +272,42 @@ void describe('Media', () => {
 });
 
 void describe('Now Playing', () => {
+  void it('syncs ready playback/2.1 and keeps text cards for missing2.1 and legacy2.0 updates', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      const baseline = playbackRecord(Date.now(), ++world.revision);
+      const ready = {...playbackRecord(baseline.observedAtMs ?? 0, baseline.revision, 'Harvest Moon', 'paused'), artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg=='}};
+      world.playback = [ready];
+      await world.start();
+      await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the ready2.1 paused record accepted through initial sync');
+      await world.publishSession();
+      await mode(world, 'monitor');
+      await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor active with its dashboard before playback resumes');
+      // Startup sync occurs while Monitor is inactive. Resume after selecting Monitor supplies its actual popup trigger.
+      const playing = {...baseline, revision: ++world.revision, artwork: ready.artwork};
+      world.playback = [playing];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(playing)});
+      const pictureOf = (record: typeof baseline): string => frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
+      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(baseline) ? true : undefined, 'ready2.1 rendered as the existing text card');
+      assert.equal(world.display()?.nowPlaying.card, true);
+      assert.equal(playbackState(ready).dataschema, 'https://bunny.invalid/events/playback/2.1');
+
+      // Pause changes the visible marker, so rejection of this live2.1 record cannot pass unnoticed.
+      const paused = playbackRecord(baseline.observedAtMs ?? 0, ++world.revision, 'Harvest Moon', 'paused');
+      const missing = {...paused, artwork: {status: 'missing' as const, generation: ready.artwork.generation}};
+      world.playback = [missing];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(missing)});
+      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(paused) ? true : undefined, 'missing2.1 changed the text card to paused');
+
+      const legacy = playbackRecord(baseline.observedAtMs ?? 0, ++world.revision);
+      world.playback = [legacy];
+      assert.equal(playbackState(legacy).dataschema, 'https://bunny.invalid/events/playback/2.0');
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(legacy)});
+      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(legacy) ? true : undefined, 'legacy2.0 changed the text card back to playing');
+    });
+  });
+
   void it('shows the playback record\'s card as a pop-up over Monitor', async () => {
     const world = await World.open();
     await within(world, async () => {

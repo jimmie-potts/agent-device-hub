@@ -32,11 +32,14 @@ export function sonyObservation(result: readonly unknown[]): PlaybackObservation
   const state = object(entry.stateInfo) ? entry.stateInfo.state : undefined;
   const status = typeof state === 'string' && Object.hasOwn(STATES, state) ? STATES[state] ?? 'unknown' : 'unknown';
   const title = text(entry.title), artist = text(entry.artist), album = text(entry.albumName);
+  const candidate = object(entry.content) ? entry.content.thumbnailUrl : undefined;
+  const thumbnailUrl = typeof candidate === 'string' && candidate.length > 0 && candidate.length <= 2048 ? candidate : undefined;
   // Pause, next and previous were qualified while playing (#158). The owner's 2026-09-25 live check (#37) qualified next and previous
   // while paused: the phone changes track without resuming, but the receiver keeps reporting the old title. Play/resume is not qualified.
   const controls: PlaybackAction[] = status === 'playing' ? ['pause', 'next', 'previous'] : status === 'paused' ? ['next', 'previous'] : [];
   return {
     status, ...(title === undefined ? {} : {title}), ...(artist === undefined ? {} : {artist}), ...(album === undefined ? {} : {album}), controls,
+    ...(thumbnailUrl === undefined ? {} : {thumbnailUrl}),
   };
 }
 

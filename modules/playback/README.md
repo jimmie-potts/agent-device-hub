@@ -93,7 +93,7 @@ A block the Hub would refuse is refused with fixed text.
 This is what the Pixoo Now Playing cards
 ([#843](https://github.com/jimmie-potts/agent-device-hub/issues/843)) and the
 Tidbyt now-playing tile ([#930](https://github.com/jimmie-potts/agent-device-hub/issues/930))
-read. It is the core family `playback/2.0`
+read. It is the core family `playback/2.1`
 ([`packages/event-contracts`](../../packages/event-contracts/README.md)).
 
 | What | Value |
@@ -102,7 +102,7 @@ read. It is the core family `playback/2.0`
 | Sync family | `playback`: one record, the configured ID |
 | Routing key | `bunny.state.playback.<id>` |
 | Type | `org.bunny.playback.updated`, kind `state` |
-| `dataschema` | `https://bunny.invalid/events/playback/2.0` |
+| `dataschema` | `https://bunny.invalid/events/playback/2.1` |
 | Subject | the record's `id` |
 
 A consumer syncs `playback` from the module and then follows live state
@@ -127,7 +127,7 @@ messages. The record's fields:
     rather than empty;
   - `controls` are the actions the speaker offers now.
 
-The module publishes a new revision only when `availability` or `playback`
+The module publishes a new revision only when `availability`, `playback` or current `artwork`
 changes. A read that changes nothing else publishes nothing, so `observedAtMs`
 can be minutes older than the last read while the speaker answers every poll.
 The old Hub's snapshot gave the latest read's time and its age instead. Judge
@@ -144,6 +144,18 @@ still being read, so after a restart an HT-A9 on another input never publishes
 failed has no observation since the start, so it is `unavailable` and ranks
 last, and the record shows what the others report
 ([#930](https://github.com/jimmie-potts/agent-device-hub/issues/930)).
+
+### Optional shared artwork
+
+The owner publishes `playback/2.1` ([#229](https://github.com/jimmie-potts/agent-device-hub/issues/229)); validators retain unchanged `playback/2.0` for existing records. Eligible playing/paused records carry optional `artwork`: `missing`, `unsupported` or `ready`, with an opaque UUID `generation`. Ready state contains `mediaType: "image/png"`, dimensions and canonical `base64`, at most 128×128 and 65,536 decoded bytes. Text-only consumers continue to work. Display and browser rendering have separate acceptance.
+
+Sony candidates stay private. Acquisition permits only absolute HTTP URLs on the configured receiver's origin, without credentials or fragments; all redirects are refused. A response is streamed up to 1 MiB regardless of its declared media type. An isolated worker accepts single JPEG/PNG images up to 4,000,000 decoded pixels, strips metadata and normalizes the result. Fetch and decode each have a 2 s deadline. These limits bound admitted work and pixels, not native decoder heap usage or physical thread termination overlap.
+
+Only one acquisition chain runs at a time, with the newest replacement retained. Duplicate acquired candidates do not refetch. Transient `unavailable` observations retry after 2 s and 4 s, at most three attempts per candidate/generation. Fetch/decode deadline expiration is an unavailable observation; it never retries a playback command. Typed SDK worker errors keep their registered code. Origin, format, capacity, internal and uncertain-result refusals do not retry, even when a registry flag says the condition may clear. Absent content can acquire later when the receiver reports a candidate. Failure leaves metadata and controls usable.
+
+Artwork diagnostics use `bunny.operation` `media`: one failure transition per changed code, DEBUG records for the two scheduled retries and an exhausted-attempt summary, and INFO recovery when acquisition succeeds. Format/origin refusals are INFO, unavailable/capacity/uncertain-result are WARN, and internal faults are ERROR. Records contain only registered codes, actual attempt counts and the fixed Sony device ID. They exclude raw errors, URLs, image bytes and listening metadata. Duplicate polls and obsolete completions emit no artwork diagnostics.
+
+Generation changes follow source, reported title/artist/album, eligible session loss, unavailable playback and restart. Pause/resume, duplicate polls and stale/available transitions retain it. Candidate replacement invalidates older work within that generation. Late completions cannot restore an earlier track or cross a Sony/Sonos handoff. Sonos is `unsupported` in this release. Image completion publishes without refreshing metadata freshness; receivers' paused-next metadata lag remains an observation limitation.
 
 ### Which speaker is presented
 
@@ -294,6 +306,8 @@ address, a title or an exception's text:
 | `outbox.republished` | INFO | Each start, with how many stored messages went out again |
 | `operation.failed` | WARN, or ERROR for `internal` | The module's database refuses a commit of any kind (a record, an intent or an outcome), once per run of refusals, with `bunny.operation` `storage` and the code: `capacity` for a full disk, `unavailable` for a database another writer holds |
 | `operation.completed` | INFO | A commit works again after a run of refusals, once |
+| `operation.failed` | INFO for artwork format/origin refusal; WARN for unavailable, capacity or uncertain-result; ERROR for internal; DEBUG for bounded retry/summary | With `bunny.operation` `media`, a changed artwork failure condition, then at most two scheduled retries and one exhausted-attempt summary per candidate; no private input |
+| `operation.completed` | INFO | With `bunny.operation` `media`, artwork succeeds after a failure condition |
 
 A speaker is named in `bunny.device.id` as `<id>.<kind>`, such as
 `living-room.sonos`. The bus records each command's admission and reply. The
@@ -379,3 +393,13 @@ context and staged host have no counterpart here. In the runtime, the SDK
 edge's grants authenticate remote parts
 ([#835](https://github.com/jimmie-potts/agent-device-hub/issues/835)), and the
 runtime has no staged host.
+
+### Synthetic artwork scenario
+
+The `speaker-artwork` runtime scenario selects a tiny synthetic Sony PNG through
+the explicit `artwork` simulation action. Normal `play` actions remain text-only.
+All simulation factories inject a fixture-only byte fetcher; the production
+worker still decodes the bytes. The scenario follows shared SDK state from
+missing to ready, preserves pause and freshness behavior, and verifies an
+identical-title Sonos handoff clears Sony artwork. It provides synthetic runtime
+evidence, independently of installed or physical-device acceptance.

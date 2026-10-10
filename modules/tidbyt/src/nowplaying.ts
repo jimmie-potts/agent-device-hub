@@ -1,5 +1,5 @@
 // The now-playing tile's view and card (Hub #930). Copied from controllers/tidbyt/src/nowplaying.ts at main 627e3fe3 and
-// rewritten for the module's synced copy of the `playback/2.0` record, which the playback module owns (#929). The record
+// rewritten for the module's synced copy of the 2.0 or 2.1 playback record, which the playback module owns (#929). The record
 // replaces the Hub's playback snapshot, so its envelope check (`parsePlaybackSnapshot`) is not copied: the record comes
 // from the runtime's bus, whose owners' messages the tests check against profile 2.0. Freshness comes from the record's
 // `availability`, never from the age of `observedAtMs`, because the owner publishes no revision for a read that changes

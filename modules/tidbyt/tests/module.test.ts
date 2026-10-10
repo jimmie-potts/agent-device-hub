@@ -39,6 +39,27 @@ const owner = (h: Hosted): StandIn<PlaybackState> => {
 };
 const pushes = (h: Hosted, installation = STATUS): number => shown(h, installation).pushes;
 
+test('syncs ready playback/2.1 and keeps text tiles for missing2.1 and legacy2.0 updates', async context => {
+  const baseline = playback('playing');
+  const ready = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
+        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg=='}};
+  const h = await host(context, {sessions: [], playback: ready});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the ready2.1 synced card');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline), 'ready image leaves the existing text tile unchanged');
+
+  const paused = playback('paused');
+  await owner(h).set({...paused, artwork: {status: 'missing', generation: ready.artwork.generation}});
+  await h.advance(15 * SECOND);
+  await until(() => pushes(h, NOW_PLAYING) === 2, 'the live missing2.1 paused card');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(paused));
+
+  await owner(h).set(baseline);
+  await h.advance(15 * SECOND);
+  await until(() => pushes(h, NOW_PLAYING) === 3, 'the legacy2.0 playing card');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline));
+  assert.deepEqual(h.problems(), []);
+});
+
 test('the status tile shows the synced sessions, and the now-playing tile what plays, each in its own installation', async context => {
   const sessions = [asking({label: label('review-bot')}), working({label: label('hub-work')}), finished({label: label('docs')})];
   const h = await host(context, {sessions, playback: playback('playing')});

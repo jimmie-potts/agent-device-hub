@@ -7,7 +7,11 @@
 export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
 export type PlaybackStatus = 'playing' | 'paused' | 'stopped' | 'inactive' | 'unknown';
 /** One successful read of a source, normalized. A failed read is never an observation. */
-export type PlaybackObservation = {status: PlaybackStatus; title?: string; artist?: string; album?: string; controls: PlaybackAction[]};
+export type PlaybackObservation = {
+  status: PlaybackStatus; title?: string; artist?: string; album?: string; controls: PlaybackAction[];
+  /** Private candidate, never copied into public playback metadata. */
+  thumbnailUrl?: string;
+};
 export type Availability = 'available' | 'stale' | 'unavailable';
 
 export const ACTIONS: readonly PlaybackAction[] = ['play', 'pause', 'next', 'previous'];
