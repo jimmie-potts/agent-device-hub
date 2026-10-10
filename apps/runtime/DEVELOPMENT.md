@@ -40,6 +40,11 @@ safe refusal diagnostics. Existing runtime CI discovers it. The fixture does
 not read the installed service or prove release closure, listener ownership,
 build/health identity or upgrade eligibility.
 
+Baseline closure checks also retain nested declared workspace payloads, including
+the current `modules/roborock/transport` layout. Changing its compiled dependency
+bytes refuses; it is included even when no runtime module imports it. This does
+not establish storage compatibility or configured-device acceptance.
+
 The preflight suite also checks the post-start observation composition: a new
 process, selected release, unchanged approved inputs and repeated authenticated
 build/health reads. Wrong build, unhealthy state, token drift, changed arguments,

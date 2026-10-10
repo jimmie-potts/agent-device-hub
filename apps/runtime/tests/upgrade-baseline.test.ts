@@ -13,7 +13,9 @@ void test('baseline closure binds actual execution and dependencies to admitted 
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-baseline-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const running = join(root, 'running');
-  const content: Record<string, string> = {'package.json': JSON.stringify({workspaces: ['packages/sdk', 'apps/runtime', 'apps/inactive']}),
+  const content: Record<string, string> = {'package.json': JSON.stringify({workspaces: ['packages/sdk', 'apps/runtime', 'apps/inactive', 'modules/roborock/transport']}),
+    'modules/roborock/transport/package.json': JSON.stringify({name: '@synthetic/nested-transport'}),
+    'modules/roborock/transport/dist/index.js': 'synthetic nested workspace dependency',
     'apps/runtime/package.json': JSON.stringify({name: '@synthetic/runtime'}),
     'apps/inactive/package.json': JSON.stringify({name: '@synthetic/inactive'}),
     'apps/inactive/src/main.ts': 'synthetic inactive source', 'apps/runtime/dist/src/main.js': 'synthetic entry',
@@ -29,6 +31,7 @@ void test('baseline closure binds actual execution and dependencies to admitted 
   await symlink('../../packages/sdk', join(running, 'node_modules/@synthetic/sdk'));
   await symlink('../../apps/runtime', join(running, 'node_modules/@synthetic/runtime'));
   await symlink('../../apps/inactive', join(running, 'node_modules/@synthetic/inactive'));
+  await symlink('../../modules/roborock/transport', join(running, 'node_modules/@synthetic/nested-transport'));
   await mkdir(join(running, 'node_modules/.bin'), {mode: 0o700});
   await symlink('../@synthetic/sdk/dist/index.js', join(running, 'node_modules/.bin/synthetic-sdk'));
   await mkdir(join(running, '.git'), {mode: 0o700});
@@ -78,7 +81,7 @@ catch {process.stdout.write('baseline-refused');process.exitCode=2;}`, JSON.stri
     await assert.rejects(inspect()); await rm(extra);
   });
   await t.test('changed native and built bytes refuse', async () => {
-    for (const name of ['node_modules/native/binding.node', 'packages/sdk/dist/index.js']) {
+    for (const name of ['node_modules/native/binding.node', 'packages/sdk/dist/index.js', 'modules/roborock/transport/dist/index.js']) {
       await writeFile(join(running, name), 'changed', {mode: 0o600}); await assert.rejects(inspect());
       await writeFile(join(running, name), content[name] ?? '', {mode: 0o600});
     }

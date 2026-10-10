@@ -73,7 +73,9 @@ export async function runtimeWorkspaceMap(release) {
   if (!Array.isArray(document.workspaces) || document.workspaces.length > 128) refuse();
   const result = [];
   for (const path of document.workspaces) {
-    if (typeof path !== 'string' || !/^(apps|packages|modules|controllers)\/[^/]+$/.test(path) || !safeRelative(path)) refuse();
+    // Main includes a nested module transport workspace. Bind its declared
+    // manifest and complete linked payload too; deeper/escaping layouts refuse.
+    if (typeof path !== 'string' || !/^(apps|packages|modules|controllers)(?:\/[^/]+){1,2}$/.test(path) || !safeRelative(path)) refuse();
     const manifest = await read(path + '/package.json');
     if (typeof manifest.name !== 'string' || !/^(?:@[a-z0-9_.-]+\/)?[a-z0-9_.-]+$/.test(manifest.name)) refuse();
     result.push({path, name: manifest.name});
