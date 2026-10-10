@@ -27,6 +27,9 @@ export type EdgeCredential = {
   /** The lowercase hexadecimal SHA-256 of its bearer token. */
   readonly digest: string;
   readonly scopes: readonly Scope[];
+  /** Explicit transport ownership; carries no ordinary scopes and is bound to the Windows helper source. */
+  readonly role?: 'bb8-link';
+  readonly robotId?: string;
 };
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -58,7 +61,7 @@ export const reservedSource = (source: string): boolean =>
 /**
  * Checks a credentials document, `{"schema": "edge-credentials/1.0", "credentials": [...]}`, and returns its
  * credentials. At most 32; each with a distinct ID, digest and source, a well-formed source that is not the core's, a
- * module's, the runtime's own or the browser sessions', and distinct scopes from the four. A credential has no other
+ * module's, the runtime's own or the browser sessions', and distinct scopes from the four. The explicit BB-8 role additionally requires its fixed helper source, robot ID and no scopes. A credential has no other
  * member, so one that names devices is refused rather than read wider than it was written. Throws a `RuntimeError`:
  * `edge-credential-source` for a reserved source, `edge-credentials-invalid` otherwise. No refusal quotes a digest.
  */
@@ -68,7 +71,7 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
   const listed = document.credentials;
   if (!Array.isArray(listed) || listed.length > MAX_CREDENTIALS) throw invalid(`must list at most ${MAX_CREDENTIALS} credentials`);
   const credentials = listed.map((entry: unknown): EdgeCredential => {
-    if (!isRecord(entry) || Object.keys(entry).some(key => !['id', 'source', 'digest', 'scopes'].includes(key))) {
+    if (!isRecord(entry) || Object.keys(entry).some(key => !['id', 'source', 'digest', 'scopes', 'role', 'robotId'].includes(key))) {
       throw invalid('has a credential that is not {id, source, digest, scopes}');
     }
     const {id, source, digest, scopes} = entry;
@@ -78,6 +81,11 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
     if (typeof digest !== 'string' || !DIGEST.test(digest)) throw invalid(`gives ${id} a digest that is not a lowercase hexadecimal SHA-256`);
     const known = (scope: unknown): scope is Scope => typeof scope === 'string' && (SCOPES as readonly string[]).includes(scope);
     if (!Array.isArray(scopes) || !scopes.every(known) || new Set(scopes).size !== scopes.length) throw invalid(`gives ${id} scopes other than distinct read, control, ingest and admin`);
+    if (entry.role !== undefined || entry.robotId !== undefined) {
+      if (entry.role !== 'bb8-link' || source !== 'bunny/parts/bb8-windows' || scopes.length !== 0 || typeof entry.robotId !== 'string' || entry.robotId.length > 128 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.robotId)) throw invalid('has an invalid BB-8 transport role');
+      return {id, source, digest, scopes: [], role: 'bb8-link', robotId: entry.robotId};
+    }
+    if (source === 'bunny/parts/bb8-windows') throw invalid('requires the BB-8 transport role for its reserved helper source');
     return {id, source, digest, scopes: [...scopes]};
   });
   if (new Set(credentials.map(credential => credential.id)).size !== credentials.length) throw invalid('gives two credentials one ID');
@@ -119,7 +127,7 @@ export async function readEdgeCredentials(file: string): Promise<EdgeCredential[
 
 /** The credentials as the file holds them, one per line. */
 export const credentialsDocument = (credentials: readonly EdgeCredential[]): string =>
-  `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes}) => ({id, source, digest, scopes}))}, null, 2)}\n`;
+  `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes, role, robotId}) => ({id, source, digest, scopes, ...(role === undefined ? {} : {role, robotId})}))}, null, 2)}\n`;
 
 /** How old an empty lock file must be before a writer takes it for one a crashed writer left. */
 const EMPTY_LOCK_MS = 60_000;

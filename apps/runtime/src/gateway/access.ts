@@ -34,6 +34,8 @@ export type Principal = {
   readonly kind: 'credential' | 'browser';
   readonly source: string;
   readonly scopes: ReadonlySet<Scope>;
+  readonly role?: 'bb8-link';
+  readonly robotId?: string;
 };
 
 /** A refusal before anything else happens, with the registry code and a fixed sentence. */
@@ -57,6 +59,13 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
  * with its own story.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
+  if (principal.kind === 'credential' && principal.role === 'bb8-link' && principal.source === 'bunny/parts/bb8-windows' && principal.robotId !== undefined && principal.scopes.size === 0) {
+    return {id: principal.id, source: principal.source, calls: ['respond', 'serve', 'publish', 'subscribe'], keys: [
+      `bunny.cmd.bb8-link-execute.${principal.robotId}`, `bunny.cmd.bb8-link-recorded.${principal.robotId}`,
+      'bunny.state.bb8-link.*', 'bunny.state.bb8-link-result.*',
+      `bunny.event.bb8-link-execute.${principal.robotId}`, `bunny.event.bb8-link-recorded.${principal.robotId}`, 'bunny.event.outcome-recorded.bb8-windows',
+    ], publishes: ['bb8-link', 'bb8-link-result', 'outcome', 'removal']};
+  }
   const calls = new Set<Call>();
   const keys = new Set<string>();
   const publishes: string[] = [];
@@ -280,12 +289,12 @@ export class Access {
 
 /** A configured credential as a principal. */
 export function principalOf(credential: EdgeCredential): Principal {
-  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes)};
+  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes), ...(credential.role === undefined ? {} : {role: credential.role, robotId: credential.robotId})};
 }
 
 function sameGrant(a: Principal, b: Principal): boolean {
   const same = (x: ReadonlySet<string>, y: ReadonlySet<string>): boolean => x.size === y.size && [...x].every(item => y.has(item));
-  return a.id === b.id && a.source === b.source && same(a.scopes, b.scopes);
+  return a.id === b.id && a.source === b.source && a.role === b.role && a.robotId === b.robotId && same(a.scopes, b.scopes);
 }
 
 /** The `Set-Cookie` value that carries a new session, and the one that ends it. */

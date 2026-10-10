@@ -275,10 +275,10 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
-      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
+      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:bb8:built', 'npm run test:bb8-windows:built', 'npm run test:bb8:package:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
-      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'npm run test:observability:browser'],
+      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'npm run test:bb8:browser', 'npm run test:observability:browser'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
@@ -359,6 +359,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
 
 // Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.
 const packagedMarkdown = [
+  'apps/bb8-windows/README.md', 'apps/bb8-windows/THIRD-PARTY-NOTICES.md', 'modules/bb8/README.md',
   'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/maintenance/README.md', 'apps/wispr-collector/README.md',
   'docs/agent-lifecycle-contract.md', 'docs/app-verification.md', 'docs/controller-contract.md',
   'docs/decisions/0009-app-verification-runs.md', 'docs/install-contract.md', 'docs/observability-contract.md',
@@ -367,7 +368,7 @@ const packagedMarkdown = [
   'packages/mcp/README.md', 'packages/observability/README.md', 'packages/wispr-contracts/README.md',
 ];
 const packagedNames = new Set(['OPERATIONS.md', 'TESTING.md', 'README.md', 'SETUP.md', 'CONTRACT.md', 'install-contract.md', 'provider-qualification.md',
-  'app-verification.md', 'adr-0009-app-verification-runs.md']);
+  'app-verification.md', 'adr-0009-app-verification-runs.md', 'THIRD-PARTY-NOTICES.md']);
 
 test('Markdown that package checks copy exists, and the hash-checked vendor folders hold none', () => {
   for (const file of packagedMarkdown) assert.ok(fs.existsSync(path.join(root, file)), `${file} is copied by a package script; delete or rename it only with that script`);
