@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
+      # Manual upgrade checks execute Markdown commands, including recipe-only edits.
+      - run: npm run build
+      - run: node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js
       - run: npm run test:preflight
       # Hosted runners sometimes stall in apt-get update until the job's limit (#862). The step takes 15 to 133 s, its
       # slowest apt install about 2 minutes; each attempt of the two apt commands gets 180 s, and a stalled or failed

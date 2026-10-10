@@ -6,6 +6,132 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Current-runtime upgrade inventory and receipt checks (#1037) are in
+`apps/runtime/tests/runtime-upgrade-check.test.ts`. After the root build, run
+`node --test apps/runtime/dist/tests/runtime-upgrade-check.test.js`; existing
+`test:runtime:built` discovery also runs them in the active core CI job. They use
+small private disposable directories, never installed state or service control.
+They compare supplied release manifest/inventory/archive hashes and establish
+receipt validation, private atomic persistence and readback. Supplied hashes do
+not establish trusted merged source or safe archive extraction;
+upgrade/recovery, running identity and installed acceptance require their own
+procedure evidence.
+
+`node --test apps/runtime/dist/tests/upgrade-admission.test.js` checks the
+read-only binding of a coordinator's reviewed qualification decision to exact
+private evidence and independently supplied identities. It covers complete
+coverage, changed evidence, missing owners, duplicate phases, identity drift,
+unknown fields and linked evidence. Existing runtime CI test discovery includes
+it. These fixtures establish binding and refusal behavior; the production
+preflight, independent acceptance and installed upgrade remain separate gates.
+
+`node --test apps/runtime/dist/tests/upgrade-owner.test.js` checks fixed-service
+process observation through an internal reader seam: PID/start identity,
+runtime arguments, restart/PID reuse, another user, incomplete observations and
+safe refusal diagnostics. Existing runtime CI discovers it. The fixture does
+not read the installed service or prove release closure, listener ownership,
+build/health identity or upgrade eligibility.
+
+`node --test apps/runtime/dist/tests/upgrade-lock.test.js` checks inherited FD9
+against the named private operation lock. It covers missing/wrong descriptors,
+permissions, replaced paths, links and a same-shell `flock` fixture whose
+competing operation exits 75. It runs the read-only helper in child processes,
+not an installed upgrade. Existing runtime CI discovers it.
+
+`node --test apps/runtime/dist/tests/upgrade-inputs.test.js` checks private
+configuration and retained-owner classification using file metadata, including
+the core's separate lease file. Live databases are not opened. Unknown owners,
+unsafe entries and permissions refuse. Receipt fixtures exercise the shared
+validator, installation/filename binding and refusal of valid in-progress,
+interrupted, failed-recovery and finalization-failure receipts. This read-only
+inspection has a 4,096-file receipt bound and never clears unresolved evidence.
+Existing runtime CI discovers it; stopped-writer backup, complete recovery
+coverage and final preflight remain separate.
+
+`node --test apps/runtime/dist/tests/upgrade-listener.test.js` binds the selected
+loopback TCP listener to the already observed runtime PID's socket descriptors.
+Fixtures cover another process or user, wildcard and duplicate listeners,
+replacement during inspection, malformed or oversized observations and invalid
+inputs. The reader neither discovers processes nor sends HTTP requests. Existing
+runtime CI discovers these tests; authenticated build/health reads and release
+closure remain separate checks.
+
+`node --test apps/runtime/dist/tests/upgrade-http.test.js` checks the fixed
+loopback build and health reads. It binds the bearer to the current read grant,
+rejects private-input and owner/listener drift, verifies the expected clean
+build, validates health and excludes secret values, reason details and volatile
+counters from its result. A disposable loopback server checks the production
+GET reader's authentication, redirect refusal and response-size bound. Calls
+have a three-second deadline and 256 KiB response limit. Existing runtime CI
+discovers these tests. Observing valid degraded health does not accept an
+exception or establish upgrade eligibility.
+
+`node --test apps/runtime/dist/tests/upgrade-paths.test.js` checks first adoption
+from the retained direct tree and routine upgrades through the previous-release
+anchor. Foreign or dangling anchors, overlapping mutable paths, wrong release
+placement, linked inputs, public operation directories and unexpected entries
+refuse without filesystem changes. The request has no observation or acceptance
+flags. Existing runtime CI discovers these tests. Accepted baseline closure, hook
+protection and the complete preflight remain separate requirements.
+
+`node --test apps/runtime/dist/tests/upgrade-source.test.js` checks release-derived
+production input inventories. Resealed artifacts with changed producers,
+controllers, outboxes, lockfiles or registry generators refuse. Missing required
+anchors and executable-looking build identities also refuse. Build identity is
+parsed as data. Explicit operator-only helper exclusions do not establish that
+the runtime entry graph excludes those helpers; independent review must verify
+that boundary. These synthetic checks do not qualify installed compatibility.
+
+`node --test apps/runtime/dist/tests/upgrade-baseline.test.js` checks actual-byte
+comparison against the verified previous release and a privately pinned closure.
+The inventory derives production inputs, built files, dependencies and linked
+workspace payloads from that release. Fixtures cover changed or missing bytes,
+extra dependencies, workspace-local dependency shadows, escaped links, changed
+Node or unit files, and drift during inspection. Manifest link resolution also
+covers a `.bin` link through a workspace link. Hard-linked files require every
+alias to be present in the verified inventory; an external or newly added alias
+refuses. Node and unit pins still require single-link files. Directory membership checks are
+bounded and do not recursively follow filesystem links. Existing runtime CI
+discovers these tests. A matching observation is point-in-time evidence; it does
+not accept coordinator admission, startup provenance or upgrade eligibility.
+
+`node --test apps/runtime/dist/tests/upgrade-hooks.test.js` checks the qualified
+hook list in the privately pinned baseline closure. It preserves directory and
+file links, exact invocation paths and script bytes. Changed links, unsafe files,
+duplicate or missing declarations, overlap with installation storage, and drift
+during the final read refuse. The checker reads scripts without executing them
+and never rewrites a hook or client configuration. Existing runtime CI discovers
+these tests. The coordinator's admission must establish list completeness;
+fixtures do not establish the installed hook paths.
+
+`node --test apps/runtime/dist/tests/upgrade-preflight.test.js` checks composition
+through internal synthetic readers: the original process/listener, pinned source
+and admission, baseline/hook/state/receipt continuity, private-input hashes,
+authenticated build and health, and exact plan equality under the operation lock.
+Changed evidence, unexpected health, a stopped watchdog, missing lock and an
+altered plan refuse. The production export binds fixed installed readers; no
+request field selects a reader. These fixtures test coordination, not installed
+eligibility. The owning component tests above verify the individual readers.
+
+`node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js` executes the
+owning procedure's manual backup and release-selection commands on disposable
+byte fixtures. It checks complete sidecar/original/reference retention, private
+backup hashes and archive roundtrip, refused unsafe or reused destinations,
+atomic anchor selection, and recovery/re-upgrade without replacing newer state.
+Backup and stopped-writer checks use an ordinary Bash shell; the documented
+blocks enforce their own failure handling.
+It also generates a private adoption draft from a synthetic plan, preserves the
+observed invocation, and refuses changed frames, reused drafts and systemd
+substitution/quoting characters before creating a proposal. The exact adoption
+block is also checked with a fake service command: a directory, copy, comparison,
+synchronization, reload or start failure prevents later steps.
+These Markdown-dependent checks run in the active Workflow job after its root
+build, including Markdown-only revisions. They are excluded from the Checks
+job’s runtime test glob.
+The test does not stop a service, open an installed store or qualify database
+reopening. Production-store recovery and established-installation acceptance
+require their separate evidence.
+
 The Automation browser journey uses the existing runtime harness with the real
 Nanoleaf module over `SimulatedNanoleaf`. It checks explicit disabled creation,
 enable/settings/edit/delete, passive drafts, one page-closed tracked moment,

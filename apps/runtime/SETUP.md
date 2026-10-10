@@ -8,6 +8,9 @@ This guide is not a qualified routine upgrade/rollback procedure; the legacy
 Select and qualify an owning runtime upgrade procedure before claiming an
 installed delivery. Do not repeat fresh setup against existing runtime state.
 
+The draft [current-runtime upgrade and recovery procedure](UPGRADE.md) records
+its separate qualification and adoption gates.
+
 This procedure prepares the existing WSL host for the owner-present cutover.
 It starts with empty runtime state and manually selected configuration. It does
 not transfer data or run the legacy migration tools. Keep the old installation,
