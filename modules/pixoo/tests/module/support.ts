@@ -43,7 +43,7 @@ export function playbackRecord(atMs: number, revision: number, title = 'Harvest 
   return {id: 'presented', revision, availability: 'available', observedAtMs: atMs, playback: {status: 'known', player, title, artist: 'Neil Young', controls: ['pause', 'next']}};
 }
 export const playbackState = (record: PlaybackState): StateDraft<PlaybackState> =>
-  ({type: 'org.bunny.playback.updated', subject: record.id, dataschema: schemaOf('playback'), data: record});
+  ({type: 'org.bunny.playback.updated', subject: record.id, dataschema: record.artwork === undefined ? schemaOf('playback') : 'https://bunny.invalid/events/playback/2.1', data: record});
 
 /** A validator with every family the module's messages use. */
 export function validator(): MessageValidator {

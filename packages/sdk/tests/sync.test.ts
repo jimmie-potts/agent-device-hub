@@ -3,6 +3,7 @@
 // consumer scenarios and agent-state's stalled-consumer resync.
 import assert from 'node:assert/strict';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {
   SdkError, type Draft, type ErrorScope, type Removal, type Sdk, type Snapshot, type Subscription, type SyncChange, type SyncedCopy, type SyncRequest,
 } from '../src/index.js';
@@ -15,6 +16,36 @@ import {
 const FAMILY = SESSION_FAMILY;
 const PARENT_TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = {traceparent: `00-${PARENT_TRACE}-b7ad6b7169203331-01`};
+
+it('playback consumers sync 2.0 and follow the same shared 2.1 image without another source read', async context => {
+  const {core, wall} = bus();
+  context.after(async () => { await core.close(); await wall.close(); });
+  let data: PlaybackState = {id: 'living-room', revision: 1, availability: 'available', observedAtMs: START,
+    playback: {status: 'known', player: 'playing', title: 'Synthetic song', controls: ['pause']}};
+  let version = '2.0';
+  const state = (): Draft<PlaybackState> => ({kind: 'state', type: 'org.bunny.playback.updated', subject: data.id,
+    dataschema: `https://bunny.invalid/events/playback/${version}`, data: structuredClone(data)});
+  await core.serveSync(['playback'], () => ({revision: data.revision, states: [state()]}));
+  const first = await wall.sync<PlaybackState>(['playback'], () => {}, {timeoutMs: 5000});
+  assert.equal(first.status, 'synced');
+  if (first.status !== 'synced') return;
+  assert.equal(first.copy.states()[0]?.dataschema, 'https://bunny.invalid/events/playback/2.0');
+  version = '2.1';
+  data = {...data, revision: 2, artwork: {status: 'ready', generation: '12345678-1234-4234-8234-123456789abc',
+    mediaType: 'image/png', width: 1, height: 1,
+    base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg=='}};
+  await core.publish('bunny.state.playback.living-room', state());
+  await flush();
+  assert.deepEqual(first.copy.states()[0]?.data, data);
+  const another = checked(core);
+  const second = await another.sync<PlaybackState>(['playback'], () => {}, {timeoutMs: 5000});
+  assert.equal(second.status, 'synced');
+  if (second.status === 'synced') {
+    assert.deepEqual(second.copy.states()[0]?.data.artwork, first.copy.states()[0]?.data.artwork);
+    await second.copy.close();
+  }
+  await first.copy.close();
+});
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
 
 /** A session owner: each change takes the revision given and is published at once. */

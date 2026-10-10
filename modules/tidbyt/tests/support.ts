@@ -194,7 +194,7 @@ export class StandIn<T extends {id: string; revision: number}> {
   #draft(record: T): {type: string; subject: string; dataschema: string; data: T} {
     return this.#family === 'session' ?
       {type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record} :
-      {type: 'org.bunny.playback.updated', subject: record.id, dataschema: PLAYBACK_SCHEMA, data: record};
+      {type: 'org.bunny.playback.updated', subject: record.id, dataschema: 'artwork' in record ? 'https://bunny.invalid/events/playback/2.1' : PLAYBACK_SCHEMA, data: record};
   }
 }
 

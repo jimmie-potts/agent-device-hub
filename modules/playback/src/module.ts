@@ -1,6 +1,6 @@
 // The playback module (Hub #929): one owner for the Sony HT-A9 and the Sonos Move, because the presented-source rule
 // (#233) needs both sources and modules cannot import each other. It polls each configured speaker about every two
-// seconds, publishes the presented source as the core `playback` record (`playback/2.0`), and answers `playback-control`
+// seconds, publishes the presented source as the core `playback` record (`playback/2.1`), and answers `playback-control`
 // with a reply and an outcome from its outbox. Under policy A (ADR 0012, "Failure isolation") a speaker's errors and
 // timeouts are outcomes and an `unavailable` record, never a module failure, and start never waits on a speaker.
 import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -12,12 +12,16 @@ import {
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
 import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
+import {simulatedArtworkFetch} from './simulated-artwork.js';
 import {SIMULATED_SECTION, SimulatedSpeakers} from './simulated.js';
 import {createSource, type Deadline} from './sources.js';
 import {httpSpeakers, type SpeakerTransport} from './transport.js';
+import {ArtworkController} from './artwork.js';
+import {ARTWORK_DECODE_MS, type ArtworkFetch, type ArtworkResult} from './artwork-fetch.js';
+import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
 
 export const PLAYBACK_MODULE = 'playback';
-export const PLAYBACK_SCHEMA = `${SCHEMA_BASE}playback/2.0`;
+export const PLAYBACK_SCHEMA = `${SCHEMA_BASE}playback/2.1`;
 export const PLAYBACK_CONTROL_SCHEMA = `${SCHEMA_BASE}playback-control/2.0`;
 const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 /** How often each speaker is read, as the old Hub did. */
@@ -44,6 +48,7 @@ export type PlaybackModuleOptions = {
    * `performance.now()`; a test on a manual clock passes that clock.
    */
   monotonic?: () => number;
+  artwork?: {fetch?: ArtworkFetch; decode?: ArtworkDecode};
 };
 
 /** The routing key of the playback record's state messages. */
@@ -60,8 +65,8 @@ export const controlPlayback = (id: string, action: PlaybackAction, expectedRevi
 
 const stateOf = (record: PlaybackState): StateDraft<PlaybackState> =>
   ({type: 'org.bunny.playback.updated', subject: record.id, dataschema: PLAYBACK_SCHEMA, data: structuredClone(record)});
-/** What a revision says: availability and the presented playback. `observedAtMs` alone never makes a new revision. */
-const content = (record: PlaybackState): string => JSON.stringify([record.availability, record.playback]);
+/** What a revision says: availability, presented playback and current artwork. `observedAtMs` alone never makes a new revision. */
+const content = (record: PlaybackState): string => JSON.stringify([record.availability, record.playback, record.artwork]);
 /** The record for what is presented now. An unavailable source shows no playback, and old metadata is withheld. */
 function recordOf(id: string, revision: number, {availability, observedAtMs, observation}: PresentedView): PlaybackState {
   const {title, artist, album} = observation ?? {};
@@ -88,11 +93,11 @@ type Handled = {body: string; result: string | null};
  * The playback module. `configure` takes the playback record's routing ID and one or two speakers in preference order
  * (see `configurePlayback`); the runtime refuses the module without that section.
  */
-export function createPlaybackModule({transport, pollMs = POLL_MS, timeoutMs = CALL_TIMEOUT_MS, monotonic = () => performance.now()}: PlaybackModuleOptions):
+export function createPlaybackModule({transport, pollMs = POLL_MS, timeoutMs = CALL_TIMEOUT_MS, monotonic = () => performance.now(), artwork: artworkOptions}: PlaybackModuleOptions):
 BunnyModule<PlaybackConfig> {
   return {
     manifest: {name: PLAYBACK_MODULE, apiVersion: '1.1', configure: configurePlayback},
-    async start({sdk, config, database, clock, scheduler, log, trace, signal}) {
+    async start({sdk, config, database, clock, scheduler, log, trace, signal, workers}) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (config === undefined) throw new Error('the playback module started without its configuration');
       const {id} = config;
@@ -194,11 +199,21 @@ BunnyModule<PlaybackConfig> {
       const allFirstReadsSettled = (): boolean => firstRead.every(Boolean);
       let markSettled: () => void = () => {};
       const firstReads = new Promise<void>(resolve => { markSettled = resolve; });
-      /** Publishes a new revision when availability or the presented playback changed. */
+      const artwork = new ArtworkController({scheduler, signal,
+        ...(artworkOptions?.fetch === undefined ? {} : {fetch: artworkOptions.fetch}),
+        decode: artworkOptions?.decode ?? ((bytes, abort) => workers.call<ArtworkResult<ArtworkThumbnail>>(
+          new URL('./artwork-worker.js', import.meta.url), bytes, {timeoutMs: ARTWORK_DECODE_MS, signal: abort})),
+        onChange: () => { evaluate(); },
+      });
+      /** Publishes a new revision when availability, presented playback or current artwork changes. */
       let freshness: (() => void) | undefined;
       const evaluate = (): void => {
         if (signal.aborted || !allFirstReadsSettled()) return;
-        const next = recordOf(id, record.revision + 1, presentation.view());
+        const view = presentation.view();
+        const sourceConfig = config.sources[view.index];
+        if (sourceConfig !== undefined) artwork.update({...view, kind: sourceConfig.kind, endpoint: sourceConfig.endpoint});
+        const image = artwork.snapshot();
+        const next = {...recordOf(id, record.revision + 1, view), ...(image === undefined ? {} : {artwork: image})};
         if (dirty || content(next) !== content(record)) {
           dirty = false;
           void commit(next);
@@ -408,7 +423,7 @@ BunnyModule<PlaybackConfig> {
 export const playbackFactory = {
   name: PLAYBACK_MODULE,
   create: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: httpSpeakers()}),
-  simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers()}),
+  simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers(), artwork: {fetch: simulatedArtworkFetch}}),
   // The speakers take no credential, so the section names no secret.
   simulatedSection: {config: SIMULATED_SECTION},
 } as const;

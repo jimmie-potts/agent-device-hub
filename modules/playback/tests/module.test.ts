@@ -57,6 +57,7 @@ test('the presented source is the playback record, with a new revision only when
   assert.deepEqual(record, {
     id: ID, revision: 2, availability: 'available', observedAtMs: record.observedAtMs,
     playback: {status: 'known', player: 'playing', title: 'First song', artist: 'Artist', controls: ['pause', 'next', 'previous']},
+    artwork: {status: 'missing', generation: record.artwork?.generation},
   });
   const message = hosted.published.filter(entry => entry.dataschema === PLAYBACK_SCHEMA).at(-1);
   assert.deepEqual([message?.type, message?.subject, message?.kind], ['org.bunny.playback.updated', ID, 'state']);
@@ -88,6 +89,7 @@ test('a silent source turns stale after 5 s and unavailable after 30 s, when old
   assert.deepEqual(stale?.data, {
     id: ID, revision: 3, availability: 'stale', observedAtMs,
     playback: {status: 'known', player: 'playing', title: 'Old title', artist: 'Artist', controls: ['pause', 'next', 'previous']},
+    artwork: {status: 'missing', generation: hosted.records()[before - 1]?.artwork?.generation},
   }, 'a stale record keeps the last playback');
   assert.equal(Date.parse(stale?.time ?? '') - observedAtMs, 5000, 'stale exactly 5 s after the last observation');
   assert.deepEqual(unavailable?.data, {id: ID, revision: 4, availability: 'unavailable', observedAtMs, playback: {status: 'unknown'}},

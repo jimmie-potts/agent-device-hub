@@ -8,12 +8,24 @@ import assert from 'node:assert/strict';
 import {CALL_TIMEOUT_MS} from '../src/module.js';
 import {Presentation} from '../src/playback.js';
 import {sonosSource} from '../src/sonos.js';
-import {sonySource} from '../src/sony.js';
+import {sonyObservation, sonySource} from '../src/sony.js';
 import type {SpeakerSource} from '../src/sources.js';
 import {httpSpeakers} from '../src/transport.js';
 import {DIDL, airplay, deadlineOf, envelope, fakeSonos, fakeSony, playingInfo, soapFault, test, type SonosCall} from './support.js';
 
 const http = httpSpeakers();
+
+test('Sony retains only a bounded private thumbnail candidate without making it playback text', () => {
+  const thumbnailUrl = 'http://127.0.0.1:10000/artwork/one.jpg';
+  const observation = sonyObservation([airplay({content: {thumbnailUrl}})]);
+  assert.equal((observation as unknown as {thumbnailUrl?: string}).thumbnailUrl, thumbnailUrl);
+  for (const content of [undefined, {}, {thumbnailUrl: 7}, {thumbnailUrl: 'x'.repeat(2049)}]) {
+    const absent = sonyObservation([airplay({content})]);
+    assert.equal((absent as unknown as {thumbnailUrl?: string}).thumbnailUrl, undefined);
+    assert.equal(absent.title, observation.title);
+    assert.deepEqual(absent.controls, observation.controls);
+  }
+});
 /** One read reported into a one-source presentation, as the Hub's source did: a failed read reports nothing. */
 const reporter = (source: SpeakerSource, presentation: Presentation) => async (): Promise<void> => {
   try {
@@ -27,15 +39,15 @@ test('Sony AirPlay observations normalize metadata, status and controls', async 
   const sony = await fakeSony();
   const source = sonySource({kind: 'sony', endpoint: sony.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   try {
-    assert.deepEqual(await source.read(), {status: 'playing', title: 'Song', artist: 'Artist', album: 'Album', controls: ['pause', 'next', 'previous']});
+    assert.deepEqual(await source.read(), {status: 'playing', title: 'Song', artist: 'Artist', album: 'Album', controls: ['pause', 'next', 'previous'], thumbnailUrl: 'http://192.168.1.20:60200/thumbnail.jpg'});
     assert.deepEqual(sony.calls[0], {path: '/sony/avContent', method: 'getPlayingContentInfo', id: sony.calls[0]?.id, params: [{output: ''}], version: '1.2'});
     sony.set(() => playingInfo([airplay({stateInfo: {state: 'PAUSED'}, albumName: '', title: '  Padded  '})]));
-    assert.deepEqual(await source.read(), {status: 'paused', title: 'Padded', artist: 'Artist', controls: ['next', 'previous']},
+    assert.deepEqual(await source.read(), {status: 'paused', title: 'Padded', artist: 'Artist', controls: ['next', 'previous'], thumbnailUrl: 'http://192.168.1.20:60200/thumbnail.jpg'},
       'the owner live check of 2026-09-25 qualified next and previous while paused');
     sony.set(() => playingInfo([airplay({stateInfo: {state: 'STOPPED'}, title: undefined, artist: undefined, albumName: undefined, content: undefined})]));
     assert.deepEqual(await source.read(), {status: 'stopped', controls: []});
     sony.set(() => ({result: [airplay({stateInfo: {state: 'BUFFERING'}, title: 'x'.repeat(300)})]}));
-    assert.deepEqual(await source.read(), {status: 'unknown', title: 'x'.repeat(256), artist: 'Artist', album: 'Album', controls: []});
+    assert.deepEqual(await source.read(), {status: 'unknown', title: 'x'.repeat(256), artist: 'Artist', album: 'Album', controls: [], thumbnailUrl: 'http://192.168.1.20:60200/thumbnail.jpg'});
     sony.set(() => playingInfo([{source: 'extInput:tv', uri: 'extInput:tv', stateInfo: {state: 'PLAYING'}, title: 'TV'}]));
     assert.deepEqual(await source.read(), {status: 'inactive', controls: []});
   } finally {
