@@ -106,7 +106,6 @@ export class Collector {
     #stopped = false;
     #halted = false;
     #timer: Cancel | undefined;
-    #dueAt: number | undefined;
     #inflight: Promise<void> | undefined;
     #trailing: Promise<void> | undefined;
     #wirePending = false;
@@ -246,7 +245,7 @@ export class Collector {
         if (this.#reported === code)
             return;
         this.#reported = code;
-        this.#context.log.warn('operation.failed', {
+        this.#context.log[code === 'internal' ? 'error' : 'warn']('operation.failed', {
             'bunny.operation': 'status',
             'bunny.code': code,
         });
@@ -264,11 +263,6 @@ export class Collector {
                 ? 1
                 : Math.max(1, (status.observedAtMs.status === 'known'
                     ? status.observedAtMs.value + cadence : this.#now() + cadence) - this.#now()));
-        // Timer admission may be late because other serialized reads ran long.
-        // Keep the observation's deadline so that the next poll retains the gap.
-        this.#dueAt = explicit === undefined && this.#pending === undefined
-            && this.#control.failureStreak === 0 && status.observedAtMs.status === 'known'
-            ? status.observedAtMs.value + cadence : this.#now() + delay;
         try {
             this.#timer = this.#context.scheduler.after(delay, () => { void this.poll(); });
         }
@@ -606,6 +600,20 @@ export class Collector {
             }
             return;
         }
+        // Every successful status read is an observation, including map fences.
+        // Unavailable/restart/storage recovery has its own interval evidence.
+        if (control.status.availability === 'available' && control.openGapId === null
+            && control.status.observedAtMs.status === 'known') {
+            const cadence = control.status.activity === 'cleaning' || control.status.activity === 'returning'
+                ? 15000 : 60000;
+            const expected = control.status.observedAtMs.value + cadence;
+            if (entry.at > expected + 1) {
+                this.#store.appendGap({
+                    id: entry.gapId, episodeId: control.activeId,
+                    startAtMs: expected, endAtMs: entry.at, reason: 'missed-poll',
+                });
+            }
+        }
         this.#store.markSuccessfulStatus(control.generation, entry.at);
         if (control.openGapId !== null) {
             this.#store.closeGap(control.openGapId, entry.at);
@@ -755,7 +763,6 @@ export class Collector {
             return;
         }
         const cycle = this.#cycle();
-        const started = this.#now();
         try {
             if (this.#pendingMap !== undefined) {
                 await this.#capture(this.#pendingMap, cycle);
@@ -782,17 +789,10 @@ export class Collector {
                 return;
             const observations = [status, consumables, summary, rooms]
                 .filter((entry): entry is Entry<VendorJson> => entry !== undefined);
-            const missed: Gap | undefined = this.#dueAt !== undefined && started > this.#dueAt + 1
-                ? {
-                    id: randomUUID(), episodeId: this.#control.activeId,
-                    startAtMs: this.#dueAt, endAtMs: started, reason: 'missed-poll',
-                } : undefined;
             if (!await this.#commit({
                 work: control => {
                     for (const entry of observations)
                         this.#store.appendObservation(entry.observation);
-                    if (missed !== undefined)
-                        this.#store.appendGap(missed);
                     this.#applyStatus(control, status);
                     this.#store.recoverOpenGaps(100);
                     this.#applyAncillary(control, consumables, summary);

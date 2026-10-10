@@ -28,7 +28,8 @@ returning activity and every 15 seconds during it. Calls and record batches are
 bounded and serialized. These policy intervals do not establish push support.
 The reader has a 9-second deadline within the collector's 10-second fallback
 fence, so transport timeouts can report degradation before cancellation. Slow
-serialized work retains the original poll deadline and records missed intervals.
+serialized work records missed observation intervals, including status reads
+that bracket a candidate map capture.
 A docked `clean_time` or `clean_area` may describe the previous run; it does not
 start or complete an episode. Unavailable replies and downtime create gaps,
 never synthetic battery samples or inferred completion.

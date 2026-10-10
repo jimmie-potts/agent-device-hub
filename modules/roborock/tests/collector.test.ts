@@ -195,6 +195,7 @@ for (const code of ['capacity', 'internal', 'invalid-state'] as const) {
         const record = w.diagnostics.find(item => item.event === 'operation.failed');
         assert.ok(record !== undefined);
         assert.equal(record.fields['bunny.code'], code);
+        assert.equal(record.level, code === 'internal' ? 'error' : 'warn');
         assert.equal(checkModuleRecord('roborock', record), undefined);
     });
 }
@@ -718,6 +719,64 @@ void test('new activity during map capture keeps original bytes and refuses attr
     assert.equal(capture.association, 'unverified');
     assert.deepEqual(w.store.readMapBlob(required(capture.blobHash)), w.transport.bytes);
     assert.equal(w.store.getRun(BEGIN)?.map.reason, 'ambiguous-window');
+});
+void test('successful map-capture status reads expose missed battery intervals for a newer run', async (context) => {
+    const w = await world(context);
+    await activeRun(w);
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 29, complete: 1 });
+    const record = w.transport.readCleanRecord.bind(w.transport);
+    let newerRun = false;
+    w.transport.readCleanRecord = async id => {
+        const result = await record(id);
+        w.transport.status = { state: 5, battery: 78, in_cleaning: 1, in_returning: 0 };
+        newerRun = true;
+        return result;
+    };
+    const summary = w.transport.readCleanSummary.bind(w.transport);
+    let delaySummary = true;
+    w.transport.readCleanSummary = async () => {
+        if (newerRun && delaySummary) {
+            delaySummary = false;
+            w.clock.jump(8000);
+        }
+        return summary();
+    };
+    const map = w.transport.readCurrentMap.bind(w.transport);
+    w.transport.readCurrentMap = options => { w.clock.jump(8000); return map(options); };
+    let newerStatuses = 0;
+    w.transport.statusHook = () => {
+        if (newerRun && ++newerStatuses === 2) w.clock.jump(8000);
+        return Promise.resolve({ ok: true, value: w.transport.status, observedAt: new Date(w.clock.now()).toISOString() });
+    };
+    w.clock.jump(15000);
+    await w.collector.poll();
+    assert.equal(w.clock.now(), START + 54001);
+    const capture = required(w.store.listMapCaptures(BEGIN)[0]).capture;
+    assert.ok(capture.reasons.includes('newer-run'));
+    assert.equal(capture.association, 'unverified');
+    w.transport.readCleanRecord = record;
+    w.transport.readCleanSummary = summary;
+    w.transport.readCurrentMap = map;
+    w.transport.statusHook = undefined;
+    w.clock.jump(6000);
+    await w.collector.poll();
+    w.transport.status = { state: 8, battery: 76, in_cleaning: 0, in_returning: 0 };
+    w.transport.summary = { records: [BEGIN, BEGIN + 30] };
+    w.transport.records.set(BEGIN + 30, { begin: BEGIN + 30, end: BEGIN + 65, complete: 1 });
+    w.clock.jump(9000);
+    await w.collector.poll();
+    const page = w.store.listSamples(BEGIN + 30);
+    assert.deepEqual(page.gaps, [{
+        startAtMs: START + 45001, endAtMs: { status: 'known', value: START + 54001 }, reason: 'missed-poll',
+    }]);
+    // The archive retains the post-status sample. Existing conservative gap
+    // eligibility excludes its boundary, but later evidence remains plottable.
+    assert.equal(w.database.prepare('SELECT COUNT(*) AS n FROM rr_samples WHERE observed_at_ms=?').get(START + 54001)?.n, 1);
+    assert.deepEqual(page.samples.map(sample => sample.observedAtMs), [START + 30001, START + 60001]);
+    assert.equal(page.next, null);
+    assert.ok(capture.reasons.includes('gap'));
+    assert.equal(w.collector.state().availability, 'available');
+    assert.equal(w.collector.storageFailure(), undefined);
 });
 void test('an unavailable post-map observation records a gap and preserves unverified bytes', async (context) => {
     const w = await world(context);
