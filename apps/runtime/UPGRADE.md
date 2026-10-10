@@ -309,7 +309,7 @@ and digest privately. A missing observation is a refusal, not a matching baselin
 
 The request's required `execution` object binds the neutral `operationId` and
 `backupDirectory` (`<installationRoot>/backups/<operationId>`), `stopTimeoutMs`
-(1–60 seconds), and `postStart` limits: `attempts` (1–30), `timeoutMs` (1–60
+(1–60 seconds), and `postStart` limits: `attempts` (1–30), `timeoutMs` (1–180
 seconds), and `intervalMs` (100–10,000 milliseconds, less than the timeout).
 `startupEffects.assessment` and `startupEffects.authority` are private
 `{path, sha256}` evidence pins under provenance. A valid pin establishes unchanged
@@ -323,6 +323,14 @@ operation. The plan derives the draft's exact bytes and digest from the observed
 invocation. Preparing those same bytes at the named provenance path preserves
 the plan; different draft bytes refuse. All operational choices and evidence
 are compared again by the locked recheck.
+
+Choose the post-start bound for the complete verification attempt before stopping
+the service. It includes repeated release inventories and protected-input checks,
+as well as the separately bounded HTTP reads. Use read-only release checks on the
+actual artifacts to size it; small synthetic fixtures do not establish installed
+verification time. Changing the selected bound requires a fresh plan and its
+applicable authority. Only observations are retried; service or device effects
+are not repeated to make verification pass.
 
 Set the manual command variables from this inspected plan. In particular,
 `BUNNY_BACKUP_DIRECTORY` is `execution.backupDirectory`, and

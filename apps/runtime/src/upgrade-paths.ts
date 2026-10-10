@@ -46,7 +46,7 @@ function executionFrame(value: unknown, root: string, operation: string): value 
     || value.backupDirectory !== join(root, 'backups', value.operationId)
     || !bounded(value.stopTimeoutMs, 1000, 60000)
     || !closed(value.postStart, ['attempts', 'timeoutMs', 'intervalMs'])
-    || !bounded(value.postStart.attempts, 1, 30) || !bounded(value.postStart.timeoutMs, 1000, 60000)
+    || !bounded(value.postStart.attempts, 1, 30) || !bounded(value.postStart.timeoutMs, 1000, 180000)
     || !bounded(value.postStart.intervalMs, 100, 10000) || value.postStart.intervalMs >= value.postStart.timeoutMs
     || !closed(value.startupEffects, ['assessment', 'authority']) || !Object.values(value.startupEffects).every(evidencePin)) return false;
   if (operation === 'upgrade') return value.adoption === null;

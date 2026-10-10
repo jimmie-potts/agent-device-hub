@@ -21,6 +21,13 @@ void test('request binds operational choices and refuses missing or unbounded ex
     releases: {previous: artifact, target: artifact, recovery: artifact},
     formatInventoryFiles: {previous: root + '/p', target: root + '/t', recovery: root + '/r', qualification: root + '/q'}, execution};
   assert.deepEqual(parseUpgradeRequest(document), document);
+  const longerObservation = {...document, execution: {...execution,
+    postStart: {...execution.postStart, timeoutMs: 180000}}};
+  assert.deepEqual(parseUpgradeRequest(longerObservation), longerObservation);
+  for (const timeoutMs of [0, 999, 180001, Infinity, NaN, Number.MAX_SAFE_INTEGER]) {
+    assert.throws(() => parseUpgradeRequest({...longerObservation, execution: {...longerObservation.execution,
+      postStart: {...longerObservation.execution.postStart, timeoutMs}}}), /^Error: runtime-upgrade-paths-refused$/);
+  }
   const missing: Partial<typeof document> = {...document};
   delete missing.execution;
   for (const value of [missing, {...document, execution: {...execution, stopTimeoutMs: 0}},
