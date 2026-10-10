@@ -139,3 +139,50 @@ void test('a full unconsumed receipt projection refuses new work, and receipt st
   assert.throws(() => new HelperOwner({id: 'other', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => {opens++; throw Error('must remain passive');}}));
   await owner.stop(); await sdk.close(); await module.close(); db.close();
 });
+
+import {RecordedSpans} from '@jimmie-potts/sdk/testing';
+import type {Logger, LogFields, TraceContext} from '@jimmie-potts/sdk';
+const sendTo = async (module: import('@jimmie-potts/sdk').Participant, owner: HelperOwner, operation: object) => {
+  const id = crypto.randomUUID();
+  return module.request('bunny.cmd.bb8-link-execute.bb8', executeDraft('bb8', {requestId: id, operationId: id, parentRequestId: id, expectedConfigurationRevision: 0, expectedHelperEpoch: owner.state.helperEpoch, expectedConnectionGeneration: owner.state.connectionGeneration, operationExpiresAtMs: Date.now() + (('kind' in operation && operation.kind === 'connect') ? 14_000 : 4000), operation}), {requestId: id, timeoutMs: 1000});
+};
+void test('matching nonzero MRSP is a definitive failed transmission, including unknown device errors', async () => {
+  for (const [mrsp, code] of [[4, 'unsupported-capability'], [7, 'invalid-request'], [1, 'internal'], [255, 'internal']] as const) {
+    const db = new DatabaseSync(':memory:'), bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE), module = bus.connect(MODULE_SOURCE), gatt = new FakeGatt();
+    const owner = new HelperOwner({id: 'bb8', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => Promise.resolve(gatt)})});
+    try {
+      await owner.start(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain();
+      gatt.mrsp = mrsp;
+      assert.equal((await sendTo(module, owner, {kind: 'led-set', led: {target: 'main', rgb: [10, 20, 30]}})).status, 'accepted'); await owner.drain();
+      const result = owner.results.at(-1); assert.equal(result?.result, 'failed', `MRSP ${mrsp}`); assert.equal(result?.evidence, 'transmitted'); assert.equal(result.error?.code, code); assert.equal(gatt.writes.length, 5);
+    } finally {await owner.stop(); await sdk.close(); await module.close(); db.close();}
+  }
+});
+void test('native loss invalidates device work while healthy SDK permits a fresh explicit reconnect', async () => {
+  const db = new DatabaseSync(':memory:'), bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE), module = bus.connect(MODULE_SOURCE), first = new FakeGatt(), second = new FakeGatt(); let opens = 0;
+  const owner = new HelperOwner({id: 'bb8', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => Promise.resolve(++opens === 1 ? first : second)})});
+  try {
+    await owner.start(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain();
+    const old = owner.state; first.disconnect();
+    for (let i = 0; i < 20 && owner.state.connection !== 'unavailable'; i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(owner.state.connection, 'unavailable'); assert.equal(opens, 1); assert.equal(first.writes.length, 4, 'loss does not reconnect automatically');
+    const id = crypto.randomUUID(); const stale = await module.request('bunny.cmd.bb8-link-execute.bb8', executeDraft('bb8', {requestId: id, operationId: id, parentRequestId: id, expectedConfigurationRevision: 0, expectedHelperEpoch: old.helperEpoch, expectedConnectionGeneration: old.connectionGeneration, operationExpiresAtMs: Date.now() + 4000, operation: {kind: 'wake'}}), {requestId: id, timeoutMs: 1000});
+    assert.equal(stale.status === 'rejected' && stale.error.error.code, 'revision-conflict');
+    assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain(); assert.equal(opens, 2); assert.equal(owner.state.connection, 'connected'); assert.equal(second.writes.length, 4);
+    await owner.streamLost(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'rejected', 'actual SDK loss still fences commands');
+  } finally {await owner.stop(); await sdk.close(); await module.close(); db.close();}
+});
+void test('helper decisions and outbox publications retain structured trace records and recorded device spans', async () => {
+  const records: {level: string; event: string; fields?: LogFields; trace?: TraceContext}[] = [];
+  const collect = (level: string) => (event: string, fields?: LogFields, trace?: TraceContext): void => {records.push({level, event, ...(fields === undefined ? {} : {fields}), ...(trace === undefined ? {} : {trace})});};
+  const log: Logger = {debug: collect('debug'), info: collect('info'), warn: collect('warn'), error: collect('error')}; const trace = new RecordedSpans();
+  const db = new DatabaseSync(':memory:'), bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE), module = bus.connect(MODULE_SOURCE), gatt = new FakeGatt();
+  const options = {id: 'bb8', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => Promise.resolve(gatt)}), log, trace}; const owner = new HelperOwner(options);
+  try {
+    await owner.start(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain();
+    assert.ok(records.some(record => record.event === 'command.admitted' && record.trace !== undefined));
+    assert.ok(records.some(record => record.event === 'command.completed' && record.trace !== undefined));
+    assert.ok(records.some(record => record.event === 'outcome.published' && record.trace !== undefined));
+    assert.equal(trace.named('bunny.device.call').length, 1); assert.ok(trace.named('bunny.device.call')[0]?.endedAtMs !== undefined); assert.ok(trace.named('bunny.outcome.publish').length > 0);
+  } finally {await owner.stop(); await sdk.close(); await module.close(); db.close();}
+});

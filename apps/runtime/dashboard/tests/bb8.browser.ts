@@ -45,7 +45,16 @@ try {
     assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isDisabled(), true);
     await controls.getByText('Motion is unavailable in this release.', {exact: true}).waitFor();
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+    world.bb8Online(true);
+    await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
+    const beforeReader = world.bb8State().operations.length;
+    await page.reload(); await feed(page, 'connected');
+    await controls.getByText('Read-only access. Control access is required for device commands.', {exact: true}).waitFor();
+    assert.equal(await controls.getByRole('button', {name: 'Connect', exact: true}).isDisabled(), true);
+    assert.equal(await controls.getByRole('button', {name: 'Disconnect', exact: true}).isDisabled(), true);
+    assert.equal(await controls.getByRole('button', {name: 'Set main LED', exact: true}).isDisabled(), true);
+    assert.equal(world.bb8State().operations.length, beforeReader, 'rendered read-only context causes no effects');
     assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'bb8', transport: 'authenticated simulated runtime', inspectionWrites: 0, keyboard: true, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'bb8', transport: 'authenticated simulated runtime', inspectionWrites: 0, keyboard: true, axe: 'passed', readonly: 'UI authority interception plus real reader HTTP refusal'})}\n`);
   } finally {await context.close();}
 } finally {await world.close(); await browser.close();}

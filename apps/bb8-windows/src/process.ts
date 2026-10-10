@@ -1,6 +1,6 @@
 /** Explicit Windows entry point. Loading this file alone never constructs Noble or opens a robot. */
 import {createHash} from 'node:crypto';
-import {lstat, readFile} from 'node:fs/promises';
+import {lstat, open, readFile, type FileHandle} from 'node:fs/promises';
 import {join} from 'node:path';
 import {performance} from 'node:perf_hooks';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
@@ -9,6 +9,7 @@ import {HELPER_SOURCE} from '@jimmie-potts/bb8/link';
 import {assertPrivate, readWindowsConfig} from './configuration.js';
 import {NativeAdapter} from './native.js';
 import {HelperOwner} from './owner.js';
+import {startHelperDiagnostics} from './diagnostics.js';
 import {acquireWriterLease} from './writer-lease.js';
 const scheduler = {after: (ms: number, callback: () => void) => {const timer = setTimeout(callback, ms); return () => {clearTimeout(timer);};}};
 async function main(): Promise<void> {
@@ -37,17 +38,32 @@ async function main(): Promise<void> {
     if (prior !== undefined && prior.fingerprint !== enrollment) throw new Error('BB-8 enrollment changed');
     database.prepare('INSERT OR IGNORE INTO bb8_enrollment VALUES(1,?)').run(enrollment);
   } catch (error) {database.close(); lease.release(); throw error;}
+  let diagnosticFile: FileHandle | undefined;
+  let diagnostic: Awaited<ReturnType<typeof startHelperDiagnostics>>;
+  try {
+    const diagnosticPath = join(config.stateDirectory, 'diagnostics.ndjson');
+    const existingDiagnostics = await lstat(diagnosticPath).then(() => true, (error: unknown) => {if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') return false; throw error instanceof Error ? error : new SdkError(errorBody('unavailable'));});
+    if (existingDiagnostics) await assertPrivate(diagnosticPath, false, Infinity);
+    diagnosticFile = await open(diagnosticPath, 'a', 0o600);
+    await assertPrivate(diagnosticPath, false, Infinity);
+    let diagnosticBytes = (await diagnosticFile.stat()).size;
+    const output = diagnosticFile;
+    diagnostic = await startHelperDiagnostics({sink: async line => {const bytes = Buffer.byteLength(line); if (diagnosticBytes + bytes > 4 * 1024 * 1024) throw new Error('BB-8 diagnostic capacity'); diagnosticBytes += bytes; await output.write(line);}});
+  } catch (error) {await diagnosticFile?.close(); database.close(); lease.release(); throw error;}
+  const output = diagnosticFile;
+  const endDiagnostics = async (): Promise<void> => {try {await diagnostic.shutdown();} finally {await output?.close();}};
   let sdk;
-  try {sdk = await connectRemote({url: config.gatewayUrl, source: HELPER_SOURCE, token, onError: () => {}, onDiagnostic: diagnostic => {
-    if (diagnostic.event === 'remote.disconnected') void owner?.streamLost().catch(() => {});
-    if (diagnostic.event === 'remote.reconnected') void owner?.streamRestored().catch(() => {});
-  }});} catch (error) {database.close(); lease.release(); throw error;}
+  try {sdk = await connectRemote({url: config.gatewayUrl, source: HELPER_SOURCE, token, onError: error => {diagnostic.failed(error);}, onDiagnostic: item => {
+    diagnostic.diagnostic(item);
+    if (item.event === 'remote.disconnected') void owner?.streamLost().catch(() => {});
+    if (item.event === 'remote.reconnected') void owner?.streamRestored().catch(() => {});
+  }});} catch (error) {database.close(); lease.release(); await endDiagnostics(); throw error;}
   const wall = Date.now(), monotonic = performance.now();
   const clockErrorMs = (): number | undefined => Date.now() > config.clockQualifiedUntilMs || Math.abs((Date.now() - wall) - (performance.now() - monotonic)) > config.clockErrorMs ? undefined : config.clockErrorMs;
   const adapter = new NativeAdapter({targetAddress: config.targetAddress, adapterAddress: config.adapterAddress, logDirectory: join(config.stateDirectory, 'native-logs'), ownsWriter: () => database.isOpen && !leaseLost});
-  try {owner = new HelperOwner({id: config.robotId, configurationRevision: config.configurationRevision, database, sdk, now: Date.now, scheduler, clockErrorMs, adapter: () => adapter, onError: () => {process.stderr.write('BB-8 helper cannot complete an operation; inspect its private receipts.\n');}});} catch (error) {await sdk.close(); database.close(); lease.release(); throw error;}
+  try {owner = new HelperOwner({id: config.robotId, configurationRevision: config.configurationRevision, database, sdk, now: Date.now, scheduler, clockErrorMs, adapter: () => adapter, log: diagnostic.log, trace: diagnostic.trace, onError: error => {diagnostic.failed(error);}});} catch (error) {await sdk.close(); database.close(); lease.release(); await endDiagnostics(); throw error;}
   let stopped = false;
-  const stop = async (): Promise<void> => {if (stopped) return; stopped = true; try {await owner?.stop();} finally {try {await sdk.close();} finally {if (database.isOpen) database.close(); lease.release();}};};
+  const stop = async (): Promise<void> => {if (stopped) return; stopped = true; try {await owner?.stop();} finally {try {await sdk.close();} finally {if (database.isOpen) database.close(); lease.release(); await endDiagnostics();}};};
   process.once('SIGINT', () => {void stop().catch(() => {process.exitCode = 1;});});
   process.once('SIGTERM', () => {void stop().catch(() => {process.exitCode = 1;});});
   try {await owner.start(); process.stdout.write('BB-8 helper ready; radio access awaits explicit connect.\n');}

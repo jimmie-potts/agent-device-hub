@@ -14,6 +14,9 @@ export interface Gatt {
   onDisconnected?(handler: () => void): void;
 }
 export interface Adapter {open(signal: AbortSignal): Promise<Gatt>}
+export class ProtocolRefusal extends SdkError {
+  constructor(code: number) {super(errorBody([4, 5, 9].includes(code) ? 'unsupported-capability' : code === 7 ? 'invalid-request' : 'internal', {detail: 'BB-8 protocol refused the transmitted operation'}));}
+}
 export type TransportObservation = {power?: Power; version?: Version};
 const refusal = (code: 'unavailable' | 'unsupported-capability' | 'invalid-request' | 'invalid-message' | 'capacity'): SdkError => new SdkError(errorBody(code, {detail: 'BB-8 transport refused the operation'}));
 /** Only this executor can write the selected GATT characteristics. Native loading belongs to the injected adapter. */
@@ -115,7 +118,7 @@ export class PacketTransport {
       const packet = await reply;
       if (this.#fault !== undefined) throw this.#fault;
       check();
-      if (packet.code !== 0) throw refusal([4, 5, 9].includes(packet.code) ? 'unsupported-capability' : packet.code === 7 ? 'invalid-request' : 'invalid-message');
+      if (packet.code !== 0) throw new ProtocolRefusal(packet.code);
       if (packet.data.length !== length) throw refusal('invalid-message');
       return packet.data;
     } catch (error) {

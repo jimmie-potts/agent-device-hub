@@ -42,3 +42,16 @@ Windows ACL/mutex behavior and native cancellation still need the #605 trial.
 Packet sequence numbers are not reused in one connection. Exhaustion after 256
 requests refuses work and requires a later explicit reconnect, preventing a
 late reply from satisfying a new request with a wrapped sequence number.
+
+Structured helper diagnostics use the shared observability host adapter with no
+exporter, registered fields and recorded device/outbox spans. They retain request
+trace context, registry codes and fixed text, never addresses or native errors.
+The private receipt directory holds `diagnostics.ndjson`, capped at 4 MiB across
+starts; full or failed sinks drop diagnostics without changing device outcomes.
+Native capture remains a separate 64 KiB file per explicit connection.
+
+A native radio loss advances the connection generation and aborts outstanding
+work, while a healthy SDK stream still permits a fresh explicit connect. SDK
+stream loss separately fences admission until the stream returns. A valid
+nonzero PacketV1 response produces a failed outcome with transmitted evidence;
+unknown response codes use `internal` and do not create an uncertain hold.

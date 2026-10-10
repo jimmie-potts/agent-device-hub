@@ -5,6 +5,10 @@ export class FakeGatt implements Gatt {
   callback: ((bytes: Uint8Array) => void) | undefined;
   closed = false;
   reply = true;
+  mrsp = 0;
+  #disconnected: (() => void) | undefined;
+  onDisconnected(handler: () => void): void {this.#disconnected = handler;}
+  disconnect(): void {this.closed = true; this.#disconnected?.();}
   corrupt = false;
   staleSequence = false;
   power = [1, 2, 1, 164, 0, 5, 0, 100];
@@ -15,7 +19,7 @@ export class FakeGatt implements Gatt {
     if (uuid === UUID.command && this.reply) {
       const seq = bytes[4]; if (seq === undefined) throw new Error('fake command lacks sequence');
       const data = bytes[2] === 0 && bytes[3] === 2 ? [1, 2, 3, 4, 5, 6, 7, 8] : bytes[2] === 0 && bytes[3] === 32 ? this.power : [];
-      const body = [0, this.staleSequence ? (seq + 1) & 255 : seq, data.length + 1, ...data];
+      const body = [this.mrsp, this.staleSequence ? (seq + 1) & 255 : seq, data.length + 1, ...data];
       const frame = Uint8Array.of(255, 255, ...body, this.corrupt ? 0 : 255 - (body.reduce((a, b) => a + b, 0) & 255));
       this.callback?.(frame.slice(0, 3)); this.callback?.(frame.slice(3));
     }

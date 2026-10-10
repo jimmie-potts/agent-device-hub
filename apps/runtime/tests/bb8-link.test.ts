@@ -20,9 +20,9 @@ it('authenticated gateway routes BB-8 LED to its Windows writer while the helper
   const {runtime, logs} = await run(t, {modules: [createCoreModule(), createBb8Module()], stateDir: await stateDir(t), configFile: files.config, edge: {schemas: bb8Schemas}});
   const sdk = await connectRemote({url: runtime.url, source: HELPER_SOURCE, token});
   const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
-  const db = new DatabaseSync(':memory:'), gatt = new FakeGatt(); let opens = 0;
+  const db = new DatabaseSync(':memory:'); let gatt = new FakeGatt(), opens = 0;
   const errors: unknown[] = [];
-  const helper = new HelperOwner({id: 'bb8', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => {opens++; return Promise.resolve(gatt);}}), onError: error => {errors.push(error);}});
+  const helper = new HelperOwner({id: 'bb8', configurationRevision: 0, database: db, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => {opens++; if (gatt.closed) gatt = new FakeGatt(); return Promise.resolve(gatt);}}), onError: error => {errors.push(error);}});
   t.after(async () => {await helper.stop(); await reader.close(); await sdk.close(); db.close();});
   await helper.start(); assert.equal(opens, 0);
   await assert.rejects(() => sdk.sync(['session'], () => {}, {timeoutMs: 1000}), e => e instanceof SdkError && e.body.error.code === 'forbidden');
@@ -58,6 +58,20 @@ it('authenticated gateway routes BB-8 LED to its Windows writer while the helper
   await waitFor(() => gatt.writes.length === 5 && helper.results.length === 0, 5000, 'LED persisted and helper receipt retired');
   assert.deepEqual(gatt.writes.at(-1)?.bytes.slice(2, -1), [2, 32, 2, 4, 10, 20, 30]);
   assert.equal(opens, 1); assert.deepEqual(errors, []);
+  const publicResults: import('@jimmie-potts/event-contracts/v2/devices').CompletedOutcome[] = [];
+  const cancelOutcomes = await reader.subscribe('bunny.event.bb8-led-set.bb8', message => {publicResults.push(message.data as import('@jimmie-potts/event-contracts/v2/devices').CompletedOutcome);});
+  t.after(() => cancelOutcomes.close());
+  for (const [mrsp, code] of [[4, 'unsupported-capability'], [7, 'invalid-request'], [255, 'internal']] as const) {
+    if (gatt.closed) {
+      assert.equal(await send('bb8-connect'), 200);
+      await waitFor(() => {const robot = state(); return robot?.link.status === 'known' && robot.link.value.connection === 'connected' && robot.link.value.connectionGeneration === helper.state.connectionGeneration && robot.lastResult.status === 'known' && robot.lastResult.value.result === 'succeeded';}, 5000, 'fresh reconnect after protocol refusal');
+    }
+    gatt.mrsp = mrsp; const prior = publicResults.length, writes = gatt.writes.length;
+    assert.equal(await send('bb8-led-set', {led: {target: 'main', rgb: [1, 2, 3]}}), 200);
+    await waitFor(() => publicResults.length === prior + 1 && helper.results.length === 0, 5000, 'public definitive refusal and retired helper receipt');
+    const outcome = publicResults.at(-1); assert.equal(outcome?.result, 'failed'); assert.equal(outcome?.evidence, 'transmitted'); assert.equal(outcome?.error?.code, code); assert.equal(gatt.writes.length, writes + 1); assert.equal(state()?.held, undefined);
+    await waitFor(() => {const link = state()?.link; return link?.status === 'known' && link.value.connectionGeneration === helper.state.connectionGeneration;}, 5000, 'refusal generation projection');
+  }
   const bytes = gatt.writes.length;
   const changed = JSON.parse(await readFile(files.credentials, 'utf8')) as typeof credentials;
   changed.credentials = changed.credentials.filter(item => item.id !== 'bb8-helper');
