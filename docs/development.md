@@ -212,7 +212,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-core and Workflow jobs' fifteen, the retained documentation job's twenty-five and the App verification job's thirty. Branch pushes do not duplicate PR checks.
+Workflow job's fifteen, the retained documentation job's twenty-five and the core and App verification jobs' thirty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
