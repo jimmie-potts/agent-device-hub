@@ -3,6 +3,7 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { errorBody, isErrorCode, type ErrorCode } from '@jimmie-potts/event-contracts/v2';
 import { SdkError } from '@jimmie-potts/sdk';
 import type { BatterySample, CollectionGap, RunRecord, VacuumStatus, Value } from './contracts.js';
+import { activity, normalizeStatus } from './normalize.js';
 export type Operation = 'status' | 'consumables' | 'summary' | 'record' | 'rooms' | 'map';
 export type Observation = {
     id: string;
@@ -27,6 +28,8 @@ export type Episode = {
     lastObservationId: string;
     endAtMs: number | null;
     runId: number | null;
+    /** Observed dock boundary, separate from a record-supported end/completion. */
+    terminal?: { observationId: string; observedAtMs: number };
 };
 export type Sample = {
     id: string;
@@ -132,7 +135,7 @@ const ELIGIBLE_SAMPLE = `s.run_id IS NOT NULL AND r.end_at_ms IS NOT NULL
  AND s.observed_at_ms BETWEEN e.start_at_ms AND json_extract(e.data,'$.lastObservedAtMs')
  AND NOT EXISTS(SELECT 1 FROM rr_run_conflicts c WHERE c.record_id=r.record_id)
  AND NOT EXISTS(SELECT 1 FROM rr_runs other WHERE other.record_id<>r.record_id AND other.begin_at_ms<=r.end_at_ms AND(other.end_at_ms IS NULL OR other.end_at_ms>=r.begin_at_ms))
- AND NOT EXISTS(SELECT 1 FROM rr_episodes other WHERE other.id<>e.id AND other.start_at_ms<=r.end_at_ms AND(other.end_at_ms IS NULL OR other.end_at_ms>=r.begin_at_ms))
+ AND NOT EXISTS(SELECT 1 FROM rr_episodes other WHERE other.id<>e.id AND other.start_at_ms<=r.end_at_ms AND(COALESCE(other.end_at_ms,json_extract(other.data,'$.terminal.observedAtMs')) IS NULL OR COALESCE(other.end_at_ms,json_extract(other.data,'$.terminal.observedAtMs'))>=r.begin_at_ms))
  AND NOT EXISTS(SELECT 1 FROM rr_gaps g WHERE g.start_at_ms<=s.observed_at_ms AND(g.end_at_ms IS NULL OR g.end_at_ms>=s.observed_at_ms))`;
 const MAX_JSON = 128 * 1024, MAX_MAP = 2 * 1024 * 1024;
 const OPERATIONS: readonly Operation[] = ['status', 'consumables', 'summary', 'record', 'rooms', 'map'];
@@ -381,12 +384,42 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
     }[] { this.identity(); integer(after); limit(size, 100); return this.many<Data & {
         seq: number;
     }>('SELECT seq,data FROM rr_episodes WHERE seq>? ORDER BY seq LIMIT ?', after, size).map(r => ({ sequence: r.seq, episode: JSON.parse(r.data) as Episode })); }
-    putEpisode(e: Episode): void { this.write(); identifier(e.id); integer(e.generation); integer(e.startAtMs); integer(e.lastObservedAtMs); if (e.lastObservedAtMs < e.startAtMs || (e.endAtMs !== null && integer(e.endAtMs) < e.lastObservedAtMs))
-        refuse('invalid-request'); const first = this.getObservation(e.startObservationId), last = this.getObservation(e.lastObservationId); if (!first || !last || first.operation !== 'status' || last.operation !== 'status' || !Object.hasOwn(first, 'value') || !Object.hasOwn(last, 'value') || first.generation !== e.generation || last.generation !== e.generation || first.observedAtMs !== e.startAtMs || last.observedAtMs !== e.lastObservedAtMs)
-        refuse('invalid-state'); const old = this.getEpisode(e.id); if (old ? (old.generation !== e.generation || old.startAtMs !== e.startAtMs || old.startObservationId !== e.startObservationId || e.lastObservedAtMs < old.lastObservedAtMs || (old.endAtMs !== null && old.endAtMs !== e.endAtMs) || old.runId !== e.runId) : e.runId !== null)
-        refuse('invalid-state'); this.storeEpisode(e); }
+    putEpisode(e: Episode): void {
+        this.write();
+        identifier(e.id); integer(e.generation); integer(e.startAtMs); integer(e.lastObservedAtMs);
+        if (e.lastObservedAtMs < e.startAtMs || (e.endAtMs !== null && integer(e.endAtMs) < e.lastObservedAtMs))
+            refuse('invalid-request');
+        const first = this.getObservation(e.startObservationId), last = this.getObservation(e.lastObservationId);
+        if (!first || !last || first.operation !== 'status' || last.operation !== 'status'
+            || !Object.hasOwn(first, 'value') || !Object.hasOwn(last, 'value')
+            || first.generation !== e.generation || last.generation !== e.generation
+            || first.observedAtMs !== e.startAtMs || last.observedAtMs !== e.lastObservedAtMs)
+            refuse('invalid-state');
+        if (e.terminal !== undefined) {
+            identifier(e.terminal.observationId); integer(e.terminal.observedAtMs);
+            const observation = this.getObservation(e.terminal.observationId);
+            const status = observation?.operation === 'status' && Object.hasOwn(observation, 'value')
+                ? normalizeStatus(observation.value) : undefined;
+            if (observation === undefined || status === undefined || observation.generation !== e.generation
+                || observation.observedAtMs !== e.terminal.observedAtMs
+                || activity(status) !== 'other' || status.stateCode.kind !== 'known'
+                || (status.stateCode.value !== 8 && status.stateCode.value !== 100)
+                || e.terminal.observedAtMs < e.lastObservedAtMs
+                || (e.endAtMs !== null && e.endAtMs > e.terminal.observedAtMs))
+                refuse('invalid-state');
+        }
+        const old = this.getEpisode(e.id);
+        if (old ? (old.generation !== e.generation || old.startAtMs !== e.startAtMs
+            || old.startObservationId !== e.startObservationId || e.lastObservedAtMs < old.lastObservedAtMs
+            || (old.endAtMs !== null && old.endAtMs !== e.endAtMs) || old.runId !== e.runId
+            || (old.terminal !== undefined && JSON.stringify(old.terminal) !== JSON.stringify(e.terminal))
+            || (old.terminal !== undefined && old.lastObservedAtMs !== e.lastObservedAtMs)) : e.runId !== null)
+            refuse('invalid-state');
+        this.storeEpisode(e);
+    }
     appendSample(s: Sample): boolean { this.write(); identifier(s.id); identifier(s.episodeId); integer(s.observedAtMs); if (integer(s.batteryPercent) > 100 || s.runId !== null)
         refuse('invalid-request'); const o = this.getObservation(s.id), e = this.getEpisode(s.episodeId); if (!o || !e || o.operation !== 'status' || !Object.hasOwn(o, 'value') || o.observedAtMs !== s.observedAtMs || o.generation !== e.generation || s.observedAtMs < e.startAtMs || (e.endAtMs !== null && s.observedAtMs > e.endAtMs))
+        refuse('invalid-state'); if (e.terminal !== undefined && s.observedAtMs > e.terminal.observedAtMs)
         refuse('invalid-state'); const data = json(s), old = this.one<Data>('SELECT data FROM rr_samples WHERE id=?', s.id); if (old) {
         same(old.data, data);
         return false;
@@ -400,7 +433,7 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
     } { this.write(); if (w.externallyValidated !== true)
         refuse('invalid-request'); identifier(w.episodeId); integer(w.recordId, 1); integer(w.startAtMs); integer(w.endAtMs); if (w.endAtMs < w.startAtMs)
         refuse('invalid-request'); const r = this.getRun(w.recordId), e = this.getEpisode(w.episodeId), no = { attached: false, samples: 0 }; if (!r || !e || r.endAtMs.status !== 'known' || e.endAtMs === null || (e.runId !== null && e.runId !== w.recordId) || r.startAtMs !== w.startAtMs || r.endAtMs.value !== w.endAtMs || e.startAtMs < w.startAtMs || e.lastObservedAtMs > w.endAtMs || this.conflictingRunWindow(w.recordId))
-        return no; if (this.one('SELECT 1 FROM rr_runs WHERE record_id<>? AND begin_at_ms<=? AND (end_at_ms IS NULL OR end_at_ms>=?) LIMIT 1', w.recordId, w.endAtMs, w.startAtMs) !== undefined || this.one('SELECT 1 FROM rr_episodes WHERE id<>? AND start_at_ms<=? AND (end_at_ms IS NULL OR end_at_ms>=?) LIMIT 1', w.episodeId, w.endAtMs, w.startAtMs) !== undefined || this.one('SELECT 1 FROM rr_samples WHERE episode_id=? AND run_id IS NOT NULL AND run_id<>? LIMIT 1', w.episodeId, w.recordId) !== undefined)
+        return no; if (this.one('SELECT 1 FROM rr_runs WHERE record_id<>? AND begin_at_ms<=? AND (end_at_ms IS NULL OR end_at_ms>=?) LIMIT 1', w.recordId, w.endAtMs, w.startAtMs) !== undefined || this.one("SELECT 1 FROM rr_episodes WHERE id<>? AND start_at_ms<=? AND (COALESCE(end_at_ms,json_extract(data,'$.terminal.observedAtMs')) IS NULL OR COALESCE(end_at_ms,json_extract(data,'$.terminal.observedAtMs'))>=?) LIMIT 1", w.episodeId, w.endAtMs, w.startAtMs) !== undefined || this.one('SELECT 1 FROM rr_samples WHERE episode_id=? AND run_id IS NOT NULL AND run_id<>? LIMIT 1', w.episodeId, w.recordId) !== undefined)
         return no; const added = this.run(`INSERT OR IGNORE INTO rr_sample_links(sample_id,run_id) SELECT s.id,? FROM rr_samples s WHERE s.episode_id=? AND s.run_id IS NULL AND s.observed_at_ms BETWEEN ? AND ? AND s.observed_at_ms<=? AND NOT EXISTS(SELECT 1 FROM rr_gaps g WHERE g.start_at_ms<=s.observed_at_ms AND(g.end_at_ms IS NULL OR g.end_at_ms>=s.observed_at_ms)) ORDER BY s.observed_at_ms,s.seq`, w.recordId, w.episodeId, w.startAtMs, w.endAtMs, e.lastObservedAtMs); this.run('UPDATE rr_samples SET run_id=? WHERE episode_id=? AND run_id IS NULL AND EXISTS(SELECT 1 FROM rr_sample_links l WHERE l.sample_id=rr_samples.id AND l.run_id=?)', w.recordId, w.episodeId, w.recordId); this.storeEpisode({ ...e, runId: w.recordId }); return { attached: true, samples: added }; }
     appendGap(g: Gap): boolean { this.write(); identifier(g.id); integer(g.startAtMs); if ((g.endAtMs !== null && integer(g.endAtMs) < g.startAtMs) || !GAP_REASONS.includes(g.reason))
         refuse('invalid-request'); if (g.episodeId !== null && !this.getEpisode(g.episodeId))
@@ -544,8 +577,8 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
         integer(generation, 1);
         return this.one(`SELECT 1 FROM rr_episodes
      WHERE json_extract(data,'$.runId') IS NULL
-       AND json_extract(data,'$.generation')<?
-     LIMIT 1`, generation) !== undefined;
+       AND (json_extract(data,'$.generation')<? OR (json_extract(data,'$.generation')=? AND json_extract(data,'$.terminal.observedAtMs') IS NOT NULL))
+     LIMIT 1`, generation, generation) !== undefined;
     }
     listUnresolvedEpisodes(generation: number, after = 0, size = 25): EpisodeRecoveryItem[] {
         this.identity();
@@ -556,9 +589,9 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
             seq: number;
         }>(`SELECT seq,data FROM rr_episodes
      WHERE json_extract(data,'$.runId') IS NULL
-       AND json_extract(data,'$.generation')<?
+       AND (json_extract(data,'$.generation')<? OR (json_extract(data,'$.generation')=? AND json_extract(data,'$.terminal.observedAtMs') IS NOT NULL))
        AND seq>?
-     ORDER BY seq LIMIT ?`, generation, after, size).map(row => ({
+     ORDER BY seq LIMIT ?`, generation, generation, after, size).map(row => ({
             sequence: row.seq,
             episode: JSON.parse(row.data) as Episode,
         }));
@@ -609,7 +642,8 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
         const episode = this.getEpisode(episodeId);
         const run = this.getRun(recordId);
         if (episode === undefined || run === undefined
-            || episode.generation >= generation
+            || episode.generation > generation
+            || (episode.generation === generation && episode.terminal === undefined)
             || episode.runId !== null
             || run.recordId * 1000 !== run.startAtMs
             || run.complete.status !== 'known' || run.complete.value !== 1
@@ -617,6 +651,7 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
             || run.endAtMs.value > checkedAt
             || episode.startAtMs < run.startAtMs
             || episode.lastObservedAtMs > run.endAtMs.value
+            || (episode.terminal !== undefined && run.endAtMs.value > episode.terminal.observedAtMs)
             || (episode.endAtMs !== null && episode.endAtMs !== run.endAtMs.value)
             || this.conflictingRunWindow(recordId))
             return no;

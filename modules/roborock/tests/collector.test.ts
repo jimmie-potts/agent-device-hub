@@ -6,12 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { errorBody, type Message, } from '@jimmie-potts/event-contracts/v2';
-import { InProcessBus, Outbox, SdkError, openModuleDatabaseFile, type ModuleContext, type Scheduler, } from '@jimmie-potts/sdk';
+import { InProcessBus, Outbox, SdkError, openModuleDatabaseFile, type LogFields, type ModuleContext, type Scheduler, } from '@jimmie-potts/sdk';
+import { checkModuleRecord, type HarnessRecord } from '@jimmie-potts/sdk/testing';
 import type { Reading, ReadOptions, VendorJson, } from '@jimmie-potts/roborock-transport';
 import { Collector, type CollectorTransport } from '../src/collector.js';
 import type { RoborockConfig } from '../src/configuration.js';
 import { RoborockStore } from '../src/store.js';
 import { roborockValidator, validateStatus } from '../src/families.js';
+import { reader } from '../transport/src/transport/reader.js';
 const BEGIN = 1700000000;
 const START = BEGIN * 1000;
 const flush = async (): Promise<void> => {
@@ -35,6 +37,7 @@ function manualClock() {
     };
     return {
         now: () => now,
+        jump: (milliseconds: number): void => { now += milliseconds; },
         scheduler,
         advance: async (milliseconds: number): Promise<void> => {
             const end = now + milliseconds;
@@ -156,10 +159,11 @@ async function world(context: TestContext) {
     };
     const controller = new AbortController();
     const logs: unknown[] = [];
+    const diagnostics: HarnessRecord[] = [];
     const log = {
         debug: () => { }, info: () => { },
-        warn: (_name: string, fields: unknown) => { logs.push(fields); },
-        error: (_name: string, fields: unknown) => { logs.push(fields); },
+        warn: (event: string, fields: LogFields = {}) => { logs.push(fields); diagnostics.push({ level: 'warn', event, fields }); },
+        error: (event: string, fields: LogFields = {}) => { logs.push(fields); diagnostics.push({ level: 'error', event, fields }); },
     };
     const moduleContext = {
         sdk, clock: { now: clock.now }, scheduler: clock.scheduler,
@@ -178,7 +182,21 @@ async function world(context: TestContext) {
         await participant.close();
         await rm(dir, { recursive: true, force: true });
     });
-    return { collector, store, database, clock, transport, publication, controller, logs, outbox };
+    return { collector, store, database, clock, transport, publication, controller, logs, diagnostics, outbox };
+}
+for (const code of ['capacity', 'internal', 'invalid-state'] as const) {
+    void test(`collector ${code} failures produce admissible module diagnostics`, async (context) => {
+        const w = await world(context);
+        w.collector.startlocal();
+        await w.clock.advance(1);
+        w.store.saveProjection = () => { throw new SdkError(errorBody(code)); };
+        await w.collector.poll();
+        assert.equal(w.collector.storageFailure(), code);
+        const record = w.diagnostics.find(item => item.event === 'operation.failed');
+        assert.ok(record !== undefined);
+        assert.equal(record.fields['bunny.code'], code);
+        assert.equal(checkModuleRecord('roborock', record), undefined);
+    });
 }
 void test('local start is inert, first cycle retains private originals and publishes exact records', async (context) => {
     const w = await world(context);
@@ -227,6 +245,35 @@ void test('cadence follows observed activity and never overlaps transport reads'
     assert.equal(w.transport.calls.filter(call => call === 'status').length, active + 1);
     assert.equal(w.transport.maximumActive, 1);
 });
+for (const cleaning of [true, false]) {
+    void test(`slow serialized reads retain the missed ${cleaning ? 'active' : 'idle'} poll deadline`, async (context) => {
+        const w = await world(context);
+        if (cleaning) w.transport.status = { state: 5, battery: 85, in_cleaning: 1, in_returning: 0 };
+        const wait = () => new Promise<void>(resolve => { w.clock.scheduler.after(9000, resolve); });
+        for (const method of ['readConsumables', 'readCleanSummary', 'readRoomMapping'] as const) {
+            const original = w.transport[method].bind(w.transport);
+            w.transport[method] = async () => { await wait(); return original(); };
+        }
+        if (!cleaning) {
+            const ids = Array.from({ length: 4 }, (_, index) => BEGIN - 1000 - index * 100);
+            w.transport.summary = { records: ids };
+            for (const id of ids) w.transport.records.set(id, { begin: id, end: id + 30, complete: 1 });
+            const original = w.transport.readCleanRecord.bind(w.transport);
+            w.transport.readCleanRecord = async id => { await wait(); return original(id); };
+        }
+        w.collector.startlocal();
+        await w.clock.advance(cleaning ? 27002 : 63002);
+        const gaps = w.database.prepare('SELECT data FROM rr_gaps ORDER BY seq').all()
+            .map(row => JSON.parse(String(row.data)) as { startAtMs: number; endAtMs: number; reason: string });
+        assert.deepEqual(gaps.map(gap => ({ startAtMs: gap.startAtMs, endAtMs: gap.endAtMs, reason: gap.reason })), [{
+            startAtMs: START + 1 + (cleaning ? 15000 : 60000),
+            endAtMs: START + (cleaning ? 27002 : 63002), reason: 'missed-poll',
+        }]);
+        assert.equal(w.transport.maximumActive, 1);
+        assert.equal(w.collector.state().availability, 'available');
+        assert.equal(w.store.counts().samples, cleaning ? 2 : 0);
+    });
+}
 void test('synthetic refresh follows an existing cycle with one new poll', async (context) => {
     const w = await world(context);
     w.collector.startlocal();
@@ -343,6 +390,35 @@ void test('supported record end commits before candidate map and keeps associati
     assert.equal(w.store.getRun(BEGIN)?.battery.availability, 'partial');
     assert.equal(w.collector.state().collection.maps, 'unverified');
 });
+void test('map storage retry commits retained bytes once and resumes later polls', async (context) => {
+    const w = await world(context);
+    w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    await w.clock.advance(15000);
+    w.transport.status = { state: 8, battery: 80, in_cleaning: 0, in_returning: 0 };
+    w.transport.summary = { records: [BEGIN] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 30, complete: 1, duration: 25 });
+    const save = w.store.saveMapCapture.bind(w.store);
+    let full = true;
+    w.store.saveMapCapture = (...args) => {
+        if (full) throw Object.assign(new Error('synthetic disk full'), { errcode: 13 });
+        return save(...args);
+    };
+    await w.clock.advance(15000);
+    assert.equal(w.collector.storageFailure(), 'capacity');
+    assert.equal(w.transport.calls.filter(call => call === 'map').length, 1);
+    full = false;
+    await w.collector.poll();
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.equal(w.store.counts().mapCaptures, 1);
+    const before = w.collector.state().revision;
+    for (let count = 0; count < 3; count += 1) await w.collector.poll();
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.ok(w.collector.state().revision > before);
+    assert.equal(w.transport.calls.filter(call => call === 'map').length, 1);
+    assert.equal(w.store.counts().mapCaptures, 1);
+});
 void test('startup historical records and pauses do not fetch historical maps or infer completion', async (context) => {
     const w = await world(context);
     w.transport.summary = { records: [BEGIN - 100] };
@@ -361,6 +437,78 @@ void test('startup historical records and pauses do not fetch historical maps or
     assert.ok(active !== null && active !== undefined);
     assert.equal(w.store.getEpisode(active)?.endAtMs, null);
     assert.equal(w.transport.calls.includes('map'), false);
+});
+void test('delayed records reconcile distinct observed runs without capturing an old map', async (context) => {
+    const w = await world(context);
+    const cleaning = (battery: number) => { w.transport.status = { state: 5, battery, in_cleaning: 1, in_returning: 0 }; };
+    const docked = (battery: number) => { w.transport.status = { state: 8, battery, in_cleaning: 0, in_returning: 0 }; };
+    cleaning(90);
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    const first = required(w.store.loadCheckpoint()?.activeEpisodeId);
+    w.clock.jump(19999);
+    docked(85);
+    await w.collector.poll();
+    assert.equal(w.store.getEpisode(first)?.endAtMs, null);
+    assert.equal(w.store.getEpisode(first)?.runId, null);
+    assert.equal(w.store.counts().runs, 0);
+    w.clock.jump(20000);
+    cleaning(80);
+    await w.collector.poll();
+    assert.equal(w.store.counts().episodes, 2);
+    assert.equal(w.store.getEpisode(first)?.endAtMs, null);
+    w.clock.jump(20000);
+    docked(75);
+    w.transport.summary = { records: [BEGIN, BEGIN + 35] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 15, complete: 1 });
+    w.transport.records.set(BEGIN + 35, { begin: BEGIN + 35, end: BEGIN + 55, complete: 1 });
+    await w.collector.poll();
+    for (const id of [BEGIN, BEGIN + 35]) {
+        assert.equal(w.store.listSamples(id).samples.length, 1);
+        assert.equal(w.store.getRun(id)?.battery.availability, 'partial');
+    }
+    assert.equal(w.store.listMapCaptures(BEGIN).length, 0);
+    assert.equal(w.store.listMapCaptures(BEGIN + 35).length, 1);
+    w.clock.jump(20000);
+    cleaning(70);
+    await w.collector.poll();
+    assert.equal(w.store.counts().episodes, 3);
+    w.clock.jump(20000);
+    docked(65);
+    w.transport.summary = { records: [BEGIN + 75, BEGIN + 35, BEGIN] };
+    w.transport.records.set(BEGIN + 75, { begin: BEGIN + 75, end: BEGIN + 95, complete: 1 });
+    await w.collector.poll();
+    assert.equal(w.store.listSamples(BEGIN + 75).samples.length, 1);
+    assert.equal(w.store.listMapCaptures(BEGIN + 75).length, 1);
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.equal(w.store.counts().samples, 6);
+});
+void test('multiple delayed completed records recover during a newer active run without maps', async (context) => {
+    const w = await world(context);
+    w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    for (const [at, state, battery] of [[20, 8, 85], [40, 5, 80], [60, 8, 75]] as const) {
+        w.clock.jump(START + at * 1000 - w.clock.now());
+        w.transport.status = { state, battery, in_cleaning: state === 5 ? 1 : 0, in_returning: 0 };
+        w.transport.summary = { records: at === 20 ? [BEGIN] : [BEGIN, BEGIN + 35] };
+        await w.collector.poll();
+    }
+    assert.equal(w.store.counts().episodes, 2);
+    assert.equal(w.store.counts().runs, 0);
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 15, complete: 1 });
+    w.transport.records.set(BEGIN + 35, { begin: BEGIN + 35, end: BEGIN + 55, complete: 1 });
+    w.transport.status = { state: 5, battery: 70, in_cleaning: 1, in_returning: 0 };
+    for (const at of [100, 130]) {
+        w.clock.jump(START + at * 1000 - w.clock.now());
+        await w.collector.poll();
+    }
+    assert.equal(w.store.counts().episodes, 3);
+    for (const id of [BEGIN, BEGIN + 35]) assert.equal(w.store.listSamples(id).samples.length, 1);
+    assert.equal(w.transport.calls.filter(call => call === 'map').length, 0);
+    const active = required(w.store.loadCheckpoint()?.activeEpisodeId);
+    assert.equal(w.store.getEpisode(active)?.endAtMs, null);
+    assert.equal(w.store.getEpisode(active)?.runId, null);
 });
 void test('deadline and stop retire late reads without another overlapping call or late commit', async (context) => {
     const w = await world(context);
@@ -382,6 +530,38 @@ void test('deadline and stop retire late reads without another overlapping call 
     assert.deepEqual(w.collector.state(), afterDeadline);
     assert.equal(w.transport.maximumActive, 1);
     assert.equal(w.transport.stopped, true);
+});
+void test('collector preserves real reader timeout and recovery diagnostics', async (context) => {
+    const w = await world(context);
+    const events: string[] = [];
+    const config = {
+        schemaVersion: 1 as const, deviceId: 'synthetic-a97', address: '192.168.10.20',
+        broker: 'mqtts://mqtt-us.roborock.com:8883', region: 'us' as const,
+    };
+    const session = {
+        schemaVersion: 1 as const, deviceId: config.deviceId, model: 'roborock.vacuum.a97' as const,
+        protocol: '1.0' as const, localKey: '0123456789abcdef', broker: config.broker,
+        rriot: { u: 'synthetic-user', s: 'sentinel-auth-secret', k: 'sentinel-auth-key' },
+    };
+    let silent = true;
+    const wire = () => silent ? new Promise<never>(() => { }) : Promise.resolve({
+        kind: 'json' as const, value: { state: 8, battery: 90, in_cleaning: 0, in_returning: 0 },
+    });
+    const record = (event: string): void => { events.push(event); };
+    const owner = reader(config, session, {
+        clock: { now: w.clock.now }, scheduler: w.clock.scheduler,
+        local: wire, mqtt: wire, log: { debug: record, info: record, warn: record, error: record },
+    });
+    context.after(() => { owner.stop(); });
+    w.transport.readStatus = options => owner.readStatus(options);
+    w.collector.startlocal();
+    await w.clock.advance(10001);
+    assert.equal(w.collector.state().availability, 'unavailable');
+    assert.deepEqual(events, ['device.unavailable']);
+    silent = false;
+    await w.collector.poll();
+    assert.equal(w.collector.state().availability, 'available');
+    assert.deepEqual(events, ['device.unavailable', 'device.available']);
 });
 function required<T>(value: T | null | undefined): T {
     assert.ok(value !== undefined && value !== null);

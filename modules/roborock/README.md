@@ -26,6 +26,9 @@ The generic `device` record declares all controls unsupported.
 The collector initially polls every 60 seconds outside supported cleaning or
 returning activity and every 15 seconds during it. Calls and record batches are
 bounded and serialized. These policy intervals do not establish push support.
+The reader has a 9-second deadline within the collector's 10-second fallback
+fence, so transport timeouts can report degradation before cancellation. Slow
+serialized work retains the original poll deadline and records missed intervals.
 A docked `clean_time` or `clean_area` may describe the previous run; it does not
 start or complete an episode. Unavailable replies and downtime create gaps,
 never synthetic battery samples or inferred completion.
@@ -44,6 +47,9 @@ associated episode. Later overlapping or contradictory run windows retire
 public sample eligibility while preserving the original observations and
 private links. Clock alignment remains unqualified until a real-run comparison.
 Lifetime counters remain distinct from the partial retained run inventory.
+An observed dock boundary separates later activity into a new episode without
+setting an end or completion. Delayed completed records revisit these separate
+windows; an old record never triggers a current-map capture.
 
 A run-end map is captured only after its matching record commits. Decoded bytes
 stay in a private deduplicated BLOB archive with request/response time, map
@@ -61,7 +67,8 @@ committed archive is separate evidence from successful publication.
 
 After a restart, successful status recovery closes prior unavailable intervals
 in pages of at most 100, retaining their original versions and first recovery
-time. A persisted cursor revisits older unresolved episodes in pages of 25.
+time. A persisted cursor revisits unresolved episodes from older generations
+and dock-bounded windows from the current generation in pages of 25.
 An explicit completed record with a compatible end can close an old episode;
 overlapping or conflicting evidence can still leave its samples unattached.
 Recovery never requests a current map for historical records.

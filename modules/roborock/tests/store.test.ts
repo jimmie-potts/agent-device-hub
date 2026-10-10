@@ -61,6 +61,37 @@ void test('real SQLite full-disk rollback preserves the committed snapshot and o
     await outbox.transaction(() => { store.appendObservation(observation('retry')); store.saveProjection({ ...before, revision: 2 }, false); });
     assert.equal(store.counts().observations, 2);
 });
+void test('observed dock boundaries survive restart without inventing record completion', async (t) => {
+    const w = await world(t), a = await w.start();
+    const dock: Observation = {
+        id: 'dock', operation: 'status', generation: 1, observedAtMs: AT + 70000,
+        value: { state: 8, battery: 79, in_cleaning: 0, in_returning: 0 },
+    };
+    await a.outbox.transaction(() => {
+        a.store.appendObservation(observation('active', AT + 1000));
+        a.store.appendObservation(dock);
+        a.store.putEpisode(episode('bounded', 'active', AT + 1000));
+        a.store.putEpisode({ ...present(a.store.getEpisode('bounded')), terminal: { observationId: dock.id, observedAtMs: dock.observedAtMs } });
+        a.store.appendSample({ id: 'active', episodeId: 'bounded', observedAtMs: AT + 1000, batteryPercent: 80, runId: null });
+    });
+    assert.equal(a.store.getEpisode('bounded')?.endAtMs, null);
+    assert.equal(a.store.getEpisode('bounded')?.runId, null);
+    await assert.rejects(a.outbox.transaction(() => {
+        a.store.putEpisode({ ...present(a.store.getEpisode('bounded')), terminal: { observationId: 'active', observedAtMs: AT + 1000 } });
+    }), refusal('invalid-state'));
+    a.database.close();
+    const b = await w.start();
+    assert.equal(b.store.hasHistoricalEpisodes(1), true);
+    assert.equal(b.store.listUnresolvedEpisodes(1).length, 1);
+    assert.equal(b.store.getEpisode('bounded')?.endAtMs, null);
+    await b.outbox.transaction(() => {
+        b.store.putRun(record());
+        assert.deepEqual(b.store.reconcileHistoricalEpisode('bounded', ID, 1, AT + 100000), { resolved: true, attached: true });
+    });
+    assert.equal(b.store.listSamples(ID).samples.length, 1);
+    assert.equal(b.store.listMapCaptures(ID).length, 0);
+    assert.equal(b.database.prepare('SELECT COUNT(*) AS n FROM rr_episode_versions WHERE episode_id=?').get('bounded')?.n, 4);
+});
 void test('exclusive SQLite ownership refuses another connection; closed private backup restores originals', async (t) => {
     const w = await world(t), a = await w.start();
     await a.outbox.transaction(() => { a.store.appendObservation(observation('original')); a.store.putRun(record()); });

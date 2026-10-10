@@ -12,6 +12,8 @@ export type CollectorTransport = ReadTransport & {
     identity(): Promise<string>;
 };
 const READ_MS = 10000;
+// Leave the reader time to classify its timeout before the fallback abort fence.
+const TRANSPORT_READ_MS = 9000;
 const CYCLE_MS = 120000;
 const MAP_WINDOW_MS = 60000;
 const MAX_BACKOFF_MS = 300000;
@@ -57,6 +59,7 @@ type Batch = {
     work: (control: Control) => Control;
     privateOnly?: boolean;
     publishOnly?: boolean;
+    capturedCandidateId?: string;
 };
 type Cycle = {
     controller: AbortController;
@@ -78,6 +81,7 @@ function matching(run: RunRecord, episode: Episode, now: number): boolean {
     return run.complete.status === 'known' && run.complete.value === 1
         && run.endAtMs.status === 'known'
         && run.endAtMs.value <= now
+        && (episode.terminal === undefined || run.endAtMs.value <= episode.terminal.observedAtMs)
         && episode.startAtMs >= run.startAtMs
         && episode.lastObservedAtMs <= run.endAtMs.value;
 }
@@ -243,7 +247,7 @@ export class Collector {
             return;
         this.#reported = code;
         this.#context.log.warn('operation.failed', {
-            'bunny.operation': 'roborock.collect',
+            'bunny.operation': 'status',
             'bunny.code': code,
         });
     }
@@ -260,7 +264,11 @@ export class Collector {
                 ? 1
                 : Math.max(1, (status.observedAtMs.status === 'known'
                     ? status.observedAtMs.value + cadence : this.#now() + cadence) - this.#now()));
-        this.#dueAt = this.#now() + delay;
+        // Timer admission may be late because other serialized reads ran long.
+        // Keep the observation's deadline so that the next poll retains the gap.
+        this.#dueAt = explicit === undefined && this.#pending === undefined
+            && this.#control.failureStreak === 0 && status.observedAtMs.status === 'known'
+            ? status.observedAtMs.value + cadence : this.#now() + delay;
         try {
             this.#timer = this.#context.scheduler.after(delay, () => { void this.poll(); });
         }
@@ -402,6 +410,9 @@ export class Collector {
         if (committed) {
             this.#storageFailure = undefined;
             this.#pending = undefined;
+            // Retire on durable commit, including a replay of the retained batch.
+            if (this.#pendingMap?.id === batch.capturedCandidateId)
+                this.#pendingMap = undefined;
             if (this.#alive()) {
                 this.#control = candidate;
                 if (candidate.candidate !== undefined)
@@ -512,7 +523,7 @@ export class Collector {
             this.#wirePending = true;
             let promise: Promise<Reading<T>>;
             try {
-                promise = call({ signal, timeoutMs: READ_MS });
+                promise = call({ signal, timeoutMs: Math.min(TRANSPORT_READ_MS, Math.max(1, cycle.deadline - started - 1000)) });
             }
             catch (error) {
                 this.#wirePending = false;
@@ -615,7 +626,7 @@ export class Collector {
         const paused = normalized.stateCode.kind === 'known'
             && normalized.stateCode.value === 10;
         if (positive && (episode === undefined || episode.endAtMs !== null
-            || episode.generation !== control.generation)) {
+            || episode.terminal !== undefined || episode.generation !== control.generation)) {
             if (episode !== undefined && episode.endAtMs === null)
                 control.retiredId = episode.id;
             episode = {
@@ -629,15 +640,21 @@ export class Collector {
             control.activeId = episode.id;
         }
         else if (episode !== undefined && episode.endAtMs === null
-            && episode.generation === control.generation && (positive || paused)) {
+            && episode.terminal === undefined && episode.generation === control.generation && (positive || paused)) {
             episode = {
                 ...episode, lastObservedAtMs: entry.at,
                 lastObservationId: entry.observation.id,
             };
             this.#store.putEpisode(episode);
         }
+        if (episode !== undefined && episode.endAtMs === null && episode.terminal === undefined
+            && episode.generation === control.generation && terminal(normalized)) {
+            episode = { ...episode, terminal: { observationId: entry.observation.id, observedAtMs: entry.at } };
+            this.#store.putEpisode(episode);
+        }
         if (episode !== undefined && episode.endAtMs === null
             && episode.generation === control.generation
+            && (episode.terminal === undefined || episode.terminal.observationId === entry.observation.id)
             && normalized.batteryPercent.kind === 'known') {
             this.#store.appendSample({
                 id: entry.observation.id, episodeId: episode.id,
@@ -848,7 +865,8 @@ export class Collector {
                                 continue;
                             const episode = this.#store.getEpisode(episodeId);
                             if (episode === undefined || episode.endAtMs !== null
-                                || episode.generation !== control.generation)
+                                || episode.generation !== control.generation
+                                || episode.terminal?.observationId !== status.observation.id)
                                 continue;
                             const matches = accepted.filter(run => matching(run, episode, checkedAt));
                             const run = matches.length === 1 ? matches[0] : undefined;
@@ -968,7 +986,8 @@ export class Collector {
             association: 'unverified',
             reasons: [],
         };
-        const done = await this.#commit({
+        await this.#commit({
+            capturedCandidateId: candidate.id,
             work: control => {
                 for (const entry of entries)
                     this.#store.appendObservation(entry.observation);
@@ -999,7 +1018,5 @@ export class Collector {
                 return control;
             },
         });
-        if (done)
-            this.#pendingMap = undefined;
     }
 }
