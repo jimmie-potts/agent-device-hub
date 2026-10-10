@@ -1608,6 +1608,7 @@ The catalog holds:
   operator directly: every command goes through the dispatcher. Time
   is real in a disposable run, so the step to `unavailable` at 30 s is left to
   the module's own tests;
+- `speaker-artwork`: the playback owner shares a synthetic Sony PNG through its real decoder worker and SDK state, retains the generation through pause and staleness, and clears it on an identical-title Sonos handoff. Acquisition is fixture-only in every simulation factory; installed and visible-device acceptance remain separate;
 - the LIFX module (#928) with a simulated pendant and Beam: the pendant follows the
   core's sessions in Work, painting once per change, a restart writes nothing to
   it, Free never paints it, a color command reaches it, and once it is switched

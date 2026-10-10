@@ -297,6 +297,12 @@ a consumer with exactly the owner's entities. `tests/families.test.mjs` runs the
 `tests/mapping.test.mjs` converts the 1.x corpora and a real agent-state owner's
 expiry and retirement through MAPPING.md's rules.
 
+### Playback artwork (`playback/2.1`)
+
+`registerCoreFamilies` registers both unchanged `playback/2.0` and `playback/2.1`. The new version adds optional top-level `artwork` for available/stale, known playing/paused records. Its closed branches are `{status: "missing" | "unsupported", generation}` and ready state with `generation`, `mediaType: "image/png"`, `width`, `height` and canonical padded `base64`. The opaque generation is a UUID v4; image dimensions are 1–128 and decoded bytes at most 65,536. The validator checks encoding, PNG signature and IHDR dimensions without decoding image contents on the bus thread. The producer performs full decoding and normalization. These checks do not prove arbitrary compressed contents are decodable.
+
+Receiver addresses, URLs and source identities are absent. Sync and live copies preserve the same shared bytes; no asset endpoint or receiver read is needed. Existing 2.0 records remain valid and cannot carry artwork. Unknown versions and fields, invalid associations and oversized image state are refused. `tests/playback-artwork.test.mjs` covers these boundaries; retained Python fixtures test 1.x regression compatibility rather than introduce a Python 2.1 mirror.
+
 ### Device families
 
 The device families describe every device's state and controls in one shared
