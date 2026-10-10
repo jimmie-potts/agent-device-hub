@@ -1,5 +1,8 @@
 // The playback module's scenarios (Hub #929, #999): one owner for the HT-A9 and the Move, presenting the speaker the
 // phone plays to. The catalog collects this file.
+import {SIMULATED_SECTION as TIDBYT_SECTION, type CloudState} from '@jimmie-potts/tidbyt';
+import {SIMULATED_SECTION as PIXOO_SECTION, schemaOf, type DisplayRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
+import {expectedTidbytArtwork, expectedPixooArtwork} from '../../fixtures/speaker-artwork.js';
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {SIMULATED_SECTION, controlPlayback, type SpeakersState} from '@jimmie-potts/playback';
 import {
@@ -122,51 +125,79 @@ const hasArtwork = (h: Harness, status: 'missing' | 'ready' | 'unsupported'): Ou
   return artwork.status === 'ready' && artwork.mediaType === 'image/png' && artwork.width === 1 && artwork.height === 1 &&
     Buffer.from(artwork.base64, 'base64').byteLength <= 65536 || 'the worker did not return the bounded synthetic PNG';
 };
+const displayArtwork = (h: Harness, artwork: boolean, device: 'tidbyt' | 'pixoo'): Outcome => {
+  if (device === 'tidbyt') {
+    const shown = deviceState<CloudState>(h, 'tidbyt').installations[TIDBYT_SECTION.nowPlaying.installation];
+    return shown !== undefined && JSON.stringify(shown.picture) === JSON.stringify(expectedTidbytArtwork(artwork)) || 'Tidbyt has not uploaded the independently expected card';
+  }
+  const shown = deviceState<SimulatedPixooState>(h, 'pixoo').shown;
+  return shown?.digests.length === 1 && shown.digests[0] === expectedPixooArtwork(artwork) || 'Pixoo has not sent the independently expected card';
+};
+const acquiredOnce = (h: Harness): Outcome => speakerState(h).artworkAcquisitions === 1 ||
+  `fixture byte acquisitions: ${String(speakerState(h).artworkAcquisitions)}`;
 const speakerArtwork: Scenario = {
   id: 'speaker-artwork',
   title: 'shared Sony artwork uses the real decoder and clears on an identical-title Sonos handoff',
-  seed: {modules: ['core', 'playback'], follows: [CORE_FAMILIES, ['playback']], config: {playback: PLAYBACK_SECTION}},
+  seed: {modules: ['core', 'playback', 'tidbyt', 'pixoo'],
+    follows: [CORE_FAMILIES, ['playback'], {families: ['device'], owner: 'bunny/modules/tidbyt'}, {families: ['device', 'pixoo-display'], owner: 'bunny/modules/pixoo'}],
+    config: {playback: PLAYBACK_SECTION, tidbyt: TIDBYT_SECTION, pixoo: {...PIXOO_SECTION.config, playback: PLAYBACK_SECTION.id}}},
   steps: [
-    expect('the playback owner and core are running', h => running(h, ['core', 'playback'])),
+    expect('the playback owner and core are running', h => running(h, ['core', 'playback', 'tidbyt', 'pixoo'])),
     expect('the SDK reader starts with text-only inactive playback', h => playbackShows(h, 'available inactive "" []'), 5000),
+    act('the operator selects Monitor before the phone starts playing', h => dispatchOnce(h, 'operator', 'art-monitor', {
+      key: `bunny.cmd.device-mode-set.${PIXOO_SECTION.config.device.id}`,
+      draft: {type: 'org.bunny.device-mode.set.requested', subject: PIXOO_SECTION.config.device.id,
+        dataschema: schemaOf('device-mode-set'), data: {mode: 'monitor'}},
+    }, 'req-art-monitor')),
+    expect('Monitor is active and shows its dashboard before playback starts', h => {
+      const display = h.reader.states<DisplayRecord>('pixoo-display', 'bunny/modules/pixoo')[0]?.data;
+      return display?.mode === 'monitor' && display.participating && display.showing === 'dashboard' || 'Monitor has not become active';
+    }, 5000),
     act('the phone plays the synthetic same-title track to Sony without artwork', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'Same Track'});
+      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
     }),
     expect('the reader has playing metadata, controls and missing artwork', h =>
-      playbackShows(h, 'available playing "Same Track" [pause,next,previous]') === true ? hasArtwork(h, 'missing') : playbackShows(h, 'available playing "Same Track" [pause,next,previous]'), 5000),
+      playbackShows(h, 'available playing "A" [pause,next,previous]') === true ? hasArtwork(h, 'missing') : playbackShows(h, 'available playing "A" [pause,next,previous]'), 5000),
     act('the operator explicitly selects the synthetic Sony PNG fixture', h => {
       h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
     }),
     expect('the real decoder makes the shared SDK artwork ready', h => hasArtwork(h, 'ready'), 8000),
+    expect('Pixoo sends the real worker RGB card with the fixture image', h => displayArtwork(h, true, 'pixoo'), 5000),
+    expect('Tidbyt uploads the real worker WebP card with the fixture image', h => displayArtwork(h, true, 'tidbyt'), 18_000),
+    expect('one producer byte acquisition fed both render workers', acquiredOnce),
     expect('artwork publication preserves the track, availability and controls', h =>
-      playbackShows(h, 'available playing "Same Track" [pause,next,previous]')),
+      playbackShows(h, 'available playing "A" [pause,next,previous]')),
     act('the operator pauses the speaker through the existing dispatcher', h =>
       dispatchOnce(h, 'operator', 'art-pause', playbackCommand('pause'), 'req-art-pause')),
     expect('only Sony heard pause once', h => speakersGot(h, 'move [] ht-a9 [pause]')),
+    expect('pause history preserves the succeeded transmitted outcome', h => recorded(h, 'req-art-pause', 'succeeded', 'transmitted')),
     expect('pause changes metadata but preserves the ready generation', h => {
-      const text = playbackShows(h, 'available paused "Same Track" [next,previous]');
+      const text = playbackShows(h, 'available paused "A" [next,previous]');
       return text === true ? artworkRecord(h)?.artwork?.generation === firstReadyGeneration(h) || 'pause changed the artwork generation' : text;
     }, 5000),
     act('Sony stops reporting metadata while the ready thumbnail is retained', h => {
       h.simulate({device: 'playback', speaker: 'sony', action: 'silent'});
     }),
     expect('metadata freshness still turns stale without changing the ready generation', h => {
-      const text = playbackShows(h, 'stale paused "Same Track" [next,previous]');
+      const text = playbackShows(h, 'stale paused "A" [next,previous]');
       return text === true ? artworkRecord(h)?.artwork?.status === 'ready' && artworkRecord(h)?.artwork?.generation === firstReadyGeneration(h) || 'freshness changed the image association' : text;
     }, 9000),
     act('Sony answers metadata polls again', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'answer'}); }),
     expect('playback returns to available with its existing ready image', h =>
-      playbackShows(h, 'available paused "Same Track" [next,previous]') === true ? hasArtwork(h, 'ready') : playbackShows(h, 'available paused "Same Track" [next,previous]'), 6000),
+      playbackShows(h, 'available paused "A" [next,previous]') === true ? hasArtwork(h, 'ready') : playbackShows(h, 'available paused "A" [next,previous]'), 6000),
     act('the phone hands the same reported title to Sonos', h => {
       h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Same Track'});
+      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
     }),
     expect('Sonos has the same title with unsupported artwork and a different generation', h => {
-      const text = playbackShows(h, 'available playing "Same Track" [pause,next,previous]');
+      const text = playbackShows(h, 'available playing "A" [pause,next,previous]');
       if (text !== true) return text;
       const image = artworkRecord(h)?.artwork;
       return image?.status === 'unsupported' && image.generation !== firstReadyGeneration(h) || 'Sony artwork crossed the handoff';
     }, 5000),
+    expect('Pixoo clears Sony artwork while preserving identical Sonos text', h => displayArtwork(h, false, 'pixoo'), 5000),
+    expect('Tidbyt clears Sony artwork while preserving identical Sonos text', h => displayArtwork(h, false, 'tidbyt'), 18_000),
+    holds('pause, freshness changes and handoff caused no extra fixture acquisition', acquiredOnce, 100),
     holds('shared state and logs expose no private source URL, secret or raw logged image', async h => {
       const address = noSpeakerAddress(h);
       if (address !== true) return address;

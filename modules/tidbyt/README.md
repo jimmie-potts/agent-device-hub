@@ -159,6 +159,21 @@ unknown playback, a stopped track or another input removes the card. While the
 copy does not follow the playback module, the last card is dimmed, and it is
 removed once the copy has not followed for 30 s.
 
+With a ready `playback/2.1` thumbnail, the worker contains the static PNG in a
+24×24 black region at `(0, 8)` and draws title and artist to its right, starting
+at x=27. The play/pause/stale marker stays above the image. Staleness dims the
+image and text together. The worker admits at most 64 KiB and 128×128 input
+pixels, checks the declared dimensions and refuses animation or malformed PNGs
+before composition. Missing, unsupported or refused artwork uses the existing
+text layout. The module never fetches an image or imports the playback owner.
+
+Each render and queued cloud call retains a private observation association.
+The module checks it after waits and at queue admission, including after a
+rate hold. Superseded work that sent no request leaves the write gate and stored
+presence unchanged; a call already sent retains its real outcome. Only a digest
+of ready image content joins the stored frame key; bytes and association tokens
+are neither persisted there nor added to diagnostics.
+
 ### The start window
 
 Each start and restart writes nothing until what a tile shows is known, for at
@@ -254,6 +269,7 @@ the Tidbyt's routing ID. It never logs the cloud's device ID, the key or a frame
 | `operation.failed` | WARN | The cloud refused a tile's call, answered with a server error, or a render failed, once per run of failures of that tile, and again when the cloud refuses the key or the device inside that run, with the code: `unauthenticated`, `forbidden`, `not-found`, `invalid-request`, `capacity`, `uncertain-result` or `unavailable` |
 | `operation.failed` / `operation.completed` | ERROR / INFO | A fault of the module's own in a tile's evaluation, with `bunny.code` `internal` and its `error.type`, once per run of faults; and the next evaluation that completes, with no `bunny.operation.id` |
 | `operation.failed` / `operation.completed` | WARN / INFO | A copy stopped following its owner, or follows again: `bunny.operation` `feed`, `bunny.participant` the owner |
+| `operation.failed` / `operation.completed` | WARN / INFO | Artwork refused with a fixed registry code, once per code change, and the next valid ready image: `bunny.operation` `playback`, without `bunny.operation.id`, bytes or association tokens |
 | `operation.failed` / `operation.completed` | WARN, or ERROR for `internal` / INFO | The database refused a commit, once per run, with `bunny.operation` `storage` |
 | `operation.failed` | WARN | The writer lease was refused at start: `bunny.operation` `startup`, `bunny.reason` `busy`, `unauthorized` or `unavailable` |
 | `outbox.republished` | INFO | Each start |
@@ -286,6 +302,34 @@ it; the catalog's `tidbyt-tiles` scenario drives it
 
 `npm run test:tidbyt-module` builds, then runs `test:tidbyt-module:built`. The
 tests need no cloud and no Python.
+
+`artwork-render.test.ts` compares complete independently expected RGB frames
+with WebP decoded through libwebp, including paused/stale cards, narrow artwork,
+long text and exact text fallback. `writer.test.ts` covers obsolete renders,
+queued pushes/removals and rate holds. The runtime's `speaker-artwork` scenario
+uses both real display workers and fake queues, counts one producer acquisition
+and clears the Sony image on a same-title Sonos handoff. See
+[the focused commands](../../docs/development.md#tidbyt-module-checks).
+
+### Physical artwork trial
+
+This trial belongs to [#1054](https://github.com/jimmie-potts/agent-device-hub/issues/1054)
+after its established runtime upgrade. Golden frames and cloud acknowledgment
+do not establish visible-device acceptance.
+
+1. Verify the installed revision, running identity and health through the
+   qualified runtime upgrade procedure. Privately confirm the configured cloud
+   device and installation IDs and obtain authorization for content replacement.
+2. Play an owner-selected Sony track with artwork. Wait for the tile's 15 s gate
+   and its next normal rotation opportunity; observe image, text and status.
+3. Select another track and observe its current image at the next eligible
+   opportunity. Then select missing-artwork content or hand off to Sonos and
+   observe readable text with the Sony image cleared.
+4. Stop playback and observe removal of the now-playing installation while the
+   normal rotation and status tile continue. If the trial fails, use the
+   qualified runtime recovery procedure; do not start the retained old writer
+   concurrently. Keep targets, content and observation evidence private, and
+   publish only sanitized results with the tested revision and their limits.
 
 - `render.test.ts`, `golden.test.ts`: the renderer's copied tests, the worker's
   render, and the golden frames decoded by `sharp`, with a changed pixel, a

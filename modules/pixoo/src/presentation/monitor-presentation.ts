@@ -1,3 +1,4 @@
+import {artworkKey, type CardContext} from './card-context.js';
 import type {Player} from '../playback/index.js';
 import {presentationConfiguration,type PresentationConfiguration,type PresentationStatus,type IntegrationAction,type NowPlayingMedia,type NowPlayingSetting,type NowPlayingState} from '../core/index.js';
 import {DashboardService} from './dashboard-service.js';
@@ -21,7 +22,7 @@ interface Options {
  /** Renders the dashboard's frames, such as in a worker thread. Defaults to rendering in this thread. */
  renderDashboard?:(layout:DashboardLayout)=>Uint8Array[]|Promise<Uint8Array[]>;
  /** Renders a card's frame, such as in a worker thread. Defaults to rendering in this thread. */
- renderCard?:(view:Card)=>Uint8Array|Promise<Uint8Array>;
+ renderCard?:(view:Card,context?:CardContext)=>Uint8Array|Promise<Uint8Array>;
 }
 type Takeover={kind:'popup'|'whole';generation:number;until:number};
 const blocking=new Set(['approval','input','question']);
@@ -38,6 +39,8 @@ export class MonitorPresentation {
  /** The last submitted frame's source: a dashboard rendition or a card. */
  private lastFrame='';
  private playback:PlaybackSourceStatus={source:'unavailable',view:{card:false}};
+ private cardContext:CardContext|undefined;
+ private cardWrite:{abort:AbortController;current:()=>boolean;key:string}|null=null;
  private nowPlaying:NowPlayingSetting;
  /** The last fresh track, and whether it was playing; stale reads never change it. */
  private heard:{key:string|null;playing:boolean}={key:null,playing:false};
@@ -49,7 +52,7 @@ export class MonitorPresentation {
  private heldFrom:number|null=null;
  private lastOutcome:PresentationStatus['lastOutcome']=null;
  /** The current card's frame: null while it renders, or after a failed render until `retryAt`. */
- private card:{key:string;rgb:Uint8Array|null;retryAt:number}|null=null;
+ private card:{key:string;observation:string;rgb:Uint8Array|null;retryAt:number}|null=null;
  /** The last card that finished rendering, which stays on the display while a changed card renders. */
  private previousCard:{key:string;rgb:Uint8Array}|null=null;
  private tail:Promise<unknown>=Promise.resolve();
@@ -75,26 +78,27 @@ export class MonitorPresentation {
  /** Current cached card only. Reading never starts a render or substitutes the previous track's pixels. */
  cachedCard():Uint8Array|null{
   const card=this.card;
-  return this.playback.view.card&&card?.key==='card:'+JSON.stringify(this.playback.view)&&card.rgb!==null?card.rgb.slice():null;
+  return this.playback.view.card&&card?.key===this.cardKey(this.playback.view)&&card.observation===this.observation()&&card.rgb!==null?card.rgb.slice():null;
  }
  /** The dashboard's latest layout, rendered or not, not copied: the sessions, matches and page the display record reports. */
  layout():Readonly<DashboardLayout>|null{return this.dashboard.layout();}
  /** The dashboard renders only while Monitor participates; its layout follows every input. */
- submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter,this.active);if(this.attention())this.popupUntil=0;this.onChange();}
+ submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter,this.active);if(this.attention())this.popupUntil=0;this.invalidateCardWrite();this.onChange();}
  interrupt(){this.interrupts++;this.dropTakeover();this.suspend();}
- suspend(){this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;this.onChange();}
+ suspend(){this.cancelCardWrite();this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;this.onChange();}
  private attention():boolean{return this.view?.snapshot?.sessions.some(session=>session.attention.some(item=>blocking.has(item.kind)))??false;}
  /** Latest playback evidence. A new fresh track, or playback starting, is a start; stale reads are never one. */
- submitPlayback(status:PlaybackSourceStatus){
+ submitPlayback(status:PlaybackSourceStatus,context?:CardContext){
   if(this.closed)return;
-  this.playback=structuredClone(status);
+  this.playback=structuredClone(status);this.cardContext=context===undefined?undefined:structuredClone(context);
+  this.invalidateCardWrite();
   const view=status.view;let started=false;
   if(view.card&&!view.stale){const key=trackKey(view);started=view.status==='playing'&&(!this.heard.playing||key!==this.heard.key);this.heard={key,playing:view.status==='playing'};}
   else if(!view.card)this.heard={...this.heard,playing:false};
   if(started&&this.active&&!this.attention())this.popupUntil=this.clock()+POPUP_MS;
   if(started&&this.nowPlaying.media==='popup')this.beginTakeover('popup');
   if(this.nowPlaying.media==='whole'&&view.card)this.beginTakeover('whole');
-  this.settleTakeover();this.onChange();
+  this.settleTakeover();this.invalidateCardWrite();this.onChange();
  }
  /** What the display record reports of Now Playing, without the card's pixels. */
  nowPlayingSummary():Omit<NowPlayingStatus,'card'|'lastTakeover'|'source'>{
@@ -113,19 +117,21 @@ export class MonitorPresentation {
   */
  private cardFrame(view:NowPlayingView):Uint8Array|null{
   if(!view.card)return null;
-  const key='card:'+JSON.stringify(view),current=this.card;
-  if(current?.key===key&&(current.rgb!==null||this.clock()<current.retryAt))return current.rgb;
+  const key=this.cardKey(view),observation=this.observation(),current=this.card;
+  if(current?.key===key&&current.rgb!==null){current.observation=observation;return current.rgb;}
+  if(current?.key===key&&current.observation===observation&&this.clock()<current.retryAt)return null;
   if(current!==null&&current.rgb!==null)this.previousCard={key:current.key,rgb:current.rgb};
-  const render=this.options.renderCard??renderNowPlaying;
+  const render:NonNullable<Options['renderCard']>=this.options.renderCard??(view=>renderNowPlaying(view));
   let rendered:Uint8Array|Promise<Uint8Array>;
-  try{rendered=render(view);}catch{this.card={key,rgb:null,retryAt:this.clock()+CARD_RETRY_MS};return null;}
-  if(rendered instanceof Uint8Array){this.card={key,rgb:rendered,retryAt:0};return rendered;}
-  const pending={key,rgb:null as Uint8Array|null,retryAt:Infinity};this.card=pending;
-  void rendered.then(rgb=>{if(this.card!==pending||this.closed)return;pending.rgb=rgb;this.onChange();},()=>{if(this.card===pending)pending.retryAt=this.clock()+CARD_RETRY_MS;});
+  try{rendered=render(view,this.cardContext);}catch{this.card={key,observation,rgb:null,retryAt:this.clock()+CARD_RETRY_MS};return null;}
+  if(rendered instanceof Uint8Array){this.card={key,observation,rgb:rendered,retryAt:0};return rendered;}
+  const pending={key,observation,rgb:null as Uint8Array|null,retryAt:Infinity};this.card=pending;
+  void rendered.then(rgb=>{if(this.card!==pending||this.closed||pending.observation!==this.observation()||pending.key!==this.cardKey(this.playback.view))return;pending.rgb=rgb;this.onChange();},()=>{if(this.card===pending&&pending.observation===this.observation())pending.retryAt=this.clock()+CARD_RETRY_MS;});
   return null;
  }
  /** Persist a new Media setting, then end a takeover it no longer wants or start one it now does. */
  async setNowPlaying(media:NowPlayingMedia):Promise<void>{
+  this.cancelCardWrite();
   return this.enqueue(async()=>{
    const next:NowPlayingSetting={version:1,media};
    await this.options.saveNowPlaying?.(next);this.nowPlaying=next;
@@ -153,7 +159,7 @@ export class MonitorPresentation {
  private settleTakeover(){
   const takeover=this.takeover;if(!takeover)return;
   if(this.playback.view.card&&this.clock()<takeover.until&&this.nowPlaying.media===takeover.kind)return;
-  this.takeover=null;this.lastFrame='';this.onChange();
+  this.cancelCardWrite();this.takeover=null;this.lastFrame='';this.onChange();
   void this.enqueue(async()=>{
    const state=this.player.getState();
    if(this.closed||this.configuration.mode!=='media'||state.generation!==takeover.generation||state.intent!=='paused'||!state.requestedScreenOn){this.lastTakeover='dropped';return;}
@@ -172,19 +178,23 @@ export class MonitorPresentation {
  /** Forget a takeover without resuming: the user, the screen or a failure owns what happens next. */
  private dropTakeover(){if(!this.takeover)return;this.takeover=null;this.lastTakeover='dropped';this.lastFrame='';this.onChange();}
  /** The picture the display should show now, if the presentation owns it. */
- private frame():{key:string;frames:ReadonlyArray<Uint8Array|number[]>;generation:number;card:boolean}|null{
+ private frame():{key:string;frames:ReadonlyArray<Uint8Array|number[]>;generation:number;card:boolean;retained?:boolean}|null{
   const view=this.playback.view,ready=this.cardFrame(view);
   // While a changed card renders, the card the display already shows stays, under its own key, so nothing is sent again.
   const previous=this.previousCard;
-  const card=ready!==null?{key:'card:'+JSON.stringify(view),rgb:ready}:view.card&&previous!==null&&this.lastFrame===previous.key?{key:previous.key,rgb:previous.rgb}:null;
+  const card=ready!==null?{key:this.cardKey(view),rgb:ready,retained:false}:view.card&&previous!==null&&this.lastFrame===previous.key?{key:previous.key,rgb:previous.rgb,retained:true}:null;
   if(this.active){
-   if(this.popupUntil!==0&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.playerGeneration,card:true};
+   if(this.popupUntil!==0&&view.card)return card===null?null:{key:card.key,frames:[card.rgb],generation:this.playerGeneration,card:true,retained:card.retained};
    const rendition=this.dashboard.current();
    return rendition?{key:'dashboard:'+rendition.generation,frames:rendition.frames,generation:this.playerGeneration,card:false}:null;
   }
-  if(this.takeover!==null&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.takeover.generation,card:true};
+  if(this.takeover!==null&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.takeover.generation,card:true,retained:card.retained};
   return null;
  }
+ private observation():string{return this.cardContext?.observation??JSON.stringify(this.playback.view);}
+ private cardKey(view:NowPlayingView):string{return 'card:'+JSON.stringify(view)+':'+artworkKey(this.cardContext?.artwork);}
+ private cancelCardWrite():void{this.cardWrite?.abort.abort();}
+ private invalidateCardWrite():void{if(this.cardWrite&&!this.cardWrite.current())this.cancelCardWrite();}
  private enqueue<T>(work:()=>Promise<T>):Promise<T>{
   if(this.closed)return Promise.reject(new ApiError('closed',503));
   const result=this.tail.then(()=>{if(this.closed)throw new ApiError('closed',503);return work();});this.tail=result.catch(()=>{});return result;
@@ -253,11 +263,20 @@ export class MonitorPresentation {
   this.takeOverNow();
   const frame=this.frame();
   if(changed)this.onChange();
-  if(!frame||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;
+  this.invalidateCardWrite();
+  if(!frame||frame.retained===true||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;
   const generation=this.generation,playerGeneration=frame.generation,takeover=this.active?null:this.takeover;
   const renditionGeneration=this.dashboard.status().rendition?.generation??0;
+  const observation=this.observation(),abort=new AbortController();
+  const current=()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
+   &&observation===this.observation()&&frame.key===this.cardKey(this.playback.view)
+   &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
+  const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
-  void this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration).then(result=>{
+  void this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,write===null?{}:{signal:abort.signal,current}).then(result=>{
+   if(write!==null&&abort.signal.aborted&&(result===undefined||!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')){
+    if(this.lastFrame===write.key)this.lastFrame='';return;
+   }
    // A Media takeover reports through its own status; a failed or uncertain card upload ends it without resuming.
    const sent=result?.ok===true;
    if(takeover){if(!sent&&this.takeover===takeover)this.dropTakeover();return;}
@@ -266,7 +285,7 @@ export class MonitorPresentation {
   }).catch(()=>{
    if(takeover){if(this.takeover===takeover)this.dropTakeover();return;}
    this.lastOutcome={generation,renditionGeneration,status:'failed',code:'operation-failed'};if(generation===this.generation)this.suspend();
-  }).finally(()=>{this.inFlight=false;this.onChange();});
+  }).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;this.inFlight=false;this.onChange();});
  }
  async close(){if(this.closed)return;this.closed=true;this.dropTakeover();this.suspend();this.unsubscribe();this.dashboard.close();await this.tail;}
 }

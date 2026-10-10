@@ -12,7 +12,7 @@
 // has no outcome to report: a write that failed is not sent again, and a later write is a fresh one for the current
 // state.
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -145,6 +145,9 @@ type Tile = {
   failing: ErrorCode | undefined;
   /** Whether a run of the module's own faults in this tile's evaluation has been logged. */
   faulting: boolean;
+  targetIdentity: string;
+  association: string;
+  artworkFailing: ErrorCode | undefined;
 };
 
 /** One start of the module, from `start` to `stop`. */
@@ -449,10 +452,11 @@ class TidbytRun {
     const {clock, signal} = this.#context;
     const tile: Tile = {
       name, operation: name === 'status' ? 'status' : 'playback', installation, poll, trigger: undefined, requested: false, running: undefined, timer: undefined,
-      failing: undefined, faulting: false,
+      failing: undefined, faulting: false, targetIdentity: '', association: randomUUID(), artworkFailing: undefined,
       writer: new TileWriter({
         queue, installation: target, minIntervalMs: this.#timing.minIntervalMs, refreshMs: this.#timing.refreshMs, pollMs: poll, now: () => clock.now(),
-        stopped: () => this.#closing || signal.aborted, render: request => this.#render(request), report: call => { this.#report(tile, call); },
+        stopped: () => this.#closing || signal.aborted, current: target => !this.#closing && !signal.aborted && target.association === tile.association && target.association === this.#captureTarget(tile).association,
+        render: request => this.#render(request, tile), report: call => { this.#report(tile, call); },
         begin: call => this.#begin(tile, call),
         remember: memory => { this.#remember(installation, memory); }, ...(restored === undefined ? {} : {restored}),
       }),
@@ -485,13 +489,28 @@ class TidbytRun {
     // other record is followed, inside the window too.
     if (starting && (record === undefined || record.availability === 'unavailable')) return {kind: 'hold'};
     const view = nowPlayingView({record, following: copy.following, lostForMs});
-    return view.card ? {kind: 'show', key: JSON.stringify(view), request: {tile: 'now-playing', view}} : {kind: 'remove'};
+    if (!view.card) return {kind: 'remove'};
+    const artwork = record?.artwork;
+    const imageKey = artwork?.status === 'ready' ? ':' + createHash('sha256').update(JSON.stringify([artwork.mediaType, artwork.width, artwork.height, artwork.base64])).digest('hex') : '';
+    const observation = JSON.stringify([PLAYBACK, record?.id, artwork?.generation ?? record?.revision]);
+    return {kind: 'show', key: JSON.stringify(view) + imageKey, observation, request: {tile: 'now-playing', view, ...(artwork === undefined ? {} : {artwork})}};
+  }
+
+  /** Capture a private association at every input, including changes that arrive while a write waits. */
+  #captureTarget(tile: Tile): TileTarget {
+    const target = this.#target(tile);
+    const identity = JSON.stringify([target.kind, target.kind === 'show' ? target.key : null, target.observation ?? null]);
+    if (identity !== tile.targetIdentity) {tile.targetIdentity = identity; tile.association = randomUUID();}
+    return {...target, association: tile.association};
   }
 
   /** Asks for an evaluation of the tile. Requests made while one runs coalesce into one more. */
   #update(tile: Tile, parent: TraceContext | undefined): void {
     if (this.#closing) return;
-    if (parent !== undefined) tile.trigger = parent;
+    // A state message is structurally a TraceContext; retain only its declared tracing field.
+    if (parent !== undefined) tile.trigger = {traceparent: parent.traceparent};
+    // Invalidate waiting work even when evaluating this input fails. The loop owns fault reporting and retry.
+    try {this.#captureTarget(tile);} catch {tile.targetIdentity = 'fault'; tile.association = randomUUID();}
     tile.requested = true;
     if (tile.running !== undefined) return;
     const running = this.#loop(tile).finally(() => {
@@ -509,7 +528,7 @@ class TidbytRun {
       let wakeMs = tile.poll;
       try {
         if (this.#dirty) await this.#commitWanted(undefined);
-        wakeMs = await tile.writer.write(this.#target(tile));
+        wakeMs = await tile.writer.write(this.#captureTarget(tile));
         this.#healthy(tile);
       } catch (error) {
         // A fault of the module's own, never the cloud's: logged once per run, by type, and the tile tries again at its
@@ -534,12 +553,23 @@ class TidbytRun {
   }
 
   /** Draws and encodes a frame in a worker thread, which the module's stop ends. */
-  async #render(request: TileRequest): Promise<Uint8Array> {
+  async #render(request: TileRequest, tile: Tile): Promise<Uint8Array> {
+    const association = this.#captureTarget(tile).association;
     const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {
       timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: this.#context.signal,
     });
     if (typeof reply !== 'object' || reply === null || !reply.ok || !(reply.webp instanceof Uint8Array)) {
       throw new SdkError(errorBody('internal', {detail: 'the render worker answered without a frame'}));
+    }
+    if (request.tile === 'now-playing' && association === tile.association && association === this.#captureTarget(tile).association) {
+      const fields = {...this.#deviceField(), 'bunny.operation': 'playback'};
+      if (reply.artworkCode !== undefined && reply.artworkCode !== tile.artworkFailing) {
+        tile.artworkFailing = reply.artworkCode;
+        this.#context.log.warn('operation.failed', {...fields, 'bunny.code': reply.artworkCode});
+      } else if (reply.artworkCode === undefined && request.artwork?.status === 'ready' && tile.artworkFailing !== undefined) {
+        tile.artworkFailing = undefined;
+        this.#context.log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+      }
     }
     return reply.webp;
   }

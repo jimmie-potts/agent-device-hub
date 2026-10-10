@@ -32,7 +32,8 @@ import {playerContent} from './player-content.js';
 import {readMonitorContent} from './monitor-content.js';
 import type {PlaybackSourceStatus} from '../presentation/sources.js';
 import {PixooUploads} from './upload.js';
-import type {RenderRequest} from './render-worker.js';
+import type {RenderRequest, RenderReply} from './render-worker.js';
+import {artworkKey, type CardContext} from '../presentation/card-context.js';
 import {
   DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, schemaOf,
   type AssetChangeRequest, type DisplayRecord, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
@@ -183,6 +184,8 @@ class PixooRuntime {
   #serial: Promise<unknown> = Promise.resolve();
   /** The Now Playing view last given to the presentation, so an unchanged one is not given again. */
   #nowPlaying = '';
+  #cardInputKey = '';
+  #artworkFailing: ErrorCode | undefined;
   #catalogTail: Promise<unknown> = Promise.resolve();
   /** Hosted renditions the first read of the catalog listed before their frames were checked. */
   readonly #unchecked = new Set<string>();
@@ -267,7 +270,13 @@ class PixooRuntime {
       },
       clock: () => clock.now(),
       renderDashboard: layout => this.#render({kind: 'dashboard', layout}),
-      renderCard: view => this.#render({kind: 'card', view}).then(([frame]) => frame ?? new Uint8Array(12288)),
+      renderCard: (view, context) => {
+        const key = JSON.stringify([view, context?.observation, artworkKey(context?.artwork)]);
+        return this.#render({kind: 'card', view, ...(context?.artwork === undefined ? {} : {artwork: context.artwork})}, key).then(([frame]) => {
+          if (frame === undefined) throw new SdkError(errorBody('internal', {detail: 'the render worker answered without a frame'}));
+          return frame;
+        });
+      },
     });
     this.#control = new PixooControl({player, monitor, library, profile: device.profile});
     // Everything the module serves at its start carries the revision it starts at; each later change raises it. The
@@ -456,17 +465,30 @@ class PixooRuntime {
    * Draws a dashboard or a card in a worker thread. A failed render is no evidence about the device: the presentation
    * keeps its last picture and tries again. One record reports a run of failures, and one its end.
    */
-  async #render(request: RenderRequest): Promise<Uint8Array[]> {
+  async #render(request: RenderRequest, cardInputKey?: string): Promise<Uint8Array[]> {
     const {workers, signal, log} = this.#context;
     try {
-      const frames = await workers.call<Uint8Array[]>(this.#options.renderWorker ?? RENDER_WORKER, request, {timeoutMs: RENDER_MS, signal});
-      if (this.#renderFailing) {
+      const reply = await workers.call<Uint8Array[] | RenderReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {timeoutMs: RENDER_MS, signal});
+      const frames = Array.isArray(reply) ? reply : reply?.frames;
+      if (!Array.isArray(frames) || frames.length < 1 || frames.length > 2 || frames.some(frame => !(frame instanceof Uint8Array) || frame.length !== 12288)) {
+        throw new SdkError(errorBody('internal', {detail: 'the render worker answered without complete frames'}));
+      }
+      if (request.kind === 'card' && cardInputKey === this.#cardInputKey) {
+        const code = Array.isArray(reply) ? undefined : reply.artworkCode;
+        const fields = {'bunny.device.id': this.#device, 'bunny.operation': 'playback'};
+        if (code !== undefined && code !== this.#artworkFailing) {
+          this.#artworkFailing = code; log.warn('operation.failed', {...fields, 'bunny.code': code});
+        } else if (code === undefined && request.artwork?.status === 'ready' && this.#artworkFailing !== undefined) {
+          this.#artworkFailing = undefined; log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+        }
+      }
+      if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
         log.info('operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
       }
       return frames;
     } catch (error) {
-      if (!this.#renderFailing && !signal.aborted) {
+      if (!this.#renderFailing && !signal.aborted && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = true;
         log.warn('operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
       }
@@ -552,11 +574,14 @@ class PixooRuntime {
     const chosen = this.#config.playback === undefined ? records[0] : this.#playback.records.get(this.#config.playback);
     const current = this.#playback.state === 'current';
     const status = {source: this.#playback.state, view: nowPlayingView(chosen, {current})};
-    // A record that changed nothing the card shows is not given to the presentation again.
+    const artwork = chosen?.artwork;
+    const context: CardContext = {observation: JSON.stringify(['bunny/modules/playback', chosen?.id, artwork?.generation ?? chosen?.revision]),
+      ...(artwork === undefined ? {} : {artwork})};
     const shown = JSON.stringify(status);
-    if (shown === this.#nowPlaying) return;
-    this.#nowPlaying = shown;
-    this.#monitor?.submitPlayback(status);
+    const inputKey = JSON.stringify([status.view, context.observation, artworkKey(artwork)]);
+    if (shown === this.#nowPlaying && inputKey === this.#cardInputKey) return;
+    this.#nowPlaying = shown; this.#cardInputKey = inputKey;
+    this.#monitor?.submitPlayback(status, context);
   }
 
   // Records

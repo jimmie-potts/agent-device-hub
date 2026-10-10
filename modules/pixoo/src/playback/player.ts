@@ -149,12 +149,15 @@ export class Player {
   restartWithChanges():Promise<void> {if(this.record?.source?.kind==='media')return Promise.reject(new PlaybackError('unsupported-operation'));return this.record?this.start(this.record.snapshot.id):Promise.reject(new PlaybackError('no-context'));}
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
   /** Upload one monitor picture of one or two complete frames, played at 500 ms each. */
-  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number):Promise<OperationResult<UploadResult>|undefined> {
+  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
     if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
-    if(this.closing||expectedGeneration!==this.epoch||this.intent!=='paused'||!this.requestedScreenOn)return undefined;
+    const cancelled=()=>options.signal?.aborted===true;
+    if(this.closing||expectedGeneration!==this.epoch||this.intent!=='paused'||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
     const generation=this.adapterGeneration;
     const result=await this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
-      {generation,signal:this.abort.signal,timeoutMs:this.operationTimeoutMs});
+      {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs});
+    // Superseded private card work with no effects is no evidence about the device or user intent.
+    if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')return result;
     // Evidence from a retired write cannot alter the current player or revive it.
     if(expectedGeneration===this.epoch&&!this.closing){
       this.observeResult(result,generation,'dashboard');await this.observedControl(result,generation);

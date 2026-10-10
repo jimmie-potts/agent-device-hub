@@ -1,3 +1,4 @@
+import {expectedCard} from '../helpers/artwork-oracle.js';
 // The Pixoo module's behavior on the bus (Hub #843): Monitor follows the core's sessions, Media commands complete with
 // their uploads, Now Playing follows the playback record, an offline device is unavailable without failing the module, a
 // bad image fails only its own job, nothing is sent twice, and a finished turn is dismissed for the Pixoo only.
@@ -272,12 +273,44 @@ void describe('Media', () => {
 });
 
 void describe('Now Playing', () => {
-  void it('syncs ready playback/2.1 and keeps text cards for missing2.1 and legacy2.0 updates', async () => {
+  void it('invalid artwork keeps the text card and safe refusal diagnostics recover on a valid image', async () => {
     const world = await World.open();
     await within(world, async () => {
-      const baseline = playbackRecord(Date.now(), ++world.revision);
-      const ready = {...playbackRecord(baseline.observedAtMs ?? 0, baseline.revision, 'Harvest Moon', 'paused'), artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg=='}};
+      await world.start(); await world.publishSession(); await mode(world, 'monitor');
+      await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor before playback');
+      const baseline = {...playbackRecord(Date.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
+      const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
+      const invalid = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc',
+        mediaType: 'image/png' as const, width: 1, height: 1, base64: png.subarray(0, png.length - 1).toString('base64')}};
+      world.playback = [invalid];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
+      const textDigest = frameDigest(renderNowPlaying(nowPlayingView(baseline, {current: true})));
+      await waitFor(() => world.device.state().shown?.digests[0] === textDigest ? true : undefined, 'the current text fallback');
+      const decisions = (event: string) => world.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'playback');
+      assert.equal(decisions('operation.failed').length, 1);
+      assert.equal(decisions('operation.failed')[0]?.fields['bunny.code'], 'invalid-request');
+      const uploads = world.device.state().uploads;
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
+      await sleep(1100);
+      assert.equal(world.device.state().uploads, uploads, 'duplicate artwork does not upload again');
+      assert.equal(decisions('operation.failed').length, 1);
+      const valid = {...invalid, revision: ++world.revision, artwork: {...invalid.artwork, generation: '22345678-1234-4234-8234-123456789abc', base64: png.toString('base64')}};
+      world.playback = [valid];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(valid)});
+      const digest = frameDigest(expectedCard(64, 'playing', false, [{text: 'A', y: 13}, {text: 'H', y: 27, artist: true}]));
+      await waitFor(() => world.device.state().shown?.digests[0] === digest ? true : undefined, 'the valid image replacement');
+      assert.equal(decisions('operation.completed').length, 1);
+      const diagnostics = JSON.stringify(world.logs());
+      for (const image of [invalid.artwork, valid.artwork]) assert.ok(!diagnostics.includes(image.base64) && !diagnostics.includes(image.generation));
+    });
+  });
+  void it('renders ready playback/2.1 and keeps text cards for missing2.1 and legacy2.0 updates', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      const baseline = {...playbackRecord(Date.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
+      const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
+      const ready = {...baseline, playback: {...baseline.playback, player: 'paused' as const}, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
+        base64: png.toString('base64')}};
       world.playback = [ready];
       await world.start();
       await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the ready2.1 paused record accepted through initial sync');
@@ -288,10 +321,26 @@ void describe('Now Playing', () => {
       const playing = {...baseline, revision: ++world.revision, artwork: ready.artwork};
       world.playback = [playing];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(playing)});
-      const pictureOf = (record: typeof baseline): string => frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
-      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(baseline) ? true : undefined, 'ready2.1 rendered as the existing text card');
+      const pictureOf = (record: ReturnType<typeof playbackRecord>): string => frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
+      const artworkDigest = frameDigest(expectedCard(64, 'playing', false, [{text: 'A', y: 13}, {text: 'H', y: 27, artist: true}]));
+      await waitFor(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'the module passes the synced image to its worker and device queue');
       assert.equal(world.display()?.nowPlaying.card, true);
       assert.equal(playbackState(ready).dataschema, 'https://bunny.invalid/events/playback/2.1');
+
+      const unsupported = {...baseline, revision: ++world.revision, artwork: {status: 'unsupported' as const, generation: '22345678-1234-4234-8234-123456789abc'}};
+      world.playback = [unsupported];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(unsupported)});
+      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(baseline) ? true : undefined, 'same-text Sonos handoff clears the old image');
+      const returned = {...playing, revision: ++world.revision, artwork: {...ready.artwork, generation: '32345678-1234-4234-8234-123456789abc'}};
+      world.playback = [returned];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(returned)});
+      await waitFor(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'same-text Sony return uses its new association');
+      const uploads = world.device.state().uploads;
+      const duplicate = {...returned, revision: ++world.revision, artwork: {...returned.artwork, generation: '42345678-1234-4234-8234-123456789abc'}};
+      world.playback = [duplicate];
+      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(duplicate)});
+      await sleep(1100);
+      assert.equal(world.device.state().uploads, uploads, 'identical current pixels need no duplicate upload');
 
       // Pause changes the visible marker, so rejection of this live2.1 record cannot pass unnoticed.
       const paused = playbackRecord(baseline.observedAtMs ?? 0, ++world.revision, 'Harvest Moon', 'paused');

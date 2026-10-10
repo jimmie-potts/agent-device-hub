@@ -364,6 +364,24 @@ start stays passive, as the Pixoo service's simulator did.
 
 ### Isolation
 
+Now Playing consumes optional `playback/2.1` artwork in its existing render
+worker. A ready static PNG is contained in a 24×24 black region at `(0, 13)`,
+with title and artist at x=27 below the unchanged status header and divider.
+Staleness dims the whole card. The decoder admits at most 64 KiB and 128×128
+input pixels and checks framing, animation and declared dimensions; refused,
+missing or unsupported artwork preserves the text card. Pixoo does not acquire
+receiver artwork or import the playback owner.
+
+The private render context carries the producer observation association and
+thumbnail. Public Now Playing views keep their existing text/status fields.
+The cache and upload guard discard superseded results and queued cards; a
+cancelled upload with no effects changes neither player evidence nor Monitor
+participation. Possible partial effects retain the existing uncertainty and
+recovery behavior. An artwork update follows Monitor attention and Media
+`off`, `popup` or `whole` policy; it does not extend or reopen a pop-up. Safe
+refusal/recovery records use `bunny.operation` `playback` and fixed registry
+codes, without image bytes or association tokens.
+
 - **Media.** Decoding and rendering run in a forked child process with a
   256 MiB heap, killed with SIGKILL when the job is aborted. A corrupt,
   oversized or hostile image fails only its own job. An image that declares
@@ -401,6 +419,28 @@ device `pixoo-1` at `10.0.0.64`, outside the home network's range, with the
 observed GIF profile, and names no secret. Tests and the `shipped` disposable
 run use it. The scenario catalog and disposable runs pair the simulated Pixoo
 with the playback module (#929) and its simulated speakers.
+
+### Physical artwork trial
+
+After the established runtime upgrade, [#1054](https://github.com/jimmie-potts/agent-device-hub/issues/1054)
+owns a separately authorized visible-device trial. Confirm the installed and
+running revision, health and explicit private Pixoo target before replacing its
+content. Preserve the operator's selected mode, Media setting and playlist for
+the return step.
+
+1. In Monitor without blocking attention, start an owner-selected Sony track
+   and observe artwork, readable text and status during the existing pop-up.
+   Confirm that the dashboard returns at its original deadline.
+2. Select the next track and observe its current image. Then select missing-art
+   content or hand off to Sonos and observe text without the old Sony image.
+3. Exercise only the authorized Media setting, confirm its `off`, `popup` or
+   `whole` behavior, and stop playback. Verify the previous presentation or
+   playlist resumes where that policy calls for it.
+4. Return the selected mode and setting. Use the qualified runtime recovery
+   procedure if needed; keep one designated writer. Retain targets, selected
+   content and recordings privately and publish sanitized findings with the
+   revision and observation limits. Simulated RGB frames and LAN acknowledgment
+   are separate evidence.
 
 ## Library migration
 

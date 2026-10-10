@@ -12,7 +12,7 @@ import {
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
 import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
-import {simulatedArtworkFetch} from './simulated-artwork.js';
+import {createSimulatedArtworkFetch} from './simulated-artwork.js';
 import {SIMULATED_SECTION, SimulatedSpeakers} from './simulated.js';
 import {createSource, type Deadline} from './sources.js';
 import {httpSpeakers, type SpeakerTransport} from './transport.js';
@@ -436,7 +436,10 @@ BunnyModule<PlaybackConfig> {
 export const playbackFactory = {
   name: PLAYBACK_MODULE,
   create: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: httpSpeakers()}),
-  simulate: (): BunnyModule<PlaybackConfig> => createPlaybackModule({transport: new SimulatedSpeakers(), artwork: {fetch: simulatedArtworkFetch}}),
+  simulate: (): BunnyModule<PlaybackConfig> => {
+    const speakers = new SimulatedSpeakers();
+    return createPlaybackModule({transport: speakers, artwork: {fetch: createSimulatedArtworkFetch(() => speakers.artworkAcquired())}});
+  },
   // The speakers take no credential, so the section names no secret.
   simulatedSection: {config: SIMULATED_SECTION},
 } as const;

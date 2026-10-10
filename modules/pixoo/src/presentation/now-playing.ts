@@ -27,27 +27,28 @@ export function trackKey(view:NowPlayingView):string|null {return view.card?JSON
 
 const COLUMNS=16,FIRST_ROW=13,PITCH=7,ROWS=7,MAX_ARTIST_ROWS=3;
 /** Wrap at spaces, split words longer than a row, and end cut-off text with '.'. */
-function wrap(value:string,rows:number):string[] {
+function wrap(value:string,rows:number,columns:number):string[] {
  const out:string[]=[];let current='';
  for(let word of value.split(' ').filter(Boolean)){
-  while(word.length>COLUMNS){if(current!==''){out.push(current);current='';}out.push(word.slice(0,COLUMNS));word=word.slice(COLUMNS);}
+  while(word.length>columns){if(current!==''){out.push(current);current='';}out.push(word.slice(0,columns));word=word.slice(columns);}
   if(word==='')continue;
-  if(current==='')current=word;else if(current.length+1+word.length<=COLUMNS)current+=` ${word}`;else{out.push(current);current=word;}
+  if(current==='')current=word;else if(current.length+1+word.length<=columns)current+=` ${word}`;else{out.push(current);current=word;}
  }
  if(current!=='')out.push(current);
  if(out.length<=rows)return out;
  if(rows<1)return [];
  const kept=out.slice(0,rows),last=kept[rows-1]??'';
- kept[rows-1]=(last.length<COLUMNS?last:last.slice(0,COLUMNS-1))+'.';
+ kept[rows-1]=(last.length<columns?last:last.slice(0,columns-1))+'.';
  return kept;
 }
 export type CardLine={role:'title'|'artist';text:string;y:number};
 /** Title rows first (up to four with an artist, else seven), a one-row gap, then up to three artist rows. */
-export function cardLines(view:NowPlayingView):CardLine[] {
+export function cardLines(view:NowPlayingView,artwork=false):CardLine[] {
  if(!view.card)return [];
- const title=wrap(view.title,view.artist!==''?4:ROWS);
+ const columns=artwork?9:COLUMNS;
+ const title=wrap(view.title,view.artist!==''?4:ROWS,columns);
  const start=title.length>0?title.length+1:0;
- const artist=wrap(view.artist,Math.min(MAX_ARTIST_ROWS,ROWS-start));
+ const artist=wrap(view.artist,Math.min(MAX_ARTIST_ROWS,ROWS-start),columns);
  return [...title.map((text,i)=>({role:'title' as const,text,y:FIRST_ROW+i*PITCH})),...artist.map((text,i)=>({role:'artist' as const,text,y:FIRST_ROW+(start+i)*PITCH}))];
 }
 export const NOW_PLAYING_COLORS:Readonly<Record<'playing'|'paused'|'title'|'artist'|'divider',Color>>=Object.freeze({
@@ -55,7 +56,7 @@ export const NOW_PLAYING_COLORS:Readonly<Record<'playing'|'paused'|'title'|'arti
 });
 const play='100110111110100',pause='101101101101101';
 /** Draw a card as a 64×64 RGB frame: marker and status word, a divider, then the title and artist rows. */
-export function renderNowPlaying(view:NowPlayingView):Uint8Array {
+export function renderNowPlaying(view:NowPlayingView,artwork=false):Uint8Array {
  if(!view.card)throw new Error('now-playing-card-required');
  const rgb=new Uint8Array(64*64*3);
  const shade=(color:Color):Color=>view.stale?[Math.floor(color[0]/3),Math.floor(color[1]/3),Math.floor(color[2]/3)]:color;
@@ -63,6 +64,6 @@ export function renderNowPlaying(view:NowPlayingView):Uint8Array {
  drawGlyph(rgb,view.stale?fallback:view.status==='playing'?play:pause,0,1,marker);
  drawText(rgb,view.status==='playing'?'PLAYING':'PAUSED',5,1,marker);
  const divider=shade(NOW_PLAYING_COLORS.divider);for(let x=0;x<64;x++)rgb.set(divider,(9*64+x)*3);
- for(const line of cardLines(view))drawText(rgb,line.text,0,line.y,shade(line.role==='title'?NOW_PLAYING_COLORS.title:NOW_PLAYING_COLORS.artist));
+ for(const line of cardLines(view,artwork))drawText(rgb,line.text,artwork?27:0,line.y,shade(line.role==='title'?NOW_PLAYING_COLORS.title:NOW_PLAYING_COLORS.artist));
  return rgb;
 }

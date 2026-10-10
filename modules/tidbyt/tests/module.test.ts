@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+import {expectedCard} from './artwork-oracle.js';
 // The Tidbyt module on the simulated cloud and a manual clock (Hub #930): both tiles from synced records, the write gate
 // under bursts, the refresh, removal, an unavailable or lost copy, failed, uncertain and held writes, a cloud that does
 // not answer at start, rendering in a worker and its end at stop, a restart, the device record and its diagnostics.
@@ -39,13 +41,14 @@ const owner = (h: Hosted): StandIn<PlaybackState> => {
 };
 const pushes = (h: Hosted, installation = STATUS): number => shown(h, installation).pushes;
 
-test('syncs ready playback/2.1 and keeps text tiles for missing2.1 and legacy2.0 updates', async context => {
-  const baseline = playback('playing');
+test('renders ready playback/2.1 and keeps text tiles for missing2.1 and legacy2.0 updates', async context => {
+  const baseline = playback('playing', {}, {title: 'A', artist: 'H'});
+  const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
   const ready = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
-        base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg=='}};
+        base64: png.toString('base64')}};
   const h = await host(context, {sessions: [], playback: ready});
   await until(() => pushes(h, NOW_PLAYING) === 1, 'the ready2.1 synced card');
-  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline), 'ready image leaves the existing text tile unchanged');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, picture(expectedCard(32, 'playing', false, [{text: 'A', y: 1}, {text: 'H', y: 9, artist: true}])), 'the module passes the synced image to its real worker and cloud queue');
 
   const paused = playback('paused');
   await owner(h).set({...paused, artwork: {status: 'missing', generation: ready.artwork.generation}});
@@ -57,6 +60,58 @@ test('syncs ready playback/2.1 and keeps text tiles for missing2.1 and legacy2.0
   await h.advance(15 * SECOND);
   await until(() => pushes(h, NOW_PLAYING) === 3, 'the legacy2.0 playing card');
   assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline));
+  assert.deepEqual(h.problems(), []);
+});
+
+test('same-text artwork handoffs clear and restore images, while duplicate bytes survive restart without another push', async context => {
+  const baseline = playback('playing', {}, {title: 'A', artist: 'H'});
+  const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
+  const image = {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1, base64: png.toString('base64')};
+  const h = await host(context, {sessions: [], playback: {...baseline, artwork: image}});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the first Sony image');
+  const expected = shown(h, NOW_PLAYING).picture;
+  await owner(h).set({...baseline, artwork: {status: 'unsupported', generation: '22345678-1234-4234-8234-123456789abc'}});
+  await h.advance(15 * SECOND); await until(() => pushes(h, NOW_PLAYING) === 2, 'the same-text Sonos fallback');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline));
+  const returned = {...baseline, artwork: {...image, generation: '32345678-1234-4234-8234-123456789abc'}};
+  await owner(h).set(returned); await h.advance(15 * SECOND);
+  await until(() => pushes(h, NOW_PLAYING) === 3, 'the returning Sony image');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, expected);
+  await owner(h).set({...returned, artwork: {...image, generation: '42345678-1234-4234-8234-123456789abc'}});
+  await h.advance(15 * SECOND); await quiet();
+  assert.equal(pushes(h, NOW_PLAYING), 3, 'generation-only replacement keeps an identical completed frame');
+  await h.stop(); await h.start(); await h.advance(15 * SECOND); await quiet();
+  assert.equal(pushes(h, NOW_PLAYING), 3, 'restart reuses the persisted visual key');
+  assert.deepEqual(h.problems(), []);
+});
+
+test('invalid artwork keeps text and reports a safe refusal once, then a valid current image recovers', async context => {
+  const baseline = playback('playing', {}, {title: 'A', artist: 'H'});
+  const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
+  const invalid = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc',
+    mediaType: 'image/png' as const, width: 1, height: 1, base64: png.subarray(0, png.length - 1).toString('base64')}};
+  const h = await host(context, {sessions: [], playback: invalid});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the text fallback from invalid artwork');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, cardPicture(baseline));
+  const decisions = (event: string) => h.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'playback' && entry.fields['bunny.operation.id'] === undefined);
+  assert.equal(decisions('operation.failed').length, 1);
+  assert.equal(decisions('operation.failed')[0]?.fields['bunny.code'], 'invalid-request');
+  await owner(h).set(invalid); await h.advance(15 * SECOND); await quiet();
+  assert.equal(pushes(h, NOW_PLAYING), 1, 'a duplicate invalid image neither retries the cloud nor warns again');
+  assert.equal(decisions('operation.failed').length, 1);
+  const valid = {...invalid, artwork: {...invalid.artwork, generation: '22345678-1234-4234-8234-123456789abc', base64: png.toString('base64')}};
+  await owner(h).set(valid); await h.advance(15 * SECOND);
+  await until(() => pushes(h, NOW_PLAYING) === 2, 'the valid replacement');
+  assert.deepEqual(shown(h, NOW_PLAYING).picture, picture(expectedCard(32, 'playing', false, [{text: 'A', y: 1}, {text: 'H', y: 9, artist: true}])));
+  assert.equal(decisions('operation.completed').length, 1);
+  const diagnostics = JSON.stringify(h.logs());
+  for (const image of [invalid.artwork, valid.artwork]) {
+    const leaked = h.logs().flatMap(entry => Object.entries(entry.fields).filter(([, value]) => {
+      const text = JSON.stringify(value);
+      return text?.includes(image.base64) || text?.includes(image.generation);
+    }).map(([field]) => `${entry.event}:${field}`));
+    assert.ok(!diagnostics.includes(image.base64) && !diagnostics.includes(image.generation), `diagnostics contain neither image bytes nor association tokens: ${leaked.join(',')}`);
+  }
   assert.deepEqual(h.problems(), []);
 });
 
