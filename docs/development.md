@@ -138,7 +138,7 @@ acceptance use their separate explicitly selected briefs.
 
 ## Roborock transport checks
 
-`modules/roborock` owns the unregistered read-only V1 transport from Hub #1070.
+`modules/roborock/transport` owns the read-only V1 transport from Hub #1070. The root module has separate observation, consumer and browser checks described below.
 Its [guide](../modules/roborock/README.md) records the protocol provenance,
 private setup boundary and synthetic verification. The source transport has no
 runtime registration, collector or served page; #376 owns those consumers.
@@ -729,6 +729,16 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 ## Runtime dashboard checks
 
 See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.
+
+Playback artwork (#1069) adds passive owner/gateway checks to the existing
+`npm run test:playback:built` and `npm run test:runtime:built` discovery. After
+the root build, run `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`
+for the focused Home/Music image, association, text/control and accessibility
+journey; App verification runs that same entry. It uses the real playback
+owner and decoder with synthetic acquisition on the disposable browser harness.
+Keep the full dashboard browser suite required by the owning procedure. These
+checks establish source behavior; installed browser identity and physical
+display acceptance remain separate.
 
 ## Agent lifecycle contract checks
 
@@ -1484,3 +1494,19 @@ trusted supervisor boundary and installed qualification.
 ## BB-8 source checks
 
 Before product implementation, #604 registers the module/helper workspaces and CI checks. [Module guide](../modules/bb8/README.md) owns `test:bb8`, `test:bb8:built`, `test:bb8:package` and `test:bb8:browser`; [Windows component guide](../apps/bb8-windows/README.md) owns `test:bb8-windows` and `test:bb8-windows:built`. Root build/typecheck compile both under the strict profile. Core CI runs their built tests/package consumer; App verification runs the focused browser/axe journey. These additions require executable checks before acceptance. Retain the qualification's shared compatibility, SDK/module-kit, both-transport catalog, full dashboard browser and independent disposable Acceptance checks. Source delivery does not activate the helper or qualify BLE.
+
+## Roborock module checks
+
+Use Node 24 and `npm ci`, then build before type-aware lint. Run
+`npm run build`, `npm run typecheck`, `npm run lint:js`,
+`npm run test:roborock:built`, `npm run test:roborock:consumer:built` and
+`npm run test:roborock:browser`. The module suite includes the SDK module test
+kit; the transport retains its separate transport and consumer suites.
+
+Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus
+`npm run check:workflow` and `npm run test:workflow`. The Roborock catalog
+scenario runs over both in-memory transports. Follow
+[runtime development](../apps/runtime/DEVELOPMENT.md) for its focused disposable
+run and full-suite triggers. These checks use synthetic records and simulated
+transport. Source success does not establish installation, current
+account/device compatibility or map attribution.

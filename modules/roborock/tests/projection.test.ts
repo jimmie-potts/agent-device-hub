@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { normalizeRecord, normalizeStatus, normalizeConsumables, normalizeSummary } from '../src/normalize.js';
+import { projectRun, projectStatusFields, projectConsumables, projectTotals } from '../src/projection.js';
+const begin = 1700000000;
+void test('source seconds convert only at the public run projection, with independent record ID', () => {
+    const r = normalizeRecord({ begin, end: begin + 900, duration: 600, area: 12000000, cleaned_area: 13000000, error: -1 }, begin);
+    const p = projectRun(r, (begin + 1000) * 1000);
+    assert.ok(p);
+    assert.equal(p.recordId, begin);
+    assert.equal(p.startAtMs, begin * 1000);
+    assert.deepEqual(p.endAtMs, { status: 'known', value: (begin + 900) * 1000 });
+    assert.deepEqual(p.durationSeconds, { status: 'known', value: 600 });
+    assert.deepEqual(p.errorCode, { status: 'known', value: -1 });
+    assert.equal(p.map.availability, 'missing');
+    assert.equal(projectRun(normalizeRecord({ begin: begin + 1 }, begin), begin * 1000), undefined);
+    assert.deepEqual(projectRun(normalizeRecord({ begin }, begin), begin * 1000)?.endAtMs, { status: 'unknown' });
+});
+void test('current projection keeps missingness, measured units and raw vendor codes', () => {
+    const status = projectStatusFields(normalizeStatus({ state: 777, battery: 0, clean_time: 123, error_code: -1, water_shortage_status: 2, dss: 0xffffffff }));
+    assert.deepEqual(status.state, { status: 'known', value: 777 });
+    assert.deepEqual(status.errorCode, { status: 'known', value: -1 });
+    assert.deepEqual(status.cleanAreaMm2, { status: 'unknown' });
+    assert.deepEqual(status.dss, { status: 'known', value: 0xffffffff });
+    const c = projectConsumables(normalizeConsumables({ strainer_work_times: 7, cleaning_brush_work_times: 2, main_brush_work_time: 3601 }), begin * 1000);
+    assert.deepEqual(c.strainerCycles, { status: 'known', value: 7 });
+    assert.deepEqual(c.cleaningBrushCycles, { status: 'known', value: 2 });
+    assert.deepEqual(c.mainBrushSeconds, { status: 'known', value: 3601 });
+    assert.deepEqual(projectTotals(normalizeSummary({ clean_time: 100, clean_area: 12000000, clean_count: 195, records: [begin] }), begin * 1000).cleanCount, { status: 'known', value: 195 });
+});

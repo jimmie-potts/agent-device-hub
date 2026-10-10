@@ -1,3 +1,4 @@
+import {createRoborockModule,SimulatedRoborock,roborockSchemas,type RoborockModule,type SimulationAction,type VacuumStatus} from '@jimmie-potts/roborock';
 import {createBb8Module, SimulatedLink, bb8Schemas, type SimulatedState as Bb8SimulatedState} from '@jimmie-potts/bb8';
 import {Gadget, gadgetSchemas, setGadget} from '../../dist/tests/fixtures/gadget.js';
 // The runtime dashboard's browser suites' world (Hub #922): the built runtime in this process with the core and its
@@ -20,7 +21,9 @@ import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, token
 import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
-import {playbackFactory} from '@jimmie-potts/playback';
+import {createPlaybackModule, playbackFactory, type PlaybackModuleOptions, type SimulatedSpeakers} from '@jimmie-potts/playback';
+
+type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['fetch']>;
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
@@ -32,11 +35,14 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  roborock?: boolean;
   bb8?: boolean;
   /** The actual file reader on explicitly selected private synthetic collector files. */
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
+  /** Real playback owner and decoder over caller-owned synthetic speakers/bytes; no live fetch fallback. */
+  playbackArtwork?: {speakers: SimulatedSpeakers; fetch: ArtworkFetch};
   /** A synthetic module principal for Desktop metadata; reads no provider files. */
   desktopMetadata?: boolean;
   /** Qualified scripted Nanoleaf/Pixoo native responders; Nanoleaf fails and Pixoo succeeds independently. */
@@ -55,6 +61,11 @@ export type WorldOptions = {
 };
 
 export type World = {
+  roborockAction(action:SimulationAction):Promise<void>;
+  roborockRefresh():Promise<void>;
+  roborockCalls():readonly string[];
+  roborockStatus():Promise<VacuumStatus>;
+  roborockStatusViaMcp():Promise<unknown>;
   readonly url: string;
   readonly stateDir: string;
   /** Every record the runtime wrote, across restarts. */
@@ -121,6 +132,9 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
   ]}));
+  const roborock=new SimulatedRoborock();
+  let roborockModule:RoborockModule|undefined;
+  const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
   const bb8 = new SimulatedLink();
   const bulbs = new SimulatedLifx();
   const lines = new SimulatedNanoleaf();
@@ -143,16 +157,18 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
+    ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...options.bb8 === true ? {bb8: {id: 'bb8', configurationRevision: 0}} : {},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
     ...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
-    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config, playback: playbackFactory.simulatedSection.config} : {},
+    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
+    ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
-    credentials, mcp: options.inbox === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
+    credentials, mcp: options.inbox === true || options.roborock===true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
   }}));
   const logs: LogRecord[] = [];
@@ -169,10 +185,13 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     stop: () => { desktopSdk = undefined; },
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
-    modules: [core = createCoreModule(), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
-      ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
+    modules: [
+      core = createCoreModule(), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
+        : options.pixooPages === true ? [playbackFactory.simulate()] : []),
+      ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...options.roborock===true?roborockSchemas:{}, ...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -180,6 +199,16 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
+    roborockRefresh:refreshRoborock,
+    roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},
+    roborockCalls:()=>[...roborock.calls],
+    roborockStatus:async()=>{const response=await fetch(`${runtime.url}/modules/roborock/content/status`,{headers:{authorization:`Bearer ${readerToken}`}});assert.equal(response.status,200);return await response.json()as VacuumStatus;},
+    roborockStatusViaMcp:async()=>{
+      const headers:Record<string,string>={authorization:`Bearer ${readerToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'};
+      const call=(body:object):Promise<Response>=>fetch(`${runtime.url}/mcp`,{method:'POST',headers,body:JSON.stringify(body)});
+      const initialized=await call({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'roborock-browser-synthetic',version:'1'}}});assert.equal(initialized.status,200);await initialized.arrayBuffer();const session=initialized.headers.get('mcp-session-id');assert.ok(session!==null);headers['mcp-session-id']=session;headers['mcp-protocol-version']='2025-11-25';
+      try{const ready=await call({jsonrpc:'2.0',method:'notifications/initialized'});await ready.arrayBuffer();const response=await call({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'roborock_status',arguments:{}}});assert.equal(response.status,200);const body:unknown=await response.json();assert.ok(typeof body==='object'&&body!==null&&'result'in body);const result:unknown=body.result;assert.ok(typeof result==='object'&&result!==null&&'structuredContent'in result);const content:unknown=result.structuredContent;assert.ok(typeof content==='object'&&content!==null&&'data'in content);const data:unknown=content.data;assert.ok(typeof data==='object'&&data!==null&&'result'in data);return data.result;}finally{const ended=await fetch(`${runtime.url}/mcp`,{method:'DELETE',headers});await ended.arrayBuffer();}
+    },
     url: runtime.url, stateDir, logs, runtime: () => runtime,
     bb8State: () => bb8.snapshot(), bb8Online: value => {bb8.online(value);}, bb8Next: result => {bb8.next(result);},
     readonlyBb8: async data => {const result = await fetch(`${runtime.url}/api/v2/commands/bb8-connect`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'bb8', data, requestId: 'readonly-bb8'})}); await result.arrayBuffer(); return result.status;},

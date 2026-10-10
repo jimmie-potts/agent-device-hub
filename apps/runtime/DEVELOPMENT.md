@@ -344,7 +344,10 @@ scenarios pass in the in-memory harness and in a run. It also starts each
 boundary negative control and shows its check fails, shows the network guard
 refuses `net`, `http`, `https`, `fetch` and `dgram` in a worker thread and a
 child Node process too, and checks that `build-current` watches every source
-the run loads. It also judges the follow query of Hub #950, which reads one request's or trace's journal
+the run loads. Nested module workspaces declared in the root package file are
+also watched and included in the served candidate, with their declared built
+import entries checked as outputs. They do not register as device modules.
+It also judges the follow query of Hub #950, which reads one request's or trace's journal
 records and spans in a run (see [Follow one request](verify/README.md#follow-one-request)),
 and the runtime tests (`test:runtime:built`) cover the bounded, private span file that the
 run's runtime writes. It starts the `nanoleaf-migrated` run (#933), whose seed migrates a synthetic Nanoleaf bridge
