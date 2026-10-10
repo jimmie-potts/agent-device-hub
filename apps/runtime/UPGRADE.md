@@ -352,12 +352,12 @@ preflight requires coordinator admission and current baseline/hook protection;
 it cannot derive acceptance from a supplied flag. It pins configuration,
 credential and read-token file hashes without including their contents. Keep
 the plan private, including these hashes. Accepted degraded-health exceptions
-are the intentionally unconfigured Wispr (#840) and BB-8 modules, each refused
-with `not-found`. State/configuration inspection must establish absence;
-configured or retained BB-8 state remains outside this qualified profile and
-refuses. BB-8's production registration was checked with no configuration: it
-refuses before start and creates no state. Other module refusals require separate
-qualification.
+are the intentionally unconfigured Wispr (#840), BB-8 and Roborock modules,
+each refused with `not-found` and `healthy: false`. State/configuration inspection
+must establish absence; configured or retained BB-8 or Roborock state remains
+outside this qualified profile and refuses. Both production registrations were
+checked with no configuration: each refuses before start and creates no owner
+state. Other module refusals require separate qualification.
 
 During initial qualified setup, create `install.lock` once as an owned regular
 file with mode 600. Creation must refuse an existing path. Never delete,
@@ -368,9 +368,9 @@ Perform the operation in one shell. Open the existing lock read-only and obtain
 its exclusive lock before rechecking any approved input:
 
 ```bash
-exec 9<"$BUNNY_INSTALL_ROOT/install.lock"
-flock -n -E 75 9
-node apps/runtime/bin/runtime-upgrade-check.mjs check-lock "$BUNNY_INSTALL_ROOT"
+exec 9<"$BUNNY_INSTALL_ROOT/install.lock" || exit "$?"
+flock -n -E 75 9 || exit "$?"
+node apps/runtime/bin/runtime-upgrade-check.mjs check-lock "$BUNNY_INSTALL_ROOT" || exit "$?"
 ```
 
 Stop if any command fails. Keep that descriptor and shell alive through

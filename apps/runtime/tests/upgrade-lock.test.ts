@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';
-import {chmod, mkdtemp, open, rename, rm, symlink, writeFile} from 'node:fs/promises';
+import {chmod, mkdtemp, open, readFile, rename, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
@@ -8,6 +8,14 @@ import {promisify} from 'node:util';
 
 const helper = join(process.cwd(), 'apps/runtime/bin/runtime-upgrade-check.mjs');
 const run = promisify(execFile);
+async function documentedLockBlock(): Promise<string> {
+  const guide = await readFile('apps/runtime/UPGRADE.md', 'utf8');
+  const block = guide.match(/```bash\n(exec 9<[^]*?)\n```/);
+  assert.ok(block, 'the owning procedure has a lock-acquisition block');
+  const script = block[1];
+  assert.ok(script !== undefined && script.length > 0);
+  return script;
+}
 function check(root: string, descriptor?: number): Promise<{code: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
     // The named descriptor becomes child FD9. This tests identity only; the
@@ -36,14 +44,38 @@ void test('lock identity check accepts only inherited FD9 for the named persiste
   assert.equal(result.stderr, '');
 
   await t.test('the same manual shell retains flock while a competing operation refuses', async () => {
-    const script = 'set -eu\nexec 9<"$1/install.lock"\n/usr/bin/flock -n -E 75 9\n"$2" "$3" check-lock "$1"\n/usr/bin/flock -n -E 75 "$1/install.lock" /usr/bin/true';
-    await assert.rejects(run('/bin/bash', ['-c', script, 'upgrade-lock-fixture', root, process.execPath, helper],
-      {timeout: 3000, maxBuffer: 8192}), error => {
+    const script = `${await documentedLockBlock()}\n/usr/bin/flock -n -E 75 "$BUNNY_INSTALL_ROOT/install.lock" /usr/bin/true`;
+    await assert.rejects(run('/bin/bash', ['--noprofile', '--norc', '-c', script],
+      {timeout: 3000, maxBuffer: 8192, env: {...process.env, BUNNY_INSTALL_ROOT: root}}), error => {
       assert.ok(error instanceof Error && 'code' in error && 'stdout' in error);
       assert.equal(error.code, 75);
       assert.deepEqual(JSON.parse(String(error.stdout)), {lockIdentityVerified: true});
       return true;
     });
+  });
+  await t.test('the exact documented block stops before checking identity when another operation holds the lock', async () => {
+    const holder = spawn('/usr/bin/flock', ['-n', '-E', '75', lock, '/bin/sh', '-c', 'printf ready; cat >/dev/null'],
+      {stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000});
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.once('error', reject);
+        holder.once('exit', () => reject(new Error('lock holder exited before readiness')));
+        holder.stdout.once('data', (bytes: Buffer) => {
+          assert.equal(bytes.toString(), 'ready');
+          resolve();
+        });
+      });
+      await assert.rejects(run('/bin/bash', ['--noprofile', '--norc', '-c', await documentedLockBlock()],
+        {timeout: 3000, maxBuffer: 8192, env: {...process.env, BUNNY_INSTALL_ROOT: root}}), error => {
+        assert.ok(error instanceof Error && 'code' in error && 'stdout' in error);
+        assert.equal(error.code, 75);
+        assert.equal(error.stdout, '');
+        return true;
+      });
+    } finally {
+      holder.stdin.end();
+      await new Promise<void>(resolve => { if (holder.exitCode !== null) resolve(); else holder.once('close', () => resolve()); });
+    }
   });
   await t.test('missing FD9 refuses', async () => {
     const failure = await check(root);
