@@ -524,6 +524,16 @@ if (await readlink(join(root, 'current')) !== target || await realpath(join(root
 JS
 ```
 
+A nonzero selection exit does not prove that the anchor stayed unchanged. The
+rename can succeed before directory synchronization or readback fails. Inspect
+the exact link, selected release and writer state before choosing an outcome or
+recovery. Do not start the candidate, repeat selection blindly or record
+`failed-before-switch` merely because this command failed. Retain the intent and
+failed evidence until inspection establishes what happened. If the anchor
+changed, use one explicitly selected qualified recovery; successful recovery
+records `failed-rolled-back` with failure phase `switch` and the observed previous
+identity. An unresolved selection remains interrupted.
+
 Start the same service:
 
 ```bash
@@ -600,7 +610,8 @@ upgrade health check pass.
 
 ## Recover and finalize
 
-If candidate verification fails, inspect the observed state and follow only the
+If selection, startup or candidate verification fails, inspect the observed state
+and follow only the
 named qualified recovery sequence while retaining the same lock. Stop and verify
 writer exit, select the verified previous release atomically and start the same
 service on the **latest durable state**. Verify its process/build identity,
@@ -615,6 +626,19 @@ Make one selected recovery attempt; a failure requires inspection, not another
 automatic switch or start. In a successful recovery, the receipt records
 `failed-rolled-back` with the observed previous identity. If it cannot establish
 that identity and health, record `rollback-failed` or `interrupted` as applicable.
+
+Choose the final outcome from retained observations, not the exit code alone.
+The receipt helper validates and persists the document; it does not establish
+that its described operation occurred.
+
+| Observed failure | Outcome and evidence |
+| --- | --- |
+| Stop, writer-exit or backup failed; inspection proves no selection occurred | `failed-before-switch`; record the actual phase and retain the failed checks. Do not claim a verified running identity or health. |
+| Selection failed before replacement and the original anchor is verified | `failed-before-switch` with phase `switch`; retain the anchor inspection. |
+| Selection changed the anchor, or candidate start/health failed; one recovery verifies the previous release | `failed-rolled-back`; preserve the original failure phase, verified recovery identity/health and latest-state evidence. |
+| The selected recovery cannot verify startup or health | `rollback-failed`; record phase `rollback`, keep running identity unverified and retain the recovery checks. |
+| Effects or selection remain unresolved after interruption | `interrupted`; retain the intent and inspection handoff. Do not retry service or device effects. |
+| Final receipt synchronization or readback failed | `receipt-finalization-failed` diagnostic when valid; inspect the durable receipt and retain both inputs before retrying persistence. |
 
 Prepare `BUNNY_FINAL_RECEIPT_FILE` without replacing the original private intent
 input. It must match the observed running identity, health, backup, state and

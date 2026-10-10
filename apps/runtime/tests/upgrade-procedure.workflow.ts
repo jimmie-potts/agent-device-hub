@@ -170,6 +170,45 @@ void test('manual selection adopts the anchor, recovers on latest bytes and refu
   });
 });
 
+void test('a failed selection synchronization can leave the candidate selected and requires inspection', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-selection-interrupted-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const old = join(root, 'releases', 'a'.repeat(40)), next = join(root, 'releases', 'b'.repeat(40));
+  await mkdir(old, {recursive: true, mode: 0o700}); await mkdir(next, {mode: 0o700});
+  await symlink(old, join(root, 'current'));
+  const state = join(root, 'latest-state'); await writeFile(state, 'latest retained state', {mode: 0o600});
+  const preload = join(root, 'selection-sync-fault.mjs');
+  await writeFile(preload, `import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+const original = fs.promises.open;
+fs.promises.open = async (...args) => {
+  const handle = await original(...args);
+  if (args[0] === process.env.BUNNY_INSTALL_ROOT && args[1] === 'r') {
+    handle.sync = async () => { throw new Error('synthetic selection directory sync refusal'); };
+  }
+  return handle;
+};
+syncBuiltinESMExports();
+`, {mode: 0o600});
+  const block = await command('select-release');
+  const env = {...process.env, BUNNY_INSTALL_ROOT: root, BUNNY_SELECTION_DIRECTORY: next};
+  await assert.rejects(run('bash', ['--noprofile', '--norc', '-c', block], {
+    cwd: process.cwd(), timeout: 10000, env: {...env, NODE_OPTIONS: '--import=' + preload},
+  }), (error: unknown) => {
+    assert.match((error as {stderr: string}).stderr, /synthetic selection directory sync refusal/);
+    return true;
+  });
+  assert.equal(await readlink(join(root, 'current')), next, 'a nonzero selection does not prove it failed before replacement');
+  assert.equal(await readFile(state, 'utf8'), 'latest retained state');
+  assert.ok(!(await readdir(root)).some(name => name.startsWith('current.next-')));
+  // After inspecting the failed operation, one explicitly selected recovery uses latest state.
+  await run('bash', ['--noprofile', '--norc', '-c', block], {
+    cwd: process.cwd(), timeout: 10000, env: {...env, BUNNY_SELECTION_DIRECTORY: old},
+  });
+  assert.equal(await readlink(join(root, 'current')), old);
+  assert.equal(await readFile(state, 'utf8'), 'latest retained state');
+});
+
 void test('adoption draft preserves the complete observed invocation and creates only a private proposal', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-adoption-draft-'));
   t.after(() => rm(root, {recursive: true, force: true}));
