@@ -102,15 +102,28 @@ export function DeviceCard({record, owner, live, control, operations, operations
   </article>;
 }
 
-export function PlaybackCard({record, live, control, operations, operationsLive}: {
-  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
+/** A keyed subtree keeps late load/error callbacks attached to their original observation. */
+function PlaybackArtwork({src}: {src: string}): React.JSX.Element {
+  const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  return <div className="playback-artwork" aria-hidden="true" data-loaded={state === 'loaded'}>
+    <img src={src} alt="" onLoad={() => { setState(current => current === 'failed' ? current : 'loaded'); }}
+      onError={() => { setState('failed'); }}/>
+  </div>;
+}
+
+export function PlaybackCard({record, live, control, operations, operationsLive, artworkUrl}: {
+  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artworkUrl?: string | undefined;
 }): React.JSX.Element {
   const action = useAttempt(record.id, operations, operationsLive);
   const playback = record.playback;
   return <article className="widget" aria-label={`Music ${record.id}`}><header className="widget-head"><h2>Music</h2></header>
-    <p>{!live || record.availability !== 'available' ? 'Playback unavailable' : playback.status === 'known' ? playback.title ?? 'No track title' : 'Playback unknown'}</p>
+    <div className="playback-track">
+      {artworkUrl !== undefined ? <PlaybackArtwork key={`${record.id}:${artworkUrl}`} src={artworkUrl}/> : <div className="playback-artwork" aria-hidden="true"/>}
+      <div><p>{!live || record.availability !== 'available' ? 'Playback unavailable' : playback.status === 'known' ? playback.title ?? 'No track title' : 'Playback unknown'}</p>
+        {playback.status === 'known' && <p className="hint">{[playback.artist, playback.album].filter(Boolean).join(' · ')}</p>}
+      </div>
+    </div>
     <Facts items={[['Observed status', !live || record.availability !== 'available' ? 'Unavailable' : playback.status === 'known' ? title(playback.player) : 'Unknown']]}/>
-    {playback.status === 'known' && <p className="hint">{[playback.artist, playback.album].filter(Boolean).join(' · ')}</p>}
     {control && playback.status === 'known' && <fieldset disabled={!live || record.availability !== 'available' || action.locked || !operationsLive}>
       {playback.controls.map(value => <button type="button" key={value} onClick={() => { void action.run({family: 'playback-control', target: record.id, requestId: crypto.randomUUID(), data: {action: value, expectedRevision: record.revision}}); }}>{title(value)}</button>)}
     </fieldset>}<p role="status">{action.text}</p>

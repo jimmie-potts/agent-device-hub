@@ -249,6 +249,7 @@ export type Hosted = {
    */
   problems: () => string[];
   stateDir: string;
+  readContent: (ref: string) => Promise<Awaited<ReturnType<NonNullable<BunnyModule['manifest']['content']>>>>;
 };
 
 /** Whether a speaker call is a command rather than one of the reads every poll makes. */
@@ -366,8 +367,10 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   await watcher.subscribe('bunny.*.*.*', message => { published.push(message); });
+  let readContent: BunnyModule['manifest']['content'];
   const build = (): ModuleHarness => {
     const inner = createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions});
+    readContent = inner.manifest.content;
     const module: BunnyModule<PlaybackConfig> = {
       manifest: inner.manifest,
       start: context => inner.start({...context, database: () => {
@@ -381,6 +384,7 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
   const first = build();
   const hosted: Hosted & {instances: ModuleHarness[]} = {
     harness: first, instances: [first], clock, requester, published, stateDir,
+    readContent: ref => Promise.resolve(readContent?.(ref)),
     records: () => published.filter(message => message.dataschema === PLAYBACK_SCHEMA).map(message => message.data as PlaybackState),
     record: () => {
       const last = hosted.records().at(-1);

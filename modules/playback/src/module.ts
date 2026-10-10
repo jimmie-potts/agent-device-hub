@@ -19,6 +19,7 @@ import {httpSpeakers, type SpeakerTransport} from './transport.js';
 import {ArtworkController} from './artwork.js';
 import {ARTWORK_DECODE_MS, type ArtworkFetch, type ArtworkResult} from './artwork-fetch.js';
 import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
+import {readArtworkContent} from './artwork-content.js';
 
 export const PLAYBACK_MODULE = 'playback';
 export const PLAYBACK_SCHEMA = `${SCHEMA_BASE}playback/2.1`;
@@ -95,11 +96,15 @@ type Handled = {body: string; result: string | null};
  */
 export function createPlaybackModule({transport, pollMs = POLL_MS, timeoutMs = CALL_TIMEOUT_MS, monotonic = () => performance.now(), artwork: artworkOptions}: PlaybackModuleOptions):
 BunnyModule<PlaybackConfig> {
+  let readContent: NonNullable<BunnyModule<PlaybackConfig>['manifest']['content']> | undefined;
   return {
-    manifest: {name: PLAYBACK_MODULE, apiVersion: '1.1', configure: configurePlayback},
+    manifest: {name: PLAYBACK_MODULE, apiVersion: '1.2', configure: configurePlayback, content: ref => readContent?.(ref)},
     async start({sdk, config, database, clock, scheduler, log, trace, signal, workers}) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (config === undefined) throw new Error('the playback module started without its configuration');
+      readContent = undefined;
+      const retireContent = (): void => { readContent = undefined; };
+      signal.addEventListener('abort', retireContent, {once: true});
       const {id} = config;
       const db = database();
       db.exec(`CREATE TABLE IF NOT EXISTS playback_records (id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT;
@@ -168,9 +173,10 @@ BunnyModule<PlaybackConfig> {
         log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
       };
 
-      // The record as last committed. Each start publishes a new revision, unavailable until every speaker's first read settles.
+      // The optimistic record drives existing revision admission/rollback; content uses only successful commits.
       const stored = db.prepare('SELECT revision FROM playback_records WHERE id = ?').get(id) as {revision: number} | undefined;
       let record = recordOf(id, (stored?.revision ?? 0) + 1, presentation.view());
+      let committedRecord: PlaybackState | undefined;
       /** Whether the last commit failed, so the next evaluation publishes whatever it finds. */
       let dirty = false;
       const commit = (next: PlaybackState): Promise<void> => {
@@ -179,7 +185,11 @@ BunnyModule<PlaybackConfig> {
         return outbox.transaction(add => {
           saveRevision.run(id, next.revision);
           add(playbackKey(id), {kind: 'state', ...stateOf(next)});
-        }).then(storageWorked, (error: unknown) => {
+        }).then(() => {
+          // Outbox resolves after its publish attempt; a committed deferred publish still stands.
+          if (committedRecord === undefined || next.revision > committedRecord.revision) committedRecord = next;
+          storageWorked();
+        }, (error: unknown) => {
           // Nothing committed, and the next evaluation tries again.
           if (record === next) {
             record = previous;
@@ -218,6 +228,19 @@ BunnyModule<PlaybackConfig> {
           }
         },
       });
+      if (!signal.aborted) readContent = ref => {
+        if (signal.aborted) return undefined;
+        const view = presentation.view(), observation = view.observation;
+        const playback = committedRecord?.playback;
+        return readArtworkContent(ref, {
+          record: committedRecord, current: artwork.snapshot(), stopped: signal.aborted,
+          presentedSonyIsEligible: view.availability === 'available' && config.sources[view.index]?.kind === 'sony'
+            && observation !== undefined && (observation.status === 'playing' || observation.status === 'paused'),
+          presentedMetadataMatchesRecord: playback?.status === 'known' && observation !== undefined
+            && playback.player === observation.status && playback.title === observation.title
+            && playback.artist === observation.artist && playback.album === observation.album,
+        });
+      };
       /** Publishes a new revision when availability, presented playback or current artwork changes. */
       let freshness: (() => void) | undefined;
       const evaluate = (): void => {
@@ -425,7 +448,7 @@ BunnyModule<PlaybackConfig> {
 
       sources.forEach((_, index) => { tick(index); });
     },
-    stop: () => {},
+    stop: () => { readContent = undefined; },
   };
 }
 

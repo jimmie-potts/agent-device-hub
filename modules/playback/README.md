@@ -157,6 +157,17 @@ Artwork diagnostics use `bunny.operation` `media`: one failure transition per ch
 
 Generation changes follow source, reported title/artist/album, eligible session loss, unavailable playback and restart. Pause/resume, duplicate polls and stale/available transitions retain it. Candidate replacement invalidates older work within that generation. Late completions cannot restore an earlier track or cross a Sony/Sonos handoff. Sonos is `unsupported` in this release. Image completion publishes without refreshing metadata freshness; receivers' paused-next metadata lag remains an observation limitation.
 
+The module's API 1.2 content contribution serves the already normalized current
+PNG at `/modules/playback/content/artwork.<generation>.<revision>`. The gateway
+requires read authority and retains its no-store, nosniff and safe-error policy.
+The reference binds the canonical generation UUID to a positive committed
+record revision. The private presentation, image bytes and dimensions must
+still match that record. A changed observation, pending or failed association
+commit, stale/unavailable record, stop or abort refuses the old reference.
+Content reads copy bounded bytes; they never fetch, decode, publish, refresh
+metadata or send a speaker command. Browser image requests reuse this owner
+without exposing the receiver candidate or adding an acquisition chain.
+
 ### Which speaker is presented
 
 A speaker ranks first by reporting a session (a retained observation that is
