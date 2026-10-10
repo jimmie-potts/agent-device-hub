@@ -144,16 +144,22 @@ export function createUpgradeSourceAdapter(verify) {
         inputs[name] = runtimeFormatInputs(release.entries);
         artifacts[name] = release;
       }
-      if (canonical(inputs.previous) !== canonical(inputs.target) || canonical(inputs.previous) !== canonical(inputs.recovery)) refused();
-      const inventorySha256 = sha256(Buffer.from(canonical({scope, inputs: inputs.previous})));
+      const identical = canonical(inputs.previous) === canonical(inputs.target) && canonical(inputs.previous) === canonical(inputs.recovery);
+      // Each release is bound to its own verified bytes. Changed inputs remain
+      // unqualified until the separate coordinator admission covers this exact
+      // inventory set and its production recovery evidence. No compatibility
+      // verdict is inferred from successful inventory verification.
+      const classification = identical ? 'identical' : 'changed-requires-admission';
+      const inputInventories = {...inputs, qualification: inputs.target};
+      const inventorySha256 = sha256(Buffer.from(canonical({scope, inputs: inputInventories})));
       const inventories = {};
       for (const name of ['previous', 'target', 'recovery', 'qualification']) {
         const path = input.formatInventoryFiles[name];
         if (!text(path)) refused();
-        inventories[name] = await inventoryPin(path, name === 'qualification' ? input.qualificationRevision : releases[name].sourceRevision, inputs.previous);
+        inventories[name] = await inventoryPin(path, name === 'qualification' ? input.qualificationRevision : releases[name].sourceRevision, inputInventories[name]);
       }
       return {expected: {installationId: input.installationId, provenanceDirectory: input.provenanceDirectory, releases,
-        formats: {scope, qualificationRevision: input.qualificationRevision, inventorySha256, inventories}}, stamps, inputs: inputs.previous, artifacts};
+        formats: {scope, qualificationRevision: input.qualificationRevision, inventorySha256, inventories}}, stamps, classification, inputInventories, inputs: inputs.previous, artifacts};
     } catch { return refused(); }
   };
 }

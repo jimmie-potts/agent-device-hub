@@ -21,6 +21,50 @@ async function command(name: string): Promise<string> {
   return block;
 }
 
+void test('manual running checks bound observations and retain failed attempts without service replay', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-running-bound-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const bin = join(root, 'bin'); await mkdir(bin, {mode: 0o700});
+  await writeFile(join(bin, 'node'), `#!/bin/bash
+if [[ "$1" == --input-type=module ]]; then printf '2 1 0.1 synthetic'; exit 0; fi
+printf 'observation\\n' >> "$BUNNY_TEST_TRACE"
+case "$BUNNY_TEST_MODE" in
+  fail) exit 2 ;;
+  timeout) /usr/bin/sleep 5; printf 'unexpected late completion\\n' >> "$BUNNY_TEST_TRACE"; exit 0 ;;
+  retry) if [[ "$(/usr/bin/wc -l < "$BUNNY_TEST_TRACE")" -lt 2 ]]; then exit 2; fi ;;
+esac
+printf '{"verified":true}\\n'
+`, {mode: 0o700});
+  const block = await command('verify-running');
+  const execute = async (mode: string, installation: string, trace: string) => run('bash', ['--noprofile', '--norc', '-c', block], {
+    timeout: 6000, cwd: process.cwd(), env: {...process.env, PATH: bin + ':' + (process.env.PATH ?? ''),
+      BUNNY_CHECK_PHASE: 'candidate', BUNNY_REQUEST_FILE: 'synthetic-request', BUNNY_PLAN_FILE: 'synthetic-plan',
+      BUNNY_INSTALL_ROOT: installation, BUNNY_TEST_MODE: mode, BUNNY_TEST_TRACE: trace},
+  });
+  for (const mode of ['good', 'retry', 'fail', 'timeout']) {
+    await t.test(mode, async () => {
+      const installation = join(root, mode), trace = join(root, mode + '.trace');
+      await mkdir(join(installation, 'provenance'), {recursive: true, mode: 0o700});
+      if (mode === 'good' || mode === 'retry') await execute(mode, installation, trace);
+      else await assert.rejects(execute(mode, installation, trace));
+      const attempts = (await readFile(trace, 'utf8')).trim().split('\n');
+      assert.deepEqual(attempts, Array.from({length: mode === 'good' ? 1 : 2}, () => 'observation'));
+      const evidence = join(installation, 'provenance/running-synthetic-candidate');
+      if (mode === 'fail' || mode === 'timeout') {
+        for (const attempt of [1, 2]) {
+          const code = (await readFile(join(evidence, 'attempt-' + attempt + '.exit'), 'utf8')).trim();
+          if (mode === 'fail') assert.equal(code, '2');
+          else assert.ok(['124', '137'].includes(code), 'the timeout retains its nonzero timeout or kill result');
+        }
+      }
+      const before = [...await readdir(evidence)].sort();
+      await assert.rejects(execute(mode, installation, trace));
+      assert.deepEqual([...await readdir(evidence)].sort(), before);
+      assert.deepEqual((await readFile(trace, 'utf8')).trim().split('\n'), attempts);
+    });
+  }
+});
+
 void test('manual stopped backup preserves complete synthetic bytes and refuses unsafe or reused destinations', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-procedure-'));
   t.after(() => rm(root, {recursive: true, force: true}));
@@ -49,9 +93,9 @@ void test('manual stopped backup preserves complete synthetic bytes and refuses 
   })));
   const block = await command('stopped-backup');
   const backup = join(root, 'backup');
-  const backupAt = (directory: string) => run('bash', ['--noprofile', '--norc', '-c', block], {
+  const backupAt = (directory: string, environment: NodeJS.ProcessEnv = {}) => run('bash', ['--noprofile', '--norc', '-c', block], {
     cwd: process.cwd(), timeout: 10000,
-    env: {...process.env, BUNNY_STATE_DIRECTORY: state, BUNNY_CONFIG_FILE: config, BUNNY_BACKUP_DIRECTORY: directory},
+    env: {...process.env, ...environment, BUNNY_STATE_DIRECTORY: state, BUNNY_CONFIG_FILE: config, BUNNY_BACKUP_DIRECTORY: directory},
   });
   await backupAt(backup);
   for (const [name, bytes] of expected) assert.deepEqual(await readFile(join(backup, 'state', name)), bytes);
@@ -62,6 +106,16 @@ void test('manual stopped backup preserves complete synthetic bytes and refuses 
   const extracted = join(root, 'extracted'); await mkdir(extracted, {mode: 0o700});
   await run('tar', ['--extract', '--file=' + join(backup, 'backup.tar'), '--directory=' + extracted]);
   for (const [name, bytes] of expected) assert.deepEqual(await readFile(join(extracted, 'state', name)), bytes);
+
+  await t.test('inherited tar options cannot rename retained backup entries', async () => {
+    const destination = join(root, 'inherited-options');
+    await backupAt(destination, {TAR_OPTIONS: '--transform=s,^state,renamed-state,'});
+    const extraction = join(root, 'inherited-extracted');
+    await mkdir(extraction, {mode: 0o700});
+    await run('tar', ['--extract', '--file=' + join(destination, 'backup.tar'), '--directory=' + extraction],
+      {env: {...process.env, TAR_OPTIONS: ''}});
+    for (const [name, bytes] of expected) assert.deepEqual(await readFile(join(extraction, 'state', name)), bytes);
+  });
 
   await t.test('an existing backup is retained and never overwritten', async () => {
     await assert.rejects(backupAt(backup));
@@ -123,8 +177,12 @@ void test('adoption draft preserves the complete observed invocation and creates
   const entry = join(root, 'direct/apps/runtime/dist/src/main.js');
   const argv = [process.execPath, entry, '--port', '8788', '--state-dir', join(root, 'state'),
     '--config', join(root, 'config.json'), '--edge', '--environment', 'production'];
+  const destination = join(root, 'provenance', 'anchor.conf');
+  const plannedArgv = [...argv]; plannedArgv[1] = join(root, 'current/apps/runtime/dist/src/main.js');
+  const plannedBytes = '[Service]\nWorkingDirectory=' + join(root, 'current') + '\nExecStart=\nExecStart=' + plannedArgv.join(' ') + '\n';
   const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission', operation: 'adoption',
-    paths: {directories: [{path: root}]}, owner: {executable: process.execPath, entry, argv}};
+    paths: {directories: [{path: root}], adoptionDraftSha256: digest(Buffer.from(plannedBytes))},
+    execution: {adoption: {draftFile: destination}}, owner: {executable: process.execPath, entry, argv}};
   const planFile = join(root, 'provenance', 'synthetic-plan.json');
   const seal = async (value: object): Promise<void> => {
     const result = await run(process.execPath, ['--input-type=module', '-e',
@@ -137,7 +195,6 @@ void test('adoption draft preserves the complete observed invocation and creates
     cwd: process.cwd(), timeout: 10000,
     env: {...process.env, BUNNY_PLAN_FILE: planFile, BUNNY_INSTALL_ROOT: root, BUNNY_DRAFT_OVERRIDE: destination},
   });
-  const destination = join(root, 'provenance', 'anchor.conf');
   await draftAt(destination);
   const selected = [...argv]; selected[1] = join(root, 'current/apps/runtime/dist/src/main.js');
   const bytes = await readFile(destination, 'utf8');
@@ -158,8 +215,9 @@ void test('adoption draft preserves the complete observed invocation and creates
   await t.test('systemd substitution or quoting characters refuse rather than change arguments', async () => {
     for (const value of ['%h/state', '$HOME/state', '/private path/state', '/private\nstate']) {
       const changed = [...argv]; changed[5] = value;
-      await seal({...body, owner: {...body.owner, argv: changed}});
-      await assert.rejects(draftAt(join(root, 'provenance', 'unsafe.conf')));
+      const unsafe = join(root, 'provenance', 'unsafe.conf');
+      await seal({...body, execution: {adoption: {draftFile: unsafe}}, owner: {...body.owner, argv: changed}});
+      await assert.rejects(draftAt(unsafe));
     }
     await seal(body);
   });

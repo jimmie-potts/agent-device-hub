@@ -12,8 +12,16 @@ Current-runtime upgrade inventory and receipt checks (#1037) are in
 `test:runtime:built` discovery also runs them in the active core CI job. They use
 small private disposable directories, never installed state or service control.
 They compare supplied release manifest/inventory/archive hashes and establish
-receipt validation, private atomic persistence and readback. Supplied hashes do
-not establish trusted merged source or safe archive extraction;
+receipt validation, private atomic persistence and readback. A disposable child
+refuses only the receipt directory synchronization through a test preload; the
+real CLI must refuse an identical retry until synchronization works, emit a
+schema-valid private failure receipt and preserve its visible bytes. Resolution
+fixtures also exercise the real CLI under an inherited installation
+lock: ordinary replacement refuses, explicit inspected resolution retains the
+original bytes, and missing locks, changed evidence, changed approval and
+conflicting retained copies refuse. These synthetic evidence files establish
+binding and persistence behavior, not installed inspection or coordinator
+acceptance. Supplied hashes do not establish trusted merged source or safe archive extraction;
 upgrade/recovery, running identity and installed acceptance require their own
 procedure evidence.
 
@@ -31,6 +39,15 @@ runtime arguments, restart/PID reuse, another user, incomplete observations and
 safe refusal diagnostics. Existing runtime CI discovers it. The fixture does
 not read the installed service or prove release closure, listener ownership,
 build/health identity or upgrade eligibility.
+
+The preflight suite also checks the post-start observation composition: a new
+process, selected release, unchanged approved inputs and repeated authenticated
+build/health reads. Wrong build, unhealthy state, token drift, changed arguments,
+changed selection and missing locks refuse. The paths suite uses disposable
+files to check the target anchor and exact first-adoption override. These checks
+use internal reader fixtures and no installed service. The manual `verify-running`
+block applies the plan's finite attempt and process timeout bounds; actual
+startup, recovery and failure-to-receipt evidence remain separate requirements.
 
 `node --test apps/runtime/dist/tests/upgrade-lock.test.js` checks inherited FD9
 against the named private operation lock. It covers missing/wrong descriptors,
@@ -67,7 +84,15 @@ discovers these tests. Observing valid degraded health does not accept an
 exception or establish upgrade eligibility.
 
 `node --test apps/runtime/dist/tests/upgrade-paths.test.js` checks first adoption
-from the retained direct tree and routine upgrades through the previous-release
+and the required operational frame: exact backup and adoption paths, bounded
+stop/post-start limits, pinned private startup-effects and restoration evidence,
+and the derived adoption-draft bytes. Changed evidence or occupied destinations
+refuse; preparing the exact planned draft does not invalidate the locked plan.
+These tests use disposable files and do not accept startup effects or installed
+execution. The composed preflight suite also checks operational-evidence drift.
+
+The suite also checks adoption from the retained direct tree and routine
+upgrades through the previous-release
 anchor. Foreign or dangling anchors, overlapping mutable paths, wrong release
 placement, linked inputs, public operation directories and unexpected entries
 refuse without filesystem changes. The request has no observation or acceptance
@@ -76,10 +101,13 @@ protection and the complete preflight remain separate requirements.
 
 `node --test apps/runtime/dist/tests/upgrade-source.test.js` checks release-derived
 production input inventories. Resealed artifacts with changed producers,
-controllers, outboxes, lockfiles or registry generators refuse. Missing required
-anchors and executable-looking build identities also refuse. Build identity is
-parsed as data. Explicit operator-only helper exclusions do not establish that
-the runtime entry graph excludes those helpers; independent review must verify
+controllers, outboxes, lockfiles or registry generators refuse when their pinned
+inventories are stale. Correct independent release inventories can be bound,
+but changed inputs remain explicitly unqualified until coordinator admission
+accepts the exact inventory set and complete production recovery evidence.
+Missing required anchors and executable-looking build identities also refuse.
+Build identity is parsed as data. Explicit operator-only helper exclusions do
+not establish that the runtime entry graph excludes those helpers; independent review must verify
 that boundary. These synthetic checks do not qualify installed compatibility.
 
 `node --test apps/runtime/dist/tests/upgrade-baseline.test.js` checks actual-byte

@@ -58,6 +58,13 @@ void test('binds a complete admitted qualification to private evidence and indep
     changed.releases.target = {...release, manifestSha256: 'f'.repeat(64)};
     await assert.rejects(bindUpgradeAdmission(path, changed), /^Error: runtime-proof-admission-refused$/);
   });
+  await t.test('an admission for an older production inventory cannot authorize changed inputs', async () => {
+    const changed = structuredClone(expected);
+    changed.formats.inventorySha256 = 'e'.repeat(64);
+    await assert.rejects(bindUpgradeAdmission(path, changed), /^Error: runtime-proof-admission-refused$/);
+    // Refusal preserves the retained coordinator decision and its evidence.
+    assert.deepEqual((await readdir(directory)).sort(), ['admission.json', 'evidence.json']);
+  });
   await t.test('a caller passed flag or nested unknown field refuses', async () => {
     for (const changed of [{...value, passed: true}, {...value, coordinator: {...value.coordinator, passed: true}}]) {
       await writeFile(path, JSON.stringify(changed), {mode: 0o600});

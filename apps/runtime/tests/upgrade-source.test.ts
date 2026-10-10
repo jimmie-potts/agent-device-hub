@@ -18,7 +18,7 @@ const anchors = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json',
   ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx'].map(name => `modules/${name}/package.json`),
   'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
 
-void test('release source comparison derives format inputs and refuses changes or executable build identities', async t => {
+void test('release source comparison binds exact inventories and refuses unbound changes or executable build identities', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-source-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const revisions = {previous: 'a'.repeat(40), target: 'b'.repeat(40), recovery: 'a'.repeat(40)};
@@ -81,6 +81,32 @@ void test('release source comparison derives format inputs and refuses changes o
         return true;
       });
       await writeFile(file, original, {mode: 0o600});
+      await seal('target');
+    }
+  });
+  await t.test('changed producers can bind their own inventories without asserting recovery compatibility', async () => {
+    const target = releases.target;
+    assert.ok(target);
+    const file = join(target.directory, 'apps/runtime/src/state.ts');
+    const original = await readFile(file);
+    const targetPin = inventories.target, qualificationPin = inventories.qualification;
+    assert.ok(targetPin !== undefined && qualificationPin !== undefined);
+    const originalTargetPin = await readFile(targetPin), originalQualificationPin = await readFile(qualificationPin);
+    const changed = 'changed synthetic production input requiring explicit qualification';
+    const targetInputs = inputs.map(row => row.path === 'apps/runtime/src/state.ts' ? {...row, sha256: hash(changed)} : row);
+    try {
+      await writeFile(file, changed, {mode: 0o600});
+      await seal('target');
+      for (const pin of [targetPin, qualificationPin]) await writeFile(pin, JSON.stringify({
+        schema: 'runtime-format-input-inventory/1.0', scope: 'runtime-durable-formats/1.0', sourceRevision: revisions.target, inputs: targetInputs,
+      }), {mode: 0o600});
+      const result = await run(process.execPath, [helper, 'verify-formats', request]);
+      assert.deepEqual(JSON.parse(result.stdout), {verified: true, scope: 'runtime-durable-formats/1.0', inputs: anchors.length,
+        classification: 'changed-requires-admission', compatibility: 'not-established'});
+    } finally {
+      await writeFile(file, original, {mode: 0o600});
+      await writeFile(targetPin, originalTargetPin, {mode: 0o600});
+      await writeFile(qualificationPin, originalQualificationPin, {mode: 0o600});
       await seal('target');
     }
   });

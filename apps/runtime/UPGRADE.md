@@ -278,6 +278,15 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
+Each previous, target and recovery inventory must match that release's actual
+verified production inputs. The qualification inventory matches the target's
+production inputs and records the qualification revision. Their combined digest
+binds all four roles. `verify-formats` verifies those bindings; changed inputs
+are reported as `changed-requires-admission` with compatibility `not-established`.
+It does not accept recovery. The coordinator must assess every difference using
+the complete production-store evidence and independent reviews. Stale inventories,
+unclassified ownership, missing coverage or unknown recovery still refuse.
+
 Record the coordinator's acceptance of the qualification in one private proof
 admission certificate. Bind its exact release identities, source-format inventory,
 complete owner coverage, phase receipts, installed-baseline closure and reviewed
@@ -292,6 +301,29 @@ Capture the exact read-only preflight plan. Review its installed identity,
 running process/build identity, target, compatibility coverage, protected paths,
 configuration, backup, recovery and expected effects. Retain the canonical plan
 and digest privately. A missing observation is a refusal, not a matching baseline.
+
+The request's required `execution` object binds the neutral `operationId` and
+`backupDirectory` (`<installationRoot>/backups/<operationId>`), `stopTimeoutMs`
+(1–60 seconds), and `postStart` limits: `attempts` (1–30), `timeoutMs` (1–60
+seconds), and `intervalMs` (100–10,000 milliseconds, less than the timeout).
+`startupEffects.assessment` and `startupEffects.authority` are private
+`{path, sha256}` evidence pins under provenance. A valid pin establishes unchanged
+bytes; the coordinator must inspect and accept their meaning before effects.
+
+For an upgrade, `execution.adoption` is `null`. For first adoption it names
+`draftFile`, `overrideFile`, private retained `originals` pins, and a private
+`restoration` evidence pin. The new override must be in the observed primary
+unit's `bunny-runtime.service.d` directory, which must remain absent before the
+operation. The plan derives the draft's exact bytes and digest from the observed
+invocation. Preparing those same bytes at the named provenance path preserves
+the plan; different draft bytes refuse. All operational choices and evidence
+are compared again by the locked recheck.
+
+Set the manual command variables from this inspected plan. In particular,
+`BUNNY_BACKUP_DIRECTORY` is `execution.backupDirectory`, and
+`BUNNY_STOP_TIMEOUT_SECONDS` is `execution.stopTimeoutMs / 1000`. For adoption,
+use its exact draft and override paths; derive the override directory with
+`dirname`. Do not choose different destinations or bounds after approval.
 
 After building the reviewed source, save the initial plan in the qualified
 private provenance directory. Use a new filename; never overwrite a reviewed
@@ -355,20 +387,33 @@ first-adoption override or other effect outside standing installation authority.
 Write the schema-valid in-progress receipt and require successful durable readback
 before stopping the runtime:
 
+Use a new `BUNNY_RECEIPT_DIAGNOSTIC_FILE` in the private operation-evidence
+directory for each invocation. Do not use a journal, CI log or public artifact.
+The file must not already exist; the command refuses to overwrite it.
+
 ```bash
-node apps/runtime/bin/runtime-upgrade-check.mjs receipt "$BUNNY_INTENT_FILE" "$BUNNY_RECEIPTS_DIRECTORY"
+(
+set -euo pipefail
+umask 077
+set -o noclobber
+test ! -e "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+test ! -L "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+node apps/runtime/bin/runtime-upgrade-check.mjs receipt "$BUNNY_INTENT_FILE" "$BUNNY_RECEIPTS_DIRECTORY" 2> "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+)
 ```
 
 The receipt writer validates and persists the supplied document. It does not
 prove that the host performed the described operation. Finalization preserves
-the original operation, release, approval and compatibility frame.
+the original operation, release, approval and compatibility frame. An identical
+receipt is synchronized and read back again before `persisted: true`; visible
+bytes from an earlier failed synchronization do not establish durability.
 
 ## Stop, back up, select and verify
 
 Control only the named user service:
 
 ```bash
-timeout 30s systemctl --user stop bunny-runtime.service
+timeout "${BUNNY_STOP_TIMEOUT_SECONDS}s" systemctl --user stop bunny-runtime.service
 ```
 
 Within the approved bound, verify that its owner and children have exited and
@@ -435,9 +480,9 @@ for BUNNY_SPAN_FILE in spans.ndjson spans.previous.ndjson; do
 done
 cp --preserve=mode,timestamps --no-dereference -- "$BUNNY_CONFIG_FILE" "$BUNNY_BACKUP_DIRECTORY/runtime.json"
 cmp -- "$BUNNY_CONFIG_FILE" "$BUNNY_BACKUP_DIRECTORY/runtime.json"
-tar --create --file="$BUNNY_BACKUP_DIRECTORY/backup.tar" --directory="$BUNNY_BACKUP_DIRECTORY" state runtime.json
+env -u TAR_OPTIONS /usr/bin/tar --create --file="$BUNNY_BACKUP_DIRECTORY/backup.tar" --directory="$BUNNY_BACKUP_DIRECTORY" state runtime.json
 sha256sum -- "$BUNNY_BACKUP_DIRECTORY/backup.tar" > "$BUNNY_BACKUP_DIRECTORY/backup.sha256"
-sync -- "$BUNNY_BACKUP_DIRECTORY/backup.tar" "$BUNNY_BACKUP_DIRECTORY/backup.sha256" "$BUNNY_BACKUP_DIRECTORY"
+sync -- "$BUNNY_BACKUP_DIRECTORY/backup.tar" "$BUNNY_BACKUP_DIRECTORY/backup.sha256" "$BUNNY_BACKUP_DIRECTORY" "$(dirname -- "$BUNNY_BACKUP_DIRECTORY")"
 sha256sum --check --status -- "$BUNNY_BACKUP_DIRECTORY/backup.sha256"
 )
 ```
@@ -491,6 +536,61 @@ An active service, selected link or healthy HTTP listener alone is insufficient.
 An accepted health exception must match its named owner and evidence; it cannot
 cover a new failure.
 
+Use `verify-running` for those reads. It binds the approved request and plan,
+checks the selected target or recovery release, preserves Node, arguments,
+configuration, credentials, hooks and original unit bytes, and checks the
+authenticated build and module health around repeated owner/listener reads.
+For first adoption it also checks the exact added override. It inspects retained
+state owners and layout without opening live databases; content retention still
+requires the separately qualified latest-state evidence.
+
+Run the following block in the shell holding FD9. Set `BUNNY_CHECK_PHASE` to
+`candidate`, `recovery` or `reupgrade` for the start just performed. Each phase
+creates a new private evidence directory; an existing directory requires
+inspection before selecting any new evidence location. The block derives its
+attempt, per-attempt timeout and interval from the approved frame. Only
+observations are retried. It never starts, stops or switches a service.
+
+<!-- qualification: verify-running -->
+```bash
+(
+set -euo pipefail
+umask 077
+case "$BUNNY_CHECK_PHASE" in candidate|recovery|reupgrade) ;; *) exit 1 ;; esac
+BUNNY_CHECK_FRAME="$(node --input-type=module - "$BUNNY_REQUEST_FILE" "$BUNNY_PLAN_FILE" "$BUNNY_INSTALL_ROOT" <<'JS'
+import {readPrivateFile} from './apps/runtime/dist/src/state.js';
+import {parseUpgradeRequest} from './apps/runtime/dist/src/upgrade-paths.js';
+import {canonical, sha256} from './apps/hub/dist/install/files.js';
+const [requestFile, planFile, root] = process.argv.slice(2);
+const bytes = await readPrivateFile(requestFile, 256 * 1024);
+const request = parseUpgradeRequest(JSON.parse(bytes.toString('utf8')));
+const {planSha256, ...plan} = JSON.parse((await readPrivateFile(planFile, 256 * 1024)).toString('utf8'));
+if (request.installationRoot !== root || sha256(bytes) !== plan.requestSha256 || sha256(canonical(plan)) !== planSha256 || canonical(request.execution) !== canonical(plan.execution)) throw new Error('runtime-upgrade-running-refused');
+const {attempts, timeoutMs, intervalMs} = request.execution.postStart;
+process.stdout.write([attempts, timeoutMs / 1000, intervalMs / 1000, request.execution.operationId].join(' '));
+JS
+)"
+read -r BUNNY_CHECK_ATTEMPTS BUNNY_CHECK_TIMEOUT_SECONDS BUNNY_CHECK_INTERVAL_SECONDS BUNNY_CHECK_OPERATION <<< "$BUNNY_CHECK_FRAME"
+BUNNY_CHECK_EVIDENCE_DIRECTORY="$BUNNY_INSTALL_ROOT/provenance/running-$BUNNY_CHECK_OPERATION-$BUNNY_CHECK_PHASE"
+mkdir -m 700 -- "$BUNNY_CHECK_EVIDENCE_DIRECTORY"
+for ((BUNNY_CHECK_ATTEMPT=1; BUNNY_CHECK_ATTEMPT<=BUNNY_CHECK_ATTEMPTS; BUNNY_CHECK_ATTEMPT++)); do
+  if /usr/bin/timeout --signal=KILL "${BUNNY_CHECK_TIMEOUT_SECONDS}s" node apps/runtime/bin/runtime-upgrade-check.mjs verify-running "$BUNNY_REQUEST_FILE" "$BUNNY_PLAN_FILE" "$BUNNY_CHECK_PHASE" > "$BUNNY_CHECK_EVIDENCE_DIRECTORY/attempt-$BUNNY_CHECK_ATTEMPT.json" 2> "$BUNNY_CHECK_EVIDENCE_DIRECTORY/attempt-$BUNNY_CHECK_ATTEMPT.stderr"; then
+    exit 0
+  else
+    BUNNY_CHECK_EXIT=$?
+    printf '%s\n' "$BUNNY_CHECK_EXIT" > "$BUNNY_CHECK_EVIDENCE_DIRECTORY/attempt-$BUNNY_CHECK_ATTEMPT.exit"
+  fi
+  if ((BUNNY_CHECK_ATTEMPT<BUNNY_CHECK_ATTEMPTS)); then /usr/bin/sleep "$BUNNY_CHECK_INTERVAL_SECONDS"; fi
+done
+exit 1
+)
+```
+
+An exhausted bound is a verification failure. Retain every attempt and record
+the supported failed or uncertain outcome before the qualified manual recovery
+step. A killed attempt may leave an empty observation file; it is not a successful
+read. Successful running checks do not establish client or physical acceptance.
+
 Verify retained latest-state evidence and any applicable installed-client or
 physical acceptance separately. Do not send device commands merely to make an
 upgrade health check pass.
@@ -513,11 +613,33 @@ automatic switch or start. In a successful recovery, the receipt records
 `failed-rolled-back` with the observed previous identity. If it cannot establish
 that identity and health, record `rollback-failed` or `interrupted` as applicable.
 
-Write and read back the final receipt with the same receipt command. It must
-match the observed running identity, health, backup, state and recovery result.
-Do not claim success if receipt finalization fails after a healthy start; retain
-the inspectable intent and all recovery references. Release the descriptor only
-after final readback or a recorded interrupted handoff:
+Prepare `BUNNY_FINAL_RECEIPT_FILE` without replacing the original private intent
+input. It must match the observed running identity, health, backup, state and
+recovery result. Select a new `BUNNY_RECEIPT_DIAGNOSTIC_FILE`, distinct from the
+intent command's diagnostic file, then finalize:
+
+```bash
+(
+set -euo pipefail
+umask 077
+set -o noclobber
+test ! -e "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+test ! -L "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+node apps/runtime/bin/runtime-upgrade-check.mjs receipt "$BUNNY_FINAL_RECEIPT_FILE" "$BUNNY_RECEIPTS_DIRECTORY" 2> "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+)
+```
+
+A persistence failure exits nonzero and, when its validated fields permit it,
+emits the attempted schema-valid `receipt-finalization-failed` document to that
+private stderr file. Otherwise it emits only a fixed refusal code. The diagnostic
+is not proof that the durable receipt changed. Rename may already be visible
+when synchronization or readback fails; inspect the actual receipt, selected
+link, processes and latest state before any recovery. Retain both receipt inputs,
+the diagnostic and all recovery references. Retrying receipt persistence sends
+no service or device command; never repeat the upgrade itself blindly.
+
+Do not claim success if finalization fails after a healthy start. Release the
+descriptor only after final readback or a recorded interrupted handoff:
 
 ```bash
 exec 9<&-
@@ -526,6 +648,69 @@ exec 9<&-
 Retain all owned releases and recovery evidence for this initial procedure;
 there is no pruning step. An interruption releasing the lock does not resolve
 its intent. The next operation must inspect that intent before any effects.
+
+### Settle an interrupted receipt
+
+Hold the same installation lock while inspecting the unresolved receipt, its
+approved plan, the selected link, running identity and health, and the latest
+retained state. A named coordinator must decide what those observations establish
+and retain that decision privately. The resolver checks hashes and document
+consistency; it does not establish the meaning or accuracy of those observations.
+Do not use it to turn missing installed evidence into a successful outcome.
+
+Prepare a separate schema-valid final receipt for the same operation. Preserve
+its original approval, source identities, compatibility decision and start time.
+The final outcome must be `succeeded`, `refused`, `failed-before-switch` or
+`failed-rolled-back`, supported by the inspection. If running identity or recovery
+remains unknown, retain the unresolved outcome and handoff instead.
+
+Prepare a private resolution file under the installation's `provenance/`
+directory with exactly these fields:
+
+```json
+{
+  "schema": "runtime-receipt-resolution/1.0",
+  "installationId": "<same installation>",
+  "operationId": "<same operation>",
+  "receiptSha256": "<SHA-256 of the unresolved receipt's exact bytes>",
+  "finalReceiptSha256": "<SHA-256 of the final input's exact bytes>",
+  "plan": {"path": "<approved plan file>", "sha256": "<file SHA-256>"},
+  "running": {"path": "<inspection evidence file>", "sha256": "<file SHA-256>"},
+  "latestState": {"path": "<state evidence file>", "sha256": "<file SHA-256>"},
+  "coordinator": {
+    "name": "<decision owner>",
+    "authority": {"path": "<retained decision file>", "sha256": "<file SHA-256>"}
+  }
+}
+```
+
+Each evidence file must also be private and under `provenance/`. The plan must
+retain its valid canonical hash and match the original receipt's approval and
+operation. Use a new diagnostic file and run this persistence-only command from
+the shell holding FD9:
+
+```bash
+(
+set -euo pipefail
+umask 077
+set -o noclobber
+test ! -e "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+test ! -L "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+node apps/runtime/bin/runtime-upgrade-check.mjs resolve-receipt "$BUNNY_FINAL_RECEIPT_FILE" "$BUNNY_INSTALL_ROOT" "$BUNNY_RESOLUTION_FILE" 2> "$BUNNY_RECEIPT_DIAGNOSTIC_FILE"
+)
+```
+
+Before publishing the final receipt, this command durably retains the original
+bytes as `provenance/unresolved-<operationId>-<receiptSha256>.json`. It refuses
+changed evidence, a conflicting retained copy, a missing lock or changes to the
+original operation. It sends no service or device command. Keep the resolution,
+both receipt inputs, original retained bytes, observations and decision.
+
+If publication or synchronization fails, inspect the actual receipt before
+retrying. A visible final receipt can be persisted again with the ordinary
+`receipt` command using the identical final input. A still-unresolved receipt
+requires another inspected resolution. Neither path authorizes replaying an
+upgrade, recovery or device command.
 
 ## First adoption
 
@@ -551,17 +736,18 @@ import {dirname, join} from 'node:path';
 import {canonical, sha256} from './apps/hub/dist/install/files.js';
 import {syncDirectory} from './apps/hub/dist/install/stage.js';
 import {readPrivateFile} from './apps/runtime/dist/src/state.js';
+import {renderUpgradeAdoptionDraft} from './apps/runtime/dist/src/upgrade-paths.js';
 const [planFile, root, destination] = process.argv.slice(2);
 const {planSha256, ...plan} = JSON.parse((await readPrivateFile(planFile, 256 * 1024)).toString('utf8'));
 if (sha256(canonical(plan)) !== planSha256 || plan.schema !== 'runtime-upgrade-plan/1.0' || plan.operation !== 'adoption'
   || plan.eligibility !== 'eligible-under-coordinator-admission' || plan.paths.directories[0].path !== root
-  || dirname(destination) !== join(root, 'provenance') || plan.owner.argv[0] !== plan.owner.executable
+  || dirname(destination) !== join(root, 'provenance') || destination !== plan.execution.adoption.draftFile
+  || plan.owner.argv[0] !== plan.owner.executable
   || plan.owner.argv[1] !== plan.owner.entry) throw new Error('adoption-draft-refused');
-const cwd = join(root, 'current');
-const argv = [...plan.owner.argv]; argv[1] = join(cwd, 'apps/runtime/dist/src/main.js');
-if (![cwd, ...argv].every(value => typeof value === 'string' && /^[-A-Za-z0-9_/.:=]+$/.test(value))) throw new Error('adoption-draft-refused');
+const bytes = renderUpgradeAdoptionDraft(root, plan.owner);
+if (sha256(bytes) !== plan.paths.adoptionDraftSha256) throw new Error('adoption-draft-refused');
 const file = await open(destination, 'wx', 0o600);
-try { await file.writeFile('[Service]\nWorkingDirectory=' + cwd + '\nExecStart=\nExecStart=' + argv.join(' ') + '\n'); await file.sync(); }
+try { await file.writeFile(bytes); await file.sync(); }
 finally { await file.close(); }
 await syncDirectory(dirname(destination));
 JS

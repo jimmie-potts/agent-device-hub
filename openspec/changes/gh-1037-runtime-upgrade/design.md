@@ -61,6 +61,16 @@ the owned current anchor atomically; verify a new process and its exact build,
 configured module/core health and existing scoped health exceptions. Bounded
 timeouts produce truthful failure receipts rather than inferred success.
 
+The request includes one closed manual operation frame: a neutral operation ID,
+the exact new backup destination, the service-stop deadline, post-start attempt,
+elapsed-time and interval bounds, the startup-effects assessment and its authority
+evidence. First adoption also names the override, draft, original-preservation
+and restoration paths. The canonical plan binds this frame alongside the
+observations; changing an operational choice requires a new plan. Validate path
+separation and bounds before effects. A bounded read-only verifier uses the same
+frame for candidate and recovery identity/health checks; it never stops, starts,
+selects a release or triggers recovery.
+
 Recovery reopens latest durable state using a qualified prior release. Never
 restore an older snapshot automatically. Compare format-producing/consuming inputs
 conservatively and execute cross-revision tests through production adapters with
@@ -69,8 +79,25 @@ outboxes participate; file originals/references remain intact. Startup may mark
 unfinished operations uncertain or pause playback, but cannot replay commands.
 Use semantic post-start assertions, not whole-database byte equality.
 
+Bind each release's actual production-input inventory independently. Equality
+can reuse scoped evidence; changed inputs require the coordinator's explicit
+qualification of the exact baseline/candidate/recovery inventories and complete
+four-phase production-store corpus. A pinned inventory alone is not compatibility
+acceptance. Unknown owners or formats still refuse before service effects.
+
+Resolve an interrupted receipt only through an explicit inspected-resolution
+step under the held installation lock. Bind that resolution to the existing
+receipt's exact hash, original operation/approval frame and privately retained
+inspection, running-health and latest-state evidence. Preserve the prior bytes
+for recovery. Normal finalization cannot silently clear an interrupted operation,
+change its target or approval, or replay a service/device effect.
+
 Finalize a schema-valid private receipt and read it back before success. Retain
-all owned recovery releases; no pruning runs in this procedure. Publication uses synthetic receipts only. Credentials never enter
+all owned recovery releases; no pruning runs in this procedure. Even an identical
+terminal receipt must be synchronized and read back before a durability claim.
+A failed final write emits the attempted schema-valid failure receipt to the
+explicit private diagnostic channel when possible, without claiming its bytes
+are durable. Publication uses synthetic receipts only. Credentials never enter
 receipts or logs; consistent private backup handling follows the existing
 configuration/state protection rules. Independent reviews and active CI remain
 required before installed execution.

@@ -22,6 +22,10 @@ MUST refuse unknown targets, changed inputs and effects outside that authority.
 - **WHEN** the baseline, candidate bytes, configuration, state ownership or protected paths differ from the reviewed plan
 - **THEN** execution refuses before stopping any writer or changing the installation and requires a fresh plan
 
+#### Scenario: Operational choices changed
+- **WHEN** the backup destination, verification bounds, startup-effects authority or first-adoption override/restoration paths change
+- **THEN** the canonical operation plan changes and the locked comparison refuses the previous plan before any effect
+
 #### Scenario: Legacy installer selected for current runtime
 - **WHEN** an operator attempts to satisfy this procedure with the retained Hub installer or repeats fresh cutover against current state
 - **THEN** the procedure refuses that execution path and preserves current state and unrelated services
@@ -80,6 +84,14 @@ MUST stay out of receipts intended for publication and all GitHub surfaces.
 #### Scenario: Final receipt persistence fails
 - **WHEN** running verification succeeds but durable receipt finalization fails
 - **THEN** the operation reports failure, retains its inspectable intent and performs no blind retry or pruning
+
+#### Scenario: Visible terminal receipt has not been synchronized
+- **WHEN** receipt replacement is visible but directory synchronization or readback fails
+- **THEN** finalization reports failure through the private diagnostic channel and an identical persistence retry cannot report success without synchronization and exact readback
+
+#### Scenario: Inspected interrupted operation is resolved
+- **WHEN** the authorized coordinator verifies the actual selection, running identity, health and latest state under the held lock after an interruption
+- **THEN** an explicit resolution binds the exact unresolved receipt and original approval frame, retains prior evidence and permits truthful finalization without replaying effects
 
 ### Requirement: Separate synthetic and established-installation acceptance
 
