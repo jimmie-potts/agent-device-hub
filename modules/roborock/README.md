@@ -1,7 +1,10 @@
 # Roborock source transport
 
 This package supplies the read-only V1 transport for Hub #1070. It is not
-registered with the running application. The runtime collector, private SQLite
+registered with the running application. The private workspace package lives at
+`modules/roborock/transport`; the module root has no package manifest until #376
+provides a complete runtime registration. This preserves the build registry’s
+rule that every direct module package exports a registration. The runtime collector, private SQLite
 history, module page and MCP status tool are #376 work.
 
 The transport uses an explicit private target configuration and session. Local
@@ -94,7 +97,7 @@ validation cannot identify every directed subnet broadcast; common `.0` and
 
 ## Consumer interface
 
-Import `@jimmie-potts/roborock/transport`. Load the explicit configuration and
+Import `@jimmie-potts/roborock-transport`. Load the explicit configuration and
 session with `loadPrivateConfig` and `loadPrivateSession`, then construct a
 `createReadTransport` owner. Construction snapshots and validates the target;
 it opens no connection and never signs in. There is no generic command export.

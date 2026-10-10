@@ -156,6 +156,7 @@ npm run test:roborock-transport:consumer:built
 npm run test:sdk:built
 npm run test:events:built
 npm run test:contracts:built
+npm run test:runtime:built
 npm run check:workflow
 npm run test:workflow
 ```
@@ -165,8 +166,9 @@ runs both `:built` commands after its fresh root build. Tests use synthetic
 credentials, TCP/MQTT/account peers and independently authored byte vectors.
 They cover the six final-sender RPCs and prohibited calls, framing/correlation,
 private files, bounded map inflation, deadlines, disconnect, cancellation and
-stop. The consumer check exercises the exported transport entry and registry
-errors. No test uses an owner session, vendor endpoint or physical robot.
+stop. The consumer check exercises the exported transport entry, registry
+errors and generated runtime module registry. The nested source package is not
+a direct module manifest; #376 adds the complete runtime registration. No test uses an owner session, vendor endpoint or physical robot.
 Record the allowlist/decompression negative control with the candidate's local
 checks; source success does not establish account, installed or firmware
 compatibility. Runtime/page/MCP and live-run acceptance stay with #376.

@@ -1,11 +1,11 @@
 {
-  "name": "@jimmie-potts/roborock",
+  "name": "@jimmie-potts/roborock-transport",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Source-qualified read-only Roborock V1 transport (Hub #1070)",
   "exports": {
-    "./transport": {
+    ".": {
       "types": "./dist/src/transport/index.d.ts",
       "import": "./dist/src/transport/index.js"
     }

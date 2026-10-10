@@ -119,7 +119,11 @@ export function reader(config: Config, session: Session, dependencies: Dependenc
     return new Promise(resolve => {
       const job: Job = {request: {method, params, id: nextId++, seq: randomBytes(4).readUInt32BE(0), seconds: Math.floor(clock.now() / 1000), nonce: randomBytes(16)}, options, controller: new AbortController(), resolve, dispose: () => {}, settled: false, generation, span: undefined};
       const abort = (): void => { settle(job, failed('cancelled')); };
-      const cancelDeadline = scheduler.after(timeout, () => {settle(job, failed('unavailable'));});
+      const cancelDeadline = scheduler.after(timeout, () => {
+        // Queue expiry has observed no device; an active timeout is one failed observation.
+        if (!retired(job) && active === job) availability.unreachable('roborock', 'unavailable', job.span?.context);
+        settle(job, failed('unavailable'));
+      });
       options.signal?.addEventListener('abort', abort, {once: true});
       job.dispose = () => {cancelDeadline(); options.signal?.removeEventListener('abort', abort);};
       queue.push(job); drain();

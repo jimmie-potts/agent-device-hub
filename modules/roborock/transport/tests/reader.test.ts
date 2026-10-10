@@ -110,3 +110,25 @@ void test('known account IDs and derived broker credentials cannot escape in JSO
   const escaped = reader(config, escapedSession, {local: wire, mqtt: wire});
   assert.equal(code(await escaped.readStatus()), 'unavailable'); escaped.stop();
 });
+
+void test('active timeouts record degradation, bounded summaries and recovery; queued expiry and cancellation do not', async () => {
+  const time = new Time(); const records: HarnessRecord[] = []; const spans = new RecordedSpans();
+  const record = (level: HarnessRecord['level']) => (event: string, fields: HarnessRecord['fields'] = {}, trace?: HarnessRecord['trace']): void => {records.push({level, event, fields, ...(trace === undefined ? {} : {trace})});};
+  const log = {debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error')};
+  const parent = {traceparent: '00-11111111111111111111111111111111-2222222222222222-01'};
+  let silent = true;
+  const wire = (): Promise<WireResult> => silent ? new Promise(() => {}) : Promise.resolve({kind: 'json', value: []});
+  const owner = reader(config, session, {clock: time, scheduler: time, local: wire, mqtt: wire, log, trace: spans});
+  const cancelled = new AbortController(); const active = owner.readStatus({timeoutMs: 100, trace: parent});
+  const queued = owner.readStatus({timeoutMs: 50, trace: parent}); const aborted = owner.readStatus({signal: cancelled.signal, trace: parent});
+  cancelled.abort(); assert.equal(code(await aborted), 'cancelled');
+  time.advance(50); assert.equal(code(await queued), 'unavailable'); assert.equal(records.length, 0);
+  time.advance(50); assert.equal(code(await active), 'unavailable');
+  for (let i = 0; i < 2; i++) {
+    time.advance(60000); const timeout = owner.readStatus({timeoutMs: 100, trace: parent}); time.advance(100); assert.equal(code(await timeout), 'unavailable');
+  }
+  silent = false; assert.equal((await owner.readStatus({trace: parent})).ok, true); owner.stop();
+  assert.deepEqual(records.map(entry => [entry.level, entry.event]), [['warn', 'device.unavailable'], ['debug', 'device.unavailable'], ['debug', 'device.unavailable'], ['info', 'device.available']]);
+  for (const entry of records) {assert.equal(checkModuleRecord('roborock', entry), undefined); assert.equal(entry.trace?.traceparent?.slice(3, 35), '11111111111111111111111111111111');}
+  assert.ok(spans.spans.every(span => span.endedAtMs !== undefined)); assert.equal(JSON.stringify([records, spans.spans]).includes('sentinel'), false);
+});

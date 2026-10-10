@@ -4,7 +4,7 @@ B.U.N.N.Y. needs a read-only TypeScript connection before it can collect the own
 
 ## What Changes
 
-- Add a narrow transport under `modules/roborock/src/transport`, with typed methods for status, consumables, cleaning summary, one record, room mapping and current-map bytes.
+- Add a narrow transport under `modules/roborock/transport/src/transport`, with typed methods for status, consumables, cleaning summary, one record, room mapping and current-map bytes.
 - Adapt only necessary local V1 and vendor-MQTT primitives from the MIT-licensed ioBroker.roborock revision `ce998f6980b9928af800d8083cbe794f3b93ca97`, preserving attribution.
 - Enforce an RPC allowlist at the final sender, bounded framing/map decoding, serialized reads, deadlines, cancellation and stop fencing.
 - Provide explicit interactive account setup and private session loading, tested only with synthetic account endpoints and credentials.

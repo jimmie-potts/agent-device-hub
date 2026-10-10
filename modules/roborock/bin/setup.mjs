@@ -2,8 +2,8 @@
 import {parseArgs} from 'node:util';
 import {createInterface} from 'node:readline/promises';
 import {SdkError} from '@jimmie-potts/sdk';
-import {setupSession} from '../dist/src/transport/account.js';
-import {checkPrivateDestination, loadPrivateConfig, savePrivateSession} from '../dist/src/transport/private.js';
+import {setupSession} from '../transport/dist/src/transport/account.js';
+import {checkPrivateDestination, loadPrivateConfig, savePrivateSession} from '../transport/dist/src/transport/private.js';
 
 async function main() {
   const {values} = parseArgs({options: {config: {type: 'string'}, session: {type: 'string'}}, allowPositionals: false});
