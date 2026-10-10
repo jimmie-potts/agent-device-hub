@@ -17,7 +17,7 @@ const FULL = null;
 // First match wins. `prefix/**` matches everything below prefix, `**/*.ext` every path with that extension, and any
 // other pattern one exact path. Everything unmatched selects every group.
 const RULES = Object.freeze([
-  ['**/*.md', [], 'Markdown: no Checks suite reads it (docs/sdlc.md, Markdown-only CI routing)'],
+  ['**/*.md', [], 'Markdown: no Checks test may depend on its content (docs/sdlc.md, Markdown-only CI routing)'],
   // The runtime composes every module, and maintenance imports the runtime.
   ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
   ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
@@ -98,6 +98,25 @@ export function selectChecks({ event, paths, complete, detail } = {}) {
     reasons.push({ path: file, groups: [...rule.groups], reason: rule.reason });
   }
   return full.length ? result('full', GROUPS, reasons, full) : result('selected', groups, reasons, []);
+}
+
+/** The title of the notice annotation in which the select job publishes its selection for the delivery preflight. */
+export const NOTICE_TITLE = 'Affected checks';
+
+/** The notice message that publishes a selection: compact JSON, so it needs no workflow-command escaping. */
+export const noticeMessage = selection => JSON.stringify({ mode: selection.mode, groups: selection.groups });
+
+/** A published selection read back from its notice message, or null when the message is not one. */
+export function readNotice(message) {
+  let value;
+  try {
+    value = JSON.parse(message);
+  } catch {
+    return null;
+  }
+  if (!value || !['full', 'selected'].includes(value.mode) || !Array.isArray(value.groups)
+    || !value.groups.every(group => GROUPS.includes(group))) return null;
+  return { mode: value.mode, groups: ordered(new Set(value.groups)) };
 }
 
 /** The `if` of a job in JOBS. */

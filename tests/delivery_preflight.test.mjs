@@ -15,9 +15,10 @@ import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
+import { selectChecks } from '../scripts/ci-selection/selection.mjs';
 import {
   ACTIONS, BASE, DEPOT, EXPECTED_JOBS, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
-  checkRun, cleanWorld, comment, declaration, fakeTransport, job, mergeWorld, reviewReport, suite,
+  checkRun, cleanWorld, comment, declaration, fakeTransport, job, mergeWorld, publishSelection, reviewReport, suite,
   writeProof,
 } from './delivery-preflight/world.mjs';
 
@@ -196,7 +197,7 @@ for (const [name, change, reason] of ciCases) {
 
 test('CI: a successful rerun is accepted and the superseded attempt stays visible', async () => {
   const world = cleanWorld();
-  const first = world.checkRuns[HEAD][0];
+  const first = world.checkRuns[HEAD].find(run => /^Build, lint/.test(run.name));
   first.conclusion = 'failure';
   world.checkRuns[HEAD].push(checkRun(first.name, HEAD, first.check_suite.id, { started_at: '2026-09-27T07:40:00Z' }));
   const report = await preflight(world);
@@ -279,6 +280,7 @@ test('CI: a Depot-era revision expects Depot check runs under "<workflow> / <job
   world.checkSuites[HEAD] = [suite(9400, HEAD, 'claude/gh-700-example', { app: { slug: DEPOT.app } })];
   const depotNames = EXPECTED_JOBS.map(name => ((name.startsWith('Workflow checks') || name.startsWith('Retained documentation')) ? `Workflow / ${name}` : `Checks / ${name}`));
   world.checkRuns[HEAD] = depotNames.map(name => checkRun(name, HEAD, 9400, { app: { slug: DEPOT.app } }));
+  publishSelection(world, HEAD);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
   assert.equal(ci.evidence.provider, 'depot');
@@ -330,7 +332,7 @@ function narrowWorld(files = ['apps/maintenance/src/planner.ts']) {
   world.files = files.map(filename => ({ filename, status: 'modified' }));
   world.compares[`${BASE}...${HEAD}`].files = world.files;
   for (const run of world.checkRuns[HEAD]) if (unselectedJob.test(run.name)) run.conclusion = 'skipped';
-  return world;
+  return publishSelection(world, HEAD, selectChecks({ event: 'pull_request', paths: files, complete: true }));
 }
 const runNamed = (world, pattern) => world.checkRuns[HEAD].find(run => pattern.test(run.name));
 
@@ -346,6 +348,11 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   assert.ok(ci.evidence.jobs.filter(item => item.selected !== false).every(item => item.result === 'success'));
   assert.match(ci.reasons.join('\n'), /App verification on ubuntu-latest: not selected for this change \(omitted: runtime, modules, chompi, shared\); skipped, not run/);
   // An unselected job that ran anyway was executed, and is reported as a success.
+  // A hosted selection wider than the report's ran more work, which is noted, not a gap.
+  const wider = gate(await preflight(publishSelection(narrowWorld(), HEAD)), 'ci-pr');
+  assert.equal(wider.status, 'satisfied', wider.reasons.join('; '));
+  assert.match(wider.reasons.join(), /hosted selection ran more groups/);
+  assert.deepEqual(ci.evidence.hostedSelection, { mode: 'selected', groups: ['maintenance'] });
   const ran = narrowWorld();
   runNamed(ran, /^Firmware/).conclusion = 'success';
   const executed = gate(await preflight(ran), 'ci-pr');
@@ -364,6 +371,17 @@ const selectionCases = [
   ['a missing unselected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !/^Firmware/.test(run.name)); }, /Firmware host tests and ARM build on ubuntu-latest: missing/],
   ['a skip recorded for another revision', world => { runNamed(world, /^Firmware/).head_sha = OLD_HEAD; }, /Firmware host tests and ARM build on ubuntu-latest: missing/],
   ['a failed gate', world => { runNamed(world, /^Selected checks gate$/).conclusion = 'failure'; }, /Selected checks gate: failure/],
+  // The hosted select job's published selection must cover the groups this report selects (Hub #1080, C10).
+  ['a hosted selection narrower than the report\'s', world => publishSelection(world, HEAD, { mode: 'selected', groups: [] }),
+    /Select affected checks: the hosted selection \(no group\) omits maintenance, which this change selects/],
+  ['a select job that published no selection', world => {
+    const run = runNamed(world, /^Select affected checks$/);
+    run.output.annotations_count = 0;
+    delete world.annotations[run.id];
+  }, /Select affected checks: publishes no single readable selection/],
+  ['a select job whose published selection is malformed', world => {
+    world.annotations[runNamed(world, /^Select affected checks$/).id][0].message = '{"mode":"selected","groups":["bogus"]}';
+  }, /Select affected checks: publishes no single readable selection/],
   ['a failed selection that skipped everything after it', world => {
     runNamed(world, /^Select affected checks$/).conclusion = 'failure';
     // A job skipped before its matrix expands reports its name unexpanded.

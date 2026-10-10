@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { GROUPS, NOTICE_TITLE, noticeMessage } from '../../scripts/ci-selection/selection.mjs';
 import { CI_PROVIDERS } from '../../scripts/delivery-preflight/context.mjs';
 import { expectedJobs, parseWorkflow } from '../../scripts/delivery-preflight/workflows.mjs';
 
@@ -62,6 +63,16 @@ export function checkRun(name, sha, suite, overrides = {}) {
     output: { annotations_count: 0 },
     ...overrides,
   };
+}
+
+/** Give the revision's select run the notice in which the select job publishes its selection (Hub #1080). */
+export function publishSelection(world, sha, selection = { mode: 'full', groups: GROUPS }) {
+  for (const run of world.checkRuns[sha] ?? []) {
+    if (!/(^|\/ )Select affected checks$/.test(run.name)) continue;
+    run.output = { ...run.output, annotations_count: 1 };
+    world.annotations[run.id] = [{ annotation_level: 'notice', title: NOTICE_TITLE, message: noticeMessage(selection) }];
+  }
+  return world;
 }
 
 export function suite(suiteId, sha, branch, overrides = {}) {
@@ -213,7 +224,7 @@ export function cleanWorld() {
   };
   world.compares[`${BASE}...${HEAD}`] = { status: 'ahead', merge_base_commit: { sha: BASE }, files: world.files };
   world.compares[`${POLICY}...${BASE}`] = { status: 'ahead', merge_base_commit: { sha: POLICY }, files: [{ filename: 'README.md', status: 'modified' }] };
-  return world;
+  return publishSelection(world, HEAD);
 }
 
 /** Declare the delivery the way the CLI does. */
@@ -229,7 +240,7 @@ export function mergeWorld(world) {
   world.commits[MERGE] = { sha: MERGE, parents: [{ sha: BASE }], files: world.files };
   world.checkRuns[MERGE] = EXPECTED_JOBS.map(name => checkRun(name, MERGE, mainSuite));
   world.checkSuites[MERGE] = [suite(mainSuite, MERGE, 'main')];
-  return world;
+  return publishSelection(world, MERGE);
 }
 
 // ---- Fake transport ----

@@ -131,8 +131,9 @@ function jobNames(workflow, job, provider) {
 /**
  * Enumerate the check names `provider` should report for one event.
  * Returns {jobs, filtered, uncertain, notes, selection}; each job has its check `name`, its `key` and `selected`,
- * which is false only for a job the affected-check selection deliberately leaves out. Uncertain entries mean the
- * expected set may be missing jobs; notes record conservative choices.
+ * which is false only for a job the affected-check selection deliberately leaves out, and `selector`, true for the
+ * `select` job of a workflow that selects jobs or steps. Uncertain entries mean the expected set may be missing jobs;
+ * notes record conservative choices.
  */
 export function expectedJobs(workflows, { event, branch, files, filesComplete }, provider) {
   if (!provider) throw new Error('expectedJobs needs the CI provider');
@@ -160,6 +161,8 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
       uncertain.push(`${workflow.file}: workflow has no name, so its check names are unknown`);
       continue;
     }
+    // A workflow that selects affected checks publishes the selection from its `select` job.
+    const selects = workflow.jobs.some(job => conditionJob(job.if) || /needs\.select\.outputs/.test(JSON.stringify(job.steps ?? [])));
     for (const job of workflow.jobs) {
       if (job.uses) {
         uncertain.push(`${workflow.file} job ${job.id}: reusable workflow jobs are not enumerated`);
@@ -185,7 +188,7 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
         uncertain.push(result.error);
         continue;
       }
-      for (const { name, key } of result.names) jobs.push({ name, key, workflow: workflow.file, job: job.id, selected });
+      for (const { name, key } of result.names) jobs.push({ name, key, workflow: workflow.file, job: job.id, selected, selector: selects && job.id === 'select' });
     }
   }
   // Two jobs with one check name cannot be told apart in the check runs.

@@ -1,5 +1,6 @@
 // Exact-revision CI evidence. The only path-specific allowance is the affected-check selection (Hub #1080): a job
 // that selection deliberately leaves out may be skipped, and is reported as not run.
+import { NOTICE_TITLE, readNotice } from '../ci-selection/selection.mjs';
 import { CI_PROVIDERS, short } from './context.mjs';
 import { ReadFailure } from './github.mjs';
 import { expectedJobs, parseWorkflow } from './workflows.mjs';
@@ -86,10 +87,29 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     return;
   }
   gate.evidence.mode = provider.id;
-  await evaluateChecks(ctx, gate, { sha, names, unselected, omitted: expected.selection ? expected.selection.omitted : [], checkBranch, provider });
+  const selectors = new Set(expected.jobs.filter(job => job.selector).map(job => job.name));
+  await evaluateChecks(ctx, gate, { sha, names, unselected, selectors, selection: expected.selection, checkBranch, provider });
 }
 
-async function evaluateChecks(ctx, gate, { sha, names, unselected, omitted, checkBranch, provider }) {
+/** Compare the selection a select job published with this report's own: the hosted one must cover it. */
+function checkPublishedSelection(gate, name, annotations, selection) {
+  const notices = annotations.filter(item => item.annotation_level === 'notice' && item.title === NOTICE_TITLE);
+  const hosted = notices.length === 1 ? readNotice(notices[0].message) : null;
+  if (!hosted) {
+    gate.unresolved(`${name}: publishes no single readable selection, so the groups its jobs ran are unknown`);
+    return;
+  }
+  gate.evidence.hostedSelection = hosted;
+  const missing = selection.groups.filter(group => !hosted.groups.includes(group));
+  if (missing.length) {
+    gate.unresolved(`${name}: the hosted selection (${hosted.groups.join(', ') || 'no group'}) omits ${missing.join(', ')}, which this change selects`);
+  } else if (hosted.groups.length > selection.groups.length) {
+    gate.note(`${name}: the hosted selection ran more groups (${hosted.groups.join(', ')}) than this report selects`);
+  }
+}
+
+async function evaluateChecks(ctx, gate, { sha, names, unselected, selectors, selection, checkBranch, provider }) {
+  const omitted = selection ? selection.omitted : [];
   const { github, repo } = ctx;
   const evidence = await ctx.read(gate, async () => ({
     runs: await github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'),
@@ -132,14 +152,18 @@ async function evaluateChecks(ctx, gate, { sha, names, unselected, omitted, chec
     else if (unselected.has(name) && result === 'skipped') gate.note(`${name}: not selected for this change (omitted: ${omitted.join(', ')}); skipped, not run`);
     else if (result !== 'success') gate.unresolved(`${name}: ${result}${unselected.has(name) ? ' (not selected)' : ''}`);
     else if (job.superseded.some(item => item.result === 'pending')) gate.unresolved(`${name}: an earlier attempt is still running`);
-    if (result === 'success' && latest.output && latest.output.annotations_count > 0) {
+    const selector = selectors.has(name) && selection;
+    if (result === 'success' && latest.output && (latest.output.annotations_count > 0 || selector)) {
       const annotations = await ctx.read(gate, () => github.getAll(`/repos/${repo}/check-runs/${latest.id}/annotations?per_page=100`));
       if (annotations.ok) {
         job.annotations = annotations.value.length;
         if (annotations.value.some(item => item.annotation_level === 'failure')) {
           gate.unresolved(`${name}: success with a failure annotation; resolve the contradiction`);
         }
+        if (selector) checkPublishedSelection(gate, name, annotations.value, selection);
       }
+    } else if (result === 'success' && selector) {
+      gate.unresolved(`${name}: publishes no single readable selection, so the groups its jobs ran are unknown`);
     }
   }
   gate.evidence.jobs = jobs;

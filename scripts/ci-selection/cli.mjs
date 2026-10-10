@@ -6,7 +6,7 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { GROUPS, gateVerdict, selectChecks } from './selection.mjs';
+import { GROUPS, NOTICE_TITLE, gateVerdict, noticeMessage, selectChecks } from './selection.mjs';
 
 // GitHub's comparison lists at most 300 files; a list that long may be truncated.
 export const COMPARE_FILE_LIMIT = 300;
@@ -49,7 +49,7 @@ function describe(selection) {
     `### Affected checks: ${selection.mode === 'full' ? 'full coverage' : 'selected groups'}`,
     '',
     `Selected: ${selection.groups.join(', ') || 'none (build, typecheck and lint only)'}`,
-    `Omitted: ${selection.omitted.join(', ') || 'none'}`,
+    `Omitted (no changed path selects them): ${selection.omitted.join(', ') || 'none'}`,
     '',
   ];
   for (const item of selection.full) lines.push(`- full coverage: ${item.path ? `\`${item.path}\` is ` : ''}${item.reason}`);
@@ -94,6 +94,8 @@ async function main(argv) {
   if (command === 'select') {
     const selection = await runSelect();
     console.log(`${selection.mode}: ${selection.groups.join(', ') || 'no group'} (of ${GROUPS.join(', ')})`);
+    // The delivery preflight reads this annotation back and checks that the hosted selection covers its own.
+    console.log(`::notice title=${NOTICE_TITLE}::${noticeMessage(selection)}`);
     return 0;
   }
   if (command === 'gate') {

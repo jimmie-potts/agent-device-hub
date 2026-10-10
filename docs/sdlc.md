@@ -659,8 +659,9 @@ A selected check must succeed on the exact head. An unselected job must report
 `skipped` (or `success` when it ran anyway) and the `Selected checks gate` job
 must succeed; a failure, cancellation, missing result, failed selection or
 skipped selected job blocks merge. The delivery preflight recomputes the
-selection from the PR's changed files with the same mapping and lists omitted
-jobs as not run. Reviews, guarded merge and merged-main CI apply as usual.
+selection from the PR's changed files with the same mapping, requires the
+select job's published selection to cover it and lists omitted jobs as not
+run. Reviews, guarded merge and merged-main CI apply as usual.
 
 ## Installation and evidence
 

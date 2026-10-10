@@ -11,7 +11,8 @@ import YAML from 'yaml';
 
 import { runGate, runSelect } from '../scripts/ci-selection/cli.mjs';
 import { localPaths, selectedCommands } from '../scripts/ci-selection/local.mjs';
-import { GROUPS, JOBS, STEP_CONDITION, gateVerdict, jobCondition, selectChecks, stepGroup } from '../scripts/ci-selection/selection.mjs';
+import { GROUPS, JOBS, NOTICE_TITLE, STEP_CONDITION, gateVerdict, jobCondition, noticeMessage, readNotice, selectChecks, stepGroup } from '../scripts/ci-selection/selection.mjs';
+import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checks = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8'));
@@ -201,6 +202,7 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
     return { ok: true, status: 200, json: async () => ({ files: [
       { filename: 'apps/chompi-bridge/src/new.ts', previous_filename: 'apps/maintenance/src/old.ts', status: 'renamed' },
       { filename: 'docs/sdlc.md', status: 'modified' },
+      { filename: 'apps/maintenance/src/removed.ts', status: 'removed' },
     ] }) };
   };
   const result = await runSelect({ env, fetch });
@@ -212,7 +214,8 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
   assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', firmware: 'true', 'app-verify': 'true' });
   const summary = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
   assert.match(summary, /Selected: maintenance, chompi/);
-  assert.match(summary, /Omitted: runtime, modules, shared/);
+  assert.match(summary, /Omitted \(no changed path selects them\): runtime, modules, shared/);
+  assert.match(summary, /apps\/maintenance\/src\/removed\.ts/);
   assert.match(summary, /apps\/maintenance\/src\/old\.ts/);
   assert.doesNotMatch(summary, /token-value/);
 });
@@ -245,6 +248,20 @@ test('the gate entry point reads the needs context, writes a summary and returns
   assert.match(fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'), /firmware: skipped \(not selected\)/);
   assert.equal((await runGate({ env: { ...env, NEEDS: 'not json' } })).ok, false);
   assert.equal((await runGate({ env: { ...env, NEEDS: undefined } })).ok, false);
+});
+
+test('the select command publishes its selection in a notice that the preflight reads back', t => {
+  const { env } = actions(t, 'push', { after: 'c'.repeat(40) });
+  const run = spawnSync(process.execPath, [path.join(root, 'scripts/ci-selection/cli.mjs'), 'select'], { env: { ...env, PATH: process.env.PATH }, encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const line = run.stdout.split('\n').find(text => text.startsWith('::notice '));
+  assert.equal(line, `::notice title=${NOTICE_TITLE}::${noticeMessage({ mode: 'full', groups: GROUPS })}`);
+  assert.deepEqual(readNotice(line.slice(line.indexOf('::', 2) + 2)), { mode: 'full', groups: [...GROUPS] });
+  const narrow = pr(['apps/maintenance/src/planner.ts']);
+  assert.deepEqual(readNotice(noticeMessage(narrow)), { mode: 'selected', groups: ['maintenance'] });
+  for (const message of ['', 'not json', '{"mode":"partial","groups":[]}', '{"mode":"selected","groups":["bogus"]}', '{"mode":"selected"}']) {
+    assert.equal(readNotice(message), null, message);
+  }
 });
 
 // ---- Local selection ----
@@ -283,6 +300,72 @@ test('local paths include both sides of renames, uncommitted and untracked files
 });
 
 // ---- The workflow uses the mapping consistently ----
+
+// The group of every conditional Checks step, pinned so that moving a suite to another group fails here (Hub #1080).
+// A step belongs to the group whose changed paths can break it; `shared` runs only with full coverage.
+const STEP_GROUPS = {
+  core: {
+    'actions/setup-python': 'shared',
+    'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt': 'shared',
+    'npm run test:maintenance:built': 'maintenance', 'npm run test:maintenance:package:built': 'maintenance',
+    'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
+    'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
+    'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
+    'npm run test:runtime:built': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
+    'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
+    'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
+    'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',
+    'npm run test:chompi-bridge:built': 'chompi', 'npm run test:chompi-bridge:scenarios': 'chompi',
+    'npm run test:mcp:built': 'shared', 'npm run test:mcp:protocol:built': 'shared', 'npm run test:mcp:package:built': 'shared',
+    'npm run test:pixoo:built': 'modules', 'npm run test:nanoleaf:built': 'modules', 'npm run test:playback:built': 'modules',
+    'npm run test:lifx-module:built': 'modules', 'npm run test:tidbyt-module:built': 'modules', 'npm run test:codex-desktop:built': 'modules',
+    'npm run test:wispr-module:built': 'modules', 'npm run test:roborock-transport:built': 'modules',
+    // The Roborock consumer tests import the built runtime registry.
+    'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
+    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:bb8:built': 'modules', 'npm run test:bb8-windows:built': 'modules',
+    'npm run test:bb8:package:built': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
+  },
+  'app-verify': {
+    'npm run test:app-verify:built': 'shared', 'npm run test:app-verify:package:built': 'shared', 'npm run test:verify-host': 'shared',
+    'npm run test:chompi-bridge:verify:built': 'chompi', 'npm run test:chompi-bridge:browser': 'chompi',
+    'npm run test:runtime:verify:built': 'runtime', 'npm run test:dashboard:smoke': 'shared',
+    // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
+    'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime',
+    'npm run test:bb8:browser': 'runtime', 'npm run test:roborock:browser': 'runtime', 'npm run test:observability:browser': 'shared',
+  },
+};
+
+test('every conditional Checks step keeps its pinned group', () => {
+  for (const [id, expected] of Object.entries(STEP_GROUPS)) {
+    const actual = Object.fromEntries(checks.jobs[id].steps.filter(step => step.if !== undefined)
+      .map(step => [step.run ?? step.uses.split('@')[0], stepGroup(step.if)]));
+    assert.deepEqual(actual, expected, `${id}: a suite moved group, or a conditional step was added or removed`);
+  }
+});
+
+test('a narrow change runs the suites its paths can break', () => {
+  const runs = files => selectedCommands(checks, pr(files)).flatMap(job => job.commands);
+  const expectations = [
+    [['apps/runtime/src/main.ts'], ['npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:runtime-dashboard:built',
+      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:bb8:browser', 'npm run test:roborock:browser',
+      'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:maintenance:built'],
+    ['npm run test:pixoo:built', 'npm run test:chompi-bridge:built', 'npm run test:sdk:built', 'npm run test:firmware']],
+    [['modules/pixoo/src/module.ts'], ['npm run test:pixoo:built', 'npm run test:nanoleaf:built', 'npm run test:runtime:built',
+      'npm run test:runtime:verify:built', 'npm run test:maintenance:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
+    [['modules/roborock/transport/src/transport/codec.ts'], ['npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built',
+      'npm run test:roborock:browser'], ['npm run test:firmware']],
+    [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+      'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:firmware', 'npm run test:firmware:arm'],
+    ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:app-verify:built']],
+    [['apps/maintenance/src/planner.ts'], ['npm run test:maintenance:built', 'npm run test:maintenance:package:built'],
+      ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:pixoo:built']],
+  ];
+  for (const [files, included, excluded] of expectations) {
+    const commands = runs(files);
+    for (const command of ['npm run build', 'npm run typecheck', 'npm run lint:js', ...included]) assert.ok(commands.includes(command), `${files}: runs ${command}`);
+    for (const command of excluded) assert.equal(commands.includes(command), false, `${files}: omits ${command}`);
+  }
+});
 
 test('Checks selects jobs and steps only through the selection outputs, and the gate covers every job', () => {
   assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'firmware', 'app-verify', 'gate']);

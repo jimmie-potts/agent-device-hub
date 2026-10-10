@@ -261,7 +261,7 @@ Normal CI has seven GitHub-hosted Linux jobs, and each suite runs in exactly one
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24 and Python 3.14 in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
@@ -309,7 +309,9 @@ unexpanded name. The `Selected checks gate` job runs last, even after a
 failure, and fails unless the selection succeeded, every selected job
 succeeded, and only unselected jobs were skipped. The select and gate jobs'
 summaries list the selected and omitted groups and the paths that chose them.
-The [delivery preflight](#delivery-preflight) recomputes the same selection.
+The select job also publishes its selection in an `Affected checks` notice
+annotation. The [delivery preflight](#delivery-preflight) recomputes the same
+selection and requires that published one to cover it.
 
 To run every check on a PR head, start the Checks workflow manually on its
 branch: `gh workflow run Checks --ref <branch>`. Its results report on the same
@@ -318,8 +320,12 @@ local change selects, and the commands CI would run for it, use
 `npm run ci:select -- --base origin/main`; it compares `<base>...HEAD` plus
 uncommitted and untracked files and runs nothing. When adding a suite, give its
 step the group whose paths can break it, or no condition for setup that every
-selected group needs; `tests/ci_selection.test.mjs` checks the workflow against
-the table.
+selected group needs, and add it to the pinned step groups in
+`tests/ci_selection.test.mjs`. That test pins every conditional step's group,
+checks that representative narrow changes run their suites, and checks that
+selector, workflow and preflight paths select full coverage. The select job runs
+the candidate's own selector, so that test, which the Workflow job runs for
+every change, is what guards an edit to the selector.
 
 ### Old system checks
 
@@ -475,7 +481,7 @@ prints tokens, local paths or reviewer return text.
 | Gate | What it reads | Rule |
 | --- | --- | --- |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
-| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, or a skip of a selected job, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
+| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose published `Affected checks` notice is missing, malformed or omits a group this selection needs, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
@@ -520,7 +526,8 @@ failures on UI changes, open counterpart,
 missing work issue, both finish-line kinds, removed-flag refusals, filtered paths,
 the affected-check selection (deliberately skipped jobs, a skipped selected job,
 failed, cancelled, pending or missing unselected jobs, a skip recorded for
-another revision, and a failed selection or gate) and dirty or failed-capture receipts. It also
+another revision, a failed selection or gate, and a missing, malformed or
+narrower published selection) and dirty or failed-capture receipts. It also
 covers the read-only guard and a run under Node's permission model, which
 denies file writes and child processes. CI runs it in the Workflow checks job.
 Fixtures do not qualify live GitHub state or installed clients.
