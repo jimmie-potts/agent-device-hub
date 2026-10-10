@@ -1,7 +1,8 @@
 /** One current image and one admitted chain. Image completion never reports metadata evidence. */
 import {randomUUID} from 'node:crypto';
 import type {PlaybackArtwork} from '@jimmie-potts/event-contracts/v2/families';
-import type {Scheduler} from '@jimmie-potts/sdk';
+import {SdkError, type Scheduler} from '@jimmie-potts/sdk';
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {ARTWORK_DECODE_MS, ARTWORK_FETCH_MS, artworkFailure, artworkUrl, createArtworkFetch, type ArtworkFetch, type ArtworkResult} from './artwork-fetch.js';
 import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
 
@@ -13,8 +14,10 @@ export type ArtworkPresentation = {
 export type ArtworkControllerOptions = {
   scheduler: Scheduler; signal: AbortSignal; decode: ArtworkDecode;
   fetch?: ArtworkFetch; generation?: () => string; onChange: () => void;
+  onDiagnostic?: (record: ArtworkDiagnostic) => void;
 };
-type Candidate = {url: string; endpoint: string; generation: string; sequence: number; attempts: number};
+export type ArtworkDiagnostic = {kind: 'failure' | 'retry' | 'exhausted' | 'recovery'; code: ErrorCode; attempts: number};
+type Candidate = {url: string; endpoint: string; generation: string; sequence: number; attempts: number; exhausted?: boolean};
 
 export class ArtworkController {
   readonly #options: ArtworkControllerOptions;
@@ -26,6 +29,7 @@ export class ArtworkController {
   #sequence = 0;
   #running = false;
   #retry: (() => void) | undefined;
+  #failure: ErrorCode | undefined;
 
   constructor(options: ArtworkControllerOptions) {
     this.#options = options;
@@ -67,6 +71,7 @@ export class ArtworkController {
       this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       const url = artworkUrl(raw, view.endpoint);
       if (url !== undefined) this.#candidate = {url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
+      else if (raw !== undefined) this.#failed('unsupported-capability', 0);
     }
     this.#start();
   }
@@ -83,6 +88,12 @@ export class ArtworkController {
     return !this.#options.signal.aborted && this.#candidate === candidate && candidate.sequence === this.#sequence && this.#artwork?.generation === candidate.generation;
   }
 
+  #failed(code: ErrorCode, attempts: number): void {
+    if (this.#failure === code) return;
+    this.#options.onDiagnostic?.({kind: 'failure', code, attempts});
+    this.#failure = code;
+  }
+
   /** Bounds an operation independently of an injected facility and ends its signal at the deadline. */
   async #bounded<T>(ms: number, operation: (signal: AbortSignal) => Promise<ArtworkResult<T>>): Promise<ArtworkResult<T>> {
     const abort = new AbortController();
@@ -96,7 +107,12 @@ export class ArtworkController {
       cancel = this.#options.scheduler.after(ms, () => { abort.abort(); resolve(artworkFailure('unavailable', true)); });
     });
     try {
-      const operationResult = Promise.resolve().then(() => operation(abort.signal)).catch(() => artworkFailure('unavailable', true));
+      const operationResult = Promise.resolve().then(() => operation(abort.signal)).catch((error: unknown) => {
+        // Workers already classify their boundary. Only unavailable observations repeat; capacity,
+        // uncertain results and internal faults keep their code and terminate this candidate.
+        if (error instanceof SdkError) return artworkFailure(error.body.error.code, error.body.error.code === 'unavailable');
+        return artworkFailure('internal');
+      });
       return await Promise.race([operationResult, deadline]);
     } finally {
       cancel();
@@ -106,21 +122,31 @@ export class ArtworkController {
 
   #start(): void {
     const candidate = this.#candidate;
-    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.attempts >= 3 || this.#artwork?.status === 'ready') return;
+    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.exhausted === true || candidate.attempts >= 3 || this.#artwork?.status === 'ready') return;
     this.#running = true;
     candidate.attempts += 1;
     void this.#acquire(candidate).then(result => {
       if (!this.#current(candidate)) return;
       if (result.ok) {
+        if (this.#failure !== undefined) {
+          this.#options.onDiagnostic?.({kind: 'recovery', code: this.#failure, attempts: candidate.attempts});
+          this.#failure = undefined;
+        }
         this.#artwork = {status: 'ready', generation: candidate.generation, ...result.value};
         this.#options.onChange();
-      } else if (result.transient && candidate.attempts < 3) {
-        this.#retry = this.#options.scheduler.after(candidate.attempts === 1 ? 2000 : 4000, () => {
-          this.#retry = undefined;
-          this.#start();
-        });
       } else {
-        candidate.attempts = 3;
+        const code: ErrorCode = result.code === 'unsupported' ? 'unsupported-capability' : result.code === 'invalid-response' ? 'invalid-state' : result.code;
+        this.#failed(code, candidate.attempts);
+        if (code === 'unavailable' && result.transient && candidate.attempts < 3) {
+          this.#options.onDiagnostic?.({kind: 'retry', code, attempts: candidate.attempts});
+          this.#retry = this.#options.scheduler.after(candidate.attempts === 1 ? 2000 : 4000, () => {
+            this.#retry = undefined;
+            this.#start();
+          });
+        } else {
+          candidate.exhausted = true;
+          this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts});
+        }
       }
     }).finally(() => {
       this.#running = false;

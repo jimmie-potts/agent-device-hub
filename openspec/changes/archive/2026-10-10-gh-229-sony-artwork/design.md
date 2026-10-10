@@ -18,6 +18,8 @@ Drive one current-artwork controller from the presented source and normalized ti
 
 Inline bytes fit comfortably below the envelope limit and avoid an asset service, filesystem handoff or new browser endpoint. Existing text consumers need compatibility verification rather than rendering changes here.
 
+Preserve registered SDK worker failures at their boundary. Only transient `unavailable` observations, including fetch/decode deadlines, retry within the fixed budget; capacity, internal and uncertain-result codes terminate the candidate. This does not resend a playback command. Cancel a stalled response reader when its request signal ends. The module records safe artwork failure/recovery transitions under `bunny.operation` `media`, with registered codes and actual attempt counts, and DEBUG retry/exhaustion records. Repeated unchanged failure codes are summarized; private URLs, image bytes, metadata and raw exceptions never enter diagnostics.
+
 ## Risks / Trade-offs
 
 - Receiver metadata can lag while paused, and byte-identical metadata/candidate cannot prove a new track → associate only observable changes and document the receiver limitation.

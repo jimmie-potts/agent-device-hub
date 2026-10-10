@@ -204,6 +204,19 @@ BunnyModule<PlaybackConfig> {
         decode: artworkOptions?.decode ?? ((bytes, abort) => workers.call<ArtworkResult<ArtworkThumbnail>>(
           new URL('./artwork-worker.js', import.meta.url), bytes, {timeoutMs: ARTWORK_DECODE_MS, signal: abort})),
         onChange: () => { evaluate(); },
+        onDiagnostic: diagnostic => {
+          const fields: LogFields = {'bunny.operation': 'media', 'bunny.code': diagnostic.code,
+            'bunny.attempt_count': diagnostic.attempts, ...deviceField(`${id}.sony`)};
+          if (diagnostic.kind === 'recovery') {
+            log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+          } else if (diagnostic.kind !== 'failure') {
+            log.debug('operation.failed', fields);
+          } else {
+            const level = diagnostic.code === 'internal' ? 'error' :
+              ['capacity', 'unavailable', 'uncertain-result', 'unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict'].includes(diagnostic.code) ? 'warn' : 'info';
+            log[level]('operation.failed', fields);
+          }
+        },
       });
       /** Publishes a new revision when availability, presented playback or current artwork changes. */
       let freshness: (() => void) | undefined;

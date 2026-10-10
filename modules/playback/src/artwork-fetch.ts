@@ -1,8 +1,9 @@
 /** Sony artwork IO: private URLs enter here and only bounded bytes or fixed failures leave. */
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 export const ARTWORK_INPUT_BYTES = 1_048_576;
 export const ARTWORK_FETCH_MS = 2000;
 export const ARTWORK_DECODE_MS = 2000;
-export type ArtworkFailure = {ok: false; code: 'unsupported' | 'capacity' | 'unavailable' | 'invalid-response'; transient: boolean};
+export type ArtworkFailure = {ok: false; code: ErrorCode | 'unsupported' | 'invalid-response'; transient: boolean};
 export type ArtworkResult<T> = {ok: true; value: T} | ArtworkFailure;
 export const artworkFailure = (code: ArtworkFailure['code'], transient = false): ArtworkFailure => ({ok: false, code, transient});
 export type ArtworkFetch = (candidate: string, endpoint: string, signal: AbortSignal) => Promise<ArtworkResult<Uint8Array>>;
@@ -22,9 +23,12 @@ export function createArtworkFetch(fetcher: typeof fetch = fetch): ArtworkFetch 
     const url = artworkUrl(candidate, endpoint);
     if (url === undefined) return artworkFailure('unsupported');
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const cancelRead = (): void => { void reader?.cancel().catch(() => {}); };
     try {
       const response = await fetcher(url, {method: 'GET', redirect: 'manual', credentials: 'omit', signal});
       reader = response.body?.getReader();
+      signal.addEventListener('abort', cancelRead, {once: true});
+      if (signal.aborted) cancelRead();
       if (response.redirected || (response.status >= 300 && response.status < 400)) return artworkFailure('unsupported');
       if (!response.ok) return artworkFailure('unavailable', response.status === 408 || response.status === 429 || response.status >= 500);
       if (response.body === null) return artworkFailure('invalid-response');
@@ -50,6 +54,7 @@ export function createArtworkFetch(fetcher: typeof fetch = fetch): ArtworkFetch 
     } catch {
       return artworkFailure('unavailable', true);
     } finally {
+      signal.removeEventListener('abort', cancelRead);
       await reader?.cancel().catch(() => {});
     }
   };

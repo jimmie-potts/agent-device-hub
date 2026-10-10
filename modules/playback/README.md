@@ -151,7 +151,9 @@ The owner publishes `playback/2.1` ([#229](https://github.com/jimmie-potts/agent
 
 Sony candidates stay private. Acquisition permits only absolute HTTP URLs on the configured receiver's origin, without credentials or fragments; all redirects are refused. A response is streamed up to 1 MiB regardless of its declared media type. An isolated worker accepts single JPEG/PNG images up to 4,000,000 decoded pixels, strips metadata and normalizes the result. Fetch and decode each have a 2 s deadline. These limits bound admitted work and pixels, not native decoder heap usage or physical thread termination overlap.
 
-Only one acquisition chain runs at a time, with the newest replacement retained. Duplicate acquired candidates do not refetch. Transient failures retry after 2 s and 4 s, at most three attempts per candidate/generation; origin, format and capacity refusals do not retry. Absent content can acquire later when the receiver reports a candidate. Failure leaves metadata and controls usable and emits no raw error, URL or image diagnostic.
+Only one acquisition chain runs at a time, with the newest replacement retained. Duplicate acquired candidates do not refetch. Transient `unavailable` observations retry after 2 s and 4 s, at most three attempts per candidate/generation. Fetch/decode deadline expiration is an unavailable observation; it never retries a playback command. Typed SDK worker errors keep their registered code. Origin, format, capacity, internal and uncertain-result refusals do not retry, even when a registry flag says the condition may clear. Absent content can acquire later when the receiver reports a candidate. Failure leaves metadata and controls usable.
+
+Artwork diagnostics use `bunny.operation` `media`: one failure transition per changed code, DEBUG records for the two scheduled retries and an exhausted-attempt summary, and INFO recovery when acquisition succeeds. Format/origin refusals are INFO, unavailable/capacity/uncertain-result are WARN, and internal faults are ERROR. Records contain only registered codes, actual attempt counts and the fixed Sony device ID. They exclude raw errors, URLs, image bytes and listening metadata. Duplicate polls and obsolete completions emit no artwork diagnostics.
 
 Generation changes follow source, reported title/artist/album, eligible session loss, unavailable playback and restart. Pause/resume, duplicate polls and stale/available transitions retain it. Candidate replacement invalidates older work within that generation. Late completions cannot restore an earlier track or cross a Sony/Sonos handoff. Sonos is `unsupported` in this release. Image completion publishes without refreshing metadata freshness; receivers' paused-next metadata lag remains an observation limitation.
 
@@ -304,6 +306,8 @@ address, a title or an exception's text:
 | `outbox.republished` | INFO | Each start, with how many stored messages went out again |
 | `operation.failed` | WARN, or ERROR for `internal` | The module's database refuses a commit of any kind (a record, an intent or an outcome), once per run of refusals, with `bunny.operation` `storage` and the code: `capacity` for a full disk, `unavailable` for a database another writer holds |
 | `operation.completed` | INFO | A commit works again after a run of refusals, once |
+| `operation.failed` | INFO for artwork format/origin refusal; WARN for unavailable, capacity or uncertain-result; ERROR for internal; DEBUG for bounded retry/summary | With `bunny.operation` `media`, a changed artwork failure condition, then at most two scheduled retries and one exhausted-attempt summary per candidate; no private input |
+| `operation.completed` | INFO | With `bunny.operation` `media`, artwork succeeds after a failure condition |
 
 A speaker is named in `bunny.device.id` as `<id>.<kind>`, such as
 `living-room.sonos`. The bus records each command's admission and reply. The
