@@ -9,6 +9,8 @@ export interface OperationOptions {
   /** Includes time waiting for the writer. Defaults to 5000ms. */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Private presentation admission: recheck after queue waits and before each effect. */
+  current?: () => boolean;
 }
 export interface Timing {
   submittedAtMs: number;

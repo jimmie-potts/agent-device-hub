@@ -44,7 +44,7 @@ export type SpeakerState = {
   calls: number;
   peak: number;
 };
-export type SpeakersState = Readonly<Record<SimulatedKind, SpeakerState>>;
+export type SpeakersState = Readonly<Record<SimulatedKind, SpeakerState>> & {artworkAcquisitions?: number};
 export type Track = {title: string; artist?: string; album?: string};
 
 const SONY_ACTIONS: Readonly<Record<string, PlaybackAction>> = {
@@ -86,6 +86,7 @@ export type SimulatedSpeakersOptions = {
 
 /** A Sony HT-A9 and a Sonos Move, simulated at their protocols. Each starts answering, on another input, unless told otherwise. */
 export class SimulatedSpeakers implements SpeakerTransport {
+  #artworkAcquisitions = 0;
   readonly #speakers: Record<SimulatedKind, SpeakerState>;
   readonly #active: Record<SimulatedKind, number> = {sony: 0, sonos: 0};
   readonly #scheduler: Scheduler;
@@ -156,9 +157,13 @@ export class SimulatedSpeakers implements SpeakerTransport {
     this.#speakers[kind].nextCommand = ending;
   }
 
+  /** Fixture acquisitions only, counted once per byte request rather than per metadata publication. */
+  artworkAcquired(): void { this.#artworkAcquisitions += 1; }
+
   state(): SpeakersState {
     const copy = (speaker: SpeakerState): SpeakerState => ({...speaker, commands: [...speaker.commands]});
-    return {sony: copy(this.#speakers.sony), sonos: copy(this.#speakers.sonos)};
+    return {sony: copy(this.#speakers.sony), sonos: copy(this.#speakers.sonos),
+      ...(this.#speakers.sony.syntheticArtwork ? {artworkAcquisitions: this.#artworkAcquisitions} : {})};
   }
 
   async #call<T>(kind: SimulatedKind, signal: AbortSignal, reply: () => T | 'hang'): Promise<T> {
