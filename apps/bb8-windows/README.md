@@ -47,7 +47,11 @@ Structured helper diagnostics use the shared observability host adapter with no
 exporter, registered fields and recorded device/outbox spans. They retain request
 trace context, registry codes and fixed text, never addresses or native errors.
 The private receipt directory holds `diagnostics.ndjson`, capped at 4 MiB across
-starts; full or failed sinks drop diagnostics without changing device outcomes.
+starts; logs and spans append as separate, serialized JSON lines, including the
+separator bytes in that cap. Ordinary diagnostic file or adapter startup failures
+disable telemetry and report a fixed warning while the helper continues. Unsafe
+diagnostic paths still refuse startup. Full or failed sinks drop diagnostics
+without changing device outcomes.
 Native capture remains a separate 64 KiB file per explicit connection.
 
 A native radio loss advances the connection generation and aborts outstanding
