@@ -2,6 +2,7 @@
 // harnesses simulate its speakers. A disposable run's supervisor holds the simulated speakers, and the runtime's module
 // reaches them one call at a time over its link; no address crosses it.
 import type {DeviceAction, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
+import {simulatedArtworkFetch, simulatedArtworkReply} from './simulated-artwork.js';
 import {createPlaybackModule, playbackFactory} from './module.js';
 import {SimulatedSpeakers, type SimulatedKind} from './simulated.js';
 import type {SonosReply, SonyReply} from './transport.js';
@@ -16,6 +17,9 @@ function act(speakers: SimulatedSpeakers, simulation: DeviceAction): void {
   const speaker = simulation.speaker as SimulatedKind;
   const {title} = simulation;
   switch (simulation.action) {
+    case 'artwork':
+      speakers.artwork();
+      return;
     case 'play':
       speakers.play(speaker, typeof title === 'string' ? {title} : undefined);
       return;
@@ -51,16 +55,16 @@ type SonyCall = {method: string; version: string};
 type SonosCall = {action: string; args: string};
 
 export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSpeakers> = {
-  actions: ['play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'],
-  admits: (_action, {speaker, title, ...rest}) => typeof speaker === 'string' && KINDS.includes(speaker) && Object.keys(rest).length === 0 &&
-    (title === undefined || (typeof title === 'string' && title.length <= 200)),
+  actions: ['artwork', 'play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'],
+  admits: (action, {speaker, title, ...rest}) => typeof speaker === 'string' && KINDS.includes(speaker) && Object.keys(rest).length === 0 &&
+    (title === undefined || (typeof title === 'string' && title.length <= 200)) && (action !== 'artwork' || (speaker === 'sony' && title === undefined)),
   memory: {
     // A slow speaker waits on the harness's virtual time.
     create: ({scheduler}) => new SimulatedSpeakers({}, {scheduler}),
     state: speakers => speakers.state(),
     act,
     // Freshness follows the harness's clock, so a silent speaker ages in virtual time.
-    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now}),
+    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, artwork: {fetch: simulatedArtworkFetch}}),
   },
   run: {
     create: () => new SimulatedSpeakers(),
@@ -82,9 +86,9 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
         return answer.value;
       };
       return createPlaybackModule({transport: {
-        sony: async (_endpoint, method, version, signal) => await call('sony', {method, version}, signal) as SonyReply,
+        sony: async (endpoint, method, version, signal) => simulatedArtworkReply(await call('sony', {method, version}, signal) as SonyReply, endpoint),
         sonos: async (_endpoint, action, args, signal) => await call('sonos', {action, args}, signal) as SonosReply,
-      }});
+      }, artwork: {fetch: simulatedArtworkFetch}});
     },
   },
 };

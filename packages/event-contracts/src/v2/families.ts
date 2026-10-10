@@ -129,8 +129,12 @@ export type PlaybackAction = 'play' | 'pause' | 'next' | 'previous';
  * playback record's `id`; its owner sends the action once, to the source presented at admission.
  */
 export type PlaybackControlRequest = {requestId: string; action: PlaybackAction; expectedRevision?: number};
+/** Optional bounded artwork in playback/2.1; the token identifies the owner's presented observation. */
+export type PlaybackArtwork =
+  | {status: 'missing' | 'unsupported'; generation: string}
+  | {status: 'ready'; generation: string; mediaType: 'image/png'; width: number; height: number; base64: string};
 export type PlaybackState = {
-  id: string; revision: number; availability: 'available' | 'stale' | 'unavailable'; observedAtMs?: number;
+  id: string; revision: number; availability: 'available' | 'stale' | 'unavailable'; observedAtMs?: number; artwork?: PlaybackArtwork;
   playback: {status: 'unknown'} | {
     status: 'known'; player: 'playing' | 'paused' | 'stopped' | 'inactive' | 'unknown';
     title?: string; artist?: string; album?: string; controls: PlaybackAction[];
@@ -228,6 +232,22 @@ const checkSessionLabel: PayloadCheck = message => {
     ? 'payload /label not Unicode scalar values' : undefined);
 };
 
+/** Checks encoding and PNG header bounds without running an image decoder on the bus thread. */
+const checkPlaybackArtwork: PayloadCheck = message => {
+  const entity = checkEntity(message);
+  if (entity !== undefined) return entity;
+  const {artwork} = message.data as PlaybackState;
+  if (artwork?.status !== 'ready') return undefined;
+  const bytes = Buffer.from(artwork.base64, 'base64');
+  if (bytes.length > 65_536 || bytes.toString('base64') !== artwork.base64 || bytes.length < 33 ||
+      !bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+      bytes.readUInt32BE(8) !== 13 || bytes.toString('ascii', 12, 16) !== 'IHDR' ||
+      bytes.readUInt32BE(16) !== artwork.width || bytes.readUInt32BE(20) !== artwork.height) {
+    return 'payload /artwork invalid bounded PNG encoding or dimensions';
+  }
+  return undefined;
+};
+
 /** Every core family, in registration order: the session schema holds definitions the other agent families use. */
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
@@ -241,6 +261,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   }, '2.1'),
   define('inbox-handle', 'command', 'org.bunny.inbox.handle.requested', routedSubject('routing')),
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
+  define('playback', 'state', 'org.bunny.playback.updated', checkPlaybackArtwork, '2.1'),
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),

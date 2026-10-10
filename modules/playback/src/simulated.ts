@@ -4,6 +4,7 @@
 // recorded, so the module's own parsing runs on them. Like real speakers, they keep their state when the runtime
 // restarts. A test can play, pause or stop either one, switch it to another input, make it stop answering or answer
 // each call slowly, or make its next command fail or never answer. They ignore the endpoint they are called at.
+import {SIMULATED_ARTWORK_MARKER, simulatedArtworkReply} from './simulated-artwork.js';
 import type {Scheduler} from '@jimmie-potts/sdk';
 import type {PlaybackSection} from './configuration.js';
 import type {PlaybackAction} from './playback.js';
@@ -25,6 +26,8 @@ export const SLOW_MS = 400;
 export type SpeakerState = {
   /** Whether it answers. One that does not never replies, until the call's signal aborts. */
   answering: boolean;
+  /** Set only by the explicit synthetic artwork action; never a real receiver URL. */
+  syntheticArtwork: boolean;
   /** How long it takes to answer each call, reads and commands alike: 0 at once, or more for a slow speaker. */
   delayMs: number;
   /** `airplay` while the phone plays to it over AirPlay; `other` for another input. */
@@ -68,7 +71,7 @@ const silence = (signal: AbortSignal): Promise<never> => new Promise((_, reject)
 });
 
 const initial = (given: Partial<SpeakerState> = {}): SpeakerState => ({
-  answering: true, delayMs: 0, input: 'other', status: 'stopped', nextCommand: 'answer', calls: 0, peak: 0, ...given, commands: [...(given.commands ?? [])],
+  answering: true, syntheticArtwork: false, delayMs: 0, input: 'other', status: 'stopped', nextCommand: 'answer', calls: 0, peak: 0, ...given, commands: [...(given.commands ?? [])],
 });
 /** Real time, for the runtime's `--simulate` and disposable runs. */
 const REAL_TIME: Scheduler = {after: (delayMs, callback) => {
@@ -92,8 +95,11 @@ export class SimulatedSpeakers implements SpeakerTransport {
     this.#scheduler = scheduler;
   }
 
-  sony(_endpoint: string, method: string, _version: string, signal: AbortSignal): Promise<SonyReply> {
-    return this.#call('sony', signal, () => this.#sonyReply(method));
+  sony(endpoint: string, method: string, _version: string, signal: AbortSignal): Promise<SonyReply> {
+    return this.#call('sony', signal, () => {
+      const reply = this.#sonyReply(method);
+      return reply === 'hang' || endpoint === '' ? reply : simulatedArtworkReply(reply, endpoint);
+    });
   }
 
   sonos(_endpoint: string, action: string, _args: string, signal: AbortSignal): Promise<SonosReply> {
@@ -112,6 +118,9 @@ export class SimulatedSpeakers implements SpeakerTransport {
       Object.assign(speaker, {title}, artist === undefined ? {} : {artist}, album === undefined ? {} : {album});
     }
   }
+
+  /** Select the one synthetic PNG fixture for the Sony speaker. */
+  artwork(): void { this.#speakers.sony.syntheticArtwork = true; }
 
   pause(kind: SimulatedKind): void {
     this.#speakers[kind].status = 'paused';
@@ -205,6 +214,7 @@ export class SimulatedSpeakers implements SpeakerTransport {
         source: 'extInput:airPlay', uri: 'extInput:airPlay', output: '', stateInfo: {state: SONY_STATES[speaker.status], supplement: ''},
         ...(title === undefined ? {} : {title}), ...(artist === undefined ? {} : {artist}), ...(album === undefined ? {} : {albumName: album}),
         applicationName: 'app',
+        ...(speaker.syntheticArtwork ? {content: {thumbnailUrl: SIMULATED_ARTWORK_MARKER}} : {}),
       }]]};
     }
     const action = SONY_ACTIONS[method];

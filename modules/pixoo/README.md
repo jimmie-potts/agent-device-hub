@@ -40,7 +40,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
 | `src/media` | Bounded rendering through sharp, GIF encoding and decoding, the media store and its child process |
 | `src/playback` | The player, traversal and the library-backed store |
-| `src/presentation` | Monitor presentation over `session/2.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` and the pixel font |
+| `src/presentation` | Monitor presentation over `session/2.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` or `playback/2.1` and the pixel font |
 | `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
 | `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration, its store on a full database and the library migration |
@@ -141,7 +141,7 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
   device with the hosted profile needs it.
 - `presentation` and `nowPlaying` are where the settings begin. Once the module
   saves its own, those win.
-- `playback` names the `playback/2.0` record Now Playing follows; without it,
+- `playback` names the `playback/2.0` or `playback/2.1` record Now Playing follows; without it,
   the playback owner's first record.
 - The Pixoo's local API takes no token, so the module reads no secret.
 
@@ -171,7 +171,7 @@ Each statement the module's store runs is prepared once. A settings save that
 cannot commit, as on a full disk, throws SQLite's own error and leaves the saved
 settings and the configuration revision as they were.
 
-Its copies of the core's `session/2.0` records and of the `playback/2.0` record
+Its copies of the core's `session/2.0` records and of the `playback/2.0` or `playback/2.1` record
 come from sync and are never stored. A copy that has not synced is tried again
 after a doubling wait from 1 s to 60 s. An owner that has not answered since
 the start, such as a playback owner that starts later, logs at DEBUG until that
@@ -565,7 +565,7 @@ Read on 2026-10-06 from divoom-app-upgrade:
   the HTTP adapter refuses a profile name that is not a non-empty string.
 - **Module boundary.** The media child process no longer writes its own
   diagnostic record or imports `@jimmie-potts/bunny-observability`; the module
-  records each job. The presentation reads `session/2.0` and `playback/2.0`
+  records each job. The presentation reads `session/2.0` and `playback/2.0` or `playback/2.1`
   records (`presentation/sources.ts`, `agent-dashboard.ts`, `now-playing.ts`)
   instead of agent-state's 1.x snapshot and the Hub's playback snapshot, and
   renders through injectable renderers. The synthetic previews' frames are

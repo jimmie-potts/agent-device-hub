@@ -1,8 +1,8 @@
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {NowPlayingView} from '../core/index.js';
 import {drawGlyph,drawText,glyphs,type Color} from './pixel-font.js';
-// Now-playing card for the playback owner's `playback/2.0` record (Hub #929). The owner publishes a record only when the
-// speaker changes and says itself when the record turns stale or unavailable (ADR 0012, "Consumers and recovery"), so
+// Text card for the playback owner's 2.0 or 2.1 record (Hub #929, #229). The owner publishes playback, artwork and
+// availability changes and says itself when the record turns stale or unavailable (ADR 0012, "Consumers and recovery"), so
 // the card follows the record's `availability` and whether the module's copy still follows its owner, never the age of
 // `observedAtMs`: a song that plays on unchanged keeps a current card. See openspec bunny-pixoo-module.
 export type {NowPlayingView};
