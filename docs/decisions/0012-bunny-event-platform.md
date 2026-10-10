@@ -613,3 +613,16 @@ runs at a time. One owner-present setup and smoke check completes the installed
 step. Retirement is optional follow-up work with separate scope, rather than a
 gate for this delivery. This amendment does not authorize installed discovery,
 service changes or physical device commands before the owner's #840 window.
+
+**2026-10-10, ONN host ADB dependency.** After ordinary Android TV Remote
+text entry failed in standard Stremio and owner-observed ADB controls worked in
+both standard apps, the owner approved Google's native ADB as a scoped host
+dependency for ONN controls. The ONN module, queue, storage and dashboard remain
+TypeScript in the existing runtime. One explicitly configured ONN uses a private
+ADB server socket; clients receive fixed typed actions through the authenticated
+gateway and dispatcher. No discovery, protocol fallback, arbitrary-shell client
+API or Android app installation is selected. This exception does not select a
+production metadata companion. The trade-off is a native host dependency whose
+setup, ownership, cancellation and failure behavior need qualification. See the
+[ONN controls qualification](../onn-controls-qualification.md) for the selected
+route, evidence limits and minimum implementation contract.
