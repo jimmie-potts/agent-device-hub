@@ -1487,4 +1487,16 @@ Before product implementation, #604 registers the module/helper workspaces and C
 
 ## Roborock module checks
 
-Use Node 24 and `npm ci`, then build before type-aware lint. Run `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:roborock:built`, `npm run test:roborock:consumer:built` and `npm run test:roborock:browser`. The transport retains its separate transport and consumer suites. Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus `npm run check:workflow` and `npm run test:workflow`. The Roborock catalog scenario runs over both in-memory transports; follow apps/runtime/DEVELOPMENT.md for its focused disposable run and full-suite triggers. These checks use synthetic records and simulated transport only; source success establishes neither installation nor current account/device or map attribution.
+Use Node 24 and `npm ci`, then build before type-aware lint. Run
+`npm run build`, `npm run typecheck`, `npm run lint:js`,
+`npm run test:roborock:built`, `npm run test:roborock:consumer:built` and
+`npm run test:roborock:browser`. The module suite includes the SDK module test
+kit; the transport retains its separate transport and consumer suites.
+
+Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus
+`npm run check:workflow` and `npm run test:workflow`. The Roborock catalog
+scenario runs over both in-memory transports. Follow
+[runtime development](../apps/runtime/DEVELOPMENT.md) for its focused disposable
+run and full-suite triggers. These checks use synthetic records and simulated
+transport. Source success does not establish installation, current
+account/device compatibility or map attribution.

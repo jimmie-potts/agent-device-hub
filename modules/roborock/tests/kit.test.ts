@@ -15,7 +15,7 @@ moduleConformance({
       void device.action('offline');
       return createRoborockModule({transport: device});
     },
-    unavailable: message => message.dataschema.endsWith('/device/2.0')
+    unavailable: message => message.dataschema.endsWith('/device/2.1')
       && (message.data as {availability?: unknown}).availability === 'unavailable',
   },
 });

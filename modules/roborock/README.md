@@ -208,7 +208,7 @@ it opens no connection and never signs in. There is no generic command export.
 The reader provides `readStatus`, `readConsumables`, `readCleanSummary`,
 `readCleanRecord(startTime)`, `readRoomMapping`, `readCurrentMap` and `stop`.
 A reading is either `{ok: true, value, observedAt}` or
-`{ok: false, error: ErrorBody}`. Missing vendor domain fields remain missing;
+`{ok: false, error: ErrorBody}`. Missing vendor domain fields remain missing.
 The registered module owns normalization. Current maps return private `Buffer` bytes, with no
 claim about geometry or map coverage. The owning module must associate map
 capture time and run identity rather than infer a historical map from a late
