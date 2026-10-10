@@ -91,14 +91,19 @@ one operation-wide cancellation signal to every connection, including client
 convenience methods whose signature omits a signal. Use no automatic retry or
 server selection fallback.
 
-The selected ADB route's physical client/server restart remains pending. The
-earlier ordinary-Remote restart and ADB disconnect/reconnect checks do not
-substitute for it. AC3 and the controls prerequisite remain unaccepted until
-that approved check has protocol and owner-observed evidence. One retained
-foreground read returned no package and an ambiguous result; it establishes an
-unavailable current-app observation. A later YouTube observation does not turn
-that gap into a known state. The 15-second stale threshold below is still a
-production bound to validate, not a physically measured guarantee.
+A separately approved check restarted only the private host ADB server once
+per app, reusing pairing and reconnecting to the configured target without any
+TV input command. Before and after each restart, the selected current-app read
+matched the owner-selected app. The owner confirmed that both apps stayed paused
+at the same position, with no unexpected playback or focus change, and that the
+physical remote still worked. This qualifies the official ADB route's restart
+behavior; it does not qualify an installed TypeScript module or prove a
+production persistence fence.
+
+One retained foreground read returned no package and an ambiguous result; it
+establishes an unavailable current-app observation. A later YouTube observation
+does not turn that gap into a known state. The 15-second stale threshold below
+is still a production bound to validate, not a physically measured guarantee.
 
 ## Minimum implementation contract
 
@@ -214,8 +219,15 @@ playing state, while its explicit advertisement field was absent. That absence
 also occurred during main playback. Duration change alone does not qualify
 reliable ad classification or main-content watched time.
 
-The temporary Java/Dex reader was qualification-only and was removed after the
-approved session. No production Android metadata companion is selected.
+The temporary Java/Dex metadata reader was qualification-only and was removed
+after the approved session. A separate, reviewed one-shot advertisement reader
+briefly connected through Android UiAutomation using the flag intended to
+preserve existing accessibility services. Its first compatibility sample returned
+`selected-root-unavailable` and reported successful disconnect. Sampling stopped
+without retry, and its verified file and empty directory were removed. The owner
+confirmed YouTube remained on its browsing page. This establishes no usable
+advertisement or Skip marker; existing-service preservation was not separately
+measured. No production Android metadata companion is selected.
 History design must retain original selected observations privately and
 indefinitely, with credentials excluded, and resolve reliable playback/ad
 classification before accepting watched-time totals. Missing topic fields stay
