@@ -299,7 +299,9 @@ permission to replace an owner.
    and archive on the delivery branch before final review. Incomplete tasks,
    missing acceptance or failed lookups prevent archive.
    Validate locally before every push: build once, then run the affected
-   `:built` checks. Prove that a check fails with a local negative control.
+   `:built` checks; `npm run ci:select` lists the groups and commands hosted
+   CI would select for the change. Prove that a check fails with a local
+   negative control.
    Before review, check every acceptance item against its evidence. Search the
    docs for each fact the change alters. Search at least `README.md`,
    `AGENTS.md`, `docs/architecture.md`, `docs/development.md`, `docs/sdlc.md`,
@@ -394,7 +396,8 @@ permission to replace an owner.
 4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
    for the current PR head. Require every applicable configured job to succeed,
    including matrix jobs; missing, pending, skipped, cancelled or failed jobs
-   prevent merge.
+   prevent merge. The only allowed skip is a job the
+   [affected-check selection](#affected-pr-checks) deliberately leaves out.
    Apply the UI verification policy below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
@@ -430,8 +433,9 @@ that changes no user-facing or device-facing output.
 Verification has three tiers.
 
 1. **Automatic.** Once an application has a shared scenario catalog, every PR
-   that runs the Checks workflow runs it in CI through the in-memory end-to-end
-   harness. Markdown-only changes skip it.
+   whose [affected checks](#affected-pr-checks) select that application runs it
+   in CI through the in-memory end-to-end harness, and so does every main push
+   that runs the Checks workflow. Markdown-only changes skip it.
    [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
    adds both for the new runtime that
    [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
@@ -580,6 +584,12 @@ before accepting a successful rerun. Checks from another app or revision do not
 qualify. Runs from the other provider on the same revision do not count, and
 they waste minutes; rebase a branch that still has `.depot/workflows/`.
 
+A pull request's CI runs only its [affected checks](#affected-pr-checks). A job
+that selection deliberately leaves out reports `skipped`; it counts as not run,
+never as passed, and it is acceptable only when the selection recomputed from
+the PR's changed files omits it and the `Selected checks gate` job succeeded.
+Merged-main revisions run every applicable job.
+
 Inspect relevant job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.
@@ -632,6 +642,25 @@ guarded files, but no Checks test may depend on Markdown content. A test that
 does must run in the Workflow job, which still runs for Markdown-only changes.
 
 If a change's file list or filter behavior is uncertain, keep the full gate.
+
+### Affected PR checks
+
+A pull request that runs the Checks workflow runs only the check groups its
+changed paths can affect, including their known consumers
+([#1080](https://github.com/jimmie-potts/agent-device-hub/issues/1080)). The
+mapping, its groups and its full-coverage fallbacks are in
+[Affected PR checks](development.md#affected-pr-checks). Shared packages and
+contracts, root toolchain and lockfile files, CI configuration, scripts
+(including the selector and this preflight), unknown paths and any incomplete
+or unreadable comparison run every check. Pushes to main run every applicable
+check, as do manual runs of the Checks workflow, the full-run escape hatch.
+
+A selected check must succeed on the exact head. An unselected job must report
+`skipped` (or `success` when it ran anyway) and the `Selected checks gate` job
+must succeed; a failure, cancellation, missing result, failed selection or
+skipped selected job blocks merge. The delivery preflight recomputes the
+selection from the PR's changed files with the same mapping and lists omitted
+jobs as not run. Reviews, guarded merge and merged-main CI apply as usual.
 
 ## Installation and evidence
 

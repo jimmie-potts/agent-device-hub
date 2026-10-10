@@ -4,7 +4,11 @@
 // Each job also gets the provider-independent key "<workflow> / <job>", which
 // compares coverage across a provider change. Anything this module cannot
 // evaluate exactly is returned as uncertain so the caller keeps the normal gate.
+// A job whose condition is the affected-check selection (Hub #1080) stays expected; the shared mapping in
+// scripts/ci-selection/selection.mjs decides whether it must succeed or was deliberately left out.
 import YAML from 'yaml';
+
+import { conditionJob, selectChecks } from '../ci-selection/selection.mjs';
 
 const MATRIX_REF = /\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/g;
 const HAS_MATRIX_REF = /\$\{\{\s*matrix\./;
@@ -126,9 +130,9 @@ function jobNames(workflow, job, provider) {
 
 /**
  * Enumerate the check names `provider` should report for one event.
- * Returns {jobs, filtered, uncertain, notes}; each job has its check `name`
- * and its `key`. Uncertain entries mean the expected set may be missing jobs;
- * notes record conservative choices.
+ * Returns {jobs, filtered, uncertain, notes, selection}; each job has its check `name`, its `key` and `selected`,
+ * which is false only for a job the affected-check selection deliberately leaves out. Uncertain entries mean the
+ * expected set may be missing jobs; notes record conservative choices.
  */
 export function expectedJobs(workflows, { event, branch, files, filesComplete }, provider) {
   if (!provider) throw new Error('expectedJobs needs the CI provider');
@@ -136,6 +140,13 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
   const filtered = [];
   const uncertain = [];
   const notes = [];
+  let selection = null;
+  let selectionError = null;
+  try {
+    selection = selectChecks({ event, paths: files, complete: filesComplete });
+  } catch (error) {
+    selectionError = error.message;
+  }
   for (const workflow of workflows) {
     const trigger = workflow.triggers[event];
     if (!trigger) continue;
@@ -154,18 +165,32 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
         uncertain.push(`${workflow.file} job ${job.id}: reusable workflow jobs are not enumerated`);
         continue;
       }
-      if (job.if !== undefined) notes.push(`${workflow.file} job ${job.id}: its condition is not evaluated; it stays expected`);
+      let selected = true;
+      const selectedBy = conditionJob(job.if);
+      if (selectedBy) {
+        if (!selection) {
+          uncertain.push(`${workflow.file} job ${job.id}: cannot select affected checks (${selectionError})`);
+          continue;
+        }
+        if (!Object.hasOwn(selection.jobs, selectedBy)) {
+          uncertain.push(`${workflow.file} job ${job.id}: the selection has no job ${selectedBy}`);
+          continue;
+        }
+        selected = selection.jobs[selectedBy];
+      } else if (job.if !== undefined) {
+        notes.push(`${workflow.file} job ${job.id}: its condition is not evaluated; it stays expected`);
+      }
       const result = jobNames(workflow, job, provider);
       if (result.error) {
         uncertain.push(result.error);
         continue;
       }
-      for (const { name, key } of result.names) jobs.push({ name, key, workflow: workflow.file, job: job.id });
+      for (const { name, key } of result.names) jobs.push({ name, key, workflow: workflow.file, job: job.id, selected });
     }
   }
   // Two jobs with one check name cannot be told apart in the check runs.
   const counts = new Map();
   for (const job of jobs) counts.set(job.name, (counts.get(job.name) ?? 0) + 1);
   for (const [name, count] of counts) if (count > 1) uncertain.push(`check name ${JSON.stringify(name)} belongs to ${count} jobs`);
-  return { jobs, filtered, uncertain, notes };
+  return { jobs, filtered, uncertain, notes, selection };
 }

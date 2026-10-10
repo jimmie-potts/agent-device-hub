@@ -1,6 +1,10 @@
 # Markdown-only changes skip this workflow; the Workflow checks and retained documentation checks still run (#861).
 # GitHub-hosted runners replaced Depot CI in #870.
 # The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
+# Pull requests run affected checks (#1080): the select job maps the PR's changed paths to check groups with
+# scripts/ci-selection/selection.mjs, steps and jobs outside those groups are skipped, and the gate job fails unless
+# every selected job succeeded. Pushes to main and manual runs (workflow_dispatch, the full-run escape hatch) run
+# every check; so does any shared, unknown or unreadable change.
 
 name: Checks
 on:
@@ -9,14 +13,36 @@ on:
     paths-ignore: ['**/*.md']
   pull_request:
     paths-ignore: ['**/*.md']
+  workflow_dispatch: {}
 permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 jobs:
+  select:
+    name: Select affected checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+      groups: ${{ steps.select.outputs.groups }}
+      firmware: ${{ steps.select.outputs.firmware }}
+      app-verify: ${{ steps.select.outputs.app-verify }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: scripts/ci-selection
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci-selection/cli.mjs select
   core:
     name: Build, lint and core tests on ${{ matrix.os }}
+    needs: select
     strategy:
       fail-fast: false
       matrix:
@@ -31,68 +57,112 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.14'
           cache: pip
           cache-dependency-path: requirements-contracts.txt
       - run: npm ci
-      - run: python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint:js
-      - run: npm run test:maintenance:built
-      - run: npm run test:maintenance:package:built
-      - run: npm run test:observability:built
-      - run: npm run test:observability:pilot
-      - run: npm run test:observability:python
-      - run: npm run test:observability:query
-      - run: npm run test:observability:package:built
-      - run: npm run test:contracts:built
-      - run: npm run test:events:built
-      - run: npm run test:events:python
-      - run: npm run test:sdk:built
-      - run: npm run test:runtime:built
-      - run: npm run test:runtime:scenarios:built
-      - run: npm run test:lifecycle:built
-      - run: npm run test:lifecycle:python
-      - run: npm run test:lifecycle:package:built
-      - run: npm run test:agent-state:built
-      - run: npm run test:agent-state:python
-      - run: npm run test:agent-state:package:built
-      - run: npm run test:wispr:built
-      - run: npm run test:wispr:package:built
-      - run: npm run test:chompi-bridge:built
-      - run: npm run test:chompi-bridge:scenarios
-      - run: npm run test:mcp:built
-      - run: npm run test:mcp:protocol:built
-      - run: npm run test:mcp:package:built
-      - run: npm run test:pixoo:built
-      - run: npm run test:nanoleaf:built
-      - run: npm run test:playback:built
-      - run: npm run test:lifx-module:built
-      - run: npm run test:tidbyt-module:built
-      - run: npm run test:codex-desktop:built
-      - run: npm run test:wispr-module:built
-      - run: npm run test:roborock-transport:built
-      - run: npm run test:roborock-transport:consumer:built
-      - run: npm run test:roborock:built
-      - run: npm run test:roborock:consumer:built
-      - run: npm run test:bb8:built
-      - run: npm run test:bb8-windows:built
-      - run: npm run test:bb8:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
+        run: npm run test:maintenance:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
+        run: npm run test:maintenance:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:pilot
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:python
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:query
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:contracts:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:events:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:events:python
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:sdk:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:runtime:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:runtime:scenarios:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:lifecycle:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:lifecycle:python
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:lifecycle:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:agent-state:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:agent-state:python
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:agent-state:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:wispr:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:wispr:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
+        run: npm run test:chompi-bridge:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
+        run: npm run test:chompi-bridge:scenarios
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:mcp:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:mcp:protocol:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:mcp:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:pixoo:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:nanoleaf:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:playback:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:lifx-module:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:tidbyt-module:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:codex-desktop:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:wispr-module:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:roborock-transport:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:roborock-transport:consumer:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:roborock:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:roborock:consumer:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:bb8:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:bb8-windows:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:bb8:package:built
       # The old dashboard's unit tests stay, because #922 copies the dashboard into the runtime; App verification runs its browser smoke check.
-      - run: npm run test:dashboard
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:dashboard
       # The runtime's dashboard (#922): its unit tests here, its browser smoke check in App verification.
-      - run: npm run test:runtime-dashboard:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:runtime-dashboard:built
+  # A job skipped before its matrix expands reports its name with the matrix expression unexpanded, so the two jobs
+  # the selection can skip name their single runner instead of using a matrix.
   firmware:
-    name: Firmware host tests and ARM build on ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
+    name: Firmware host tests and ARM build on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.firmware == 'true'
     timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -102,12 +172,10 @@ jobs:
       - run: npm run test:firmware
       - run: npm run test:firmware:arm
   app-verify:
-    name: App verification on ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    name: App verification on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.app-verify == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners. By 2026-10-07 the job took
     # 11 to 15 minutes as the runtime verify suite grew with each module (to about 217 s), and timed out at 15 in that suite.
@@ -132,18 +200,47 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
       # Lifecycle tests need a systemd user manager and skip with a printed reason without one (hidden above, #873); unsupervised capture tests always run.
-      - run: npm run test:app-verify:built
-      - run: npm run test:app-verify:package:built
-      - run: npm run test:verify-host
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:app-verify:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:app-verify:package:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:verify-host
       # Hub #853: CHOMPI bridge boundary checks with real crossing runs, every capture step through runCaptureStep, and the control page's browser and accessibility check.
-      - run: npm run test:chompi-bridge:verify:built
-      - run: npm run test:chompi-bridge:browser
-      - run: npm run test:runtime:verify:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
+        run: npm run test:chompi-bridge:verify:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
+        run: npm run test:chompi-bridge:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:runtime:verify:built
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
-      - run: npm run test:dashboard:smoke
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:dashboard:smoke
       # The runtime dashboard's browser smoke check (#922); the full `test:runtime-dashboard:browser` suite runs locally.
-      - run: npm run test:runtime-dashboard:smoke
-      - run: node apps/runtime/dashboard/tests/playback-artwork.browser.ts
-      - run: npm run test:bb8:browser
-      - run: npm run test:roborock:browser
-      - run: npm run test:observability:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:runtime-dashboard:smoke
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/playback-artwork.browser.ts
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:bb8:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:roborock:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:observability:browser
+  gate:
+    name: Selected checks gate
+    needs: [select, core, firmware, app-verify]
+    # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          sparse-checkout: scripts/ci-selection
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-selection/cli.mjs gate

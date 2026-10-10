@@ -1,4 +1,5 @@
-// Exact-revision CI evidence; no path-specific evidence exceptions.
+// Exact-revision CI evidence. The only path-specific allowance is the affected-check selection (Hub #1080): a job
+// that selection deliberately leaves out may be skipped, and is reported as not run.
 import { CI_PROVIDERS, short } from './context.mjs';
 import { ReadFailure } from './github.mjs';
 import { expectedJobs, parseWorkflow } from './workflows.mjs';
@@ -55,8 +56,15 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
   for (const reason of expected.uncertain) gate.unresolved(`cannot enumerate expected jobs: ${reason}`);
   for (const reason of expected.notes) gate.note(reason);
   const names = [...new Set([...expected.jobs.map(job => job.name), ...requiredContexts])];
+  // A required context or a second job with the same name keeps a check required.
+  const unselected = new Set(expected.jobs.filter(job => !job.selected).map(job => job.name)
+    .filter(name => !requiredContexts.includes(name) && expected.jobs.every(job => job.name !== name || !job.selected)));
   gate.evidence.expected = names;
   gate.evidence.filtered = expected.filtered;
+  if (expected.selection) {
+    const { mode, groups, omitted, full } = expected.selection;
+    gate.evidence.selection = { mode, groups, omitted, full: full.map(item => (item.path ? `${item.path}: ${item.reason}` : item.reason)) };
+  }
 
   // A candidate that edits its own workflows, or moves them to another provider,
   // cannot lower its gate silently. Jobs are compared by "<workflow> / <job>".
@@ -78,10 +86,10 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     return;
   }
   gate.evidence.mode = provider.id;
-  await evaluateChecks(ctx, gate, { sha, names, checkBranch, provider });
+  await evaluateChecks(ctx, gate, { sha, names, unselected, omitted: expected.selection ? expected.selection.omitted : [], checkBranch, provider });
 }
 
-async function evaluateChecks(ctx, gate, { sha, names, checkBranch, provider }) {
+async function evaluateChecks(ctx, gate, { sha, names, unselected, omitted, checkBranch, provider }) {
   const { github, repo } = ctx;
   const evidence = await ctx.read(gate, async () => ({
     runs: await github.getAll(`/repos/${repo}/commits/${sha}/check-runs?per_page=100&filter=all`, 'check_runs'),
@@ -118,9 +126,11 @@ async function evaluateChecks(ctx, gate, { sha, names, checkBranch, provider }) 
       htmlUrl: latest.html_url ?? null,
       superseded: attempts.slice(0, -1).map(run => ({ checkRunId: run.id, result: resultOf(run) })),
     };
+    if (unselected.has(name)) job.selected = false;
     jobs.push(job);
     if (result === 'pending') gate.unresolved(`${name}: pending (${latest.status})`);
-    else if (result !== 'success') gate.unresolved(`${name}: ${result}`);
+    else if (unselected.has(name) && result === 'skipped') gate.note(`${name}: not selected for this change (omitted: ${omitted.join(', ')}); skipped, not run`);
+    else if (result !== 'success') gate.unresolved(`${name}: ${result}${unselected.has(name) ? ' (not selected)' : ''}`);
     else if (job.superseded.some(item => item.result === 'pending')) gate.unresolved(`${name}: an earlier attempt is still running`);
     if (result === 'success' && latest.output && latest.output.annotations_count > 0) {
       const annotations = await ctx.read(gate, () => github.getAll(`/repos/${repo}/check-runs/${latest.id}/annotations?per_page=100`));
