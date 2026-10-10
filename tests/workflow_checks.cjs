@@ -278,7 +278,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:roborock:consumer:built', 'npm run test:bb8:built', 'npm run test:bb8-windows:built', 'npm run test:bb8:package:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
-      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'npm run test:bb8:browser', 'npm run test:roborock:browser', 'npm run test:observability:browser'],
+      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts', 'npm run test:bb8:browser', 'npm run test:roborock:browser', 'npm run test:observability:browser'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',

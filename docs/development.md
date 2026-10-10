@@ -730,6 +730,16 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.
 
+Playback artwork (#1069) adds passive owner/gateway checks to the existing
+`npm run test:playback:built` and `npm run test:runtime:built` discovery. After
+the root build, run `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`
+for the focused Home/Music image, association, text/control and accessibility
+journey; App verification runs that same entry. It uses the real playback
+owner and decoder with synthetic acquisition on the disposable browser harness.
+Keep the full dashboard browser suite required by the owning procedure. These
+checks establish source behavior; installed browser identity and physical
+display acceptance remain separate.
+
 ## Agent lifecycle contract checks
 
 Hub #2 adds `packages/lifecycle-contracts`, a private versioned lifecycle schema

@@ -11,6 +11,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
+import {playbackArtworkUrl} from './playback-artwork.ts';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
@@ -276,7 +277,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <NavLink route={{kind: 'automation'}} current={route}>Automation</NavLink>
         <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
         {devices.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
-        {playback.map(({record}) => <NavLink key={record.id} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
+        {playback.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
         {runtime.modules?.flatMap(module => module.pages.map(page => <NavLink key={`${module.name}:${page.id}`} route={{kind: 'module', module: module.name, page: page.id}} current={route}>{page.title}</NavLink>))}
       </nav>
       <PlacesNav links={links}/>
@@ -312,7 +313,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         </div>)}</div>
       </section>}
       {(route.kind === 'home' || route.kind === 'playback') && <section aria-label="Music"><div className="cards">{playback.map(({record, copy}) =>
-        <PlaybackCard key={record.id} record={record} live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}</div></section>}
+        <PlaybackCard key={`${copy.owner}:${record.id}`} record={record} live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive}
+          artworkUrl={playbackArtworkUrl(record, copy.owner, state.feed === 'connected' && copy.synced && !runtime.catalogFailed, runtime.modules)}/>)}</div></section>}
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>

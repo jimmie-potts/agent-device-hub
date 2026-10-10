@@ -21,7 +21,9 @@ import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, token
 import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
-import {playbackFactory} from '@jimmie-potts/playback';
+import {createPlaybackModule, playbackFactory, type PlaybackModuleOptions, type SimulatedSpeakers} from '@jimmie-potts/playback';
+
+type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['fetch']>;
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
@@ -39,6 +41,8 @@ export type WorldOptions = {
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
+  /** Real playback owner and decoder over caller-owned synthetic speakers/bytes; no live fetch fallback. */
+  playbackArtwork?: {speakers: SimulatedSpeakers; fetch: ArtworkFetch};
   /** A synthetic module principal for Desktop metadata; reads no provider files. */
   desktopMetadata?: boolean;
   /** Qualified scripted Nanoleaf/Pixoo native responders; Nanoleaf fails and Pixoo succeeds independently. */
@@ -159,7 +163,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
-    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config, playback: playbackFactory.simulatedSection.config} : {},
+    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
+    ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
@@ -182,7 +187,9 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
       core = createCoreModule(), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
-      ...(options.pixooPages === true ? [playbackFactory.simulate(), createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
+      ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
+        : options.pixooPages === true ? [playbackFactory.simulate()] : []),
+      ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
     port, stateDir, configFile: config, edge: {schemas: {...options.roborock===true?roborockSchemas:{}, ...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });

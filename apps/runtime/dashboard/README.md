@@ -222,6 +222,13 @@ The focused label/reload journey runs with
 It shares its label assertions with the full `browser.ts` suite and checks
 conflict drafts, explicit retry, Clear, keyboard focus and desktop/phone axe.
 
+The focused artwork journey runs with
+`node apps/runtime/dashboard/tests/playback-artwork.browser.ts` after a build.
+It uses the real playback owner and decoder with synthetic speakers and PNG
+bytes. Its pixel oracle and acquisition/command counters check the shared Home
+and Music card; synthetic browser evidence is separate from the installed
+runtime identity and served browser build.
+
 ## Devices, music and operations
 
 The authenticated module catalog names every device owner. `runtime-feeds.ts`
@@ -229,6 +236,15 @@ keeps one SDK copy per owner, alongside core operations and playback, using the
 existing participant. Desired state, device observation, queued kinds, last
 transmission and held state stay separate. A failed owner remains visible as
 unavailable; a lost stream keeps records stale until their own snapshot returns.
+
+Home and Music show optional playback artwork beside the title and artist.
+The current synced SDK owner must map to one running catalog module that serves
+playback. A native same-origin image uses the existing browser session and an
+opaque generation/revision reference; it reads no receiver URL or inline image
+payload. Owner, record and reference changes retire the image subtree and its
+callbacks. Loading or refusal leaves text, supported controls and operation
+evidence usable; image events send no command or retry. Decorative artwork has
+empty alternative text and adds no keyboard stop.
 
 Home keeps the existing mode/power quick controls; the device route exposes
 brightness, scenes, zones, media and manual moments only where declared. Each
