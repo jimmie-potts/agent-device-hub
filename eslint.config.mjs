@@ -21,11 +21,12 @@ export const staged = [];
 // safe-error rules (Hub #953) skip them. The strict rules still apply.
 const tests = ['**/tests/**', '**/*.test.{ts,tsx,js,mjs}'];
 // Named entry points that own the process's standard streams, so `bunny/no-console` skips them: the runtime's journal
-// sink and its process entry (the ready line and usage), the Pixoo library migration's and the Nanoleaf migration's
+// sink and its process entry (the ready line and usage), the explicit Roborock account-setup CLI, the Pixoo library migration's and the Nanoleaf migration's
 // entries (each its JSON line), and the verification run's supervisor and network guard.
 export const streamOwners = [
   'apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/src/migrate-pixoo.ts', 'apps/runtime/src/migrate-nanoleaf.ts',
   'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts',
+  'modules/roborock/bin/setup.mjs',
 ];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
