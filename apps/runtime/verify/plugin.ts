@@ -25,6 +25,23 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
 const version = (JSON.parse(readFileSync(join(root, 'apps/runtime/package.json'), 'utf8')) as {version: string}).version;
 
+/** Explicit nested module workspaces are build dependencies, never registrations. */
+function nestedModuleBuilds(at: string): {folder: string; entry: string}[] {
+  const manifest = join(at, 'package.json');
+  if (!existsSync(manifest)) return [];
+  const {workspaces} = JSON.parse(readFileSync(manifest, 'utf8')) as {workspaces?: unknown};
+  if (!Array.isArray(workspaces)) return [];
+  const folders = workspaces.filter((folder): folder is string => typeof folder === 'string'
+    && /^modules\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)+$/u.test(folder));
+  return [...new Set(folders)].sort().map(folder => {
+    const {exports} = JSON.parse(readFileSync(join(at, folder, 'package.json'), 'utf8')) as {exports?: {'.'?: {import?: unknown}}};
+    const entry = exports?.['.']?.import;
+    if (typeof entry !== 'string' || !/^\.\/dist\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.js$/u.test(entry))
+      throw new Error(`${folder} must declare its built import entry`);
+    return {folder, entry: `${folder}/${entry.slice(2)}`};
+  });
+}
+
 /**
  * The served candidate: the built runtime with its module registry, its verification run and fixtures, the SDK, the
  * profile, the agent-state owner the core runs with its lifecycle contracts (#831), every module folder's build (Hub
@@ -46,6 +63,7 @@ export function artifactFiles(at = root): string[] {
     ...built('packages/mcp/dist'), ...built('packages/contracts/dist'),
     ...built('packages/agent-state/dist'), ...built('packages/lifecycle-contracts/dist'),
     ...moduleFolders(at).flatMap(folder => built(`modules/${folder}/dist/src`)),
+    ...nestedModuleBuilds(at).flatMap(({folder}) => built(`${folder}/dist/src`)),
     // The 2.0 agent hook script (Hub #926), which a capture step runs as a client's hook command does; it is not built.
     ...['apps/runtime/bin/monitor-hook.mjs'].filter(file => existsSync(join(at, file))),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
@@ -61,13 +79,14 @@ export function artifactFiles(at = root): string[] {
 
 /** Every module folder's sources, and its package file, from which the build writes the runtime's module registry (Hub #999). */
 export const BUILD_SOURCES = [
+  'package.json',
   ':(glob)apps/runtime/src/**', ':(glob)apps/runtime/build/**', ':(glob)apps/runtime/verify/*.ts', ':(glob)apps/runtime/tests/fixtures/**',
   ':(glob)apps/runtime/tests/scenarios/**',
   ':(glob)packages/sdk/src/**', ':(glob)packages/app-verify/src/**', ':(glob)packages/event-contracts/src/**', ':(glob)packages/observability/src/**',
   ':(glob)packages/observability/runtime/**',
   ':(glob)packages/wispr-contracts/src/**',
   ':(glob)packages/agent-state/src/**', ':(glob)packages/lifecycle-contracts/src/**', ':(glob)packages/mcp/src/**', ':(glob)packages/contracts/src/**',
-  ':(glob)modules/*/src/**', ':(glob)modules/*/package.json',
+  ':(glob)modules/**/src/**', ':(glob)modules/**/package.json',
   // The dashboard's page (Hub #922), built from its sources and the Places manifest it reads.
   ':(glob)apps/runtime/dashboard/src/**', 'apps/runtime/dashboard/build.mjs', 'docs/skins/places.json',
 ];
@@ -79,6 +98,7 @@ export const buildOutputs = (at = root): string[] => [
   'packages/wispr-contracts/dist/index.js', 'packages/wispr-contracts/dist/query.js',
   'packages/agent-state/dist/index.js', 'packages/lifecycle-contracts/dist/v1.2.js', 'packages/mcp/dist/index.js', 'packages/contracts/dist/index.js',
   ...moduleFolders(at).map(folder => `modules/${folder}/dist/src/index.js`),
+  ...nestedModuleBuilds(at).map(({entry}) => entry),
   'apps/runtime/dist/dashboard/dashboard.js',
 ];
 

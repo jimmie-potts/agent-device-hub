@@ -160,11 +160,14 @@ test('the strict rules keep their intended options', async () => {
   }
 });
 
-test('only Wispr may import its published-file contract, without importing another implementation', async () => {
+test('scoped module seams permit only their own contract or nested transport', async () => {
   const eslint = new ESLint({cwd: root});
   for (const [file, imported, allowed] of [
     ['modules/wispr/src/probe.mjs', '@jimmie-potts/wispr-contracts', true],
     ['modules/example/src/probe.mjs', '@jimmie-potts/wispr-contracts', false],
+    ['modules/roborock/src/probe.mjs', '@jimmie-potts/roborock-transport', true],
+    ['modules/example/src/probe.mjs', '@jimmie-potts/roborock-transport', false],
+    ['modules/roborock/src/probe.mjs', '@jimmie-potts/lifx', false],
     ['modules/wispr/src/probe.mjs', '@jimmie-potts/agent-state', false],
     ['modules/wispr/src/probe.mjs', '../../../apps/hub/src/wispr.js', false],
   ]) {

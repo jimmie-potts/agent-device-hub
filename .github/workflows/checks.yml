@@ -74,6 +74,8 @@ jobs:
       - run: npm run test:wispr-module:built
       - run: npm run test:roborock-transport:built
       - run: npm run test:roborock-transport:consumer:built
+      - run: npm run test:roborock:built
+      - run: npm run test:roborock:consumer:built
       - run: npm run test:bb8:built
       - run: npm run test:bb8-windows:built
       - run: npm run test:bb8:package:built
@@ -140,4 +142,5 @@ jobs:
       # The runtime dashboard's browser smoke check (#922); the full `test:runtime-dashboard:browser` suite runs locally.
       - run: npm run test:runtime-dashboard:smoke
       - run: npm run test:bb8:browser
+      - run: npm run test:roborock:browser
       - run: npm run test:observability:browser
