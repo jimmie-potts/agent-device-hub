@@ -136,6 +136,23 @@ both-transport, browser/accessibility and disposable Acceptance checks. A passiv
 native binary load proves packaging compatibility only; radio access and physical
 acceptance use their separate explicitly selected briefs.
 
+## ONN qualification and future product checks
+
+[ONN controls qualification](onn-controls-qualification.md) records the selected
+host ADB route, owner-approved native dependency, physical evidence and minimum
+controls contract. This documentation-only change installs no product behavior
+or schema and needs no OpenSpec delta. Run the workflow checks and documentation
+drift fixtures above; independent review checks the evidence boundaries and
+reserved design.
+
+Before product implementation, link the exact owning issue's OpenSpec change,
+register its build/type/tests in package scripts and CI, and document the ONN
+module checks here. Use SDK/module facilities and disposable runtime scenarios
+for actions, cancellation/refusal, persistence, sensitive text, recovery and no
+replay. Retain gateway/MCP, browser/accessibility and disposable Acceptance
+checks for their affected consumers. Fake socket evidence does not establish
+an installed or physically observed TypeScript client.
+
 ## Roborock transport checks
 
 `modules/roborock/transport` owns the read-only V1 transport from Hub #1070. The root module has separate observation, consumer and browser checks described below.
