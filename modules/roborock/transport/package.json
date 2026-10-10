@@ -1,0 +1,22 @@
+{
+  "name": "@jimmie-potts/roborock-transport",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Source-qualified read-only Roborock V1 transport (Hub #1070)",
+  "exports": {
+    ".": {
+      "types": "./dist/src/transport/index.d.ts",
+      "import": "./dist/src/transport/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "mqtt": "5.16.0",
+    "debug": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/debug": "4.1.13"
+  }
+}

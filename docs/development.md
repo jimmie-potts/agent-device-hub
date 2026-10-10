@@ -136,6 +136,43 @@ both-transport, browser/accessibility and disposable Acceptance checks. A passiv
 native binary load proves packaging compatibility only; radio access and physical
 acceptance use their separate explicitly selected briefs.
 
+## Roborock transport checks
+
+`modules/roborock` owns the unregistered read-only V1 transport from Hub #1070.
+Its [guide](../modules/roborock/README.md) records the protocol provenance,
+private setup boundary and synthetic verification. The source transport has no
+runtime registration, collector or served page; #376 owns those consumers.
+
+Use Node 24 from the assigned worktree root. Register these checks before
+transport implementation, then build once and run:
+
+```bash
+npm ci
+npm run build
+npm run typecheck
+npm run lint:js
+npm run test:roborock-transport:built
+npm run test:roborock-transport:consumer:built
+npm run test:sdk:built
+npm run test:events:built
+npm run test:contracts:built
+npm run test:runtime:built
+npm run check:workflow
+npm run test:workflow
+```
+
+`test:roborock-transport` builds first for a standalone run. The core CI job
+runs both `:built` commands after its fresh root build. Tests use synthetic
+credentials, TCP/MQTT/account peers and independently authored byte vectors.
+They cover the six final-sender RPCs and prohibited calls, framing/correlation,
+private files, bounded map inflation, deadlines, disconnect, cancellation and
+stop. The consumer check exercises the exported transport entry, registry
+errors and generated runtime module registry. The nested source package is not
+a direct module manifest; #376 adds the complete runtime registration. No test uses an owner session, vendor endpoint or physical robot.
+Record the allowlist/decompression negative control with the candidate's local
+checks; source success does not establish account, installed or firmware
+compatibility. Runtime/page/MCP and live-run acceptance stay with #376.
+
 ## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
