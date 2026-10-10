@@ -126,9 +126,16 @@ void test('production HTTP reader uses fixed loopback GETs and refuses redirects
   await writeFile(tokenFile, token, {mode: 0o600});
   let mode: 'success' | 'redirect' | 'oversized' = 'success';
   let redirected = 0;
+  const requestTraces: string[] = [];
   const server = createServer((request, response) => {
     if (request.url === '/sentinel') redirected++;
     assert.equal(request.method, 'GET');
+    assert.equal(typeof request.headers.traceparent, 'string');
+    const trace = request.headers.traceparent as string;
+    assert.match(trace, /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+    assert.notEqual(trace.slice(3, 35), '0'.repeat(32));
+    assert.notEqual(trace.slice(36, 52), '0'.repeat(16));
+    requestTraces.push(trace);
     if (request.url === '/api/v2/build') {
       assert.equal(request.headers.authorization, `Bearer ${token}`);
       if (mode === 'redirect') { response.writeHead(302, {Location: '/sentinel'}); response.end(); return; }
@@ -152,8 +159,14 @@ void test('production HTTP reader uses fixed loopback GETs and refuses redirects
   const address = server.address();
   assert.ok(address !== null && typeof address !== 'string');
   const disposableOwner = {...owner, options: {...owner.options, port: address.port, config: configFile}};
-  const result = await observeInstalledUpgradeHttp(disposableOwner, tokenFile, {revision, version: '0.1.0'}, () => Promise.resolve());
+  const parent = {traceparent: `00-${'b'.repeat(32)}-${'c'.repeat(16)}-01`};
+  const result = await observeInstalledUpgradeHttp(disposableOwner, tokenFile, {revision, version: '0.1.0'}, () => Promise.resolve(),
+    parent);
   assert.equal(result.build.revision, revision);
+  assert.equal(requestTraces.length, 2);
+  assert.equal(requestTraces[0]?.slice(3, 35), 'b'.repeat(32), 'HTTP observations continue the operation trace');
+  assert.equal(requestTraces[0]?.slice(3, 35), requestTraces[1]?.slice(3, 35));
+  assert.notEqual(requestTraces[0], requestTraces[1], 'each HTTP call has its own span');
   for (const failure of ['redirect', 'oversized'] as const) {
     mode = failure;
     await assert.rejects(observeInstalledUpgradeHttp(disposableOwner, tokenFile, {revision, version: '0.1.0'}, () => Promise.resolve()),

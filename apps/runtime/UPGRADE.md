@@ -334,6 +334,13 @@ files. It sends no device command and changes no service or release selection.
 (umask 077; set -C; node apps/runtime/bin/runtime-upgrade-check.mjs plan "$BUNNY_REQUEST_FILE" > "$BUNNY_INSTALL_ROOT/provenance/plan.json")
 ```
 
+Each preflight or running check creates one operation trace and propagates its
+context to both loopback HTTP reads. The existing bounded tracing adapter writes
+operation spans to private stderr, including the selected operation ID. Retain
+that diagnostic output privately; it contains no token or credential contents.
+Random trace IDs stay outside the canonical plan and its digest. Diagnostic
+failure does not change the observation result.
+
 Require exit zero and inspect the complete private plan. A failed command may
 leave an incomplete file; retain it as failed evidence and do not use it. The
 preflight requires coordinator admission and current baseline/hook protection;
@@ -440,7 +447,7 @@ test "$(systemctl --user show --value --property=MainPID bunny-runtime.service)"
 test "$(systemctl --user show --value --property=ActiveState bunny-runtime.service)" = inactive
 test ! -e "/proc/$BUNNY_OLD_PID"
 if test -e "$BUNNY_OLD_CGROUP"; then
-  rg --quiet --line-regexp 'populated 0' "$BUNNY_OLD_CGROUP/cgroup.events"
+  grep -Fxq 'populated 0' "$BUNNY_OLD_CGROUP/cgroup.events"
 fi
 )
 ```

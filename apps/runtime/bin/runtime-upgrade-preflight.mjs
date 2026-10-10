@@ -1,7 +1,7 @@
 // Read-only composition for the established manual runtime upgrade procedure.
 import {join} from 'node:path';
 import {validateInstallReceipt} from '@jimmie-potts/device-contracts';
-import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
+import {childOf, MODULE_API_VERSION, noSpans, startSpan} from '@jimmie-potts/sdk';
 import {canonical, readRegular, sha256} from '../../hub/dist/install/files.js';
 import {createUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {inspectRuntimeBaselineClosure} from './runtime-upgrade-baseline.mjs';
@@ -13,6 +13,9 @@ import {createInstalledUpgradeListenerObserver} from '../dist/src/upgrade-listen
 import {inspectUpgradeProtectedHooks} from '../dist/src/upgrade-hooks.js';
 import {inspectUpgradeState, inspectUpgradeReceipts} from '../dist/src/upgrade-inputs.js';
 import {observeInstalledUpgradeHttp} from '../dist/src/upgrade-http.js';
+import {INSTANCE_ID, LogWriter, stderrSink} from '../dist/src/log.js';
+import {runtimeResource, RUNTIME_SCOPE} from '../dist/src/record.js';
+import {startTracing} from '../dist/src/tracing.js';
 import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
 const maximum = 256 * 1024;
 const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
@@ -46,6 +49,7 @@ export function createRuntimeUpgradePreflight(io) {
     try {
       const requestBytes = await io.privateFile(requestFile, maximum);
       const request = io.parseRequest(parse(requestBytes));
+      const observationContext = {operationId: request.execution.operationId, trace: childOf(undefined)};
       const execution = await io.execution(request);
       if (approvedPlanFile !== undefined) await io.lock(request.installationRoot);
       const owner = await io.owner();
@@ -93,10 +97,10 @@ export function createRuntimeUpgradePreflight(io) {
         requireHealth(value.health, state.configured, owner.options.lagLimitMs);
       };
       await original();
-      const http = await io.http(owner, request.tokenFile, expectedBuild, original); checkHttp(http);
+      const http = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); checkHttp(http);
       await original();
       await protectedBindings();
-      const finalHttp = await io.http(owner, request.tokenFile, expectedBuild, original); checkHttp(finalHttp);
+      const finalHttp = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); checkHttp(finalHttp);
       // The final HTTP request is another asynchronous drift opportunity.
       // Recompare protected files and declarations against the original frame.
       await protectedBindings();
@@ -132,6 +136,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
       if (!['candidate', 'recovery', 'reupgrade'].includes(phase)) fail();
       const requestBytes = await io.privateFile(requestFile, maximum);
       const request = io.parseRequest(parse(requestBytes));
+      const observationContext = {operationId: request.execution.operationId, trace: childOf(undefined)};
       const approvedBytes = await io.privateFile(approvedPlanFile, maximum);
       const approved = parse(approvedBytes);
       const {planSha256, ...body} = approved;
@@ -187,9 +192,9 @@ export function createRuntimeUpgradeRunningCheck(io) {
         requireHealth(value.health, approved.state.configured, owner.options.lagLimitMs);
       };
       await bindings(); await original();
-      const http = await io.http(owner, request.tokenFile, expectedBuild, original); check(http);
+      const http = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); check(http);
       await bindings(); await original();
-      const finalHttp = await io.http(owner, request.tokenFile, expectedBuild, original); check(finalHttp);
+      const finalHttp = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); check(finalHttp);
       await bindings(); await original();
       if (!same(http, finalHttp)) fail();
       return {schema: 'runtime-running-check/1.0', verified: true, phase, planSha256,
@@ -198,13 +203,35 @@ export function createRuntimeUpgradeRunningCheck(io) {
   };
 }
 
+// This operator entry owns private diagnostic output; runtime readers do not.
+let diagnosticSinkGuarded = false;
+async function observeUpgradeHttp(owner, tokenFile, expected, recheck, operation) {
+  const resource = runtimeResource('production', INSTANCE_ID);
+  const log = new LogWriter(stderrSink, 'info', {now: () => Date.now()}, resource).logger(RUNTIME_SCOPE);
+  if (!diagnosticSinkGuarded) {
+    diagnosticSinkGuarded = true;
+    process.stderr.on('error', () => {});
+  }
+  const tracing = await startTracing(resource, line => { process.stderr.write(line + '\n'); }, log);
+  const span = startSpan(tracing?.recorder(RUNTIME_SCOPE) ?? noSpans, 'bunny.helper.run', {
+    parent: operation.trace, attributes: {'bunny.operation': 'verification', 'bunny.operation.id': operation.operationId},
+  });
+  try { return await observeInstalledUpgradeHttp(owner, tokenFile, expected, recheck, span.context); }
+  catch (error) { span.end('error'); throw error; }
+  finally {
+    span.end();
+    try { await tracing?.shutdown(); }
+    catch { log.error('runtime.tracing.failed', {'error.type': 'Error'}); }
+  }
+}
+
 const installedReaders = {
   privateFile: readPrivateFile, parseRequest: parseUpgradeRequest, canonical, sha256, execution: inspectUpgradeExecution,
   lock: requireUpgradeLock, owner: createInstalledUpgradeOwnerObserver(readRegular),
   listener: createInstalledUpgradeListenerObserver(readRegular), source: createUpgradeSourceAdapter(verifyRuntimeUpgradeRelease),
   admission: bindUpgradeAdmission, baseline: inspectRuntimeBaselineClosure, config: readRuntimeConfig, paths: inspectUpgradePaths,
   hooks: inspectUpgradeProtectedHooks, state: inspectUpgradeState,
-  receipts: (path, installationId) => inspectUpgradeReceipts(path, installationId, validateInstallReceipt), http: observeInstalledUpgradeHttp,
+  receipts: (path, installationId) => inspectUpgradeReceipts(path, installationId, validateInstallReceipt), http: observeUpgradeHttp,
   runningPaths: inspectUpgradeRunningPaths,
 };
 export const runtimeUpgradePreflight = createRuntimeUpgradePreflight(installedReaders);

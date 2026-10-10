@@ -52,7 +52,7 @@ await writeFile(join(root,'credentials'),'synthetic credential inventory',{mode:
 const configSha256=sha256(await readPrivateFile(owner.options.config,1024*1024));
 const credentialsSha256=sha256(await readPrivateFile(join(root,'credentials'),65536));
 const state={configSha256,configured,durableOwners:['core','lifx','nanoleaf','pixoo','playback','tidbyt']};
-const counters={owner:0,listener:0,source:0,admission:0,baseline:0,paths:0,hooks:0,state:0,receipts:0,http:0,lock:0,execution:0}; let afterHttp=false;
+const counters={owner:0,listener:0,source:0,admission:0,baseline:0,paths:0,hooks:0,state:0,receipts:0,http:0,lock:0,execution:0}; let afterHttp=false; const observations=[];
 const drift=(name,count)=>scenario===name+'-drift'&&count>1||scenario==='late-'+name+'-drift'&&counters.http>1;
 const io={privateFile:readPrivateFile,parseRequest:parseUpgradeRequest,canonical,sha256,
  execution:async()=>{counters.execution++;return drift('execution',counters.execution)?{...request.execution,stopTimeoutMs:10000}:request.execution;},
@@ -66,7 +66,7 @@ const io={privateFile:readPrivateFile,parseRequest:parseUpgradeRequest,canonical
  hooks:async()=>{counters.hooks++;return {closureSha256:admission.installedBaselineClosure.sha256,hooks:drift('hook',counters.hooks)?[{changed:true}]:[]};},
  state:async()=>{counters.state++;if(scenario==='request-drift'&&counters.state>1) await writeFile(requestFile,JSON.stringify({...request,tokenFile:join(root,'changed-token')}));return drift('state',counters.state)?{...state,durableOwners:[...state.durableOwners,'unknown']}:state;},
  receipts:async()=>{counters.receipts++;return drift('receipt',counters.receipts)?[{name:'new.json',sha256:'0'.repeat(64)}]:[];},
- http:async(observed,token,expected,recheck)=>{counters.http++;if(token!==request.tokenFile) throw new Error('wrong token selection');await recheck();afterHttp=true;
+ http:async(observed,token,expected,recheck,context)=>{observations.push(context);counters.http++;if(token!==request.tokenFile) throw new Error('wrong token selection');await recheck();afterHttp=true;
  if(counters.http>1&&scenario==='token-drift') await writeFile(request.tokenFile,'changed synthetic secret');
  if(counters.http>1&&scenario==='credentials-drift') await writeFile(join(root,'credentials'),'changed synthetic inventory');
  if(counters.http>1&&scenario==='config-drift') await writeFile(owner.options.config,JSON.stringify({changed:true}));
@@ -76,14 +76,22 @@ const preflight=createRuntimeUpgradePreflight(io);
 try {let plan;
  if(['locked','wrong-plan','missing-lock'].includes(scenario)) {plan=await preflight(requestFile);const approved=join(root,'approved-'+scenario+'.json');await writeFile(approved,JSON.stringify(scenario==='wrong-plan'?{...plan,planSha256:'0'.repeat(64)}:plan),{mode:0o600});plan=await preflight(requestFile,approved);}
  else plan=await preflight(requestFile);
- process.stdout.write(JSON.stringify({plan,counters}));}
+ process.stdout.write(JSON.stringify({plan,counters,observations}));}
 catch(error){process.stdout.write(JSON.stringify({code:error.message,counters}));process.exitCode=2;}`;
   const inspect = (scenario: string) => run(process.execPath, ['--input-type=module', '-e', script, root, scenario], {cwd: process.cwd(), timeout: 10000});
-  const first = JSON.parse((await inspect('adoption')).stdout) as {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}};
+  const first = JSON.parse((await inspect('adoption')).stdout) as {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   assert.ok(!(await inspect('adoption')).stdout.includes('synthetic-secret-never-public'));
   assert.equal((JSON.parse((await inspect('bb8-absent')).stdout) as {plan: {operation: string}}).plan.operation, 'adoption');
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
+  assert.equal(first.observations.length, 2);
+  assert.deepEqual(first.observations[0], first.observations[1]);
+  assert.equal(first.observations[0]?.operationId, 'synthetic');
+  assert.match(first.observations[0]?.trace.traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  assert.ok(!JSON.stringify(first.plan).includes('traceparent'));
+  const repeated = JSON.parse((await inspect('adoption')).stdout) as typeof first;
+  assert.equal(first.plan.planSha256, repeated.plan.planSha256);
+  assert.notEqual(first.observations[0]?.trace.traceparent, repeated.observations[0]?.trace.traceparent);
   assert.equal((JSON.parse((await inspect('upgrade')).stdout) as {plan: {operation: string}}).plan.operation, 'upgrade');
   assert.equal((JSON.parse((await inspect('locked')).stdout) as {counters: {lock: number}}).counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
@@ -138,17 +146,22 @@ await writeFile(requestFile,JSON.stringify(request),{mode:0o600}); await writeFi
 const body={schema:'runtime-upgrade-plan/1.0',eligibility:'eligible-under-coordinator-admission',requestSha256:sha256(await readFile(requestFile)),operation:request.operation,installationId:request.installationId,execution:request.execution,owner,paths,baseline,hooks,state,source:{expected,stamps},admission,privateInputs:{configSha256:sha256('config'),credentialsSha256:sha256('credentials'),readTokenSha256:sha256('synthetic private token')}};
 body.owner=original; const plan={...body,planSha256:sha256(canonical(body))}; if(scenario==='wrong-plan-hash')plan.planSha256='0'.repeat(64);
 await writeFile(planFile,JSON.stringify(plan),{mode:0o600});
-const counts={owner:0,http:0,selection:0,lock:0};
+const counts={owner:0,http:0,selection:0,lock:0}; const observations=[];
 const health={status:'ok',moduleApiVersion:MODULE_API_VERSION,lagCheck:{status:'active',limitMs:10000},modules:[{name:'core',state:'running',healthy:true,reasonCode:null}]};
 const io={privateFile:path=>readFile(path),parseRequest:value=>value,canonical,sha256,lock:async()=>{counts.lock++;if(scenario==='missing-lock')throw Error('no');},execution:async()=>request.execution,
  source:async()=>scenario==='source-drift'&&counts.http>1?{...source,inputs:[{changed:true}]}:source,admission:async()=>admission,baseline:async()=>baseline,hooks:async()=>scenario==='hook-drift'&&counts.http>1?{hooks:[{changed:true}]}:hooks,state:async()=>state,
  config:async()=>({edge:{credentials:join(root,'credentials')}}),owner:async()=>{counts.owner++;if(scenario==='same-process')return original;if(scenario==='wrong-arguments')return {...owner,argv:[...owner.argv,'--simulate']};if(scenario==='owner-drift'&&counts.http>0)return {...owner,pid:102};return owner;},
  listener:async pid=>({pid,inode:'one'}),runningPaths:async(request,observed,approved,selected)=>{counts.selection++;if(scenario==='wrong-selection'||scenario==='late-selection-drift'&&counts.http>1)throw Error('wrong selection');return {target:selected};},
- http:async(observed,token,expectedBuild,recheck)=>{counts.http++;await recheck();if(scenario==='token-drift')await writeFile(request.tokenFile,'changed');return {build:scenario==='wrong-build'?stamps.previous:scenario==='recovery'?stamps.recovery:stamps.target,health:scenario==='bad-health'?{...health,lagCheck:{status:'stopped'}}:health,configSha256:state.configSha256,credentialsSha256:sha256('credentials')};}};
-try {const result=await createRuntimeUpgradeRunningCheck(io)(requestFile,planFile,['recovery','reupgrade'].includes(scenario)?scenario:'candidate');process.stdout.write(JSON.stringify({result,counts}));}catch(error){process.stdout.write(JSON.stringify({code:error.message,counts}));process.exitCode=2;}`;
+ http:async(observed,token,expectedBuild,recheck,context)=>{observations.push(context);counts.http++;await recheck();if(scenario==='token-drift')await writeFile(request.tokenFile,'changed');return {build:scenario==='wrong-build'?stamps.previous:scenario==='recovery'?stamps.recovery:stamps.target,health:scenario==='bad-health'?{...health,lagCheck:{status:'stopped'}}:health,configSha256:state.configSha256,credentialsSha256:sha256('credentials')};}};
+try {const result=await createRuntimeUpgradeRunningCheck(io)(requestFile,planFile,['recovery','reupgrade'].includes(scenario)?scenario:'candidate');process.stdout.write(JSON.stringify({result,counts,observations}));}catch(error){process.stdout.write(JSON.stringify({code:error.message,counts}));process.exitCode=2;}`;
   const inspect = (scenario: string) => run(process.execPath, ['--input-type=module', '-e', script, root, scenario], {cwd: process.cwd(), timeout: 10000});
-  const passed = JSON.parse((await inspect('good')).stdout) as {result: {phase: string; verified: boolean}; counts: {http: number}};
+  const passed = JSON.parse((await inspect('good')).stdout) as {result: {phase: string; verified: boolean}; counts: {http: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   assert.equal(passed.result.phase, 'candidate'); assert.equal(passed.result.verified, true); assert.equal(passed.counts.http, 2);
+  assert.equal(passed.observations.length, 2);
+  assert.deepEqual(passed.observations[0], passed.observations[1]);
+  assert.equal(passed.observations[0]?.operationId, 'one');
+  assert.match(passed.observations[0]?.trace.traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  assert.ok(!JSON.stringify(passed.result).includes('traceparent'));
   for (const phase of ['recovery', 'reupgrade']) {
     const observed = JSON.parse((await inspect(phase)).stdout) as {result: {phase: string; selection: {target: string}}};
     assert.equal(observed.result.phase, phase);

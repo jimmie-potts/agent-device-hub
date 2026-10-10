@@ -284,6 +284,8 @@ else
   exit 91
 fi
 `, {mode: 0o700});
+  // Refuse accidental use of an optional search tool even on hosts where it exists.
+  await writeFile(join(bin, 'rg'), '#!/bin/bash\nexit 127\n', {mode: 0o700});
   const child = spawn(process.execPath, ['-e', 'process.exit(0)'], {stdio: 'ignore'});
   assert.ok(child.pid !== undefined);
   await once(child, 'exit');

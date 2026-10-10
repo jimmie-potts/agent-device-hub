@@ -1,6 +1,6 @@
 // Fixed read-only installed endpoints; this observes health, never accepts it.
 import {createHash} from 'node:crypto';
-import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
+import {childOf, MODULE_API_VERSION, type TraceContext} from '@jimmie-potts/sdk';
 import {parseCredentials, tokenMatches} from './credentials.js';
 import {readPrivateFile, readRuntimeConfig, type RuntimeConfig} from './state.js';
 import type {UpgradeOwner} from './upgrade-owner.js';
@@ -98,16 +98,16 @@ function health(bytes: Buffer) {
 export interface UpgradeHttpReader {
   privateFile(path: string, limit: number): Promise<Buffer>;
   config(path: string): Promise<RuntimeConfig>;
-  get(port: number, path: Route, token?: string): Promise<Buffer>;
+  get(port: number, path: Route, token?: string, parent?: TraceContext): Promise<Buffer>;
 }
 
-async function installedGet(port: number, path: Route, token?: string): Promise<Buffer> {
+async function installedGet(port: number, path: Route, token?: string, parent?: TraceContext): Promise<Buffer> {
   const controller = new AbortController();
   const timer = setTimeout(() => { controller.abort(); }, 3000);
   try {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: 'GET', redirect: 'error', signal: controller.signal,
-      headers: token === undefined ? {} : {Authorization: `Bearer ${token}`},
+      headers: {traceparent: childOf(parent).traceparent, ...(token === undefined ? {} : {Authorization: `Bearer ${token}`})},
     });
     const length = response.headers.get('content-length');
     if (response.status !== 200 || response.body === null
@@ -137,8 +137,9 @@ async function installedGet(port: number, path: Route, token?: string): Promise<
 }
 
 export function createUpgradeHttpObserver(reader: UpgradeHttpReader) {
-  return async (owner: UpgradeOwner, tokenFile: string, expected: ExpectedBuild, recheckOwnerAndListener: () => Promise<void>) => {
+  return async (owner: UpgradeOwner, tokenFile: string, expected: ExpectedBuild, recheckOwnerAndListener: () => Promise<void>, parent?: TraceContext) => {
     try {
+      const context = childOf(parent);
       const port = owner.options.port;
       const configFile = owner.options.config;
       if (!Number.isSafeInteger(port) || port < 1 || port > 65535 || configFile === undefined
@@ -159,11 +160,11 @@ export function createUpgradeHttpObserver(reader: UpgradeHttpReader) {
           || !tokenBytes.equals(await reader.privateFile(tokenFile, 65536))) refused();
       };
       await recheckOwnerAndListener();
-      const observedBuild = build(await reader.get(port, '/api/v2/build', token), expected);
+      const observedBuild = build(await reader.get(port, '/api/v2/build', token, context), expected);
       await recheckOwnerAndListener();
       await unchanged();
       await recheckOwnerAndListener();
-      const observedHealth = health(await reader.get(port, '/api/runtime/v1/health'));
+      const observedHealth = health(await reader.get(port, '/api/runtime/v1/health', undefined, context));
       await recheckOwnerAndListener();
       await unchanged();
       return {build: observedBuild, health: observedHealth, configSha256: hash(configBytes), credentialsSha256: hash(credentialBytes)};
