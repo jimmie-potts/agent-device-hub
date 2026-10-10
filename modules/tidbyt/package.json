@@ -12,9 +12,7 @@
   },
   "dependencies": {
     "@jimmie-potts/event-contracts": "1.0.0",
-    "@jimmie-potts/sdk": "0.1.0"
-  },
-  "devDependencies": {
+    "@jimmie-potts/sdk": "0.1.0",
     "sharp": "0.35.4"
   }
 }
