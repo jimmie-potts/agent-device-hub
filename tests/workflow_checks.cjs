@@ -310,13 +310,14 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
       * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], '${{ matrix.os }}');
-    // The core job runs every kept Node and Python suite once; it took about 12 minutes on 2026-10-07 before the old
-    // system's checks left CI (#827). App verification took 7-9.6 minutes and once timed out at 10, because
+    // The core job runs every kept Node and Python suite once. The same source passed in 10m30s on PR #1078 but
+    // hit 15 minutes twice on main; its 30 leave finite headroom for slower hosted runs (#1037).
+    // App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
     // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
     // leave room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 30 : ['core', 'workflow'].includes(id) ? 15 : 10);
+    assert.equal(job['timeout-minutes'], ['core', 'app-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }

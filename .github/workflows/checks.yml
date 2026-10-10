@@ -21,7 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-    timeout-minutes: 15
+    # The same source passed in 10m30s on a PR but hit 15 minutes twice on main (#1037, PR #1078).
+    # Leave finite headroom for slower hosted runs while retaining every suite.
+    timeout-minutes: 30
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
