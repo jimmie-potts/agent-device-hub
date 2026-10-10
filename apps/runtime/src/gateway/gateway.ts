@@ -822,6 +822,14 @@ export class Gateway {
   async #dispatchFor(id: string, input: ActionInput & {family: string}): Promise<ActionAnswer> {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
+    if (input.family.startsWith('bb8-')) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
+    if (input.family === 'inbox-handle' && input.data.action === 'send-again') {
+      try {
+        const copy = await this.#copy('inbox-item', 'bunny/core');
+        const item = copy.get({family: 'inbox-item', id: input.target})?.data as {item?: {command?: string}} | undefined;
+        if (item?.item?.command?.startsWith('org.bunny.bb8.') === true || item?.item?.command?.startsWith('org.bunny.bb8-') === true) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
+      } catch {return errorBody('unavailable', {detail: 'the saved command could not be read'});}
+    }
     return this.#dispatch(principalOf(credential), input.family, input);
   }
 
@@ -885,6 +893,7 @@ export class Gateway {
   #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
+    if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
     const dataschema = `${SCHEMA_BASE}${family}/2.0`;

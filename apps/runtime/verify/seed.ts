@@ -25,7 +25,7 @@ export {
 export type RunScenario = {
   description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
   prepare?: (dataDir: string) => Promise<void>; refused?: readonly string[];
-  wisprFixture?: Seed['wisprFixture'];
+  wisprFixture?: Seed['wisprFixture']; sections?: Seed['sections'];
 };
 
 /** The shipped modules that take a section: a run that gives no sections, as the shipped controls do, has them refused. */
@@ -43,7 +43,7 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     [name, {description, runtime: 'shipped', modules: [], simulated: shippedModules, prepare} satisfies RunScenario])),
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
-    ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
+    ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
     ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
   } satisfies RunScenario])),
   'control-real-transports': {
@@ -80,7 +80,7 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
     : {...scenario.config, wispr: await prepareWisprFixture(dir, Date.now(), scenario.wisprFixture)};
   const config = await writeConfiguration(dir, {
     ...(modules === undefined ? {} : {modules}),
-    ...(scenario.simulated === undefined ? {} : {sections: await simulatedSections(dir, scenario.simulated)}), tokens, producer,
+    sections: {...scenario.sections, ...scenario.simulated === undefined ? {} : await simulatedSections(dir, scenario.simulated)}, tokens, producer,
   });
   await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer})}\n`, {mode: 0o600});
   await chmod(partTokensOf(dataDir), 0o600);

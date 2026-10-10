@@ -595,8 +595,7 @@ checks. A grant for `bunny.cmd.*.lamp-1` can then never act on `lamp-2` through 
 command whose subject names it, and a record never reaches a reader of another
 entity's key.
 
-No scope lets a remote part respond to commands or serve a family yet; a remote
-owner's grant comes with its own story. The core's dispatcher decides what a
+Ordinary scopes grant no remote responder or sync owner. The explicit `bb8-link` transport role below grants its bounded internal ownership. The core's dispatcher decides what a
 remote grant may request directly (#782, `DIRECT_COMMANDS`): the core's own
 operator commands. A device's command, a moment, a mode change and a module's
 own family, module-internal ones included, are `forbidden` at the edge, so no
@@ -1790,3 +1789,9 @@ The catalog's `shared-inbox-history` journey and focused core/gateway tests use
 synthetic state. One synthetic 1,000-item sync check records the largest encoded
 state/completed message and total answer bytes against the existing per-message
 256 KiB limit. Paging and timing targets remain outside this feature.
+
+### BB-8 transport credential
+
+The private credentials file accepts an explicit `role: "bb8-link"`, `robotId: "bb8"`, fixed source `bunny/parts/bb8-windows` and `scopes: []`. Only this role gets respond/serve/publish/subscribe for its exact internal execute/recorded command targets, BB-8 link/result state families, corresponding internal outcomes and `outcome-recorded.bb8-windows`. State/result family wildcards are required by SDK family-level sync ownership; the helper serves only its enrolled robot and the module verifies receipt identity. The role cannot request commands or sync/subscribe session content. Ordinary read/control/ingest/admin and browser grants retain their permissions. Removing/changing this credential ends its streams; every SDK call reauthenticates.
+
+The [module](../../modules/bb8/README.md) owns public LED/status controls; the [Windows component](../bb8-windows/README.md) owns BLE and private transport receipts. Generic MCP execution, including inbox resend of BB-8 commands, is refused. Internal helper commands cannot use public HTTP action routes. No source delivery activates a helper or changes the installed runtime.

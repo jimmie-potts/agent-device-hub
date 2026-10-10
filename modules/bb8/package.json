@@ -1,0 +1,25 @@
+{
+  "name": "@jimmie-potts/bb8",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BB-8 runtime module (Hub #604)",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./link": {
+      "types": "./dist/src/link.d.ts",
+      "import": "./dist/src/link.js"
+    },
+    "./frontend": {
+      "types": "./dist/src/frontend/index.d.ts",
+      "import": "./src/frontend/index.tsx"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
+  }
+}

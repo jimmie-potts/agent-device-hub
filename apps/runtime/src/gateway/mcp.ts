@@ -166,6 +166,7 @@ function commandTool(host: McpHost, handling = false): ServiceExtension {
       if (!credential.scopes.includes('control')) return failure(errorBody('forbidden', {detail: 'the credential may not control'}));
       const selected = handling ? {family: 'inbox-handle', target: args.id, data: {expectedRevision: args.expectedRevision, action: args.action}} : args;
       const {family, target, data, requestId} = selected as {family: string; target: string; data: Record<string, unknown>; requestId?: string};
+      if (family.startsWith('bb8-')) return failure(errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'}));
       if (Object.hasOwn(data, 'requestId')) return failure(errorBody('invalid-request', {detail: 'the command\'s payload names no requestId; pass it beside data'}));
       const answer = await host.dispatch(credential.id, {family, target, data, ...(requestId === undefined ? {} : {requestId})});
       return 'error' in answer ? failure(answer) : {data: {result: answer}};

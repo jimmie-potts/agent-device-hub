@@ -15,7 +15,7 @@ const unused = {
 // New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it; the
 // Pixoo snapshot joined with its module (Hub #843), so nothing is staged now.
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
-export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
+export const strict = ['apps/bb8-windows/**/*.ts', 'apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
 export const staged = [];
 // Tests, their fixtures and helpers read an error to report a failure and spell out the bodies they expect, so the
 // safe-error rules (Hub #953) skip them. The strict rules still apply.
@@ -24,7 +24,7 @@ const tests = ['**/tests/**', '**/*.test.{ts,tsx,js,mjs}'];
 // sink and its process entry (the ready line and usage), the explicit Roborock account-setup CLI, the Pixoo library migration's and the Nanoleaf migration's
 // entries (each its JSON line), and the verification run's supervisor and network guard.
 export const streamOwners = [
-  'apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/src/migrate-pixoo.ts', 'apps/runtime/src/migrate-nanoleaf.ts',
+  'apps/bb8-windows/src/process.ts', 'apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/src/migrate-pixoo.ts', 'apps/runtime/src/migrate-nanoleaf.ts',
   'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts',
   'modules/roborock/bin/setup.mjs',
 ];

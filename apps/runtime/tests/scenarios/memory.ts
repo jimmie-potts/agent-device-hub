@@ -177,7 +177,7 @@ class Memory implements MemoryHarness {
     const configDir = join(this.stateDir, 'config');
     const modules = wisprFixture === undefined ? config : {...config, wispr: await prepareWisprFixture(configDir, this.#clock.now(), wisprFixture)};
     this.#config = await readRuntimeConfig(await writeConfiguration(configDir, {
-      ...(modules === undefined ? {} : {modules}), tokens: this.#tokens, producer: this.#producer,
+      ...(modules === undefined ? {} : {modules}), ...(this.#seed.sections === undefined ? {} : {sections: this.#seed.sections}), tokens: this.#tokens, producer: this.#producer,
     }));
     const edge = this.#config.edge;
     if (edge === undefined) throw new Error('the harness wrote no edge section');
