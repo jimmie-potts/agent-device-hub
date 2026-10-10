@@ -637,11 +637,15 @@ If a change's file list or filter behavior is uncertain, keep the full gate.
 
 Identify the selected installation before planning an upgrade. The current
 B.U.N.N.Y. installation is `apps/runtime`, whose [setup guide](../apps/runtime/SETUP.md)
-owns fresh setup and manual return to retained old services. It does not supply a
-qualified routine upgrade/rollback command. Source delivery must not silently use
-the legacy installer or claim installation complete when the selected runtime's
-upgrade procedure is unavailable. Preserve the source result and report that
-installation gate pending until the owning procedure is qualified.
+owns fresh setup and manual return to retained old services. Before planning,
+running or checking its upgrades/recovery, read the owning
+[runtime upgrade procedure](../apps/runtime/UPGRADE.md), including its qualification
+status, private plan/admission, held operation lock and receipt requirements.
+Its first release-anchor adoption has a separately approved one-time override
+and startup sequence; qualified routine upgrades retain standing authority.
+Source delivery must not silently use the legacy installer or infer installed
+qualification from source checks. Preserve the source result and report that
+installation gate pending until the owning installed acceptance is satisfied.
 
 For a selected retained legacy Hub, follow the
 [Hub upgrade procedure](../apps/hub/SETUP.md#upgrade-and-roll-back-the-installed-hub).

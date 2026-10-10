@@ -148,12 +148,16 @@ current `apps/runtime` installation or a retained legacy Hub. Read
 `apps/runtime/README.md` and `apps/runtime/SETUP.md` for the current runtime.
 The accepted #840 cutover stopped and disabled the old writers while retaining
 their units, releases and stores for manual return. The legacy Hub installer
-below does not update `bunny-runtime.service`. The runtime setup guide covers
-fresh setup and manual return, not a routine upgrade/rollback command; do not
-substitute the legacy installer or infer a qualified upgrade path. If a selected
-runtime change needs an upgrade procedure not yet qualified, preserve the source
-result and report that delivery's installation gate pending. Documentation-only
-work needs instruction/readback evidence and no service restart.
+below does not update `bunny-runtime.service`. Before planning, running or
+checking a current-runtime upgrade or recovery, read the owning
+[runtime upgrade procedure](apps/runtime/UPGRADE.md) and its qualification status.
+Keep its plan, admission, lock, receipts and state evidence private. Routine
+installation authority applies after that procedure is qualified; first adoption
+of its release anchor needs the named one-time override/startup approval. Do not
+substitute the legacy installer or infer qualification from source checks. Until
+the owning installed gate is accepted, preserve the source result and report
+installation pending. Documentation-only work needs instruction/readback evidence
+and no service restart.
 
 Installation of a selected retained legacy Hub: a merged change is complete only after
 `node apps/hub/bin/hub-install.mjs upgrade <sha>` installs it on the owner's

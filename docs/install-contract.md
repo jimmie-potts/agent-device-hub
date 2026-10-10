@@ -113,7 +113,54 @@ must include its forwarding path in this same fenced conversion.
 
 ## 3. Commands and approval
 
-Each runtime exposes `plan`, `upgrade <sha>`, `rollback [<sha>]` and `status`.
+### Current TypeScript runtime profile
+
+`apps/runtime` is the successor runtime from ADR 0012. Its installation is
+separate from the retained Hub installation above. It uses receipt
+`runtime: "hub"` with a distinct configured `installationId`; that logical
+receipt value does not select the legacy Hub installer or its service.
+
+The owning procedure must resolve one private installation root containing
+`releases/<sha>/`, `current`, `provenance/`, `receipts/`, `backups/` and
+`install.lock`. Mutable runtime state, configuration, credentials and the Node
+executable stay at their separately owned external paths. It controls only the
+named `bunny-runtime.service` owner and its children. It preserves the retained
+Hub installation, unrelated services, hooks and other owners' paths.
+
+First adoption may introduce one explicitly authorized service override that
+resolves the verified release through `current`. The exact plan must retain the
+original unit bytes and name restoration steps and restart effects. Routine
+upgrades switch only the owned anchor; they do not rewrite units or hooks.
+Adoption is distinct from the runtime's fresh-setup/manual-return procedure.
+
+This profile permits an explicit manual operator procedure with narrowly scoped
+preflight and receipt checks. One exclusive operation lock must cover input
+rechecks, durable intent, stopped-writer backup, release selection, restart,
+identity/health verification, recovery and final receipt readback. Manual steps
+retain every release-integrity, compatibility and latest-state requirement in
+sections 1 and 4; an automatic recovery engine is not required. Retain all owned
+recovery releases for this initial procedure without pruning.
+
+Use the current runtime's startup-scoped build interface and operational health
+interface to verify the running revision and configured owners. A legacy health
+response, schema-valid receipt or selected link cannot substitute for those
+observations. Exact interface checks belong to the owning procedure.
+
+Compatibility evidence covers all configured durable owners and retained files.
+An ONN owner may be excluded only when the exact configuration omits it, no ONN
+database, sidecar or folder exists, and its omitted/refused factory creates no
+state or effects. Configuration absence alone cannot exclude existing data.
+Activation or any ONN state invalidates that absence-bound recovery proof;
+subsequent recovery requires a qualified ONN-capable release.
+
+This profile defines requirements; it does not establish that the current
+installation's upgrade procedure or first adoption has been qualified.
+
+### Existing runtime commands
+
+The retained Hub, Nanoleaf and Pixoo consumer procedures expose `plan`,
+`upgrade <sha>`, `rollback [<sha>]` and `status`. The current TypeScript profile
+uses documented equivalent manual steps and its preflight/receipt checks.
 Only plan and status are read-only and require no operation approval. They must
 not stop/start services, alter durable install records or send device commands.
 

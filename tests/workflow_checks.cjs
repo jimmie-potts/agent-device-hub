@@ -271,6 +271,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
   });
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
+      'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
@@ -341,7 +342,7 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 2);
+  assert.equal(builds, 3);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
   // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
   // keeps its full browser suite local too.
