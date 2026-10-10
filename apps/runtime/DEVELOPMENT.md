@@ -257,8 +257,9 @@ start to its exit against a disposable runtime's edge (#926); the README's
 
 Every runtime story is tested at four layers
 ([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
-The core CI job runs the first three after its fresh build, on every PR that
-runs the Checks workflow; Markdown-only changes skip them. The App verification
+The core CI job runs the first three after its fresh build, on every main push
+and every PR whose [affected checks](../../docs/development.md#affected-pr-checks)
+select the runtime; Markdown-only changes skip them. The App verification
 job judges the fourth layer's capture steps without a user manager.
 
 | Layer | Command | What it runs |
@@ -338,7 +339,9 @@ host. All runs keep synthetic data, simulated devices and an outside-checkout
 `TMPDIR`; they grant no installed-system or physical-device authority.
 
 The App verification CI job still runs the full `test:runtime:verify:built`
-suite on every PR that runs the Checks workflow. Focused local verification
+suite on every main push and every PR whose
+[affected checks](../../docs/development.md#affected-pr-checks) select the
+runtime, which any runtime, module, shared or unknown change does. Focused local verification
 does not waive an applicable failed or missing CI job, contract check, browser
 or accessibility check, or independent review.
 

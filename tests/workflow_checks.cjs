@@ -222,10 +222,11 @@ const browserInstallMinutes = 20;
 const playwrightInstall = aptRetry(300, 'npx playwright install --with-deps chromium');
 const hookAptScript = 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles';
 const hookAptMinutes = 14;
-// Hub #861: the heavy Checks workflow also skips Markdown-only changes.
+// Hub #861: the heavy Checks workflow also skips Markdown-only changes. Hub #1080: a manual run is its full-run escape hatch.
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['**/*.md'] },
   pull_request: { 'paths-ignore': ['**/*.md'] },
+  workflow_dispatch: {},
 };
 
 test('Workflow checks every path while Checks skips only Markdown-only changes', () => {
@@ -250,7 +251,7 @@ test('Workflow checks every path while Checks skips only Markdown-only changes',
   }
 });
 
-test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () => {
+test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
@@ -261,15 +262,20 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
   assert.equal(workflowChecks.name, 'Workflow');
   assert.deepEqual(Object.keys(workflowChecks.jobs), ['workflow', 'documents']);
   const ci = { ...checks, jobs: { ...checks.jobs, workflow: workflowChecks.jobs.workflow } };
-  const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
-    + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + 1, 5, 'normal CI must run exactly five jobs');
+  const instances = job => (job.strategy ? Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1) : 1);
+  const coreJobs = Object.values(ci.jobs).reduce((count, job) => count + instances(job), 0);
+  // Hub #1080: a pull request runs only its affected work. The select job maps the changed paths to check groups,
+  // firmware and App verification run only when selected, and the gate fails unless every selected job succeeded.
+  // tests/ci_selection.test.mjs checks the selection conditions themselves.
+  assert.equal(coreJobs + 1, 7, 'normal CI must run exactly seven jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
     'cancel-in-progress': true,
   });
   const suites = {
+    select: ['node scripts/ci-selection/cli.mjs select'],
+    gate: ['node scripts/ci-selection/cli.mjs gate'],
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
@@ -282,11 +288,16 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts', 'npm run test:bb8:browser', 'npm run test:roborock:browser', 'npm run test:observability:browser'],
   };
   const names = {
+    select: 'Select affected checks',
+    gate: 'Selected checks gate',
     workflow: 'Workflow checks on ${{ matrix.os }}',
     core: 'Build, lint and core tests on ${{ matrix.os }}',
-    firmware: 'Firmware host tests and ARM build on ${{ matrix.os }}',
-    'app-verify': 'App verification on ${{ matrix.os }}',
+    // A job skipped before its matrix expands reports the unexpanded name, so the jobs the selection skips name their runner.
+    firmware: 'Firmware host tests and ARM build on ubuntu-latest',
+    'app-verify': 'App verification on ubuntu-latest',
   };
+  const matrixJobs = ['workflow', 'core'];
+  const conditions = { firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", gate: 'always()' };
   assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   // Each suite runs in exactly one job.
@@ -296,20 +307,24 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
     const setup = job.steps.filter(step => step.uses);
-    const expectedSetup = [
+    // The select and gate jobs check out only the dependency-free selector and install nothing.
+    const expectedSetup = ['select', 'gate'].includes(id) ? [
+      { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', with: { 'sparse-checkout': 'scripts/ci-selection' } },
+      { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
+    ] : [
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
       { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24', cache: 'npm' } },
     ];
-    // One Python version: the installed Nanoleaf runtime's (Hub #861).
+    // One Python version: the installed Nanoleaf runtime's (Hub #861), set up only for the suites that use it.
     if (id === 'core') expectedSetup.push({
+      if: "contains(fromJSON(needs.select.outputs.groups), 'shared')",
       uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
       with: { 'python-version': '3.14', cache: 'pip', 'cache-dependency-path': 'requirements-contracts.txt' },
     });
     assert.deepEqual(setup, expectedSetup);
-    builds += Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1)
-      * job.steps.filter(step => step.run === 'npm run build').length;
+    builds += instances(job) * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
-    assert.equal(job['runs-on'], '${{ matrix.os }}');
+    assert.equal(job['runs-on'], matrixJobs.includes(id) ? '${{ matrix.os }}' : 'ubuntu-latest');
     // The core job runs every kept Node and Python suite once. The same source passed in 10m30s on PR #1078 but
     // hit 15 minutes twice on main; its 30 leave finite headroom for slower hosted runs (#1037).
     // App verification took 7-9.6 minutes and once timed out at 10, because
@@ -317,17 +332,22 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
     // leave room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
-    assert.equal(job['timeout-minutes'], ['core', 'app-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : 10);
+    // The select and gate jobs read one comparison or the needs context and take seconds.
+    assert.equal(job['timeout-minutes'], ['core', 'app-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }
     const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
     assert.deepEqual(installs, id === 'app-verify' ? [{ name: 'Install Chromium with its system dependencies',
       'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
-    assert.equal(job.strategy['fail-fast'], false);
-    assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
-    assert.equal(job.if, undefined, 'all matrix jobs must run');
-    assert.equal(job.concurrency, undefined, 'matrix siblings must not cancel each other');
+    if (matrixJobs.includes(id)) {
+      assert.equal(job.strategy['fail-fast'], false);
+      assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
+    } else {
+      assert.equal(job.strategy, undefined, `${id} has no matrix`);
+    }
+    assert.equal(job.if, conditions[id], `${id}: only the selection skips a job`);
+    assert.equal(job.concurrency, undefined, 'jobs must not cancel each other');
     const linuxSteps = job.steps.filter(step => step.name === 'Check isolated Linux hook qualification');
     assert.deepEqual(linuxSteps, id === 'workflow' ? [{
       name: 'Check isolated Linux hook qualification',
@@ -341,7 +361,10 @@ test('CI runs five GitHub-hosted Linux jobs and retains every suite once', () =>
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
-    assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
+    // Steps are skipped only by the selection (Hub #1080); none may fail without failing its job.
+    assert(originalSteps.every(step => !step['continue-on-error']));
+    assert(originalSteps.every(step => step.if === undefined || (['core', 'app-verify'].includes(id)
+      && /^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if))), id);
   }
   assert.equal(builds, 3);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
