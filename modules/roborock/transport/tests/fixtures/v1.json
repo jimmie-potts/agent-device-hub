@@ -1,0 +1,21 @@
+{
+  "provenance": "Synthetic Python hashlib/struct/binascii/zlib and OpenSSL encryption; no upstream or owner fixture.",
+  "localKey": "0123456789abcdef",
+  "payload": "{\"id\":42,\"result\":[\"ok\"]}",
+  "header": {
+    "seq": 7,
+    "random": 9,
+    "seconds": 1700000000,
+    "protocol": 4
+  },
+  "frameHex": "312e3000000007000000096553f1000004002038c7f84ac6b52db15fd36679d87f939f3f0a9a49b84116e802a564a157b895405fab086f",
+  "nonceHex": "abababababababababababababababab",
+  "mapEnvelopeHex": "000000000000000000000000000000002a000000000000006a5030ae23fcece59df498c571de23b80bb35607dbd87d603e1a57e7f7a12e562d62fbfd64e244f909c1dd159b4baa622a54b561c812a7bf70a8a3321474adf1",
+  "mapHex": "7272140000000000010000000300000007000000a8df0c44b9da22d3d0053a106403112f15f817ec",
+  "mqttUsername": "891a39b0",
+  "mqttPassword": "c9014ba45a59dd3b",
+  "mqttEndpoint": "A5jwmArI",
+  "connectHex": "00000015312e3000000000000000090000000000000000000a",
+  "connackHex": "312e30000000000000000900000000000100000000",
+  "pubackHex": "00000011312e300000000700000000000000000005"
+}

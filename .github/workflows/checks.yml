@@ -72,6 +72,8 @@ jobs:
       - run: npm run test:tidbyt-module:built
       - run: npm run test:codex-desktop:built
       - run: npm run test:wispr-module:built
+      - run: npm run test:roborock-transport:built
+      - run: npm run test:roborock-transport:consumer:built
       - run: npm run test:bb8:built
       - run: npm run test:bb8-windows:built
       - run: npm run test:bb8:package:built
