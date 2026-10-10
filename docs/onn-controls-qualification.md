@@ -72,12 +72,33 @@ acknowledgment, and partial acknowledgment followed by disconnect. Every case
 sent one request with no retry; all owned sockets and the fake server were
 closed. The source remains qualification scratch, not production code.
 
+A follow-up fake server exercised the unchanged client through serial selection
+and its shell-v2 subprocess service. The earlier adapter's separate connection
+bounds allowed a fake command to finish at 210 ms despite a 150 ms operation
+deadline. A small wrapper supplies the same cancellation signal to every
+connection, including convenience methods. The same check then rejected at
+150 ms before writing the command. Thirteen focused cases passed: representative
+key and neutral text services, fragmented responses, nonzero Android exit,
+server/target refusal or silence, an already expired operation, lost replies and
+the deadline spanning server validation and target selection. Lost-reply cases
+wrote the service once and did not repeat it. All traffic used a private fake
+Unix socket and synthetic serial; its sockets and server were closed.
+
 This supports the bounded client approach. It does not prove a production shell
 action, command tracking, persistence, installed client or physical TypeScript
 control. Those checks belong to implementation and installed acceptance. Supply
 one operation-wide cancellation signal to every connection, including client
 convenience methods whose signature omits a signal. Use no automatic retry or
 server selection fallback.
+
+The selected ADB route's physical client/server restart remains pending. The
+earlier ordinary-Remote restart and ADB disconnect/reconnect checks do not
+substitute for it. AC3 and the controls prerequisite remain unaccepted until
+that approved check has protocol and owner-observed evidence. One retained
+foreground read returned no package and an ambiguous result; it establishes an
+unavailable current-app observation. A later YouTube observation does not turn
+that gap into a known state. The 15-second stale threshold below is still a
+production bound to validate, not a physically measured guarantee.
 
 ## Minimum implementation contract
 
