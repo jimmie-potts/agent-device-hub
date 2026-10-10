@@ -1,0 +1,25 @@
+{
+  "name": "@jimmie-potts/bb8-windows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BB-8 Windows transport component (Hub #604)",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing.d.ts",
+      "import": "./dist/src/testing.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "@jimmie-potts/bb8": "0.1.0"
+  },
+  "optionalDependencies": {
+    "@stoprocent/noble": "2.8.0"
+  }
+}

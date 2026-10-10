@@ -1421,3 +1421,7 @@ and Shared monitoring setup checks above. Fixtures use synthetic journal data
 and disposable private state; these checks do not establish installed scheduling, credentials, permissions or
 physical behavior. See [the intake guide](../apps/maintenance/README.md) for its
 trusted supervisor boundary and installed qualification.
+
+## BB-8 source checks
+
+Before product implementation, #604 registers the module/helper workspaces and CI checks. [Module guide](../modules/bb8/README.md) owns `test:bb8`, `test:bb8:built`, `test:bb8:package` and `test:bb8:browser`; [Windows component guide](../apps/bb8-windows/README.md) owns `test:bb8-windows` and `test:bb8-windows:built`. Root build/typecheck compile both under the strict profile. Core CI runs their built tests/package consumer; App verification runs the focused browser/axe journey. These additions require executable checks before acceptance. Retain the qualification's shared compatibility, SDK/module-kit, both-transport catalog, full dashboard browser and independent disposable Acceptance checks. Source delivery does not activate the helper or qualify BLE.

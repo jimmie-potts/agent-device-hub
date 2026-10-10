@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import {mkdtemp, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {test} from 'node:test';
+import {InProcessBus} from '@jimmie-potts/sdk';
+import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {createBb8Module} from '../src/module.js';
+import {SimulatedLink} from '../src/simulated.js';
+import {commandType, schemaOf} from '../src/contracts.js';
+
+void test('public accepted reply has durable responsibility before the helper executes', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-module-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();});
+  await host.start();
+  const link = transport.state();
+  const result = await operator.request('bunny.cmd.bb8-connect.bb8', {type: commandType('bb8-connect'), subject: 'bb8', dataschema: schemaOf('bb8-connect'), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration}}, {timeoutMs: 1000, requestId: 'connect-1'});
+  assert.equal(result.status, 'accepted', JSON.stringify({result, logs: host.logs, failures: host.failures}));
+  const database = host.moduleDatabase(); assert.ok(database, 'accepted responsibility must open the private store');
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM bb8_responsibility WHERE request_id=?').get('connect-1')?.n, 1);
+});
+
+void test('uncertain held state survives a restart and cannot be rebound to another robot', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-recovery-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator');
+  let host = new ModuleHarness(createBb8Module({transport: new SimulatedLink()}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  await host.start();
+  const db = host.moduleDatabase(); assert.ok(db);
+  const saved = JSON.parse(String(db.prepare('SELECT state FROM bb8_state').get()?.state)) as Record<string, unknown>;
+  saved.held = {requestId: 'uncertain-1', heldAtMs: Date.now()};
+  db.prepare('UPDATE bb8_state SET state=?').run(JSON.stringify(saved));
+  await host.stop();
+  host = new ModuleHarness(createBb8Module({transport: new SimulatedLink()}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  await host.start();
+  const copy = await operator.sync<Record<string, unknown>>(['device'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
+  assert.equal(copy.status, 'synced'); if (copy.status !== 'synced') throw Error('no copy');
+  assert.deepEqual(copy.copy.states()[0]?.data.held, saved.held);
+  await copy.copy.close(); await host.stop();
+  host = new ModuleHarness(createBb8Module({transport: new SimulatedLink()}), {bus, stateDir: directory, section: {id: 'other', configurationRevision: 0}});
+  await assert.rejects(() => host.start());
+  await host.stop(); await operator.close();
+});
+void test('failed WSL completion storage cannot consume the helper receipt or report success', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-completion-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink(); let consumed = 0;
+  const recorded = transport.recorded.bind(transport);
+  transport.recorded = async (id, parent) => {consumed++; await recorded(id, parent);};
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const db = host.moduleDatabase(); assert.ok(db);
+  db.exec("CREATE TRIGGER reject_completion BEFORE UPDATE OF stage ON bb8_responsibility WHEN NEW.stage='done' BEGIN SELECT RAISE(ABORT,'synthetic storage failure'); END");
+  const state = transport.state();
+  const answer = await operator.request('bunny.cmd.bb8-connect.bb8', {type: commandType('bb8-connect'), subject: 'bb8', dataschema: schemaOf('bb8-connect'), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: state.helperEpoch, expectedConnectionGeneration: state.connectionGeneration}}, {timeoutMs: 1000, requestId: 'completion-1'});
+  assert.equal(answer.status, 'accepted');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(consumed, 0); assert.equal(transport.results().length, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM bb8_responsibility WHERE stage='done'").get()?.n, 0);
+  const copy = await operator.sync(['bb8-robot'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
+  assert.equal(copy.status, 'rejected'); db.exec('DROP TRIGGER reject_completion');
+});

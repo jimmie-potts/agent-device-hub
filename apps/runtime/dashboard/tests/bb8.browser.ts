@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {AxeBuilder} from '@axe-core/playwright';
+import {chromium} from 'playwright';
+import {changes, feed, startWorld} from './harness.ts';
+const browser = await chromium.launch({headless: true});
+const world = await startWorld({bb8: true});
+try {
+  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  try {
+    const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
+    const page = await context.newPage(); page.setDefaultTimeout(8000); const sent = changes(page);
+    await page.goto(`${world.url}/#/module/bb8/robot`); await feed(page, 'connected');
+    const controls = page.getByRole('region', {name: 'BB-8 controls'});
+    await controls.getByText('Connection: disconnected', {exact: true}).waitFor();
+    assert.deepEqual(world.bb8State().operations, []); assert.deepEqual(sent, [], 'page open is read-only');
+    assert.equal(await world.readonlyBb8({}), 403);
+    const connect = controls.getByRole('button', {name: 'Connect', exact: true});
+    await connect.focus(); await connect.press('Enter');
+    await controls.getByText('Connection: connected', {exact: true}).waitFor();
+    await controls.getByRole('button', {name: 'Set main LED', exact: true}).click();
+    await controls.getByText('Last result: succeeded · evidence transmitted', {exact: true}).waitFor();
+    assert.deepEqual(world.bb8State().led, {target: 'main', rgb: [33, 150, 255]});
+    await controls.getByRole('spinbutton', {name: 'Tail brightness'}).fill('256');
+    assert.equal(await controls.getByRole('button', {name: 'Set tail LED'}).isDisabled(), true);
+    await controls.getByRole('spinbutton', {name: 'Tail brightness'}).fill('0');
+    await controls.getByRole('button', {name: 'Set tail LED'}).click();
+    await controls.getByRole('button', {name: 'Refresh power'}).click();
+    await controls.getByText(/^Power: OK · 4.20 V · reported at /).waitFor();
+    assert.equal(world.bb8State().operations.length, 4);
+    await page.reload(); await feed(page, 'connected');
+    await controls.getByText(/^Power: OK · 4.20 V · reported at /).waitFor();
+    assert.equal(world.bb8State().operations.length, 4, 'reload does not connect or replay a command');
+    world.bb8Next('failed'); await controls.getByRole('button', {name: 'Set main LED'}).click();
+    await controls.getByText('Last result: failed · evidence none', {exact: true}).waitFor();
+    await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
+    world.bb8Next('uncertain'); await controls.getByRole('button', {name: 'Set main LED'}).click();
+    await controls.getByText('Last result: uncertain · evidence none', {exact: true}).waitFor();
+    assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isDisabled(), true);
+    await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
+    assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isEnabled(), true);
+    await page.evaluate(() => {const now = Date.now(); Date.now = () => now + 65_000;});
+    await controls.getByText(/^Power: OK · 4.20 V · stale at /).waitFor();
+    world.bb8Online(false);
+    await controls.getByText('Connection: unavailable', {exact: true}).waitFor();
+    assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isDisabled(), true);
+    await controls.getByText('Motion is unavailable in this release.', {exact: true}).waitFor();
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+    assert.deepEqual(errors, []);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'bb8', transport: 'authenticated simulated runtime', inspectionWrites: 0, keyboard: true, axe: 'passed'})}\n`);
+  } finally {await context.close();}
+} finally {await world.close(); await browser.close();}
