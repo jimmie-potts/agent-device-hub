@@ -149,6 +149,8 @@ Changed evidence, unexpected health, a stopped watchdog, missing lock and an
 altered plan refuse. The production export binds fixed installed readers; no
 request field selects a reader. These fixtures test coordination, not installed
 eligibility. The owning component tests above verify the individual readers.
+Each composed case calls the preflight or running check in the test process;
+the file's two CLI tests keep the real process boundary (#1081).
 
 `node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js` executes the
 owning procedure's manual backup and release-selection commands on disposable
