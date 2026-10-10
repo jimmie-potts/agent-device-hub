@@ -29,6 +29,36 @@ const errorCode = (error: unknown) => (error instanceof Error ? error.message : 
 const answer = <T>(value: T) => Promise.resolve(value);
 const refuse = (message: string) => Promise.reject(new Error(message));
 
+/** Bounds one composed case as the per-case subprocess timeout did, so a hang fails in 10 s, not at the job's limit. */
+async function bounded<T>(scenario: string, work: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`${scenario} did not settle within 10 s`)); }, 10_000); });
+  try {
+    return await Promise.race([work, limit]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Runs `body`, passing everything this process writes to stdout and stderr through while recording it. */
+async function written<T>(body: () => Promise<T>): Promise<{value: T; text: string}> {
+  const chunks: string[] = [];
+  const streams = [process.stdout, process.stderr];
+  const originals = streams.map(stream => stream.write.bind(stream));
+  streams.forEach((stream, index) => {
+    const original = originals[index] as (...values: unknown[]) => boolean;
+    stream.write = (chunk: unknown, ...rest: unknown[]) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk as Uint8Array).toString('utf8'));
+      return original(chunk, ...rest);
+    };
+  });
+  try {
+    return {value: await body(), text: chunks.join('')};
+  } finally {
+    streams.forEach((stream, index) => { stream.write = originals[index] as typeof stream.write; });
+  }
+}
+
 /** One composed preflight case over synthetic readers that drift or refuse as `scenario` names. */
 async function composedPreflight(root: string, scenario: string): Promise<Outcome> {
   const requestFile = join(root, `request-${scenario}.json`);
@@ -135,9 +165,12 @@ void test('composed upgrade preflight binds original observations and the exact 
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-preflight-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   type Planned = {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
-  const inspect = (scenario: string) => composedPreflight(root, scenario);
+  const inspect = (scenario: string) => bounded(scenario, composedPreflight(root, scenario));
   const first = await inspect('adoption') as Planned;
-  assert.ok(!JSON.stringify(await inspect('adoption')).includes('synthetic-secret-never-public'));
+  // Neither the outcome nor anything the case writes holds the read token, as the subprocess's stdout did not.
+  const shown = await written(() => inspect('adoption'));
+  assert.ok(!JSON.stringify(shown.value).includes('synthetic-secret-never-public'));
+  assert.ok(!shown.text.includes('synthetic-secret-never-public'));
   assert.equal((await inspect('bb8-absent') as Planned).plan.operation, 'adoption');
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
@@ -151,7 +184,10 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(first.plan.planSha256, repeated.plan.planSha256);
   assert.notEqual(first.observations[0]?.trace.traceparent, repeated.observations[0]?.trace.traceparent);
   assert.equal((await inspect('upgrade') as Planned).plan.operation, 'upgrade');
-  assert.equal((await inspect('locked') as Planned).counters.lock, 2);
+  const locked = await inspect('locked') as Planned & {code?: string};
+  assert.equal(locked.code, undefined, 'the approved plan is accepted under the lock');
+  assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
+  assert.equal(locked.counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
     'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
@@ -167,7 +203,7 @@ void test('composed upgrade preflight binds original observations and the exact 
 void test('production preflight CLI rejects unknown request fields before installed observation', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-preflight-cli-'));
   t.after(() => rm(root, {recursive: true, force: true}));
-  const {writeFile} = await import('node:fs/promises'); const input = join(root, 'request.json');
+  const input = join(root, 'request.json');
   await writeFile(input, JSON.stringify({observations: {passed: true}}), {mode: 0o600});
   await assert.rejects(run(process.execPath, ['apps/runtime/bin/runtime-upgrade-check.mjs', 'plan', input], {cwd: process.cwd(), timeout: 10000}), (error: unknown) => {
     const value = error as {stdout: string; stderr: string};
@@ -254,7 +290,7 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
 void test('post-start observation binds the selected release and refuses drift without service effects', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-running-check-'));
   t.after(() => rm(root, {recursive: true, force: true}));
-  const inspect = (scenario: string) => runningCheck(root, scenario);
+  const inspect = (scenario: string) => bounded(scenario, runningCheck(root, scenario));
   type Passed = {result: {phase: string; verified: boolean; selection: {target: string}}; counters: {http: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   const passed = await inspect('good') as Passed;
   assert.equal(passed.result.phase, 'candidate'); assert.equal(passed.result.verified, true); assert.equal(passed.counters.http, 2);
