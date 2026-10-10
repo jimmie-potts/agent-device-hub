@@ -95,6 +95,10 @@ and the derived adoption-draft bytes. Changed evidence or occupied destinations
 refuse; preparing the exact planned draft does not invalidate the locked plan.
 These tests use disposable files and do not accept startup effects or installed
 execution. The composed preflight suite also checks operational-evidence drift.
+The paths test accepts an explicitly selected 180-second observation attempt and
+rejects longer, non-finite, undersized or unsafe integer limits. The stop bound
+remains sixty seconds. This parser check does not establish actual installed
+verification time; size that bound using the owning procedure before effects.
 
 The suite also checks adoption from the retained direct tree and routine
 upgrades through the previous-release
