@@ -1,0 +1,16 @@
+{
+  "name": "@jimmie-potts/roborock",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only Roborock observations and private history for B.U.N.N.Y.",
+  "exports": {
+    ".": {"types": "./dist/src/index.d.ts", "import": "./dist/src/index.js"},
+    "./frontend": {"types": "./dist/src/frontend/index.d.ts", "import": "./src/frontend/index.tsx"}
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "@jimmie-potts/roborock-transport": "0.1.0"
+  }
+}

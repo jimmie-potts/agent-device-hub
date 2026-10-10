@@ -161,6 +161,14 @@ export default defineConfig(
       allowedPackages: [...modulePackages, '@jimmie-potts/wispr-contracts'], workspaceScopes}]},
   },
   {
+    // Roborock's source-qualified transport is a private package inside the same
+    // module root. This permits its public typed seam, never another module.
+    name: 'bunny/module-boundary/roborock-own-transport',
+    files: ['modules/roborock/**/*.{ts,tsx,js,mjs}'],
+    rules: {'bunny/module-boundary': ['error', {root: import.meta.dirname,
+      allowedPackages: [...modulePackages, '@jimmie-potts/roborock-transport'], workspaceScopes}]},
+  },
+  {
     // ADR 0012's "Safe errors" and "Observability" rules, for production code under the profile.
     name: 'bunny/safe-errors',
     files: [...strict, 'modules/**/*.{js,mjs}'],

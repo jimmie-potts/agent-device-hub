@@ -1,11 +1,111 @@
-# Roborock source transport
+# Roborock observations
 
-This package supplies the read-only V1 transport for Hub #1070. It is not
-registered with the running application. The private workspace package lives at
-`modules/roborock/transport`; the module root has no package manifest until #376
-provides a complete runtime registration. This preserves the build registry’s
-rule that every direct module package exports a registration. The runtime collector, private SQLite
-history, module page and MCP status tool are #376 work.
+`modules/roborock` registers a read-only module for the B.U.N.N.Y. runtime,
+with a React status page and the read-scoped `roborock_status` MCP tool.
+The nested `@jimmie-potts/roborock-transport` package supplies the V1 transport.
+The Roborock app remains the cleaning control surface.
+
+The module uses SDK API 1.3. Its configuration names one routing `id` and two
+private secret files, `target` and `session`. The target and session JSON
+contracts are described below. Settings expose only the routing ID. Imports,
+configuration admission and local startup open no robot connection and load no
+account session. The first scheduled collection loads the named private files;
+a target mismatch refuses collection into the existing archive.
+
+The page lives at `#/module/roborock/status`. It reads `status`, `runs`, `run`
+and `samples` through the shell's authenticated content API and follows the
+`roborock-vacuum` family through its synced copy. Runs pages contain at most 25
+records; sample pages contain at most 100 samples and 100 gaps. Cursors freeze
+membership admission, while later conflicting evidence may retire sample
+eligibility. Content references cannot select files, original JSON, room names
+or map bytes. The single MCP contribution reads the same status projection.
+The generic `device` record declares all controls unsupported.
+
+## Observation and retention boundaries
+
+The collector initially polls every 60 seconds outside supported cleaning or
+returning activity and every 15 seconds during it. Calls and record batches are
+bounded and serialized. These policy intervals do not establish push support.
+A docked `clean_time` or `clean_area` may describe the previous run; it does not
+start or complete an episode. Unavailable replies and downtime create gaps,
+never synthetic battery samples or inferred completion.
+
+The runtime owns one private SQLite connection on its ext4 state root, outside
+Git and Windows mounts. It uses exclusive ownership, WAL and FULL durability.
+Original successful parsed JSON, normalization version, observation ID and
+collection generation stay private. This is parsed-value retention, not a
+claim to preserve wire bytes. Vendor record IDs identify retained runs; public
+start/end instants use milliseconds. Summary subsets and empty replies do not
+delete history. Partial records preserve previously known measurements with
+separate private evidence times; contradictory inputs retain their versions.
+
+Battery curves contain only observed samples from a compatible, uniquely
+associated episode. Later overlapping or contradictory run windows retire
+public sample eligibility while preserving the original observations and
+private links. Clock alignment remains unqualified until a real-run comparison.
+Lifetime counters remain distinct from the partial retained run inventory.
+
+A run-end map is captured only after its matching record commits. Decoded bytes
+stay in a private deduplicated BLOB archive with request/response time, map
+index/sequence, generation and before/after observations. The V1 header contains
+no run identifier. Every capture remains unverified; failed, late, interrupted
+or conflicting windows never establish coverage. Startup-only history does not
+receive a retrospectively captured current map.
+
+Archive/projection writes and one admitted state batch share an Outbox
+transaction. A refused prior publication blocks admission of another batch,
+while new originals and the latest projection can still commit with a durable
+publication-needed flag. Storage failure retains one bounded pending batch
+with stable observation IDs and stops further capture until recovery. A
+committed archive is separate evidence from successful publication.
+
+After a restart, successful status recovery closes prior unavailable intervals
+in pages of at most 100, retaining their original versions and first recovery
+time. A persisted cursor revisits older unresolved episodes in pages of 25.
+An explicit completed record with a compatible end can close an old episode;
+overlapping or conflicting evidence can still leave its samples unattached.
+Recovery never requests a current map for historical records.
+
+## Private manual backup and recovery
+
+The archive is `<state-root>/modules/roborock.sqlite`. Retention has no automatic
+expiry or pruning. Raw readings, record versions, room mappings, battery
+observations and decoded maps are personal data under
+[ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
+Keep originals and backups in private owner-controlled Linux storage outside
+every Git checkout. Do not attach them to issues, PRs, logs or CI artifacts.
+
+With separately authorized runtime maintenance, stop the sole runtime owner
+cleanly before making or restoring a backup. Verify its process has ended and
+no writer holds the database. A live copy of the SQLite file alone can omit
+committed WAL data. A clean close normally checkpoints the WAL; if sidecars
+remain, preserve the complete database/WAL set privately and investigate the
+close before proceeding. Keep the original set intact, use copies with mode
+`0600` in a `0700` directory, and verify the copied archive's identity, record
+inventory and integrity before using it for recovery.
+
+Restore only while the owner remains stopped, with the original archive and
+sidecars retained separately for recovery. Never mix sidecars from different
+copies or change the archive's robot identity to admit a new target. Restart
+through the owning runtime procedure and verify its running identity, health,
+retained inventory and new restart gap. This manual procedure grants no
+runtime authority and does not qualify an installed storage adapter.
+
+## Field qualification
+
+Object and exact positional V1 layouts derive from the pinned MIT source below.
+No timestamp scan, string coercion or magnitude-based unit guess is accepted.
+`clean_time`, record `duration` and consumable `_work_time`/`_dirty_time` values
+are seconds. Areas are square millimetres; `area` and `cleaned_area` stay
+separate. `strainer_work_times`, `cleaning_brush_work_times` and
+`dust_collection_work_times` are cycle counts. `extra_time` has no proven unit
+and is retained privately as a raw number; its seconds measurement is unknown.
+
+Unfamiliar numeric status, error, start and finish codes retain their numeric
+value without an invented label. Dock `dss` bit meanings are source-qualified
+only; this guide claims no exact-model wash/dry semantics or default consumable
+lifetimes. `avoid_count` is a vendor avoidance count, not a count of distinct
+obstacles. Missing, invalid and unqualified fields remain unknown.
 
 The transport uses an explicit private target configuration and session. Local
 status, consumables, summary, records and rooms use TCP 58867. Current-map bytes
@@ -37,7 +137,10 @@ synthetic; owner maps, account material and household history stay private.
 ## Source validation
 
 Use Node 24 and the commands in
+[Roborock module checks](../../docs/development.md#roborock-module-checks) and
 [Roborock transport checks](../../docs/development.md#roborock-transport-checks).
+Module checks include the actual-runtime browser journey, recursive browser
+boundary fixtures, both SDK transports and a disposable runtime scenario.
 `npm run test:roborock-transport` builds and runs the focused suite;
 `test:roborock-transport:built` and `test:roborock-transport:consumer:built`
 require a fresh root build. Independent Standards and Specification review
@@ -106,7 +209,7 @@ The reader provides `readStatus`, `readConsumables`, `readCleanSummary`,
 `readCleanRecord(startTime)`, `readRoomMapping`, `readCurrentMap` and `stop`.
 A reading is either `{ok: true, value, observedAt}` or
 `{ok: false, error: ErrorBody}`. Missing vendor domain fields remain missing;
-#376 owns normalization. Current maps return private `Buffer` bytes, with no
+The registered module owns normalization. Current maps return private `Buffer` bytes, with no
 claim about geometry or map coverage. The owning module must associate map
 capture time and run identity rather than infer a historical map from a late
 current-map response.
