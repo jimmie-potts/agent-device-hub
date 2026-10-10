@@ -4,7 +4,7 @@ import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser, type ElementHandle, type Route} from 'playwright';
 import {expect} from 'playwright/test';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {REQUEST_HEADER, SOURCE_HEADER} from '@jimmie-potts/sdk';
 import {SimulatedSpeakers, type SonyReply, type PlaybackModuleOptions} from '@jimmie-potts/playback';
@@ -371,6 +371,52 @@ try {
     await textAndControls(longTitle, completed);
     assert.equal(acquisitions, beforeReload); assert.equal(sent.length, 1); assert.deepEqual(speakers.state().sony.commands, ['pause']);
     checks.push('completion survives re-entry without command replay');
+    // Reject a real playback replacement sync, then keep its scheduled retry pending while late A finishes.
+    const rejectedSync = latch<void>(), enteredRetry = latch<void>(), releaseRetry = latch<void>(), endedRetry = latch<void>();
+    let playbackAttempts = 0, beforeRefusalAcquisitions = 0;
+    const failedSyncHandler = async (route: Route): Promise<void> => {
+      const call = route.request().postDataJSON() as SyncCall;
+      if (call.owner !== 'bunny/modules/playback' || !call.request.data.families.includes('playback')) {await route.continue(); return;}
+      playbackAttempts++;
+      if (playbackAttempts === 1) {
+        await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({schema: 'sdk-remote/1.0',
+          answer: {status: 'rejected', requestId: call.request.data.requestId,
+            error: errorBody('unavailable', {detail: 'synthetic playback sync refusal', requestId: call.request.data.requestId})}})});
+        rejectedSync.resolve(); return;
+      }
+      enteredRetry.resolve(); await releaseRetry.wait;
+      try {await route.continue(); endedRetry.resolve();} catch (error) {endedRetry.reject(error);}
+    };
+    void endedRetry.wait.catch(() => {});
+    try {
+      await heldImage(() => {select('Failed sync A');}, async (_a, old) => {
+        beforeRefusalAcquisitions = acquisitions;
+        await page.route('**/api/sdk/v1/sync', failedSyncHandler);
+        const refusal = page.waitForResponse(response => new URL(response.url()).pathname === '/api/sdk/v1/sync'
+          && (response.request().postDataJSON() as SyncCall).owner === 'bunny/modules/playback');
+        world.dropDashboardStreams();
+        const response = await refusal; const answer = await response.json() as {answer: {status: string; error: {error: {code: string}}}};
+        assert.equal(response.status(), 200); assert.equal(answer.answer.status, 'rejected'); assert.equal(answer.answer.error.error.code, 'unavailable');
+        await bounded(rejectedSync.wait, 'real playback sync rejection'); await bounded(enteredRetry.wait, 'scheduled playback retry after rejection');
+        await feed(page, 'connected'); await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor(); await square();
+        assert.equal(await old.evaluate(node => node.isConnected), false);
+        for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isDisabled(), true);
+        assert.equal(await card.locator('fieldset button').count(), 3);
+        assert.equal(await card.getByRole('status').innerText(), completed);
+      });
+      // The truthful delayed A response has completed while the failed copy still cannot claim current membership.
+      await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor();
+      assert.equal(await card.getByRole('status').innerText(), completed);
+      assert.equal(acquisitions, beforeRefusalAcquisitions, 'sync refusal and late image completion never reacquire artwork');
+      const expectedBAcquisitions = acquisitions + 1;
+      select('Failed sync B', true); releaseRetry.resolve(); await bounded(endedRetry.wait, 'successful playback retry');
+      await page.unroute('**/api/sdk/v1/sync', failedSyncHandler);
+      await frame(await current({title: 'Failed sync B', artwork: 'ready'}), [200, 20, 20, 255]);
+      await textAndControls('Failed sync B', completed);
+      assert.equal(acquisitions, expectedBAcquisitions, 'only selecting B starts its one acquisition; retry and browser consumers reuse it');
+      assert.ok(playbackAttempts >= 2); assert.equal(sent.length, 1); assert.deepEqual(speakers.state().sony.commands, ['pause']);
+      checks.push('rejected playback sync/late image/retry/no command replay');
+    } finally {releaseRetry.resolve(); await page.unroute('**/api/sdk/v1/sync', failedSyncHandler);}
     // Production freshness cadence remains unchanged; await evidence boundaries, never arbitrary sleeps.
     speakers.silent('sony'); speakers.silent('sonos');
     await current({availability: 'stale'}); await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor(); await square();
