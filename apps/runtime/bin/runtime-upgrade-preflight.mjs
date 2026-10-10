@@ -20,20 +20,20 @@ import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
 const maximum = 256 * 1024;
 const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
-const knownModules = ['bb8', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt', 'wispr'];
+const knownModules = ['bb8', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
 
 function requireHealth(health, configured, lagLimitMs) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
-    || configured.some(name => name === 'bb8' || !knownModules.includes(name))
+    || configured.some(name => ['bb8', 'roborock'].includes(name) || !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
     || !['core', ...configured].every(name => health.modules.some(row => row.name === name))) refused();
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8. State inspection still rejects either configuration or retained BB8.
-    if (['wispr', 'bb8'].includes(row.name) && !configured.includes(row.name)) {
+    // BB8 and Roborock. State inspection still rejects their configuration or retained state.
+    if (['wispr', 'bb8', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
     } else if ((row.name !== 'core' && !configured.includes(row.name))

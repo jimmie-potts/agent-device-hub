@@ -278,6 +278,11 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
+The current profile accepts unconfigured BB8 and Roborock only when their
+health rows are `refused`, `healthy: false`, and `not-found`, and no state is
+retained for either owner. Configured or retained BB8/Roborock state still
+refuses before effects; it needs its own complete upgrade/recovery qualification.
+
 Each previous, target and recovery inventory must match that release's actual
 verified production inputs. The qualification inventory matches the target's
 production inputs and records the qualification revision. Their combined digest

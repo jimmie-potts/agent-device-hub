@@ -42,6 +42,11 @@ if(scenario.startsWith('bb8-') || scenario==='configured-bb8') {
  if(scenario==='bb8-wrong-status') health.status='ok';
  if(scenario==='configured-bb8') configured.push('bb8');
 }
+if(scenario.startsWith('roborock-') || scenario==='configured-roborock') {
+ health.modules.push({name:'roborock',apiVersion:MODULE_API_VERSION,state:scenario==='roborock-running'?'running':'refused',healthy:scenario==='roborock-healthy',reasonCode:scenario==='roborock-wrong-reason'?'unavailable':'not-found'});
+ if(scenario==='roborock-wrong-status') health.status='ok';
+ if(scenario==='configured-roborock') configured.push('roborock');
+}
 if(scenario==='configured-refusal') {health.modules.find(row=>row.name==='pixoo').state='refused';health.modules.find(row=>row.name==='pixoo').healthy=false;}
 if(scenario==='unknown-module') health.modules.push({name:'onn',apiVersion:MODULE_API_VERSION,state:'refused',healthy:false,reasonCode:'not-found'});
 if(scenario==='stopped-watchdog') health.lagCheck.status='stopped';
@@ -82,6 +87,7 @@ catch(error){process.stdout.write(JSON.stringify({code:error.message,counters}))
   const first = JSON.parse((await inspect('adoption')).stdout) as {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   assert.ok(!(await inspect('adoption')).stdout.includes('synthetic-secret-never-public'));
   assert.equal((JSON.parse((await inspect('bb8-absent')).stdout) as {plan: {operation: string}}).plan.operation, 'adoption');
+  assert.equal((JSON.parse((await inspect('roborock-absent')).stdout) as {plan: {operation: string}}).plan.operation, 'adoption');
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
   assert.equal(first.observations.length, 2);
@@ -95,7 +101,7 @@ catch(error){process.stdout.write(JSON.stringify({code:error.message,counters}))
   assert.equal((JSON.parse((await inspect('upgrade')).stdout) as {plan: {operation: string}}).plan.operation, 'upgrade');
   assert.equal((JSON.parse((await inspect('locked')).stdout) as {counters: {lock: number}}).counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       await assert.rejects(inspect(scenario), (error: unknown) => {
         const result = JSON.parse((error as {stdout: string}).stdout) as {code: string; counters: {owner: number; http: number; lock: number}};
