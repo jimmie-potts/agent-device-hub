@@ -131,7 +131,7 @@ export class HttpDeviceAdapter implements DeviceAdapter {
     let cancelTimer = () => {};
     return new Promise(resolve => {
       const interrupted = (): FailureCode | undefined => reason ??
-        (this.closed?'cancelled':generation !== this.currentGeneration ? 'stale-generation' : signal?.aborted === true ? 'cancelled' : this.clock.now() >= deadline ? 'timeout' : undefined);
+        (this.closed?'cancelled':generation !== this.currentGeneration ? 'stale-generation' : signal?.aborted === true || options.current?.() === false ? 'cancelled' : this.clock.now() >= deadline ? 'timeout' : undefined);
       const finish = (value?: T, error?: DeviceRequestError) => {
         if (done) return;
         done = true; cancelTimer(); signal?.removeEventListener('abort', abort);

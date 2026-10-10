@@ -96,6 +96,14 @@ test('invalid artwork keeps text and reports a safe refusal once, then a valid c
   const decisions = (event: string) => h.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'playback' && entry.fields['bunny.operation.id'] === undefined);
   assert.equal(decisions('operation.failed').length, 1);
   assert.equal(decisions('operation.failed')[0]?.fields['bunny.code'], 'invalid-request');
+  const refusal = decisions('operation.failed')[0];
+  const pushSpan = h.spans.named('bunny.device.call').find(span => span.attributes['bunny.operation'] === 'playback' && span.attributes['bunny.operation.id'] === 'push');
+  assert.ok(pushSpan?.parentSpanId !== undefined, 'the same evaluation has a traced cloud push');
+  const refusalTrace = refusal?.trace?.traceparent.split('-');
+  assert.deepEqual({level: refusal?.level, traceId: refusalTrace?.[1], spanId: refusalTrace?.[2]},
+    {level: 'info', traceId: pushSpan.traceId, spanId: pushSpan.parentSpanId}, 'artwork validation follows the triggering trace at its registered level');
+  assert.deepEqual(Object.keys(refusal?.trace ?? {}), ['traceparent'], 'trace metadata retains only the allowlisted field');
+
   await owner(h).set(invalid); await h.advance(15 * SECOND); await quiet();
   assert.equal(pushes(h, NOW_PLAYING), 1, 'a duplicate invalid image neither retries the cloud nor warns again');
   assert.equal(decisions('operation.failed').length, 1);
@@ -104,6 +112,10 @@ test('invalid artwork keeps text and reports a safe refusal once, then a valid c
   await until(() => pushes(h, NOW_PLAYING) === 2, 'the valid replacement');
   assert.deepEqual(shown(h, NOW_PLAYING).picture, picture(expectedCard(32, 'playing', false, [{text: 'A', y: 1}, {text: 'H', y: 9, artist: true}])));
   assert.equal(decisions('operation.completed').length, 1);
+  const recovered = decisions('operation.completed')[0];
+  const latest = h.published.filter(message => message.type === 'org.bunny.playback.updated').at(-1);
+  assert.deepEqual({level: recovered?.level, trace: recovered?.trace}, {level: 'info', trace: {traceparent: latest?.traceparent}}, 'recovery continues the new state trace');
+
   const diagnostics = JSON.stringify(h.logs());
   for (const image of [invalid.artwork, valid.artwork]) {
     const leaked = h.logs().flatMap(entry => Object.entries(entry.fields).filter(([, value]) => {

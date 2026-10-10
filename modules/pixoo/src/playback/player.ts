@@ -151,11 +151,11 @@ export class Player {
   /** Upload one monitor picture of one or two complete frames, played at 500 ms each. */
   async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
     if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
-    const cancelled=()=>options.signal?.aborted===true;
+    const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
     if(this.closing||expectedGeneration!==this.epoch||this.intent!=='paused'||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
     const generation=this.adapterGeneration;
     const result=await this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
-      {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs});
+      {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});
     // Superseded private card work with no effects is no evidence about the device or user intent.
     if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')return result;
     // Evidence from a retired write cannot alter the current player or revive it.

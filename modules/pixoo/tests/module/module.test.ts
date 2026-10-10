@@ -283,12 +283,16 @@ void describe('Now Playing', () => {
       const invalid = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc',
         mediaType: 'image/png' as const, width: 1, height: 1, base64: png.subarray(0, png.length - 1).toString('base64')}};
       world.playback = [invalid];
-      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
+      const refusedInput = await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
       const textDigest = frameDigest(renderNowPlaying(nowPlayingView(baseline, {current: true})));
       await waitFor(() => world.device.state().shown?.digests[0] === textDigest ? true : undefined, 'the current text fallback');
       const decisions = (event: string) => world.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'playback');
       assert.equal(decisions('operation.failed').length, 1);
       assert.equal(decisions('operation.failed')[0]?.fields['bunny.code'], 'invalid-request');
+      const refusal = decisions('operation.failed')[0];
+      assert.deepEqual({level: refusal?.level, trace: refusal?.trace},
+        {level: 'info', trace: {traceparent: refusedInput.traceparent}}, 'validation follows the selected state trace at its registered level');
+
       const uploads = world.device.state().uploads;
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
       await sleep(1100);
@@ -296,10 +300,14 @@ void describe('Now Playing', () => {
       assert.equal(decisions('operation.failed').length, 1);
       const valid = {...invalid, revision: ++world.revision, artwork: {...invalid.artwork, generation: '22345678-1234-4234-8234-123456789abc', base64: png.toString('base64')}};
       world.playback = [valid];
-      await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(valid)});
+      const recoveredInput = await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(valid)});
       const digest = frameDigest(expectedCard(64, 'playing', false, [{text: 'A', y: 13}, {text: 'H', y: 27, artist: true}]));
       await waitFor(() => world.device.state().shown?.digests[0] === digest ? true : undefined, 'the valid image replacement');
       assert.equal(decisions('operation.completed').length, 1);
+      const recovery = decisions('operation.completed')[0];
+      assert.deepEqual({level: recovery?.level, trace: recovery?.trace},
+        {level: 'info', trace: {traceparent: recoveredInput.traceparent}}, 'recovery follows only the current observation trace');
+
       const diagnostics = JSON.stringify(world.logs());
       for (const image of [invalid.artwork, valid.artwork]) assert.ok(!diagnostics.includes(image.base64) && !diagnostics.includes(image.generation));
     });

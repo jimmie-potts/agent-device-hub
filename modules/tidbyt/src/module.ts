@@ -17,7 +17,7 @@ import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} fr
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
+  DeviceAvailability, fullDisk, levelOf, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
   type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
@@ -555,6 +555,7 @@ class TidbytRun {
   /** Draws and encodes a frame in a worker thread, which the module's stop ends. */
   async #render(request: TileRequest, tile: Tile): Promise<Uint8Array> {
     const association = this.#captureTarget(tile).association;
+    const parent = tile.trigger;
     const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {
       timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: this.#context.signal,
     });
@@ -565,10 +566,10 @@ class TidbytRun {
       const fields = {...this.#deviceField(), 'bunny.operation': 'playback'};
       if (reply.artworkCode !== undefined && reply.artworkCode !== tile.artworkFailing) {
         tile.artworkFailing = reply.artworkCode;
-        this.#context.log.warn('operation.failed', {...fields, 'bunny.code': reply.artworkCode});
+        this.#context.log[levelOf(reply.artworkCode)]('operation.failed', {...fields, 'bunny.code': reply.artworkCode}, parent);
       } else if (reply.artworkCode === undefined && request.artwork?.status === 'ready' && tile.artworkFailing !== undefined) {
         tile.artworkFailing = undefined;
-        this.#context.log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+        this.#context.log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
       }
     }
     return reply.webp;

@@ -274,7 +274,7 @@ export class MonitorPresentation {
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   void this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,write===null?{}:{signal:abort.signal,current}).then(result=>{
-   if(write!==null&&abort.signal.aborted&&(result===undefined||!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')){
+   if(write!==null&&(abort.signal.aborted||!current())&&(result===undefined||!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')){
     if(this.lastFrame===write.key)this.lastFrame='';return;
    }
    // A Media takeover reports through its own status; a failed or uncertain card upload ends it without resuming.

@@ -72,6 +72,17 @@ function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'p
   const uploads: Upload[] = [];
   const displays: {atMs: number; digests: string[]}[] = [];
   let detach = (): void => {};
+  let pixooFailed = (): void => {};
+  const pixooFailure = new Promise<void>(resolve => { pixooFailed = resolve; });
+  // Worker completion is real IO, not virtual popup time. Bound the barrier in real time.
+  const waitForPixooFailure = async (): Promise<void> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([pixooFailure, new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => { reject(new Error('ready Pixoo worker did not report a fault within 5 real seconds')); }, 5000);
+      })]);
+    } finally { if (timeout !== undefined) clearTimeout(timeout); }
+  };
   const playback: typeof playbackSimulation = {...playbackSimulation, memory: {...playbackSimulation.memory,
     build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, ...(pollMs === undefined ? {} : {pollMs}), artwork: {fetch}}),
   }};
@@ -95,11 +106,18 @@ function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'p
       detach = device.onChange(state => {
         if (state.shown !== null) displays.push({atMs: now(), digests: [...state.shown.digests]});
       });
-      return createPixooModule({transport: device,
+      const module = createPixooModule({transport: device,
         ...(failingRenderer === 'pixoo' ? {renderWorker: new URL('./fixtures/pixoo-ready-fail-worker.js', import.meta.url)} : {})});
+      if (failingRenderer !== 'pixoo') return module;
+      return {...module, start: (context: Parameters<typeof module.start>[0]) => module.start({...context, log: {...context.log,
+        warn: (event, fields, parent) => {
+          context.log.warn(event, fields, parent);
+          if (event === 'operation.failed' && fields?.['bunny.operation'] === 'feed' && fields?.['bunny.code'] === 'uncertain-result') pixooFailed();
+        },
+      }})};
     },
   }};
-  return {uploads, displays, detach: () => { detach(); }, registrations: registrations.map(entry =>
+  return {uploads, displays, waitForPixooFailure, detach: () => { detach(); }, registrations: registrations.map(entry =>
     entry.name === 'playback' ? {...entry, simulation: playback} : entry.name === 'tidbyt' ? {...entry, simulation: tidbyt}
       : entry.name === 'pixoo' ? {...entry, simulation: pixoo} : entry)};
 }
@@ -262,6 +280,9 @@ for (const transport of TRANSPORTS) for (const failingRenderer of ['tidbyt', 'pi
       await within(h, 'real producer independently completes its ready artwork', () =>
         record(h)?.artwork?.status === 'ready' && text(h, 'A', 'playing') === true || 'producer artwork is not ready', 8000);
       if (failingRenderer === 'pixoo') {
+        const beforeFault = h.now();
+        await fixture.waitForPixooFailure();
+        assert.equal(h.now(), beforeFault, 'waiting for the real worker does not spend the virtual popup');
         await within(h, 'ready Pixoo render failure is diagnosed within the existing popup', () => failures().length === 1 || 'no Pixoo render failure', 2000);
         assert.equal(shown(h).shown?.digests[0], baselinePixooDigest, 'failed Pixoo retains its already shown current text');
         assert.equal(shown(h).uploads, baselinePixooUploads, 'no new text/image upload is claimed for the failed renderer');

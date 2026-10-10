@@ -16,9 +16,9 @@ import {
 } from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
+  DeviceAvailability, levelOf, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type ModuleStagedUpload, type ModuleUploadRequest,
-  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange,
+  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext,
 } from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
@@ -138,7 +138,7 @@ export const pixooFactory = {
 };
 
 /** A copy of another owner's records, and whether a warning about it is outstanding. */
-type Copy<T> = {state: 'current' | 'stale' | 'unavailable'; revision: number | null; records: Map<string, T>; warned: boolean};
+type Copy<T> = {state: 'current' | 'stale' | 'unavailable'; revision: number | null; records: Map<string, T>; parents: Map<string, TraceContext>; warned: boolean};
 type Catalog = {renditions: Omit<RenditionRecord, 'revision'>[]; playlists: Omit<PlaylistRecord, 'revision'>[]};
 type Shown = {json: string; revision: number};
 /** What one publish also does in its transaction: see `#publishNow`. */
@@ -158,8 +158,8 @@ class PixooRuntime {
   readonly #validator = new MessageValidator();
   readonly #availability: DeviceAvailability;
   readonly #deviceClock: DeviceClock;
-  readonly #sessions: Copy<SessionRecord> = {state: 'unavailable', revision: null, records: new Map(), warned: false};
-  readonly #playback: Copy<PlaybackState> = {state: 'unavailable', revision: null, records: new Map(), warned: false};
+  readonly #sessions: Copy<SessionRecord> = {state: 'unavailable', revision: null, records: new Map(), parents: new Map(), warned: false};
+  readonly #playback: Copy<PlaybackState> = {state: 'unavailable', revision: null, records: new Map(), parents: new Map(), warned: false};
   /** The JSON and revision of each record last served or published, by `<family>/<id>`. */
   readonly #shown = new Map<string, Shown>();
   readonly #timers = new Set<Cancel>();
@@ -205,6 +205,7 @@ class PixooRuntime {
   /** How many accepted commands are still running. */
   #running = 0;
   #renderFailing = false;
+  #cardParent: TraceContext | undefined;
   #stopping = false;
 
   constructor(context: ModuleContext<PixooConfig>, config: PixooConfig, options: PixooOptions) {
@@ -467,6 +468,7 @@ class PixooRuntime {
    */
   async #render(request: RenderRequest, cardInputKey?: string): Promise<Uint8Array[]> {
     const {workers, signal, log} = this.#context;
+    const parent = request.kind === 'card' ? this.#cardParent : undefined;
     try {
       const reply = await workers.call<Uint8Array[] | RenderReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {timeoutMs: RENDER_MS, signal});
       const frames = Array.isArray(reply) ? reply : reply?.frames;
@@ -477,20 +479,20 @@ class PixooRuntime {
         const code = Array.isArray(reply) ? undefined : reply.artworkCode;
         const fields = {'bunny.device.id': this.#device, 'bunny.operation': 'playback'};
         if (code !== undefined && code !== this.#artworkFailing) {
-          this.#artworkFailing = code; log.warn('operation.failed', {...fields, 'bunny.code': code});
+          this.#artworkFailing = code; log[levelOf(code)]('operation.failed', {...fields, 'bunny.code': code}, parent);
         } else if (code === undefined && request.artwork?.status === 'ready' && this.#artworkFailing !== undefined) {
-          this.#artworkFailing = undefined; log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+          this.#artworkFailing = undefined; log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
         }
       }
       if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
-        log.info('operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
+        log.info('operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'}, parent);
       }
       return frames;
     } catch (error) {
       if (!this.#renderFailing && !signal.aborted && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = true;
-        log.warn('operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
+        log.warn('operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'}, parent);
       }
       throw error;
     }
@@ -521,17 +523,21 @@ class PixooRuntime {
     };
     // This attempt's records replace the copy's at its first sync, so an entity the owner no longer has disappears.
     const records = new Map<string, T>();
+    const parents = new Map<string, TraceContext>();
     const handle = (change: SyncChange<T>): void => {
       switch (change.type) {
         case 'updated':
           records.set(change.entity.id, change.message.data);
+          parents.set(change.entity.id, {traceparent: change.message.traceparent});
           copy.revision = Math.max(copy.revision ?? 0, (change.message.data as {revision?: number}).revision ?? 0);
           break;
         case 'removed':
           records.delete(change.entity.id);
+          parents.delete(change.entity.id);
           break;
         case 'synced':
           copy.records = records;
+          copy.parents = parents;
           copy.state = 'current';
           copy.revision = Math.max(copy.revision ?? 0, change.message.data.revision);
           break;
@@ -572,6 +578,7 @@ class PixooRuntime {
   #playbackChanged(): void {
     const records = [...this.#playback.records.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     const chosen = this.#config.playback === undefined ? records[0] : this.#playback.records.get(this.#config.playback);
+    this.#cardParent = chosen === undefined ? undefined : this.#playback.parents.get(chosen.id);
     const current = this.#playback.state === 'current';
     const status = {source: this.#playback.state, view: nowPlayingView(chosen, {current})};
     const artwork = chosen?.artwork;

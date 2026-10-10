@@ -1,5 +1,6 @@
 import {expect, it} from 'vitest';
 import sharp from 'sharp';
+import {HttpDeviceAdapter, SPIKE_PROFILE} from '../../src/device/http-adapter.js';
 import {Player} from '../../src/playback/index.js';
 import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {MonitorPresentation} from '../../src/presentation/monitor-presentation.js';
@@ -191,4 +192,53 @@ it('attention cancels a queued artwork card and clearing attention does not repl
     expect(monitor.nowPlayingSummary()).toMatchObject({showing: 'dashboard', takeover: null});
     expect(monitor.status().participating).toBe(true);
   } finally {await monitor.close(); await player.close();}
+});
+
+
+it('rejects a queued artwork upload released after popup expiry before the next presentation tick', async () => {
+  const clock = new ManualClock(), calls: {atMs: number; command: unknown; pixel?: number}[] = [];
+  let hold = false, release: (() => void) | undefined;
+  const device = new HttpDeviceAdapter({ip: '10.0.0.1', profile: SPIKE_PROFILE, clock}, async body => {
+    calls.push({atMs: clock.now(), command: body.Command,
+      ...(typeof body.PicData === 'string' ? {pixel: Buffer.from(body.PicData, 'base64')[0]} : {})});
+    if (body.Command === 'Channel/SetBrightness' && hold) return new Promise(resolve => {release = () => {resolve({});};});
+    return {PicId: 1, SelectIndex: 0};
+  });
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
+  const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(),
+    renderCard: (_view, input) => frame(input?.artwork?.status === 'ready' ? 22 : 11)});
+  try {
+    await monitorMode(clock, monitor);
+    const deadline = clock.now() + 10_000;
+    monitor.submitPlayback(playing, context('A')); await run(clock, monitor, 9000);
+    hold = true; const brightness = player.setBrightness(60); await flush(clock);
+    expect(release).toBeTypeOf('function');
+    const before = monitor.status().lastOutcome;
+    monitor.submitPlayback(playing, await artworkContext('A')); monitor.tick(); await flush(clock);
+    expect(monitor.status().inFlight).toBe(1);
+    clock.advance(950); monitor.tick(); await flush(clock);
+    expect(clock.now()).toBe(deadline - 50);
+    const cut = calls.length;
+    clock.advance(70); present(release)(); await flush(clock);
+    expect(await brightness).toMatchObject({ok: true});
+    expect(calls.slice(cut).filter(call => call.command === 'Draw/SendHttpGif' && call.pixel === 22)).toEqual([]);
+    expect(monitor.status()).toMatchObject({participating: true, lastOutcome: before});
+    expect(player.getState().lastError).toBeNull();
+  } finally {await monitor.close(); await player.close();}
+});
+
+it('keeps possible partial effects when card eligibility expires between fake-device frames', async () => {
+  const clock = new ManualClock(), device = new FakeDeviceAdapter({clock, latencyMs: 1000});
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore(), pauseOnUncertain: true});
+  let eligible = true;
+  try {
+    await player.pause();
+    const upload = player.uploadDashboard([frame(11), frame(22)], player.getState().generation, {current: () => eligible});
+    await flush(clock); clock.advance(1000); await flush(clock);
+    expect(device.effects.filter(effect => effect.kind === 'frame')).toHaveLength(1);
+    eligible = false; clock.advance(1000); await flush(clock);
+    expect(await upload).toMatchObject({ok: false, code: 'cancelled', priorEffects: 'possible'});
+    expect(device.effects.filter(effect => effect.kind === 'frame')).toHaveLength(1);
+    expect(player.getState()).toMatchObject({lastError: {code: 'cancelled', priorEffects: 'possible'}});
+  } finally {await player.close();}
 });
