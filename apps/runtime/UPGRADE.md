@@ -10,9 +10,42 @@ The source checks and private recovery artifacts produced during qualification
 are not an installed upgrade. Routine installed use requires recorded reviewed
 source and established-installation acceptance. The initial installed qualification
 may run only from reviewed merged source with successful applicable CI and a
-separately approved exact adoption/upgrade/recovery sequence. That trial establishes
-the missing installed evidence; it does not assume the procedure already qualifies.
-Until it passes, report installation qualification pending and retain #1037 open.
+separately approved exact single forward-upgrade plan, including expected startup
+effects and at most one compatible recovery after an actual failure. Retain the
+disposable synthetic upgrade, recovery, re-upgrade and pre-effect refusal evidence.
+Deliberate live recovery and re-upgrade are not required for initial qualification;
+report them as untested unless separately exercised. First adoption remains a
+separate one-time operation and is not repeated when already accepted. A failed,
+refused or interrupted forward upgrade does not pass initial qualification, even
+if recovery succeeds. Until the forward upgrade is verified, report installation
+qualification pending and retain #1037 open.
+
+## Initial qualification checklist
+
+1. Verify reviewed merged source, successful applicable CI, release provenance
+   and retained disposable recovery/refusal evidence under
+   [release and recovery proof](#release-and-recovery-proof). Verify accepted
+   first adoption separately; do not repeat it.
+2. Prepare a fresh operation ID, backup destination and exact plan using the
+   [required inputs and authority](#inputs-and-authority). Obtain initial approval
+   for the single forward upgrade, its startup effects and at most one compatible
+   recovery after an actual failure. An earlier three-selection proposal is not
+   authority for this operation.
+3. [Hold the operation lock and recheck the plan](#plan-and-hold-the-operation-lock).
+   Follow [stop, backup, selection and verification](#stop-back-up-select-and-verify),
+   including durable intent and final receipt readback. Perform one forward upgrade.
+4. If it fails or is interrupted, inspect the intent and actual selection before
+   following [recovery and finalization](#recover-and-finalize). Perform only the
+   one compatible recovery covered by the approved plan when indicated, then end
+   the window. Do not re-upgrade or replay effects. Record the actual outcome;
+   initial installed qualification remains pending.
+5. For success, verify the running revision, required module health, preserved
+   latest state and finalized receipt. Retain the verified previous release,
+   compatible recovery path and stopped-writer backup. Report deliberate live
+   recovery and re-upgrade as untested unless separately exercised.
+6. Record source, installed, actual-client and physical results separately under
+   [installation and evidence](../../docs/sdlc.md#installation-and-evidence).
+   Independent reviews, applicable CI and normal protected merges remain required.
 
 ## Inputs and authority
 
@@ -838,7 +871,10 @@ systemd, start the preserved direct baseline unit and verify identity/health on
 latest state. A mismatched override or failed recovery needs inspection and a
 truthful failed/interrupted receipt, not an automatic retry or backup restore.
 
-Verify the baseline through the anchor before the candidate upgrade. Then check
-the candidate, recovery on latest state and re-upgrade in the coordinated runtime
-window. Record source qualification, first adoption, installed running/health
-verification and dependent ONN physical acceptance as separate results.
+Verify the baseline through the anchor before the candidate upgrade. Use the
+[initial qualification checklist](#initial-qualification-checklist) for one
+forward upgrade in the coordinated runtime window. Recovery occurs only after
+an actual failure under the exact approved plan; end that window without
+re-upgrade. Record source qualification, first adoption, installed running/health
+verification and dependent ONN physical acceptance separately, with deliberate
+live recovery and re-upgrade untested unless separately exercised.
