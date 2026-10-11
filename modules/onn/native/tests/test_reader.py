@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, pathlib, subprocess, shlex, unittest, os, fcntl, math
+import json, pathlib, subprocess, shlex, unittest, os, fcntl, math, tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 CLASSES=pathlib.Path(os.environ["ONN_NATIVE_TEST_CLASSES"]).resolve()
 class ReaderTests(unittest.TestCase):
@@ -121,4 +121,11 @@ class ReaderTests(unittest.TestCase):
    result=subprocess.run(["bash","-c",f"exec 3>&{write_fd} 1>/dev/null 2>/dev/null; exec "+shlex.join(cmd)],pass_fds=(write_fd,),capture_output=True,timeout=5.5)
    self.assertEqual(result.returncode,2)
   finally:os.close(read_fd);os.close(write_fd)
+ def test_regular_file_output_descriptor_is_refused_without_modification(self):
+  with tempfile.TemporaryFile(dir=CLASSES.parent) as stream:
+   original=b"SYNTHETIC_UNRELATED_FILE";stream.write(original);stream.flush();stream.seek(0)
+   cmd=["java","-Dscenario=selected","-cp",str(CLASSES),"OnnMetadataReader"]
+   result=subprocess.run(["bash","-c",f"exec 3>&{stream.fileno()} 1>/dev/null 2>/dev/null; exec "+shlex.join(cmd)],pass_fds=(stream.fileno(),),capture_output=True,timeout=6)
+   self.assertEqual(result.returncode,2);self.assertEqual(result.stdout,b"");self.assertEqual(result.stderr,b"")
+   stream.seek(0);self.assertEqual(stream.read(),original)
 if __name__=="__main__": unittest.main()

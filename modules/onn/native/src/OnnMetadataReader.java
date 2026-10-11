@@ -1,6 +1,8 @@
 import java.io.FileOutputStream;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -312,7 +314,11 @@ public final class OnnMetadataReader {
     public static void main(String[] args) {
         int exit = 2;
         try {
-            final Sink sink = new Sink(new FileOutputStream("/proc/self/fd/3"));
+            // Missing inherited fd3 can be reused by the VM for a regular file.
+            // Refuse it before opening; never truncate a descriptor target.
+            String target = Files.readSymbolicLink(Paths.get("/proc/self/fd/3")).toString();
+            if (!target.matches("pipe:\\[[0-9]+\\]")) throw new IllegalStateException();
+            final Sink sink = new Sink(new FileOutputStream("/proc/self/fd/3", true));
             Thread watchdog = new Thread(new Runnable() {
                 public void run() {
                     try { Thread.sleep(DEADLINE_MS); } catch (InterruptedException ignored) { return; }
