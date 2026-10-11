@@ -66,25 +66,28 @@ public final class OnnMetadataReader {
         if (at >= 0 && decodeAscii(authority.substring(0, at)).indexOf(':') >= 0) {
             url = url.substring(0, start) + REDACTED + authority.substring(at) + url.substring(end);
         }
-        int query = url.indexOf('?');
         int fragment = url.indexOf('#');
-        if (query < 0 || (fragment >= 0 && fragment < query)) return url;
-        int queryEnd = fragment < 0 ? url.length() : fragment;
-        StringBuilder out = new StringBuilder(url.substring(0, query + 1));
-        int cursor = query + 1;
-        while (cursor < queryEnd) {
+        String base = fragment < 0 ? url : url.substring(0, fragment);
+        int query = base.indexOf('?');
+        if (query >= 0) base = base.substring(0, query + 1) + redactParameters(base.substring(query + 1));
+        return base + (fragment < 0 ? "" : "#" + redactParameters(url.substring(fragment + 1)));
+    }
+    private static String redactParameters(String source) {
+        StringBuilder out = new StringBuilder();
+        int cursor = 0;
+        while (cursor < source.length()) {
             int next = cursor;
-            while (next < queryEnd && url.charAt(next) != '&' && url.charAt(next) != ';') next++;
-            String item = url.substring(cursor, next);
+            while (next < source.length() && source.charAt(next) != '&' && source.charAt(next) != ';') next++;
+            String item = source.substring(cursor, next);
             int equals = item.indexOf('=');
             if (equals >= 0 && credentialQueryKey(item.substring(0, equals)) && equals + 1 < item.length()) {
                 item = item.substring(0, equals + 1) + REDACTED;
             }
             out.append(item);
-            if (next < queryEnd) out.append(url.charAt(next));
+            if (next < source.length()) out.append(source.charAt(next));
             cursor = next + 1;
         }
-        return out.append(url.substring(queryEnd)).toString();
+        return out.toString();
     }
     private static boolean schemeChar(char c) {
         return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.';

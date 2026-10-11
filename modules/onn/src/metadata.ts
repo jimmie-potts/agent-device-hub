@@ -60,6 +60,15 @@ const redactPlain = (value:string):string => value
  .replace(authorization,(_match:string,prefix:string,scheme:string|undefined)=>`${prefix}${scheme===undefined?'':scheme+' '}${REDACTED}`)
  .replace(assignment,(_match:string,prefix:string)=>prefix+REDACTED)
  .replace(bearer,(match:string,prefix:string,token:string)=>token.length>=8 && /[^a-z]/i.test(token)?prefix+REDACTED:match);
+const redactParameters = (source:string):string => {
+ const parts=source.split(/([&;])/);
+ for(let i=0;i<parts.length;i+=2){
+  const item=parts[i]??'', equals=item.indexOf('=');
+  const key=decodeAscii(item.slice(0,equals)).toLowerCase().replaceAll('-','_');
+  if(equals>=0 && credentialKeys.has(key) && equals+1<item.length)parts[i]=item.slice(0,equals+1)+REDACTED;
+ }
+ return parts.join('');
+};
 const redactUrl = (source:string):string => {
  let url=source;
  const start=url.indexOf('://')+3;
@@ -67,16 +76,11 @@ const redactUrl = (source:string):string => {
  for(const delimiter of ['/','?','#']){const found=url.indexOf(delimiter,start);if(found>=0 && found<end)end=found;}
  const authority=url.slice(start,end), at=authority.lastIndexOf('@');
  if(at>=0 && decodeAscii(authority.slice(0,at)).includes(':'))url=url.slice(0,start)+REDACTED+authority.slice(at)+url.slice(end);
- const query=url.indexOf('?'), fragment=url.indexOf('#');
- if(query<0 || fragment>=0 && fragment<query)return url;
- const queryEnd=fragment<0?url.length:fragment;
- const parts=url.slice(query+1,queryEnd).split(/([&;])/);
- for(let i=0;i<parts.length;i+=2){
-  const item=parts[i]??'', equals=item.indexOf('=');
-  const key=decodeAscii(item.slice(0,equals)).toLowerCase().replaceAll('-','_');
-  if(equals>=0 && credentialKeys.has(key) && equals+1<item.length)parts[i]=item.slice(0,equals+1)+REDACTED;
- }
- return url.slice(0,query+1)+parts.join('')+url.slice(queryEnd);
+ const fragment=url.indexOf('#');
+ let base=fragment<0?url:url.slice(0,fragment);
+ const query=base.indexOf('?');
+ if(query>=0)base=base.slice(0,query+1)+redactParameters(base.slice(query+1));
+ return base+(fragment<0?'':'#'+redactParameters(url.slice(fragment+1)));
 };
 const javaWhitespace = (value:string):boolean => {
  const code=value.charCodeAt(0);

@@ -1,4 +1,4 @@
-import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
+import {createHash, createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {SdkError, fullDisk} from '@jimmie-potts/sdk';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
@@ -46,7 +46,7 @@ export type HistoryDetail = {
 };
 type HistoryFilters = {app: HistoryApp | null; fromMs: number | null; toMs: number | null; title: string | null; limit: number};
 type DetailFilters = {id: string; limit: number};
-type Cursor = {version: 1; kind: 'history' | 'detail'; filters: HistoryFilters | DetailFilters; cutoff: number; after: number};
+type Cursor = {version: 2; kind: 'history' | 'detail'; filterDigest: string; cutoff: number; after: number};
 type IntakeRow = Intake & {sequence: number; kind: 'sample' | 'gap'; payload: string; deviceElapsedMs: number | null; gapCount: number; reader: string | null};
 type SampleIntakeRow = IntakeRow & {kind: 'sample'; deviceElapsedMs: number; reader: string};
 type ObservationRow = {id: number; intakeSequence: number; occurrenceId: number; app: HistoryApp; receivedAtMs: number; session: string};
@@ -69,6 +69,7 @@ const canonical = (value: unknown): string => {
   return JSON.stringify(value);
 };
 const safeFailure = (error: unknown): ErrorBody => error instanceof SdkError ? error.body : errorBody(fullDisk(error) ? 'capacity' : 'unavailable', {detail: 'ONN history storage is unavailable'});
+const filterDigest = (filters: HistoryFilters | DetailFilters): string => createHash('sha256').update(canonical(filters)).digest('base64url');
 const invalid = (): ErrorBody => errorBody('invalid-request', {detail: 'invalid ONN history query or cursor'});
 const textFields = ['title', 'displayTitle', 'subtitle', 'artist', 'album', 'genre', 'description', 'mediaId'] as const;
 const project = (session: MetadataSession): SessionProjection => {
@@ -110,6 +111,7 @@ export class OnnHistoryStore {
       CREATE INDEX IF NOT EXISTS onn_history_app_evidence ON onn_history_observations(app,id DESC);
       CREATE INDEX IF NOT EXISTS onn_history_occurrence_evidence ON onn_history_observations(occurrenceId,intakeSequence DESC,id DESC);
       CREATE INDEX IF NOT EXISTS onn_history_occurrence_date ON onn_history_observations(occurrenceId,receivedAtMs DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS onn_history_occurrence_id ON onn_history_observations(occurrenceId,id DESC);
       CREATE INDEX IF NOT EXISTS onn_history_intake_observations ON onn_history_observations(intakeSequence DESC,id DESC);
       CREATE TABLE IF NOT EXISTS onn_history_gaps (sequence INTEGER PRIMARY KEY REFERENCES onn_history_intakes(sequence), reason TEXT NOT NULL) STRICT`);
     database.prepare('INSERT OR IGNORE INTO onn_history_key VALUES (1,?)').run(randomBytes(32).toString('hex'));
@@ -204,22 +206,22 @@ export class OnnHistoryStore {
     const payload = Buffer.from(canonical(value)).toString('base64url');
     return `${payload}.${createHmac('sha256',this.cursorKey).update(payload).digest('base64url')}`;
   }
-  private parseCursor(value: unknown, kind: Cursor['kind'], filters: Cursor['filters']): Cursor | undefined {
-    if (typeof value !== 'string' || value.length > 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) return undefined;
+  private parseCursor(value: unknown, kind: Cursor['kind'], filters: HistoryFilters | DetailFilters): Cursor | undefined {
+    if (typeof value !== 'string' || value.length > 512 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)) return undefined;
     const [payload, signature] = value.split('.');
     if (payload === undefined || signature === undefined) return undefined;
     const expected = createHmac('sha256',this.cursorKey).update(payload).digest(); const received = Buffer.from(signature,'base64url');
     if (received.length !== expected.length || !timingSafeEqual(expected,received)) return undefined;
     try {
       const cursor: unknown = JSON.parse(Buffer.from(payload,'base64url').toString());
-      if (!object(cursor) || !closed(cursor,['version','kind','filters','cutoff','after']) || cursor.version !== 1 || cursor.kind !== kind || canonical(cursor.filters) !== canonical(filters) || !integer(cursor.cutoff) || !integer(cursor.after) || cursor.cutoff > (this.latest()?.sequence ?? 0)) return undefined;
+      if (!object(cursor) || !closed(cursor,['version','kind','filterDigest','cutoff','after']) || cursor.version !== 2 || cursor.kind !== kind || cursor.filterDigest !== filterDigest(filters) || !integer(cursor.cutoff) || !integer(cursor.after) || cursor.cutoff > (this.latest()?.sequence ?? 0)) return undefined;
       return cursor as Cursor;
     } catch {return undefined;}
   }
-  private initial(kind: Cursor['kind'], filters: Cursor['filters']): Cursor {
+  private initial(kind: Cursor['kind'], filters: HistoryFilters | DetailFilters): Cursor {
     const cutoff = this.latest()?.sequence ?? 0;
     const row = this.database.prepare('SELECT id FROM onn_history_observations WHERE intakeSequence<=? ORDER BY intakeSequence DESC,id DESC LIMIT 1').get(cutoff) as {id: number} | undefined;
-    return {version:1,kind,filters,cutoff,after:(row?.id ?? 0)+1};
+    return {version:2,kind,filterDigest:filterDigest(filters),cutoff,after:(row?.id ?? 0)+1};
   }
   private observation(row: ObservationRow): HistoryObservation {
     const intake = this.database.prepare('SELECT * FROM onn_history_intakes WHERE sequence=?').get(row.intakeSequence) as SampleIntakeRow;

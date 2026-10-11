@@ -36,6 +36,28 @@ const fixture = () => {
 const present = <T>(value: T | null | undefined): T => {assert.ok(value !== null && value !== undefined);return value;};
 const page = (value: ReturnType<OnnHistoryStore['history']>): HistoryPage => {assert.ok(!('error' in value),JSON.stringify(value));return value;};
 const detail = (value: ReturnType<OnnHistoryStore['detail']>): HistoryDetail => {assert.ok(!('error' in value),JSON.stringify(value));return value;};
+void test('recognized fragment credentials never reach immutable originals or returned observations',()=>{
+  const f=fixture();try{
+    f.put([session('youtube','before https://example.invalid/callback#access_token=SYNTHETIC_SECRET_123&chapter=2 after')]);
+    const original=f.database.prepare("SELECT payload FROM onn_history_intakes WHERE kind='sample'").get() as {payload:string};
+    assert.equal(original.payload.includes('SYNTHETIC_SECRET_123'),false);
+    const item=present(page(f.store.history({})).items[0]);
+    assert.equal(item.observation.metadata?.title,'before https://example.invalid/callback#access_token=[REDACTED]&chapter=2 after');
+    assert.deepEqual(item.observation.omissions,[{field:'title',reason:'credential-redacted'}]);
+  }finally{f.close();}
+});
+void test('detail query uses an occurrence and evidence range without sorting the archive',()=>{
+  const f=fixture();try{
+    f.put([session('youtube','first','stable')]);f.put([session('youtube','second','stable')]);
+    const prepare=f.database.prepare.bind(f.database);let sql:string|undefined;
+    f.database.prepare=(query:string)=>{if(query.includes('WHERE occurrenceId=? AND id<?'))sql=query;return prepare(query);};
+    const id=present(page(f.store.history({})).items[0]).id;
+    assert.equal(detail(f.store.detail({id,limit:1})).observations.length,1);assert.ok(sql!==undefined);
+    const plan=prepare('EXPLAIN QUERY PLAN '+sql).all(Number(id.slice(4)),3,2) as Array<{detail:string}>;
+    assert.ok(plan.every(row=>!row.detail.includes('TEMP B-TREE')),JSON.stringify(plan));
+    assert.ok(plan.some(row=>row.detail.includes('occurrenceId=? AND id<?')),JSON.stringify(plan));
+  }finally{f.close();}
+});
 void test('both apps and same-title unsupported identities remain separate with source semantics and nulls', () => {
   const f=fixture();try {
     f.put([session('youtube','Unicode 👩🏽‍🚀 café 漢字')]);f.put([session('stremio','Unicode 👩🏽‍🚀 café 漢字')]);f.put([session('stremio','Unicode 👩🏽‍🚀 café 漢字')]);

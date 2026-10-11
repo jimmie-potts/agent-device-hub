@@ -55,6 +55,9 @@ void test('recognized credentials are narrowly redacted and omissions stay idemp
  ['hello password="synthetic secret" goodbye','hello password=[REDACTED] goodbye'],
  ['https://bob:synthetic@example.test/view?access%5Ftoken=synthetic&v=abc#chapter','https://[REDACTED]@example.test/view?access%5Ftoken=[REDACTED]&v=abc#chapter'],
  ['https://example.test/view?token=synthetic#chapter','https://example.test/view?token=[REDACTED]#chapter'],
+ ['before https://example.test/callback#access_token=synthetic&chapter=2 after','before https://example.test/callback#access_token=[REDACTED]&chapter=2 after'],
+ ['https://example.test/view?token=one#refresh%5Ftoken=two;id-token=three&chapter=2','https://example.test/view?token=[REDACTED]#refresh%5Ftoken=[REDACTED];id-token=[REDACTED]&chapter=2'],
+ ['https://example.test/view#chapter?ordinary=yes','https://example.test/view#chapter?ordinary=yes'],
  ['https://bob@example.test/view?key=ordinary','https://bob@example.test/view?key=ordinary'],
  ];
  for(const [source,expected] of cases){

@@ -8,7 +8,7 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createOnnModule} from '../src/module.js';
 import type {OnnTransport, AppObservation} from '../src/transport.js';
 import type {MetadataSample} from '../src/metadata.js';
-import type {HistoryPage, HistoryState} from '../src/history.js';
+import type {HistoryDetail, HistoryPage, HistoryState} from '../src/history.js';
 
 const section = {id:'onn',configurationRevision:1,adbSocket:'/not-configured/s',serial:'192.0.2.10:12345',hostExecutable:'/not-configured/adb',hostExecutableSha256:'0'.repeat(64),hostVersion:'37.0.1',hostKeyDirectory:'/not-configured/keys',historyEnabled:true};
 const sample = (title = 'Synthetic selected title', state = 3): MetadataSample => ({schema:'onn-metadata/2.0',deviceElapsedMs:1000,sessions:[{app:'youtube',metadata:{title,displayTitle:null,subtitle:null,artist:'Synthetic channel',album:null,genre:null,description:null,mediaId:'synthetic-id',durationMs:120000},playback:{state,positionMs:10000,speed:state===2?0:1,positionUpdatedElapsedMs:1000},omissions:[]}]});
@@ -64,7 +64,15 @@ void test('disabled collection preserves a read API without accepting accidental
 });
 void test('collection storage failure refuses intake, preserves originals and records loss on recovery',async context=>{
   const f=await fixture(context,{read:()=>Promise.resolve({app:'youtube',metadata:sample()}),execute:()=>Promise.resolve({result:'succeeded',evidence:'transmitted',connection:'available'})});
-  await f.clock.tick(0);const db=f.host.moduleDatabase();assert.ok(db);const count=db.prepare('SELECT count(*) AS n FROM onn_history_intakes').get();
+  await f.clock.tick(0);await f.clock.tick(5000);const db=f.host.moduleDatabase();assert.ok(db);const count=db.prepare('SELECT count(*) AS n FROM onn_history_intakes').get();
+  const before=await f.value<HistoryPage>('history');const id=before.items[0]?.id;assert.ok(id!==undefined&&id.length>0);
+  const firstDetail=await f.value<HistoryDetail>('history-detail',{id,limit:'1'});assert.ok(firstDetail.nextCursor!==null&&firstDetail.nextCursor.length>0);
   db.exec('PRAGMA query_only=ON');await f.clock.tick(5000);const failed=await f.value<HistoryState>('history-state');assert.equal(failed.status,'unavailable');assert.equal(failed.coverage.storageAvailable,false);assert.deepEqual(db.prepare('SELECT count(*) AS n FROM onn_history_intakes').get(),count);
+  const page=await f.value<HistoryPage>('history');assert.equal(page.coverage.storageAvailable,false);assert.deepEqual(page.coverage.pendingGap,failed.coverage.pendingGap);
+  const occurrence=page.items[0];assert.ok(occurrence);
+  const detail=await f.value<HistoryDetail>('history-detail',{id:occurrence.id});assert.equal(detail.coverage.storageAvailable,false);assert.deepEqual(detail.coverage.pendingGap,failed.coverage.pendingGap);
+  const older=await f.value<HistoryDetail>('history-detail',{id,limit:'1',cursor:firstDetail.nextCursor});assert.equal(older.cutoff,firstDetail.cutoff);assert.deepEqual(older.coverage.pendingGap,failed.coverage.pendingGap);assert.equal(older.coverage.storageAvailable,false);
+  assert.deepEqual(await f.tool('history'),page);assert.deepEqual(await f.tool('history_detail',{id:occurrence.id}),detail);
   db.exec('PRAGMA query_only=OFF');await f.clock.tick(5000);const recovered=await f.value<HistoryState>('history-state');assert.ok(recovered.coverage.recentGaps.some(gap=>gap.reason==='storage'));assert.equal((await f.value<HistoryPage>('history')).items.length,2);
+  const restored=await f.value<HistoryPage>('history');assert.equal(restored.coverage.storageAvailable,true);assert.equal(restored.coverage.pendingGap,null);
 });

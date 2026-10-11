@@ -87,6 +87,11 @@ class ReaderTests(unittest.TestCase):
   value=self.run_reader("ordinary")[1]["sessions"][0]
   self.assertEqual(value["metadata"]["title"],"Bearer bonds Password stories https://example.test/watch?v=abc&key=ordinary bob@example.test")
   self.assertEqual(value["omissions"],[])
+ def test_fragment_credentials_excluded_and_ordinary_fragment_preserved(self):
+  code,value,result=self.run_reader("fragment-credential");self.assertEqual(code,0)
+  self.assertNotIn(b"private123",result.stdout)
+  self.assertEqual(value["sessions"][0]["metadata"]["title"],"before https://example.test/callback#access%5Ftoken=[REDACTED]&chapter=2 after")
+  self.assertEqual(value["sessions"][0]["omissions"],[{"field":"title","reason":"credential-redacted"}])
  def test_fixed_arguments_errors_and_deadline(self):
   self.assert_failure("selected",["private-arg"]);self.assert_failure("throw");self.assert_failure("hang")
  def test_short_explicit_auth_and_url_fragment_preservation(self):

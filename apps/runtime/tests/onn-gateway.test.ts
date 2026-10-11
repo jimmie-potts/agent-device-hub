@@ -10,6 +10,22 @@ import {edgeConfig, it, run, stateDir, waitFor} from './support.js';
 const operator = {source: 'bunny/parts/operator', token: 'synthetic-onn-operator', scopes: ['read', 'control'] as const};
 const reader = {source: 'bunny/parts/reader', token: 'synthetic-onn-reader', scopes: ['read'] as const};
 
+it('long Unicode title filters continue through HTTP and MCP with the same bounded cursor',async context=>{
+  const device=new SimulatedOnn();device.act('physical-youtube');const title='界'.repeat(256);
+  const transport={read:async(signal:AbortSignal)=>{const observed=await device.read(signal);assert.ok(observed?.metadata);const selected=observed.metadata.sessions[0];assert.ok(selected?.metadata);selected.metadata.title=title;selected.metadata.mediaId=null;observed.metadata.sessions=[selected,structuredClone(selected)];return observed;},execute:device.execute.bind(device)};
+  const scheduler={after:(ms:number,work:()=>void)=>{let active=true;if(ms===0)queueMicrotask(()=>{if(active)work();});return()=>{active=false;};}};
+  const files=await edgeConfig(context,[reader],{mcp:true,modules:{onn:ONN_SIMULATED_SECTION}}),privateState=await stateDir(context);
+  const {runtime}=await run(context,{stateDir:privateState,configFile:files.config,modules:[createCoreModule(),createOnnModule({transport})],edge:{schemas:onnSchemas},scheduler});
+  const get=(query:URLSearchParams)=>fetch(new URL('/modules/onn/content/history?'+query.toString(),runtime.url),{headers:{Authorization:`Bearer ${reader.token}`}});
+  const query=new URLSearchParams({title,limit:'1'});await waitFor(async()=>{const response=await get(query);return response.ok&&(await response.json() as HistoryPage).items.length===1;});
+  const first=await (await get(query)).json() as HistoryPage;assert.ok(first.nextCursor!==null&&first.nextCursor.length>0);
+  query.set('cursor',first.nextCursor);const continued=await get(query);assert.equal(continued.status,200,'the returned cursor must fit the gateway contract');
+  assert.ok(first.nextCursor.length<=512);const second=await continued.json() as HistoryPage;assert.equal(second.items.length,1);assert.notEqual(second.items[0]?.id,first.items[0]?.id);assert.equal(second.cutoff,first.cutoff);
+  const client=new Client({name:'onn-unicode-pagination',version:'1'});context.after(()=>client.close());
+  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp',runtime.url),{requestInit:{headers:{Authorization:`Bearer ${reader.token}`}}}) as unknown as Transport);
+  const called=await client.callTool({name:'onn_history',arguments:{title,limit:1,cursor:first.nextCursor}});assert.equal(called.isError,false);assert.deepEqual(called.structuredContent,{kind:'extension',data:{result:second}});assert.equal(device.effects,0);
+});
+
 it('a real MCP protocol client discovers ONN state and sends the same authenticated typed actions without retaining text', async context => {
   const files = await edgeConfig(context, [operator, reader], {mcp: true, modules: {onn: ONN_SIMULATED_SECTION}}), device = new SimulatedOnn();
   const privateState = await stateDir(context);

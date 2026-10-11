@@ -119,6 +119,11 @@ changes cannot reorder a cutoff page. Reuse the same filters and limit with a
 returned cursor. An empty filtered page can still have continuation. Detail
 pages retain contributing observations at the same cutoff.
 
+Retained gaps and observations follow that cutoff. `storageAvailable` and
+`pendingGap` report the collector's current known storage health, including a
+failed intake not yet persisted, even when reading an older cutoff page. A
+successful recovery persists the gap and clears the pending failure.
+
 Each accepted original projection is retained privately and indefinitely in the
 module's existing database, including intake/run/poll identity, host/device
 times, reader identity and omissions. Stable source IDs can group continuous

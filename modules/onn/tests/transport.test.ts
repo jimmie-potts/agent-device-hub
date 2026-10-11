@@ -5,6 +5,7 @@ import {createServer, type Socket} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {READER_SHA256, READER_DEVICE_PATH} from '../src/reader-artifact.js';
 import {AdbTransport, type OnnAction} from '../src/transport.js';
 import type {OnnConfig} from '../src/configuration.js';
 const frame = (value: string): Buffer => Buffer.concat([Buffer.from(Buffer.byteLength(value).toString(16).padStart(4, '0')), Buffer.from(value)]);
@@ -50,7 +51,7 @@ async function fake(context: TestContext, mode: Mode): Promise<{transport: AdbTr
           else if (mode === 'missing-exit') socket.end(Buffer.concat([Buffer.from('OKAY'), packet(1, '')]));
           else if (mode === 'artifact-missing' && request.includes('sha256sum')) socket.end(Buffer.concat([Buffer.from('OKAY'), packet(3, Buffer.from([1]))]));
           else {
-            const stdout = request.includes('sha256sum') ? `${mode === 'artifact-mismatch' ? '0'.repeat(64) : 'c948826d04a4476f7a86d353e798d5a60d0e78adbf1a019604a8fbe46ab0ca76'}  /data/local/tmp/bunny-onn-metadata/c948826d04a4476f7a86d353e798d5a60d0e78adbf1a019604a8fbe46ab0ca76.dex\n`
+            const stdout = request.includes('sha256sum') ? `${mode === 'artifact-mismatch' ? '0'.repeat(64) : READER_SHA256}  ${READER_DEVICE_PATH}\n`
               : request.includes('app_process') ? mode === 'metadata-invalid' ? 'not JSON\n' : mode === 'metadata-oversize' ? 'x'.repeat(262_145) : JSON.stringify(metadataSample) + '\n'
               : request.includes('resolve-activity') ? 'com.stremio.one/com.stremio.tv.MainActivity\n'
               : request.includes('am start') ? 'Status: ok\nActivity: com.stremio.one/com.stremio.tv.MainActivity\n'

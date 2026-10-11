@@ -96,14 +96,20 @@ class OnnOwner {
     this.#poll = this.#context.scheduler.after(0, () => this.#read());
   }
   status(): OnnState {return structuredClone(this.#state);}
+  #withCollectionLoss<T extends {coverage:HistoryState['coverage']}>(value:T | ErrorBody):T | ErrorBody {
+    // Durable evidence stays at the cursor cutoff; collection health is current owner knowledge.
+    if(!('error'in value)&&this.#storageLoss!==undefined){value.coverage.storageAvailable=false;value.coverage.pendingGap={...this.#storageLoss,reason:'storage'};}
+    return value;
+  }
   #historyState(): HistoryState {
     const state=this.#history.status(this.#context.clock.now(),this.#config.historyEnabled===true);
-    if(this.#storageLoss!==undefined){state.status=state.enabled?'unavailable':'disabled';state.currentEvidence=state.lastAccepted===null?'none':'last-observed';state.coverage.storageAvailable=false;state.coverage.pendingGap={...this.#storageLoss,reason:'storage'};}
+    this.#withCollectionLoss(state);
+    if(this.#storageLoss!==undefined){state.status=state.enabled?'unavailable':'disabled';state.currentEvidence=state.lastAccepted===null?'none':'last-observed';}
     return state;
   }
   #historyRecord():HistoryState & {id:string;revision:number;configurationRevision:number} {return {...this.#historyState(),id:this.#config.id,revision:this.#state.revision,configurationRevision:this.#config.configurationRevision};}
-  history(args:unknown): HistoryPage | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#history.history(args);}
-  historyDetail(args:unknown): HistoryDetail | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#history.detail(args);}
+  history(args:unknown): HistoryPage | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#withCollectionLoss(this.#history.history(args));}
+  historyDetail(args:unknown): HistoryDetail | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#withCollectionLoss(this.#history.detail(args));}
   content(ref:string,request?:ModuleContentRequest) {
     if(this.#stopped)return errorBody('unavailable',{detail:'ONN has stopped'});
     if(request?.signal.aborted===true)return errorBody('cancelled',{detail:'ONN history read was cancelled'});

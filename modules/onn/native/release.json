@@ -1,9 +1,9 @@
 {
   "schema": "onn-native-release/1",
   "readerSchema": "onn-metadata/2.0",
-  "sourceVersion": "onn-metadata/2.0-native-1",
-  "sourceSha256": "5a81e28f0cc05b9e76b7bf267892dc9beb876f226ac7db7dbefe93ece9a5fef2",
-  "dexSha256": "c948826d04a4476f7a86d353e798d5a60d0e78adbf1a019604a8fbe46ab0ca76",
+  "sourceVersion": "onn-metadata/2.0-native-2",
+  "sourceSha256": "2109727cb3045ed534abb84feba34e5ec999cdea33f3b17a48f5add364e1d3f3",
+  "dexSha256": "3edaac607809711e0eb3ce72a1be86800e60cac3e4840eb23b39fed6f56132f0",
   "r8Sha256": "900dfbc649519969fc5a4c7520d6b7355338e565fa1249874e0190b8d61b1199",
   "r8Version": "8.3.37",
   "javaRelease": 8,
