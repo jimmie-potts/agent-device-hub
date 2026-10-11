@@ -1,0 +1,1 @@
+package android.app; public class ActivityThread { static { System.out.println("STARTUP CHATTER"); System.err.println("PRIVATE STARTUP ERROR"); } public static ActivityThread systemMain(){ return new ActivityThread(); } public android.content.Context getSystemContext(){return new android.content.Context();} }

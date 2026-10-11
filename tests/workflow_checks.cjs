@@ -282,7 +282,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
-      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:roborock:consumer:built', 'npm run test:bb8:built', 'npm run test:bb8-windows:built', 'npm run test:bb8:package:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
+      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:bb8:built', 'npm run test:bb8-windows:built', 'npm run test:bb8:package:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts', 'npm run test:bb8:browser', 'npm run test:roborock:browser', 'npm run test:onn:browser', 'npm run test:observability:browser'],
@@ -320,6 +320,11 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
       if: "contains(fromJSON(needs.select.outputs.groups), 'shared')",
       uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
       with: { 'python-version': '3.14', cache: 'pip', 'cache-dependency-path': 'requirements-contracts.txt' },
+    });
+    if (id === 'core') expectedSetup.push({
+      if: "contains(fromJSON(needs.select.outputs.groups), 'modules')",
+      uses: 'actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961',
+      with: { distribution: 'temurin', 'java-version': '21' },
     });
     assert.deepEqual(setup, expectedSetup);
     builds += instances(job) * job.steps.filter(step => step.run === 'npm run build').length;

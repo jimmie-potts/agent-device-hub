@@ -1,13 +1,16 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContentRequest, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {APPS, KEYS, keyCommand, textCommand} from './actions.js';
 import {configureOnn, type OnnConfig} from './configuration.js';
 import {FAMILIES, schemaOf, types, type Family, type Input, type OnnState} from './contracts.js';
 import {onnStatusSchema, onnValidator} from './families.js';
 import {canonical, OnnStore, type RequestRow} from './store.js';
 import {AdbTransport, type Attempt, type OnnAction, type OnnTransport} from './transport.js';
+import {OnnHistoryStore, type HistoryDetail, type HistoryPage, type HistoryState, type Intake} from './history.js';
+import {historyDetailQuerySchema, historyDetailSchema, historyPageSchema, historyQuerySchema} from './history-contract.js';
+import {validateMetadataSample} from './metadata.js';
 
 export const ACTION_LIMIT_MS = 5000, POLL_MS = 5000, STALE_MS = 15_000, MAX_PENDING = 16;
 const unknown = {status: 'unknown'} as const;
@@ -26,9 +29,12 @@ export function createOnnModule(options: {transport?: OnnTransport} = {}): Bunny
   let owner: OnnOwner | undefined;
   return {manifest: {name: 'onn', apiVersion: '1.3', configure: configureOnn,
     pages: [{id: 'controls', title: 'ONN', presentation: 'react'}],
+    content: (ref, request) => owner === undefined ? errorBody('unavailable', {detail:'ONN has not started'}) : owner.content(ref,request),
     tools: [{name: 'status', description: 'Read the configured ONN connection, neutral current app and qualified controls. App observations become stale after 15 seconds. Reading sends no control. Use core_send_command with onn-key-press, onn-app-open or onn-text; seeking requires a focused TV timeline. Results report transmission, not visible playback.',
       input: {type: 'object', additionalProperties: false, properties: {}}, output: onnStatusSchema,
-      read: () => owner === undefined ? errorBody('unavailable', {detail: 'ONN has not started'}) : owner.status()}]},
+      read: () => owner === undefined ? errorBody('unavailable', {detail: 'ONN has not started'}) : owner.status()},
+      {name:'history',description:'Read private retained ONN title observations with app, host-receive-date and title filters, evidence order and bounded cursor pages. YouTube records are selected-title observations and may cover advertisements. Reported progress is not watched time or completion. Reads operate stored data only.',input:historyQuerySchema,output:historyPageSchema,read:args=>owner===undefined?errorBody('unavailable',{detail:'ONN has not started'}):owner.history(args)},
+      {name:'history_detail',description:'Read a local ONN occurrence and its bounded contributing observation pages, source identity confidence, reported progress, omissions and collection gaps. No device or vendor lookup occurs. Source values do not establish attention, ad classification, watched time or completion.',input:historyDetailQuerySchema,output:historyDetailSchema,read:args=>owner===undefined?errorBody('unavailable',{detail:'ONN has not started'}):owner.historyDetail(args)}]},
     start: async context => {owner = new OnnOwner(context, options.transport); await owner.start();},
     stop: () => owner?.stop(),
   };
@@ -40,6 +46,7 @@ class OnnOwner {
   readonly #transport: OnnTransport;
   readonly #store: OnnStore;
   readonly #outbox: Outbox;
+  readonly #history: OnnHistoryStore;
   readonly #validator: MessageValidator = onnValidator();
   readonly #availability: DeviceAvailability;
   readonly #pending = new Map<string, Pending>();
@@ -52,6 +59,9 @@ class OnnOwner {
   #committing: Promise<void> = Promise.resolve();
   #running: Promise<void> | undefined;
   #reading: Promise<void> | undefined;
+  #readAbort: AbortController | undefined;
+  #pollNumber = 0;
+  #storageLoss: Intake | undefined;
   #poll: Cancel | undefined;
   #stale: Cancel | undefined;
   #stopped = false;
@@ -60,6 +70,7 @@ class OnnOwner {
     if (context.config === undefined) throw new Error('ONN started without configuration');
     this.#context = context; this.#config = context.config;
     this.#store = new OnnStore(context.database(), context.files);
+    this.#history = new OnnHistoryStore(context.database());
     this.#outbox = new Outbox({...context, database: context.database(), validator: this.#validator});
     this.#transport = transport ?? new AdbTransport(this.#config);
     this.#availability = new DeviceAvailability(context);
@@ -74,17 +85,38 @@ class OnnOwner {
       const result = this.#admitting.then(() => this.#accept(family, command));
       this.#admitting = result.then(() => {}, () => {}); return result;
     });
-    await sdk.serveSync(['device', 'onn-state'], request => ({revision: this.#state.revision, states: this.#states(request.data.families)}));
+    await sdk.serveSync(['device', 'onn-state', 'onn-history-state'], request => ({revision: this.#state.revision, states: this.#states(request.data.families)}));
     await this.#outbox.republish();
     for (const row of this.#store.unfinished()) await this.#commitOutcome(row,
       failure(row.requestId, row.state === 'started' ? 'uncertain-result' : 'unavailable', row.state === 'started'));
-    await this.#transaction(add => this.#records(add));
+    await this.#transaction(add => {
+      if(this.#config.historyEnabled===true)this.#history.gap({...this.#intake(),reason:'startup'});
+      this.#records(add);
+    });
     this.#poll = this.#context.scheduler.after(0, () => this.#read());
   }
   status(): OnnState {return structuredClone(this.#state);}
+  #historyState(): HistoryState {
+    const state=this.#history.status(this.#context.clock.now(),this.#config.historyEnabled===true);
+    if(this.#storageLoss!==undefined){state.status=state.enabled?'unavailable':'disabled';state.currentEvidence=state.lastAccepted===null?'none':'last-observed';state.coverage.storageAvailable=false;state.coverage.pendingGap={...this.#storageLoss,reason:'storage'};}
+    return state;
+  }
+  #historyRecord():HistoryState & {id:string;revision:number;configurationRevision:number} {return {...this.#historyState(),id:this.#config.id,revision:this.#state.revision,configurationRevision:this.#config.configurationRevision};}
+  history(args:unknown): HistoryPage | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#history.history(args);}
+  historyDetail(args:unknown): HistoryDetail | ErrorBody {return this.#stopped?errorBody('unavailable',{detail:'ONN has stopped'}):this.#history.detail(args);}
+  content(ref:string,request?:ModuleContentRequest) {
+    if(this.#stopped)return errorBody('unavailable',{detail:'ONN has stopped'});
+    if(request?.signal.aborted===true)return errorBody('cancelled',{detail:'ONN history read was cancelled'});
+    const query:Record<string,unknown>={...(request?.query??{})};
+    for(const key of ['fromMs','toMs','limit'])if(key in query){const raw=query[key];if(typeof raw!=='string'||! /^(0|[1-9][0-9]*)$/.test(raw))return errorBody('invalid-request',{detail:'invalid ONN history query'});query[key]=Number(raw);}
+    const value=ref==='history-state'?Object.keys(query).length===0?this.#historyState():errorBody('invalid-request',{detail:'ONN history state accepts no query'}):ref==='history'?this.history(query):ref==='history-detail'?this.historyDetail(query):errorBody('not-found',{detail:'no such ONN content reference'});
+    return 'error'in value?value:{type:'application/json',bytes:Buffer.from(JSON.stringify(value))};
+  }
+  #intake(): Intake {return {intakeId:`${this.#state.generation.epoch}-${this.#pollNumber}`,runId:this.#state.generation.epoch,poll:this.#pollNumber,receivedAtMs:this.#context.clock.now()};}
   #states(families: readonly string[]): StateDraft[] {
     return [
       ...(families.includes('onn-state') ? [{type: 'org.bunny.onn-state.updated', subject: this.#config.id, dataschema: schemaOf('onn-state'), data: this.#state}] : []),
+      ...(families.includes('onn-history-state') ? [{type:'org.bunny.onn-history-state.updated',subject:this.#config.id,dataschema:schemaOf('onn-history-state'),data:this.#historyRecord()}] : []),
       ...(families.includes('device') ? [{type: 'org.bunny.device.updated', subject: this.#config.id, dataschema: 'https://bunny.invalid/events/device/2.1', data: this.#device()}] : []),
     ];
   }
@@ -99,12 +131,12 @@ class OnnOwner {
   }
   #records(add: AddMessage, parent?: {traceparent: string}): void {
     this.#state.revision = this.#store.nextRevision();
-    for (const draft of this.#states(['device', 'onn-state'])) add(`bunny.state.${draft.type === 'org.bunny.device.updated' ? 'device' : 'onn-state'}.${this.#config.id}`, {kind: 'state', ...draft}, parent === undefined ? {} : {parent});
+    for (const draft of this.#states(['device', 'onn-state',...(this.#config.historyEnabled===true?['onn-history-state']:[])])) add(`bunny.state.${draft.type === 'org.bunny.device.updated' ? 'device' : draft.type==='org.bunny.onn-history-state.updated'?'onn-history-state':'onn-state'}.${this.#config.id}`, {kind: 'state', ...draft}, parent === undefined ? {} : {parent});
   }
   #transaction<T>(work: (add: AddMessage) => Synchronous<T>): Promise<T> {
     const result = this.#committing.then(async () => {
-      const state = structuredClone(this.#state), outcome = this.#lastOutcome, transmission = this.#lastTransmission;
-      try {return await this.#outbox.transaction(work);} catch (error) {this.#state = state; this.#lastOutcome = outcome; this.#lastTransmission = transmission; throw error;}
+      const state = structuredClone(this.#state), outcome = this.#lastOutcome, transmission = this.#lastTransmission, storageLoss=this.#storageLoss;
+      try {return await this.#outbox.transaction(work);} catch (error) {this.#state = state; this.#lastOutcome = outcome; this.#lastTransmission = transmission;this.#storageLoss=storageLoss; throw error;}
     });
     this.#committing = result.then(() => {}, () => {}); return result;
   }
@@ -155,6 +187,8 @@ class OnnOwner {
     }} finally {this.#running = undefined;}
   }
   async #execute(pending: Pending): Promise<void> {
+    this.#readAbort?.abort('control-priority');
+    await this.#reading;
     const {command, family, action} = pending, {requestId} = command.data;
     const row = this.#store.get(requestId); if (row === undefined || row.state !== 'accepted') return;
     const guard = this.#guards(command);
@@ -194,9 +228,9 @@ class OnnOwner {
       ...(result.code === undefined ? {} : {error: errorBody(result.code, {detail: result.result === 'uncertain' ? 'the ONN effect is uncertain; it will not be repeated' : 'ONN device work was refused'}).error})};
     await this.#finish(row, outcome, result.connection);
   }
-  async #bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  async #bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number, extra?: AbortSignal): Promise<T> {
     const controller = new AbortController(), cancel = this.#context.scheduler.after(ms, () => {controller.abort();});
-    const signal = AbortSignal.any([controller.signal, this.#context.signal, this.#stopSignal.signal]);
+    const signal = AbortSignal.any([controller.signal, this.#context.signal, this.#stopSignal.signal,...(extra===undefined?[]:[extra])]);
     try {signal.throwIfAborted(); return await work(signal);} finally {cancel(); controller.abort();}
   }
   #connection(connection: 'available' | 'unavailable'): void {
@@ -224,30 +258,43 @@ class OnnOwner {
   async #read(): Promise<void> {
     if (this.#stopped) return;
     const startedAt = this.#context.clock.now();
-    this.#reading = this.#observe();
+    this.#pollNumber+=1;
+    this.#readAbort=new AbortController();
+    this.#reading = this.#observe(this.#readAbort,this.#running!==undefined||this.#pending.size>0);
     try {await this.#reading;} finally {
       this.#reading = undefined;
+      this.#readAbort=undefined;
       if (!this.#stopped) this.#poll = this.#context.scheduler.after(Math.max(0, POLL_MS - (this.#context.clock.now() - startedAt)), () => this.#read());
     }
   }
-  async #observe(): Promise<void> {
+  async #observe(controller:AbortController,busy:boolean): Promise<void> {
     const call = this.#context.trace.start('bunny.device.call', {kind: 'client', attributes: {'bunny.device.id': this.#config.id, 'bunny.operation': 'snapshot'}});
     let observation: Awaited<ReturnType<OnnTransport['read']>>;
-    try {observation = await this.#bounded(signal => this.#transport.read(signal), ACTION_LIMIT_MS);} catch {observation = undefined;}
+    try {if(!busy)observation = await this.#bounded(signal => this.#transport.read(signal), ACTION_LIMIT_MS,controller.signal);} catch {observation = undefined;}
+    busy=busy||controller.signal.reason==='control-priority';
     call.end(observation === undefined ? 'error' : 'unset');
     if (this.#stopped) return;
-    if (observation === undefined) this.#availability.unreachable(this.#config.id, 'unavailable', call.context); else this.#availability.reached(this.#config.id, call.context);
+    if(!busy){if (observation === undefined) this.#availability.unreachable(this.#config.id, 'unavailable', call.context); else this.#availability.reached(this.#config.id, call.context);}
+    const intake=this.#intake(),loss=this.#storageLoss;
+    const metadata=validateMetadataSample(observation?.metadata);
     try {await this.#transaction(add => {
-      const connection = observation === undefined ? 'unavailable' : 'available';
-      const currentApp = observation?.app === undefined ? unknown : {status: 'known' as const, value: observation.app, observedAtMs: this.#context.clock.now()};
-      if (connection === this.#state.connection && canonical(currentApp) === canonical(this.#state.currentApp)) return;
-      this.#connection(connection);
+      if(this.#config.historyEnabled===true){
+        if(loss!==undefined)this.#history.gap({...loss,intakeId:`storage-${loss.intakeId}`,reason:'storage'});
+        if(busy)this.#history.gap({...intake,reason:'busy'});
+        else if(metadata===undefined)this.#history.gap({...intake,reason:'unavailable'});
+        else this.#history.ingest({...intake,sample:metadata});
+      }
+      const connection = busy?this.#state.connection:observation === undefined ? 'unavailable' : 'available';
+      const currentApp = busy?this.#state.currentApp:observation?.app === undefined ? unknown : {status: 'known' as const, value: observation.app, observedAtMs: this.#context.clock.now()};
+      if (this.#config.historyEnabled!==true&&connection === this.#state.connection && canonical(currentApp) === canonical(this.#state.currentApp)) return;
+      if(connection!=='unknown')this.#connection(connection);
       this.#state.currentApp = currentApp;
+      this.#storageLoss=undefined;
       this.#records(add, call.context);
-    });} catch {return;}
+    });this.#storageLoss=undefined;} catch {if(this.#config.historyEnabled===true)this.#storageLoss??=intake;return;}
     this.#stale?.();
     this.#stale = this.#context.scheduler.after(STALE_MS, async () => {
-      if (this.#stopped || this.#state.currentApp.status === 'unknown') return;
+      if (this.#stopped || this.#state.currentApp.status === 'unknown'&&this.#config.historyEnabled!==true) return;
       try {await this.#transaction(add => {this.#state.currentApp = unknown; this.#records(add);});} catch { /* the last committed evidence retains its timestamp */ }
     });
   }

@@ -12,7 +12,8 @@ const packet = (id: number, body: string | Buffer): Buffer => {
   const payload = typeof body === 'string' ? Buffer.from(body) : body, head = Buffer.alloc(5);
   head[0] = id; head.writeUInt32LE(payload.length, 1); return Buffer.concat([head, payload]);
 };
-type Mode = 'okay' | 'version-refused' | 'version-silent' | 'selection-refused' | 'shell-silent' | 'partial-ack' | 'missing-exit' | 'nonzero' | 'lifetime' | 'oversize';
+type Mode = 'okay' | 'version-refused' | 'version-silent' | 'selection-refused' | 'shell-silent' | 'partial-ack' | 'missing-exit' | 'nonzero' | 'lifetime' | 'oversize' | 'metadata' | 'artifact-missing' | 'artifact-mismatch' | 'metadata-invalid' | 'metadata-silent' | 'metadata-oversize';
+const metadataSample = {schema: 'onn-metadata/2.0', deviceElapsedMs: 12_000, sessions: []};
 async function fake(context: TestContext, mode: Mode): Promise<{transport: AdbTransport; requests: string[]; config: OnnConfig}> {
   const dir = await mkdtemp(join(tmpdir(), 'onn-protocol-')); await chmod(dir, 0o700);
   const executable = join(dir, 'adb'), adbSocket = join(dir, 's'), key = join(dir, 'adbkey');
@@ -44,11 +45,14 @@ async function fake(context: TestContext, mode: Mode): Promise<{transport: AdbTr
             if (mode === 'lifetime') later(answer, 100); else answer();
           }
         } else if (request.startsWith('shell,v2,raw:')) {
-          if (mode === 'shell-silent') socket.write('OKAY');
+          if (mode === 'shell-silent' || mode === 'metadata-silent' && request.includes('app_process')) socket.write('OKAY');
           else if (mode === 'partial-ack') socket.end('OK');
           else if (mode === 'missing-exit') socket.end(Buffer.concat([Buffer.from('OKAY'), packet(1, '')]));
+          else if (mode === 'artifact-missing' && request.includes('sha256sum')) socket.end(Buffer.concat([Buffer.from('OKAY'), packet(3, Buffer.from([1]))]));
           else {
-            const stdout = request.includes('resolve-activity') ? 'com.stremio.one/com.stremio.tv.MainActivity\n'
+            const stdout = request.includes('sha256sum') ? `${mode === 'artifact-mismatch' ? '0'.repeat(64) : 'c948826d04a4476f7a86d353e798d5a60d0e78adbf1a019604a8fbe46ab0ca76'}  /data/local/tmp/bunny-onn-metadata/c948826d04a4476f7a86d353e798d5a60d0e78adbf1a019604a8fbe46ab0ca76.dex\n`
+              : request.includes('app_process') ? mode === 'metadata-invalid' ? 'not JSON\n' : mode === 'metadata-oversize' ? 'x'.repeat(262_145) : JSON.stringify(metadataSample) + '\n'
+              : request.includes('resolve-activity') ? 'com.stremio.one/com.stremio.tv.MainActivity\n'
               : request.includes('am start') ? 'Status: ok\nActivity: com.stremio.one/com.stremio.tv.MainActivity\n'
               : request.includes('dumpsys') ? 'com.google.android.youtube.tv\n' : mode === 'oversize' ? 'x'.repeat(16_385) : '';
             socket.end(Buffer.concat([Buffer.from('OKAY'), packet(1, stdout), packet(2, ''), packet(3, Buffer.from([mode === 'nonzero' ? 1 : 0]))]));
@@ -104,4 +108,21 @@ void test('unsafe dependencies refuse before socket access; read-only foreground
   const count = requests.length; await chmod(config.adbSocket, 0o666);
   assert.deepEqual(await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(1000)), {result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable'});
   assert.equal(requests.length, count);
+});
+
+void test('enabled history reads only the fixed release artifact and retains neutral foreground evidence', {timeout: 3000}, async context => {
+  const {transport, config, requests} = await fake(context, 'metadata');
+  Object.assign(config, {historyEnabled: true});
+  assert.deepEqual(await transport.read(AbortSignal.timeout(1000)), {app: 'youtube', metadata: metadataSample});
+  const commands = requests.filter(value => value.startsWith('shell,'));
+  assert.equal(commands.length, 3);
+  assert.equal(commands[1]?.includes('sha256sum /data/local/tmp/bunny-onn-metadata/'),true);
+  assert.equal(commands[2]?.includes('app_process /system/bin OnnMetadataReader'),true);
+  assert.ok(commands.every(value => !/input |am start|push|mkdir|chmod/.test(value)));
+});
+for (const mode of ['artifact-missing', 'artifact-mismatch', 'metadata-invalid', 'metadata-silent', 'metadata-oversize'] as const) void test(`${mode} loses metadata without inventing a foreground outage or sending a control`, {timeout: 3000}, async context => {
+  const {transport, config, requests} = await fake(context, mode); Object.assign(config, {historyEnabled: true});
+  assert.deepEqual(await transport.read(AbortSignal.timeout(150)), {app: 'youtube', metadataFailure: true});
+  if (mode === 'artifact-missing' || mode === 'artifact-mismatch') assert.equal(requests.some(value => value.includes('app_process')), false);
+  assert.ok(requests.every(value => !value.includes('input ') && !value.includes('am start')));
 });

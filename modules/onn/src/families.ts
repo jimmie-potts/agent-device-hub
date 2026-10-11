@@ -3,11 +3,13 @@ import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {APPS, KEYS} from './actions.js';
 import {FAMILIES, schemaOf, types, type OnnState} from './contracts.js';
+import {historyRecordSchema} from './history-contract.js';
 const block = (name: string): object => ({$ref: `${SCHEMA_BASE}blocks/2.0#/$defs/${name}`});
 const closed = (properties: Record<string, object>, required = Object.keys(properties)): object => ({type: 'object', additionalProperties: false, properties, required});
 const guards = {requestId: block('requestId'), expectedConfigurationRevision: block('revision'), expectedGeneration: block('ticket')};
 const commandSchema = (extra: Record<string, object>): object => closed({...guards, ...extra}, ['requestId', ...Object.keys(extra)]);
 const entries: Record<string, object> = {
+  'onn-history-state': historyRecordSchema,
   'onn-key-press': commandSchema({key: {enum: KEYS}}),
   'onn-app-open': commandSchema({app: {enum: APPS}}),
   'onn-text': commandSchema({text: {type: 'string', minLength: 1, maxLength: 256}}),
@@ -24,11 +26,11 @@ export function registerOnnFamilies(validator: MessageValidator): void {
     const family = id.slice(SCHEMA_BASE.length).split('/')[0];
     validator.register(id, body, (message: Message) => {
     const command = FAMILIES.some(value => value === family);
-    if (message.kind !== (command ? 'command' : 'state') || message.type !== (command ? types[family as typeof FAMILIES[number]] : 'org.bunny.onn-state.updated')) return 'ONN kind/type mismatch';
+    if (message.kind !== (command ? 'command' : 'state') || message.type !== (command ? types[family as typeof FAMILIES[number]] : family === 'onn-history-state' ? 'org.bunny.onn-history-state.updated' : 'org.bunny.onn-state.updated')) return 'ONN kind/type mismatch';
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(message.subject) || message.subject.length > 128) return 'ONN subject mismatch';
     if (!command) {
       const state = message.data as unknown as OnnState;
-      if (state.id !== message.subject || (state.currentApp.status === 'known' && state.currentApp.observedAtMs > Date.parse(message.time))) return 'ONN observation identity/time mismatch';
+      if (state.id !== message.subject || family === 'onn-state' && state.currentApp.status === 'known' && state.currentApp.observedAtMs > Date.parse(message.time)) return 'ONN observation identity/time mismatch';
     }
     return undefined;
     });

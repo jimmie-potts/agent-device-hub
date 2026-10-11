@@ -5,3 +5,4 @@ export {SimulatedOnn} from './simulated.js';
 export type {OnnState, Family, Input} from './contracts.js';
 export type {OnnConfig} from './configuration.js';
 export type {OnnTransport, OnnAction, Attempt} from './transport.js';
+export type {HistoryState, HistoryPage, HistoryDetail, HistoryOccurrence, HistoryObservation} from './history.js';
