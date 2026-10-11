@@ -10,7 +10,8 @@ import {CURRENT_APP_COMMAND, currentApp, keyCommand, launchCommand, launcherComm
 import type {OnnConfig} from './configuration.js';
 
 export type OnnAction = {kind: 'key'; key: Key} | {kind: 'app'; app: App} | {kind: 'text'; text: string};
-export type Attempt = {result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'none' | 'transmitted'; code?: ErrorCode};
+/** Connection evidence is independent of action success; local refusals leave it unknown. */
+export type Attempt = {result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'none' | 'transmitted'; code?: ErrorCode; connection: 'available' | 'unavailable' | 'unknown'};
 export type AppObservation = {app?: CurrentApp};
 export interface OnnTransport {
   execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined): Promise<Attempt>;
@@ -107,7 +108,7 @@ export class AdbTransport implements OnnTransport {
     } finally {end.abort();}
   }
   async execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined = () => undefined): Promise<Attempt> {
-    let possible = false, sent = false;
+    let possible = false, sent = false, answered = false;
     const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {sent = true;};
     try {
       let command: string | undefined;
@@ -115,20 +116,21 @@ export class AdbTransport implements OnnTransport {
       else if (action.kind === 'text') command = textCommand(action.text);
       else {
         const resolve = launcherCommand(action.app);
-        if (resolve === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability'};
+        if (resolve === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability', connection: 'unknown'};
         const launcher = await this.#shell(resolve, signal, false, wrote, transmitted);
-        if (launcher.exitCode !== 0 || launcher.stderr !== '') return {result: 'failed', evidence: 'none', code: 'not-found'};
+        answered = true;
+        if (launcher.exitCode !== 0 || launcher.stderr !== '') return {result: 'failed', evidence: 'none', code: 'not-found', connection: 'available'};
         command = launchCommand(action.app, launcher.stdout);
       }
-      if (command === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability'};
+      if (command === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability', connection: answered ? 'available' : 'unknown'};
       const response = await this.#shell(command, signal, true, wrote, transmitted);
       const launchOkay = action.kind !== 'app' || /^Status: ok\r?$/m.test(response.stdout);
       const outputOkay = action.kind === 'app' || response.stdout === '';
-      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: 'uncertain', evidence: sent ? 'transmitted' : 'none', code: 'uncertain-result'};
-      return {result: 'succeeded', evidence: 'transmitted'};
+      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: 'uncertain', evidence: sent ? 'transmitted' : 'none', code: 'uncertain-result', connection: 'available'};
+      return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};
     } catch (error) {
-      if (error instanceof EffectRefused) return {result: 'failed', evidence: 'none', code: error.code};
-      return {result: possible ? 'uncertain' : 'failed', evidence: sent ? 'transmitted' : 'none', code: possible ? 'uncertain-result' : 'unavailable'};
+      if (error instanceof EffectRefused) return {result: 'failed', evidence: 'none', code: error.code, connection: answered ? 'available' : 'unknown'};
+      return {result: possible ? 'uncertain' : 'failed', evidence: sent ? 'transmitted' : 'none', code: possible ? 'uncertain-result' : 'unavailable', connection: 'unavailable'};
     }
   }
   async read(signal: AbortSignal): Promise<AppObservation | undefined> {

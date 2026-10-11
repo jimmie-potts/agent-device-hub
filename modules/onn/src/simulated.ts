@@ -9,12 +9,12 @@ export class SimulatedOnn implements OnnTransport {
   effects = 0;
   execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined = () => undefined): Promise<Attempt> {
     signal.throwIfAborted();
-    const code = beforeEffect(); if (code !== undefined) return Promise.resolve({result: 'failed', evidence: 'none', code});
-    if (!this.online) return Promise.resolve({result: 'failed', evidence: 'none', code: 'unavailable'});
+    const code = beforeEffect(); if (code !== undefined) return Promise.resolve({result: 'failed', evidence: 'none', code, connection: 'unknown'});
+    if (!this.online) return Promise.resolve({result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable'});
     this.effects += 1;
     if (action.kind === 'app') this.app = action.app;
     if (action.kind === 'key' && action.key === 'home') this.app = 'other';
-    return Promise.resolve({result: 'succeeded', evidence: 'transmitted'});
+    return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});
   }
   read(signal: AbortSignal): Promise<AppObservation | undefined> {signal.throwIfAborted(); return Promise.resolve(this.online ? {app: this.app} : undefined);}
   state(): {online: boolean; app: CurrentApp; effects: number} {return {online: this.online, app: this.app, effects: this.effects};}

@@ -12,9 +12,9 @@ const simulation: DeviceSimulation<SimulatedOnn, SimulatedOnn> = {
     serve: (device, request) => request.method === 'execute' ? device.execute(request.args as OnnAction, request.signal) : device.read(request.signal),
     remote: link => createOnnModule({transport: {
       async execute(action, signal, beforeEffect) {
-        const code = beforeEffect(); if (code !== undefined) return {result: 'failed', evidence: 'none', code};
+        const code = beforeEffect(); if (code !== undefined) return {result: 'failed', evidence: 'none', code, connection: 'unknown'};
         const answer = await link.call('execute', action, signal);
-        return answer.status === 'answered' ? answer.value as Attempt : {result: 'uncertain', evidence: 'none', code: 'uncertain-result'};
+        return answer.status === 'answered' ? answer.value as Attempt : {result: 'uncertain', evidence: 'none', code: 'uncertain-result', connection: 'unavailable'};
       },
       async read(signal) {
         const answer = await link.call('read', {}, signal);

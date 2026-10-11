@@ -52,6 +52,9 @@ qualified controls. Read-only polling every five seconds reports only
 `youtube`, `stremio`, `other`, `none` or unknown; raw package names and private
 paths never appear in state. Current-app observations become stale after
 15 seconds. App launch transmission does not prove the foreground app changed.
+Commands update connection state from reachability evidence with their outcome.
+A local refusal preserves that state; unchanged offline polls publish no new
+state, while a fresh timestamped app observation remains new evidence.
 
 The queue holds at most 16 accepted pending actions including the in-flight
 action. One action has a five-second whole-operation deadline, shortened by
@@ -70,7 +73,8 @@ changed semantic input conflicts. Two deliberate presses use distinct IDs.
 Focused text remains in memory only. Both core and module admission retain a
 stable private HMAC, never plaintext or an unkeyed text hash. Each owner pins
 its key identity in its leased database. A missing, replaced or unsafe key
-refuses new text and retries, preserving old fences. Do not replace a key to
+refuses new text, retries and queued text at its final effect check, preserving
+old fences. Do not replace a key to
 recover a request. The dashboard clears submitted text immediately; it keeps
 no text in browser storage. Inbox Send again refuses omitted input before
 handling the original item; Dismiss remains available. Enter fresh text with

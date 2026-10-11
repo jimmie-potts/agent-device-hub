@@ -68,34 +68,40 @@ async function fake(context: TestContext, mode: Mode): Promise<{transport: AdbTr
 void test('a final guard refusal sends no effect service after ADB preparation', {timeout: 3000}, async context => {
   const {transport, requests} = await fake(context, 'okay');
   const result = await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(1000), () => 'revision-conflict');
-  assert.deepEqual(result, {result: 'failed', evidence: 'none', code: 'revision-conflict'});
+  assert.deepEqual(result, {result: 'failed', evidence: 'none', code: 'revision-conflict', connection: 'unknown'});
   assert.equal(requests.some(value => value.includes('input keyevent')), false);
 });
 
 for (const action of [{kind: 'key', key: 'right'}, {kind: 'text', text: 'bunny test'}, {kind: 'app', app: 'stremio'}] satisfies OnnAction[]) {
   void test(`${action.kind}: the exact serial receives one qualified effect through the private protocol`, {timeout: 3000}, async context => {
     const {transport, requests} = await fake(context, 'okay');
-    assert.deepEqual(await transport.execute(action, AbortSignal.timeout(1000)), {result: 'succeeded', evidence: 'transmitted'});
+    assert.deepEqual(await transport.execute(action, AbortSignal.timeout(1000)), {result: 'succeeded', evidence: 'transmitted', connection: 'available'});
     assert.equal(requests.filter(value => /shell,v2,raw:(input|am start)/.test(value)).length, 1);
     assert.ok(requests.every(value => value === 'host:version' || value.startsWith('host:tport:serial:192.0.2.10:12345') || value.startsWith('shell,v2,raw:')));
   });
 }
 for (const mode of ['version-refused', 'version-silent', 'selection-refused', 'lifetime'] as const) void test(`${mode}: whole deadline or dependency refusal writes no effect`, {timeout: 3000}, async context => {
   const {transport, requests} = await fake(context, mode);
-  assert.deepEqual(await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(150)), {result: 'failed', evidence: 'none', code: 'unavailable'});
+  assert.deepEqual(await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(150)), {result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable'});
   assert.equal(requests.filter(value => value.startsWith('shell,')).length, 0);
 });
 for (const mode of ['shell-silent', 'partial-ack', 'missing-exit', 'nonzero', 'oversize'] as const) void test(`${mode}: a possible effect remains uncertain and is never repeated`, {timeout: 3000}, async context => {
   const {transport, requests} = await fake(context, mode);
   const result = await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(150));
   assert.equal(result.result, 'uncertain'); assert.equal(result.code, 'uncertain-result');
+  assert.equal(result.connection, mode === 'nonzero' ? 'available' : 'unavailable');
   assert.equal(requests.filter(value => value.startsWith('shell,')).length, 1);
+});
+void test('a launcher refusal after Android answers is not a device outage and sends no launch', {timeout: 3000}, async context => {
+  const {transport, requests} = await fake(context, 'nonzero');
+  assert.deepEqual(await transport.execute({kind: 'app', app: 'stremio'}, AbortSignal.timeout(1000)), {result: 'failed', evidence: 'none', code: 'not-found', connection: 'available'});
+  assert.equal(requests.some(value => value.includes('am start')), false);
 });
 void test('unsafe dependencies refuse before socket access; read-only foreground state contains only a neutral app', {timeout: 3000}, async context => {
   const {transport, requests, config} = await fake(context, 'okay');
   assert.deepEqual(await transport.read(AbortSignal.timeout(1000)), {app: 'youtube'});
   assert.ok(requests.every(value => !value.includes('input ') && !value.includes('am start')));
   const count = requests.length; await chmod(config.adbSocket, 0o666);
-  assert.deepEqual(await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(1000)), {result: 'failed', evidence: 'none', code: 'unavailable'});
+  assert.deepEqual(await transport.execute({kind: 'key', key: 'right'}, AbortSignal.timeout(1000)), {result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable'});
   assert.equal(requests.length, count);
 });

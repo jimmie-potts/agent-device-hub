@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, unlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {InProcessBus} from '@jimmie-potts/sdk';
-import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {InProcessBus, type Scheduler} from '@jimmie-potts/sdk';
+import {ModuleHarness, type HarnessOptions} from '@jimmie-potts/sdk/testing';
 import {createOnnModule} from '../src/module.js';
 import {schemaOf, types, type Family} from '../src/contracts.js';
 import type {OnnAction, OnnTransport} from '../src/transport.js';
@@ -18,8 +18,8 @@ void test('the durable fence is rechecked at the transport effect boundary after
     execute: async (_action, _signal, beforeEffect: () => ErrorCode | undefined = () => undefined) => {
       prepared(); await gate;
       const code = beforeEffect();
-      if (code !== undefined) return {result: 'failed', evidence: 'none', code};
-      effects += 1; return {result: 'succeeded', evidence: 'transmitted'};
+      if (code !== undefined) return {result: 'failed', evidence: 'none', code, connection: 'unknown'};
+      effects += 1; return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};
     }});
   assert.equal((await command('onn-key-press', {key: 'right'}, 'effect-fence')).status, 'accepted');
   await ready;
@@ -30,21 +30,110 @@ void test('the durable fence is rechecked at the transport effect boundary after
   const row = database.prepare('SELECT record FROM onn_requests WHERE request_id = ?').get('effect-fence') as {record: string};
   assert.equal((JSON.parse(row.record) as {outcome: {result: string}}).outcome.result, 'failed');
 });
-async function setup(context: TestContext, transport: OnnTransport) {
+async function setup(context: TestContext, transport: OnnTransport, timing: Pick<HarnessOptions, 'clock' | 'scheduler'> = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'onn-boundary-')), bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator');
-  const host = new ModuleHarness(createOnnModule({transport}), {bus, stateDir: dir, section});
+  const states: Record<string, unknown>[] = [];
+  await operator.subscribe<Record<string, unknown>>('bunny.state.*.*', message => {states.push({...message.data, type: message.type});});
+  const host = new ModuleHarness(createOnnModule({transport}), {bus, stateDir: dir, section, ...timing});
   context.after(async () => {await host.stop(); await operator.close(); await rm(dir, {recursive: true, force: true});});
   await host.start();
   const command = (family: Family, data: object, requestId: string, target = 'onn', timeoutMs = 1000) => operator.request(`bunny.cmd.${family}.${target}`,
     {type: types[family], subject: target, dataschema: schemaOf(family), data}, {requestId, timeoutMs});
-  return {host, operator, command, dir, bus};
+  return {host, operator, command, dir, bus, states};
 }
+function controlledTime() {
+  let now = Date.now();
+  const timers: Array<{ms: number; callback: () => void; canceled: boolean}> = [];
+  const scheduler: Scheduler = {after: (ms, callback) => {
+    const timer = {ms, callback, canceled: false}; timers.push(timer); return () => {timer.canceled = true;};
+  }};
+  return {clock: {now: () => now}, scheduler, async tick(ms: number): Promise<void> {
+    const index = timers.findIndex(timer => !timer.canceled && timer.ms === ms); assert.ok(index >= 0);
+    const timer = timers.splice(index, 1)[0]; assert.ok(timer); now += ms; timer.callback(); await turns();
+  }};
+}
+for (const damage of ['missing', 'replaced'] as const) void test(`private key ${damage} during transport preparation refuses text without replay`, {timeout: 10_000}, async context => {
+  let prepared: () => void = () => {}, release: () => void = () => {}, effects = 0;
+  const ready = new Promise<void>(resolve => {prepared = resolve;}), gate = new Promise<void>(resolve => {release = resolve;});
+  const {command, host, dir} = await setup(context, {read: () => Promise.resolve({app: 'youtube'}),
+    execute: async (_action, _signal, beforeEffect) => {
+      prepared(); await gate; const code = beforeEffect();
+      if (code !== undefined) return {result: 'failed', evidence: 'none', code, connection: 'unknown' as const};
+      effects += 1; return {result: 'succeeded', evidence: 'transmitted', connection: 'available' as const};
+    }});
+  context.after(release);
+  const input = {text: 'SYNTHETIC_PRIVATE_KEY_BOUNDARY'};
+  assert.equal((await command('onn-text', input, `key-${damage}`)).status, 'accepted'); await ready;
+  const key = join(dir, 'onn', 'request-digest.key');
+  if (damage === 'missing') await unlink(key); else await writeFile(key, Buffer.alloc(32, 7));
+  release(); await turns();
+  assert.equal(effects, 0);
+  const database = host.moduleDatabase(); assert.ok(database);
+  const row = JSON.parse((database.prepare('SELECT record FROM onn_requests WHERE request_id = ?').get(`key-${damage}`) as {record: string}).record) as {state: string; outcome: {result: string; evidence: string; error: {code: string}}};
+  assert.equal(row.state, 'done'); assert.equal(row.outcome.result, 'failed'); assert.equal(row.outcome.evidence, 'none'); assert.equal(row.outcome.error.code, 'unavailable');
+  const retry = await command('onn-text', input, `key-${damage}`);
+  assert.equal('error' in retry && retry.error.error.code, 'unavailable'); assert.equal(effects, 0);
+});
+void test('a disconnected command immediately publishes unavailable state and a new generation', {timeout: 10_000}, async context => {
+  const time = controlledTime();
+  const {command, states} = await setup(context, {read: () => Promise.resolve({app: 'youtube'}), execute: () => Promise.resolve({result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable' as const})}, time);
+  await time.tick(0);
+  const before = states.filter(state => state.type === 'org.bunny.onn-state.updated').at(-1); assert.ok(before);
+  assert.equal(before.connection, 'available');
+  assert.equal((await command('onn-key-press', {key: 'right'}, 'disconnect')).status, 'accepted'); await turns();
+  const after = states.filter(state => state.type === 'org.bunny.onn-state.updated').at(-1); assert.ok(after);
+  assert.equal(after.connection, 'unavailable'); assert.deepEqual(after.currentApp, {status: 'unknown'});
+  assert.equal((after.generation as {sequence: number}).sequence, (before.generation as {sequence: number}).sequence + 1);
+  assert.equal(states.filter(state => state.type === 'org.bunny.device.updated').at(-1)?.availability, 'unavailable');
+});
+void test('local final-guard refusal preserves available state without outage or recovery diagnostics', {timeout: 10_000}, async context => {
+  const time = controlledTime(); let prepared: () => void = () => {}, release: () => void = () => {};
+  const ready = new Promise<void>(resolve => {prepared = resolve;}), gate = new Promise<void>(resolve => {release = resolve;});
+  const {command, host, states} = await setup(context, {read: () => Promise.resolve({app: 'youtube'}), execute: async (_action, _signal, beforeEffect) => {
+    prepared(); await gate; const code = beforeEffect(); assert.equal(code, 'internal'); return {result: 'failed', evidence: 'none', code, connection: 'unknown' as const};
+  }}, time);
+  context.after(release); await time.tick(0);
+  assert.equal((await command('onn-key-press', {key: 'right'}, 'local-guard')).status, 'accepted'); await ready;
+  const database = host.moduleDatabase(); assert.ok(database);
+  database.prepare("UPDATE onn_requests SET record = json_set(record, '$.digest', 'changed-fence') WHERE request_id = ?").run('local-guard');
+  release(); await turns(); await time.tick(5000);
+  assert.equal(states.filter(state => state.type === 'org.bunny.onn-state.updated').at(-1)?.connection, 'available');
+  assert.equal(host.logs.filter(record => ['device.unavailable', 'device.available'].includes(record.event)).length, 0);
+});
+void test('unchanged offline and unknown-app polls publish no state; new observations and recovery do', {timeout: 10_000}, async context => {
+  const time = controlledTime(); let observation: {app?: 'youtube'} | undefined;
+  const {states, host} = await setup(context, {read: () => Promise.resolve(observation), execute: () => Promise.reject(new Error('no effect permitted'))}, time);
+  await time.tick(0); const offlineCount = states.length;
+  await time.tick(5000); await time.tick(5000); assert.equal(states.length, offlineCount);
+  observation = {}; await time.tick(5000); const unknownAppCount = states.length;
+  assert.ok(unknownAppCount > offlineCount); await time.tick(5000); assert.equal(states.length, unknownAppCount);
+  observation = {app: 'youtube'}; await time.tick(5000);
+  const first = states.filter(state => state.type === 'org.bunny.onn-state.updated').at(-1); assert.ok(first);
+  const knownCount = states.length; await time.tick(5000); assert.equal(states.length, knownCount + 2);
+  const second = states.filter(state => state.type === 'org.bunny.onn-state.updated').at(-1); assert.ok(second);
+  assert.notDeepEqual(second.currentApp, first.currentApp, 'new timestamped evidence remains publishable');
+  assert.equal(host.logs.filter(record => record.event === 'device.unavailable' && record.level === 'warn').length, 1);
+  assert.equal(host.logs.filter(record => record.event === 'device.available').length, 1);
+});
+void test('actual module SQLite exhaustion returns capacity before effects and retains no admission fence', {timeout: 10_000}, async context => {
+  let effects = 0;
+  const {command, host} = await setup(context, {read: () => Promise.resolve({}), execute: () => {effects += 1; return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});}});
+  const database = host.moduleDatabase(); assert.ok(database);
+  database.exec('CREATE TABLE pressure (value BLOB); CREATE TRIGGER full_admission BEFORE INSERT ON onn_requests BEGIN INSERT INTO pressure VALUES (zeroblob(100000)); END;');
+  const pages = (database.prepare('PRAGMA page_count').get() as {page_count: number}).page_count;
+  database.exec(`PRAGMA max_page_count = ${String(pages)}`);
+  const refused = await command('onn-key-press', {key: 'right'}, 'full-store');
+  assert.equal('error' in refused && refused.error.error.code, 'capacity'); assert.equal(effects, 0);
+  assert.equal(database.prepare('SELECT 1 FROM onn_requests WHERE request_id = ?').get('full-store'), undefined);
+  database.exec('DROP TRIGGER full_admission');
+  assert.equal((await command('onn-key-press', {key: 'right'}, 'safe-new-request')).status, 'accepted'); await turns(); assert.equal(effects, 1);
+});
 void test('one accepted key reaches the module-owned writer; matching retries and restart send nothing', {timeout: 10_000}, async context => {
   const dir = await mkdtemp(join(tmpdir(), 'onn-module-'));
   const bus = new InProcessBus();
   const operator = bus.connect('bunny/parts/operator');
   const effects: OnnAction[] = [];
-  const transport: OnnTransport = {execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted'});}, read: () => Promise.resolve({app: 'youtube'})};
+  const transport: OnnTransport = {execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});}, read: () => Promise.resolve({app: 'youtube'})};
   const host = new ModuleHarness(createOnnModule({transport}), {bus, stateDir: dir, section});
   const hosts = [host];
   context.after(async () => {for (const owner of hosts) await owner.stop(); await operator.close(); await rm(dir, {recursive: true, force: true});});
@@ -71,7 +160,7 @@ void test('the bound includes the in-flight action, preserves order and refuses 
       signal.addEventListener('abort', abort, {once: true});
       void gate.then(() => {signal.removeEventListener('abort', abort); resolve();});
     });
-    return {result: 'succeeded', evidence: 'transmitted'};
+    return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};
   }});
   for (let index = 0; index < 16; index += 1) assert.equal((await command('onn-key-press', {key: index % 2 === 1 ? 'left' : 'right'}, `queue-${index}`)).status, 'accepted');
   const refused = await command('onn-key-press', {key: 'down'}, 'queue-17');
@@ -84,7 +173,7 @@ void test('the bound includes the in-flight action, preserves order and refuses 
 void test('expiry while queued and stale guards cause no effect', {timeout: 10_000}, async context => {
   const effects: OnnAction[] = []; let release: () => void = () => {};
   const gate = new Promise<void>(resolve => {release = resolve;});
-  const {command, host} = await setup(context, {read: () => Promise.resolve({app: 'youtube'}), execute: async action => {effects.push(action); await gate; return {result: 'succeeded', evidence: 'transmitted'};}});
+  const {command, host} = await setup(context, {read: () => Promise.resolve({app: 'youtube'}), execute: async action => {effects.push(action); await gate; return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};}});
   assert.equal((await command('onn-key-press', {key: 'up'}, 'head')).status, 'accepted');
   assert.equal((await command('onn-key-press', {key: 'down'}, 'expires', 'onn', 50)).status, 'accepted');
   const stale = await command('onn-key-press', {key: 'right', expectedConfigurationRevision: 2}, 'stale');
@@ -97,7 +186,7 @@ void test('expiry while queued and stale guards cause no effect', {timeout: 10_0
 
 void test('text is memory-only in the module journal, WAL, outbox and logs; deliberate new IDs still execute', {timeout: 10_000}, async context => {
   const effects: OnnAction[] = [], text = 'SYNTHETIC_ONN_MEMORY_ONLY_1039';
-  const {command, host, dir} = await setup(context, {read: () => Promise.resolve({}), execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted'});}});
+  const {command, host, dir} = await setup(context, {read: () => Promise.resolve({}), execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});}});
   for (const id of ['text-first', 'text-first', 'text-second']) assert.equal((await command('onn-text', {text}, id)).status, 'accepted');
   await turns(); assert.equal(effects.length, 2);
   const conflict = await command('onn-text', {text: 'changed'}, 'text-first');
@@ -114,7 +203,7 @@ void test('text is memory-only in the module journal, WAL, outbox and logs; deli
 
 void test('a failed storage commit refuses admission before any effect and leaves no fence', {timeout: 10_000}, async context => {
   const effects: OnnAction[] = [];
-  const {command, host} = await setup(context, {read: () => Promise.resolve({}), execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted'});}});
+  const {command, host} = await setup(context, {read: () => Promise.resolve({}), execute: action => {effects.push(action); return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});}});
   const database = host.moduleDatabase(); assert.ok(database); database.exec('PRAGMA query_only = ON');
   const refused = await command('onn-key-press', {key: 'right'}, 'store-refused');
   assert.equal('error' in refused && refused.error.error.code, 'internal'); assert.equal(effects.length, 0);
@@ -126,7 +215,7 @@ void test('a failed storage commit refuses admission before any effect and leave
 
 void test('startup settles durable accepted and started stages without reconstructing or replaying input', {timeout: 10_000}, async context => {
   let effects = 0;
-  const transport: OnnTransport = {read: () => Promise.resolve({}), execute: () => {effects += 1; return Promise.resolve({result: 'succeeded', evidence: 'transmitted'});}};
+  const transport: OnnTransport = {read: () => Promise.resolve({}), execute: () => {effects += 1; return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});}};
   const {command, host, dir, bus} = await setup(context, transport);
   for (const id of ['accepted-before-crash', 'started-before-crash']) assert.equal((await command('onn-key-press', {key: 'left'}, id)).status, 'accepted');
   await turns(); assert.equal(effects, 2);

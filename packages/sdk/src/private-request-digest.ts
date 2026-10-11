@@ -17,15 +17,40 @@ export class PrivateRequestDigest {
   /** Admission transaction only. Initialization requires proof that no old sensitive fence exists. */
   digest(domain: string, canonical: string, initialize: boolean): string {
     if (!this.database.isTransaction) return refused();
-    const pin = this.database.prepare('SELECT digest FROM bunny_private_request_key WHERE id = 1').get() as {digest: string} | undefined;
-    if (pin === undefined && !initialize) return refused();
+    let key: Buffer | undefined;
+    try {
+      const pin = this.#pin();
+      if (pin === undefined && !initialize) return refused();
+      key = this.#key(pin, pin === undefined);
+      if (pin === undefined) this.database.prepare('INSERT INTO bunny_private_request_key VALUES (1, ?)').run(createHash('sha256').update(key).digest('hex'));
+      return createHmac('sha256', key).update(domain).update('\0').update(canonical).digest('hex');
+    } catch (error) {
+      if (fullDisk(error)) throw new SdkError(errorBody('capacity', {detail: 'private request identity storage is full'}));
+      return refused();
+    }
+    finally {key?.fill(0);}
+  }
+
+  /** Read-only final effect check. It never initializes or repairs a missing key. */
+  assertAvailable(): void {
+    let key: Buffer | undefined;
+    try {
+      const pin = this.#pin(); if (pin === undefined) return refused();
+      key = this.#key(pin, false);
+    } catch {return refused();}
+    finally {key?.fill(0);}
+  }
+  #pin(): {digest: string} | undefined {
+    return this.database.prepare('SELECT digest FROM bunny_private_request_key WHERE id = 1').get() as {digest: string} | undefined;
+  }
+  #key(pin: {digest: string} | undefined, initialize: boolean): Buffer {
     let key: Buffer | undefined;
     try {
       const folder = this.folder(), directory = lstatSync(folder);
       const uid = process.getuid?.();
       if (uid === undefined || !directory.isDirectory() || directory.uid !== uid || (directory.mode & 0o777) !== 0o700) return refused();
       const path = join(folder, 'request-digest.key');
-      if (pin === undefined) {
+      if (initialize) {
         let fd: number | undefined;
         try {
           fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
@@ -44,12 +69,7 @@ export class PrivateRequestDigest {
       if (key.length !== 32) return refused();
       const identity = createHash('sha256').update(key).digest('hex');
       if (pin !== undefined && pin.digest !== identity) return refused();
-      if (pin === undefined) this.database.prepare('INSERT INTO bunny_private_request_key VALUES (1, ?)').run(identity);
-      return createHmac('sha256', key).update(domain).update('\0').update(canonical).digest('hex');
-    } catch (error) {
-      if (fullDisk(error)) throw new SdkError(errorBody('capacity', {detail: 'private request identity storage is full'}));
-      return refused();
-    }
-    finally {key?.fill(0);}
+      return key;
+    } catch (error) {key?.fill(0); throw error;}
   }
 }

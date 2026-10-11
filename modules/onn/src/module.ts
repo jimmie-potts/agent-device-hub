@@ -182,30 +182,38 @@ class OnnOwner {
       const guard = this.#guards(command); if (guard !== undefined) return guard.error.code;
       try {
         const current = this.#store.get(requestId);
-        return current?.state === 'started' && current.digest === row.digest ? undefined : 'internal';
-      } catch {return 'internal';}
-    }), remaining);} catch {result = {result: 'uncertain', evidence: 'none', code: 'uncertain-result'};}
+        if (current?.state !== 'started' || current.digest !== row.digest) return 'internal';
+        if (family === 'onn-text') this.#store.privateDigest.assertAvailable();
+        return undefined;
+      } catch (error) {return error instanceof SdkError ? error.body.error.code : 'internal';}
+    }), remaining);} catch {result = {result: 'uncertain', evidence: 'none', code: 'uncertain-result', connection: 'unknown'};}
     call.end(result.result === 'succeeded' ? 'unset' : 'error');
-    if (result.result === 'succeeded') this.#availability.reached(this.#config.id, trace);
-    else this.#availability.unreachable(this.#config.id, result.code ?? 'unavailable', trace);
+    if (result.connection === 'available') this.#availability.reached(this.#config.id, trace);
+    else if (result.connection === 'unavailable') this.#availability.unreachable(this.#config.id, result.code ?? 'unavailable', trace);
     const outcome: CompletedOutcome = {requestId, result: result.result, evidence: result.evidence,
       ...(result.code === undefined ? {} : {error: errorBody(result.code, {detail: result.result === 'uncertain' ? 'the ONN effect is uncertain; it will not be repeated' : 'ONN device work was refused'}).error})};
-    await this.#finish(row, outcome);
+    await this.#finish(row, outcome, result.connection);
   }
   async #bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
     const controller = new AbortController(), cancel = this.#context.scheduler.after(ms, () => {controller.abort();});
     const signal = AbortSignal.any([controller.signal, this.#context.signal, this.#stopSignal.signal]);
     try {signal.throwIfAborted(); return await work(signal);} finally {cancel(); controller.abort();}
   }
-  async #finish(row: RequestRow, outcome: CompletedOutcome): Promise<void> {
+  #connection(connection: 'available' | 'unavailable'): void {
+    if (connection !== this.#state.connection) this.#state.generation = {...this.#state.generation, sequence: this.#state.generation.sequence + 1};
+    this.#state.connection = connection;
+    if (connection === 'unavailable') this.#state.currentApp = unknown;
+  }
+  async #finish(row: RequestRow, outcome: CompletedOutcome, connection?: Attempt['connection']): Promise<void> {
     this.#pending.delete(row.requestId);
-    try {await this.#commitOutcome(row, outcome);} catch {
+    try {await this.#commitOutcome(row, outcome, connection);} catch {
       // Its accepted/started fence remains. Restart settles it; no effect is retried.
       this.#context.log.warn('command.completed', {'bunny.device.id': this.#config.id, 'bunny.request.id': row.requestId, 'bunny.outcome': 'uncertain', 'bunny.code': 'internal'}, row);
     }
   }
-  async #commitOutcome(row: RequestRow, outcome: CompletedOutcome): Promise<void> {
+  async #commitOutcome(row: RequestRow, outcome: CompletedOutcome, connection?: Attempt['connection']): Promise<void> {
     await this.#transaction(add => {
+      if (connection === 'available' || connection === 'unavailable') this.#connection(connection);
       this.#store.outcome(row, outcome); this.#lastOutcome = outcome;
       if (outcome.evidence === 'transmitted') this.#lastTransmission = {status: 'known', requestId: row.requestId, transmittedAtMs: this.#context.clock.now(), operationIds: []};
       this.#records(add, row);
@@ -231,9 +239,10 @@ class OnnOwner {
     if (observation === undefined) this.#availability.unreachable(this.#config.id, 'unavailable', call.context); else this.#availability.reached(this.#config.id, call.context);
     try {await this.#transaction(add => {
       const connection = observation === undefined ? 'unavailable' : 'available';
-      if (connection !== this.#state.connection) this.#state.generation = {...this.#state.generation, sequence: this.#state.generation.sequence + 1};
-      this.#state.connection = connection;
-      this.#state.currentApp = observation?.app === undefined ? unknown : {status: 'known', value: observation.app, observedAtMs: this.#context.clock.now()};
+      const currentApp = observation?.app === undefined ? unknown : {status: 'known' as const, value: observation.app, observedAtMs: this.#context.clock.now()};
+      if (connection === this.#state.connection && canonical(currentApp) === canonical(this.#state.currentApp)) return;
+      this.#connection(connection);
+      this.#state.currentApp = currentApp;
       this.#records(add, call.context);
     });} catch {return;}
     this.#stale?.();

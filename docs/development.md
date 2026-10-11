@@ -1572,7 +1572,9 @@ Before product implementation, #604 registers the module/helper workspaces and C
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:onn:built`. The module suite covers the
 fixed action mappings, private ADB protocol, bounded queue, persistent fences,
-outcome outbox and module conformance. `npm run test:runtime:onn-admission:built`
+outcome outbox, key changes before effects, truthful connection transitions,
+unchanged polling, actual module-store exhaustion and module conformance.
+`npm run test:runtime:onn-admission:built`
 checks text omission and duplicate identity in the actual core store and inbox.
 The runtime unit suite also runs `onn-gateway.test.ts` through a real MCP SDK
 client. Run `npm run test:runtime:scenarios:built` for the shared catalog's
