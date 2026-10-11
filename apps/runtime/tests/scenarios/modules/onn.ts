@@ -1,5 +1,5 @@
-import {ONN_SIMULATED_SECTION, type OnnState} from '@jimmie-potts/onn';
-import {act, answered, answers, deviceState, dispatchOnce, expect, holds, noToken, recorded, refusedWith, running, type Harness, type Scenario} from '../framework.js';
+import {ONN_SIMULATED_SECTION, type OnnState, type HistoryState, type HistoryPage} from '@jimmie-potts/onn';
+import {act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, noToken, recorded, refusedWith, running, type Harness, type Scenario} from '../framework.js';
 const owner = 'bunny/modules/onn';
 const status = (h: Harness): OnnState | undefined => h.reader.states<OnnState>('onn-state', owner)[0]?.data;
 const effects = (h: Harness): number => deviceState<{effects: number}>(h, 'onn').effects;
@@ -37,5 +37,32 @@ export const scenarios: readonly Scenario[] = [{
     expect('credentials and text stay out of public projections and diagnostics', async h => await noToken(h) === true
       && !JSON.stringify(h.logs()).includes('SYNTHETIC_ONN_INPUT') && !JSON.stringify(h.published()).includes('SYNTHETIC_ONN_INPUT') || 'sensitive input was retained'),
     expect('the dispatcher recorded each accepted action', h => answered(h, 'text', 'accepted')),
+  ],
+},{
+  id:'onn-title-history',title:'ONN retains private title observations and source progress across physical changes, gaps and restart',
+  seed:{modules:['core','onn'],follows:[{owner,families:['onn-history-state']}],sections:{onn:ONN_SIMULATED_SECTION}},
+  steps:[
+    expect('core and ONN are running',h=>running(h,['core','onn'])),
+    act('synthetic physical remote selects YouTube',h=>{h.simulate({device:'onn',action:'physical-youtube'});}),
+    act('a collection period passes',h=>h.wait(5100)),
+    expect('YouTube title is fresh with selected-title semantics',h=>{const s=h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data;return s?.status==='fresh'&&s.current[0]?.metadata?.title==='Synthetic YouTube title 1'||'YouTube title missing';}),
+    expect('the authenticated stored query includes provenance and no watched totals',answers({as:'reader',method:'GET',path:'/modules/onn/content/history?app=youtube'},answer=>{const p=bodyOf<HistoryPage>(answer);return answer.status===200&&p?.items[0]?.observation.provenance.semantics==='selected-title-observed'&& !('watchedMs'in p)||'history projection differs';})),
+    act('physical remote pauses playback',h=>{h.simulate({device:'onn',action:'physical-pause'});}),
+    act('the pause observation arrives',h=>h.wait(5100)),
+    expect('reported pause is retained without extrapolation',h=>h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data.current[0]?.playback?.state===2||'pause not observed'),
+    act('physical remote selects a Stremio episode',h=>{h.simulate({device:'onn',action:'physical-stremio'});}),
+    act('the episode observation arrives',h=>h.wait(5100)),
+    expect('Stremio exposes series and episode',h=>{const s=h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data.current[0];return s?.app==='stremio'&&s.metadata?.subtitle==='Synthetic episode 1'||'episode not observed';}),
+    act('physical remote changes to another episode',h=>{h.simulate({device:'onn',action:'physical-next'});}),
+    act('the changed episode arrives',h=>h.wait(5100)),
+    expect('the episode changes without software input',h=>h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data.current[0]?.metadata?.subtitle==='Synthetic episode 2'&&effects(h)===0||'episode change differs'),
+    act('physical remote exits playback',h=>{h.simulate({device:'onn',action:'physical-exit'});}),
+    act('the empty observation arrives',h=>h.wait(5100)),
+    expect('current content clears',h=>h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data.current.length===0||'old title remains current'),
+    act('runtime restarts on latest private state',h=>h.restart()),
+    expect('stored episodes and originals survive restart',answers({as:'reader',method:'GET',path:'/modules/onn/content/history?app=stremio'},answer=>answer.status===200&&(bodyOf<HistoryPage>(answer)?.items.length??0)>=2||'retained episode history missing')),
+    act('source becomes unavailable',h=>{h.simulate({device:'onn',action:'offline'});}),
+    act('the unavailable observation arrives',h=>h.wait(5100)),
+    expect('loss is explicit and no command was replayed',h=>{const s=h.reader.states<HistoryState>('onn-history-state',owner)[0]?.data;return s?.status==='unavailable'&&s.coverage.recentGaps.some(g=>g.reason==='unavailable')&&effects(h)===0||'loss/effects differ';}),
   ],
 }];

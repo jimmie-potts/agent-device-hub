@@ -3,9 +3,10 @@ import {createOnnModule} from './module.js';
 import {onnSchemas, registerOnnFamilies} from './families.js';
 import {SimulatedOnn} from './simulated.js';
 import type {Attempt, OnnAction} from './transport.js';
-export const ONN_SIMULATED_SECTION = Object.freeze({id: 'onn', configurationRevision: 1, adbSocket: '/not-configured/s', serial: '192.0.2.10:12345', hostExecutable: '/not-configured/adb', hostExecutableSha256: '0'.repeat(64), hostVersion: '37.0.1', hostKeyDirectory: '/not-configured/keys'});
+import {validateMetadataSample} from './metadata.js';
+export const ONN_SIMULATED_SECTION = Object.freeze({id: 'onn', configurationRevision: 1, adbSocket: '/not-configured/s', serial: '192.0.2.10:12345', hostExecutable: '/not-configured/adb', hostExecutableSha256: '0'.repeat(64), hostVersion: '37.0.1', hostKeyDirectory: '/not-configured/keys',historyEnabled:true});
 const simulation: DeviceSimulation<SimulatedOnn, SimulatedOnn> = {
-  actions: ['online', 'offline', 'physical-youtube', 'physical-stremio'], admits: (_action, values) => Object.keys(values).length === 0,
+  actions: ['online', 'offline', 'physical-youtube', 'physical-stremio','physical-next','physical-pause','physical-resume','physical-exit'], admits: (_action, values) => Object.keys(values).length === 0,
   memory: {create: () => new SimulatedOnn(), state: device => device.state(), act: (device, value) => {device.act(value.action);}, build: device => createOnnModule({transport: device})},
   run: {
     create: () => new SimulatedOnn(), state: device => device.state(), act: (device, value) => {device.act(value.action);},
@@ -20,7 +21,8 @@ const simulation: DeviceSimulation<SimulatedOnn, SimulatedOnn> = {
         const answer = await link.call('read', {}, signal);
         if (answer.status !== 'answered' || typeof answer.value !== 'object' || answer.value === null) return undefined;
         const app = 'app' in answer.value ? answer.value.app : undefined;
-        return app === 'youtube' || app === 'stremio' || app === 'other' || app === 'none' ? {app} : {};
+        const metadata=validateMetadataSample('metadata'in answer.value?answer.value.metadata:undefined);
+        return {...(app === 'youtube' || app === 'stremio' || app === 'other' || app === 'none' ? {app} : {}),...(metadata===undefined?{metadataFailure:true as const}:{metadata})};
       },
     }}),
   },

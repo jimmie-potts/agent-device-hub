@@ -1598,6 +1598,18 @@ These are source and
 simulator checks. Installed-client and physical acceptance require their own
 evidence.
 
+For ONN title-history source changes, also run `npm run test:onn:native` with
+JDK 21 and Python 3.12 or later. This compiles the fixed reader against synthetic
+Android surfaces, exercises privacy/bounds/deadlines, and verifies the packaged
+source/Dex pins. It does not run Android or reproduce Dex unless the qualified
+R8 tool is explicitly supplied through the owning native build procedure.
+The modules CI group provisions JDK 21 and runs this check. Module tests cover
+closed metadata intake, immutable private originals, gaps, clock/restart faults,
+storage loss and bounded cutoff history/detail queries. Runtime gateway tests
+use a real loopback MCP SDK client; both transport scenario runs verify stored
+reads without device commands. Source delivery leaves installed acceptance in
+#1044 and history React/browser work in #1041.
+
 ## Roborock module checks
 
 Use Node 24 and `npm ci`, then build before type-aware lint. Run

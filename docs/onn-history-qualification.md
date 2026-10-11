@@ -146,9 +146,10 @@ Use a stable evidence cutoff and deterministic cursor order so new collection
 does not change an existing page. Bound detail pages too. Validate closed inputs
 and return the shared ErrorBody codes for invalid filters/cursors, unavailable
 query state and capacity. Enforce an output-byte bound, with explicit field/page
-omissions while preserving the private originals. Use indexed app/date ordering
-and a bounded candidate window for title matching; do not scan the indefinite
-archive. Return a continuation cursor even when a bounded search window finds
+omissions while preserving the private originals. Use indexed app/evidence ordering
+and bounded date/title candidate filtering; do not scan the indefinite archive.
+Order by evidence sequence so host-clock changes cannot reorder a cutoff page;
+date filters use each observation's explicit host receive time. Return a continuation cursor even when a bounded search window finds
 no match. A gateway response timeout is not SQLite cancellation.
 
 The module-owned React page uses shared connection/authentication components.

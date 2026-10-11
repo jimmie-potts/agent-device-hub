@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {spawnSync} from 'node:child_process';
 import {CURRENT_APP_COMMAND, currentApp, keyCommand, textCommand, launcherCommand, launchCommand} from '../src/actions.js';
+import {configureOnn} from '../src/configuration.js';
 
 void test('only the eight qualified keys map to one Android key press', () => {
   for (const [key, code] of Object.entries({up: 19, down: 20, left: 21, right: 22, select: 23, back: 4, home: 3, 'play-pause': 85}))
@@ -32,4 +33,13 @@ void test('the two shortcuts resolve the selected LEANBACK package and validate 
   assert.equal(launchCommand('stremio', 'com.stremio.one/com.stremio.tv.MainActivity\n'), 'am start -W -n com.stremio.one/com.stremio.tv.MainActivity');
   assert.equal(launchCommand('youtube', 'com.google.android.youtube.tv/.MainActivity'), 'am start -W -n com.google.android.youtube.tv/.MainActivity');
   for (const output of ['No activity found', 'com.other/.Main', 'com.stremio.one/.Main; input keyevent 3', 'com.stremio.one/.Main\ncom.stremio.one/.Other']) assert.equal(launchCommand('stremio', output), undefined);
+});
+
+void test('private configuration explicitly enables history and refuses reader or device overrides', () => {
+  const section = {id: 'onn', configurationRevision: 1, adbSocket: '/private/s', serial: '192.0.2.10:12345', hostExecutable: '/private/adb', hostExecutableSha256: '0'.repeat(64), hostVersion: '37.0.1', hostKeyDirectory: '/private/keys'};
+  const enabled = configureOnn({...section, historyEnabled: true});
+  assert.ok('config' in enabled, 'explicit history configuration must be accepted');
+  for (const value of ['true', null, 1]) assert.ok('error' in configureOnn({...section, historyEnabled: value}));
+  for (const key of ['readerPath', 'readerCommand', 'sourceUrl', 'deviceAddress']) assert.ok('error' in configureOnn({...section, [key]: 'synthetic override'}));
+  assert.ok('config' in configureOnn(section), 'existing control-only configuration remains compatible');
 });

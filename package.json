@@ -160,7 +160,8 @@
     "test:runtime:onn-admission:built": "node --test apps/runtime/dist/tests/onn-admission.test.js",
     "test:onn": "npm run build && npm run test:onn:built",
     "test:onn:built": "node --test modules/onn/dist/tests/*.test.js",
-    "test:onn:browser": "node apps/runtime/dashboard/tests/onn.browser.ts"
+    "test:onn:browser": "node apps/runtime/dashboard/tests/onn.browser.ts",
+    "test:onn:native": "python3 modules/onn/native/check.py"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

@@ -8,11 +8,13 @@ import {MaybeConsumable, type ReadableStream as AdbReadable} from '@yume-chan/st
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {CURRENT_APP_COMMAND, currentApp, keyCommand, launchCommand, launcherCommand, textCommand, type App, type CurrentApp, type Key} from './actions.js';
 import type {OnnConfig} from './configuration.js';
+import {parseMetadataReply, type MetadataSample} from './metadata.js';
+import {READER_CHECK, READER_DEVICE_PATH, READER_INVOCATION, READER_SHA256} from './reader-artifact.js';
 
 export type OnnAction = {kind: 'key'; key: Key} | {kind: 'app'; app: App} | {kind: 'text'; text: string};
 /** Connection evidence is independent of action success; local refusals leave it unknown. */
 export type Attempt = {result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'none' | 'transmitted'; code?: ErrorCode; connection: 'available' | 'unavailable' | 'unknown'};
-export type AppObservation = {app?: CurrentApp};
+export type AppObservation = {app?: CurrentApp; metadata?: MetadataSample; metadataFailure?: true};
 export interface OnnTransport {
   execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined): Promise<Attempt>;
   read(signal: AbortSignal): Promise<AppObservation | undefined>;
@@ -74,7 +76,7 @@ class OperationConnector implements AdbServerClient.ServerConnector {
   clearReverseTunnels(): never {throw new DependencyUnavailable();}
 }
 
-async function boundedText(stream: AdbReadable<Uint8Array>, signal: AbortSignal): Promise<string> {
+async function boundedText(stream: AdbReadable<Uint8Array>, signal: AbortSignal, maximum = 16_384): Promise<string> {
   const reader = stream.getReader(), parts: Uint8Array[] = [];
   let size = 0;
   try {
@@ -83,7 +85,7 @@ async function boundedText(stream: AdbReadable<Uint8Array>, signal: AbortSignal)
       const next = await reader.read();
       if (next.done) return new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(parts));
       size += next.value.byteLength;
-      if (size > 16_384) throw new DependencyUnavailable();
+      if (size > maximum) throw new DependencyUnavailable();
       parts.push(next.value);
     }
   } finally {reader.releaseLock();}
@@ -91,7 +93,7 @@ async function boundedText(stream: AdbReadable<Uint8Array>, signal: AbortSignal)
 
 export class AdbTransport implements OnnTransport {
   constructor(readonly config: OnnConfig) {}
-  async #shell(command: string, signal: AbortSignal, effect: boolean, wrote: () => void, transmitted: () => void): Promise<{stdout: string; stderr: string; exitCode: number}> {
+  async #shell(command: string, signal: AbortSignal, effect: boolean, wrote: () => void, transmitted: () => void, maximum = 16_384): Promise<{stdout: string; stderr: string; exitCode: number}> {
     signal.throwIfAborted();
     privateDependency(this.config);
     const end = new AbortController(), lifetime = AbortSignal.any([signal, end.signal]);
@@ -103,7 +105,7 @@ export class AdbTransport implements OnnTransport {
     });
     try {
       const process = await service.spawn(command, lifetime);
-      const [stdout, stderr, exitCode] = await Promise.all([boundedText(process.stdout, lifetime), boundedText(process.stderr, lifetime), process.exited]);
+      const [stdout, stderr, exitCode] = await Promise.all([boundedText(process.stdout, lifetime, maximum), boundedText(process.stderr, lifetime), process.exited]);
       return {stdout, stderr, exitCode};
     } finally {end.abort();}
   }
@@ -134,11 +136,18 @@ export class AdbTransport implements OnnTransport {
     }
   }
   async read(signal: AbortSignal): Promise<AppObservation | undefined> {
+    let observed: AppObservation | undefined;
     try {
       const result = await this.#shell(CURRENT_APP_COMMAND, signal, false, () => {}, () => {});
       if (result.exitCode !== 0 || result.stderr !== '') return undefined;
       const app = currentApp(result.stdout);
-      return app === undefined ? {} : {app};
-    } catch {return undefined;}
+      observed = app === undefined ? {} : {app};
+      if (this.config.historyEnabled !== true) return observed;
+      const artifact = await this.#shell(READER_CHECK, signal, false, () => {}, () => {});
+      if (artifact.exitCode !== 0 || artifact.stderr !== '' || artifact.stdout !== `${READER_SHA256}  ${READER_DEVICE_PATH}\n`) return {...observed, metadataFailure: true};
+      const reply = await this.#shell(READER_INVOCATION, signal, false, () => {}, () => {}, 262_144);
+      const metadata = parseMetadataReply(reply.stdout, reply.exitCode, reply.stderr);
+      return metadata === undefined ? {...observed, metadataFailure: true} : {...observed, metadata};
+    } catch {return observed === undefined ? undefined : {...observed, metadataFailure: true};}
   }
 }

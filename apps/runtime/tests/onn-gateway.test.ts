@@ -4,11 +4,27 @@ import {join} from 'node:path';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type {Transport} from '@modelcontextprotocol/sdk/shared/transport.js';
-import {createOnnModule, onnSchemas, ONN_SIMULATED_SECTION, SimulatedOnn} from '@jimmie-potts/onn';
+import {createOnnModule, onnSchemas, ONN_SIMULATED_SECTION, SimulatedOnn, type HistoryPage, type HistoryState} from '@jimmie-potts/onn';
 import {createCoreModule} from '../src/index.js';
 import {edgeConfig, it, run, stateDir, waitFor} from './support.js';
 const operator = {source: 'bunny/parts/operator', token: 'synthetic-onn-operator', scopes: ['read', 'control'] as const};
 const reader = {source: 'bunny/parts/reader', token: 'synthetic-onn-reader', scopes: ['read'] as const};
+
+it('long Unicode title filters continue through HTTP and MCP with the same bounded cursor',async context=>{
+  const device=new SimulatedOnn();device.act('physical-youtube');const title='界'.repeat(256);
+  const transport={read:async(signal:AbortSignal)=>{const observed=await device.read(signal);assert.ok(observed?.metadata);const selected=observed.metadata.sessions[0];assert.ok(selected?.metadata);selected.metadata.title=title;selected.metadata.mediaId=null;observed.metadata.sessions=[selected,structuredClone(selected)];return observed;},execute:device.execute.bind(device)};
+  const scheduler={after:(ms:number,work:()=>void)=>{let active=true;if(ms===0)queueMicrotask(()=>{if(active)work();});return()=>{active=false;};}};
+  const files=await edgeConfig(context,[reader],{mcp:true,modules:{onn:ONN_SIMULATED_SECTION}}),privateState=await stateDir(context);
+  const {runtime}=await run(context,{stateDir:privateState,configFile:files.config,modules:[createCoreModule(),createOnnModule({transport})],edge:{schemas:onnSchemas},scheduler});
+  const get=(query:URLSearchParams)=>fetch(new URL('/modules/onn/content/history?'+query.toString(),runtime.url),{headers:{Authorization:`Bearer ${reader.token}`}});
+  const query=new URLSearchParams({title,limit:'1'});await waitFor(async()=>{const response=await get(query);return response.ok&&(await response.json() as HistoryPage).items.length===1;});
+  const first=await (await get(query)).json() as HistoryPage;assert.ok(first.nextCursor!==null&&first.nextCursor.length>0);
+  query.set('cursor',first.nextCursor);const continued=await get(query);assert.equal(continued.status,200,'the returned cursor must fit the gateway contract');
+  assert.ok(first.nextCursor.length<=512);const second=await continued.json() as HistoryPage;assert.equal(second.items.length,1);assert.notEqual(second.items[0]?.id,first.items[0]?.id);assert.equal(second.cutoff,first.cutoff);
+  const client=new Client({name:'onn-unicode-pagination',version:'1'});context.after(()=>client.close());
+  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp',runtime.url),{requestInit:{headers:{Authorization:`Bearer ${reader.token}`}}}) as unknown as Transport);
+  const called=await client.callTool({name:'onn_history',arguments:{title,limit:1,cursor:first.nextCursor}});assert.equal(called.isError,false);assert.deepEqual(called.structuredContent,{kind:'extension',data:{result:second}});assert.equal(device.effects,0);
+});
 
 it('a real MCP protocol client discovers ONN state and sends the same authenticated typed actions without retaining text', async context => {
   const files = await edgeConfig(context, [operator, reader], {mcp: true, modules: {onn: ONN_SIMULATED_SECTION}}), device = new SimulatedOnn();
@@ -51,4 +67,36 @@ it('a real MCP protocol client discovers ONN state and sends the same authentica
   }
   assert.equal(JSON.stringify(logs).includes(marker), false);
   assert.equal(JSON.stringify(logs).includes(operator.token), false); assert.equal(JSON.stringify(logs).includes(reader.token), false);
+});
+
+it('authenticated HTTP and a real MCP client read the same retained history without device effects, including restart with collection disabled', async context=>{
+  const device=new SimulatedOnn();device.act('physical-youtube');
+  const files=await edgeConfig(context,[reader,operator,{source:'bunny/parts/control-only',token:'synthetic-control-only',scopes:['control']}],{mcp:true,modules:{onn:ONN_SIMULATED_SECTION}}),privateState=await stateDir(context);
+  // Run only startup timers. Polls remain held so both public reads share a fixed evidence cutoff.
+  const scheduler={after:(ms:number,work:()=>void)=>{let active=true;if(ms===0)queueMicrotask(()=>{if(active)work();});return()=>{active=false;};}};
+  const {runtime,logs}=await run(context,{stateDir:privateState,configFile:files.config,modules:[createCoreModule(),createOnnModule({transport:device})],edge:{schemas:onnSchemas},scheduler});
+  const get=(base:string,path:string,token=reader.token)=>fetch(new URL(path,base),{headers:{Authorization:`Bearer ${token}`}});
+  await waitFor(async()=>{const response=await get(runtime.url,'/modules/onn/content/history-state');return response.ok&&(await response.json() as HistoryState).status==='fresh';});
+  const response=await get(runtime.url,'/modules/onn/content/history?app=youtube&limit=1');assert.equal(response.status,200);const history=await response.json() as HistoryPage;
+  assert.equal(history.items.length,1);assert.equal(history.items[0]?.observation.metadata?.title,'Synthetic YouTube title 1');assert.equal(history.items[0]?.observation.provenance.semantics,'selected-title-observed');
+  assert.match(history.items[0]?.observation.reader.sha256??'',/^[a-f0-9]{64}$/);
+  const connected=new Client({name:'onn-history-protocol-client',version:'1'});
+  const transport=new StreamableHTTPClientTransport(new URL('/mcp',runtime.url),{requestInit:{headers:{Authorization:`Bearer ${reader.token}`}}});
+  context.after(()=>connected.close());await connected.connect(transport as unknown as Transport);
+  const tools=(await connected.listTools()).tools;assert.ok(tools.some(tool=>tool.name==='onn_history'));assert.ok(tools.some(tool=>tool.name==='onn_history_detail'));assert.ok(!tools.some(tool=>tool.name==='core_send_command'));
+  const called=await connected.callTool({name:'onn_history',arguments:{app:'youtube',limit:1}});assert.equal(called.isError,false);assert.deepEqual(called.structuredContent,{kind:'extension',data:{result:history}});
+  const item=history.items[0];
+  const detail=await (await get(runtime.url,`/modules/onn/content/history-detail?id=${item.id}`)).json() as unknown;
+  const detailCall=await connected.callTool({name:'onn_history_detail',arguments:{id:item.id}});assert.equal(detailCall.isError,false);assert.deepEqual(detailCall.structuredContent,{kind:'extension',data:{result:detail}});
+  assert.equal((await connected.callTool({name:'onn_history',arguments:{readerPath:'/arbitrary'}})).isError,true);
+  assert.equal((await get(runtime.url,'/modules/onn/content/history?limit=101')).status,400);
+  assert.equal((await get(runtime.url,'/modules/onn/content/history','synthetic-control-only')).status,403);
+  assert.equal((await fetch(new URL('/modules/onn/content/history',runtime.url))).status,401);
+  assert.equal(device.effects,0);
+  await connected.close();await runtime.stop();
+  const disabled=await edgeConfig(context,[reader],{modules:{onn:{...ONN_SIMULATED_SECTION,historyEnabled:false}}});
+  const restarted=await run(context,{stateDir:privateState,configFile:disabled.config,modules:[createCoreModule(),createOnnModule({transport:device})],edge:{schemas:onnSchemas},scheduler});
+  const retained=await (await get(restarted.runtime.url,'/modules/onn/content/history?app=youtube&limit=1')).json() as HistoryPage;
+  assert.deepEqual(retained.items,history.items);const state=await (await get(restarted.runtime.url,'/modules/onn/content/history-state')).json() as HistoryState;assert.equal(state.status,'disabled');assert.equal(state.currentEvidence,'last-observed');
+  assert.equal(device.effects,0,'queries and restart do not operate the device');assert.equal(JSON.stringify(logs).includes('Synthetic YouTube title 1'),false,'private titles stay out of diagnostic logs');
 });

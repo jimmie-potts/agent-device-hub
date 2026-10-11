@@ -1,0 +1,1 @@
+package android.os; public class SystemClock {public static long elapsedRealtime(){String s=System.getProperty("scenario");return s.equals("bad-clock")?-1:s.equals("unsafe-clock")?9007199254740992L:123456;}}

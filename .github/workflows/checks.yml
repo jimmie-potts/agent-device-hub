@@ -143,6 +143,13 @@ jobs:
         run: npm run test:roborock:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:onn:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:onn:native
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:consumer:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
