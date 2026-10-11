@@ -145,6 +145,10 @@ controls through the existing dispatcher, SDK outbox and shared dashboard.
 Its [checks](#onn-module-checks) preserve the distinction between source,
 simulated, protocol, installed-client and physically observed evidence.
 
+[ONN title-history qualification](onn-history-qualification.md) records the
+approved fixed read-only metadata reader, selected-title semantics and minimum
+retention/query contract. It does not claim production or installed history.
+
 ### ONN focused-text admission checks
 
 The issue-linked `gh-1039-onn-controls` change adds a narrow privacy exception to the existing core dispatcher. After the root build, run `npm run test:runtime:onn-admission:built` for the actual dispatcher/store regression. The runtime unit suite discovers this test, and CI's existing `test:runtime:built` step runs it; shared SDK checks cover the private digest primitive. Retain the failing-before result and verify semantic duplicates, missing/replaced keys, durable plaintext exclusion, no replay and inbox refusal. This is source evidence; installed ONN acceptance remains separate.

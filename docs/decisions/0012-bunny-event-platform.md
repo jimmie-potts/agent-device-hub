@@ -626,3 +626,17 @@ production metadata companion. The trade-off is a native host dependency whose
 setup, ownership, cancellation and failure behavior need qualification. See the
 [ONN controls qualification](../onn-controls-qualification.md) for the selected
 route, evidence limits and minimum implementation contract.
+
+**2026-10-11, ONN fixed metadata reader.** The owner selected a small read-only
+Java/Dex reader invoked through the existing private ADB connection for one ONN.
+It returns fixed selected YouTube/Stremio MediaSession metadata and exits.
+TypeScript in the existing ONN module owns scheduling, storage, state, queries
+and React views. This exception adds no APK, resident Android service, new
+permission, screen/OCR collector, Google connection or reader control action.
+The release retains selected-title observations and source-reported progress;
+watched-time totals, completion, reliable ad classification and automatic Skip
+are deferred. A YouTube title observed during an ad does not prove main-video
+playback. See the [title-history qualification](../onn-history-qualification.md)
+for the field, privacy, retention, query and acceptance boundaries. Production
+source and installed acceptance must qualify the new reader; the earlier
+experimental reader is not automatically a production dependency.
