@@ -8,11 +8,12 @@ export type ArtworkResult<T> = {ok: true; value: T} | ArtworkFailure;
 export const artworkFailure = (code: ArtworkFailure['code'], transient = false): ArtworkFailure => ({ok: false, code, transient});
 export type ArtworkFetch = (candidate: string, endpoint: string, signal: AbortSignal) => Promise<ArtworkResult<Uint8Array>>;
 
-/** Absolute HTTP only, on the already configured receiver origin. Never resolves relative URLs or hostnames. */
+/** Absolute HTTP only, on the configured receiver origin or its qualified port 58080 thumbnail service. */
 export function artworkUrl(candidate: unknown, endpoint: string): string | undefined {
   if (typeof candidate !== 'string' || candidate.length === 0 || candidate.length > 2048 || !URL.canParse(candidate) || !URL.canParse(endpoint)) return undefined;
   const url = new URL(candidate), configured = new URL(endpoint);
-  if (url.protocol !== 'http:' || configured.protocol !== 'http:' || url.origin !== configured.origin ||
+  const receiverOrigin = url.origin === configured.origin || (url.hostname === configured.hostname && url.port === '58080');
+  if (url.protocol !== 'http:' || configured.protocol !== 'http:' || !receiverOrigin ||
     url.username !== '' || url.password !== '' || url.hash !== '' || candidate.trim() !== candidate || [...candidate].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) return undefined;
   return url.href;
 }
