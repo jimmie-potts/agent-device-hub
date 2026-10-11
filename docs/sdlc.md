@@ -252,6 +252,38 @@ before its fix; imported bootstrap workflow fixtures do not establish a product
 red/green result. Do not widen scope to satisfy a test or rewrite device behavior
 as incidental cleanup.
 
+## Canonical checkout refresh
+
+At preparation, record the designated canonical local checkout, configured remote
+and target branch, pinned-revision policy, writer owner and installed-source
+effects in existing private delivery evidence. This applies to ordinary delivery
+and explicitly selected deliver-work. It grants no startup-update authority.
+
+After verified merge and required merged-revision CI, follow the shared
+[canonical checkout refresh procedure](https://github.com/jimmie-potts/agent-skills/blob/main/skills/deliver-work/references/project-discovery.md#canonical-checkout-refresh).
+Reading the procedure does not invoke the explicit-only skill. Refresh the remote
+target, record its immutable SHA/time and prove it contains the delivered merge.
+Establish exclusive writer ownership through the existing participating claim or
+verified owner handoff; clean status or an idle-looking session is insufficient.
+Recheck branch, expected HEAD, index/worktree/untracked state and ownership
+immediately before fast-forwarding only to that observed SHA.
+
+Retain a pinned, dirty, wrong-branch, diverged or concurrently owned checkout;
+retain it when authority, remote evidence or writer exclusion is unknown. Never
+switch branches, reset, stash, clean, force refs or discard another owner's data.
+If updating activates installed sources, use their complete owning update
+procedure and timing/authority checks first. Preserve source-only limits; no
+generic Git update may bypass installation. Instruction-only changes need
+file/revision readback, not a service restart.
+
+Read back branch and exact SHA. Reconcile interrupted or uncertain results before
+retrying; an observed completed update needs no second mutation. Record checkout,
+observed target/time, before/after revisions, ownership evidence and `updated`,
+`already current`, `retained/pending` or `not applicable` in the existing delivery
+record. Pending results name reason, owner and next action. Keep source completion,
+checkout refresh and required installation separate; pending refresh does not
+undo a verified source merge or claim updated instructions.
+
 ## Tracker reconciliation
 
 At accepted child completion, reopening, material scope or prerequisite change,
