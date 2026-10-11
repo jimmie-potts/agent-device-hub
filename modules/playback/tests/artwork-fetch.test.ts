@@ -7,7 +7,24 @@ const fake = (reply: Response, observe?: (input: string | URL | Request, init?: 
   observe?.(input, init); return Promise.resolve(reply);
 };
 
-void test('candidate admits exact configured origin only with no credentials or fragment', () => {
+void test('acquires the configured receiver thumbnail service on port 58080 without admitting other hosts or ports', async () => {
+  let calls = 0;
+  const thumbnail = 'http://127.0.0.1:58080/artwork.jpg';
+  const fetcher = createArtworkFetch(fake(new Response(new Uint8Array([1, 2, 3])), (input, init) => {
+    calls++; assert.equal(input, thumbnail); assert.equal(init?.redirect, 'manual'); assert.equal(init?.credentials, 'omit');
+  }));
+  for (const refused of ['http://127.0.0.2:58080/artwork.jpg', 'http://localhost:58080/artwork.jpg',
+    'http://127.0.0.1:58081/artwork.jpg', 'http://127.0.0.1/artwork.jpg', 'https://127.0.0.1:58080/artwork.jpg',
+    'http://name:secret@127.0.0.1:58080/artwork.jpg', `${thumbnail}#fragment`, 'http://127.0.0.1:58080/art\nwork.jpg']) {
+    assert.deepEqual(await fetcher(refused, endpoint, signal), {ok: false, code: 'unsupported', transient: false});
+  }
+  assert.equal(calls, 0, 'refused candidates must never contact a service');
+  const result = await fetcher(thumbnail, endpoint, signal);
+  assert.ok(result.ok, 'the qualified receiver thumbnail port must be admitted');
+  assert.deepEqual([...result.value], [1, 2, 3]); assert.equal(calls, 1);
+});
+
+void test('candidate retains configured origin admission with no credentials or fragment', () => {
   assert.equal(artworkUrl(`${endpoint}/image?private=1`, endpoint), `${endpoint}/image?private=1`);
   for (const url of ['/image', 'https://127.0.0.1:10000/image', 'http://127.0.0.1:10001/image', 'http://localhost:10000/image',
     'http://name:secret@127.0.0.1:10000/image', `${endpoint}/image#fragment`, `${endpoint}/ima\nge`, `${endpoint}/${'x'.repeat(2048)}`]) assert.equal(artworkUrl(url, endpoint), undefined, url);
@@ -20,6 +37,7 @@ void test('wrong origin starts no fetch, redirect is manual and always refused',
   }));
   assert.equal((await fetcher('http://127.0.0.2:10000/image', endpoint, signal)).ok, false); assert.equal(calls, 0);
   assert.deepEqual(await fetcher(`${endpoint}/image`, endpoint, signal), {ok: false, code: 'unsupported', transient: false}); assert.equal(calls, 1);
+  assert.deepEqual(await fetcher('http://127.0.0.1:58080/image', endpoint, signal), {ok: false, code: 'unsupported', transient: false}); assert.equal(calls, 2);
 });
 
 void test('ignores media type and enforces streamed byte limit at and beyond boundary', async () => {
