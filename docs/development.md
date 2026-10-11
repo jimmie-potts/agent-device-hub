@@ -1346,7 +1346,10 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 core CI job runs `npm run test:playback:built` after its fresh build. The suite
 needs no speaker: the HTTP tests use fake speakers on the loopback interface,
 and the module tests use the simulated speakers on a manual clock and run the
-module test kit. The runtime's `speaker-playback` catalog scenario runs the
+module test kit. `artwork-fetch.test.ts` also verifies the qualified same-receiver
+port 58080 acquisition and zero fetches for refused hosts/ports, credentials and
+fragments, while retaining redirect refusal on both admitted origins.
+The runtime's `speaker-playback` catalog scenario runs the
 module in `test:runtime:scenarios:built` and in disposable runs. The old Hub's
 `apps/hub/tests/playback.test.mjs` keeps testing the Hub's own copy, which stays
 until #839.
