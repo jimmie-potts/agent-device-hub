@@ -69,6 +69,8 @@ export type Operation = {
   target: string;
   /** The command's payload without its `requestId`, kept so a person can send it again as a new command (#923). */
   data: Record<string, unknown>;
+  /** Private identity of omitted ONN text; never an input to replay or a public operation record. */
+  payload?: {status: 'omitted'; hmac: string};
   /** Who asked for the action: an authenticated caller's source, or the core part that dispatched it. */
   requestedBy: string;
   status: OperationStatus;

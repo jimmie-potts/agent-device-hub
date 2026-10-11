@@ -136,22 +136,18 @@ both-transport, browser/accessibility and disposable Acceptance checks. A passiv
 native binary load proves packaging compatibility only; radio access and physical
 acceptance use their separate explicitly selected briefs.
 
-## ONN qualification and future product checks
+## ONN qualification
 
 [ONN controls qualification](onn-controls-qualification.md) records the selected
 host ADB route, owner-approved native dependency, physical evidence and minimum
-controls contract. This documentation-only change installs no product behavior
-or schema and needs no OpenSpec delta. Run the workflow checks and documentation
-drift fixtures above; independent review checks the evidence boundaries and
-reserved design.
+controls contract. The [ONN module](../modules/onn/README.md) implements those
+controls through the existing dispatcher, SDK outbox and shared dashboard.
+Its [checks](#onn-module-checks) preserve the distinction between source,
+simulated, protocol, installed-client and physically observed evidence.
 
-Before product implementation, link the exact owning issue's OpenSpec change,
-register its build/type/tests in package scripts and CI, and document the ONN
-module checks here. Use SDK/module facilities and disposable runtime scenarios
-for actions, cancellation/refusal, persistence, sensitive text, recovery and no
-replay. Retain gateway/MCP, browser/accessibility and disposable Acceptance
-checks for their affected consumers. Fake socket evidence does not establish
-an installed or physically observed TypeScript client.
+### ONN focused-text admission checks
+
+The issue-linked `gh-1039-onn-controls` change adds a narrow privacy exception to the existing core dispatcher. After the root build, run `npm run test:runtime:onn-admission:built` for the actual dispatcher/store regression. The runtime unit suite discovers this test, and CI's existing `test:runtime:built` step runs it; shared SDK checks cover the private digest primitive. Retain the failing-before result and verify semantic duplicates, missing/replaced keys, durable plaintext exclusion, no replay and inbox refusal. This is source evidence; installed ONN acceptance remains separate.
 
 ## Roborock transport checks
 
@@ -1570,6 +1566,30 @@ trusted supervisor boundary and installed qualification.
 ## BB-8 source checks
 
 Before product implementation, #604 registers the module/helper workspaces and CI checks. [Module guide](../modules/bb8/README.md) owns `test:bb8`, `test:bb8:built`, `test:bb8:package` and `test:bb8:browser`; [Windows component guide](../apps/bb8-windows/README.md) owns `test:bb8-windows` and `test:bb8-windows:built`. Root build/typecheck compile both under the strict profile. Core CI runs their built tests/package consumer; App verification runs the focused browser/axe journey. These additions require executable checks before acceptance. Retain the qualification's shared compatibility, SDK/module-kit, both-transport catalog, full dashboard browser and independent disposable Acceptance checks. Source delivery does not activate the helper or qualify BLE.
+
+## ONN module checks
+
+Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
+`npm run lint:js` and `npm run test:onn:built`. The module suite covers the
+fixed action mappings, private ADB protocol, bounded queue, persistent fences,
+outcome outbox, key changes before effects, truthful connection transitions,
+unchanged polling, actual module-store exhaustion and module conformance.
+`npm run test:runtime:onn-admission:built`
+checks text omission and duplicate identity in the actual core store and inbox.
+The runtime unit suite also runs `onn-gateway.test.ts` through a real MCP SDK
+client. Run `npm run test:runtime:scenarios:built` for the shared catalog's
+`onn-controls` scenario on both in-process and remote transports. Run
+`npm run test:onn:browser` for the authenticated simulated remote's keyboard,
+text, read-only refusal, reload, unavailable/unknown states, phone/desktop and
+WCAG checks. Set `BUNNY_ONN_SCREENSHOTS` to an existing private evidence folder
+to retain desktop/phone images for visual inspection. Also run the full
+runtime dashboard browser suite locally as its owning guide requires.
+The active Checks workflow includes ONN under its existing modules group;
+App verification runs the focused ONN browser journey, and runtime/SDK suites
+cover shared consumers. Run the shared contract and workflow checks too.
+These are source and
+simulator checks. Installed-client and physical acceptance require their own
+evidence.
 
 ## Roborock module checks
 

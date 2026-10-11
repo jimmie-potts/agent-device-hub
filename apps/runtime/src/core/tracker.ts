@@ -26,6 +26,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
+  PrivateRequestDigest, SdkError,
   acknowledgmentOf, levelOf, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing,
 } from '@jimmie-potts/sdk';
@@ -98,6 +99,7 @@ export type TrackerOptions = {
   trace: Tracing;
   clock: Clock;
   scheduler: ModuleScheduler;
+  files?: () => string;
   /** The parts' derivers of tracked actions' changes. */
   tracked?: readonly Tracked[];
   /** Resolves once the core's store is open. */
@@ -329,6 +331,10 @@ export class Tracker {
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {
       return refuse('invalid-request', 'an action is a command: a type org.bunny.<entity>.<verb>.requested, a dataschema and an object payload');
     }
+    const sensitive = family === 'onn-text' || draft.type === 'org.bunny.onn.text.requested' || draft.dataschema === 'https://bunny.invalid/events/onn-text/2.0';
+    if (sensitive && (family !== 'onn-text' || draft.type !== 'org.bunny.onn.text.requested' || draft.dataschema !== 'https://bunny.invalid/events/onn-text/2.0')) {
+      return refuse('invalid-request', 'the focused text command identity is invalid');
+    }
     await ready;
     if (this.#stopped || this.#statements === undefined || !store.open) return refuse('unavailable', 'the core is not taking actions now');
     const kind = kindOf(family);
@@ -348,6 +354,19 @@ export class Tracker {
     try {
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
+        if (sensitive) {
+          if (this.#options.files === undefined) throw new Refused('unavailable', 'the private request identity is unavailable');
+          const count = tx.database.prepare("SELECT COUNT(*) AS count FROM core_operations WHERE json_extract(record, '$.family') = 'onn-text'").get() as {count: number};
+          try {
+            // Create sensitive storage only inside its first admission transaction. A rolled-back initialization can retry safely.
+            const privateDigest = new PrivateRequestDigest(tx.database, this.#options.files);
+            sent.payload = {status: 'omitted', hmac: privateDigest.digest('bunny/onn-text-admission/1',
+              canonical({requestedBy: action.requestedBy, requestId, key: action.key, target, type: draft.type, schema: draft.dataschema, data}), count.count === 0)};
+          } catch (error) {
+            throw new Refused(error instanceof SdkError ? error.body.error.code : 'unavailable', 'the private request identity is unavailable');
+          }
+          sent.data = {};
+        }
         if (known !== undefined) return known;
         const handled = inbox?.handle(tx);
         if (handled !== undefined) throw new Refused(handled.error.code, handled.error.detail ?? 'inbox handling refused');
@@ -362,7 +381,7 @@ export class Tracker {
     }
     if (earlier !== undefined) {
       served.end();
-      return this.#again(earlier, action, data);
+      return this.#again(earlier, action, data, sent.payload);
     }
     // A device refusal or uncertainty from here belongs to the new operation; it cannot reject committed handling.
     inbox?.committed(requestId);
@@ -391,10 +410,12 @@ export class Tracker {
    * A request ID already in use. The same caller asking for the same action again gets what that action got, and
    * nothing is sent again; anyone or anything else is `duplicate-conflict`.
    */
-  #again(earlier: Operation, action: Action, data: Record<string, unknown>): ActionAnswer {
+  #again(earlier: Operation, action: Action, data: Record<string, unknown>, payload?: Operation['payload']): ActionAnswer {
     const {requestId} = earlier;
     const same = earlier.requestedBy === action.requestedBy && earlier.key === action.key && earlier.command === action.draft.type &&
-      earlier.dataschema === action.draft.dataschema && canonical(earlier.data) === canonical(data);
+      earlier.dataschema === action.draft.dataschema && (payload === undefined
+        ? earlier.payload === undefined && canonical(earlier.data) === canonical(data)
+        : earlier.payload?.status === 'omitted' && earlier.payload.hmac === payload.hmac);
     const fields = {'bunny.participant': action.requestedBy, ...requestField(requestId)};
     if (!same) {
       this.#record('warn', 'command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, earlier);

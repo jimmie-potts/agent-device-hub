@@ -286,6 +286,7 @@ class Core {
     });
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
+      files: context.files,
       tracked: parts.flatMap(part => part.tracked ?? []), ready: this.#ready,
       storage: {failed: code => { this.#degraded(code); }, recovered: () => { this.#recovered(); }},
     });
