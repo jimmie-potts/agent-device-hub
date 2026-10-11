@@ -33,11 +33,16 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
   }
 }
 
-void test('the edge-grants step and every catalog scenario pass in a run; the negative control fails', {timeout: 600_000}, async context => {
-  const at = await base(context);
-  const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
+const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
+void test('the capture steps include edge grants, every catalog scenario and request following', () => {
   assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
-  for (const step of reference) {
+});
+
+// Each capture keeps its own timeout and fresh run. Catalog growth must not consume another case's test budget;
+// the serial test runner and the CI job's outer bound still limit the complete suite.
+for (const step of reference) {
+  void test(`${step} passes in a fresh run`, {timeout: 300_000}, async context => {
+    const at = await base(context);
     const result = await judge(context, at, step);
     assert.equal(result.outcome, 'passed', `${step}: ${result.reason ?? ''}`);
     assert.ok(result.assertions.length >= 2, `${step} asserts its observations`);
@@ -47,10 +52,18 @@ void test('the edge-grants step and every catalog scenario pass in a run; the ne
       const scenario = JSON.parse(await readFile(attached, 'utf8')) as {synthetic: boolean; physical: boolean; outcome: string; tier: string; problems: unknown[]};
       assert.deepEqual([scenario.synthetic, scenario.physical, scenario.outcome, scenario.tier, scenario.problems], [true, false, 'passed', 'run', []]);
     }
-  }
+  });
+}
+
+void test('the scenario negative control fails in a fresh run', {timeout: 300_000}, async context => {
+  const at = await base(context);
   const control = await judge(context, at, 'control-scenario-fails');
   assert.equal(control.outcome, 'failed');
   assert.ok((control.reason ?? '').startsWith('assertion failed: the scenario passed'), control.reason);
+});
+
+void test('the follow negative control fails in a fresh run', {timeout: 300_000}, async context => {
+  const at = await base(context);
   const absent = await judge(context, at, 'control-follow-fails');
   assert.equal(absent.outcome, 'failed');
   assert.ok((absent.reason ?? '').startsWith('assertion failed: the run found a request that was never sent'), absent.reason);
