@@ -141,6 +141,8 @@ jobs:
         run: npm run test:roborock-transport:consumer:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:roborock:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:onn:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:consumer:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
@@ -225,6 +227,8 @@ jobs:
         run: npm run test:bb8:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   gate:

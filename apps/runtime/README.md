@@ -53,6 +53,11 @@ analytics routes; browser exposure remains off until explicitly enabled.
 
 ## Adding a module
 
+The [ONN module](../../modules/onn/README.md) owns one configured streaming
+device, its fixed controls and its shared-dashboard React remote. Its
+`onn_status` tool reads cached neutral app/connection evidence; commands use
+the core dispatcher. Pairing and device addresses remain private manual setup.
+
 A module registers itself from its own folder (#999), so adding runtime and
 harness registration needs no shared module list:
 

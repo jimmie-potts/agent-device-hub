@@ -1,5 +1,6 @@
 import {createRoborockModule,SimulatedRoborock,roborockSchemas,type RoborockModule,type SimulationAction,type VacuumStatus} from '@jimmie-potts/roborock';
 import {createBb8Module, SimulatedLink, bb8Schemas, type SimulatedState as Bb8SimulatedState} from '@jimmie-potts/bb8';
+import {createOnnModule, SimulatedOnn, onnSchemas, ONN_SIMULATED_SECTION} from '@jimmie-potts/onn';
 import {Gadget, gadgetSchemas, setGadget} from '../../dist/tests/fixtures/gadget.js';
 // The runtime dashboard's browser suites' world (Hub #922): the built runtime in this process with the core and its
 // gateway on a free loopback port, a private state directory under the system temporary directory, which lies outside
@@ -35,6 +36,7 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  onn?: boolean;
   roborock?: boolean;
   bb8?: boolean;
   /** The actual file reader on explicitly selected private synthetic collector files. */
@@ -61,6 +63,9 @@ export type WorldOptions = {
 };
 
 export type World = {
+  onnState(): ReturnType<SimulatedOnn['state']>;
+  onnOnline(online: boolean): void;
+  readonlyOnn(): Promise<number>;
   roborockAction(action:SimulationAction):Promise<void>;
   roborockRefresh():Promise<void>;
   roborockCalls():readonly string[];
@@ -136,6 +141,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
   const bb8 = new SimulatedLink();
+  const onn = new SimulatedOnn();
   const bulbs = new SimulatedLifx();
   const lines = new SimulatedNanoleaf();
   const gadget = new Gadget();
@@ -157,6 +163,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
+    ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...options.bb8 === true ? {bb8: {id: 'bb8', configurationRevision: 0}} : {},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
@@ -168,7 +175,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
-    credentials, mcp: options.inbox === true || options.roborock===true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
+    credentials, mcp: options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
   }}));
   const logs: LogRecord[] = [];
@@ -186,12 +193,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.bb8 === true ? [createBb8Module({transport: bb8})] : []), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.roborock===true?roborockSchemas:{}, ...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.bb8 === true ? bb8Schemas : {}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -210,6 +217,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       try{const ready=await call({jsonrpc:'2.0',method:'notifications/initialized'});await ready.arrayBuffer();const response=await call({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'roborock_status',arguments:{}}});assert.equal(response.status,200);const body:unknown=await response.json();assert.ok(typeof body==='object'&&body!==null&&'result'in body);const result:unknown=body.result;assert.ok(typeof result==='object'&&result!==null&&'structuredContent'in result);const content:unknown=result.structuredContent;assert.ok(typeof content==='object'&&content!==null&&'data'in content);const data:unknown=content.data;assert.ok(typeof data==='object'&&data!==null&&'result'in data);return data.result;}finally{const ended=await fetch(`${runtime.url}/mcp`,{method:'DELETE',headers});await ended.arrayBuffer();}
     },
     url: runtime.url, stateDir, logs, runtime: () => runtime,
+    onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
+    readonlyOnn: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/onn-key-press`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'onn', data: {key: 'right'}, requestId: 'readonly-onn'})}); await result.arrayBuffer(); return result.status;},
     bb8State: () => bb8.snapshot(), bb8Online: value => {bb8.online(value);}, bb8Next: result => {bb8.next(result);},
     readonlyBb8: async data => {const result = await fetch(`${runtime.url}/api/v2/commands/bb8-connect`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'bb8', data, requestId: 'readonly-bb8'})}); await result.arrayBuffer(); return result.status;},
     nanoleafState: () => lines.state(),

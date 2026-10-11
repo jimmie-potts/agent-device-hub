@@ -8,6 +8,7 @@ export {
 } from './spans.js';
 export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
 export {fullDisk, openModuleDatabaseFile} from './database.js';
+export {PrivateRequestDigest} from './private-request-digest.js';
 export {
   CORE_SOURCE, OUTCOME_RECORDED_SCHEMA, OUTCOME_RECORDED_TYPE, acknowledgment, acknowledgmentOf, edgeValidator, outcomeRecordedKey, type OutcomeRecorded,
 } from './acknowledgment.js';

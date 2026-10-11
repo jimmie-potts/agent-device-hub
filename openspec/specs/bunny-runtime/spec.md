@@ -938,9 +938,11 @@ It SHALL record the action as `sent` in the core store before it sends anything,
 
 The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `accepted`, then `completed` with the outcome's result and evidence; `rejected` on a refusal, failed with evidence `none`, since a rejection proves no effect; `expired` when the command was still queued at its reply deadline, failed with evidence `none`; and `uncertain` when the handler had it at its reply deadline or no outcome arrived by the outcome deadline, with evidence `none` and `uncertain-result`. A late outcome SHALL complete the record: a definitive one, `succeeded` or `failed`, SHALL replace an uncertain result, history keeping both; an uncertain one SHALL add only its evidence to a definitive result; and a `succeeded` and a `failed` outcome for one operation, in either order, SHALL keep both, with the operation in `conflict` for a person, arrival order never picking a winner. A reply after an outcome SHALL only record what the owner said. A request ID SHALL name one action, ever: the same caller asking for the same action again SHALL get what that action got (`accepted`, its refusal, or `uncertain-result` while its reply is unknown) and nothing SHALL be sent; another action or another caller under that ID SHALL be refused with `duplicate-conflict`. Nothing SHALL ever send a command again: not a timed-out or uncertain one, not after a restart, which SHALL only let each pending operation's deadline pass, ending it `uncertain`. A clean stop closes the core's participant before the core stops, which settles the dispatcher's own requests: an action whose owner's handler has it with no reply SHALL end `uncertain` at once, with `uncertain-result` and the detail `the requester closed before the reply`, not at its deadline, and one still queued SHALL end `rejected` with `cancelled`, failed, never having run. Each step SHALL commit with its history row and each part's rows for it in one transaction, and SHALL be logged once, in the action's trace: `command.queued`, `command.admitted`, `command.rejected` at its code's level and `command.completed` (INFO for success, WARN for a failed, uncertain or conflicting result, and `bunny.reason` `timeout` at a deadline). The tracker's rows with a failed, expired, uncertain or conflicting result SHALL be the rows #923 turns into inbox items.
 
+The exact ONN focused-text family SHALL omit plaintext from durable operations and retain an omitted-payload marker plus a domain-separated private HMAC over canonical caller, request ID, target/key, type, schema, guards and input. Transport time and trace SHALL be excluded. One independently stored private key SHALL have a pinned identity; a missing, replaced or unsafe key SHALL refuse sensitive effects without erasing prior fences. Private identity storage exhaustion SHALL refuse with `capacity` before sending. This exception SHALL preserve normal action tracking and outcome/history semantics for all other commands.
+
 #### Scenario: Sent, accepted, completed
 - **WHEN** an operator's action reaches a module that accepts it and reports its outcome
-- **THEN** the operation is `completed` with the outcome's result and evidence, its owner, its command and its payload kept; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
+- **THEN** the operation is `completed` with the outcome's result and evidence, its owner and command kept, and its payload kept except omitted ONN focused text; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
 
 #### Scenario: A refusal, a stopped module and an expiry
 - **WHEN** a module refuses an action, an action's family has no running module, and an action waits behind one the module's handler holds past the reply deadline
@@ -971,8 +973,14 @@ The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `
 - **THEN** the first four are refused before anything is recorded, and the moment and the mode change are tracked as kinds `moment` and `mode` with their deadlines, failed `unavailable`
 
 #### Scenario: A full disk
-- **WHEN** the core store is full and an operator sends an action
+- **WHEN** the core store is full and an operator sends an ordinary action
 - **THEN** it is refused with `unavailable` and the detail `storage-full`, nothing is recorded, and the module never gets the command
+
+#### Scenario: Sensitive semantic duplicates
+- **WHEN** an ONN text request repeats with the same semantic content but a different transport timestamp/trace, or repeats after restart
+- **THEN** its retained reply is returned without transmission and no plaintext is retained
+- **WHEN** caller, target, schema, guards or input differs under the same request ID
+- **THEN** duplicate-conflict is returned without an effect
 
 ### Requirement: Outcome intake and acknowledgment
 
