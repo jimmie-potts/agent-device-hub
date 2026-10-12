@@ -1,6 +1,7 @@
 // The core payload families of profile 2.0 (Hub #842, #918): the facts every module can rely on, and the commands
 // that change them. Each payload schema lives in `schemas/v2/families/<family>.schema.json` and is built from the
 // shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
+import {companionFamilies} from './companions.js';
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
@@ -277,6 +278,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),
   define('session-label-set', 'command', 'org.bunny.session-label.set.requested', checkSessionLabel),
   define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
+  ...companionFamilies,
 ];
 
 /**

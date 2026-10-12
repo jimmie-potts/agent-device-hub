@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-state/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "settings",
+    "presentation",
+    "decision",
+    "availability"
+  ],
+  "properties": {
+    "id": {
+      "const": "reachy"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "muted",
+        "snoozedUntilMs",
+        "timeZone"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "muted": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 3,
+          "items": {
+            "enum": [
+              "coding-attention",
+              "coding-notice",
+              "simulated-social"
+            ]
+          }
+        },
+        "snoozedUntilMs": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "presentation": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "opportunity",
+            "text",
+            "phrase",
+            "presentedAtMs",
+            "history",
+            "content"
+          ],
+          "properties": {
+            "opportunity": {
+              "$ref": "https://bunny.invalid/events/companion-opportunity/2.0"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "phrase": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16
+            },
+            "presentedAtMs": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+            },
+            "history": {
+              "type": "boolean"
+            },
+            "content": {
+              "const": "unavailable"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "unavailable"
+      ]
+    }
+  }
+}

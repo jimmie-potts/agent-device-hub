@@ -136,6 +136,18 @@ Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
 
+## Optional text companion
+
+The statically shipped `modules/companions` consumes core-owned first-live coding
+opportunities through the SDK. Core keeps session/mode ownership and produces no
+opportunity from recovery, snapshots or reconnect. The module owns only private
+settings and bounded admission/presentation records; pending candidates are not
+durable. Its browser-only React contribution uses the existing shell and tracked
+commands. Labelled synthetic scenarios remain separate from live state and
+allowances. The module adds no device/audio writer, service or transport boundary.
+The architecture diagram retains its dated physical-device view; these text
+cards use its existing core/bus/module-store/frontend boundaries.
+
 ## Module frontend ownership
 
 The owner selected React and TypeScript for new module interfaces on 2026-10-08.

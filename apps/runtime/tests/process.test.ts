@@ -55,7 +55,8 @@ const recorded = (runtime: Spawned, event: string): boolean => runtime.records()
  * Each shipped device module, which the shipped runtime refuses while no configuration gives it a section (Hub #919), at
  * the module API version its manifest declares.
  */
-const UNCONFIGURED = shippedModules.slice(1).map(factory => ({
+const UNCONFIGURED = shippedModules.slice(1).map(factory => factory.name === 'companions'
+  ? {name: 'companions', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['companion-state']} : ({
   name: factory.name, apiVersion: factory.simulate().manifest.apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
   reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
 }));
@@ -408,7 +409,7 @@ it('--config reads a private configuration file, and a file the runtime cannot t
     assert.equal(runtime.stdout(), '', `${file}: no ready line`);
   }
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
-  // The file names no module, so the core runs and each shipped device module is refused for want of its section.
+  // The file names no module, so the core and optional text companion run; configured device modules are refused for want of their sections.
   assert.deepEqual((await health(runtime.url)).body.modules.slice(1), UNCONFIGURED);
   assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running');
   runtime.child.kill('SIGTERM');

@@ -1,6 +1,132 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "companion-opportunity": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-opportunity",
+  "source": "bunny/core",
+  "type": "org.bunny.companion-opportunity.raised",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-opportunity/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "origin": {
+    "id": "msg-attention-raised",
+    "source": "bunny/core",
+    "type": "org.bunny.attention.raised"
+   },
+   "sourceKind": "coding",
+   "context": "live",
+   "category": "coding-attention",
+   "cue": "approval",
+   "revision": 4,
+   "generation": 1,
+   "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "identity": {
+    "provider": "codex",
+    "client": "desktop",
+    "hostId": "host-a",
+    "sourceId": "codex-desktop",
+    "sessionId": "session-root"
+   },
+   "turn": {
+    "status": "known",
+    "id": "turn-7"
+   },
+   "attention": {
+    "id": {
+     "status": "known",
+     "id": "approval-1"
+    },
+    "kind": "approval",
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    }
+   },
+   "noticeId": null,
+   "evidence": "lifecycle-metadata",
+   "observedAtMs": 1791287997000,
+   "occurredAtMs": 1791287996900,
+   "validUntilMs": 1791288026900,
+   "busy": null,
+   "media": null,
+   "visitor": null,
+   "location": null
+  }
+ },
+ "companion-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-state",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.companion-state.updated",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "reachy",
+   "revision": 1,
+   "settings": {
+    "enabled": false,
+    "muted": [],
+    "snoozedUntilMs": 0,
+    "timeZone": "UTC"
+   },
+   "presentation": null,
+   "decision": "disabled",
+   "availability": "available"
+  }
+ },
+ "companion-settings-set": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-settings-set",
+  "source": "bunny/core",
+  "type": "org.bunny.companion-settings.set.requested",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-settings-set/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "companion-settings-test",
+   "expectedRevision": 1,
+   "enabled": true,
+   "muted": [],
+   "snooze": "keep"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "companion-fixture-run": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-fixture-run",
+  "source": "bunny/core",
+  "type": "org.bunny.companion-fixture.run.requested",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-fixture-run/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "companion-fixture-test",
+   "scenario": "arrival",
+   "busy": false,
+   "media": false
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+
  "playback-artwork-missing": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",

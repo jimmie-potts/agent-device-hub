@@ -56,8 +56,8 @@ it('every stderr line of a runtime process is a contract record carrying the run
     const records = parsed(runtime.lines());
     // The shipped list holds the core (Hub #831), whose start and stop the runtime records, then the device modules, which
     // the runtime refuses without a configuration (Hub #919, #928).
-    const refused = shippedModules.slice(1).map(() => 'runtime.module.refused');
-    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', ...refused, 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
+    const refused = shippedModules.slice(1).filter(factory => factory.name !== 'companions').map(() => 'runtime.module.refused');
+    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', ...refused, 'runtime.module.started', 'runtime.sync.served', 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.module.stopped', 'runtime.stopped']);
     for (const record of records) {
       assert.equal(record.schema_version, '1.5');
       assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
