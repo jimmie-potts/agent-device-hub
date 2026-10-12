@@ -321,11 +321,24 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
-The current profile accepts unconfigured BB8, ONN and Roborock only when their
-health rows are `refused`, `healthy: false`, and `not-found`, and no state is
-retained for those owners. Configured or retained BB8/ONN/Roborock state still
-refuses before effects; it needs its own complete upgrade/recovery qualification.
-Configured or retained ONN qualification belongs to #1044.
+Unconfigured ONN with no retained state remains eligible only when its health
+row is `refused`, `healthy: false`, and `not-found`. Configured or retained ONN
+requires its durable owner and complete ONN coverage in the verified admission,
+with baseline, candidate, recovery and re-upgrade receipts. Configured ONN must
+also report running and healthy, without a refusal reason. Legacy seven-owner
+certificates remain supported for absent ONN. BB8 and Roborock remain refused
+when configured or retained until their own profile qualification is integrated.
+
+The ONN source tests exercise four separate processes using one built module.
+They establish retained originals, reported progress, gaps, private identities,
+outcomes and no replay across restarts. They do not establish compatibility
+between actual releases. Bind actual baseline, candidate and recovery artifacts
+and inspect every changed production input before coordinator admission. A
+recovery release must accept the complete current ONN configuration and latest
+history/command formats. Release `52ee8f28` predates `historyEnabled` support and refuses
+that setting; it cannot be used for configured-history recovery. Do not remove
+settings or observations to make an incompatible recovery appear eligible. An
+absent-ONN routine upgrade may precede a separately approved ONN activation.
 
 Each previous, target and recovery inventory must match that release's actual
 verified production inputs. The qualification inventory matches the target's

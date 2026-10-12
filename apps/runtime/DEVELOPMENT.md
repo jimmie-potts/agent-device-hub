@@ -6,6 +6,19 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+After the root build, run
+`node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
+Existing `test:runtime:built` discovery runs these checks in active core CI; no
+additional workflow is needed. They cover private inventory, exact qualification
+coverage, configured health and preserved absent-ONN refusals. Four separate
+synthetic processes use the production ONN module, its history/command stores and
+SDK outbox to retain original observations, reported progress, gaps, private
+identities and truthful interrupted outcomes without replay. All four processes
+use the same built implementation: this checks restart semantics, not compatibility
+between historical release artifacts. Actual previous/target/recovery artifacts,
+coordinator admission, installed readers/clients and physical acceptance require
+their own evidence under [UPGRADE.md](UPGRADE.md).
+
 Current-runtime upgrade inventory and receipt checks (#1037) are in
 `apps/runtime/tests/runtime-upgrade-check.test.ts`. After the root build, run
 `node --test apps/runtime/dist/tests/runtime-upgrade-check.test.js`; existing

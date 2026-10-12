@@ -89,6 +89,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     stamps: {previous: stamp, target: stamp, recovery: stamp}, inputs: [] as unknown[],
     artifacts: {previous: {identity: release, root: artifact.directory, entries: []}, target: {root: artifact.directory}, recovery: {root: artifact.directory}}};
   const admission = {schema: 'runtime-proof-admission/1.0', admissionSha256: 'd'.repeat(64),
+    coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox'],
     installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'e'.repeat(64)}};
   const configured = ['codex-desktop', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt'];
   type Row = {name: string; apiVersion: string; state: string; healthy: boolean; reasonCode: string | null};
@@ -113,6 +114,15 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const configSha256 = sha256(await readPrivateFile(owner.options.config, 1024 * 1024));
   const credentialsSha256 = sha256(await readPrivateFile(join(root, 'credentials'), 65536));
   const state = {configSha256, configured, durableOwners: ['core', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt']};
+  if (['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario)) {
+    const retainedOnly = scenario.startsWith('onn-retained-');
+    if (!retainedOnly) configured.push('onn');
+    if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
+    if (!scenario.includes('missing-coverage')) admission.coveredOwners.push('onn');
+    const row = health.modules.find(value => value.name === 'onn');
+    assert.ok(row);
+    if (!retainedOnly) {row.state = 'running'; row.healthy = true; row.reasonCode = null;}
+  }
   const counters: Record<string, number> = {owner: 0, listener: 0, source: 0, admission: 0, baseline: 0, paths: 0, hooks: 0, state: 0, receipts: 0, http: 0, lock: 0, execution: 0};
   const count = (name: string) => (counters[name] = (counters[name] ?? 0) + 1);
   let afterHttp = false;
@@ -181,6 +191,17 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
   assert.equal(absentOnn.plan.operation, 'adoption');
   assert.equal(absentOnn.counters.http, 2);
+  for (const scenario of ['onn-qualified', 'onn-retained-qualified']) {
+    const qualified = await inspect(scenario) as Planned & {code?: string};
+    assert.equal(qualified.code, undefined, scenario);
+    assert.equal(qualified.plan.operation, 'adoption');
+    assert.equal(qualified.counters.http, 2);
+  }
+  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
+    const missing = await inspect(scenario);
+    assert.equal(missing.code, 'runtime-upgrade-preflight-refused', scenario);
+    assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
+  }
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
   assert.equal(first.observations.length, 2);
@@ -239,7 +260,14 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const source = {expected, stamps, inputs: [] as unknown[],
     artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous}, target: {root: join(root, 'target')}, recovery: {root: join(root, 'previous')}}};
   const state = {configured: scenario === 'configured-onn' ? ['onn'] : [], durableOwners: ['core'], configSha256: sha256('config')};
-  const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)}};
+  const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)},
+    coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox']};
+  const qualifiedOnn = ['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario);
+  if (qualifiedOnn) {
+    if (!scenario.startsWith('onn-retained-')) state.configured.push('onn');
+    if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
+    if (!scenario.includes('missing-coverage')) admission.coveredOwners.push('onn');
+  }
   const baseline = {baselineRoot: join(root, 'previous')}, hooks = {hooks: []}, paths = {protectedPaths: []};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
   await writeFile(request.tokenFile, 'synthetic private token', {mode: 0o600});
@@ -261,6 +289,12 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
     health.status = scenario === 'onn-wrong-status' ? 'ok' : 'degraded';
     health.modules.push({name: 'onn', state: scenario === 'onn-running' ? 'running' : 'refused',
       healthy: scenario === 'onn-healthy', reasonCode: scenario === 'onn-wrong-reason' ? 'unavailable' : 'not-found'});
+  }
+  if (qualifiedOnn) {
+    const retainedOnly = scenario.startsWith('onn-retained-');
+    const row = health.modules.find(value => value.name === 'onn');
+    assert.ok(row);
+    if (!retainedOnly) {row.state = 'running'; row.healthy = true; row.reasonCode = null; health.status = 'ok';}
   }
   if (scenario === 'unknown-module') health.modules.push({name: 'unknown-module', state: 'refused', healthy: false, reasonCode: 'not-found'});
   const io: Readers = {
@@ -309,6 +343,17 @@ void test('post-start observation binds the selected release and refuses drift w
   type Passed = {result: {phase: string; verified: boolean; selection: {target: string}}; counters: {http: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   const passed = await inspect('good') as Passed;
   assert.equal(passed.result.phase, 'candidate'); assert.equal(passed.result.verified, true); assert.equal(passed.counters.http, 2);
+  for (const scenario of ['onn-qualified', 'onn-retained-qualified']) {
+    const qualified = await inspect(scenario) as Passed & {code?: string};
+    assert.equal(qualified.code, undefined, scenario);
+    assert.equal(qualified.result.verified, true);
+    assert.equal(qualified.counters.http, 2);
+  }
+  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
+    const missing = await inspect(scenario);
+    assert.equal(missing.code, 'runtime-upgrade-running-refused', scenario);
+    assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
+  }
   assert.equal(passed.observations.length, 2);
   assert.deepEqual(passed.observations[0], passed.observations[1]);
   assert.equal(passed.observations[0]?.operationId, 'one');
