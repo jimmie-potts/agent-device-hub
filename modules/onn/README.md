@@ -54,6 +54,10 @@ release identity and build checks live under `native/`; TypeScript pins are in
 file. Polling checks it and invokes it once; it never copies, repairs or installs
 an artifact. This is not an APK or resident Android service and needs no new
 device permission. Missing, mismatched or refused reader output creates a gap.
+The fixed invocation supplies the reader's result pipe before forwarding to
+raw ADB's socket-backed output. It preserves reader failure status with
+`pipefail` and suppresses VM startup stdout/stderr. Neither the result path nor
+the invocation accepts client-supplied arguments.
 Module startup opens its private store and bus resources without waiting for
 the device.
 
