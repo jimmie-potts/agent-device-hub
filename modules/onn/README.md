@@ -184,6 +184,13 @@ temporary output; it neither downloads tools nor replaces the shipped artifact.
 Default CI proves JDK behavior and pin consistency, with no Android or D8
 execution claim.
 
+The standalone reader initializes a missing process-local Android media service
+manager before selected session lookup and preserves an existing manager. This
+changes no Android permission, setting or persistent service. Initialization
+failure uses the same bounded unavailable result. Reader versions and digests
+remain attached to each stored observation; a reader update does not rewrite
+earlier originals or provenance.
+
 Use the [development checks](../../docs/development.md#onn-module-checks).
 The simulation supplies synthetic titles, episodes, progress, physical changes,
 gaps and an effect count. Native/protocol/source tests do not establish installed

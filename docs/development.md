@@ -1602,7 +1602,8 @@ evidence.
 For ONN title-history source changes, also run `npm run test:onn:native` with
 JDK 21 and Python 3.12 or later. This compiles the fixed reader against synthetic
 Android surfaces, exercises privacy/bounds/deadlines and fixed invocation over
-socket-backed raw ADB output, and verifies the packaged
+socket-backed raw ADB output, checks missing/existing process-local media
+initialization and private refusal, and verifies the packaged
 source/Dex pins. It does not run Android or reproduce Dex unless the qualified
 R8 tool is explicitly supplied through the owning native build procedure.
 The modules CI group provisions JDK 21 and runs this check. Module tests cover

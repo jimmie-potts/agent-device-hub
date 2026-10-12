@@ -1,14 +1,14 @@
 {
   "schema": "onn-native-release/1",
   "readerSchema": "onn-metadata/2.0",
-  "sourceVersion": "onn-metadata/2.0-native-3",
-  "sourceSha256": "a46d4112e84674d3fccaa616787903e93f6800da37cf8d33b82091b994e64e33",
-  "dexSha256": "460cee4c930d9fba5f2665f70c2da49e60dd7bab2cd682b80e58fc4701137d52",
+  "sourceVersion": "onn-metadata/2.0-native-4",
+  "sourceSha256": "cd29c55b48841b742ab41f847f7bb29d0e07f1e44d268482abe5a47f545ef372",
+  "dexSha256": "ac2db0440ad01c7db9a7e1c8588d8d1502872d66c55d365dd5e746e57d097052",
   "r8Sha256": "900dfbc649519969fc5a4c7520d6b7355338e565fa1249874e0190b8d61b1199",
   "r8Version": "8.3.37",
   "javaRelease": 8,
   "minApi": 28,
   "defaultCheck": "JDK synthetic execution and pin consistency only; no D8 reproduction",
-  "sourcePreparationBaseline": "f4786278e610e709ca225778bffd550d7ceb8ca4",
+  "sourcePreparationBaseline": "cfdb4cd36f7d3004d8cfda6e85192097c98f19ac",
   "contractBaseline": "fa8de1d57d63815071da012fbd53c202815cdbf3"
 }

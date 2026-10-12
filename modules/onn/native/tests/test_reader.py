@@ -34,6 +34,17 @@ class ReaderTests(unittest.TestCase):
   code,stdout,stderr=self.raw_adb_invocation('throw')
   self.assertEqual(code,2);self.assertEqual(stderr,b'')
   self.assertEqual(json.loads(stdout),{'schema':'onn-metadata/2.0','failure':'metadata-read-unavailable'})
+ def test_standalone_media_manager_initialization_over_raw_adb_socket(self):
+  code,stdout,stderr=self.raw_adb_invocation('standalone-manager')
+  self.assertEqual(code,0,'standalone process must initialize its missing media manager')
+  self.assertEqual(stderr,b'')
+  value=json.loads(stdout);self.validate_success(value)
+  self.assertEqual([s['app'] for s in value['sessions']],['youtube','stremio'])
+  self.assertEqual(value['sessions'][0]['metadata']['title'],'Synthetic title')
+ def test_media_manager_failure_remains_private_and_unsuccessful(self):
+  code,stdout,stderr=self.raw_adb_invocation('manager-unavailable')
+  self.assertEqual(code,2);self.assertEqual(stderr,b'')
+  self.assertEqual(json.loads(stdout),{'schema':'onn-metadata/2.0','failure':'metadata-read-unavailable'})
  def run_reader(self, scenario="selected", args=()):
   cmd=["java", "-Dscenario="+scenario, "-cp", str(CLASSES), "OnnMetadataReader", *args]
   result=subprocess.run(["bash","-c","exec 3>&1 1>/dev/null 2>/dev/null; exec "+shlex.join(cmd)],capture_output=True,timeout=6)
