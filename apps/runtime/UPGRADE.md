@@ -334,6 +334,28 @@ healthy without a refusal reason. Unknown owners still refuse. Legacy seven-owne
 certificates remain valid for absent BB-8 and ONN; adding ONN extends either the
 legacy set or the qualified BB-8 pair by that one fixed owner.
 
+The delivered `companions` registration always starts its private store, even
+when its card feature is disabled. A verified artifact containing its fixed
+package requires complete `companions` baseline/candidate/recovery/reupgrade
+coverage in addition to the applicable existing owner set. The certificate
+schema remains unchanged; exact names and all four phases are required. An
+older initial baseline may lack the module only while it has no companion
+configuration or retained state. Target and recovery bytes must contain its
+reader: leaving an unread database untouched does not prove reopened latest
+state. A future change to the registration requires fresh qualification rather
+than a new inference from package presence.
+
+Artifacts shipping companions require its ordinary running, healthy,
+null-reason health row without an absent-device exception. After a qualified
+first startup, the state inventory must equal the original inventory plus only
+that named owner; missing state or any unrelated addition/removal refuses.
+Compatibility fixtures retain settings, consumed origins, admissions,
+live/scenario allowances, presentation history and pending outcome identities,
+without reconstructing a reaction or replaying commands. Live databases are
+never opened by inventory checks. These source proofs do not select companion
+enablement, #643's desk acceptance or installed startup effects; inspect their
+separate authority in the exact operation plan.
+
 The ONN source tests exercise four separate processes using one built module.
 They establish retained originals, reported progress, gaps, private identities,
 outcomes and no replay across restarts. They do not establish compatibility

@@ -20,24 +20,51 @@ import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
 const maximum = 256 * 1024;
 const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
-const knownModules = ['bb8', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
+const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
 
-function requireCoverage(admission, state) {
+// The delivered companion registration always starts. Its fixed package path
+// in a verified artifact is conservative evidence of that ownership; missing
+// inventory is unknown, never a legacy exemption or dynamic module discovery.
+function companionRoles(source) {
+  return Object.fromEntries(['previous', 'target', 'recovery'].map(role => {
+    const entries = source.artifacts?.[role]?.entries;
+    if (!Array.isArray(entries)) refused();
+    const matches = entries.filter(entry => entry.path === 'modules/companions/package.json');
+    if (matches.length > 1 || matches.some(entry => entry.kind !== 'file'
+      || !/^[0-9a-f]{64}$/.test(entry.sha256))) refused();
+    return [role, matches.length === 1];
+  }));
+}
+
+function requireCoverage(admission, state, source) {
   const onn = state.configured.includes('onn') || state.durableOwners.includes('onn');
   if (onn && (!state.durableOwners.includes('onn') || !Array.isArray(admission.coveredOwners)
     || !admission.coveredOwners.includes('onn'))) refused();
   const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
   if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
     || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
+  const roles = companionRoles(source);
+  const retained = state.durableOwners.includes('companions');
+  const configured = state.configured.includes('companions');
+  if ((retained || configured || Object.values(roles).some(Boolean))
+    && (!Array.isArray(admission.coveredOwners) || !admission.coveredOwners.includes('companions')
+      || !roles.target || !roles.recovery || ((retained || configured) && !roles.previous))) refused();
+  if (roles.previous && !retained) refused();
 }
 
-function requireHealth(health, configured, lagLimitMs) {
+function stateAfterStart(state, source, role) {
+  if (!companionRoles(source)[role]) return state;
+  return {...state, durableOwners: [...new Set([...state.durableOwners, 'companions'])].sort()};
+}
+
+function requireHealth(health, configured, lagLimitMs, companions) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
     || configured.some(name => name === 'roborock' || !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
-    || !['core', ...configured].every(name => health.modules.some(row => row.name === name))) refused();
+    || !['core', ...configured, ...(companions ? ['companions'] : [])]
+      .every(name => health.modules.some(row => row.name === name))) refused();
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
@@ -46,7 +73,8 @@ function requireHealth(health, configured, lagLimitMs) {
     if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
-    } else if ((row.name !== 'core' && !configured.includes(row.name))
+    } else if ((row.name !== 'core' && !configured.includes(row.name)
+      && !(row.name === 'companions' && companions))
       || row.state !== 'running' || row.healthy !== true || row.reasonCode !== null) refused();
   }
   if (health.status !== (absentModuleException ? 'degraded' : 'ok')) refused();
@@ -88,10 +116,10 @@ export function createRuntimeUpgradePreflight(io) {
       const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: admission.installedBaselineClosure};
       const hooks = await io.hooks(hookInput);
       const state = await io.state(owner.options.stateDir, owner.options.config);
-      requireCoverage(admission, state);
+      requireCoverage(admission, state, source);
       const receiptDirectory = join(request.installationRoot, 'receipts');
       const receipts = await io.receipts(receiptDirectory, request.installationId);
-      requireCoverage(admission, state);
+      requireCoverage(admission, state, source);
       const protectedBindings = async () => {
         if (!same(execution, await io.execution(request))
           || !same(source, await io.source(sourceInput)) || !same(admission, await io.admission(request.admissionFile, source.expected))
@@ -106,7 +134,7 @@ export function createRuntimeUpgradePreflight(io) {
       const checkHttp = value => {
         if (!same(value.build, source.stamps.previous) || value.configSha256 !== state.configSha256
           || value.configSha256 !== privateInputs.configSha256 || value.credentialsSha256 !== privateInputs.credentialsSha256) refused();
-        requireHealth(value.health, state.configured, owner.options.lagLimitMs);
+        requireHealth(value.health, state.configured, owner.options.lagLimitMs, companionRoles(source).previous);
       };
       await original();
       const http = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); checkHttp(http);
@@ -170,10 +198,11 @@ export function createRuntimeUpgradeRunningCheck(io) {
       const source = await io.source(sourceInput);
       if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) fail();
       const admission = await io.admission(request.admissionFile, source.expected);
-      requireCoverage(admission, approved.state);
+      requireCoverage(admission, approved.state, source);
       if (!same(admission, approved.admission)) fail();
-      requireCoverage(admission, approved.state);
+      requireCoverage(admission, approved.state, source);
       const role = phase === 'recovery' ? 'recovery' : 'target';
+      const runningState = stateAfterStart(approved.state, source, role);
       const selected = source.artifacts[role].root;
       const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};
       const baselineInput = {path: request.installedBaselineClosureFile, pin: admission.installedBaselineClosure,
@@ -194,7 +223,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
         if (!same(await io.execution(request), approved.execution) || !same(await io.source(sourceInput), source)
           || !same(await io.admission(request.admissionFile, source.expected), admission)
           || !same(await io.baseline(baselineInput), approved.baseline) || !same(await io.hooks(hookInput), approved.hooks)
-          || !same(await io.state(owner.options.stateDir, owner.options.config), approved.state)
+          || !same(await io.state(owner.options.stateDir, owner.options.config), runningState)
           || !same(await privateInputs(), approved.privateInputs)
           || !requestBytes.equals(await io.privateFile(requestFile, maximum))
           || !approvedBytes.equals(await io.privateFile(approvedPlanFile, maximum))) fail();
@@ -203,7 +232,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
       const check = value => {
         if (!same(value.build, source.stamps[role]) || value.configSha256 !== approved.privateInputs.configSha256
           || value.credentialsSha256 !== approved.privateInputs.credentialsSha256) fail();
-        requireHealth(value.health, approved.state.configured, owner.options.lagLimitMs);
+        requireHealth(value.health, runningState.configured, owner.options.lagLimitMs, companionRoles(source)[role]);
       };
       await bindings(); await original();
       const http = await io.http(owner, request.tokenFile, expectedBuild, original, observationContext); check(http);

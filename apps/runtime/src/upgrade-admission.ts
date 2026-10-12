@@ -34,6 +34,8 @@ const owners = ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-
 const onnOwners = [...owners, 'onn'];
 const bb8Owners = [...owners, 'bb8', 'bb8-windows'];
 const bb8OnnOwners = [...bb8Owners, 'onn'];
+const coverageSets = [owners, onnOwners, bb8Owners, bb8OnnOwners]
+  .flatMap(names => [names, [...names, 'companions']]);
 const phases = ['baseline', 'candidate', 'recovery', 'reupgrade'];
 const revision = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
@@ -82,7 +84,7 @@ function admission(value: unknown): value is Admission {
     || !pin(value.installedBaselineClosure) || !pin(value.procedure)
     || !closed(value.sourceReviews, ['standards', 'specification']) || !Object.values(value.sourceReviews).every(pin)
     || !formats(value.formats) || !Array.isArray(value.coverage)
-    || ![owners.length, onnOwners.length, bb8Owners.length, bb8OnnOwners.length].includes(value.coverage.length)) return false;
+    || !coverageSets.map(names => names.length).includes(value.coverage.length)) return false;
   const names: string[] = [];
   for (const row of value.coverage) {
     if (!closed(row, ['owner', 'phases']) || !text(row.owner) || !Array.isArray(row.phases)
@@ -95,8 +97,7 @@ function admission(value: unknown): value is Admission {
     }
     if (!exactNames(phaseNames, phases)) return false;
   }
-  return exactNames(names, owners) || exactNames(names, onnOwners)
-    || exactNames(names, bb8Owners) || exactNames(names, bb8OnnOwners);
+  return coverageSets.some(set => exactNames(names, set));
 }
 
 function inside(root: string, path: string): boolean {

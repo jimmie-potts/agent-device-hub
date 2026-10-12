@@ -35,6 +35,21 @@ void test('binds a complete admitted qualification to private evidence and indep
     installedBaselineClosure: value.installedBaselineClosure, coveredOwners: [...owners].sort()});
   assert.deepEqual((await readdir(directory)).sort(), ['admission.json', 'evidence.json']);
 
+  await t.test('companions is a complete addition to each existing exact owner set', async () => {
+    for (const extras of [[], ['onn'], ['bb8', 'bb8-windows'], ['bb8', 'bb8-windows', 'onn']]) {
+      const names = [...owners, ...extras, 'companions'];
+      const extended = {...value, coverage: names.map(owner => ({owner,
+        phases: phases.map(phase => ({phase, receipt: pin}))}))};
+      await writeFile(path, JSON.stringify(extended), {mode: 0o600});
+      assert.deepEqual((await bindUpgradeAdmission(path, expected)).coveredOwners, names.sort());
+      const incomplete = {...extended, coverage: extended.coverage.map(row => row.owner === 'companions'
+        ? {...row, phases: row.phases.filter(item => item.phase !== 'recovery')} : row)};
+      await writeFile(path, JSON.stringify(incomplete), {mode: 0o600});
+      await assert.rejects(bindUpgradeAdmission(path, expected), /^Error: runtime-proof-admission-refused$/);
+    }
+    await writeFile(path, bytes, {mode: 0o600});
+  });
+
   await t.test('complete Linux and Windows BB8 coverage is bound together', async () => {
     const extended = {...value, coverage: [...value.coverage,
       ...['bb8', 'bb8-windows'].map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))]};
