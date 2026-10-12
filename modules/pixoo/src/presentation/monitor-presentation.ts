@@ -267,9 +267,12 @@ export class MonitorPresentation {
   if(!frame||frame.retained===true||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<this.configuration.cadenceMs)return;
   const generation=this.generation,playerGeneration=frame.generation,takeover=this.active?null:this.takeover;
   const renditionGeneration=this.dashboard.status().rendition?.generation??0;
-  const observation=this.observation(),abort=new AbortController();
+  // Artwork can arrive while the current observation's fallback is already
+  // being sent. Keep that upload valid; the changed render key schedules the
+  // latest card afterward without cancelling a native write with possible effects.
+  const observation=this.observation(),playback=JSON.stringify(this.playback),abort=new AbortController();
   const current=()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
-   &&observation===this.observation()&&frame.key===this.cardKey(this.playback.view)
+   &&observation===this.observation()&&playback===JSON.stringify(this.playback)
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
