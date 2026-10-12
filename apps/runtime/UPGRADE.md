@@ -325,13 +325,25 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
-Unconfigured BB-8, ONN and Roborock retain their bounded `refused`, `healthy: false`,
-`not-found` health exceptions. ONN and Roborock must have no retained state;
-their configured or retained state remains outside the qualified profile.
-Configured or retained ONN qualification belongs to #1044.
-Configured or retained BB-8 requires the complete
-`bb8` and `bb8-windows` coverage pair described below; a healthy configured
-BB-8 module must meet ordinary running health. Unknown owners still refuse.
+Unconfigured BB-8, ONN and Roborock retain their exact `refused`, `healthy: false`,
+`not-found` health exceptions. Roborock must remain unconfigured without retained
+state. Configured or retained ONN requires its durable owner and complete ONN
+coverage; configured or retained BB-8 requires its durable owner and the complete
+`bb8`/`bb8-windows` pair. Configured qualified modules must report running and
+healthy without a refusal reason. Unknown owners still refuse. Legacy seven-owner
+certificates remain valid for absent BB-8 and ONN; adding ONN extends either the
+legacy set or the qualified BB-8 pair by that one fixed owner.
+
+The ONN source tests exercise four separate processes using one built module.
+They establish retained originals, reported progress, gaps, private identities,
+outcomes and no replay across restarts. They do not establish compatibility
+between actual releases. Bind actual baseline, candidate and recovery artifacts
+and inspect every changed production input before coordinator admission. A
+recovery release must accept the complete current ONN configuration and latest
+history/command formats. Release `52ee8f28` predates `historyEnabled` support and refuses
+that setting; it cannot be used for configured-history recovery. Do not remove
+settings or observations to make an incompatible recovery appear eligible. An
+absent-ONN routine upgrade may precede a separately approved ONN activation.
 
 For BB-8, retain four phase receipts (`baseline`, `candidate`, `recovery`,
 `reupgrade`) for both the WSL production module store/SDK outbox and independently
@@ -441,7 +453,8 @@ are the intentionally unconfigured Wispr (#840), BB-8, ONN and Roborock modules,
 each refused with `not-found` and `healthy: false`. State/configuration inspection
 must establish configuration and retained ownership. Configured or retained
 BB-8 additionally requires the complete Linux/Windows proof pair and ordinary
-configured-module health; configured or retained ONN and Roborock still refuse.
+configured-module health; configured or retained ONN additionally requires its complete proof and ordinary
+configured-module health. Configured or retained Roborock still refuses.
 These production registrations were
 checked with no configuration: each refuses before start and creates no owner
 state. Other module refusals require separate qualification.

@@ -31,7 +31,8 @@ void test('binds a complete admitted qualification to private evidence and indep
   // The production observer will supply expected identities. This fixture does
   // not impersonate installed observation or grant authority to CLI input.
   const expected = {installationId: value.installationId, provenanceDirectory: directory, releases, formats};
-  assert.deepEqual(await bindUpgradeAdmission(path, expected), {schema: value.schema, admissionSha256: hash(bytes), installedBaselineClosure: value.installedBaselineClosure, coveredOwners: [...owners].sort()});
+  assert.deepEqual(await bindUpgradeAdmission(path, expected), {schema: value.schema, admissionSha256: hash(bytes),
+    installedBaselineClosure: value.installedBaselineClosure, coveredOwners: [...owners].sort()});
   assert.deepEqual((await readdir(directory)).sort(), ['admission.json', 'evidence.json']);
 
   await t.test('complete Linux and Windows BB8 coverage is bound together', async () => {

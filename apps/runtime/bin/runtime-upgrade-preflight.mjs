@@ -23,6 +23,9 @@ const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode
 const knownModules = ['bb8', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
 
 function requireCoverage(admission, state) {
+  const onn = state.configured.includes('onn') || state.durableOwners.includes('onn');
+  if (onn && (!state.durableOwners.includes('onn') || !Array.isArray(admission.coveredOwners)
+    || !admission.coveredOwners.includes('onn'))) refused();
   const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
   if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
     || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
@@ -31,15 +34,15 @@ function requireCoverage(admission, state) {
 function requireHealth(health, configured, lagLimitMs) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
-    || configured.some(name => ['onn', 'roborock'].includes(name) || !knownModules.includes(name))
+    || configured.some(name => name === 'roborock' || !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
     || !['core', ...configured].every(name => health.modules.some(row => row.name === name))) refused();
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN and Roborock. Configured/retained BB8 additionally needs both store proofs;
-    // ONN and Roborock configuration and retained state remain outside this profile.
+    // BB8, ONN and Roborock. Qualified BB8/ONN coverage is checked separately;
+    // configured or retained Roborock remains outside this profile.
     if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
@@ -85,6 +88,7 @@ export function createRuntimeUpgradePreflight(io) {
       const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: admission.installedBaselineClosure};
       const hooks = await io.hooks(hookInput);
       const state = await io.state(owner.options.stateDir, owner.options.config);
+      requireCoverage(admission, state);
       const receiptDirectory = join(request.installationRoot, 'receipts');
       const receipts = await io.receipts(receiptDirectory, request.installationId);
       requireCoverage(admission, state);
@@ -166,6 +170,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
       const source = await io.source(sourceInput);
       if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) fail();
       const admission = await io.admission(request.admissionFile, source.expected);
+      requireCoverage(admission, approved.state);
       if (!same(admission, approved.admission)) fail();
       requireCoverage(admission, approved.state);
       const role = phase === 'recovery' ? 'recovery' : 'target';

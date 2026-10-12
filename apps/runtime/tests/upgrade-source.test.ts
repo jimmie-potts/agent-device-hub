@@ -19,6 +19,19 @@ const anchors = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json',
   'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts',
   'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
 
+void test('ONN production stores, configuration and native reader remain bound format inputs while legacy absence is supported', async () => {
+  const onn = ['modules/onn/package.json', 'modules/onn/src/module.ts', 'modules/onn/src/store.ts',
+    'modules/onn/src/history.ts', 'modules/onn/src/configuration.ts', 'modules/onn/src/reader-artifact.ts',
+    'modules/onn/native/release.json', 'modules/onn/native/src/OnnMetadataReader.java', 'modules/onn/native/artifact/reader.dex'];
+  for (const paths of [anchors, [...anchors, ...onn]]) {
+    const entries = paths.map(path => ({path, kind: 'file', sha256: hash(path)}));
+    const result = await run(process.execPath, ['--input-type=module', '-e',
+      'import {runtimeFormatInputs} from "./apps/runtime/bin/runtime-upgrade-source.mjs";process.stdout.write(JSON.stringify(runtimeFormatInputs(JSON.parse(process.argv[1])).map(row=>row.path)))',
+      JSON.stringify(entries)], {cwd: process.cwd()});
+    assert.deepEqual(JSON.parse(result.stdout), [...paths].sort());
+  }
+});
+
 void test('Windows helper receipt source changes invalidate durable-format evidence', async () => {
   const path = 'apps/bb8-windows/src/receipts.ts';
   const classify = async (bytes: string): Promise<{path: string; sha256: string}[]> => {
