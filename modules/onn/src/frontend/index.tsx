@@ -2,6 +2,7 @@ import React, {useEffect, useId, useState} from 'react';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
 import type {OnnState} from '../contracts.js';
+import {History} from './history.js';
 const keys = [{value: 'up', label: 'Up', position: '1 / 2'}, {value: 'left', label: 'Left', position: '2 / 1'}, {value: 'select', label: 'Select', position: '2 / 2'}, {value: 'right', label: 'Right', position: '2 / 3'}, {value: 'down', label: 'Down', position: '3 / 2'}, {value: 'back', label: 'Back', position: '4 / 1'}, {value: 'home', label: 'Home', position: '4 / 2'}, {value: 'play-pause', label: 'Play / pause', position: '4 / 3'}];
 function Controls({context, state, live, command, now}: {context: FrontendContext; state: OnnState; live: boolean; command: FrontendCommand; now: number}): React.JSX.Element {
   const [text, setText] = useState(''); const textId = useId();
@@ -67,6 +68,7 @@ function Page({context}: {context: FrontendContext}): React.JSX.Element {
   const Command = context.ui.Command;
   return <>{state === undefined ? <p role="status">ONN status is unknown.</p> : <Command context={context} target={state.id}>{command => <Controls context={context} state={state} live={live} command={command} now={now}/>}</Command>}
     <button onClick={() => {setAttempt(value => value + 1);}}>Reload status</button>
+    <History ctx={context}/>
   </>;
 }
 export const frontend: FrontendContribution = {module: 'onn', pages: [{id: 'controls', Component: Page}]};
