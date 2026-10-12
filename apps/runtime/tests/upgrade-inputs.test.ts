@@ -70,6 +70,26 @@ void test('upgrade state inspection covers configured and retained owners withou
       } finally {await rm(path, {recursive: true});}
     }
   });
+  await t.test('ONN configuration and all retained state shapes refuse without database reads or modification', async () => {
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {onn: {}}}), {mode: 0o600});
+    await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+    await writeFile(configFile, config, {mode: 0o600});
+    for (const name of ['onn.sqlite', 'onn.sqlite-wal', 'onn.sqlite-shm', 'onn.sqlite-journal', 'onn.sqlite-owner', 'onn']) {
+      const path = join(modules, name);
+      if (name === 'onn') await mkdir(path, {mode: 0o700});
+      else await writeFile(path, 'retained synthetic ONN state', {mode: 0o600});
+      try {
+        const before = await lstat(path);
+        await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+        const after = await lstat(path);
+        assert.equal(after.atimeMs, before.atimeMs);
+        assert.equal(after.mtimeMs, before.mtimeMs);
+        assert.equal(after.size, before.size);
+        assert.equal(after.mode, before.mode);
+        if (name !== 'onn') assert.equal(await readFile(path, 'utf8'), 'retained synthetic ONN state');
+      } finally {await rm(path, {recursive: true});}
+    }
+  });
   await t.test('non-private database permissions refuse without changing them', async () => {
     await chmod(core, 0o644);
     await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);

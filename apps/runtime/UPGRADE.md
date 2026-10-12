@@ -311,10 +311,11 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
-The current profile accepts unconfigured BB8 and Roborock only when their
+The current profile accepts unconfigured BB8, ONN and Roborock only when their
 health rows are `refused`, `healthy: false`, and `not-found`, and no state is
-retained for either owner. Configured or retained BB8/Roborock state still
+retained for those owners. Configured or retained BB8/ONN/Roborock state still
 refuses before effects; it needs its own complete upgrade/recovery qualification.
+Configured or retained ONN qualification belongs to #1044.
 
 Each previous, target and recovery inventory must match that release's actual
 verified production inputs. The qualification inventory matches the target's
@@ -393,10 +394,10 @@ preflight requires coordinator admission and current baseline/hook protection;
 it cannot derive acceptance from a supplied flag. It pins configuration,
 credential and read-token file hashes without including their contents. Keep
 the plan private, including these hashes. Accepted degraded-health exceptions
-are the intentionally unconfigured Wispr (#840), BB-8 and Roborock modules,
+are the intentionally unconfigured Wispr (#840), BB-8, ONN and Roborock modules,
 each refused with `not-found` and `healthy: false`. State/configuration inspection
-must establish absence; configured or retained BB-8 or Roborock state remains
-outside this qualified profile and refuses. Both production registrations were
+must establish absence; configured or retained BB-8, ONN or Roborock state remains
+outside this qualified profile and refuses. These production registrations were
 checked with no configuration: each refuses before start and creates no owner
 state. Other module refusals require separate qualification.
 

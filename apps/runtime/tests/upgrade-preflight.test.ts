@@ -95,7 +95,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const health = {schema: 'runtime-health/1.0', status: 'degraded', moduleApiVersion: MODULE_API_VERSION, startedAtMs: 1000, lagCheck: {status: 'active', limitMs: 10000},
     modules: [...['core', ...configured].map((name): Row => ({name, apiVersion: MODULE_API_VERSION, state: 'running', healthy: true, reasonCode: null})),
       {name: 'wispr', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'} as Row].sort((a, b) => a.name.localeCompare(b.name))};
-  for (const name of ['bb8', 'roborock']) {
+  for (const name of ['bb8', 'roborock', 'onn']) {
     if (!scenario.startsWith(`${name}-`) && scenario !== `configured-${name}`) continue;
     health.modules.push({name, apiVersion: MODULE_API_VERSION, state: scenario === `${name}-running` ? 'running' : 'refused', healthy: scenario === `${name}-healthy`,
       reasonCode: scenario === `${name}-wrong-reason` ? 'unavailable' : 'not-found'});
@@ -104,7 +104,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   }
   const pixoo = health.modules.find(row => row.name === 'pixoo');
   if (scenario === 'configured-refusal' && pixoo !== undefined) {pixoo.state = 'refused'; pixoo.healthy = false;}
-  if (scenario === 'unknown-module') health.modules.push({name: 'onn', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
+  if (scenario === 'unknown-module') health.modules.push({name: 'unknown-module', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
   if (scenario === 'stopped-watchdog') health.lagCheck.status = 'stopped';
   if (scenario === 'configured-wispr') configured.push('wispr');
   await writeFile(owner.options.config, JSON.stringify({edge: {credentials: join(root, 'credentials')}, modules: {}}), {mode: 0o600});
@@ -177,6 +177,10 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.ok(!shown.text.includes('synthetic-secret-never-public'));
   assert.equal((await inspect('bb8-absent') as Planned).plan.operation, 'adoption');
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
+  const absentOnn = await inspect('onn-absent') as Planned & {code?: string};
+  assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
+  assert.equal(absentOnn.plan.operation, 'adoption');
+  assert.equal(absentOnn.counters.http, 2);
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
   assert.equal(first.observations.length, 2);
@@ -193,7 +197,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(locked.counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       const result = await inspect(scenario);
       assert.equal(result.plan, undefined, `${scenario} returned a plan`);
@@ -234,7 +238,7 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const stamps = {previous: stamp(revisions.previous), target: stamp(revisions.target), recovery: stamp(revisions.recovery)};
   const source = {expected, stamps, inputs: [] as unknown[],
     artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous}, target: {root: join(root, 'target')}, recovery: {root: join(root, 'previous')}}};
-  const state = {configured: [], durableOwners: ['core'], configSha256: sha256('config')};
+  const state = {configured: scenario === 'configured-onn' ? ['onn'] : [], durableOwners: ['core'], configSha256: sha256('config')};
   const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)}};
   const baseline = {baselineRoot: join(root, 'previous')}, hooks = {hooks: []}, paths = {protectedPaths: []};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
@@ -250,8 +254,15 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const counters: Record<string, number> = {owner: 0, http: 0, selection: 0, lock: 0};
   const count = (name: string) => (counters[name] = (counters[name] ?? 0) + 1);
   const observations: unknown[] = [];
+  type HealthRow = {name: string; state: string; healthy: boolean; reasonCode: string | null};
   const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
-    modules: [{name: 'core', state: 'running', healthy: true, reasonCode: null}]};
+    modules: [{name: 'core', state: 'running', healthy: true, reasonCode: null}] as HealthRow[]};
+  if (scenario.startsWith('onn-') || scenario === 'configured-onn') {
+    health.status = scenario === 'onn-wrong-status' ? 'ok' : 'degraded';
+    health.modules.push({name: 'onn', state: scenario === 'onn-running' ? 'running' : 'refused',
+      healthy: scenario === 'onn-healthy', reasonCode: scenario === 'onn-wrong-reason' ? 'unavailable' : 'not-found'});
+  }
+  if (scenario === 'unknown-module') health.modules.push({name: 'unknown-module', state: 'refused', healthy: false, reasonCode: 'not-found'});
   const io: Readers = {
     privateFile: (path: string) => readFile(path), parseRequest: (value: unknown) => value, canonical, sha256,
     lock: () => { count('lock'); return scenario === 'missing-lock' ? refuse('no') : answer(undefined); },
@@ -303,12 +314,16 @@ void test('post-start observation binds the selected release and refuses drift w
   assert.equal(passed.observations[0]?.operationId, 'one');
   assert.match(passed.observations[0]?.trace.traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   assert.ok(!JSON.stringify(passed.result).includes('traceparent'));
+  const absentOnn = await inspect('onn-absent') as Passed & {code?: string};
+  assert.equal(absentOnn.code, undefined, 'exact absent ONN health verifies after startup');
+  assert.equal(absentOnn.result.verified, true);
+  assert.equal(absentOnn.counters.http, 2);
   for (const phase of ['recovery', 'reupgrade']) {
     const observed = await inspect(phase) as Passed;
     assert.equal(observed.result.phase, phase);
     assert.equal(observed.result.selection.target, join(root, phase === 'recovery' ? 'previous' : 'target'));
   }
-  for (const scenario of ['wrong-plan-hash','missing-lock','same-process','wrong-arguments','owner-drift','wrong-selection','late-selection-drift','wrong-build','bad-health','token-drift','source-drift','hook-drift']) {
+  for (const scenario of ['wrong-plan-hash','missing-lock','same-process','wrong-arguments','owner-drift','wrong-selection','late-selection-drift','wrong-build','bad-health','token-drift','source-drift','hook-drift','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','unknown-module']) {
     await t.test(scenario + ' refuses', async () => {
       const value = await inspect(scenario);
       assert.equal(value.result, undefined, `${scenario} returned a result`);
