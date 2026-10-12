@@ -28,20 +28,22 @@ try {
   const record = () => JSON.parse((db.prepare('SELECT record FROM companion_state WHERE id=1').get() as {record: string}).record) as Saved;
   const boot = record();
   assert.equal(module.pending(), 0, 'restart never reconstructs pending reaction candidates');
-  if (phase === 'baseline') {
+  if (phase === 'baseline' || phase === 'candidate') {
+    const candidate = phase === 'candidate';
+    const requestId = 'synthetic-settings-' + phase;
     const reply = await core.request('bunny.cmd.companion-settings-set.reachy', {
       type: 'org.bunny.companion-settings.set.requested', subject: 'reachy',
       dataschema: 'https://bunny.invalid/events/companion-settings-set/2.0',
-      data: {requestId: 'synthetic-settings', expectedRevision: boot.state.revision,
-        enabled: false, muted: ['coding-notice'], snooze: 'one-hour'},
-    }, {requestId: 'synthetic-settings', timeoutMs: 1000});
+      data: {requestId, expectedRevision: boot.state.revision,
+        enabled: false, muted: candidate ? [] : ['coding-notice'], snooze: candidate ? 'clear' : 'one-hour'},
+    }, {requestId, timeoutMs: 1000});
     assert.equal(reply.status, 'accepted', JSON.stringify(reply)); await turns();
     const saved = record();
-    saved.received = ['synthetic-consumed-origin'];
-    saved.admissions = [{key: 'synthetic-admission-key', atMs: now - 10_000}];
-    saved.allowances = {live: {day: '2027-01-15', count: 2, lastAtMs: now - 1000},
-      scenario: {day: '2027-01-15', count: 1, lastAtMs: now - 2000}};
-    saved.state.presentation = {text: 'Synthetic retained presentation', phrase: 0,
+    saved.received.push('synthetic-consumed-origin-' + phase);
+    saved.admissions.push({key: 'synthetic-admission-key-' + phase, atMs: now - 10_000});
+    saved.allowances = {live: {day: '2027-01-15', count: candidate ? 3 : 2, lastAtMs: now - 1000},
+      scenario: {day: '2027-01-15', count: candidate ? 2 : 1, lastAtMs: now - 2000}};
+    saved.state.presentation = {text: 'Synthetic retained presentation ' + phase, phrase: 0,
       presentedAtMs: now - 40_000, history: false, content: 'unavailable', opportunity: {
         origin: {id: 'synthetic-prior-arrival', source: 'synthetic-fixture', type: 'arrival'},
         sourceKind: 'simulated-apartment', context: 'scenario', category: 'simulated-social', cue: 'arrival',

@@ -349,6 +349,8 @@ Artifacts shipping companions require its ordinary running, healthy,
 null-reason health row without an absent-device exception. After a qualified
 first startup, the state inventory must equal the original inventory plus only
 that named owner; missing state or any unrelated addition/removal refuses.
+Configuration, sidecars or an owner directory alone cannot establish that
+store: its private primary database must remain present.
 Compatibility fixtures retain settings, consumed origins, admissions,
 live/scenario allowances, presentation history and pending outcome identities,
 without reconstructing a reaction or replaying commands. Live databases are

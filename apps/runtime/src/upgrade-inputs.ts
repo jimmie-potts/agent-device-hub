@@ -56,8 +56,12 @@ export async function inspectUpgradeState(state: string, configFile: string): Pr
       if (!privateEntry(info) || (name === owner ? !info.isDirectory() : !info.isFile())) return refused();
       retained.add(owner);
     }
+    if ((configured.includes('companions') || retained.has('companions'))
+      && !entries.includes('companions.sqlite')) return refused();
+    // This always-started owner must be evidenced by its files. Configuration
+    // alone cannot conceal its loss before a stop or after a qualified start.
     return {configSha256: hash(bytes), configured,
-      durableOwners: [...new Set(['core', ...configured.filter(name => durable.includes(name)), ...retained])].sort()};
+      durableOwners: [...new Set(['core', ...configured.filter(name => name !== 'companions' && durable.includes(name)), ...retained])].sort()};
   } catch {
     return refused();
   }

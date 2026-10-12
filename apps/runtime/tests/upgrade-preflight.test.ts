@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -8,6 +8,7 @@ import {promisify} from 'node:util';
 import {test} from 'node:test';
 import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
 import {readPrivateFile} from '../src/state.js';
+import {inspectUpgradeState} from '../src/upgrade-inputs.js';
 import {parseUpgradeRequest} from '../src/upgrade-paths.js';
 const run = promisify(execFile);
 
@@ -110,7 +111,21 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   if (scenario === 'unknown-module') health.modules.push({name: 'unknown-module', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
   if (scenario === 'stopped-watchdog') health.lagCheck.status = 'stopped';
   if (scenario === 'configured-wispr') configured.push('wispr');
-  await writeFile(owner.options.config, JSON.stringify({edge: {credentials: join(root, 'credentials')}, modules: {}}), {mode: 0o600});
+  const realCompanionState = scenario.startsWith('companions-real-');
+  if (realCompanionState) configured.push('companions');
+  await writeFile(owner.options.config, JSON.stringify({schema: 'runtime-config/1.0',
+    edge: {credentials: join(root, 'credentials')},
+    modules: realCompanionState ? Object.fromEntries(configured.map(name => [name, {}])) : {}}), {mode: 0o600});
+  if (realCompanionState) {
+    const modules = join(owner.options.stateDir, 'modules');
+    await mkdir(modules, {recursive: true, mode: 0o700});
+    await writeFile(join(modules, 'core.sqlite'), 'opaque synthetic core state', {mode: 0o600});
+    if (scenario === 'companions-real-present-state') {
+      await writeFile(join(modules, 'companions.sqlite'), 'opaque synthetic companion state', {mode: 0o600});
+    } else {
+      await rm(join(modules, 'companions.sqlite'), {force: true});
+    }
+  }
   await writeFile(request.tokenFile, 'synthetic-secret-never-public', {mode: 0o600});
   await writeFile(join(root, 'credentials'), 'synthetic credential inventory', {mode: 0o600});
   const configSha256 = sha256(await readPrivateFile(owner.options.config, 1024 * 1024));
@@ -198,6 +213,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     hooks: () => answer({closureSha256: admission.installedBaselineClosure.sha256, hooks: drift('hook', count('hooks')) ? [{changed: true}] : []}),
     state: async () => {
       const n = count('state');
+      if (realCompanionState) return inspectUpgradeState(owner.options.stateDir, owner.options.config);
       if (scenario === 'request-drift' && n > 1) await writeFile(requestFile, JSON.stringify({...request, tokenFile: join(root, 'changed-token')}));
       return drift('state', n) ? {...state, durableOwners: [...state.durableOwners, 'unknown']} : state;
     },
@@ -293,6 +309,11 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(first.observations[0]?.operationId, 'synthetic');
   assert.match(first.observations[0]?.trace.traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   assert.ok(!JSON.stringify(first.plan).includes('traceparent'));
+  const actualCompanion = await inspect('companions-real-present-state');
+  assert.equal(actualCompanion.code, undefined, 'configured physical companion store passes the real inventory reader');
+  const missingCompanion = await inspect('companions-real-missing-state');
+  assert.equal(missingCompanion.code, 'runtime-upgrade-preflight-refused');
+  assert.equal(missingCompanion.counters.http, 0, 'configured missing state refuses before authenticated observation');
   const repeated = await inspect('adoption') as Planned;
   assert.equal(first.plan.planSha256, repeated.plan.planSha256);
   assert.notEqual(first.observations[0]?.trace.traceparent, repeated.observations[0]?.trace.traceparent);
@@ -346,7 +367,12 @@ async function runningCheck(root: string, scenario: string,
     artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous, entries: [] as {path: string; kind: string; sha256: string}[]},
       target: {root: join(root, 'target'), entries: [] as {path: string; kind: string; sha256: string}[]},
       recovery: {root: join(root, 'previous'), entries: [] as {path: string; kind: string; sha256: string}[]}}};
-  const state = {configured: scenario === 'configured-onn' ? ['onn'] : [], durableOwners: ['core'], configSha256: sha256('config')};
+  const realCompanionState = scenario.startsWith('companions-real-');
+  const configText = realCompanionState
+    ? JSON.stringify({schema: 'runtime-config/1.0', edge: {credentials: join(root, 'credentials')}, modules: {companions: {}}})
+    : 'config';
+  const state = {configured: realCompanionState ? ['companions'] : scenario === 'configured-onn' ? ['onn'] : [],
+    durableOwners: ['core'], configSha256: sha256(configText)};
   const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)},
     coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox']};
   const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
@@ -398,12 +424,22 @@ async function runningCheck(root: string, scenario: string,
   const baseline = {baselineRoot: join(root, 'previous')}, hooks = {hooks: []}, paths = {protectedPaths: []};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
   await writeFile(request.tokenFile, 'synthetic private token', {mode: 0o600});
-  await writeFile(options.config, 'config', {mode: 0o600});
+  await writeFile(options.config, configText, {mode: 0o600});
+  if (realCompanionState) {
+    const modules = join(options.stateDir, 'modules');
+    await mkdir(modules, {recursive: true, mode: 0o700});
+    await writeFile(join(modules, 'core.sqlite'), 'opaque synthetic core state', {mode: 0o600});
+    if (scenario === 'companions-real-present-state') {
+      await writeFile(join(modules, 'companions.sqlite'), 'opaque synthetic companion state', {mode: 0o600});
+    } else {
+      await rm(join(modules, 'companions.sqlite'), {force: true});
+    }
+  }
   await writeFile(join(root, 'credentials'), 'credentials', {mode: 0o600});
   const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission', requestSha256: sha256(await readFile(requestFile)),
     operation: request.operation, installationId: request.installationId, execution: request.execution, owner: original, paths, baseline, hooks, state,
     source: {expected, stamps}, admission,
-    privateInputs: {configSha256: sha256('config'), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('synthetic private token')}};
+    privateInputs: {configSha256: sha256(configText), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('synthetic private token')}};
   const plan = {...body, planSha256: scenario === 'wrong-plan-hash' ? '0'.repeat(64) : sha256(canonical(body))};
   await writeFile(planFile, JSON.stringify(plan), {mode: 0o600});
   const counters: Record<string, number> = {owner: 0, http: 0, selection: 0, lock: 0};
@@ -429,6 +465,7 @@ async function runningCheck(root: string, scenario: string,
     admission: () => answer(admission), baseline: () => answer(baseline),
     hooks: () => answer(scenario === 'hook-drift' && (counters.http ?? 0) > 1 ? {hooks: [{changed: true}]} : hooks),
     state: () => {
+      if (realCompanionState) return inspectUpgradeState(options.stateDir, options.config);
       if (!scenario.startsWith('companions-introduced')) return answer(state);
       const owners = [...state.durableOwners, 'companions'];
       if (scenario === 'companions-introduced-missing-state') owners.pop();
@@ -515,6 +552,11 @@ void test('companion post-start health and coverage are enforced in every select
     const qualified = await bounded(phase, runningCheck(root, 'companions-qualified', phase));
     assert.equal(qualified.code, undefined, phase);
     assert.equal((qualified.result as {verified: boolean}).verified, true);
+    const actualCompanion = await bounded(phase, runningCheck(root, 'companions-real-present-state', phase));
+    assert.equal(actualCompanion.code, undefined, `${phase} real configured companion store passes`);
+    const missingCompanion = await bounded(phase, runningCheck(root, 'companions-real-missing-state', phase));
+    assert.equal(missingCompanion.code, 'runtime-upgrade-running-refused', `${phase} real configured missing state refuses`);
+    assert.equal(missingCompanion.counters.http, 0);
     const introduced = await bounded(phase, runningCheck(root, 'companions-introduced', phase));
     assert.equal(introduced.code, undefined, `${phase} accepts only the qualified first-created owner`);
     assert.equal((introduced.result as {verified: boolean}).verified, true);

@@ -292,8 +292,10 @@ preflight/running-check regressions, plus
 `companions-upgrade-qualification.test.ts`. Its four separate production-module
 processes reopen private synthetic stores, preserve settings, admissions,
 consumed origins, allowances, archived presentation and outcome identities, and
-leave pending reactions empty. It establishes synthetic restart behavior;
-actual release compatibility and installation still need the owning UPGRADE
+leave pending reactions empty. The candidate writes distinct records and a new outcome, and a negative control
+rejects restoration of the older stopped baseline. Inventory regressions use the
+production reader to reject missing configured state, including surviving sidecars.
+These checks establish synthetic restart behavior; actual release compatibility and installation still need the owning UPGRADE
 procedure and independent artifact evidence.
 
 Run these with the normal build and `npm run test:runtime:built`; the existing
