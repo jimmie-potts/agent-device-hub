@@ -46,18 +46,32 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
       Object.assign(cursor.style,{position:'fixed',left:`${point.x - 9}px`,top:`${point.y - 9}px`,width:'18px',height:'18px',border:'3px solid #fbbf24',borderRadius:'50%',zIndex:'9998',pointerEvents:'none',transition:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'none' : 'left 120ms linear, top 120ms linear'});
     },{label,point,step});
     await page.mouse.move(point.x,point.y,{steps:8});
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(180);
   };
-  const click = async (target: Locator, label: string, keyboard = false): Promise<void> => {
-    await indicate(label,target);
-    await page.evaluate(() => {const cursor = document.getElementById('onn-test-cursor'); if (cursor !== null) cursor.style.background = '#fbbf24';});
-    if (keyboard) {await target.focus(); await target.press('Enter');} else await target.click();
-    await page.evaluate(() => {const cursor = document.getElementById('onn-test-cursor'); if (cursor !== null) cursor.style.background = '#fbbf24';});
-    await page.waitForTimeout(100);
+  const finishAction = async (target: Locator): Promise<void> => {
+    await page.waitForTimeout(240);
+    await page.evaluate(() => {const cursor = document.getElementById('onn-test-cursor'); if (cursor !== null) cursor.style.background = 'transparent';});
     await target.evaluate(element => {(element as HTMLElement).style.outline = '';}).catch(() => {});
+    await page.waitForTimeout(140);
   };
-  const fill = async (target: Locator, value: string, label: string): Promise<void> => {await indicate(label,target); await target.fill(value);};
-  const simulate = async (action: string): Promise<void> => {await indicate(`Simulated physical remote: ${action}`); run.simulate({device:'onn',action}); await run.wait(5100);};
+  const pulse = async (): Promise<void> => {await page.evaluate(() => {const cursor = document.getElementById('onn-test-cursor'); if (cursor !== null) cursor.style.background = '#fbbf24';});};
+  const click = async (target: Locator, label: string, keyboard = false): Promise<void> => {
+    await indicate(label,target); await pulse();
+    if (keyboard) {await target.focus(); await target.press('Enter');} else await target.click();
+    await finishAction(target);
+  };
+  const fill = async (target: Locator, value: string, label: string): Promise<void> => {
+    await indicate(label,target); await pulse(); await target.click(); await target.fill(value); await finishAction(target);
+  };
+  const select = async (target: Locator, value: string, label: string): Promise<void> => {
+    await indicate(label,target); await pulse(); await target.selectOption(value); await finishAction(target);
+  };
+  const simulate = async (action: string): Promise<void> => {
+    const target = current.getByRole('heading',{name:'Current ONN content',exact:true});
+    await indicate(`Simulated physical remote: ${action}`,target);
+    run.simulate({device:'onn',action}); await run.wait(5100);
+    await target.evaluate(element => {(element as HTMLElement).style.outline = '';});
+  };
   await t.expect('current observations change and clear through the real synced owner without commands',async () => {
     await current.getByText('Collection unavailable',{exact:true}).waitFor();
     run.simulate({device:'onn',action:'online'}); await simulate('physical-youtube');
@@ -76,7 +90,7 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
     const result = await run.gateway({as:'reader',method:'GET',path:'/modules/onn/content/history?app=stremio&limit=50'});
     assert.equal(result.status,200);
     const owner = JSON.parse(result.text) as HistoryPage;
-    await history.getByLabel('App',{exact:true}).selectOption('stremio');
+    await select(history.getByLabel('App',{exact:true}),'stremio','Select Stremio history');
     await click(history.getByRole('button',{name:'Search history',exact:true}),'Search retained Stremio titles',true);
     for (const item of owner.items) await history.getByRole('listitem',{name:`Occurrence ${item.id}`,exact:true}).waitFor();
     const first = owner.items[0]; assert.ok(first !== undefined);
@@ -103,7 +117,7 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
     await page.route(historyPattern,reply); await page.route(detailPattern,reply);
     await fill(history.getByLabel('From date',{exact:true}),prior.date,'Set prior-day beginning');
     await fill(history.getByLabel('Through date',{exact:true}),prior.date,'Set prior-day end');
-    await history.getByLabel('App',{exact:true}).selectOption('');
+    await select(history.getByLabel('App',{exact:true}),'','Select both supported apps');
     await click(history.getByRole('button',{name:'Search history',exact:true}),'Search both apps on the prior local calendar day',true);
     await t.expect('prior-day filters and both continuation paths match the owning queries',async () => {
       const first = fixture.history({fromMs:prior.ms,toMs:prior.toMs,limit:50});
@@ -125,7 +139,7 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
       assert.match(await history.innerText(),/Unsupported identity|Ambiguous/u);
     });
     await fill(history.getByLabel('Title contains',{exact:true}),'SYNTHETIC prior YouTube title 60','Filter one long prior-day YouTube title');
-    await history.getByLabel('App',{exact:true}).selectOption('youtube');
+    await select(history.getByLabel('App',{exact:true}),'youtube','Select YouTube history');
     await click(history.getByRole('button',{name:'Search history',exact:true}),'Read filtered titles',true);
     await history.getByRole('listitem',{name:/^Occurrence /u}).first().waitFor();
     assert.match(await history.innerText(),/<script>synthetic<\/script>/u,'long source text remains literal');
