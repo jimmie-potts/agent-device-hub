@@ -89,6 +89,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     stamps: {previous: stamp, target: stamp, recovery: stamp}, inputs: [] as unknown[],
     artifacts: {previous: {identity: release, root: artifact.directory, entries: []}, target: {root: artifact.directory}, recovery: {root: artifact.directory}}};
   const admission = {schema: 'runtime-proof-admission/1.0', admissionSha256: 'd'.repeat(64),
+    coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox'],
     installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'e'.repeat(64)}};
   const configured = ['codex-desktop', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt'];
   type Row = {name: string; apiVersion: string; state: string; healthy: boolean; reasonCode: string | null};
@@ -113,6 +114,23 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const configSha256 = sha256(await readPrivateFile(owner.options.config, 1024 * 1024));
   const credentialsSha256 = sha256(await readPrivateFile(join(root, 'credentials'), 65536));
   const state = {configSha256, configured, durableOwners: ['core', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt']};
+  if (scenario.startsWith('selected-bb8') || scenario.startsWith('retained-bb8')) {
+    const retained = scenario.startsWith('retained-bb8');
+    if (!retained) configured.push('bb8');
+    state.durableOwners.push('bb8');
+    const refused = scenario.endsWith('-refused');
+    health.modules.push({name: 'bb8', apiVersion: MODULE_API_VERSION,
+      state: retained || refused ? 'refused' : 'running',
+      healthy: !retained && !refused && !scenario.endsWith('-unhealthy'),
+      reasonCode: retained || refused ? 'not-found' : null});
+    if (!scenario.endsWith('-no-proof')) {
+      if (!scenario.endsWith('-no-linux-proof')) admission.coveredOwners.push('bb8');
+      if (!scenario.endsWith('-no-windows-proof')) admission.coveredOwners.push('bb8-windows');
+    }
+  }
+  if (scenario.endsWith('-onn-absent')) {
+    health.modules.push({name: 'onn', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
+  }
   const counters: Record<string, number> = {owner: 0, listener: 0, source: 0, admission: 0, baseline: 0, paths: 0, hooks: 0, state: 0, receipts: 0, http: 0, lock: 0, execution: 0};
   const count = (name: string) => (counters[name] = (counters[name] ?? 0) + 1);
   let afterHttp = false;
@@ -176,6 +194,14 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.ok(!JSON.stringify(shown.value).includes('synthetic-secret-never-public'));
   assert.ok(!shown.text.includes('synthetic-secret-never-public'));
   assert.equal((await inspect('bb8-absent') as Planned).plan.operation, 'adoption');
+  assert.equal((await inspect('selected-bb8') as Planned).plan.operation, 'adoption');
+  assert.equal((await inspect('retained-bb8') as Planned).plan.operation, 'adoption');
+  for (const scenario of ['selected-bb8-onn-absent', 'retained-bb8-onn-absent']) {
+    const mixed = await inspect(scenario) as Planned & {code?: string};
+    assert.equal(mixed.code, undefined, `${scenario} preserves both qualified profiles`);
+    assert.equal(mixed.plan.operation, 'adoption');
+    assert.equal(mixed.counters.http, 2);
+  }
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
   const absentOnn = await inspect('onn-absent') as Planned & {code?: string};
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
@@ -197,7 +223,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(locked.counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','selected-bb8-no-linux-proof','selected-bb8-no-windows-proof','selected-bb8-unhealthy','selected-bb8-refused','retained-bb8-no-proof','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       const result = await inspect(scenario);
       assert.equal(result.plan, undefined, `${scenario} returned a plan`);
@@ -222,7 +248,8 @@ void test('production preflight CLI rejects unknown request fields before instal
 });
 
 /** One post-start running check over synthetic readers that drift or refuse as `scenario` names. */
-async function runningCheck(root: string, scenario: string): Promise<Outcome> {
+async function runningCheck(root: string, scenario: string,
+  phase = ['recovery', 'reupgrade'].includes(scenario) ? scenario : 'candidate'): Promise<Outcome> {
   const requestFile = join(root, 'request'), planFile = join(root, 'plan');
   const request = {operation: 'upgrade', installationId: 'synthetic', installationRoot: root, tokenFile: join(root, 'token'), admissionFile: join(root, 'admission'),
     installedBaselineClosureFile: join(root, 'closure'), execution: {operationId: 'one', postStart: {attempts: 2, timeoutMs: 10000, intervalMs: 100}, adoption: null}};
@@ -230,7 +257,7 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const entry = join(root, 'current/apps/runtime/dist/src/main.js');
   const original = {service: 'bunny-runtime.service', pid: 100, startTicks: '10', startMonotonic: '20', controlGroup: '/user/runtime', executable: '/node', entry,
     cwd: join(root, 'previous'), argv: ['/node', entry, '--edge'], units: ['/service'], options};
-  const owner = {...original, pid: 101, startTicks: '11', startMonotonic: '21', cwd: join(root, scenario === 'recovery' ? 'previous' : 'target')};
+  const owner = {...original, pid: 101, startTicks: '11', startMonotonic: '21', cwd: join(root, phase === 'recovery' ? 'previous' : 'target')};
   const identity = (revision: string) => ({sourceRevision: revision, version: '0.1.0'});
   const stamp = (revision: string) => ({schema: 'runtime-build/2.0', revision, version: '0.1.0', dirty: false, builtAt: '2026-10-09T00:00:00.000Z'});
   const revisions = {previous: 'a'.repeat(40), target: 'b'.repeat(40), recovery: 'a'.repeat(40)};
@@ -239,7 +266,23 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const source = {expected, stamps, inputs: [] as unknown[],
     artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous}, target: {root: join(root, 'target')}, recovery: {root: join(root, 'previous')}}};
   const state = {configured: scenario === 'configured-onn' ? ['onn'] : [], durableOwners: ['core'], configSha256: sha256('config')};
-  const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)}};
+  const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)},
+    coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox']};
+  const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
+    modules: [{name: 'core', state: 'running', healthy: true, reasonCode: null as string | null}]};
+  if (scenario.startsWith('selected-bb8') || scenario.startsWith('retained-bb8')) {
+    const retained = scenario.startsWith('retained-bb8'), refused = scenario.endsWith('-refused');
+    state.durableOwners.push('bb8');
+    if (!retained) state.configured.push('bb8');
+    const healthy = !retained && !refused && !scenario.endsWith('-unhealthy');
+    health.modules.push({name: 'bb8', state: retained || refused ? 'refused' : 'running', healthy,
+      reasonCode: retained || refused ? 'not-found' : null});
+    if (!healthy) health.status = 'degraded';
+    if (!scenario.endsWith('-no-proof')) {
+      if (!scenario.endsWith('-no-linux-proof')) admission.coveredOwners.push('bb8');
+      if (!scenario.endsWith('-no-windows-proof')) admission.coveredOwners.push('bb8-windows');
+    }
+  }
   const baseline = {baselineRoot: join(root, 'previous')}, hooks = {hooks: []}, paths = {protectedPaths: []};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
   await writeFile(request.tokenFile, 'synthetic private token', {mode: 0o600});
@@ -254,10 +297,7 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
   const counters: Record<string, number> = {owner: 0, http: 0, selection: 0, lock: 0};
   const count = (name: string) => (counters[name] = (counters[name] ?? 0) + 1);
   const observations: unknown[] = [];
-  type HealthRow = {name: string; state: string; healthy: boolean; reasonCode: string | null};
-  const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
-    modules: [{name: 'core', state: 'running', healthy: true, reasonCode: null}] as HealthRow[]};
-  if (scenario.startsWith('onn-') || scenario === 'configured-onn') {
+  if (scenario.startsWith('onn-') || scenario === 'configured-onn' || scenario.endsWith('-onn-absent')) {
     health.status = scenario === 'onn-wrong-status' ? 'ok' : 'degraded';
     health.modules.push({name: 'onn', state: scenario === 'onn-running' ? 'running' : 'refused',
       healthy: scenario === 'onn-healthy', reasonCode: scenario === 'onn-wrong-reason' ? 'unavailable' : 'not-found'});
@@ -290,12 +330,12 @@ async function runningCheck(root: string, scenario: string): Promise<Outcome> {
       count('http');
       await recheck();
       if (scenario === 'token-drift') await writeFile(request.tokenFile, 'changed');
-      return {build: scenario === 'wrong-build' ? stamps.previous : scenario === 'recovery' ? stamps.recovery : stamps.target,
+      return {build: scenario === 'wrong-build' ? stamps.previous : phase === 'recovery' ? stamps.recovery : stamps.target,
         health: scenario === 'bad-health' ? {...health, lagCheck: {status: 'stopped'}} : health, configSha256: state.configSha256, credentialsSha256: sha256('credentials')};
     },
   };
   try {
-    const result = await helpers.createRuntimeUpgradeRunningCheck(io)(requestFile, planFile, ['recovery', 'reupgrade'].includes(scenario) ? scenario : 'candidate');
+    const result = await helpers.createRuntimeUpgradeRunningCheck(io)(requestFile, planFile, phase);
     return {result, counters, observations};
   } catch (error) {
     return {code: errorCode(error), counters, observations};
@@ -329,6 +369,33 @@ void test('post-start observation binds the selected release and refuses drift w
       assert.equal(value.result, undefined, `${scenario} returned a result`);
       assert.equal(value.code, 'runtime-upgrade-running-refused');
     });
+  }
+});
+
+void test('BB8 post-start checks require both stores through candidate, recovery and re-upgrade', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bb8-running-check-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  for (const phase of ['candidate', 'recovery', 'reupgrade']) {
+    for (const scenario of ['selected-bb8', 'retained-bb8', 'selected-bb8-onn-absent', 'retained-bb8-onn-absent']) {
+      await t.test(`${phase} ${scenario} preserves qualified coverage`, async () => {
+        const observed = await bounded(scenario, runningCheck(root, scenario, phase));
+        assert.equal(observed.code, undefined);
+        const result = observed.result as {schema: string; phase: string; verified: boolean; selection: {target: string}};
+        assert.equal(result.schema, 'runtime-running-check/1.0');
+        assert.equal(result.phase, phase);
+        assert.equal(result.verified, true);
+        assert.equal(result.selection.target, join(root, phase === 'recovery' ? 'previous' : 'target'));
+        assert.equal(observed.counters.http, 2);
+      });
+    }
+    for (const scenario of ['selected-bb8-no-linux-proof', 'selected-bb8-no-windows-proof', 'retained-bb8-no-proof',
+      'selected-bb8-unhealthy', 'selected-bb8-refused']) {
+      await t.test(`${phase} ${scenario} refuses`, async () => {
+        const observed = await bounded(scenario, runningCheck(root, scenario, phase));
+        assert.equal(observed.result, undefined);
+        assert.equal(observed.code, 'runtime-upgrade-running-refused');
+      });
+    }
   }
 });
 

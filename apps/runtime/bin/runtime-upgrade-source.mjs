@@ -61,7 +61,8 @@ const required = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json'
   'apps/runtime/src/process.ts', 'apps/runtime/src/modules.ts', 'apps/runtime/src/state.ts', 'apps/runtime/src/core/store.ts',
   'apps/runtime/build/registry.ts', 'apps/runtime/dashboard/build.mjs', 'packages/sdk/src/database.ts', 'packages/sdk/src/outbox.ts',
   'packages/agent-state/package.json', 'packages/contracts/package.json', 'packages/event-contracts/package.json',
-  ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx'].map(name => `modules/${name}/package.json`),
+  ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8'].map(name => `modules/${name}/package.json`),
+  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts',
   'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
 const closed = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && canonical(Object.keys(value).sort()) === canonical([...keys].sort());
@@ -73,7 +74,7 @@ function selected(path) {
   if (path.startsWith('apps/runtime/src/') || path.startsWith('apps/runtime/build/')
     || path === 'apps/runtime/package.json' || path === 'apps/runtime/tsconfig.json'
     || path === 'apps/runtime/dashboard/build.mjs') return true;
-  if (/^(packages|modules|controllers)\//.test(path)) {
+  if (/^(packages|modules|controllers)\//.test(path) || path.startsWith('apps/bb8-windows/')) {
     if (path.split('/').some(part => ['tests', 'test', 'fixtures', 'docs', 'dist', 'node_modules', '__pycache__', '.pytest_cache'].includes(part))
       || /\.(md|pyc)$/.test(path)) return false;
     return true;

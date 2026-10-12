@@ -27,9 +27,11 @@ export type UpgradeAdmissionExpected = {
 
 export type UpgradeAdmissionBinding = {
   schema: Admission['schema']; admissionSha256: string; installedBaselineClosure: Readonly<Pin>;
+  coveredOwners: readonly string[];
 };
 
 const owners = ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox'];
+const bb8Owners = [...owners, 'bb8', 'bb8-windows'];
 const phases = ['baseline', 'candidate', 'recovery', 'reupgrade'];
 const revision = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
@@ -77,7 +79,8 @@ function admission(value: unknown): value is Admission {
     || !closed(value.releases, ['previous', 'target', 'recovery']) || !Object.values(value.releases).every(release)
     || !pin(value.installedBaselineClosure) || !pin(value.procedure)
     || !closed(value.sourceReviews, ['standards', 'specification']) || !Object.values(value.sourceReviews).every(pin)
-    || !formats(value.formats) || !Array.isArray(value.coverage) || value.coverage.length !== owners.length) return false;
+    || !formats(value.formats) || !Array.isArray(value.coverage)
+    || ![owners.length, bb8Owners.length].includes(value.coverage.length)) return false;
   const names: string[] = [];
   for (const row of value.coverage) {
     if (!closed(row, ['owner', 'phases']) || !text(row.owner) || !Array.isArray(row.phases)
@@ -90,7 +93,7 @@ function admission(value: unknown): value is Admission {
     }
     if (!exactNames(phaseNames, phases)) return false;
   }
-  return exactNames(names, owners);
+  return exactNames(names, owners) || exactNames(names, bb8Owners);
 }
 
 function inside(root: string, path: string): boolean {
@@ -115,7 +118,8 @@ export async function bindUpgradeAdmission(path: string, expected: UpgradeAdmiss
       if (sha256(await readPrivateFile(evidence.path, 8 * 1024 * 1024)) !== evidence.sha256) refuse();
     }
     if (!bytes.equals(await readPrivateFile(path, 256 * 1024))) refuse();
-    return {schema: value.schema, admissionSha256: sha256(bytes), installedBaselineClosure: {...value.installedBaselineClosure}};
+    return {schema: value.schema, admissionSha256: sha256(bytes), installedBaselineClosure: {...value.installedBaselineClosure},
+      coveredOwners: value.coverage.map(row => row.owner).sort()};
   } catch {
     // Paths, documents, parsing failures and underlying private-file messages
     // never escape into publishable operator diagnostics.

@@ -22,17 +22,24 @@ const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
 const knownModules = ['bb8', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
 
+function requireCoverage(admission, state) {
+  const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
+  if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
+    || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
+}
+
 function requireHealth(health, configured, lagLimitMs) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
-    || configured.some(name => ['bb8', 'onn', 'roborock'].includes(name) || !knownModules.includes(name))
+    || configured.some(name => ['onn', 'roborock'].includes(name) || !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
     || !['core', ...configured].every(name => health.modules.some(row => row.name === name))) refused();
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN and Roborock. State inspection still rejects their configuration or retained state.
+    // BB8, ONN and Roborock. Configured/retained BB8 additionally needs both store proofs;
+    // ONN and Roborock configuration and retained state remain outside this profile.
     if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
@@ -80,6 +87,7 @@ export function createRuntimeUpgradePreflight(io) {
       const state = await io.state(owner.options.stateDir, owner.options.config);
       const receiptDirectory = join(request.installationRoot, 'receipts');
       const receipts = await io.receipts(receiptDirectory, request.installationId);
+      requireCoverage(admission, state);
       const protectedBindings = async () => {
         if (!same(execution, await io.execution(request))
           || !same(source, await io.source(sourceInput)) || !same(admission, await io.admission(request.admissionFile, source.expected))
@@ -159,6 +167,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
       if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) fail();
       const admission = await io.admission(request.admissionFile, source.expected);
       if (!same(admission, approved.admission)) fail();
+      requireCoverage(admission, approved.state);
       const role = phase === 'recovery' ? 'recovery' : 'target';
       const selected = source.artifacts[role].root;
       const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};
