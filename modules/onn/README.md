@@ -54,6 +54,10 @@ release identity and build checks live under `native/`; TypeScript pins are in
 file. Polling checks it and invokes it once; it never copies, repairs or installs
 an artifact. This is not an APK or resident Android service and needs no new
 device permission. Missing, mismatched or refused reader output creates a gap.
+The fixed invocation supplies the reader's result pipe before forwarding to
+raw ADB's socket-backed output. It preserves reader failure status with
+`pipefail` and suppresses VM startup stdout/stderr. Neither the result path nor
+the invocation accepts client-supplied arguments.
 Module startup opens its private store and bus resources without waiting for
 the device.
 
@@ -179,6 +183,13 @@ root. The script verifies all pins, compares generated Dex and removes its own
 temporary output; it neither downloads tools nor replaces the shipped artifact.
 Default CI proves JDK behavior and pin consistency, with no Android or D8
 execution claim.
+
+The standalone reader initializes a missing process-local Android media service
+manager before selected session lookup and preserves an existing manager. This
+changes no Android permission, setting or persistent service. Initialization
+failure uses the same bounded unavailable result. Reader versions and digests
+remain attached to each stored observation; a reader update does not rewrite
+earlier originals or provenance.
 
 Use the [development checks](../../docs/development.md#onn-module-checks).
 The simulation supplies synthetic titles, episodes, progress, physical changes,

@@ -258,6 +258,13 @@ public final class OnnMetadataReader {
         }
         Object thread = method("android.app.ActivityThread", "systemMain").invoke(null);
         Object context = call("android.app.ActivityThread", thread, "getSystemContext");
+        // app_process does not perform an application's media bootstrap.
+        // Initialize only this process's missing manager, as in qualification.
+        Class<?> managerClass = Class.forName("android.media.MediaServiceManager");
+        if (method("android.media.MediaFrameworkPlatformInitializer", "getMediaServiceManager").invoke(null) == null) {
+            Object localManager = managerClass.getConstructor().newInstance();
+            method("android.media.MediaFrameworkPlatformInitializer", "setMediaServiceManager", managerClass).invoke(null, localManager);
+        }
         Object manager = method("android.content.Context", "getSystemService", String.class).invoke(context, "media_session");
         Object raw = method("android.media.session.MediaSessionManager", "getActiveSessions", Class.forName("android.content.ComponentName")).invoke(manager, new Object[] {null});
         if (!(raw instanceof List)) throw new IllegalStateException();

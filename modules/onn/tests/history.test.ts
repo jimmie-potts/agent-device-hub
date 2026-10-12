@@ -36,6 +36,27 @@ const fixture = () => {
 const present = <T>(value: T | null | undefined): T => {assert.ok(value !== null && value !== undefined);return value;};
 const page = (value: ReturnType<OnnHistoryStore['history']>): HistoryPage => {assert.ok(!('error' in value),JSON.stringify(value));return value;};
 const detail = (value: ReturnType<OnnHistoryStore['detail']>): HistoryDetail => {assert.ok(!('error' in value),JSON.stringify(value));return value;};
+void test('reader revision changes preserve earlier provenance and original observations',()=>{
+  const f=fixture();try{
+    f.put([session('youtube','SYNTHETIC earlier title')]);
+    const priorReader={sha256:'460cee4c930d9fba5f2665f70c2da49e60dd7bab2cd682b80e58fc4701137d52',sourceVersion:'onn-metadata/2.0-native-3'};
+    // Seed an earlier-release synthetic archive; production never rewrites provenance.
+    f.database.prepare("UPDATE onn_history_intakes SET reader=? WHERE intakeId='intake-1'").run(JSON.stringify(priorReader));
+    const original=f.database.prepare("SELECT payload FROM onn_history_intakes WHERE intakeId='intake-1'").get() as {payload:string};
+    const reopened=new OnnHistoryStore(f.database);
+    assert.deepEqual(reopened.status(1000,true).lastAccepted?.reader,priorReader);
+    f.atomic(()=>reopened.ingest({intakeId:'new-reader',runId:'new-run',poll:1,receivedAtMs:2000,sample:sample([session('stremio','SYNTHETIC newer title')],2000)}));
+    const items=page(reopened.history({})).items;
+    const earlier=present(items.find(item=>item.observation.intakeId==='intake-1'));
+    assert.deepEqual(earlier.observation.reader,priorReader);
+    assert.equal(earlier.observation.metadata?.title,'SYNTHETIC earlier title');
+    const newer=present(items.find(item=>item.observation.intakeId==='new-reader'));
+    assert.equal(newer.observation.reader.sourceVersion,'onn-metadata/2.0-native-4');
+    assert.notEqual(newer.observation.reader.sha256,priorReader.sha256);
+    assert.deepEqual(detail(reopened.detail({id:earlier.id})).observations[0]?.reader,priorReader);
+    assert.equal((f.database.prepare("SELECT payload FROM onn_history_intakes WHERE intakeId='intake-1'").get() as {payload:string}).payload,original.payload);
+  }finally{f.close();}
+});
 void test('recognized fragment credentials never reach immutable originals or returned observations',()=>{
   const f=fixture();try{
     f.put([session('youtube','before https://example.invalid/callback#access_token=SYNTHETIC_SECRET_123&chapter=2 after')]);
