@@ -94,6 +94,57 @@ void test('upgrade state inspection covers configured and retained owners withou
       } finally {await rm(path, {recursive: true});}
     }
   });
+  await t.test('companion files are inventoried without opening them or accepting an unsupported lease', async () => {
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {companions: {}}}), {mode: 0o600});
+    try {
+      await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+      const database = join(modules, 'companions.sqlite');
+      await writeFile(database, 'opaque companion database', {mode: 0o600});
+      assert.ok((await inspectUpgradeState(state, configFile)).durableOwners.includes('companions'));
+      await rm(database);
+      await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+    }
+    finally {await writeFile(configFile, config, {mode: 0o600});}
+    for (const name of ['companions.sqlite', 'companions.sqlite-wal', 'companions.sqlite-shm',
+      'companions.sqlite-journal', 'companions.sqlite-owner', 'companions']) {
+      const path = join(modules, name);
+      const primary = join(modules, 'companions.sqlite');
+      if (name !== 'companions.sqlite') await writeFile(primary, 'opaque synthetic primary state', {mode: 0o600});
+      if (name === 'companions') await mkdir(path, {mode: 0o700});
+      else await writeFile(path, 'opaque synthetic companion state', {mode: 0o600});
+      try {
+        const before = await lstat(path);
+        if (name.endsWith('-owner')) {
+          await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+        } else {
+          assert.ok((await inspectUpgradeState(state, configFile)).durableOwners.includes('companions'));
+        }
+        const after = await lstat(path);
+        assert.equal(after.atimeMs, before.atimeMs);
+        assert.equal(after.mtimeMs, before.mtimeMs);
+        assert.equal(after.size, before.size);
+        assert.equal(after.mode, before.mode);
+        if (name !== 'companions') assert.equal(await readFile(path, 'utf8'), 'opaque synthetic companion state');
+      } finally {
+        await rm(path, {recursive: true});
+        if (name !== 'companions.sqlite') await rm(primary);
+      }
+    }
+  });
+  await t.test('companion sidecars cannot mask a missing primary database', async () => {
+    const database = join(modules, 'companions.sqlite'), wal = database + '-wal';
+    await writeFile(database, 'opaque companion database', {mode: 0o600});
+    await writeFile(wal, 'opaque companion sidecar', {mode: 0o600});
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {companions: {}}}), {mode: 0o600});
+    try {
+      assert.ok((await inspectUpgradeState(state, configFile)).durableOwners.includes('companions'));
+      await rm(database);
+      await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+      assert.equal(await readFile(wal, 'utf8'), 'opaque companion sidecar');
+    } finally {
+      await rm(database, {force: true}); await rm(wal); await writeFile(configFile, config, {mode: 0o600});
+    }
+  });
   await t.test('non-private database permissions refuse without changing them', async () => {
     await chmod(core, 0o644);
     await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);

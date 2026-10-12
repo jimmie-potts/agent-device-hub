@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -8,6 +8,7 @@ import {promisify} from 'node:util';
 import {test} from 'node:test';
 import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
 import {readPrivateFile} from '../src/state.js';
+import {inspectUpgradeState} from '../src/upgrade-inputs.js';
 import {parseUpgradeRequest} from '../src/upgrade-paths.js';
 const run = promisify(execFile);
 
@@ -87,7 +88,9 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const stamp = {schema: 'runtime-build/2.0', revision: release.sourceRevision, version: '0.1.0', dirty: false, builtAt: '2026-10-09T00:00:00.000Z'};
   const source = {expected: {installationId: 'synthetic', provenanceDirectory: join(root, 'provenance'), releases: {previous: release, target: release, recovery: release}, formats: {}},
     stamps: {previous: stamp, target: stamp, recovery: stamp}, inputs: [] as unknown[],
-    artifacts: {previous: {identity: release, root: artifact.directory, entries: []}, target: {root: artifact.directory}, recovery: {root: artifact.directory}}};
+    artifacts: {previous: {identity: release, root: artifact.directory, entries: [] as {path: string; kind: string; sha256: string}[]},
+      target: {root: artifact.directory, entries: [] as {path: string; kind: string; sha256: string}[]},
+      recovery: {root: artifact.directory, entries: [] as {path: string; kind: string; sha256: string}[]}}};
   const admission = {schema: 'runtime-proof-admission/1.0', admissionSha256: 'd'.repeat(64),
     coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox'],
     installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'e'.repeat(64)}};
@@ -108,12 +111,62 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   if (scenario === 'unknown-module') health.modules.push({name: 'unknown-module', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
   if (scenario === 'stopped-watchdog') health.lagCheck.status = 'stopped';
   if (scenario === 'configured-wispr') configured.push('wispr');
-  await writeFile(owner.options.config, JSON.stringify({edge: {credentials: join(root, 'credentials')}, modules: {}}), {mode: 0o600});
+  const realCompanionState = scenario.startsWith('companions-real-');
+  if (realCompanionState) configured.push('companions');
+  await writeFile(owner.options.config, JSON.stringify({schema: 'runtime-config/1.0',
+    edge: {credentials: join(root, 'credentials')},
+    modules: realCompanionState ? Object.fromEntries(configured.map(name => [name, {}])) : {}}), {mode: 0o600});
+  if (realCompanionState) {
+    const modules = join(owner.options.stateDir, 'modules');
+    await mkdir(modules, {recursive: true, mode: 0o700});
+    await writeFile(join(modules, 'core.sqlite'), 'opaque synthetic core state', {mode: 0o600});
+    if (scenario === 'companions-real-present-state') {
+      await writeFile(join(modules, 'companions.sqlite'), 'opaque synthetic companion state', {mode: 0o600});
+    } else {
+      await rm(join(modules, 'companions.sqlite'), {force: true});
+    }
+  }
   await writeFile(request.tokenFile, 'synthetic-secret-never-public', {mode: 0o600});
   await writeFile(join(root, 'credentials'), 'synthetic credential inventory', {mode: 0o600});
   const configSha256 = sha256(await readPrivateFile(owner.options.config, 1024 * 1024));
   const credentialsSha256 = sha256(await readPrivateFile(join(root, 'credentials'), 65536));
   const state = {configSha256, configured, durableOwners: ['core', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt']};
+  if (scenario.startsWith('companions-')) {
+    for (const artifact of Object.values(source.artifacts)) {
+      artifact.entries.push({path: 'modules/companions/package.json', kind: 'file', sha256: 'f'.repeat(64)});
+    }
+    state.durableOwners.push('companions'); state.durableOwners.sort();
+    if (scenario !== 'companions-no-proof') admission.coveredOwners.push('companions');
+    health.modules.push({name: 'companions', apiVersion: MODULE_API_VERSION, state: 'running', healthy: true, reasonCode: null});
+    const row = health.modules.at(-1); assert.ok(row);
+    if (scenario === 'companions-no-baseline-code') source.artifacts.previous.entries = [];
+    if (scenario === 'companions-no-recovery-code') source.artifacts.recovery.entries = [];
+    if (scenario === 'companions-no-target-code') source.artifacts.target.entries = [];
+    if (scenario === 'companions-no-state') state.durableOwners.splice(state.durableOwners.indexOf('companions'), 1);
+    if (scenario === 'companions-no-inventory') Reflect.deleteProperty(source.artifacts.target, 'entries');
+    if (scenario === 'companions-missing-row') health.modules.pop();
+    if (scenario === 'companions-duplicate-row') health.modules.push({...row});
+    if (scenario === 'companions-stopped') row.state = 'stopped';
+    if (scenario === 'companions-unhealthy') row.healthy = false;
+    if (scenario === 'companions-reason') row.reasonCode = 'unavailable';
+    if (scenario === 'companions-refused') {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found';}
+    if (scenario === 'companions-introduced') {
+      // Distinct verified roles model an older baseline without this owner.
+      source.artifacts.previous.entries = [];
+      state.durableOwners.splice(state.durableOwners.indexOf('companions'), 1);
+      health.modules.pop();
+      const target = {...release, sourceRevision: 'd'.repeat(40), archiveSha256: 'e'.repeat(64)};
+      const recovery = {...release, sourceRevision: 'f'.repeat(40), archiveSha256: '9'.repeat(64)};
+      source.expected.releases.target = target; source.expected.releases.recovery = recovery;
+      source.stamps.target = {...stamp, revision: target.sourceRevision};
+      source.stamps.recovery = {...stamp, revision: recovery.sourceRevision};
+      source.artifacts.target.root = join(root, 'target'); source.artifacts.recovery.root = join(root, 'recovery');
+      const paths = request.releases as Record<string, typeof artifact>;
+      paths.target = {...artifact, directory: source.artifacts.target.root, identity: join(root, 'target-identity')};
+      paths.recovery = {...artifact, directory: source.artifacts.recovery.root, identity: join(root, 'recovery-identity')};
+      await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
+    }
+  }
   if (['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario) || scenario.startsWith('onn-bb8-')) {
     const retainedOnly = scenario.startsWith('onn-retained-') || scenario === 'onn-bb8-retained';
     if (!retainedOnly) configured.push('onn');
@@ -160,6 +213,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     hooks: () => answer({closureSha256: admission.installedBaselineClosure.sha256, hooks: drift('hook', count('hooks')) ? [{changed: true}] : []}),
     state: async () => {
       const n = count('state');
+      if (realCompanionState) return inspectUpgradeState(owner.options.stateDir, owner.options.config);
       if (scenario === 'request-drift' && n > 1) await writeFile(requestFile, JSON.stringify({...request, tokenFile: join(root, 'changed-token')}));
       return drift('state', n) ? {...state, durableOwners: [...state.durableOwners, 'unknown']} : state;
     },
@@ -216,6 +270,27 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
   assert.equal(absentOnn.plan.operation, 'adoption');
   assert.equal(absentOnn.counters.http, 2);
+  const companion = await inspect('companions-qualified') as Planned & {code?: string};
+  assert.equal(companion.code, undefined, 'covered always-shipped companions uses ordinary running health');
+  assert.equal(companion.counters.http, 2);
+  const introduced = await inspect('companions-introduced') as Planned & {code?: string};
+  assert.equal(introduced.code, undefined, 'a qualified first introduction does not fabricate current companion health/state');
+  assert.equal(introduced.counters.http, 2);
+  const unqualifiedCompanion = await inspect('companions-no-proof');
+  assert.equal(unqualifiedCompanion.code, 'runtime-upgrade-preflight-refused');
+  assert.equal(unqualifiedCompanion.counters.http, 0, 'missing companion qualification refuses before observation');
+  for (const scenario of ['companions-no-baseline-code', 'companions-no-recovery-code', 'companions-no-target-code',
+    'companions-no-state', 'companions-no-inventory']) {
+    const missing = await inspect(scenario);
+    assert.equal(missing.code, 'runtime-upgrade-preflight-refused', scenario);
+    assert.equal(missing.counters.http, 0, 'unqualified companion roles refuse before authenticated observation');
+  }
+  for (const scenario of ['companions-missing-row', 'companions-duplicate-row', 'companions-stopped',
+    'companions-unhealthy', 'companions-reason', 'companions-refused']) {
+    const unsafe = await inspect(scenario);
+    assert.equal(unsafe.code, 'runtime-upgrade-preflight-refused', scenario);
+    assert.equal(unsafe.counters.http, 1, 'unsafe health refuses at its first observation');
+  }
   for (const scenario of ['onn-qualified', 'onn-retained-qualified', 'onn-bb8-qualified', 'onn-bb8-retained']) {
     const qualified = await inspect(scenario) as Planned & {code?: string};
     assert.equal(qualified.code, undefined, scenario);
@@ -234,6 +309,11 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(first.observations[0]?.operationId, 'synthetic');
   assert.match(first.observations[0]?.trace.traceparent ?? '', /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   assert.ok(!JSON.stringify(first.plan).includes('traceparent'));
+  const actualCompanion = await inspect('companions-real-present-state');
+  assert.equal(actualCompanion.code, undefined, 'configured physical companion store passes the real inventory reader');
+  const missingCompanion = await inspect('companions-real-missing-state');
+  assert.equal(missingCompanion.code, 'runtime-upgrade-preflight-refused');
+  assert.equal(missingCompanion.counters.http, 0, 'configured missing state refuses before authenticated observation');
   const repeated = await inspect('adoption') as Planned;
   assert.equal(first.plan.planSha256, repeated.plan.planSha256);
   assert.notEqual(first.observations[0]?.trace.traceparent, repeated.observations[0]?.trace.traceparent);
@@ -284,8 +364,15 @@ async function runningCheck(root: string, scenario: string,
   const expected = {releases: {previous: identity(revisions.previous), target: identity(revisions.target), recovery: identity(revisions.recovery)}};
   const stamps = {previous: stamp(revisions.previous), target: stamp(revisions.target), recovery: stamp(revisions.recovery)};
   const source = {expected, stamps, inputs: [] as unknown[],
-    artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous}, target: {root: join(root, 'target')}, recovery: {root: join(root, 'previous')}}};
-  const state = {configured: scenario === 'configured-onn' ? ['onn'] : [], durableOwners: ['core'], configSha256: sha256('config')};
+    artifacts: {previous: {root: join(root, 'previous'), identity: expected.releases.previous, entries: [] as {path: string; kind: string; sha256: string}[]},
+      target: {root: join(root, 'target'), entries: [] as {path: string; kind: string; sha256: string}[]},
+      recovery: {root: join(root, 'previous'), entries: [] as {path: string; kind: string; sha256: string}[]}}};
+  const realCompanionState = scenario.startsWith('companions-real-');
+  const configText = realCompanionState
+    ? JSON.stringify({schema: 'runtime-config/1.0', edge: {credentials: join(root, 'credentials')}, modules: {companions: {}}})
+    : 'config';
+  const state = {configured: realCompanionState ? ['companions'] : scenario === 'configured-onn' ? ['onn'] : [],
+    durableOwners: ['core'], configSha256: sha256(configText)};
   const admission = {installedBaselineClosure: {path: request.installedBaselineClosureFile, sha256: 'd'.repeat(64)},
     coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox']};
   const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
@@ -309,15 +396,50 @@ async function runningCheck(root: string, scenario: string,
     if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
     if (!scenario.includes('missing-coverage') && scenario !== 'onn-bb8-no-onn-proof') admission.coveredOwners.push('onn');
   }
+  const companion = scenario.startsWith('companions-');
+  if (companion) {
+    for (const artifact of Object.values(source.artifacts)) {
+      artifact.entries.push({path: 'modules/companions/package.json', kind: 'file', sha256: 'f'.repeat(64)});
+    }
+    state.durableOwners.push('companions'); state.durableOwners.sort();
+    if (scenario !== 'companions-no-proof') admission.coveredOwners.push('companions');
+    health.modules.push({name: 'companions', state: 'running', healthy: true, reasonCode: null});
+    const row = health.modules.at(-1); assert.ok(row);
+    if (scenario === 'companions-no-recovery-code') source.artifacts.recovery.entries = [];
+    if (scenario === 'companions-missing-row') health.modules.pop();
+    if (scenario === 'companions-duplicate-row') health.modules.push({...row});
+    if (scenario === 'companions-stopped') row.state = 'stopped';
+    if (scenario === 'companions-unhealthy') row.healthy = false;
+    if (scenario === 'companions-reason') row.reasonCode = 'unavailable';
+    if (scenario === 'companions-refused') {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found'; health.status = 'degraded';}
+    if (scenario.startsWith('companions-introduced')) {
+      source.artifacts.previous.entries = [];
+      state.durableOwners.splice(state.durableOwners.indexOf('companions'), 1);
+      revisions.recovery = 'c'.repeat(40);
+      expected.releases.recovery = identity(revisions.recovery); stamps.recovery = stamp(revisions.recovery);
+      source.artifacts.recovery.root = join(root, 'recovery');
+      if (phase === 'recovery') owner.cwd = source.artifacts.recovery.root;
+    }
+  }
   const baseline = {baselineRoot: join(root, 'previous')}, hooks = {hooks: []}, paths = {protectedPaths: []};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
   await writeFile(request.tokenFile, 'synthetic private token', {mode: 0o600});
-  await writeFile(options.config, 'config', {mode: 0o600});
+  await writeFile(options.config, configText, {mode: 0o600});
+  if (realCompanionState) {
+    const modules = join(options.stateDir, 'modules');
+    await mkdir(modules, {recursive: true, mode: 0o700});
+    await writeFile(join(modules, 'core.sqlite'), 'opaque synthetic core state', {mode: 0o600});
+    if (scenario === 'companions-real-present-state') {
+      await writeFile(join(modules, 'companions.sqlite'), 'opaque synthetic companion state', {mode: 0o600});
+    } else {
+      await rm(join(modules, 'companions.sqlite'), {force: true});
+    }
+  }
   await writeFile(join(root, 'credentials'), 'credentials', {mode: 0o600});
   const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission', requestSha256: sha256(await readFile(requestFile)),
     operation: request.operation, installationId: request.installationId, execution: request.execution, owner: original, paths, baseline, hooks, state,
     source: {expected, stamps}, admission,
-    privateInputs: {configSha256: sha256('config'), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('synthetic private token')}};
+    privateInputs: {configSha256: sha256(configText), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('synthetic private token')}};
   const plan = {...body, planSha256: scenario === 'wrong-plan-hash' ? '0'.repeat(64) : sha256(canonical(body))};
   await writeFile(planFile, JSON.stringify(plan), {mode: 0o600});
   const counters: Record<string, number> = {owner: 0, http: 0, selection: 0, lock: 0};
@@ -342,7 +464,15 @@ async function runningCheck(root: string, scenario: string,
     source: () => answer(scenario === 'source-drift' && (counters.http ?? 0) > 1 ? {...source, inputs: [{changed: true}]} : source),
     admission: () => answer(admission), baseline: () => answer(baseline),
     hooks: () => answer(scenario === 'hook-drift' && (counters.http ?? 0) > 1 ? {hooks: [{changed: true}]} : hooks),
-    state: () => answer(state),
+    state: () => {
+      if (realCompanionState) return inspectUpgradeState(options.stateDir, options.config);
+      if (!scenario.startsWith('companions-introduced')) return answer(state);
+      const owners = [...state.durableOwners, 'companions'];
+      if (scenario === 'companions-introduced-missing-state') owners.pop();
+      if (scenario === 'companions-introduced-unrelated-owner') owners.push('unknown');
+      if (scenario === 'companions-introduced-lost-owner') owners.splice(owners.indexOf('core'), 1);
+      return answer({...state, durableOwners: owners.sort()});
+    },
     config: () => answer({edge: {credentials: join(root, 'credentials')}}),
     owner: () => {
       count('owner');
@@ -412,6 +542,35 @@ void test('post-start observation binds the selected release and refuses drift w
       assert.equal(value.result, undefined, `${scenario} returned a result`);
       assert.equal(value.code, 'runtime-upgrade-running-refused');
     });
+  }
+});
+
+void test('companion post-start health and coverage are enforced in every selected phase', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'companions-running-check-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  for (const phase of ['candidate', 'recovery', 'reupgrade']) {
+    const qualified = await bounded(phase, runningCheck(root, 'companions-qualified', phase));
+    assert.equal(qualified.code, undefined, phase);
+    assert.equal((qualified.result as {verified: boolean}).verified, true);
+    const actualCompanion = await bounded(phase, runningCheck(root, 'companions-real-present-state', phase));
+    assert.equal(actualCompanion.code, undefined, `${phase} real configured companion store passes`);
+    const missingCompanion = await bounded(phase, runningCheck(root, 'companions-real-missing-state', phase));
+    assert.equal(missingCompanion.code, 'runtime-upgrade-running-refused', `${phase} real configured missing state refuses`);
+    assert.equal(missingCompanion.counters.http, 0);
+    const introduced = await bounded(phase, runningCheck(root, 'companions-introduced', phase));
+    assert.equal(introduced.code, undefined, `${phase} accepts only the qualified first-created owner`);
+    assert.equal((introduced.result as {verified: boolean}).verified, true);
+    for (const drift of ['companions-introduced-missing-state', 'companions-introduced-unrelated-owner', 'companions-introduced-lost-owner']) {
+      const changed = await bounded(drift, runningCheck(root, drift, phase));
+      assert.equal(changed.code, 'runtime-upgrade-running-refused', `${phase} ${drift}`);
+      assert.equal(changed.counters.http, 0, 'ownership drift refuses before observation');
+    }
+    for (const scenario of ['companions-no-proof', 'companions-no-recovery-code', 'companions-missing-row',
+      'companions-duplicate-row', 'companions-stopped', 'companions-unhealthy', 'companions-reason', 'companions-refused']) {
+      const refused = await bounded(scenario, runningCheck(root, scenario, phase));
+      assert.equal(refused.code, 'runtime-upgrade-running-refused', `${phase} ${scenario}`);
+      assert.equal(refused.result, undefined);
+    }
   }
 });
 

@@ -285,6 +285,28 @@ outbox (#972, #123); the README's Commits section says how.
 start to its exit against a disposable runtime's edge (#926); the README's
 [Agent hooks](README.md#agent-hooks) section says how.
 
+### Upgrade owner qualification
+
+The existing runtime suite includes companion upgrade input/admission and
+preflight/running-check regressions, plus
+`companions-upgrade-qualification.test.ts`. Its four separate production-module
+processes reopen private synthetic stores, preserve settings, admissions,
+consumed origins, allowances, archived presentation and outcome identities, and
+leave pending reactions empty. The candidate writes distinct records and a new outcome, and a negative control
+rejects restoration of the older stopped baseline. Inventory regressions use the
+production reader to reject missing configured state, including surviving sidecars.
+These checks establish synthetic restart behavior; actual release compatibility and installation still need the owning UPGRADE
+procedure and independent artifact evidence.
+
+Run these with the normal build and `npm run test:runtime:built`; the existing
+core CI job includes them. A focused run can select the compiled
+`upgrade-inputs`, `upgrade-admission`, `upgrade-preflight` and
+`companions-upgrade-qualification` test files. Runtime-private state tests require
+a private temporary directory outside Git and Windows mounts, as the production
+state contract does. Other source scratch remains under the repository's
+ignored `.local/`. Tests use only their own synthetic databases and fake SDK
+inputs, and do not qualify installed health, native readers or physical devices.
+
 ### Runtime test layers
 
 Every runtime story is tested at four layers
