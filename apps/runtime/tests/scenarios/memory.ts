@@ -493,8 +493,10 @@ class Memory implements MemoryHarness {
     }
     const simulated = this.#simulated.get(name);
     if (simulated === undefined) {
-      if (!this.#registrations.has(name)) throw new Error(`no module ${name}`);
-      throw new Error(`the module ${name} registers no simulation`);
+      const registration = this.#registrations.get(name);
+      if (registration === undefined) throw new Error(`no module ${name}`);
+      // A module without a device uses its existing simulated factory and the runtime's virtual context clock.
+      return registration.simulate();
     }
     return simulated.simulation.memory.build(simulated.device, {now: this.#clock.now, scheduler: this.#clock.scheduler});
   }

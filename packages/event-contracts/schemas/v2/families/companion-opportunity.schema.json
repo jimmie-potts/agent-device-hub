@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-opportunity/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "origin",
+    "sourceKind",
+    "context",
+    "category",
+    "cue",
+    "revision",
+    "generation",
+    "session",
+    "identity",
+    "turn",
+    "attention",
+    "noticeId",
+    "evidence",
+    "occurredAtMs",
+    "validUntilMs",
+    "busy",
+    "media",
+    "visitor",
+    "location",
+    "observedAtMs"
+  ],
+  "properties": {
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "sourceKind": {
+      "enum": [
+        "coding",
+        "simulated-apartment"
+      ]
+    },
+    "context": {
+      "enum": [
+        "live",
+        "scenario"
+      ]
+    },
+    "category": {
+      "enum": [
+        "coding-attention",
+        "coding-notice",
+        "simulated-social"
+      ]
+    },
+    "cue": {
+      "enum": [
+        "question",
+        "input",
+        "approval",
+        "turn-ended",
+        "arrival",
+        "visit"
+      ]
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "generation": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "identity": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "turn": {
+      "$ref": "https://bunny.invalid/events/session/2.0#/$defs/knownId"
+    },
+    "attention": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/session/2.0#/$defs/attention"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "noticeId": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "enum": [
+        "lifecycle-metadata",
+        "fixture"
+      ]
+    },
+    "occurredAtMs": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validUntilMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "busy": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "media": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "visitor": {
+      "type": "null"
+    },
+    "location": {
+      "type": "null"
+    },
+    "observedAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    }
+  }
+}

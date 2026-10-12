@@ -339,6 +339,19 @@ and exits 1, and the service manager restarts it whole.
   intake through the core's transactions and outbox. History keeps what a part
   publishes too.
 
+## Virtual Reachy text cards
+
+The optional [companions module](../../modules/companions/README.md) adds a
+Reachy page to the existing dashboard. It defaults to disabled, uses fixed text
+and consumes only the first live publication of eligible core coding occurrences.
+Session attention remains authoritative with the companion off or unavailable.
+Labelled synthetic arrival/visit scenarios keep unknown identity/location and
+separate admission records; they create no household fact or physical/audio output.
+The page's enablement, mute and social snooze controls are tracked commands.
+Saved cards return as history, and neither sync, recovery, restart nor returning
+to Free creates a reaction. See the module guide for timing, private storage and
+source checks. Source acceptance and separately selected installation remain distinct.
+
 ## Core automation
 
 The core owns event automation ([#925](https://github.com/jimmie-potts/agent-device-hub/issues/925)) in fresh private tables. It reuses the legacy Hub's event-rule definitions, interrupt set, quiet hours and budgets without transferring old rules or settings. `CoreModule.automation` exposes rule controls, settings, the interrupt set and the log for the authenticated gateway. A rule created without owner enabling stays disabled. The core runs independently of the page.

@@ -136,6 +136,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wispr-module:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:companions:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:roborock-transport:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock-transport:consumer:built
@@ -237,6 +239,8 @@ jobs:
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:onn:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:companions:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   gate:

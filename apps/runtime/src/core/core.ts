@@ -23,6 +23,7 @@ import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
 import {AutomationError} from './automation.js';
+import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
@@ -207,6 +208,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 class Core {
   readonly #automation: AutomationPart;
+  readonly #companions = new CompanionPart();
   get automation(): AutomationControls {return this.#automation.controls;}
   readonly #mode: ModePart;
   readonly #sdk: Sdk;
@@ -254,7 +256,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, this.#automation, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, this.#automation, this.#companions, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -268,11 +270,13 @@ class Core {
       database: context.database(), clock: context.clock,
       sdk: {source:context.sdk.source,publishMessage:async(key,message)=>{
         const failed=this.#automation.publishing(message);
-        try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();throw error;}
+        const companionFailed=this.#companions.publishing(message);
+        try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();companionFailed();throw error;}
       }},
       committed: change => {
         this.#automation.committed(change);
-        return ()=>this.#automation.publicationEnded(change);
+        this.#companions.committed(change);
+        return ()=>{this.#automation.publicationEnded(change);this.#companions.publicationEnded(change);};
       },
       derivers: parts.flatMap(part => part.derive ?? []),
       open: [
@@ -357,6 +361,7 @@ class Core {
     this.#timer?.();
     await this.#queue;
     await this.#automation.close();
+    this.#companions.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
@@ -779,7 +784,10 @@ class Core {
    * changed, so each record's freshness holds at the sync's time.
    */
   async #serve(request: Message<SyncRequest>): Promise<Snapshot | ErrorBody> {
-    await this.#ready;
+    try {await this.#ready;} catch {
+      // A sync during failed startup refuses; the startup owner reports the original store failure once.
+      return errorBody('unavailable', {detail: 'the core could not open its store'});
+    }
     if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
     return this.#run(async () => {
       // A store that could not open, as at a first start on a full disk, has nothing to serve until the owner opens it.

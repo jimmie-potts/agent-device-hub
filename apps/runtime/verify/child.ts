@@ -169,8 +169,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
     stop: () => {},
   })),
   // Every registered module, with the link to its simulated device in the supervisor (Hub #999).
-  ...Object.fromEntries(registrations.flatMap(({name, schemas, simulation}) =>
-    simulation === undefined ? [] : [[name, fixture(name, () => simulation.run.remote(links.link(name)), schemas)] as const])),
+  ...Object.fromEntries(registrations.map(({name, schemas, simulation, simulate}) =>
+    [name, fixture(name, () => simulation === undefined ? simulate() : simulation.run.remote(links.link(name)), schemas)] as const)),
 };
 
 const names = [...(list === '-' ? [] : list.split(',')), ...(fault === 'installed-port' ? ['prober'] : [])];

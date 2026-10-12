@@ -1639,3 +1639,14 @@ scenario runs over both in-memory transports. Follow
 run and full-suite triggers. These checks use synthetic records and simulated
 transport. Source success does not establish installation, current
 account/device compatibility or map attribution.
+
+## Companions source checks
+
+Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
+`npm run lint:js` and `npm run test:companions:built` check the optional
+[fixed-text Reachy module](../modules/companions/README.md). The core CI module
+group runs that suite. Event-family validation runs in `test:events:built`;
+core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
+Run the `reachy-text` catalog scenario over both transports and in a disposable
+runtime, and the companions browser/axe journey in the runtime dashboard suite.
+These are synthetic source checks; installation remains a separately selected batch.

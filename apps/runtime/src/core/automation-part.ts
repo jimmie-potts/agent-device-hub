@@ -5,6 +5,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Cancel, ModuleScheduler, SyncedCopy} from '@jimmie-potts/sdk';
+import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import {AutomationStore} from './automation-store.js';
@@ -32,9 +33,7 @@ export class AutomationPart implements CorePart {
   #participants: readonly ModeParticipant[] = [];
   readonly #devices = new Map<string, DeviceFollower>();
   readonly #sessions = new Map<string, SessionRecord>();
-  // Only a committed live reduction can mint eligibility. Consumed on first publication; not reconstructed at start.
-  readonly #live = new Set<string>();
-  readonly #publishing = new Set<string>();
+  readonly #eligibility = new LivePublication();
   setParticipants(participants: readonly ModeParticipant[]): void {
     this.#participants=participants;
     this.#followDevices();
@@ -108,37 +107,25 @@ export class AutomationPart implements CorePart {
       }});
   }
   /** Only the first attempt of the original batch can deliver an eligible live occurrence. */
-  publishing(message:Message<unknown>):()=>void {
-    if(this.#live.delete(message.id)) {
-      this.#publishing.add(message.id);
-      if(this.#publishing.size>4096) {const oldest=this.#publishing.values().next().value;if(oldest!==undefined) this.#publishing.delete(oldest);}
-    }
-    return ()=>{this.#publishing.delete(message.id);this.#live.clear();};
-  }
-  publicationEnded(change:CoreChange):void {
-    for(const message of change.messages) this.#live.delete(message.id);
-  }
+  publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
+  publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
   committed(change: CoreChange): void {
     for (const message of change.messages) {
-      if(message.kind==='state' && message.type==='org.bunny.session.updated') this.#sessions.set(message.subject,message.data as SessionRecord);
-      if(message.kind==='removal') this.#sessions.delete(message.subject);
-      if(message.kind==='occurrence' && KINDS.has(message.type)) {
-        this.#live.add(message.id);
-        // Bound unpublishable live marks. Dropping an eligible occurrence is safe; replaying one is not.
-        if(this.#live.size>4096) {const oldest=this.#live.values().next().value;if(oldest!==undefined) this.#live.delete(oldest);}
-      }
+      if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);
+      if (message.kind === 'removal') this.#sessions.delete(message.subject);
     }
+    this.#eligibility.committed(change.messages, new Set(KINDS.keys()));
   }
   async start(handle: CoreHandle): Promise<void> {
     this.#handle=handle;
     this.#followDevices();
     await Promise.all([
       ...[...KINDS.values()].map(kind=>handle.sdk.subscribe<AgentOccurrence>(`bunny.event.${kind}.*`,message=>{
-        if(this.#closed || message.source!==handle.sdk.source || !this.#publishing.delete(message.id)) return;
+        if(this.#closed || message.source!==handle.sdk.source || !this.#eligibility.take(message.id)) return;
         const data=message.data;
         this.#automation?.submit({id:message.id,source:'core',kind,delivery:'live',agent:opaque(JSON.stringify(data.identity)),
           ...(data.turn.status==='known'?{task:opaque(`${data.session}\0${data.turn.id}`)}:{})},{traceparent:message.traceparent});
-      },{onOverflow:()=>{this.#publishing.clear();this.#live.clear();}})),
+      },{onOverflow:()=>{this.#eligibility.clear();}})),
     ]);
   }
   get controls(): AutomationControls {
@@ -157,7 +144,7 @@ export class AutomationPart implements CorePart {
     })};
   }
   async close(): Promise<void> {
-    this.#closed=true;this.#live.clear();this.#publishing.clear();
+    this.#closed=true;this.#eligibility.clear();
     await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
     await this.#automation?.close();

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-settings-set/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "expectedRevision",
+    "enabled",
+    "muted",
+    "snooze"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "expectedRevision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "muted": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 3,
+      "items": {
+        "enum": [
+          "coding-attention",
+          "coding-notice",
+          "simulated-social"
+        ]
+      }
+    },
+    "snooze": {
+      "enum": [
+        "keep",
+        "one-hour",
+        "clear"
+      ]
+    }
+  }
+}

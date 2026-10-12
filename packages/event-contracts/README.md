@@ -476,3 +476,14 @@ codes. They go in `detail` or in the module's own payload fields.
 including a command. `invalid-request` covers a well-formed request whose values
 the owner does not accept, a command included, and a malformed request that is
 not a profile message, such as an HTTP or MCP body.
+
+## Companion payloads
+
+The additive `./v2/companions` entry supplies the `companion-opportunity`,
+`companion-state`, `companion-settings-set` and `companion-fixture-run` families.
+They are registered with the shared core families. Core publishes qualified
+first-live coding opportunities; the optional companion module owns its state
+and the two tracked commands. Opportunities retain origin, revision/generation,
+known identity and a thirty-second validity bound. Scenario identity/location
+remain unknown; rule and text-selection implementation stays module-local.
+Schemas and consumer checks join `test:events:built`.

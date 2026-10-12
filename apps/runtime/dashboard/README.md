@@ -95,6 +95,17 @@ application frame under the gateway's trusted asset policy. It is reviewed
 same-origin application code, not an untrusted extension sandbox. User media
 remains on the separate non-executable content route.
 
+## Reachy
+
+`#/module/companions/reachy` opens the optional fixed-text companion page.
+Reachy defaults to disabled. Enablement, category mute, social snooze and labelled
+synthetic arrival/visit fixtures use the existing tracked command component.
+Cards show source/session, real coding metadata or simulated scenario, evidence,
+fixed text and the last decision reason. A published card is not proof it was
+seen; restored cards are history. Core session attention remains available on Home.
+Run `npm run test:companions:browser` after the root build for persisted controls,
+priority and attribution, reconnect, keyboard, narrow-screen and axe checks.
+
 ## Agent sessions
 
 `src/connection.ts` holds the page's one remote participant, acting as the

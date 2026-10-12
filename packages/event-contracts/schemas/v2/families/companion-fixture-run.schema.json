@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-fixture-run/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "scenario",
+    "busy",
+    "media"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "scenario": {
+      "enum": [
+        "arrival",
+        "visit",
+        "question-and-arrival"
+      ]
+    },
+    "busy": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "media": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "description": "Submit one labelled synthetic scenario. Completion confirms fixture input admission; card decision and publication are separate, and visibility stays unknown."
+}

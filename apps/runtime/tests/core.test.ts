@@ -122,7 +122,7 @@ it('an approval prompt is raised and cleared, and a finished turn stays on its s
   assert.deepEqual(record?.attention, []);
   assert.equal(record?.notices.length, 1, 'the finished turn\'s unread notice is on the record');
   const occurrences = core.seen.filter(message => message.kind === 'occurrence' && message.source === 'bunny/core').map(message => message.type);
-  assert.deepEqual(occurrences, ['org.bunny.attention.raised', 'org.bunny.attention.cleared', 'org.bunny.turn.ended']);
+  assert.deepEqual(occurrences, ['org.bunny.attention.raised', 'org.bunny.companion-opportunity.raised', 'org.bunny.attention.cleared', 'org.bunny.turn.ended', 'org.bunny.companion-opportunity.raised']);
   assert.equal(core.seen.some(message => message.dataschema.includes('/inbox-item/')), false, 'no inbox item');
 });
 
