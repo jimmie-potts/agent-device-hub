@@ -214,6 +214,7 @@ async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   let result;
   try {
     result = await runScenario(scenario, run);
+    if (result.outcome === 'passed') await scenario.capture?.(t, run);
   } finally {
     await run.close();
   }
@@ -232,7 +233,7 @@ const scenarioSteps: Record<string, CaptureStep> = Object.fromEntries(SCENARIOS.
   description: `Runs the catalog scenario ${scenario.id} through the run adapter on a freshly seeded run`,
   scenario: scenario.id,
   fresh: true,
-  timeoutMs: 120_000,
+  timeoutMs: scenario.captureTimeoutMs ?? 120_000,
   run: onHealth(t => judge(t, scenario)),
 } satisfies CaptureStep]));
 

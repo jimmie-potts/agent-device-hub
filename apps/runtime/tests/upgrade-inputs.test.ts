@@ -42,17 +42,17 @@ void test('upgrade state inspection covers configured and retained owners withou
     assert.equal(await readFile(unknown, 'utf8'), 'retained opaque state');
     await rm(unknown);
   });
-  await t.test('BB8 configuration and retained state remain outside the qualified profile', async () => {
-    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {bb8: {id: 'bb8', configurationRevision: 0}}}), {mode: 0o600});
+  await t.test('Roborock configuration and retained state remain outside the qualified profile', async () => {
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {roborock: {id: 'roborock', configurationRevision: 0}}}), {mode: 0o600});
     await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
     await writeFile(configFile, config, {mode: 0o600});
-    for (const name of ['bb8.sqlite', 'bb8.sqlite-wal', 'bb8']) {
+    for (const name of ['roborock.sqlite', 'roborock.sqlite-wal', 'roborock']) {
       const path = join(modules, name);
-      if (name === 'bb8') await mkdir(path, {mode: 0o700});
-      else await writeFile(path, 'retained synthetic BB8 state', {mode: 0o600});
+      if (name === 'roborock') await mkdir(path, {mode: 0o700});
+      else await writeFile(path, 'retained synthetic Roborock state', {mode: 0o600});
       try {
         await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
-        if (name !== 'bb8') assert.equal(await readFile(path, 'utf8'), 'retained synthetic BB8 state');
+        if (name !== 'roborock') assert.equal(await readFile(path, 'utf8'), 'retained synthetic Roborock state');
       } finally {await rm(path, {recursive: true});}
     }
   });

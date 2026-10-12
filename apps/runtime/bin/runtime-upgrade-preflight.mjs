@@ -26,20 +26,23 @@ function requireCoverage(admission, state) {
   const onn = state.configured.includes('onn') || state.durableOwners.includes('onn');
   if (onn && (!state.durableOwners.includes('onn') || !Array.isArray(admission.coveredOwners)
     || !admission.coveredOwners.includes('onn'))) refused();
+  const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
+  if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
+    || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
 }
 
 function requireHealth(health, configured, lagLimitMs) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
-    || configured.some(name => ['bb8', 'roborock'].includes(name) || !knownModules.includes(name))
+    || configured.some(name => name === 'roborock' || !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
     || !['core', ...configured].every(name => health.modules.some(row => row.name === name))) refused();
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN and Roborock. Configured/retained ONN additionally requires its
-    // qualified coverage; BB8 and Roborock remain outside this source profile.
+    // BB8, ONN and Roborock. Qualified BB8/ONN coverage is checked separately;
+    // configured or retained Roborock remains outside this profile.
     if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
@@ -88,6 +91,7 @@ export function createRuntimeUpgradePreflight(io) {
       requireCoverage(admission, state);
       const receiptDirectory = join(request.installationRoot, 'receipts');
       const receipts = await io.receipts(receiptDirectory, request.installationId);
+      requireCoverage(admission, state);
       const protectedBindings = async () => {
         if (!same(execution, await io.execution(request))
           || !same(source, await io.source(sourceInput)) || !same(admission, await io.admission(request.admissionFile, source.expected))
@@ -168,6 +172,7 @@ export function createRuntimeUpgradeRunningCheck(io) {
       const admission = await io.admission(request.admissionFile, source.expected);
       requireCoverage(admission, approved.state);
       if (!same(admission, approved.admission)) fail();
+      requireCoverage(admission, approved.state);
       const role = phase === 'recovery' ? 'recovery' : 'target';
       const selected = source.artifacts[role].root;
       const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};

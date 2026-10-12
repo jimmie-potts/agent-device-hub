@@ -93,6 +93,27 @@ no text in browser storage. Inbox Send again refuses omitted input before
 handling the original item; Dismiss remains available. Enter fresh text with
 a new request ID for another deliberate insertion.
 
+## History on the dashboard
+
+The ONN controls page also shows current content and retained title history.
+Current content follows the existing owner sync and distinguishes fresh,
+stale, unavailable and disabled collection. Leaving supported playback clears
+the previous title. YouTube observations retain the selected-title label,
+including possible ad timing; position and duration are source values.
+
+Submit app, title and local calendar dates to browse retained occurrences.
+From date includes its local midnight; Through date includes that whole local
+day and ends at the following midnight, including DST changes. Each page holds
+up to 50 entries. Continue with the same submitted filters, or refresh to start
+a new evidence cutoff. View observations opens the contributing records and
+their source details. Unknown identity, omissions and collection gaps remain
+visible. Filters and replies stay in page memory.
+
+`history-types.ts` and `metadata-types.ts` contain the shared browser-safe
+fields. The frontend uses those local types and closed document guards; it
+imports no server implementation or runtime schema compiler. Browsing,
+filtering, paging and reconnecting send no device command.
+
 ## MCP and verification
 
 `onn_status` is a read-scoped cached status tool and sends no control.

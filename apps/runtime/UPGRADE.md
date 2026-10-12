@@ -5,7 +5,10 @@ runtime. It preserves that installation's state, configuration, credentials,
 Node executable and hooks. It does not operate the retained Hub installation.
 The [fresh setup procedure](SETUP.md) remains separate.
 
-Qualification is pending under [#1037](https://github.com/jimmie-potts/agent-device-hub/issues/1037).
+The initial established-runtime qualification is accepted under
+[#1037](https://github.com/jimmie-potts/agent-device-hub/issues/1037#issuecomment-6102421021).
+That acceptance covers its selected profile and one successful forward upgrade;
+later configured owners require their own complete compatibility evidence.
 The source checks and private recovery artifacts produced during qualification
 are not an installed upgrade. Routine installed use requires recorded reviewed
 source and established-installation acceptance. The initial installed qualification
@@ -18,7 +21,8 @@ report them as untested unless separately exercised. First adoption remains a
 separate one-time operation and is not repeated when already accepted. A failed,
 refused or interrupted forward upgrade does not pass initial qualification, even
 if recovery succeeds. Until the forward upgrade is verified, report installation
-qualification pending and retain #1037 open.
+qualification pending and retain the owning qualification issue open. This
+initial gate does not reopen an already accepted qualification or repeat adoption.
 
 ## Initial qualification checklist
 
@@ -321,13 +325,14 @@ uncertainty and normal policy rendering as separate effects. Refuse unknown or
 incompatible formats before a service stop. These checks do not establish physical
 accuracy or installed client behavior.
 
-Unconfigured ONN with no retained state remains eligible only when its health
-row is `refused`, `healthy: false`, and `not-found`. Configured or retained ONN
-requires its durable owner and complete ONN coverage in the verified admission,
-with baseline, candidate, recovery and re-upgrade receipts. Configured ONN must
-also report running and healthy, without a refusal reason. Legacy seven-owner
-certificates remain supported for absent ONN. BB8 and Roborock remain refused
-when configured or retained until their own profile qualification is integrated.
+Unconfigured BB-8, ONN and Roborock retain their exact `refused`, `healthy: false`,
+`not-found` health exceptions. Roborock must remain unconfigured without retained
+state. Configured or retained ONN requires its durable owner and complete ONN
+coverage; configured or retained BB-8 requires its durable owner and the complete
+`bb8`/`bb8-windows` pair. Configured qualified modules must report running and
+healthy without a refusal reason. Unknown owners still refuse. Legacy seven-owner
+certificates remain valid for absent BB-8 and ONN; adding ONN extends either the
+legacy set or the qualified BB-8 pair by that one fixed owner.
 
 The ONN source tests exercise four separate processes using one built module.
 They establish retained originals, reported progress, gaps, private identities,
@@ -339,6 +344,33 @@ history/command formats. Release `52ee8f28` predates `historyEnabled` support an
 that setting; it cannot be used for configured-history recovery. Do not remove
 settings or observations to make an incompatible recovery appear eligible. An
 absent-ONN routine upgrade may precede a separately approved ONN activation.
+
+For BB-8, retain four phase receipts (`baseline`, `candidate`, `recovery`,
+`reupgrade`) for both the WSL production module store/SDK outbox and independently
+owned Windows receipt store. Qualify latest LED intent, original power observation
+time, completed and interrupted responsibility, pending outcomes, consumed/history
+receipts and enrollment preservation in separate stopped/reopened processes.
+No phase may execute saved radio work or infer visible success. Bind the actual
+previous/target/recovery reader inputs and compiled dependency closure; source
+byte equality supports reuse only for the unchanged named readers.
+
+The Windows owner prepares and reads its receipt evidence on Windows. WSL may
+retain copied private qualification receipts, but never opens the Windows
+database. Coordinate the helper's writer handoff, quiescence and private backup
+before the actual installed operation; the coordinator inspects those exact
+steps and effects in its private admission/startup assessment. A Linux state
+backup does not back up the helper. Preserve the selected helper release,
+enrollment, credentials and latest receipts through recovery, with no second
+writer or automatic reconnect/command replay. Synthetic recovery or source
+qualification alone does not activate either component or accept a robot trial.
+
+The conservative format inventory includes BB-8 module inputs and Windows
+helper production source/package inputs. A changed helper format cannot reuse
+an unchanged compatibility inventory. Existing seven-owner certificates retain
+their coverage shape for the original profile; source, procedure and format
+bindings must still match each selected release. Adding only one member of the
+BB-8 pair, or omitting any of its four phases, refuses. Configured or retained BB-8 cannot use
+a seven-owner certificate. Native and physical acceptance remain separate.
 
 Each previous, target and recovery inventory must match that release's actual
 verified production inputs. The qualification inventory matches the target's
@@ -419,8 +451,11 @@ credential and read-token file hashes without including their contents. Keep
 the plan private, including these hashes. Accepted degraded-health exceptions
 are the intentionally unconfigured Wispr (#840), BB-8, ONN and Roborock modules,
 each refused with `not-found` and `healthy: false`. State/configuration inspection
-must establish absence; configured or retained BB-8, ONN or Roborock state remains
-outside this qualified profile and refuses. These production registrations were
+must establish configuration and retained ownership. Configured or retained
+BB-8 additionally requires the complete Linux/Windows proof pair and ordinary
+configured-module health; configured or retained ONN additionally requires its complete proof and ordinary
+configured-module health. Configured or retained Roborock still refuses.
+These production registrations were
 checked with no configuration: each refuses before start and creates no owner
 state. Other module refusals require separate qualification.
 

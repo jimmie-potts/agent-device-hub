@@ -32,6 +32,11 @@ void test('inventories configured and retained ONN without reading or modifying 
   assert.equal(after.mtimeMs, before.mtimeMs);
   assert.equal(after.size, before.size);
   assert.equal(after.mode, before.mode);
+  await writeFile(join(modules, 'bb8.sqlite'), 'opaque synthetic BB8 database', {mode: 0o600});
+  await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {onn: {historyEnabled: true}, bb8: {id: 'bb8'}}}), {mode: 0o600});
+  const combined = await inspectUpgradeState(state, configFile);
+  assert.deepEqual(combined.configured, ['bb8', 'onn']);
+  assert.deepEqual(combined.durableOwners, ['bb8', 'core', 'onn']);
   await writeFile(join(modules, 'onn.sqlite-owner'), 'unsupported owner lease', {mode: 0o600});
   await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
 });
@@ -66,6 +71,14 @@ void test('binds the fixed ONN coverage set and rejects incomplete or unknown ow
       ? {...owner, phases: phases.map(() => ({phase: 'baseline', receipt: pin}))} : owner)},
   ]) {
     await writeFile(file, JSON.stringify(row), {mode: 0o600});
+    await assert.rejects(bindUpgradeAdmission(file, expected), /^Error: runtime-proof-admission-refused$/);
+  }
+  const combined = {...value, coverage: [...value.coverage,
+    ...['bb8', 'bb8-windows'].map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))]};
+  await writeFile(file, JSON.stringify(combined), {mode: 0o600});
+  assert.deepEqual((await bindUpgradeAdmission(file, expected)).coveredOwners, [...owners, 'bb8', 'bb8-windows'].sort());
+  for (const missing of ['bb8', 'bb8-windows']) {
+    await writeFile(file, JSON.stringify({...combined, coverage: combined.coverage.filter(row => row.owner !== missing)}), {mode: 0o600});
     await assert.rejects(bindUpgradeAdmission(file, expected), /^Error: runtime-proof-admission-refused$/);
   }
 });

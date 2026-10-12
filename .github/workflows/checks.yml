@@ -221,6 +221,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
         run: npm run test:chompi-bridge:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        # Includes the ONN title-history browser, keyboard, phone and accessibility journey (#1041).
         run: npm run test:runtime:verify:built
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
