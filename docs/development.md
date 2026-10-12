@@ -1611,6 +1611,19 @@ use a real loopback MCP SDK client; both transport scenario runs verify stored
 reads without device commands. Source delivery leaves installed acceptance in
 #1044 and history React/browser work in #1041.
 
+For ONN history visuals, run `npm run test:onn:built` for local calendar/DST,
+closed browser documents and source-value checks, then
+`npm run test:onn:history:browser` after the root build. That focused command
+selects the existing `scenario-onn-title-history` capture, which exercises
+the module page in the same fresh simulated runtime as the catalog. CI's
+`test:runtime:verify:built` and independent disposable Acceptance use that exact
+path. It checks real owner reads, synthetic prior-day owner fixtures, filters,
+history/detail continuation, keyboard focus, unsupported/failed/superseded
+reads, reconnect, phone/desktop accessibility and zero device commands/effects.
+Capture attachments retain synthetic screenshots and a labelled interaction
+video for inspection. Run the full runtime dashboard browser checks as well.
+These checks do not establish installed or physical behavior.
+
 ## Roborock module checks
 
 Use Node 24 and `npm ci`, then build before type-aware lint. Run
