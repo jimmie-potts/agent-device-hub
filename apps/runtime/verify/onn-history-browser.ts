@@ -163,20 +163,29 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
     });
     await page.unroute(historyPattern); await page.unroute(detailPattern);
     await t.expect('disconnect and reconnect reload current evidence without input or replay',async () => {
-      await indicate('Disconnect this synthetic browser context');
-      await page.context().setOffline(true);
-      // The real SDK allows 45 seconds of stream silence before reconnecting.
-      await page.locator('main#main[data-feed="reconnecting"]').waitFor({timeout:55_000});
-      await page.getByText('This module page is unavailable.',{exact:true}).waitFor();
-      assert.equal(await history.getByRole('listitem',{name:/^Occurrence /u}).count(),0);
-      await indicate('Reconnect this synthetic browser context');
-      await page.context().setOffline(false);
-      await page.locator('main#main[data-feed="connected"]').waitFor();
-      await click(current.getByRole('button',{name:'Reload content',exact:true}),'Reload current content');
-      await current.getByText('Fresh observation',{exact:true}).waitFor();
-      await run.wait(10); assert.equal(effects(),0); assert.deepEqual(commands,[]); assert.deepEqual(external,[]);
+      const syncPattern = '**/api/sdk/v1/sync';
+      let releaseSync = (): void => {};
+      const heldSync = new Promise<void>(resolve => {releaseSync = resolve;});
+      await page.route(syncPattern,async route => {await heldSync; await route.continue();});
+      try {
+        const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
+        await indicate('Drop the synthetic dashboard stream; hold its replacement sync');
+        const harness = t.endpoints.harness; assert.ok(harness !== undefined);
+        // The existing disposable control ends this source's stream; no device command is involved.
+        const response = await fetch(new URL('disconnect',harness),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'bunny/parts/dashboard'}),signal:AbortSignal.timeout(5000)});
+        assert.equal(response.status,200); await replacement;
+        await page.locator('main#main[data-feed="reconnecting"]').waitFor();
+        await page.getByText('This module page is unavailable.',{exact:true}).waitFor();
+        assert.equal(await history.getByRole('listitem',{name:/^Occurrence /u}).count(),0);
+        await indicate('Release the replacement sync and inspect restored current evidence');
+        releaseSync();
+        await page.locator('main#main[data-feed="connected"]').waitFor();
+        await click(current.getByRole('button',{name:'Reload content',exact:true}),'Reload current content');
+        await current.getByText('Fresh observation',{exact:true}).waitFor();
+        await run.wait(10); assert.equal(effects(),0); assert.deepEqual(commands,[]); assert.deepEqual(external,[]);
+      } finally {releaseSync(); await page.unroute(syncPattern);}
     });
     assert.deepEqual(errors,[]);
     await t.attach('onn-history-browser.json',JSON.stringify({synthetic:true,physical:false,ownerReads:true,priorLocalDay:true,historyPaging:true,detailPaging:true,keyboard:true,phone:true,axe:'passed',failedReads:true,supersededReplies:true,reconnect:true,deviceEffects:effects(),commands:commands.length},null,2));
-  } finally {fixture.close(); await page.context().setOffline(false); await page.unroute(historyPattern); await page.unroute(detailPattern);}
+  } finally {fixture.close(); await page.unroute(historyPattern); await page.unroute(detailPattern);}
 }
