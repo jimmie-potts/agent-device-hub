@@ -619,9 +619,10 @@ implementation must add its build, type, test and consumer checks here and in
 CI. The retained old Nanoleaf worker is Python; the current runtime's domain logic is
 ported to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
 
-Reserve shared contracts, root package/lockfile changes and CI for the coordinating
-writer. Work on separate deliverables uses separate worktrees, even for different
-controller directories. Reconcile the latest shared changes before validation.
+Prepare changes to shared contracts, root package/lockfile and CI in separate
+worktrees under [Parallel delivery](sdlc.md#parallel-delivery). Coordinate interface
+decisions and integration order, rather than reserving every copy of a shared
+file. Reconcile the latest shared changes before final consumer validation.
 Run changed-package build/type/tests and every affected contract consumer, plus
 the repository workflow checks. A green unrelated package does not validate a
 controller. Use fake transports and temporary runtime data for source checks;
@@ -1609,6 +1610,19 @@ storage loss and bounded cutoff history/detail queries. Runtime gateway tests
 use a real loopback MCP SDK client; both transport scenario runs verify stored
 reads without device commands. Source delivery leaves installed acceptance in
 #1044 and history React/browser work in #1041.
+
+For ONN history visuals, run `npm run test:onn:built` for local calendar/DST,
+closed browser documents and source-value checks, then
+`npm run test:onn:history:browser` after the root build. That focused command
+selects the existing `scenario-onn-title-history` capture, which exercises
+the module page in the same fresh simulated runtime as the catalog. CI's
+`test:runtime:verify:built` and independent disposable Acceptance use that exact
+path. It checks real owner reads, synthetic prior-day owner fixtures, filters,
+history/detail continuation, keyboard focus, unsupported/failed/superseded
+reads, reconnect, phone/desktop accessibility and zero device commands/effects.
+Capture attachments retain synthetic screenshots and a labelled interaction
+video for inspection. Run the full runtime dashboard browser checks as well.
+These checks do not establish installed or physical behavior.
 
 ## Roborock module checks
 

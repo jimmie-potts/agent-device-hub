@@ -91,8 +91,17 @@ directory is still to be removed by `stop`. The frozen set is unaffected.
 
 ### One run at a time
 
-[docs/sdlc.md](../../docs/sdlc.md#acceptance-review) allows one Acceptance run at a time
-on a host, because memory is the limit.
+[docs/sdlc.md](../../docs/sdlc.md#acceptance-review) currently allows one Acceptance
+run at a time on a host as a conservative memory safeguard. The original
+[#944](https://github.com/jimmie-potts/agent-device-hub/issues/944) evidence proves
+enforcement, not a measured capacity limit of one. Keep the limit until a bounded
+representative observation supports a change; do not require a benchmark campaign.
+Prepare in parallel and request capacity by starting through the guarded wrapper
+when ready. On `run-active`, inspect current run state, continue independent work
+or wait and retry. No advance booking or conversational release is needed after
+verified normal cleanup. Do not stop another owner's run or bypass the wrapper.
+Unit tests and read-only reviews do not acquire an Acceptance reservation;
+suites that create app runs can temporarily occupy capacity as described below.
 [Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944) lets a
 wrapper enforce it. With `APP_VERIFY_SINGLE_RUN=1` in the environment of a
 `start`, the core refuses while any run's service unit is live on this host,

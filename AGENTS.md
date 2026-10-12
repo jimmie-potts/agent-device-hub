@@ -43,7 +43,8 @@ read that directory's README.md and AGENTS.md before working there, even when
 launched from the repository root. controllers/tidbyt holds the fake-tested cloud
 controller package; controllers/lifx holds the fake-tested LAN controller package. Before shared
 package, root manifest, lockfile or CI changes, read
-docs/development.md and coordinate with the owner of concurrent shared work.
+docs/development.md and coordinate integration with the owner of concurrent
+shared work under [Parallel delivery](docs/sdlc.md#parallel-delivery).
 
 Use the owning package and application guides for implementation details and
 GitHub issues for current delivery status. Keep source delivery, installation and
@@ -75,10 +76,15 @@ shared manual claim before delivery writes and retain it for the whole delivery,
 even while scheduled admissions are paused or disabled. Read
 [the manual claim procedure](docs/sdlc.md#shared-manual-delivery-claim).
 An explicitly assigned worker inside a held supervisor claim does not nest claims.
-An unwrapped or nonwrappable client stays read-only until a qualified claim or
-handoff; prose alone does not exclude another writer.
+For participating nightly delivery, an unwrapped or nonwrappable client stays
+read-only until a qualified claim or handoff; prose alone does not exclude another
+writer. Repositories outside that queue need no nightly claim or client wrapping.
 
 Use one coordinating writer and an isolated branch/worktree per deliverable.
+Independent deliverables proceed in parallel under
+[Parallel delivery](docs/sdlc.md#parallel-delivery). Coordinate concrete interface
+decisions, integration order and shared mutable resources; overlapping filenames
+in separate worktrees do not require a handoff. Block only the affected operation.
 Preserve other worktrees, branches, installations and their owners. Deliver
 changes through PRs. Independent read-only Standards and Specification reviewers
 must inspect the same committed base/head, except that one of them may confirm

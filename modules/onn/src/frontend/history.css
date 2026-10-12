@@ -1,0 +1,13 @@
+.onn-history{display:grid;gap:var(--space-l);min-width:0;overflow-wrap:anywhere}
+.onn-history .card{min-width:0}
+.onn-history .page{margin-bottom:var(--space-m)}
+.onn-history-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:var(--space-m)}
+.onn-history-actions{display:flex;flex-wrap:wrap;gap:var(--space-s);margin-bottom:var(--space-m)}
+.onn-history button{white-space:normal;max-width:100%;overflow-wrap:anywhere}
+.onn-history-list{display:grid;gap:var(--space-l);min-width:0;padding-left:var(--space-l)}
+div.onn-history-list{padding-left:0}
+.onn-history-list article{min-width:0;border-top:1px solid var(--edge-dense);padding-top:var(--space-m)}
+.onn-history .facts{min-width:0}
+.onn-history .facts>div,.onn-history .facts dd{min-width:0;overflow-wrap:anywhere}
+.onn-history-coverage{margin-top:var(--space-m)}
+.onn-history-coverage summary{cursor:pointer;margin-bottom:var(--space-s)}

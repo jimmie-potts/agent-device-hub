@@ -6,6 +6,7 @@
 // expects an observation within a time bound, or expects one to hold for a while. Time is virtual in memory and real in
 // a run; only the harness differs.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import type {CaptureContext} from '@jimmie-potts/app-verify';
 import type {InboxItem, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, errorType, type CommandDraft, type DeviceAction, type Participant} from '@jimmie-potts/sdk';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
@@ -222,7 +223,12 @@ export const holds = (name: string, check: Check, forMs = 1000): Step => ({kind:
  * runtime's first start would, such as a migration of the module's installed data.
  */
 export type ModuleRun = {readonly description: string; readonly prepare: (dataDir: string) => Promise<void>};
-export type Scenario = {readonly id: string; readonly title: string; readonly seed: Seed; readonly steps: readonly Step[]};
+export type Scenario = {
+  readonly id: string; readonly title: string; readonly seed: Seed; readonly steps: readonly Step[];
+  /** Optional browser observations after the same scenario passes in a disposable run. */
+  readonly capture?: (context: CaptureContext, harness: Harness) => Promise<void>;
+  readonly captureTimeoutMs?: number;
+};
 export type StepResult = {name: string; kind: Step['kind']; outcome: 'passed' | 'failed'; detail?: string};
 export type ScenarioResult = {
   id: string; title: string; tier: Harness['tier']; transport: TransportName; outcome: 'passed' | 'failed'; steps: StepResult[];
