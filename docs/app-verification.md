@@ -67,6 +67,9 @@ See [Operations](../packages/app-verify/OPERATIONS.md#operations) for the author
 ### One run at a time
 
 See [One run at a time](../packages/app-verify/OPERATIONS.md#one-run-at-a-time) for the authoritative procedure.
+Use its current run state and guarded admission when ready. No advance time-slot
+booking or extra acknowledgment after verified cleanup is required. Continue
+independent work while capacity is occupied; never stop another owner's run.
 
 ### Readiness and build identity
 

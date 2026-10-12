@@ -619,9 +619,10 @@ implementation must add its build, type, test and consumer checks here and in
 CI. The retained old Nanoleaf worker is Python; the current runtime's domain logic is
 ported to TypeScript in `modules/nanoleaf` (see [Nanoleaf port](#nanoleaf-port)).
 
-Reserve shared contracts, root package/lockfile changes and CI for the coordinating
-writer. Work on separate deliverables uses separate worktrees, even for different
-controller directories. Reconcile the latest shared changes before validation.
+Prepare changes to shared contracts, root package/lockfile and CI in separate
+worktrees under [Parallel delivery](sdlc.md#parallel-delivery). Coordinate interface
+decisions and integration order, rather than reserving every copy of a shared
+file. Reconcile the latest shared changes before final consumer validation.
 Run changed-package build/type/tests and every affected contract consumer, plus
 the repository workflow checks. A green unrelated package does not validate a
 controller. Use fake transports and temporary runtime data for source checks;
