@@ -1,9 +1,6 @@
-export const TEXT_FIELDS = Object.freeze(['title','displayTitle','subtitle','artist','album','genre','description','mediaId'] as const);
-export type Metadata = {[Field in typeof TEXT_FIELDS[number]]: string | null} & {durationMs: number | null};
-export interface Playback {state:number;positionMs:number;speed:number;positionUpdatedElapsedMs:number}
-export interface Omission {field:typeof TEXT_FIELDS[number];reason:'credential-redacted'|'oversized'}
-export interface MetadataSession {app:'youtube'|'stremio';metadata:Metadata|null;playback:Playback|null;omissions:Omission[]}
-export interface MetadataSample {schema:'onn-metadata/2.0';deviceElapsedMs:number;sessions:MetadataSession[]}
+import {TEXT_FIELDS, type Metadata, type Playback, type MetadataSession, type MetadataSample, type Omission} from './metadata-types.js';
+export {TEXT_FIELDS} from './metadata-types.js';
+export type {Metadata, Playback, Omission, MetadataSession, MetadataSample} from './metadata-types.js';
 
 const MAX_REPLY_BYTES = 262144;
 const MAX_TEXT_BYTES = 8192;

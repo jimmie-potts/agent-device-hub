@@ -161,6 +161,7 @@
     "test:onn": "npm run build && npm run test:onn:built",
     "test:onn:built": "node --test modules/onn/dist/tests/*.test.js",
     "test:onn:browser": "node apps/runtime/dashboard/tests/onn.browser.ts",
+    "test:onn:history:browser": "node --test --test-name-pattern='^scenario-onn-title-history passes in a fresh run$' apps/runtime/dist/verify/tests/steps.test.js",
     "test:onn:native": "python3 modules/onn/native/check.py"
   },
   "devDependencies": {

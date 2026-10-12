@@ -40,6 +40,11 @@ export const scenarios: readonly Scenario[] = [{
   ],
 },{
   id:'onn-title-history',title:'ONN retains private title observations and source progress across physical changes, gaps and restart',
+  captureTimeoutMs:180_000,
+  capture:async(context,harness)=>{
+    const {onnHistoryBrowser}=await import('../../../verify/onn-history-browser.js');
+    await onnHistoryBrowser(context,harness);
+  },
   seed:{modules:['core','onn'],follows:[{owner,families:['onn-history-state']}],sections:{onn:ONN_SIMULATED_SECTION}},
   steps:[
     expect('core and ONN are running',h=>running(h,['core','onn'])),
