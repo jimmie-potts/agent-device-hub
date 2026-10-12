@@ -67,6 +67,7 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
     await indicate(label,target); await pulse(); await target.selectOption(value); await finishAction(target);
   };
   const simulate = async (action: string): Promise<void> => {
+    await current.evaluate(element => element.scrollIntoView({block:'center'}));
     const target = current.getByRole('heading',{name:'Current ONN content',exact:true});
     await indicate(`Simulated physical remote: ${action}`,target);
     run.simulate({device:'onn',action}); await run.wait(5100);
