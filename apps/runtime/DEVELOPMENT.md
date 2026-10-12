@@ -19,6 +19,21 @@ between historical release artifacts. Actual previous/target/recovery artifacts,
 coordinator admission, installed readers/clients and physical acceptance require
 their own evidence under [UPGRADE.md](UPGRADE.md).
 
+Roborock configured-owner qualification also runs
+`node --test apps/runtime/dist/tests/roborock-upgrade-profile.test.js apps/runtime/dist/tests/roborock-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js`
+after the root build. Existing `test:runtime:built` discovery runs these in core
+CI. The metadata tests require the private primary archive and preserve complete
+fixed optional-owner coverage. Preflight and post-start tests require coverage,
+delivered artifact reader entries and ordinary configured healthy state.
+Four synthetic processes use production RoborockStore and SDK Outbox to preserve
+candidate originals/versions, samples/gaps, room mappings, private identity,
+unverified map bytes/provenance and pending state envelopes. Recovery reads latest
+candidate data before genuine unchanged-envelope republish; the older-baseline
+negative control fails. All processes use the same built implementation, so this
+proves persistence only. Exact artifact compatibility, installed admission,
+account/session setup, page/MCP clients and real-run/map acceptance stay separate
+under [UPGRADE.md](UPGRADE.md) and the selected issue.
+
 Current-runtime upgrade inventory and receipt checks (#1037) are in
 `apps/runtime/tests/runtime-upgrade-check.test.ts`. After the root build, run
 `node --test apps/runtime/dist/tests/runtime-upgrade-check.test.js`; existing

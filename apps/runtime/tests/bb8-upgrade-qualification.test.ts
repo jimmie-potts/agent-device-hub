@@ -30,7 +30,9 @@ void test('configured and retained BB8 enter complete read-only upgrade ownershi
   await chmod(robot, 0o644);
   await assert.rejects(inspectUpgradeState(state, config), /^Error: runtime-upgrade-inputs-refused$/);
   await chmod(robot, 0o600);
-  await writeFile(join(modules, 'roborock.sqlite'), 'unqualified retained owner', {mode: 0o600});
+  await writeFile(join(modules, 'roborock.sqlite'), 'synthetic retained Roborock', {mode: 0o600});
+  assert.deepEqual((await inspectUpgradeState(state, config)).durableOwners, ['bb8', 'core', 'roborock']);
+  await writeFile(join(modules, 'unknown-owner.sqlite'), 'unqualified retained owner', {mode: 0o600});
   await assert.rejects(inspectUpgradeState(state, config), /^Error: runtime-upgrade-inputs-refused$/);
   assert.equal(await readFile(join(modules, 'bb8.sqlite-wal'), 'utf8'), 'latest synthetic sidecar');
 });
