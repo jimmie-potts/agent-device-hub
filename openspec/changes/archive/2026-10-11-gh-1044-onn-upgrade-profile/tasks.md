@@ -7,11 +7,13 @@
 ## 2. Retained-state evidence
 
 - [x] 2.1 Add separate-process synthetic baseline/candidate/recovery/re-upgrade evidence using ONN stores and SDK outbox; verify originals, gaps, reported progress, private identity and truthful interrupted outcomes without replay.
-- [x] 2.2 Preserve absent-ONN legacy release support and bind compatible history recovery to exact source/artifact evidence; verify source inventory regressions and document52ee's history-setting limitation.
+- [x] 2.2 Preserve absent-ONN legacy release support and bind compatible history recovery to exact source/artifact evidence; verify source inventory regressions and document 52ee's history-setting limitation.
 
 ## 3. Integration and delivery
 
-- [ ] 3.1 Assemble with BB-8's accepted revision while preserving legacy and paired profiles; pass affected build/type/lint/runtime/scenario/contract/workflow checks and register the qualification command in owning documentation/CI.
-- [ ] 3.2 Synchronize and archive the source change after completed source validation; validate the current specification inventory, then obtain independent Standards, Specification and synthetic Acceptance on the frozen candidate.
+- [x] 3.1 Assemble with BB-8's reviewed, normally merged source revision while preserving legacy and paired profiles; pass affected build/type/lint/runtime/scenario/contract/workflow checks and register the qualification command in owning documentation/CI.
+- [x] 3.2 Synchronize the owning specification and validate archival readiness after completed source implementation and checks.
+
+Fresh independent Standards, Specification and synthetic Acceptance, hosted CI, guarded merge and exact merged-main CI follow archival. BB-8's exact merged-main acceptance remains required before dependent source delivery is accepted.
 
 Installed release qualification, activation, real-client and newly approved physical acceptance remain in #1044. These source tasks do not claim that acceptance.
