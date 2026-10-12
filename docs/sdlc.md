@@ -43,14 +43,11 @@ apply this section. Codex and Claude follow the same policy. A read-only request
 reports the assessment instead of editing the issue.
 
 A story split from an epic or another story is drafted too, so it carries its
-assessment when filed. The #830 split stories (#879-#883) had none, and the
-decisions they needed surfaced at PR time. When parallel stories change the
-same source module or interface, such as `packages/sdk/src`, each split story's
-issue names the interface and the one story that owns the module before work
-starts; another story asks that owner for a change instead of editing it.
-Root manifests, the lockfile and CI stay under the coordinator rule in
-[Scope and implementation](#scope-and-implementation), and each story still
-adds its own checks, documentation and spec deltas.
+assessment when filed. For a shared interface decision or integration dependency,
+name the affected interface and integration owner. Independent proposals may
+proceed in separate worktrees, including changes to the same files; follow
+[Parallel delivery](#parallel-delivery). Each story still adds its own checks,
+documentation and spec deltas.
 
 At every pickup, read the current issue and dependencies, current main, the
 accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
@@ -222,15 +219,15 @@ follows this document. Both paths retain independent reviews, CI, guarded merge,
 issue readback and installation authority.
 
 Refresh the repository-defined main, inspect worktrees and create
-codex/gh-<issue-number>-<slug> in an isolated worktree. One coordinator owns
-repository/GitHub writes. Standards and Specification reviewers are independent
-and read-only. An Acceptance reviewer is independent and limited to the
+codex/gh-<issue-number>-<slug> in an isolated worktree. Each deliverable's coordinator
+owns its scoped repository/GitHub writes. Standards and Specification reviewers
+are independent and read-only. An Acceptance reviewer is independent and limited to the
 authority in [Acceptance review](#acceptance-review). Preserve
 other sessions' worktrees, branches, installations and ownership.
 
 New Tidbyt and LIFX work belongs in this monorepo under their scoped controller
-instructions. Assign one writer per deliverable and a coordinator for changes
-to shared contracts, root manifests/lockfile and CI. Merge shared prerequisites
+instructions. Assign one writer per deliverable; coordinate the integration of
+shared contracts, root manifests/lockfile and CI. Merge shared prerequisites
 before dependent work claims compatibility. A controller change validates its
 affected consumers; shared changes validate every affected controller.
 Pixoo's code is staged under `modules/pixoo` (#25); the Nanoleaf port is #26.
@@ -252,12 +249,50 @@ before its fix; imported bootstrap workflow fixtures do not establish a product
 red/green result. Do not widen scope to satisfy a test or rewrite device behavior
 as incidental cleanup.
 
+## Parallel delivery
+
+Parallel work is the default for this personal project. In separate worktrees,
+tasks may implement, build, run independent tests, obtain read-only reviews and
+publish draft PRs without another task's permission. The same filename in two
+worktrees is an integration concern, not exclusive ownership of both copies.
+Coordinate incompatible interface decisions before relying on them; establish
+merge order where one candidate needs another, refresh the assembled candidate
+and renew only evidence invalidated by the integration. Existing review and CI
+gates still apply. Never build in or edit another task's or reviewer's worktree.
+
+Require a handoff only when control of a shared mutable resource changes, such
+as a checkout, tracker field, installed runtime or physical device. Name the
+resource, current owner, protected operation or baseline, and release condition
+in existing task evidence. Keep the hold as narrow and short as that condition
+allows. Waiting for user input does not reserve unrelated resources or stop
+independent source work. Reconcile an existing hold with its owner or designated
+coordinator before changing it; silence, elapsed time and an idle-looking process
+are not release evidence.
+
+Use accepted prerequisite revisions and recorded releases directly after
+verifying their scope and current state. A second conversational acknowledgment
+is unnecessary when that evidence already establishes readiness and ownership.
+A closed issue or queued message alone does not. Missing evidence blocks only
+the operation that depends on it. Progress updates need no acknowledgment unless
+they request a decision or transfer a resource. Coordinators resolve concrete
+conflicts; they do not approve every task action. Escalate only a scope decision,
+new authority or unresolved conflict, and continue independent authorized work.
+
+For disposable verification, start when ready through the existing
+[one-run guard](../packages/app-verify/OPERATIONS.md#one-run-at-a-time). On a busy
+refusal, continue other work or wait and retry after checking current run state.
+Do not negotiate advance time slots or require a separate release message after
+verified normal cleanup. Stop only your own runs. Keep the current capacity
+limit until representative evidence supports changing it; do not extend it to
+unrelated builds, unit tests or read-only reviews.
+
 ## Canonical checkout refresh
 
-At preparation, record the designated canonical local checkout, configured remote
-and target branch, pinned-revision policy, writer owner and installed-source
-effects in existing private delivery evidence. This applies to ordinary delivery
-and explicitly selected deliver-work. It grants no startup-update authority.
+Use the designated canonical checkout and existing refresh owner when known;
+reuse that discovery until it changes. Tasks work from their own worktrees and
+immutable revisions, so another task's canonical refresh is not a prerequisite
+for their source work, merge or source closeout. One designated writer can refresh
+the canonical checkout for several deliveries. This grants no startup-update authority.
 
 After verified merge and required merged-revision CI, follow the shared
 [canonical checkout refresh procedure](https://github.com/jimmie-potts/agent-skills/blob/main/skills/deliver-work/references/project-discovery.md#canonical-checkout-refresh).
@@ -265,6 +300,7 @@ Reading the procedure does not invoke the explicit-only skill. Refresh the remot
 target, record its immutable SHA/time and prove it contains the delivered merge.
 Establish exclusive writer ownership through the existing participating claim or
 verified owner handoff; clean status or an idle-looking session is insufficient.
+An existing scoped release is sufficient; do not request another acknowledgment.
 Recheck branch, expected HEAD, index/worktree/untracked state and ownership
 immediately before fast-forwarding only to that observed SHA.
 
@@ -305,6 +341,10 @@ native checkpoint before projecting its resulting state. Project synchronization
 failure remains a reported tracker gap; it does not erase verified source delivery.
 
 ## Shared manual delivery claim
+
+This procedure applies only to repositories participating in the installed
+nightly queue. Ordinary work outside that queue needs no nightly configuration,
+claim or client wrapping; retain the scoped ownership rules above.
 
 When Hub participates in the installed cross-repository nightly queue, start a
 manual delivery client under the same claim before its first write:
@@ -514,7 +554,7 @@ Verification has three tiers.
 
    A `not satisfied` verdict blocks merge like the other axes. After a fix, the
    reviewer re-runs the affected scenarios on the new head. Run at most one
-   Acceptance run at a time on this host, because memory is the constraint. A
+   Acceptance run at a time on this host as a conservative memory safeguard. A
    composition counts as one run. The Hub's wrappers above, and the host route
    for its adapters (`--app hub`, `runtime` and `compose`), refuse a `start`
    with `run-active` while any run is live on the host

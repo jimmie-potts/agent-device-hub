@@ -80,6 +80,16 @@ explicitly approved plan for its one-time service override and restart effects.
 A new host, permission, hook, configuration, module activation or device command
 needs its own applicable authority. Do not add such effects to an upgrade.
 
+Apply [Parallel delivery](../../docs/sdlc.md#parallel-delivery) to coordination.
+Reserve only the installed operation or test baseline that must remain stable;
+record the affected resources and release condition in existing private evidence.
+Keep runtime, device and camera needs separate. Waiting for physical input does
+not reserve unrelated resources or prevent source preparation in other worktrees.
+An actual upgrade still holds the operation lock through final readback. A physical
+test that needs a stable installed revision must finish or be explicitly handed
+off before an upgrade changes that baseline. A recorded release plus current
+state verification needs no second acknowledgment and grants no new device authority.
+
 ## Release and recovery proof
 
 Prepare each new release from its reviewed merged revision in an isolated clean
