@@ -15,8 +15,25 @@ const anchors = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json',
   'apps/runtime/src/process.ts', 'apps/runtime/src/modules.ts', 'apps/runtime/src/state.ts', 'apps/runtime/src/core/store.ts',
   'apps/runtime/build/registry.ts', 'apps/runtime/dashboard/build.mjs', 'packages/sdk/src/database.ts', 'packages/sdk/src/outbox.ts',
   'packages/agent-state/package.json', 'packages/contracts/package.json', 'packages/event-contracts/package.json',
-  ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx'].map(name => `modules/${name}/package.json`),
+  ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8'].map(name => `modules/${name}/package.json`),
+  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts',
   'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
+
+void test('Windows helper receipt source changes invalidate durable-format evidence', async () => {
+  const path = 'apps/bb8-windows/src/receipts.ts';
+  const classify = async (bytes: string): Promise<{path: string; sha256: string}[]> => {
+    const entries = [...anchors.filter(anchor => anchor !== path).map(path => ({path, kind: 'file', sha256: hash('synthetic production input')})),
+      {path, kind: 'file', sha256: hash(bytes)}];
+    const result = await run(process.execPath, ['--input-type=module', '-e',
+      'import {runtimeFormatInputs} from "./apps/runtime/bin/runtime-upgrade-source.mjs";process.stdout.write(JSON.stringify(runtimeFormatInputs(JSON.parse(process.argv[1]))));', JSON.stringify(entries)]);
+    return JSON.parse(result.stdout) as {path: string; sha256: string}[];
+  };
+  const previous = await classify('previous receipt format');
+  const candidate = await classify('candidate receipt format');
+  assert.equal(previous.find(row => row.path === path)?.sha256, hash('previous receipt format'));
+  assert.equal(candidate.find(row => row.path === path)?.sha256, hash('candidate receipt format'));
+  assert.notDeepEqual(candidate, previous, 'changed helper bytes cannot reuse the previous compatibility inventory');
+});
 
 void test('release source comparison binds exact inventories and refuses unbound changes or executable build identities', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-source-'));

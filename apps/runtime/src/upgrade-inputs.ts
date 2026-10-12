@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {checkStateDirectory, readPrivateFile, readRuntimeConfig} from './state.js';
 
-const durable = ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx'];
+const durable = ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8'];
 const configuredNames = [...durable, 'codex-desktop', 'wispr'];
 const rootNames = ['modules', 'bunny-launch.sock', 'spans.ndjson', 'spans.previous.ndjson'];
 const refused = (): never => { throw new Error('runtime-upgrade-inputs-refused'); };
@@ -47,7 +47,7 @@ export async function inspectUpgradeState(state: string, configFile: string): Pr
     if (entries.length > 128 || !entries.includes('core.sqlite')) return refused();
     const retained = new Set<string>();
     for (const name of entries) {
-      const match = /^(core|playback|nanoleaf|pixoo|tidbyt|lifx)(?:\.sqlite(?:-wal|-shm|-journal)?|\.sqlite-owner)?$/.exec(name);
+      const match = /^(core|playback|nanoleaf|pixoo|tidbyt|lifx|bb8)(?:\.sqlite(?:-wal|-shm|-journal)?|\.sqlite-owner)?$/.exec(name);
       if (match === null || match[1] === undefined) return refused();
       const owner = match[1];
       // Only the core uses the separate lease database in the current runtime.
