@@ -12,8 +12,8 @@
 ## 3. Integrated verification
 
 - [x] 3.1 Extend the shared ONN catalog/browser journey and run it through the same executable path used by CI and independent disposable Acceptance; verify history filters/detail, keyboard, phone/desktop, accessibility and unchanged effect counters.
-- [ ] 3.2 Run applicable build/type/lint, contract/workflow, module/runtime and full dashboard checks; inspect retained desktop/phone screenshots and record source/simulator limits.
-- [ ] 3.3 Validate and synchronize the capability and archive the completed issue-linked change before final independent reviews; verify the actual specification inventory and clean committed comparison.
+- [x] 3.2 Run applicable build/type/lint, contract/workflow, module/runtime and full dashboard checks; inspect retained desktop/phone screenshots and record source/simulator limits.
+- [x] 3.3 Validate and synchronize the capability and archive the completed issue-linked change before final independent reviews; verify the actual specification inventory and clean committed comparison.
 
 ## Delivery checkpoint
 
