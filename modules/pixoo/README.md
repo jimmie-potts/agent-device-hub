@@ -377,7 +377,11 @@ thumbnail. Public Now Playing views keep their existing text/status fields.
 The cache and upload guard discard superseded results and queued cards; a
 cancelled upload with no effects changes neither player evidence nor Monitor
 participation. Possible partial effects retain the existing uncertainty and
-recovery behavior. An artwork update follows Monitor attention and Media
+recovery behavior. Artwork-only changes for the same observation and unchanged
+playback source/view let an admitted upload finish; the latest eligible card
+then follows through the same writer and cadence. A replaced observation or
+view still cancels obsolete work, including a same-text source handoff.
+An artwork update follows Monitor attention and Media
 `off`, `popup` or `whole` policy; it does not extend or reopen a pop-up. Safe
 refusal/recovery records use `bunny.operation` `playback` and fixed registry
 codes, without image bytes or association tokens.

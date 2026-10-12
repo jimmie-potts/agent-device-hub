@@ -11,7 +11,7 @@ import {MemoryPlaybackStore} from '../helpers/playback-store.js';
 import {syntheticDashboardViews} from '../../src/presentation/dashboard-examples.js';
 import {present} from '../helpers/present.js';
 
-const playing: PlaybackSourceStatus = {source: 'current', view: {card: true, status: 'playing', title: 'SAME', artist: 'SAME', stale: false}};
+const playing = {source: 'current', view: {card: true, status: 'playing', title: 'SAME', artist: 'SAME', stale: false}} satisfies PlaybackSourceStatus;
 const context = (observation: string): CardContext => ({observation, artwork: {status: 'missing', generation: observation === 'A' ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222'}});
 const frame = (value: number): Uint8Array => new Uint8Array(12288).fill(value);
 async function flush(clock: ManualClock): Promise<void> {for (let n = 0; n < 100; n++) {await Promise.resolve(); clock.advance(0);}}
@@ -27,6 +27,82 @@ async function artworkContext(observation: string): Promise<CardContext> {
   const png = await sharp({create: {width: 1, height: 1, channels: 3, background: observation === 'A' ? {r: 192, g: 24, b: 48} : {r: 24, g: 48, b: 192}}}).png().toBuffer();
   return {observation, artwork: {status: 'ready', generation: observation === 'A' ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222', mediaType: 'image/png', width: 1, height: 1, base64: png.toString('base64')}};
 }
+
+it.each((['monitor', 'popup', 'whole'] as const).flatMap(mode =>
+  (['unchanged', 'artwork arrives'] as const).map(change => ({mode, change}))))('keeps $mode active when $change during a native card send', async ({mode, change}) => {
+  const clock = new ManualClock(), calls: {command: unknown; pixel?: number}[] = [];
+  let hold = false, pending: {signal: AbortSignal; release: () => void} | undefined;
+  const device = new HttpDeviceAdapter({ip: '10.0.0.1', profile: {...SPIKE_PROFILE, uniformTiming: false}, clock}, async (body, signal) => {
+    calls.push({command: body.Command, ...(typeof body.PicData === 'string' ? {pixel: Buffer.from(body.PicData, 'base64')[0]} : {})});
+    if (hold && body.Command === 'Draw/SendHttpGif') return new Promise(resolve => {
+      pending = {signal: present(signal), release: () => {resolve({});}};
+    });
+    return {PicId: 1, SelectIndex: 0};
+  });
+  const store = new MemoryPlaybackStore(), player = await Player.open({device, clock, store});
+  const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(),
+    renderCard: (_view, input) => frame(input?.artwork?.status === 'ready' ? 22 : 11)});
+  try {
+    if (mode === 'monitor') await monitorMode(clock, monitor);
+    else {await player.start(store.playlist.id); await flush(clock); await monitor.setNowPlaying(mode);}
+    const started = clock.now(), before = player.getState();
+    hold = true; monitor.submitPlayback(playing, context('A')); await run(clock, monitor, 200);
+    expect(pending).toBeDefined(); expect(monitor.status().inFlight).toBe(1);
+    if (change === 'artwork arrives') monitor.submitPlayback(playing, await artworkContext('A'));
+    await flush(clock);
+    expect(present(pending).signal.aborted).toBe(false);
+    hold = false; present(pending).release(); await flush(clock);
+    if (mode === 'monitor') {
+      expect(monitor.status()).toMatchObject({participating: true, lastOutcome: {status: 'sent'}});
+      expect(player.getState()).toEqual(before);
+    } else {
+      expect(monitor.nowPlayingSummary().takeover).toBe(mode);
+      expect(player.getState()).toMatchObject({intent: 'paused', lastError: null});
+      expect(player.getSession()?.playlist.id).toBe(store.playlist.id);
+    }
+    await run(clock, monitor, 1100);
+    expect(calls.filter(call => call.command === 'Draw/SendHttpGif').at(-1)?.pixel).toBe(change === 'artwork arrives' ? 22 : 11);
+    expect(monitor.nowPlayingSummary().showing).toBe('card');
+    await run(clock, monitor, 10_000 - (clock.now() - started));
+    if (mode === 'monitor') expect(monitor.nowPlayingSummary().showing).toBe('dashboard');
+    else if (mode === 'popup') {
+      await run(clock, monitor, 100);
+      expect(monitor.nowPlayingSummary().takeover).toBeNull();
+      expect(player.getState().intent).toBe('active');
+    } else expect(monitor.nowPlayingSummary().takeover).toBe('whole');
+  } finally {pending?.release(); await monitor.close(); await player.close(); await device.close();}
+});
+
+it.each(['observation', 'title', 'status', 'stale', 'source', 'expiry', 'attention'] as const)('retains possible effects when %s supersedes a dispatched card', async change => {
+  const clock = new ManualClock();
+  let hold = false, pending: {signal: AbortSignal; release: () => void} | undefined;
+  const device = new HttpDeviceAdapter({ip: '10.0.0.1', profile: SPIKE_PROFILE, clock}, async (body, signal) => {
+    if (hold && body.Command === 'Draw/SendHttpGif') return new Promise(resolve => {
+      pending = {signal: present(signal), release: () => {resolve({});}};
+    });
+    return {PicId: 1, SelectIndex: 0};
+  });
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
+  const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(), renderCard: () => frame(11)});
+  try {
+    await monitorMode(clock, monitor);
+    if (change === 'expiry') {monitor.submitPlayback(playing, context('A')); await run(clock, monitor, 9000);}
+    hold = true; monitor.submitPlayback(playing, change === 'expiry' ? await artworkContext('A') : context('A')); await run(clock, monitor, 100);
+    expect(pending).toBeDefined();
+    if (change === 'observation') monitor.submitPlayback(playing, context('B'));
+    else if (change === 'title') monitor.submitPlayback({...playing, view: {...playing.view, title: 'B'}}, context('A'));
+    else if (change === 'status') monitor.submitPlayback({...playing, view: {...playing.view, status: 'paused'}}, context('A'));
+    else if (change === 'stale') monitor.submitPlayback({...playing, view: {...playing.view, stale: true}}, context('A'));
+    else if (change === 'source') monitor.submitPlayback({...playing, source: 'unavailable'}, context('A'));
+    else if (change === 'expiry') {clock.advance(1000); monitor.tick();}
+    else monitor.submit(present(syntheticDashboardViews()[0]).view);
+    await flush(clock);
+    expect(present(pending).signal.aborted).toBe(true);
+    hold = false; present(pending).release(); await flush(clock);
+    expect(monitor.status()).toMatchObject({participating: false, lastOutcome: {status: 'uncertain', code: 'cancelled'}});
+    expect(player.getDisplayEvidence().transport).toMatchObject({source: 'dashboard', ok: false, priorEffects: 'possible'});
+  } finally {pending?.release(); await monitor.close(); await player.close(); await device.close();}
+});
 
 it('rejects delayed same-text observation A after B and caches only B', async () => {
   const clock = new ManualClock(), device = new FakeDeviceAdapter({clock});

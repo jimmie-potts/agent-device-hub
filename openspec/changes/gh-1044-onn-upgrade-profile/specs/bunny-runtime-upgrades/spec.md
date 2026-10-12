@@ -54,4 +54,3 @@ The routine upgrade procedure SHALL recognize a reported ONN health row only whe
 #### Scenario: Qualified previous release does not report ONN
 - **WHEN** an otherwise qualified previous release reports no ONN row and no ONN configuration or state exists
 - **THEN** its existing health/admission checks remain applicable without requiring a fabricated ONN row or changing the legacy seven-owner certificate format
-
