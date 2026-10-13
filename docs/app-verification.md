@@ -66,10 +66,14 @@ See [Operations](../packages/app-verify/OPERATIONS.md#operations) for the author
 
 ### One run at a time
 
-See [One run at a time](../packages/app-verify/OPERATIONS.md#one-run-at-a-time) for the authoritative procedure.
-Use its current run state and guarded admission when ready. No advance time-slot
-booking or extra acknowledgment after verified cleanup is required. Continue
-independent work while capacity is occupied; never stop another owner's run.
+Normal task launches permit concurrent simulated runtimes, each with its own
+worktree, build outputs, ports, synthetic credentials and state. No default
+count limit or capacity check applies. Keep the existing two-hour leases,
+extension, expiry and owned cleanup. Household installation remains serialized;
+physical tests retain their designated writer and explicit authorization.
+
+The [optional one-run guard](../packages/app-verify/OPERATIONS.md#one-run-at-a-time)
+is retained for callers that explicitly opt in. Never stop another owner's run.
 
 ### Readiness and build identity
 
@@ -103,7 +107,7 @@ See [Preview identity and staleness](../packages/app-verify/OPERATIONS.md#previe
 
 | Situation | Behavior |
 | --- | --- |
-| Concurrent runs | Distinct run ids, unit names, ports and directories; `doctor` lists all; no shared state. A wrapper may [refuse a second live run](#one-run-at-a-time) on the host |
+| Concurrent runs | Distinct run ids, unit names, ports and directories; `doctor` lists all; no shared state. Normal task launchers permit concurrent runs; an explicitly guarded wrapper may [refuse a second live run](#one-run-at-a-time) |
 | Occupied port | Never happens for the run's own WSL listener, which binds port 0. A fixed-port dependency the application insists on is a `start` failure naming the port, not a retry loop. A Windows process already on the chosen number is the pending host behavior below; `doctor`'s Windows reachability check is how it would show |
 | Stale build | `dirty` and `unknown` are labelled at `start`, in the card and in the receipt. Proof from a dirty run cannot be cited as a merge candidate's evidence |
 | Interrupted start | A unit that fails kills the rest of its control group; `start` reports `failed`, removes the runtime directory and stops the timer. A `start` interrupted before its `starting` receipt exists leaves nothing. Interrupted later, it leaves a `starting` receipt and whatever it had created; `doctor` lists that run and `stop` removes what exists, and because the timer precedes the unit an application is never left without a lease |
@@ -361,10 +365,8 @@ fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app compose --chec
 Use the same launcher options with existing `capture`, `handoff`, `extend` and
 `stop` arguments. The selected checkout must have the matching package identity
 and adapter entrypoint. The composition retains its existing source pins; its
-explicit `--unpinned` option still labels development-only evidence. Run one
-preview at a time on a host ([one run at a time](#one-run-at-a-time)); each
-uses its own worktree and build outputs, including both consumer checkouts for
-each composition. One coordinator controls each run;
+explicit `--unpinned` option still labels development-only evidence. Independent tasks may run previews concurrently; each uses its own worktree
+and build outputs, including both consumer checkouts for each composition. One coordinator controls each run;
 do not capture, reset or stop another coordinator's run.
 
 The `prerequisites` adapter operation is read-only. Invoking it through
@@ -377,9 +379,9 @@ older consumers first.
 
 The launcher clears the manager environment with `/usr/bin/env -i`, selects
 Node from its own Node-24 process and supplies only the Linux home, a tool PATH,
-locale, user-bus/runtime paths, owned temporary storage, shared npm/Playwright cache paths,
-`APP_VERIFY_SINGLE_RUN=1` (the [one-run guard](#one-run-at-a-time)) and explicit
-optional `PYTHON`. It forwards neither the caller's tokens/preload variables nor
+locale, user-bus/runtime paths, owned temporary storage, shared npm/Playwright
+cache paths and explicit optional `PYTHON`. It does not set
+`APP_VERIFY_SINGLE_RUN`. It forwards neither the caller's tokens/preload variables nor
 app-verify storage overrides. Proof and runtime therefore retain the adapter's
 canonical roots. The systemd client uses the session bus; it does not silently
 change profiles, grant socket access or retry with broader permissions.

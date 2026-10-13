@@ -197,15 +197,18 @@ See the [canonical refusal shape and mapping](OPERATIONS.md#refusal-error-body).
 
 ## One run at a time
 
-A host runs one Acceptance run at a time, because memory is the limit. A
-wrapper can enforce that: with `APP_VERIFY_SINGLE_RUN=1` in the environment of
-the process that runs `start`, the core refuses the start while any run's
-service unit is live on this host
-([Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944)). Only
-the exact value `1` opts in. A wrapper sets it from its package script, for
-example `"verify": "APP_VERIFY_SINGLE_RUN=1 node scripts/verify.mjs"`. Test
-suites that start runs side by side do not set it, and a vendored adapter opts
-in the same way once it vendors a core that has this.
+The core supports concurrent isolated runs. The Hub's four npm wrappers and
+host route do not enable a one-run guard or another count limit by default.
+Each task uses separate worktrees, build outputs, ports, synthetic credentials
+and state, while retaining the existing leases and owned cleanup.
+
+The guard introduced by [Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944)
+remains available for explicit opt-in. With `APP_VERIFY_SINGLE_RUN=1` in the
+environment of the process that runs `start`, the core refuses the start while
+any run's service unit is live on this host. Only the exact value `1` opts in,
+for example `APP_VERIFY_SINGLE_RUN=1 npm run -s verify -- start`. Test suites
+do not opt in by default. The host route clears inherited environment and does
+not forward this setting.
 
 ```json
 {"operation":"start","error":"run-active","detail":"run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again","errorBody":{"error":{"code":"capacity","retryable":true,"detail":"run-active: run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again"}}}
@@ -215,8 +218,8 @@ in the same way once it vendors a core that has this.
   first three, then a count), carries `errorBody` with the registry's
   `capacity`, and exits 1 like the other refusals. It comes before anything is
   created: no receipt, proof directory, runtime directory, unit or timer, and
-  the live run is untouched. Stop that run, or wait for its lease, and start
-  again.
+  the live run is untouched. Stop it only if you own it; otherwise wait for its
+  lease or its owner's cleanup before starting again.
 - **What counts** is each `app-verify-<run id>.service` of any app that is
   `active (running)` or `activating`. A failed, inactive or stopping unit, a
   unit systemd already collected, a lease or thaw timer or its service, and the
@@ -245,8 +248,8 @@ in the same way once it vendors a core that has this.
 - **Other operations.** `restart` replaces a run and is never refused.
   `scenario`, `capture`, `handoff`, `extend`, `doctor` and `stop` never read the
   variable.
-- **A composition** that starts several runs through wrappers counts as one
-  run. Its orchestrator takes the slot itself with the package's
+- **An explicitly guarded composition** that starts several runs through
+  wrappers counts as one run. Its orchestrator takes the slot itself with the package's
   `holdSingleRun(progress)`, which throws `SingleRunRefused` (its `detail` is
   the refusal's) while a run is live or another start holds the claim, and
   returns `{release()}` to call when the runs have started. It removes the
@@ -277,7 +280,7 @@ missing input or a non-empty output directory.
 | `APP_VERIFY_STATE_ROOT` | `~/.local/state/app-verify` | Runtime root. Must be outside every Git checkout |
 | `APP_VERIFY_PROOF_ROOT` | `<canonical checkout>/.local/evidence/verify` | Proof root. The canonical checkout is the repository's main worktree, never a linked worktree's path. A proof root inside a checkout must be ignored by Git |
 | `APP_VERIFY_WINDOWS_CHECK` | on when WSL interop and `curl.exe` exist | `off` skips the Windows reachability read |
-| `APP_VERIFY_SINGLE_RUN` | off | `1` makes `start` refuse with `run-active` while another run is live on this host. A wrapper's package script sets it; see [One run at a time](#one-run-at-a-time) |
+| `APP_VERIFY_SINGLE_RUN` | off | `1` makes `start` refuse with `run-active` while another run is live on this host. Explicit opt-in only; normal Hub npm wrappers and the host route leave it off. See [One run at a time](#one-run-at-a-time) |
 
 The first three overrides exist for tests; normal runs use the defaults.
 
