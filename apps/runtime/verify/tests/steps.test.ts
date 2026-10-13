@@ -7,9 +7,10 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {runCaptureStep, type CaptureStepResult} from '@jimmie-potts/app-verify';
+import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SYNTHETIC_TOKEN} from '../../tests/fixtures/sign.js';
-import {SCENARIOS, TOKEN_PREFIX} from '../../tests/scenarios/catalog.js';
-import {readGrants} from '../adapter.js';
+import {SCENARIOS, TOKEN_PREFIX, runScenario, scenario} from '../../tests/scenarios/catalog.js';
+import {connectRun, readGrants} from '../adapter.js';
 import plugin from '../plugin.js';
 import {base, startRun} from './support.js';
 
@@ -34,6 +35,29 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
 }
 
 const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
+void test('assistant recovery waits for a delayed reader resync before submitting its answer once', async context => {
+  const selected = scenario('assistant-task'); assert.ok(selected);
+  const at = await base(context), run = await startRun(context, at, selected.id);
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
+  try {
+    const restart = h.restart.bind(h), wait = h.wait.bind(h), states = h.reader.states.bind(h.reader), syncs = h.reader.syncs.bind(h.reader), gateway = h.gateway.bind(h);
+    let heldPolls = 0, oldSyncs = 0, oldStates: Message<unknown>[] = [], answers = 0;
+    h.restart = async () => {
+      oldStates = states('assistant-state', 'bunny/modules/companions'); oldSyncs = syncs('assistant-state', 'bunny/modules/companions');
+      await restart(); heldPolls = 20;
+    };
+    // Hold the observed copy across more polls than the scenario's 100 ms stability check, independent of host speed.
+    h.wait = async ms => {await wait(ms); heldPolls = Math.max(0, heldPolls - 1);};
+    h.reader.states = <T>(family: string, owner?: string): Message<T>[] =>
+      family === 'assistant-state' && heldPolls > 0 ? oldStates as Message<T>[] : states<T>(family, owner);
+    h.reader.syncs = (family, owner) => family === 'assistant-state' && heldPolls > 0 ? oldSyncs : syncs(family, owner);
+    h.gateway = call => {if (call.path.includes('requestId=assistant-answer')) answers += 1; return gateway(call);};
+    const result = await runScenario(selected, h);
+    assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+    assert.equal(answers, 1, 'the scenario submits one answer after resync, never retries a refused input');
+  } finally {await h.close(); assert.equal((await run.stop()).code, 0);}
+});
+
 void test('the capture steps include edge grants, every catalog scenario and request following', () => {
   assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
 });

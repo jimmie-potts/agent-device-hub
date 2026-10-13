@@ -1,8 +1,9 @@
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../fixtures/agents.js';
-import {act, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type Scenario} from '../framework.js';
+import {StepFailure, act, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type Scenario} from '../framework.js';
 const state = (h: Harness): CompanionState | undefined => h.reader.states<CompanionState>('companion-state', 'bunny/modules/companions')[0]?.data;
+const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
 const command = (family: string, data: object) => ({key: `bunny.cmd.${family}.reachy`, draft: {
   type: `org.bunny.${family.slice(0, family.lastIndexOf('-'))}.${family.slice(family.lastIndexOf('-') + 1)}.requested`, subject: 'reachy',
   dataschema: `https://bunny.invalid/events/${family}/2.0`, data}});
@@ -53,7 +54,12 @@ export const scenarios: readonly Scenario[] = [{
     act('operator stages private synthetic text', h => assistantInput(h, 'assistant-start')),
     expect('start receipt means input saved', h => recorded(h, 'assistant-start', 'succeeded', 'observed')),
     expect('the task waits after one fake model call', h => assistant(h)?.tasks[0]?.status === 'waiting' && assistant(h)?.tasks[0]?.modelCalls === 1 || 'task did not wait'),
-    act('the runtime restarts on its private store', h => h.restart()),
+    act('the runtime restarts on its private store', async h => {
+      assistantSyncsBeforeRestart.set(h, h.reader.syncs('assistant-state', 'bunny/modules/companions'));
+      await h.restart();
+    }),
+    expect('the reader resyncs assistant state after restart', h =>
+      h.reader.syncs('assistant-state', 'bunny/modules/companions') > (assistantSyncsBeforeRestart.get(h) ?? Number.MAX_SAFE_INTEGER) || 'the reader has not resynced'),
     holds('restart keeps the question without another call', h => assistant(h)?.tasks[0]?.status === 'waiting' && assistant(h)?.tasks[0]?.modelCalls === 1 || 'restart invoked work', 100),
     expect('an authenticated reader can read saved private text', answers({as: 'reader', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny'}, response =>
       response.status === 200 && JSON.stringify(bodyOf(response)).includes('SYNTHETIC_ASSISTANT_PROMPT') || 'private read missing')),
@@ -75,5 +81,5 @@ async function assistantInput(h: Harness, requestId: string, answer = false): Pr
   const result = await h.gateway({as: 'operator', method: 'POST', path: `/api/v2/modules/companions/upload?${query}`, headers: {'content-type': 'application/octet-stream'},
     body: {action: answer ? 'answer' : 'start', profile: 'bunny', text: answer ? 'SYNTHETIC_ASSISTANT_ANSWER' : 'SYNTHETIC_ASSISTANT_PROMPT',
       expectedRevision: state?.revision, ...(answer ? {taskId: task?.taskId, questionId: task?.questionId} : {})}});
-  if (result.status !== 200) throw new Error(`synthetic assistant input returned ${String(result.status)}`);
+  if (result.status !== 200) throw new StepFailure(`synthetic assistant input returned ${String(result.status)}`);
 }
