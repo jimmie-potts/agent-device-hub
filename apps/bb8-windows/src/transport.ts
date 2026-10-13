@@ -19,7 +19,7 @@ export class ProtocolRefusal extends SdkError {
 }
 /** A selected Stop reply keeps the link usable; it does not prove physical rest. */
 export class StepFailure extends SdkError {
-  constructor(readonly stopAcknowledged: boolean, code: 'uncertain-result' | 'cancelled' | 'invalid-state' = 'uncertain-result') {super(errorBody(code, {detail: code === 'cancelled' ? 'BB-8 gesture was stopped' : code === 'invalid-state' ? 'BB-8 is not charging' : 'BB-8 step has an uncertain result'}));}
+  constructor(readonly stopAcknowledged: boolean, readonly failureCode: 'uncertain-result' | 'cancelled' | 'invalid-state' = 'uncertain-result', readonly transmissionAcknowledged: boolean = stopAcknowledged) {super(errorBody(failureCode, {detail: failureCode === 'cancelled' ? 'BB-8 gesture was stopped' : failureCode === 'invalid-state' ? 'BB-8 is not charging' : 'BB-8 step has an uncertain result'}));}
 }
 export type TransportObservation = {power?: Power; version?: Version};
 const refusal = (code: 'unavailable' | 'unsupported-capability' | 'invalid-request' | 'invalid-message' | 'capacity' | 'invalid-state'): SdkError => new SdkError(errorBody(code, {detail: 'BB-8 transport refused the operation'}));
@@ -112,7 +112,7 @@ export class PacketTransport {
     return this.#packet(2, 0x30, Uint8Array.of(speed, heading >> 8, heading & 255, go ? 1 : 0, 0), 0, signal, check, effect, waitSignal);
   }
   async #step(operation: {speed: number; heading: number; durationMs: number}, signal: AbortSignal, check: () => void, effect: () => void, completionCheck: () => void): Promise<TransportObservation> {
-    const wait = new AbortController(); let cancel: (() => void) | undefined, possible = false, failure: unknown;
+    const wait = new AbortController(); let cancel: (() => void) | undefined, possible = false, transmissionAcknowledged = false, failure: unknown;
     let ended: (() => void) | undefined;
     const end = new Promise<void>(resolve => {ended = resolve;});
     this.#interruptStep = () => {wait.abort(); ended?.();};
@@ -123,8 +123,8 @@ export class PacketTransport {
     };
     try {
       await this.#roll(operation.speed, operation.heading, true, signal, check, started, wait.signal);
-      await end; check();
-    } catch (error) {failure = error;}
+      transmissionAcknowledged = true; await end; check();
+    } catch (error) {failure = error; transmissionAcknowledged ||= error instanceof ProtocolRefusal;}
     finally {cancel?.(); this.#interruptStep = undefined;}
     if (!possible) {if (failure !== undefined) throw failure instanceof Error ? failure : refusal('unavailable'); return {};}
     // Completing an admitted step is selected work, not a retry or a new move.
@@ -135,21 +135,26 @@ export class PacketTransport {
     try {completionCheck(); this.#fault = undefined; this.#notifications = 0; await this.#roll(0, this.#heading, false, stop.signal, completionCheck, () => {}); stopped = true;}
     catch {failure ??= refusal('unavailable');}
     finally {stopCancel();}
-    if (failure !== undefined) throw new StepFailure(stopped);
+    if (failure !== undefined) throw new StepFailure(stopped, 'uncertain-result', transmissionAcknowledged || stopped);
     return {};
   }
   async #gesture(operation: Extract<Operation, {kind: 'gesture'}>, signal: AbortSignal, check: () => void, effect: () => void, completionCheck: () => void): Promise<TransportObservation> {
     this.#gestureInterrupted = false;
     const preset = GESTURE_PRESETS[operation.gesture]; let stopped = false;
     for (const heading of preset.headings) {
-      if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
-      // Charging is checked afresh; this read is not a possible heading effect.
-      let report: TransportObservation;
-      try {report = await this.execute({kind: 'power-refresh'}, signal, check, () => {});}
-      catch (error) {if (stopped && !(error instanceof ProtocolRefusal)) throw new StepFailure(true); throw error;}
-      if (report.power?.category !== 1) throw new StepFailure(stopped, 'invalid-state');
-      if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
-      await this.#step({speed: 0, heading, durationMs: preset.durationMs}, signal, check, effect, completionCheck); stopped = true;
+      try {
+        if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
+        // Charging is checked afresh; this read is not a possible heading effect.
+        const report = await this.execute({kind: 'power-refresh'}, signal, check, () => {});
+        if (report.power?.category !== 1) throw new StepFailure(stopped, 'invalid-state');
+        if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
+        await this.#step({speed: 0, heading, durationMs: preset.durationMs}, signal, check, effect, completionCheck); stopped = true;
+      } catch (error) {
+        // Earlier transmission is evidence, not an acknowledgment of this Stop.
+        if (error instanceof StepFailure) throw new StepFailure(error.stopAcknowledged, error.failureCode, stopped || error.transmissionAcknowledged);
+        if (stopped && !(error instanceof ProtocolRefusal)) throw new StepFailure(true);
+        throw error;
+      }
     }
     if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
     // A charging report does not turn heading transmission into observed pose.

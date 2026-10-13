@@ -163,7 +163,7 @@ export class HelperOwner {
     const definitiveRefusal = failure instanceof ProtocolRefusal;
     const cancelled = failure instanceof StepFailure && code === 'cancelled';
     const refusedGesture = request.operation.kind === 'gesture' && failure instanceof StepFailure && code === 'invalid-state';
-    const knownGestureStop = request.operation.kind === 'gesture' && failure instanceof StepFailure && failure.stopAcknowledged;
+    const knownGestureTransmission = request.operation.kind === 'gesture' && failure instanceof StepFailure && failure.transmissionAcknowledged;
     const result: LinkResult['result'] = code === undefined ? 'succeeded' : definitiveRefusal || cancelled || refusedGesture ? 'failed' : effect && !['unsupported-capability', 'invalid-request'].includes(code) ? 'uncertain' : 'failed';
     const keepLink = failure instanceof StepFailure && failure.stopAcknowledged;
     if (failure !== undefined && (request.operation.kind === 'step' || request.operation.kind === 'gesture')) this.#clearReference();
@@ -174,7 +174,7 @@ export class HelperOwner {
         const revision = this.#store.nextRevision();
         if (effect && (request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || (failure !== undefined && !keepLink))) this.#state.connectionGeneration = this.#store.nextGeneration();
         this.#state = {...this.#state, revision, changedAtMs: this.#options.now(), connection: failure !== undefined && !keepLink ? effect ? 'unavailable' : this.#state.connection : request.operation.kind === 'connect' ? 'connected' : request.operation.kind === 'disconnect' ? 'disconnected' : this.#state.connection};
-        const receipt: LinkResult = {id: request.operationId, revision, robotId: this.#state.id, parentRequestId: request.parentRequestId, requestId: request.operationId, helperEpoch: request.expectedHelperEpoch, connectionGeneration: this.#state.connectionGeneration, completedAtMs: this.#options.now(), result, evidence: code === undefined ? observation.power !== undefined || observation.version !== undefined ? 'observed' : 'transmitted' : definitiveRefusal || knownGestureStop ? 'transmitted' : 'none',
+        const receipt: LinkResult = {id: request.operationId, revision, robotId: this.#state.id, parentRequestId: request.parentRequestId, requestId: request.operationId, helperEpoch: request.expectedHelperEpoch, connectionGeneration: this.#state.connectionGeneration, completedAtMs: this.#options.now(), result, evidence: code === undefined ? observation.power !== undefined || observation.version !== undefined ? 'observed' : 'transmitted' : definitiveRefusal || knownGestureTransmission ? 'transmitted' : 'none',
           ...(code === undefined ? observation : {error: refuse(result === 'uncertain' ? 'uncertain-result' : code).error})};
         this.#store.complete(receipt);
         add(`bunny.state.bb8-link-result.${receipt.id}`, {kind: 'state', type: 'org.bunny.bb8-link-result.updated', subject: receipt.id, dataschema: schemaOf('bb8-link-result'), data: receipt}, {parent: command});
