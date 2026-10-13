@@ -1646,12 +1646,21 @@ account/device compatibility or map attribution.
 
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
-[fixed-text Reachy module](../modules/companions/README.md). The core CI module
+[companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text` catalog scenario over both transports and in a disposable
+Run the `reachy-text` and `assistant-task` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
+
+The companions suite includes real process exits after a checkpoint, after answer
+admission and during a call, plus fake-clock budgets, full disk and outbox recovery.
+Shared profile 1.6 diagnostic changes require the observability JS/Python,
+query, archive-consumer and browser checks listed in its owning guide. Assistant
+and Reachy states use one owner revision sequence and the SDK's combined sync
+contract. The dashboard keeps React contributions mounted during reconnect so
+private history and drafts remain readable; the existing host command control
+locks writes against stale operations.
 
 ### Home-Wi-Fi dashboard verification
 

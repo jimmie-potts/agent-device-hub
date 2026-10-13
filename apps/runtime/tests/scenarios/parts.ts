@@ -163,7 +163,7 @@ export class GatewayClient {
   async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
     const own = this.#origin();
     const sent: Record<string, string> = {...headers};
-    if (body !== undefined) sent['content-type'] = 'application/json';
+    if (body !== undefined && sent['content-type'] === undefined) sent['content-type'] = 'application/json';
     if (as === 'browser') {
       sent.cookie = `${SESSION_COOKIE}=${await this.#session()}`;
       sent['sec-fetch-site'] = 'same-origin';

@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.6",
+      "name": "unsupported-1.7",
       "valid": false,
       "record": {
-        "schema_version": "1.6",
+        "schema_version": "1.7",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -4779,6 +4779,173 @@
           "bunny.operation": "storage",
           "bunny.save.duration_ms": 86400001
         }
+      }
+    },
+    {
+      "name": "assistant.run.started",
+      "valid": true,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "assistant.run.started",
+        "body": "Assistant run started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "companions",
+          "bunny.assistant.task_id": "synthetic-task",
+          "bunny.assistant.run_id": "synthetic-run",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "assistant.run.settled",
+      "valid": true,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "assistant.run.settled",
+        "body": "Assistant run settled",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "companions",
+          "bunny.assistant.task_id": "synthetic-task",
+          "bunny.assistant.run_id": "synthetic-run",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "assistant.call.settled",
+      "valid": true,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "assistant.call.settled",
+        "body": "Assistant call settled",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "companions",
+          "bunny.assistant.task_id": "synthetic-task",
+          "bunny.assistant.run_id": "synthetic-run",
+          "bunny.outcome": "succeeded",
+          "bunny.assistant.effect_id": "synthetic-task-step-0"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "assistant-earlier-profile-refused",
+      "valid": false,
+      "record": {
+        "schema_version": "1.5",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "assistant.run.started",
+        "body": "Assistant run started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "companions",
+          "bunny.assistant.task_id": "synthetic-task",
+          "bunny.assistant.run_id": "synthetic-run",
+          "bunny.outcome": "succeeded"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "assistant-private-text-refused",
+      "valid": false,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-06T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "assistant.run.started",
+        "body": "Assistant run started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "companions",
+          "bunny.assistant.task_id": "synthetic-task",
+          "bunny.assistant.run_id": "synthetic-run",
+          "bunny.outcome": "succeeded",
+          "assistant.prompt": "PRIVATE-SYNTHETIC"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
       }
     }
   ]

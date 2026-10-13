@@ -79,14 +79,17 @@ const examples = {
   'http.request.method': 'GET',
   'bunny.state.bytes': 8_388_609,
   'bunny.save.duration_ms': 150,
+  'bunny.assistant.task_id': 'task-test',
+  'bunny.assistant.run_id': 'run-test',
+  'bunny.assistant.effect_id': 'task-test-step-0',
 };
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.5.0 adds profile 1.5, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.5.0');
-  assert.equal(catalog.artifact_version, '1.5.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5']);
+test('artifact 1.6.0 adds profile 1.6, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.6.0');
+  assert.equal(catalog.artifact_version, '1.6.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -184,7 +187,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.6').ok, false);
+  assert.equal(projectRecord(hub, '1.7').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {

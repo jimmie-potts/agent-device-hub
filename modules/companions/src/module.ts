@@ -1,3 +1,5 @@
+import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {createHash} from 'node:crypto';
 import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
@@ -5,6 +7,7 @@ import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, ty
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {Outbox, fullDisk, levelOf, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
+import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
 import {CompanionStore, type Saved} from './store.js';
 
@@ -12,15 +15,18 @@ type Candidate = {event: CompanionOpportunity; parent: TraceContext};
 const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type: 'org.bunny.companion-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
-export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; pending(): number};
+export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; pending(): number};
 
 /** One private state owner and one bounded asynchronous presentation path; no provider, sensor or physical output. */
-export function createCompanionsModule(): CompanionsModule {
-  const engine = new Companions();
-  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}]},
-    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), pending: () => engine.pending()};
+export function createCompanionsModule(options: AssistantOptions = {}): CompanionsModule {
+  const engine = new Companions(options);
+  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}],
+    content: (ref, request) => engine.assistant?.content(ref, request),
+    upload: {family: 'assistant-input', maxBytes: 25_600, stage: request => engine.assistant?.stage(request) ?? errorBody('unavailable')}},
+    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), pending: () => engine.pending()};
 }
 class Companions {
+  assistant: AssistantEngine | undefined;
   #context: ModuleContext | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
@@ -41,7 +47,7 @@ class Companions {
   readonly #seen = new Set<string>();
   #work: Promise<void> = Promise.resolve();
   #draining: Promise<void> = Promise.resolve();
-  constructor() {registerCoreFamilies(this.#validator);}
+  constructor(readonly options: AssistantOptions) {registerCoreFamilies(this.#validator);}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
   async start(context: ModuleContext): Promise<void> {
@@ -49,14 +55,20 @@ class Companions {
     const database = context.database();
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
+    this.assistant = new AssistantEngine(context, this.#outbox, this.options);
+    await this.assistant.start();
     const saved = this.#store.read();
     for (const key of saved.received) this.#seen.add(key);
     if (saved.state.presentation !== null) saved.state.presentation.history = true;
     saved.state.availability = 'available';
     this.#store.save(saved);
-    this.#subscriptions.push(await context.sdk.serveSync(['companion-state'], () => {
+    this.#subscriptions.push(await context.sdk.serveSync(['companion-state', 'assistant-state'], request => {
       const state = this.inspect();
-      return state === undefined || this.#closed ? errorBody('unavailable') : {revision: state.revision, states: [stateDraft(state)]};
+      const assistant = this.assistant?.inspect();
+      return state === undefined || assistant === undefined || this.#closed ? errorBody('unavailable') : {revision: revision(database), states: [
+        ...(request.data.families.includes('companion-state') ? [stateDraft(state)] : []),
+        ...(request.data.families.includes('assistant-state') ? [assistantStateDraft(assistant)] : []),
+      ]};
     }));
     this.#subscriptions.push(await context.sdk.subscribe<CompanionOpportunity>('bunny.event.companion-opportunity.reachy', message => {this.#receive(message);},
       {onOverflow: () => {this.#pending.clear(); this.#decision('input-unavailable');}}));
@@ -69,6 +81,7 @@ class Companions {
   async stop(): Promise<void> {
     this.#closed = true; this.#pending.clear(); this.#scheduled?.(); this.#retry?.(); this.#expiry?.();
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
+    await this.assistant?.stop();
     await this.#copy?.close();
     await Promise.all([this.#work, this.#draining]);
   }

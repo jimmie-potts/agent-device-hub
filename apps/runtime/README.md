@@ -352,6 +352,14 @@ Saved cards return as history, and neither sync, recovery, restart nor returning
 to Free creates a reaction. See the module guide for timing, private storage and
 source checks. Source acceptance and separately selected installation remain distinct.
 
+The same module contributes a default-off **Synthetic tasks** page: private text,
+a saved clarification and explicit continuation through a bounded fake-model
+graph. It reuses the gateway, tracked dispatcher, SDK SQLite owner and outbox.
+Task mechanics are separate from Reachy cards and core session lifecycle.
+See [Synthetic assistant tasks](../../modules/companions/README.md#synthetic-assistant-tasks)
+for restart, cancellation, privacy and limits. React contributions retain their
+last loaded content during reconnect while the host disables commands.
+
 ## Core automation
 
 The core owns event automation ([#925](https://github.com/jimmie-potts/agent-device-hub/issues/925)) in fresh private tables. It reuses the legacy Hub's event-rule definitions, interrupt set, quiet hours and budgets without transferring old rules or settings. `CoreModule.automation` exposes rule controls, settings, the interrupt set and the log for the authenticated gateway. A rule created without owner enabling stays disabled. The core runs independently of the page.

@@ -7,7 +7,7 @@ Run commands from the repository root with Node 24 and the dependencies in
 ## Shared observability contract checks
 
 The source contract in `packages/observability` uses Node 24 and Python 3.14. From the assigned worktree, run `npm ci`, install
-`requirements-contracts.txt` in an isolated Python environment, then run
+`requirements-contracts.txt` and `packages/observability/requirements-host.txt` in an isolated Python environment, then run
 `npm run build`, `npm run typecheck`, `npm run test:observability`,
 `npm run test:observability:python`, `npm run test:observability:query` and
 `npm run test:observability:package` and `npm run test:observability:browser`
@@ -22,7 +22,8 @@ projections, privacy, context isolation and bounded sink failures. Profile 1.2
 fixtures cover the runtime's records and their negative controls, profile 1.3
 fixtures its decision, outbox and device records and theirs (#949), profile 1.4
 fixtures the gateway's route, method and credentials reload and theirs (#835),
-profile 1.5 fixtures the core's costly-save records and theirs (#976), and
+profile 1.5 fixtures the core's costly-save records and theirs (#976),
+profile 1.6 fixtures assistant execution identifiers and text exclusion, and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
 earlier profile rejects each profile's additions, and the runtime scopes'
 rules. `tests/host.test.mjs` checks that a host records only its profile's span

@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.5.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.6.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4 and 1.5 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5 and 1.6 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -23,8 +23,9 @@ credentials reload ([#835](https://github.com/jimmie-potts/agent-device-hub/issu
 see [The gateway's records](#the-gateways-records-profile-14). Profile 1.5
 registers a store's costly saves
 ([#976](https://github.com/jimmie-potts/agent-device-hub/issues/976)); see
-[Costly saves](#costly-saves-profile-15). The default producer profile stays
-1.1: existing producers keep it, and a producer selects 1.2, 1.3, 1.4 or 1.5
+[Costly saves](#costly-saves-profile-15). Profile 1.6 adds
+[assistant execution](#assistant-execution-profile-16). The default producer profile stays
+1.1: existing producers keep it, and a producer selects 1.2, 1.3, 1.4, 1.5 or 1.6
 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
@@ -44,7 +45,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4` or `1.5` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5` or `1.6` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -170,7 +171,7 @@ A new runtime or module event or attribute is a catalog change: a new profile or
 an unreleased one, with fixtures, contract review and the packaged-consumer
 checks. Building a record keeps only the attributes its own profile registers,
 so a default profile 1.1 record leaves out a 1.2 attribute. The Python helpers
-validate and convert profile 1.2 to 1.5 records from the schema and catalog; they
+validate and convert profile 1.2 to 1.6 records from the schema and catalog; they
 produce profile 1.1 by default and project only to 1.0 and 1.1, since Python
 producers stay on 1.1.
 
@@ -248,7 +249,24 @@ Profile 1.5 adds no span name. The runtime's core is the one producer: its
 store records these with `bunny.operation` `storage` (see the runtime's
 [Agent-session core](../apps/runtime/README.md#agent-session-core)).
 
-The runtime writes all its records and spans at profile 1.5.
+## Assistant execution (profile 1.6)
+
+Profile 1.6 adds module events `assistant.run.started`, `assistant.run.settled`
+and `assistant.call.settled`, and spans `bunny.assistant.run`,
+`bunny.assistant.model` and `bunny.assistant.tool`. They carry registered
+`bunny.assistant.task_id`, `bunny.assistant.run_id` and, for a call,
+`bunny.assistant.effect_id`: 1–128 ASCII letters, digits or hyphens. Event bodies
+are fixed catalog strings. Existing outcome/error fields describe partial,
+succeeded, cancelled, failed or uncertain work; no conversation text or raw
+exception is admitted. Earlier profiles refuse this added vocabulary.
+
+The companions producer ends run spans at human waits and shutdown and links
+later activations to the prior run. Calls are children of the active run. It
+uses the SDK and host adapter; a diagnostic failure cannot decide task success.
+There is no LangSmith or second content exporter.
+
+This source revision writes runtime records and spans at profile 1.6. Source
+fixtures and disposable runs do not establish installed adoption.
 
 ## Traces and context
 

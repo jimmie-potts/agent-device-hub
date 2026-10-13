@@ -179,6 +179,8 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
     });
     await page.unroute(historyPattern); await page.unroute(detailPattern);
     await t.expect('disconnect and reconnect reload current evidence without input or replay',async () => {
+      const draft = history.getByLabel('Title contains',{exact:true});
+      await fill(draft,'SYNTHETIC unsent reconnect draft','Keep an unsent history filter across reconnect');
       const streamPattern = '**/api/sdk/v1/stream';
       let releaseStream = (): void => {};
       const heldStream = new Promise<void>(resolve => {releaseStream = resolve;});
@@ -191,15 +193,20 @@ export async function onnHistoryBrowser(t: CaptureContext, run: Harness): Promis
         const response = await fetch(new URL(`${HARNESS_PATH}/disconnect`,harness),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'bunny/parts/dashboard'}),signal:AbortSignal.timeout(5000)});
         assert.equal(response.status,200); assert.equal(await replacement,true);
         await page.locator('main#main[data-feed="reconnecting"]').waitFor();
-        await page.getByText('This module page is unavailable.',{exact:true}).waitFor();
+        await history.getByText('Disconnected. Reconnect to read history.',{exact:true}).waitFor();
+        assert.equal(await history.getByRole('button',{name:'Search history',exact:true}).isDisabled(),true);
+        assert.equal(await history.getByRole('button',{name:'Refresh history',exact:true}).isDisabled(),true);
+        assert.equal(await current.getByRole('button',{name:'Reload content',exact:true}).isDisabled(),true);
+        assert.equal(await draft.inputValue(),'SYNTHETIC unsent reconnect draft');
         assert.equal(await history.getByRole('listitem',{name:/^Occurrence /u}).count(),0);
         await indicate('Release the replacement stream and inspect restored current evidence');
         releaseStream();
         await page.locator('main#main[data-feed="connected"]').waitFor();
+        assert.equal(await draft.inputValue(),'SYNTHETIC unsent reconnect draft');
         await click(current.getByRole('button',{name:'Reload content',exact:true}),'Reload current content');
         await current.getByText('Fresh observation',{exact:true}).waitFor();
         await run.wait(10); assert.equal(effects(),0); assert.deepEqual(commands,[]); assert.deepEqual(external,[]);
-      } finally {releaseStream(); await page.unroute(streamPattern);}
+      } finally {releaseStream(); await page.unrouteAll({behavior:'wait'});}
     });
     assert.deepEqual(errors,[]);
     await t.attach('onn-history-browser.json',JSON.stringify({synthetic:true,physical:false,ownerReads:true,priorLocalDay:true,historyPaging:true,detailPaging:true,keyboard:true,phone:true,axe:'passed',failedReads:true,supersededReplies:true,reconnect:true,deviceEffects:effects(),commands:commands.length},null,2));

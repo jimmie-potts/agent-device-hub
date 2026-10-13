@@ -1,6 +1,63 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "assistant-input": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-assistant-input",
+  "source": "bunny/core",
+  "type": "org.bunny.assistant.input.requested",
+  "subject": "assistant",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/assistant-input/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "assistant-input-test",
+   "inputRef": "opaque-test"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "assistant-control": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-assistant-control",
+  "source": "bunny/core",
+  "type": "org.bunny.assistant.control.requested",
+  "subject": "assistant",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/assistant-control/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "assistant-control-test",
+   "expectedRevision": 0,
+   "action": "enable"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "assistant-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-assistant-state",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.assistant-state.updated",
+  "subject": "assistant",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/assistant-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "assistant",
+   "revision": 0,
+   "enabled": false,
+   "available": true,
+   "tasks": []
+  }
+ },
  "companion-opportunity": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",

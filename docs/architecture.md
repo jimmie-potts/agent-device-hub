@@ -141,17 +141,29 @@ Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
 
-## Optional text companion
+## Optional companions
 
 The statically shipped `modules/companions` consumes core-owned first-live coding
 opportunities through the SDK. Core keeps session/mode ownership and produces no
-opportunity from recovery, snapshots or reconnect. The module owns only private
-settings and bounded admission/presentation records; pending candidates are not
-durable. Its browser-only React contribution uses the existing shell and tracked
+opportunity from recovery, snapshots or reconnect. The fixed-text path owns private settings and bounded admission/presentation
+records; its pending candidates are not durable. Its browser-only React contribution uses the existing shell and tracked
 commands. Labelled synthetic scenarios remain separate from live state and
 allowances. The module adds no device/audio writer, service or transport boundary.
 The architecture diagram retains its dated physical-device view; these text
 cards use its existing core/bus/module-store/frontend boundaries.
+
+The same module also owns a default-off synthetic assistant workflow. Its single
+sequential graph and inspectable conversation/task/run/call records use the
+SDK-owned SQLite connection beside Reachy. A module-local, pinned LangGraph
+saver supplies durable interrupts and pending writes; startup reconciles their
+application projection without invoking work. Existing authenticated upload
+staging keeps text out of tracked command payloads, while authenticated module
+content reads serve bounded private pages. Both state families share one owner
+revision sequence, sync provider and outbox. One unfinished task, explicit
+continuation, persisted call reservations and cancellation fences bound execution.
+The [companions guide](../modules/companions/README.md#synthetic-assistant-tasks)
+owns the flow, limits and future workspace reference. This source slice has fake
+adapters only and adds no installed service or physical writer.
 
 ## Module frontend ownership
 

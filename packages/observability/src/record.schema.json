@@ -21,7 +21,8 @@
         "1.2",
         "1.3",
         "1.4",
-        "1.5"
+        "1.5",
+        "1.6"
       ]
     },
     "timestamp": {
@@ -108,7 +109,10 @@
         "device.available",
         "runtime.edge.reloaded",
         "storage.cost.high",
-        "storage.cost.normal"
+        "storage.cost.normal",
+        "assistant.run.started",
+        "assistant.run.settled",
+        "assistant.call.settled"
       ]
     },
     "body": {
@@ -167,7 +171,10 @@
         "Device available",
         "Edge credentials reloaded",
         "Storage cost high",
-        "Storage cost normal"
+        "Storage cost normal",
+        "Assistant run started",
+        "Assistant run settled",
+        "Assistant call settled"
       ]
     },
     "resource": {
@@ -624,6 +631,24 @@
           "type": "number",
           "minimum": 0,
           "maximum": 86400000
+        },
+        "bunny.assistant.task_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9-]+$"
+        },
+        "bunny.assistant.run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9-]+$"
+        },
+        "bunny.assistant.effect_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9-]+$"
         }
       }
     },
@@ -1030,7 +1055,10 @@
               "device.unavailable",
               "device.available",
               "storage.cost.high",
-              "storage.cost.normal"
+              "storage.cost.normal",
+              "assistant.run.started",
+              "assistant.run.settled",
+              "assistant.call.settled"
             ]
           },
           "attributes": {
@@ -1096,6 +1124,73 @@
                 "const": "bunny.runtime"
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Profile 1.6 additions are closed to earlier profiles.",
+      "if": {
+        "properties": {
+          "schema_version": {
+            "enum": [
+              "1.0",
+              "1.1",
+              "1.2",
+              "1.3",
+              "1.4",
+              "1.5"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "not": {
+              "enum": [
+                "assistant.run.started",
+                "assistant.run.settled",
+                "assistant.call.settled"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.assistant.task_id",
+                  "bunny.assistant.run_id",
+                  "bunny.assistant.effect_id"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "assistant.run.started",
+              "assistant.run.settled",
+              "assistant.call.settled"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "name": {
+                "const": "bunny.module"
+              }
+            },
+            "type": "object"
           }
         }
       }
