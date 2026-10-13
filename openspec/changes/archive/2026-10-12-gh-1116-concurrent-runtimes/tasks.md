@@ -5,5 +5,5 @@
 
 ## 2. Integration evidence
 
-- [ ] 2.1 Run the required build, lint, type, contract, workflow, app-verify lifecycle/package and affected adapter checks; retain exact commands and results privately.
-- [ ] 2.2 From separate clean candidate worktrees, overlap npm and host-route simulated runtime starts, exercise a representative scenario in each, verify distinct identities/endpoints/private state/credentials and unchanged sibling state/health after reset and stop, then stop only owned runs and verify retained proof and cleanup.
+- [x] 2.1 Run the required build, lint, type, contract, workflow, app-verify lifecycle/package and affected adapter checks; retain exact commands and results privately.
+- [x] 2.2 From separate clean candidate worktrees, overlap npm and host-route simulated runtime starts, exercise a representative scenario in each, verify distinct identities/endpoints/private state/credentials and unchanged sibling state/health after reset and stop, then stop only owned runs and verify retained proof and cleanup.
