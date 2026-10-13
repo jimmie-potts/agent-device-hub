@@ -16,6 +16,12 @@ current commands and paths in CI, including Markdown-only changes.
 
 ## Current architecture diagram
 
+The companions task persistence check is `node --test
+modules/companions/dist/tests/checkpointer.test.js` after `npm run build` with
+Node 24. Existing `test:companions:built` CI discovery includes the process
+restart and pending-write checks. See the [companions guide](../modules/companions/README.md)
+for its source-only evidence boundary.
+
 The current runtime view is authored in `docs/runtime-architecture.json` and
 rendered to `docs/runtime-architecture.html`, independently of Work Guide.
 Read [architecture](architecture.md#current-runtime-and-evidence) for its source

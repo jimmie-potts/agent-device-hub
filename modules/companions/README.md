@@ -37,3 +37,9 @@ From the root with Node 24, run `npm run build`, `npm run typecheck`,
 checks, `reachy-text` catalog and the runtime dashboard browser/axe journey.
 These checks use synthetic inputs and private disposable stores. Installed
 client smoke and desk installation are separate evidence in the owning issues.
+
+The assistant persistence qualification uses `node --test
+modules/companions/dist/tests/checkpointer.test.js` after the root build. It
+opens SQLite through the SDK, terminates a disposable process after a saved
+interrupt and resumes in a fresh process. The existing companions CI test
+discovery includes it; pending-write and namespace checks use the same saver.
