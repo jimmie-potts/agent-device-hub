@@ -97,3 +97,14 @@ void test('step admission reserves one pending slot for priority Stop', async ()
     assert.equal(owner.results.at(3)?.result, 'succeeded', 'priority Stop completed before queued power');
   } finally {await finish();}
 });
+void test('Stop during Set forward leaves no reference and rejects a later step until reset', async () => {
+  const {gatt, clock, owner, send, finish} = await setup();
+  try {
+    assert.equal((await send({kind: 'aim', action: 'set'})).status, 'accepted'); await clock.tick(0);
+    assert.equal((await send({kind: 'stop'})).status, 'accepted'); await clock.tick(500); await owner.drain();
+    assert.equal(owner.state.forwardReference, undefined, 'in-flight Set forward must not restore a stopped reference');
+    const before = gatt.writes.length;
+    assert.equal((await send({kind: 'step', direction: 'forward', speed: 20, durationMs: 300, forwardReference: 'old-reference'})).status, 'rejected');
+    assert.equal(gatt.writes.length, before);
+  } finally {await finish();}
+});

@@ -149,7 +149,7 @@ export class HelperOwner {
     void expired.catch(() => {});
     try {
       check();
-      if (request.operation.kind === 'aim' || request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || request.operation.kind === 'wake') this.#clearReference();
+      if (request.operation.kind === 'aim' || request.operation.kind === 'stop' || request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || request.operation.kind === 'wake') this.#clearReference();
       const work = this.#transport.execute(request.operation, controller.signal, check, started, completionCheck);
       observation = request.operation.kind === 'step' ? await work : await Promise.race([work, expired]);
     } catch (error) {failure = error; if (!(error instanceof StepFailure && error.stopAcknowledged)) controller.abort(); if (effect && !(error instanceof StepFailure && error.stopAcknowledged)) await this.#transport.close();}
@@ -160,7 +160,7 @@ export class HelperOwner {
     const result: LinkResult['result'] = code === undefined ? 'succeeded' : definitiveRefusal ? 'failed' : effect && !['unsupported-capability', 'invalid-request'].includes(code) ? 'uncertain' : 'failed';
     const keepLink = failure instanceof StepFailure && failure.stopAcknowledged;
     if (failure !== undefined && request.operation.kind === 'step') this.#clearReference();
-    if (failure === undefined && request.operation.kind === 'aim' && request.operation.action === 'set') this.#state.forwardReference = randomUUID();
+    if (failure === undefined && request.operation.kind === 'aim' && request.operation.action === 'set' && !this.#queue.some(item => item.data.operation.kind === 'stop')) this.#state.forwardReference = randomUUID();
     const before = {...this.#state};
     try {
       await this.#outbox.transaction(add => {

@@ -8,8 +8,10 @@ function Controls({context, robot, live, command, now}: {context: FrontendContex
   const link = robot.link.status === 'known' ? robot.link.value : undefined;
   const ready = context.control && context.connected && context.operationsLive && live && robot.linkLive && link !== undefined;
   const allowed = ready && !command.locked;
-  // A stored uncertain hold permits a new explicit connection operation, never a replay of the held LED/wake request.
-  const release = ready && (allowed || (robot.held !== undefined && command.requestId === robot.held.requestId));
+  // Either tracked command may own the uncertain hold. A pending connection
+  // action stays locked; recovery is a fresh explicit request, never a replay.
+  const recovering = context.operations.some(operation => operation.target === robot.id && ['bb8-connect', 'bb8-disconnect'].includes(operation.family) && ['sent', 'accepted'].includes(operation.status));
+  const release = ready && !recovering && (allowed || robot.held !== undefined);
   const connected = link?.connection === 'connected' && robot.held === undefined;
   const send = (family: PublicFamily, led?: Led, extra: object = {}): void => {
     if (!(family === 'bb8-connect' || family === 'bb8-disconnect' ? release : allowed) || link === undefined) return;

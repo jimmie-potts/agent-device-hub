@@ -86,3 +86,26 @@ void test('the module requires a reference, rejects a second step and permits St
   assert.equal(transport.snapshot().operations.at(-1)?.kind, 'stop');
   assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'rejected');
 });
+void test('concurrent ordinary admission cannot consume the step-reserved Stop slot', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-stop-slot-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const send = (family: string, extra: object = {}) => {
+    const link = transport.state(); return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});
+  };
+  const flush = async () => {for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));};
+  assert.equal((await send('bb8-connect')).status, 'accepted'); await flush();
+  assert.equal((await send('bb8-aim', {action: 'set'})).status, 'accepted'); await flush();
+  const reference = transport.state().forwardReference; assert.ok(reference !== undefined);
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => {release = resolve;}); const execute = transport.execute.bind(transport);
+  transport.execute = async (request, parent, signal) => {if (request.operation.kind !== 'stop') await gate; return execute(request, parent, signal);};
+  try {
+    for (let n = 0; n < 7; n++) assert.equal((await send('bb8-wake')).status, 'accepted');
+    const replies = await Promise.all([send('bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: reference}}), send('bb8-power-refresh')]);
+    assert.ok(replies.some(reply => reply.status === 'accepted'));
+    const stop = await send('bb8-stop');
+    assert.equal(stop.status, 'accepted', 'a concurrent stale capacity snapshot must not consume the reserved Stop slot');
+  } finally {release?.(); await flush();}
+});

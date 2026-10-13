@@ -93,8 +93,8 @@ class Bb8Run {
     if (family !== 'bb8-connect' && family !== 'bb8-disconnect' && helper.connection !== 'connected') return refuse('unavailable');
     const pending = this.#store.pending();
     if (family === 'bb8-step' && (pending.some(row => row.family === family) || data.step === undefined || helper.forwardReference === undefined || data.step.forwardReference !== helper.forwardReference)) return refuse('invalid-state');
-    const capacity = BOUNDS.maxPending + (family !== 'bb8-stop' && (family === 'bb8-step' || pending.some(row => row.family === 'bb8-step')) ? 0 : 1);
-    if (pending.length >= capacity) return refuse('capacity');
+    const capacity = (rows: readonly Responsibility[]): number => BOUNDS.maxPending + (family !== 'bb8-stop' && (family === 'bb8-step' || rows.some(row => row.family === 'bb8-step')) ? 0 : 1);
+    if (pending.length >= capacity(pending)) return refuse('capacity');
     let operation: Operation;
     switch (family) {
       case 'bb8-connect': operation = {kind: 'connect'}; break;
@@ -110,7 +110,7 @@ class Bb8Run {
     const row = {source: command.source, request_id: data.requestId, digest, family, operation_id: id, helper_epoch: helper.helperEpoch, generation: helper.connectionGeneration, deadline, traceparent: command.traceparent};
     const before = this.#state;
     try {
-      await this.#transaction(add => {if (this.#store.pending().length >= capacity || (family === 'bb8-step' && this.#store.pending().some(row => row.family === family))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
+      await this.#transaction(add => {if (this.#store.pending().length >= capacity(this.#store.pending()) || (family === 'bb8-step' && this.#store.pending().some(row => row.family === family))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
     } catch (error) {this.#state = before; return refuse(error instanceof SdkError ? error.body.error.code : storageCode(error));}
     this.#track(this.#execute({...row, stage: 'accepted', outcome: null}, operation, data, command));
     return {status: 'accepted'};

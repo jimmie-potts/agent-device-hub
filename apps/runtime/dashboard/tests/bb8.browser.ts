@@ -58,6 +58,16 @@ try {
     assert.equal(await forward.isDisabled(), true);
     const moves = world.bb8State().operations.filter(o => o.kind === 'step');
     assert.equal(moves.length, 5);
+    await controls.getByRole('button', {name: 'Set forward', exact: true}).click();
+    await controls.getByText('Forward reference: set for this connection', {exact: true}).waitFor();
+    world.bb8Next('uncertain'); await forward.click();
+    await controls.getByText('Last result: uncertain · evidence none', {exact: true}).waitFor();
+    world.bb8Next('uncertain'); await stop.click();
+    await controls.getByText('Connection: unavailable', {exact: true}).waitFor();
+    assert.equal(await connect.isEnabled(), true, 'an uncertain independently tracked Stop must permit explicit recovery');
+    assert.equal(await controls.getByRole('button', {name: 'Disconnect', exact: true}).isEnabled(), true);
+    assert.equal(await forward.isDisabled(), true); assert.equal(await stop.isDisabled(), true);
+    await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
     world.bb8Next('failed'); await controls.getByRole('button', {name: 'Set main LED'}).click();
     await controls.getByText('Last result: failed · evidence none', {exact: true}).waitFor();
     await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
