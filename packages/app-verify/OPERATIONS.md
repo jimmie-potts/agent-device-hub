@@ -91,21 +91,19 @@ directory is still to be removed by `stop`. The frozen set is unaffected.
 
 ### One run at a time
 
-[docs/sdlc.md](../../docs/sdlc.md#acceptance-review) currently allows one Acceptance
-run at a time on a host as a conservative memory safeguard. The original
-[#944](https://github.com/jimmie-potts/agent-device-hub/issues/944) evidence proves
-enforcement, not a measured capacity limit of one. Keep the limit until a bounded
-representative observation supports a change; do not require a benchmark campaign.
-Prepare in parallel and request capacity by starting through the guarded wrapper
-when ready. On `run-active`, inspect current run state, continue independent work
-or wait and retry. No advance booking or conversational release is needed after
-verified normal cleanup. Do not stop another owner's run or bypass the wrapper.
-Unit tests and read-only reviews do not acquire an Acceptance reservation;
-suites that create app runs can temporarily occupy capacity as described below.
-[Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944) lets a
-wrapper enforce it. With `APP_VERIFY_SINGLE_RUN=1` in the environment of a
-`start`, the core refuses while any run's service unit is live on this host,
-whichever application started it:
+Independent tasks may start disposable simulated runtimes concurrently through
+the normal launchers. Each uses separate worktrees and build outputs, ports,
+synthetic credentials and state. There is no default run-count limit or
+capacity-qualification gate. The existing two-hour lease, extension, expiry,
+receipts, frozen proof and cleanup behavior remain unchanged. Stop only owned
+runs, and stop unneeded ones if resources become constrained. Household
+installation remains serialized and physical devices retain one designated
+writer and explicit authorization under [SDLC](../../docs/sdlc.md).
+
+The optional guard from [Hub #944](https://github.com/jimmie-potts/agent-device-hub/issues/944)
+remains available for compatibility. With `APP_VERIFY_SINGLE_RUN=1` explicitly
+set in the environment of a `start`, the core refuses while any run's service
+unit is live on this host, whichever application started it:
 
 ```json
 {"operation":"start","error":"run-active","detail":"run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again","errorBody":{"error":{"code":"capacity","retryable":true,"detail":"run-active: run hub-20260927T060259Z-3f9a1c is still live on this host, and only one run may start at a time; stop it with the stop operation of the adapter that started it, or wait for the lease to end, then start again"}}}
@@ -113,14 +111,11 @@ whichever application started it:
 
 - The refusal exits 1, names the live runs, comes before anything is created
   and leaves the live run untouched. Its `errorBody` is `capacity`, retryable.
-- The Hub's wrappers opt in through their package scripts: `verify`,
-  `verify:compose`, `verify:chompi` and `verify:runtime`, and the
-  [host route](../../docs/app-verification.md#explicit-host-route-for-codex-development-coordinators) sets it
-  for the adapter it runs. The pinned Nanoleaf and Pixoo cores (1.1.0) do not
-  read it, so `--app nanoleaf` and `--app pixoo` are not guarded. The test suites do not set it, so they keep starting
-  runs side by side, and a wrapper started with `node scripts/verify.mjs`
-  directly is not guarded. The Nanoleaf and Pixoo wrappers opt in the same way
-  once they vendor a core that has this.
+- The Hub's `verify`, `verify:compose`, `verify:chompi` and `verify:runtime`
+  wrappers do not set the variable. A caller may explicitly opt in, for example
+  `APP_VERIFY_SINGLE_RUN=1 npm run -s verify -- start`. The host route uses its
+  minimal environment without the variable and does not inherit it. The pinned
+  Nanoleaf and Pixoo cores (1.1.0) do not read it. Test scripts do not opt in.
 - A unit that is `active (running)` or `activating` counts. A failed, inactive
   or stopping unit, a lease or thaw timer or its service, and the host route's
   command unit do not, so a stale or failed unit never blocks a start. Any run
@@ -139,7 +134,7 @@ whichever application started it:
   start first takes a claim, the transient unit `app-verify-start-claim.service`,
   that lives while the starting process does. `systemd-run` refuses a name that
   exists, so of two starts begun together one is refused, with `run-active`.
-- `restart` is never refused. A composition counts as one run: `verify:compose`
+- `restart` is never refused. An explicitly guarded composition counts as one run: `verify:compose`
   holds the claim for the whole composition, refuses beside any live run before
   it creates anything, and starts its three runs without the variable. Its
   refusal keeps the composition's own 1.x line, `{"operation", "error":

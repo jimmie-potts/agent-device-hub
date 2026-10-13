@@ -57,9 +57,10 @@ page label them that way:
 
 ## Entry points
 
-Run at most one Acceptance run at a time on this host, because memory is the constraint
-([docs/sdlc.md](../../../docs/sdlc.md#acceptance-review)); a composition counts as one run. Check with
-`npm run -s verify:chompi -- doctor` (and the Hub's `npm run -s verify -- doctor`) before a `start`.
+Independent tasks may start simulated bridge runs concurrently, each from its own
+worktree and build outputs with separate ports, credentials and state
+([docs/sdlc.md](../../../docs/sdlc.md#acceptance-review)). Keep the existing leases
+and reset or stop only owned runs.
 
 Prerequisites: Linux with a `systemd --user` manager and the repository's Chromium (`npx playwright install
 chromium`). Run with Node 24 from the repository root, and build first: `start` serves the built candidate, and the

@@ -278,13 +278,14 @@ they request a decision or transfer a resource. Coordinators resolve concrete
 conflicts; they do not approve every task action. Escalate only a scope decision,
 new authority or unresolved conflict, and continue independent authorized work.
 
-For disposable verification, start when ready through the existing
-[one-run guard](../packages/app-verify/OPERATIONS.md#one-run-at-a-time). On a busy
-refusal, continue other work or wait and retry after checking current run state.
-Do not negotiate advance time slots or require a separate release message after
-verified normal cleanup. Stop only your own runs. Keep the current capacity
-limit until representative evidence supports changing it; do not extend it to
-unrelated builds, unit tests or read-only reviews.
+For disposable verification, independent tasks may start simulated runtimes
+concurrently through the normal npm wrappers or host route. Each run uses its
+own worktree, build outputs, ports, synthetic credentials and state. There is
+no default run-count limit or capacity-qualification gate. Keep the existing
+two-hour leases, extension, expiry and cleanup; stop only your own runs. Stop
+unneeded owned runs if resources become constrained. Household installation
+remains serialized, and physical devices keep one designated writer and their
+existing explicit authorization.
 
 ## Canonical checkout refresh
 
@@ -553,19 +554,13 @@ Verification has three tiers.
    and the run IDs.
 
    A `not satisfied` verdict blocks merge like the other axes. After a fix, the
-   reviewer re-runs the affected scenarios on the new head. Run at most one
-   Acceptance run at a time on this host as a conservative memory safeguard. A
-   composition counts as one run. The Hub's wrappers above, and the host route
-   for its adapters (`--app hub`, `runtime` and `compose`), refuse a `start`
-   with `run-active` while any run is live on the host
-   ([one run at a time](app-verification.md#one-run-at-a-time)). The pinned
-   Nanoleaf and Pixoo cores ignore the variable, so `--app nanoleaf` and
-   `--app pixoo` are not guarded. Stop your own run first. If the refusal names
-   a run you did not start, wait for it or ask its owner; do not stop it.
-   Another session's short-lived test runs count too and end by themselves, so
-   wait and retry: the app-verify tests' `avt-*` runs, the Hub, runtime and
-   CHOMPI verify suites' runs under their apps' own names, and a composition
-   test's `<tag>-nl` and `<tag>-px` stand-ins.
+   reviewer re-runs the affected scenarios on the new head. Independent tasks
+   may run disposable simulated runtimes concurrently, including Acceptance
+   runs, with separate worktrees and build outputs. Use the normal launchers;
+   they impose no default run-count limit. Preserve each run's lease, private
+   state, credentials and exact ownership. Reset, capture and stop only your
+   own runs. The shared core's [optional one-run guard](app-verification.md#one-run-at-a-time)
+   remains available for explicit opt-in; it is not required for task launches.
 
    A PR with no observable behavior skips this axis. It states "no observable
    behavior" and why, and the Standards reviewer checks the claim against the

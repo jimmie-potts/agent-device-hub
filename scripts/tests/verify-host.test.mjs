@@ -196,19 +196,42 @@ test('host commands keep browser temporary files on owned disk storage', async t
   assert.ok(launch.argv.some(a => a.startsWith('--property=ExecStopPost=')));
 });
 
-test('host commands opt a start in to the one-run guard (Hub #944)', async t => {
-  const plan = await prepare(args(await checkout(t)));
-  assert.equal(plan.hostEnv.APP_VERIFY_SINGLE_RUN, '1');
-  const fixture = supervisor();
-  await runHost(plan, fixture);
-  const launch = fixture.calls.find(c => c.program.endsWith('/systemd-run'));
-  assert.ok(launch.argv.includes('APP_VERIFY_SINGLE_RUN=1'), 'the adapter runs with the guard on');
+test('all host routes leave concurrent starts unguarded in their isolated environment', async t => {
+  const wrappers = {compose: 'apps/hub/verify/compose.mjs', runtime: 'scripts/verify-runtime.mjs'};
+  for (const [app, name] of [['hub', 'agent-device-hub'], ['runtime', 'agent-device-hub'], ['compose', 'agent-device-hub'], ['nanoleaf', 'codex-nanoleaf'], ['pixoo', 'divoom-app-upgrade']]) {
+    const root = await checkout(t, name);
+    const wrapper = wrappers[app] ?? 'scripts/verify.mjs';
+    await mkdir(join(root, wrapper, '..'), {recursive: true});
+    await writeFile(join(root, wrapper), '');
+    const plan = await prepare(['--host', '--app', app, '--checkout', root, '--', 'start']);
+    assert.equal(plan.hostEnv.APP_VERIFY_SINGLE_RUN, undefined, app);
+    const fixture = supervisor();
+    assert.equal((await runHost(plan, fixture)).code, 0);
+    const launch = fixture.calls.find(c => c.program.endsWith('/systemd-run'));
+    assert.ok(!launch.argv.some(arg => arg.startsWith('APP_VERIFY_SINGLE_RUN=')), app);
+    assert.equal(launch.argv[launch.argv.indexOf('/usr/bin/env') + 1], '-i');
+  }
 });
 
-test('every verification wrapper script opts a start in, and no test script does (Hub #944)', async () => {
+test('npm verification entrypoints default to concurrent starts and retain explicit guard opt-in', async t => {
   const {scripts} = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-  for (const name of ['verify', 'verify:compose', 'verify:chompi', 'verify:runtime']) assert.match(scripts[name], /^APP_VERIFY_SINGLE_RUN=1 node /, name);
-  // The suites start runs side by side on purpose, and some spawn a wrapper directly.
+  const root = await checkout(t);
+  const wrappers = {verify: 'scripts/verify.mjs', 'verify:compose': 'apps/hub/verify/compose.mjs',
+    'verify:chompi': 'scripts/verify-chompi.mjs', 'verify:runtime': 'scripts/verify-runtime.mjs'};
+  await writeFile(join(root, 'package.json'), JSON.stringify({scripts: Object.fromEntries(Object.keys(wrappers).map(name => [name, scripts[name]]))}));
+  const probe = "console.log(JSON.stringify({args:process.argv.slice(2),guard:process.env.APP_VERIFY_SINGLE_RUN ?? null}))";
+  const env = {...process.env};
+  delete env.APP_VERIFY_SINGLE_RUN;
+  for (const [name, wrapper] of Object.entries(wrappers)) {
+    await mkdir(join(root, wrapper, '..'), {recursive: true});
+    await writeFile(join(root, wrapper), probe);
+    for (const guard of [null, '1']) {
+      const output = execFileSync('npm', ['run', '-s', name, '--', 'start'], {
+        cwd: root, env: guard === null ? env : {...env, APP_VERIFY_SINGLE_RUN: guard}, encoding: 'utf8',
+      });
+      assert.deepEqual(JSON.parse(output), {args: ['start'], guard}, name);
+    }
+  }
   for (const [name, command] of Object.entries(scripts)) if (name.startsWith('test:')) assert.doesNotMatch(command, /APP_VERIFY_SINGLE_RUN/, name);
 });
 
