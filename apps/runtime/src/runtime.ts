@@ -11,6 +11,7 @@ import {isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
+import {WIFI_PROXY_HEADER, wifiProxyOrigin} from './gateway/wifi-proxy.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
@@ -150,7 +151,7 @@ const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
  * so that a page on a rebinding name reaches nothing. Health also takes no browser origin or cross-site fetch
  * metadata, as the Hub and local controllers require; the gateway checks each caller's own (#835).
  */
-function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute): Promise<Server> {
+function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute, wifiProxy: NonNullable<RuntimeConfig['edge']>['wifiProxy']): Promise<Server> {
   let hosts: readonly string[] = [];
   const answer = (response: ServerResponse, status: number, body: object): void => {
     response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}).end(JSON.stringify(body));
@@ -161,7 +162,9 @@ function serve(port: number, health: () => RuntimeHealth, gateway: () => Gateway
     const host = (request.headers.host ?? '').toLowerCase();
     const route = gateway();
     const isHealth = (request.url ?? '').split('?')[0] === HEALTH_PATH;
-    if (!hosts.includes(host)) {
+    const wifi = wifiProxyOrigin(request, wifiProxy) !== undefined;
+    const local = hosts.includes(host) && request.headers[WIFI_PROXY_HEADER] === undefined;
+    if ((!local && !wifi) || (wifi && (isHealth || route.state === 'off'))) {
       answer(response, 403, errorBody('forbidden', {detail: isHealth || route.state === 'off' ? 'health answers only local requests that name this listener' : 'the gateway answers only requests that name this listener'}));
       return;
     }
@@ -256,7 +259,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   let edge: GatewayRoute = {state: credentials === undefined ? 'off' : 'starting'};
   let server: Server;
   try {
-    server = await serve(port, health, () => edge);
+    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig?.wifiProxy);
   } catch (error) {
     await endTracing();
     throw error;

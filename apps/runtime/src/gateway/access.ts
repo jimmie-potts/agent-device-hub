@@ -174,7 +174,7 @@ export class Access {
    * must carry no `Origin` and no fetch metadata other than `none`. Without one, a session cookie is a browser session,
    * which only this listener's own pages and the browser itself may present; an unsafe request with it must name this
    * origin and carry `bunny-request: 1`. Anything else is `unauthenticated`, and a page on another site `forbidden`.
-   * `origin` is the request's own: `http://` and the listener's host name the request named, either loopback name.
+   * `origin` is the validated local HTTP origin or the explicitly authenticated Wi-Fi HTTPS origin.
    */
   admit(request: IncomingMessage, origin: string): Admission {
     const context = contextOf(request, origin);

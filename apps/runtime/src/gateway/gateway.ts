@@ -32,6 +32,7 @@ import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, run
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
+import {wifiProxyOrigin} from './wifi-proxy.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
 export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
@@ -191,9 +192,11 @@ export class Gateway {
 
   /**
    * The request's own origin: `http://` and the host it named, either of the listener's loopback names, so a bookmark on
-   * `localhost` signs in as one on `127.0.0.1` does (Hub #276). The runtime refuses any other host before this.
+   * `localhost` signs in as one on `127.0.0.1` does (Hub #276), or the explicitly authenticated Wi-Fi HTTPS origin.
    */
   #originOf(request: IncomingMessage): string {
+    const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy);
+    if (wifi !== undefined) return wifi;
     const host = (request.headers.host ?? '').toLowerCase();
     return this.#hosts.includes(host) ? `http://${host}` : this.#origin;
   }
@@ -941,7 +944,9 @@ export class Gateway {
   async #browser(request: IncomingMessage, action: string): Promise<Answer> {
     const known = ['launch', 'session', 'logout'].includes(action);
     if (request.method !== 'POST' || !known) throw refuse('not-found', 'no such route');
-    if (action === 'session' && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
+    const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy) !== undefined;
+    if (action === 'launch' && wifi) throw refuse('forbidden', 'the launcher serves only local browsers');
+    if (action === 'session' && !wifi && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
     // Only this listener's own page may sign a browser in or out, on either loopback name.
     const origin = this.#originOf(request);
     if (contextOf(request, origin) === 'cross' || request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1') {
@@ -956,7 +961,7 @@ export class Gateway {
     const replace = (): Answer => {
       const previous = this.access.endSession(request);
       if (previous !== undefined) this.edge.disconnectPrincipal(previous);
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession()) + (wifi ? '; Secure' : '')});
     };
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
@@ -972,7 +977,7 @@ export class Gateway {
     return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
       const ended = this.access.endSession(request);
       if (ended !== undefined) this.edge.disconnectPrincipal(ended);
-      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie + (wifi ? '; Secure' : '')});
     }, 'principal' in admission && admission.principal.kind === 'browser');
   }
 

@@ -23,6 +23,11 @@ legacy Hub installer and does not establish routine upgrade automation.
 | Per-device writers and private state/outboxes | `modules/` and their owning READMEs |
 | Browser shell and module feature pages | `apps/runtime/dashboard/` and browser-only module entries |
 
+The optional [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated
+Windows HTTPS forwarder before that same loopback gateway. The runtime admits its
+one configured origin with private proxy proof and uses ordinary browser sessions;
+no state, SDK protocol or device ownership moves into the forwarder.
+
 **Connect/reconnect:** a remote client authenticates, syncs current membership
 from its owner, then follows live events. A sync replaces membership, so removed
 entities disappear. A bounded-buffer overflow restarts the sync rather than

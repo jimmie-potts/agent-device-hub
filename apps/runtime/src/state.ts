@@ -305,6 +305,8 @@ export type EdgeConfig = {
   readonly credentials: string;
   /** `trusted-loopback` lets a same-origin loopback page open a browser session without a launch code (Hub #276). */
   readonly browserAccess?: 'trusted-loopback';
+  /** One optional HTTPS entry authenticated by the owner's local Wi-Fi forwarder (Hub #1111). */
+  readonly wifiProxy?: {readonly origin: string; readonly tokenDigest: string};
   /**
    * Whether the launcher's socket, `bunny-launch.sock` in the state directory, hands out launch codes, as the old Hub's
    * did. On unless `false`; a disposable run, whose state directory's path is too long for a socket, turns it off.
@@ -398,14 +400,14 @@ function links(value: unknown, max: number, key: (name: string) => boolean, port
 
 /**
  * The edge's section: `{"credentials": <absolute path>, "browserAccess"?: "trusted-loopback", "launcher"?: false,
- * "mcp"?: true, "editorLinks"?: {...}, "placeLinks"?: {...}}`, the old Hub's settings of the same names and the
+ * "mcp"?: true, "editorLinks"?: {...}, "placeLinks"?: {...}, "wifiProxy"?: {origin, tokenDigest}}`, the old Hub's settings and the
  * launcher's switch (Hub #835). Refuses, with `config-invalid`, anything else; no refusal quotes a value. The cutover's
  * conversion checks what it writes with this too.
  */
 export function checkEdgeSection(value: unknown): EdgeConfig {
   if (!isRecord(value)) throw invalidEdge('must be an object');
-  if (Object.keys(value).some(key => !['credentials', 'browserAccess', 'launcher', 'mcp', 'editorLinks', 'placeLinks'].includes(key))) {
-    throw invalidEdge('has a member other than credentials, browserAccess, launcher, mcp, editorLinks and placeLinks');
+  if (Object.keys(value).some(key => !['credentials', 'browserAccess', 'wifiProxy', 'launcher', 'mcp', 'editorLinks', 'placeLinks'].includes(key))) {
+    throw invalidEdge('has a member other than credentials, browserAccess, wifiProxy, launcher, mcp, editorLinks and placeLinks');
   }
   const {credentials, browserAccess, launcher = true, mcp = false} = value;
   if (typeof launcher !== 'boolean') throw invalidEdge('\'s launcher must be true or false');
@@ -414,9 +416,27 @@ export function checkEdgeSection(value: unknown): EdgeConfig {
     throw invalidEdge('must name its credentials file by an absolute path');
   }
   if (browserAccess !== undefined && browserAccess !== 'trusted-loopback') throw invalidEdge('\'s browserAccess may only be trusted-loopback');
+  const wifiProxy = checkWifiProxy(value.wifiProxy);
   return {
     credentials, ...(browserAccess === undefined ? {} : {browserAccess}), launcher, mcp,
+    ...(wifiProxy === undefined ? {} : {wifiProxy}),
     editorLinks: links(value.editorLinks, 16, name => ROUTING_ID.test(name) && name.length <= 128, false, 'editorLinks'),
     placeLinks: links(value.placeLinks, 8, name => PLACE.test(name) && name !== 'bunny', true, 'placeLinks'),
   };
+}
+
+function checkWifiProxy(value: unknown): EdgeConfig['wifiProxy'] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || Object.keys(value).some(key => !['origin', 'tokenDigest'].includes(key))) throw invalidEdge('has an invalid wifiProxy');
+  const {origin, tokenDigest} = value;
+  if (typeof origin !== 'string' || origin.length > 512 || typeof tokenDigest !== 'string' || !/^[0-9a-f]{64}$/.test(tokenDigest)) {
+    throw invalidEdge('has an invalid wifiProxy origin or token digest');
+  }
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' || url.origin !== origin) throw new Error();
+  } catch {
+    throw invalidEdge('requires a canonical HTTPS wifiProxy origin without a path, credentials, query or fragment');
+  }
+  return {origin, tokenDigest};
 }

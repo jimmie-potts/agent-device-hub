@@ -542,6 +542,13 @@ The gateway listens on the runtime's port. At the cutover (#840) that is the old
 Hub's port, 8788, so the bookmark, hook endpoints and producer files keep their
 address.
 
+For temporary phone access on home Wi-Fi, use the optional [HTTPS forwarder](WIFI.md).
+It preserves the loopback listener and existing dashboard. `edge.wifiProxy` names
+one canonical HTTPS origin and the SHA-256 digest of its private proxy secret;
+only the authenticated forwarder can open sessions on that entry. Its browser
+cookie adds `Secure`. Machine credentials, health and launcher exchange remain
+local, and MCP remains unavailable to browser sessions.
+
 ### Callers
 
 Two kinds of caller reach the gateway, and each acts as one source with the old
@@ -565,7 +572,7 @@ devices. The optional legacy conversion reports widened grants
   answers 403 with `forbidden`, and a change (any method but GET or HEAD) must
   name this origin and carry `bunny-request: 1`.
 
-"This origin" is the one the request names: `http://` and its `Host`, either
+For local access, "this origin" is the one the request names: `http://` and its `Host`, either
 `127.0.0.1:<port>` or `localhost:<port>`, so a bookmark on
 `http://localhost:8788/` signs in and changes things as one on `127.0.0.1` does
 (Hub #276), and a page on the other loopback name is another origin. A cookie
@@ -581,7 +588,7 @@ origin's own page, names it in `Origin` and carries `bunny-request: 1`.
 | Route | Signs in |
 | --- | --- |
 | `POST /api/v2/browser/launch` `{"code"}` | With a launch code from the launcher. The runtime serves the launcher's socket, `bunny-launch.sock` in its state directory, owner-only, which hands each connection the runtime's origin and a code that is good once for 30 seconds (at most eight wait). `requestBrowserLaunch(stateDir)` asks for one; the dashboard's launcher (#922) opens the browser with it. A configuration whose edge section sets `"launcher": false` serves none, as a disposable run does, whose state directory is too deep for a socket; a socket path over 107 bytes refuses the start with `launcher-path-too-long`. |
-| `POST /api/v2/browser/session` `{}` | Without a code, when the edge section sets `"browserAccess": "trusted-loopback"` (Hub #276's opt-in); otherwise 404. |
+| `POST /api/v2/browser/session` `{}` | Without a code, when the edge section sets `"browserAccess": "trusted-loopback"` (Hub #276's opt-in), or through the explicitly configured authenticated home-Wi-Fi entry; otherwise 404. |
 | `POST /api/v2/browser/logout` `{}` | Ends the cookie's session and its streams, and clears the cookie. |
 
 The session's token travels only in `Set-Cookie`, never in a body or record.

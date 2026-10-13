@@ -6,6 +6,15 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
+After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
+for configured proxy admission, browser sessions, refused origins and preserved
+local clients. Run the existing gateway suite alongside it for expiry, streaming,
+grants and diagnostic checks. The setup recipe's Caddy check and phone-width
+browser journey establish forwarding and UI behavior separately from actual
+installed iPhone acceptance; no physical device command is required by these tests.
+
+
 After the root build, run
 `node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
 Existing `test:runtime:built` discovery runs these checks in active core CI; no
@@ -460,6 +469,7 @@ by the owning story's focused browser and disposable Acceptance checks.
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
+BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts # local HTTPS, phone width; optional BUNNY_TEST_BROWSER=webkit
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline

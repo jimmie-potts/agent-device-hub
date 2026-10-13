@@ -1652,3 +1652,13 @@ core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
 Run the `reachy-text` catalog scenario over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
+
+### Home-Wi-Fi dashboard verification
+
+The optional HTTPS browser entry uses `apps/runtime/tests/wifi-proxy.test.ts`,
+discovered by existing runtime core CI, alongside the gateway suite. The owning
+[runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) and
+[setup recipe](../apps/runtime/WIFI.md#source-verification) describe the focused
+Caddy/phone-width browser journey. It uses synthetic controls and keeps actual
+installed iPhone acceptance separate; the root build, typecheck, JavaScript lint,
+SDK, contracts and workflow checks remain applicable.

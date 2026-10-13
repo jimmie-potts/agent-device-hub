@@ -37,6 +37,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** Synthetic HTTPS forwarder for the home-Wi-Fi browser journey. */
+  wifiProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   onn?: boolean;
   roborock?: boolean;
@@ -180,6 +182,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
     credentials, mcp: options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
+    ...(options.wifiProxy === undefined ? {} : {wifiProxy: options.wifiProxy}),
   }}));
   const logs: LogRecord[] = [];
   let core = createCoreModule();
