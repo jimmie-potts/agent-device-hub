@@ -123,7 +123,7 @@ void test('one active plus eight pending is bounded, and stale queued work never
   }
   assert.deepEqual(replies, [...Array<string>(9).fill('accepted'), 'capacity']);
   release?.(gatt); await owner.drain();
-  assert.equal(opens, 1); assert.equal(gatt.writes.length, 4); assert.equal(gatt.closed, false, 'queued stale work must not close the successfully connected robot');
+  assert.equal(opens, 1); assert.equal(gatt.writes.length, 5); assert.equal(gatt.closed, false, 'queued stale work must not close the successfully connected robot');
   assert.equal(owner.results.filter(result => result.result === 'failed').length, 8);
   await owner.stop(); await sdk.close(); await module.close(); db.close();
 });
@@ -154,7 +154,7 @@ void test('matching nonzero MRSP is a definitive failed transmission, including 
       await owner.start(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain();
       gatt.mrsp = mrsp;
       assert.equal((await sendTo(module, owner, {kind: 'led-set', led: {target: 'main', rgb: [10, 20, 30]}})).status, 'accepted'); await owner.drain();
-      const result = owner.results.at(-1); assert.equal(result?.result, 'failed', `MRSP ${mrsp}`); assert.equal(result?.evidence, 'transmitted'); assert.equal(result.error?.code, code); assert.equal(gatt.writes.length, 5);
+      const result = owner.results.at(-1); assert.equal(result?.result, 'failed', `MRSP ${mrsp}`); assert.equal(result?.evidence, 'transmitted'); assert.equal(result.error?.code, code); assert.equal(gatt.writes.length, 6);
     } finally {await owner.stop(); await sdk.close(); await module.close(); db.close();}
   }
 });
@@ -165,10 +165,10 @@ void test('native loss invalidates device work while healthy SDK permits a fresh
     await owner.start(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain();
     const old = owner.state; first.disconnect();
     for (let i = 0; i < 20 && owner.state.connection !== 'unavailable'; i++) await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(owner.state.connection, 'unavailable'); assert.equal(opens, 1); assert.equal(first.writes.length, 4, 'loss does not reconnect automatically');
+    assert.equal(owner.state.connection, 'unavailable'); assert.equal(opens, 1); assert.equal(first.writes.length, 5, 'loss does not reconnect automatically');
     const id = crypto.randomUUID(); const stale = await module.request('bunny.cmd.bb8-link-execute.bb8', executeDraft('bb8', {requestId: id, operationId: id, parentRequestId: id, expectedConfigurationRevision: 0, expectedHelperEpoch: old.helperEpoch, expectedConnectionGeneration: old.connectionGeneration, operationExpiresAtMs: Date.now() + 4000, operation: {kind: 'wake'}}), {requestId: id, timeoutMs: 1000});
     assert.equal(stale.status === 'rejected' && stale.error.error.code, 'revision-conflict');
-    assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain(); assert.equal(opens, 2); assert.equal(owner.state.connection, 'connected'); assert.equal(second.writes.length, 4);
+    assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'accepted'); await owner.drain(); assert.equal(opens, 2); assert.equal(owner.state.connection, 'connected'); assert.equal(second.writes.length, 5);
     await owner.streamLost(); assert.equal((await sendTo(module, owner, {kind: 'connect'})).status, 'rejected', 'actual SDK loss still fences commands');
   } finally {await owner.stop(); await sdk.close(); await module.close(); db.close();}
 });

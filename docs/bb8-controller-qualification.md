@@ -31,7 +31,7 @@ separate from installed operation and visible effects.
 | --- | --- | --- |
 | Original robot | S: `BB8 -> Ollie -> Sphero -> Toy`, inheriting PacketV1; BB-8 name prefix `BB-`; 60 ms command spacing | Accept a configured identity and expected original-BB-8 service/characteristic shape. Never enroll by prefix alone. Other Sphero generations are unsupported. P: firmware and identity still needed. |
 | GATT | S: command `22bb746f-2ba1-7554-2d6f-726568705327`; response notifications `22bb746f-2ba6-7554-2d6f-726568705327` | Require both before device commands; compare selected adapter/target, characteristic properties and configured model. Do not expose arbitrary UUID/byte writes. |
-| Handshake | S: write ASCII `011i3` to `22bb746f-2bbd-7554-2d6f-726568705327`, then byte `07` to `22bb746f-2bb2-7554-2d6f-726568705327`; install response callback | Connection itself writes to the robot. Track it as an explicit command with effects; no start/page-open connection. Its selected sequence is handshake, one ping (DID 0/CID 01h) and one version read (DID 0/CID 02h, eight-byte response) within the connect budget. Initialization/LED/self-level behavior is physically unknown. |
+| Handshake | S: write ASCII `011i3` to `22bb746f-2bbd-7554-2d6f-726568705327`, then byte `07` to `22bb746f-2bb2-7554-2d6f-726568705327`; install response callback | Connection itself writes to the robot. Track it as an explicit command with effects; no start/page-open connection. Its selected sequence is handshake, one wake, one ping (DID 0/CID 01h) and one version read (DID 0/CID 02h, eight-byte response) within the connect budget. Initialization/LED/self-level behavior is physically unknown. |
 | Wake | S: inherited `wake()` writes `01` to `22bb746f-2bbf-7554-2d6f-726568705327` | Explicit wake only, if supported by the discovered shape. GATT write completion does not prove responsiveness; an allowed subsequent ping can establish response availability. No assumed power switch. |
 | Framing | S: request `FF FF DID CID SEQ DLEN data CHK`; reply `FF FF MRSP SEQ DLEN data CHK`; asynchronous `FF FE ID DLEN-MSB DLEN-LSB data CHK`; checksum complements the byte sum after SOP | Validate framing, positive length, checksum, exact allowlisted payload length and MRSP before treating anything as success. Bound the collector and reject oversized frames. Fragmented/coalesced notifications are normal input. |
 | Sequence/queues | S: 8-bit sequence wraps; BLE writes are chunked at 20 bytes; reference has a 10 s waiter and unbounded queues | One packet transaction at a time behind one Windows process lock; separate configurable finite connection, response and command deadlines. Discard old connection callbacks; close a timed-out exchange before sequence reuse can confuse it. Reference limits are not acceptance guarantees. |
@@ -324,8 +324,8 @@ sensor stream, option write, macros, pairing change or firmware update.
 
 Place the robot in an operator-selected non-slip tray/cradle on the floor away
 from edges and people. Have its charger ready; do not assume a physical switch.
-Connect with only recorded handshake, one ping and one version read per
-connection attempt, and wake if explicitly selected. Record
+The explicit **Connect and wake** control uses the recorded handshake, one wake,
+one ping and one version read per connection attempt. Record
 characteristic shape and valid replies before LED writes. Use the RGB-only form
 first; a definite unsupported-format refusal may justify a separately selected
 four-byte/zero-persistence compatibility trial within the same LED cap. No alternate

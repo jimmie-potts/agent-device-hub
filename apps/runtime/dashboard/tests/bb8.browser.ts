@@ -12,9 +12,10 @@ try {
     await page.goto(`${world.url}/#/module/bb8/robot`); await feed(page, 'connected');
     const controls = page.getByRole('region', {name: 'BB-8 controls'});
     await controls.getByText('Connection: disconnected', {exact: true}).waitFor();
+    await controls.getByText('Connect and wake unlocks and wakes the robot before checking ping and version replies. Its lights or posture may change.', {exact: true}).waitFor();
     assert.deepEqual(world.bb8State().operations, []); assert.deepEqual(sent, [], 'page open is read-only');
     assert.equal(await world.readonlyBb8({}), 403);
-    const connect = controls.getByRole('button', {name: 'Connect', exact: true});
+    const connect = controls.getByRole('button', {name: 'Connect and wake', exact: true});
     await connect.focus(); await connect.press('Enter');
     await controls.getByText('Connection: connected', {exact: true}).waitFor();
     await controls.getByRole('button', {name: 'Set main LED', exact: true}).click();
@@ -50,7 +51,7 @@ try {
     const beforeReader = world.bb8State().operations.length;
     await page.reload(); await feed(page, 'connected');
     await controls.getByText('Read-only access. Control access is required for device commands.', {exact: true}).waitFor();
-    assert.equal(await controls.getByRole('button', {name: 'Connect', exact: true}).isDisabled(), true);
+    assert.equal(await controls.getByRole('button', {name: 'Connect and wake', exact: true}).isDisabled(), true);
     assert.equal(await controls.getByRole('button', {name: 'Disconnect', exact: true}).isDisabled(), true);
     assert.equal(await controls.getByRole('button', {name: 'Set main LED', exact: true}).isDisabled(), true);
     assert.equal(world.bb8State().operations.length, beforeReader, 'rendered read-only context causes no effects');

@@ -47,7 +47,7 @@ export class PacketTransport {
         const gatt = await this.#adapter().open(signal);
         if (signal.aborted) {await gatt.close(); check();}
         this.#gatt = gatt; gatt.onDisconnected?.(() => {if (this.#gatt === gatt) {this.#pending?.reject(refusal('unavailable')); this.#onLost();}}); this.#sequence = 0; this.#lastWriteAtMs = -Infinity;
-        if (![UUID.command, UUID.unlock, UUID.txPower].every(id => gatt.characteristics.get(id)?.includes('write') === true) || gatt.characteristics.get(UUID.response)?.includes('notify') !== true) {
+        if (![UUID.command, UUID.unlock, UUID.txPower, UUID.wake].every(id => gatt.characteristics.get(id)?.includes('write') === true) || gatt.characteristics.get(UUID.response)?.includes('notify') !== true) {
           await this.close(); throw refusal('unsupported-capability');
         }
         await gatt.subscribe(UUID.response, bytes => {
@@ -62,6 +62,7 @@ export class PacketTransport {
         }, signal);
         await this.#write(UUID.unlock, new TextEncoder().encode('011i3'), signal, check, effect);
         await this.#write(UUID.txPower, Uint8Array.of(7), signal, check, effect);
+        await this.#write(UUID.wake, Uint8Array.of(1), signal, check, effect);
         await this.#packet(0, 1, new Uint8Array(), 0, signal, check, effect);
         const bytes = await this.#packet(0, 2, new Uint8Array(), 8, signal, check, effect);
         return {version: {bytes: [...bytes] as Version['bytes'], observedAtMs: this.#now()}};

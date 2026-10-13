@@ -23,8 +23,8 @@ function Controls({context, robot, live, command, now}: {context: FrontendContex
     {(!live || !robot.linkLive) && <p role="status">Connection information is stale. Controls are unavailable.</p>}
     {robot.held !== undefined && <p role="status">A previous operation has an uncertain result. Reconnect or disconnect explicitly before further control.</p>}
     <p>Connection: {link?.connection ?? 'unknown'}</p>
-    <p>Connect writes an unlock handshake, ping and version request. It may change the robot’s lights or posture.</p>
-    <button disabled={!release} onClick={() => {send('bb8-connect');}}>Connect</button>{' '}
+    <p>Connect and wake unlocks and wakes the robot before checking ping and version replies. Its lights or posture may change.</p>
+    <button disabled={!release} onClick={() => {send('bb8-connect');}}>Connect and wake</button>{' '}
     <button disabled={!release} onClick={() => {send('bb8-disconnect');}}>Disconnect</button>{' '}
     <button disabled={!allowed || !connected} onClick={() => {send('bb8-wake');}}>Wake</button>
     <fieldset disabled={!allowed || !connected}><legend>LEDs</legend>
