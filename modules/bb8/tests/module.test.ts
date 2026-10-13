@@ -60,3 +60,62 @@ void test('failed WSL completion storage cannot consume the helper receipt or re
   const copy = await operator.sync(['bb8-robot'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
   assert.equal(copy.status, 'rejected'); db.exec('DROP TRIGGER reject_completion');
 });
+void test('the module requires a reference, rejects a second step and permits Stop through an uncertain movement hold', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-move-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const send = (family: string, extra: object = {}) => {
+    const link = transport.state();
+    return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});
+  };
+  const flush = async () => {for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));};
+  assert.equal((await send('bb8-connect')).status, 'accepted'); await flush();
+  const step = {direction: 'forward', speed: 20, durationMs: 100, forwardReference: 'old-reference'};
+  assert.equal((await send('bb8-step', {step})).status, 'rejected');
+  assert.equal((await send('bb8-aim', {action: 'set'})).status, 'accepted'); await flush();
+  const reference = transport.state().forwardReference; assert.ok(reference !== undefined);
+  transport.next('uncertain');
+  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'accepted');
+  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'rejected');
+  await new Promise(resolve => setTimeout(resolve, 120)); await flush();
+  const db = host.moduleDatabase(); assert.ok(db);
+  const before = JSON.parse(String(db.prepare('SELECT state FROM bb8_state').get()?.state)) as {held?: unknown}; assert.ok(before.held !== undefined);
+  assert.equal((await send('bb8-stop')).status, 'accepted'); await flush();
+  assert.equal(transport.snapshot().operations.filter(o => o.kind === 'step').length, 1);
+  assert.equal(transport.snapshot().operations.at(-1)?.kind, 'stop');
+  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'rejected');
+});
+void test('concurrent ordinary admission cannot consume the step-reserved Stop slot', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-stop-slot-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const revisions: number[] = [];
+  await operator.subscribe('bunny.state.bb8-robot.bb8', message => {revisions.push((message.data as {revision: number}).revision);});
+  const send = (family: string, extra: object = {}) => {
+    const link = transport.state(); return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});
+  };
+  const flush = async () => {for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));};
+  assert.equal((await send('bb8-connect')).status, 'accepted'); await flush();
+  assert.equal((await send('bb8-aim', {action: 'set'})).status, 'accepted'); await flush();
+  const reference = transport.state().forwardReference; assert.ok(reference !== undefined);
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>(resolve => {release = resolve;}); const execute = transport.execute.bind(transport);
+  transport.execute = async (request, parent, signal) => {if (request.operation.kind !== 'stop') await gate; return execute(request, parent, signal);};
+  try {
+    for (let n = 0; n < 7; n++) assert.equal((await send('bb8-wake')).status, 'accepted');
+    const replies = await Promise.all([send('bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: reference}}), send('bb8-power-refresh')]);
+    assert.ok(replies.some(reply => reply.status === 'accepted'));
+    const database = host.moduleDatabase(); assert.ok(database);
+    const durable = JSON.parse(String(database.prepare('SELECT state FROM bb8_state').get()?.state)) as {revision: number};
+    const synced = await operator.sync<{revision: number}>(['bb8-robot'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
+    assert.equal(synced.status, 'synced');
+    if (synced.status !== 'synced') throw Error('no robot copy');
+    try {assert.equal(synced.copy.states()[0]?.data.revision, durable.revision, 'a refused concurrent admission must preserve committed owner state');}
+    finally {await synced.copy.close();}
+    const stop = await send('bb8-stop');
+    assert.equal(stop.status, 'accepted', 'a concurrent stale capacity snapshot must not consume the reserved Stop slot');
+  } finally {release?.(); await flush();}
+  assert.equal(revisions.filter((revision, index) => {const previous = revisions[index - 1]; return previous !== undefined && revision <= previous;}).length, 0, 'each new published state revision must increase');
+});
