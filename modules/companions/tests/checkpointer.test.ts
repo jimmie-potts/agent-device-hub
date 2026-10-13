@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
 import {emptyCheckpoint} from '@langchain/langgraph-checkpoint';
-import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
+import {fullDisk, openModuleDatabaseFile} from '@jimmie-potts/sdk';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 
 void test('SDK SQLite checkpoint survives process termination before projection and explicitly resumes', () => {
@@ -42,6 +42,20 @@ void test('pending writes preserve ordinary first values, replace special writes
     assert.deepEqual((await saver.getTuple(root))?.parentConfig, config);
     const listed = []; for await (const tuple of saver.list(root, {limit: 1, before: {configurable: {checkpoint_id: child.id}}})) listed.push(tuple);
     assert.equal(listed.length, 1); assert.equal(listed[0]?.checkpoint.id, checkpoint.id);
+    assert.equal(database.isTransaction, false);
+  } finally {database.close();}
+});
+
+void test('SQLITE_FULL preserves the capacity code and rolls back every pending write', async () => {
+  const database = openModuleDatabaseFile(':memory:');
+  try {
+    const saver = new SqliteCheckpointSaver(database);
+    const config = await saver.put({configurable: {thread_id: 'full'}}, emptyCheckpoint(), {source: 'input', step: -1, parents: {}}, {});
+    const pages = database.prepare('PRAGMA page_count').get()?.page_count;
+    assert.equal(typeof pages, 'number');
+    database.exec(`PRAGMA max_page_count=${String(pages)}`);
+    await assert.rejects(saver.putWrites(config, [['small', 'not committed'], ['large', 'x'.repeat(8192)]], 'full-task'), error => fullDisk(error));
+    assert.deepEqual((await saver.getTuple(config))?.pendingWrites, []);
     assert.equal(database.isTransaction, false);
   } finally {database.close();}
 });

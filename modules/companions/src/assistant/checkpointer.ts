@@ -97,6 +97,11 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
   private transaction(action: () => void): void {
     this.database.exec('SAVEPOINT assistant_checkpoint');
     try {action(); this.database.exec('RELEASE assistant_checkpoint');}
-    catch (error) {this.database.exec('ROLLBACK TO assistant_checkpoint; RELEASE assistant_checkpoint'); throw error;}
+    catch (error) {
+      // SQLITE_FULL may already have rolled back the transaction and discarded its savepoints.
+      // Preserve the original numeric error for the SDK's capacity classifier even if cleanup fails.
+      try {if (this.database.isTransaction) this.database.exec('ROLLBACK TO assistant_checkpoint; RELEASE assistant_checkpoint');} catch { /* original failure wins */ }
+      throw error;
+    }
   }
 }
