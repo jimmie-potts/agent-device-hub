@@ -24,6 +24,11 @@ if recovery succeeds. Until the forward upgrade is verified, report installation
 qualification pending and retain the owning qualification issue open. This
 initial gate does not reopen an already accepted qualification or repeat adoption.
 
+BB-8 is hibernated. Its feature tests and helper startup are inactive. Retained
+BB-8 state still belongs to its recorded format owners: hibernation does not
+remove the existing paired-owner admission requirement or permit a migration.
+Do not run the dormant BB-8 qualification suites as routine CI.
+
 ## Initial qualification checklist
 
 1. Verify reviewed merged source, successful applicable CI, release provenance

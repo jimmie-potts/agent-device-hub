@@ -2,7 +2,7 @@
 // registration from `modules/*/package.json`, and the shipped list puts the core first, then every shipped module by its
 // `after` constraints, its order and its name. A list that breaks a rule fails to assemble.
 import assert from 'node:assert/strict';
-import {mkdir, readdir, writeFile} from 'node:fs/promises';
+import {mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {ModuleRegistration} from '@jimmie-potts/sdk';
@@ -57,6 +57,8 @@ it('the registry the build writes imports each module folder\'s registration, in
   }
   // A folder without a package is no module.
   await mkdir(join(root, 'modules', 'notes'), {recursive: true});
+  await mkdir(join(root, 'modules', 'dormant'), {recursive: true});
+  await writeFile(join(root, 'modules', 'dormant', 'package.json'), JSON.stringify({name: '@jimmie-potts/dormant', bunny: {hibernated: true}}));
   assert.deepEqual(moduleFolders(root), ['alpha', 'zz-probe']);
   const source = registrySource(root);
   assert.deepEqual([...source.matchAll(/^import \{registration as (m\d+)\} from "([^"]+)";$/gm)].map(match => [match[1], match[2]]),
@@ -67,7 +69,10 @@ it('the registry the build writes imports each module folder\'s registration, in
 it('the build collected every module folder in this checkout', async () => {
   const folders = [];
   for (const entry of await readdir(join(ROOT, 'modules'), {withFileTypes: true})) {
-    if (entry.isDirectory() && (await readdir(join(ROOT, 'modules', entry.name))).includes('package.json')) folders.push(entry.name);
+    if (entry.isDirectory() && (await readdir(join(ROOT, 'modules', entry.name))).includes('package.json')) {
+      const manifest = JSON.parse(await readFile(join(ROOT, 'modules', entry.name, 'package.json'), 'utf8')) as {bunny?: {hibernated?: boolean}};
+      if (manifest.bunny?.hibernated !== true) folders.push(entry.name);
+    }
   }
   assert.deepEqual(moduleFolders(ROOT), folders.sort());
   assert.equal(registrations.length, folders.length);

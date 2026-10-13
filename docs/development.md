@@ -115,26 +115,13 @@ does not create a root landing page or change the separate deployed site. Run it
 `git archive` as well as the worktree; the archive check catches missing tracked
 SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 
-## BB-8 qualification and future product checks
+## BB-8 retained qualification
 
-[The original BB-8 qualification](bb8-controller-qualification.md) records the
-selected Windows Bluetooth route, protocol sources, module/transport boundaries,
-verification map and finite physical briefs. Its documentation-only delivery
-introduces no product behavior or OpenSpec delta. Validate it using the workflow
-commands below and the documentation drift fixtures:
-
-```bash
-python3 -m unittest discover -s docs -p test_docs_drift.py
-python3 docs/check_docs_drift.py --offline
-```
-
-Product implementation must first register the reserved BB-8 module/helper checks
-from that verification map in package scripts and CI, document their exact
-commands in this guide and the owning module/Windows guides, and link its exact
-OpenSpec change from the owning issue. Retain the listed shared SDK/event/runtime,
-both-transport, browser/accessibility and disposable Acceptance checks. A passive
-native binary load proves packaging compatibility only; radio access and physical
-acceptance use their separate explicitly selected briefs.
+[The original qualification](bb8-controller-qualification.md) is retained as
+historical evidence. BB-8 is hibernated indefinitely: no feature development,
+robot test, helper start or default verification is selected. The active
+[hibernation policy](#bb-8-hibernation) supersedes its earlier test-registration
+and physical briefs. Resumption requires a new owner decision.
 
 ## ONN qualification
 
@@ -303,9 +290,9 @@ rename) and maps it to check groups with the small explicit table in
 
 | Group | Changed paths that select it | What it runs |
 | --- | --- | --- |
-| runtime | `apps/runtime/**`, modules, the BB-8 link and the two Roborock consumer tests | The runtime's unit, scenario, dashboard and verification suites, its dashboard's browser checks and the Roborock consumer tests |
+| runtime | `apps/runtime/**`, active modules and the two Roborock consumer tests | The runtime's unit, scenario, dashboard and verification suites, its dashboard's browser checks and the Roborock consumer tests |
 | maintenance | `apps/maintenance/**`, and the runtime, which maintenance imports | Maintenance's suite and archive check |
-| modules | `modules/**` and `apps/bb8-windows/**` | Every module's suite, the BB-8 link and its archive check |
+| modules | active `modules/**` | Active modules' suites |
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
@@ -1571,9 +1558,21 @@ and disposable private state; these checks do not establish installed scheduling
 physical behavior. See [the intake guide](../apps/maintenance/README.md) for its
 trusted supervisor boundary and installed qualification.
 
-## BB-8 source checks
+## BB-8 hibernation
 
-Before product implementation, #604 registers the module/helper workspaces and CI checks. [Module guide](../modules/bb8/README.md) owns `test:bb8`, `test:bb8:built`, `test:bb8:package` and `test:bb8:browser`; [Windows component guide](../apps/bb8-windows/README.md) owns `test:bb8-windows` and `test:bb8-windows:built`. Root build/typecheck compile both under the strict profile. Core CI runs their built tests/package consumer; App verification runs the focused browser/axe journey. These additions require executable checks before acceptance. Retain the qualification's shared compatibility, SDK/module-kit, both-transport catalog, full dashboard browser and independent disposable Acceptance checks. The same checks cover fixed docked gestures: strict dock confirmation, fresh charging before each zero-speed heading, a local Stop despite a missing reply, priority Stop with queued-gesture cancellation, reserved capacity and passive restart. The focused browser journey tests confirmation, all three gestures, Stop while the ordinary reply is pending, uncertain-result recovery and reader authority; the catalog uses `bb8-dock-gestures` over both transports. Public aiming/driving refuses before admission. Source delivery does not activate the helper or establish visible physical behavior.
+BB-8 is hibernated indefinitely by owner choice. Its dedicated module/helper,
+package and browser scripts are removed from normal commands and CI. Runtime
+scenario discovery and shared upgrade/browser cases exclude BB-8 behavior.
+Dedicated test sources remain with a `.hibernated` suffix. The module's package
+marks `bunny.hibernated: true`, so generated runtime and frontend registries omit
+it; root build/typecheck/lint and workspace installation omit the dormant module/helper. Build removes their
+obsolete generated output so an existing checkout cannot rediscover old tests.
+
+Retain schemas, source, private state and production format/admission guards.
+Generic inventory fixtures may name retained source paths without importing or
+executing BB-8. A new owner decision and restored validation are prerequisites
+for resumption. The owning [module](../modules/bb8/README.md) and
+[helper](../apps/bb8-windows/README.md) guides preserve historical protocol details.
 
 ## ONN module checks
 

@@ -99,7 +99,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const health = {schema: 'runtime-health/1.0', status: 'degraded', moduleApiVersion: MODULE_API_VERSION, startedAtMs: 1000, lagCheck: {status: 'active', limitMs: 10000},
     modules: [...['core', ...configured].map((name): Row => ({name, apiVersion: MODULE_API_VERSION, state: 'running', healthy: true, reasonCode: null})),
       {name: 'wispr', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'} as Row].sort((a, b) => a.name.localeCompare(b.name))};
-  for (const name of ['bb8', 'roborock', 'onn']) {
+  for (const name of ['roborock', 'onn']) {
     if (!scenario.startsWith(`${name}-`) && scenario !== `configured-${name}`) continue;
     health.modules.push({name, apiVersion: MODULE_API_VERSION, state: scenario === `${name}-running` ? 'running' : 'refused', healthy: scenario === `${name}-healthy`,
       reasonCode: scenario === `${name}-wrong-reason` ? 'unavailable' : 'not-found'});
@@ -167,28 +167,14 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
       await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
     }
   }
-  if (['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario) || scenario.startsWith('onn-bb8-')) {
-    const retainedOnly = scenario.startsWith('onn-retained-') || scenario === 'onn-bb8-retained';
+  if (['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario)) {
+    const retainedOnly = scenario.startsWith('onn-retained-');
     if (!retainedOnly) configured.push('onn');
     if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
-    if (!scenario.includes('missing-coverage') && scenario !== 'onn-bb8-no-onn-proof') admission.coveredOwners.push('onn');
+    if (!scenario.includes('missing-coverage')) admission.coveredOwners.push('onn');
     const row = health.modules.find(value => value.name === 'onn');
     assert.ok(row);
     if (!retainedOnly) {row.state = 'running'; row.healthy = true; row.reasonCode = null;}
-  }
-  if (scenario.startsWith('selected-bb8') || scenario.startsWith('retained-bb8') || scenario.startsWith('onn-bb8-')) {
-    const retained = scenario.startsWith('retained-bb8') || scenario === 'onn-bb8-retained';
-    if (!retained) configured.push('bb8');
-    state.durableOwners.push('bb8');
-    const refused = scenario.endsWith('-refused');
-    health.modules.push({name: 'bb8', apiVersion: MODULE_API_VERSION,
-      state: retained || refused ? 'refused' : 'running',
-      healthy: !retained && !refused && !scenario.endsWith('-unhealthy'),
-      reasonCode: retained || refused ? 'not-found' : null});
-    if (!scenario.endsWith('-no-proof')) {
-      if (!scenario.endsWith('-no-linux-proof')) admission.coveredOwners.push('bb8');
-      if (!scenario.endsWith('-no-windows-proof')) admission.coveredOwners.push('bb8-windows');
-    }
   }
   if (scenario.endsWith('-onn-absent')) {
     health.modules.push({name: 'onn', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
@@ -279,15 +265,6 @@ void test('composed upgrade preflight binds original observations and the exact 
   const shown = await written(() => inspect('adoption'));
   assert.ok(!JSON.stringify(shown.value).includes('synthetic-secret-never-public'));
   assert.ok(!shown.text.includes('synthetic-secret-never-public'));
-  assert.equal((await inspect('bb8-absent') as Planned).plan.operation, 'adoption');
-  assert.equal((await inspect('selected-bb8') as Planned).plan.operation, 'adoption');
-  assert.equal((await inspect('retained-bb8') as Planned).plan.operation, 'adoption');
-  for (const scenario of ['selected-bb8-onn-absent', 'retained-bb8-onn-absent']) {
-    const mixed = await inspect(scenario) as Planned & {code?: string};
-    assert.equal(mixed.code, undefined, `${scenario} preserves both qualified profiles`);
-    assert.equal(mixed.plan.operation, 'adoption');
-    assert.equal(mixed.counters.http, 2);
-  }
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
   const absentOnn = await inspect('onn-absent') as Planned & {code?: string};
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
@@ -314,13 +291,13 @@ void test('composed upgrade preflight binds original observations and the exact 
     assert.equal(unsafe.code, 'runtime-upgrade-preflight-refused', scenario);
     assert.equal(unsafe.counters.http, 1, 'unsafe health refuses at its first observation');
   }
-  for (const scenario of ['onn-qualified', 'onn-retained-qualified', 'onn-bb8-qualified', 'onn-bb8-retained']) {
+  for (const scenario of ['onn-qualified', 'onn-retained-qualified']) {
     const qualified = await inspect(scenario) as Planned & {code?: string};
     assert.equal(qualified.code, undefined, scenario);
     assert.equal(qualified.plan.operation, 'adoption');
     assert.equal(qualified.counters.http, 2);
   }
-  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state', 'onn-bb8-no-onn-proof', 'onn-bb8-no-windows-proof']) {
+  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
     const missing = await inspect(scenario);
     assert.equal(missing.code, 'runtime-upgrade-preflight-refused', scenario);
     assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
@@ -346,7 +323,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(locked.counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-bb8','bb8-running','bb8-healthy','bb8-wrong-reason','bb8-wrong-status','selected-bb8-no-linux-proof','selected-bb8-no-windows-proof','selected-bb8-unhealthy','selected-bb8-refused','retained-bb8-no-proof','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       const result = await inspect(scenario);
       assert.equal(result.plan, undefined, `${scenario} returned a plan`);
@@ -400,24 +377,11 @@ async function runningCheck(root: string, scenario: string,
     coveredOwners: ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'sdk-outbox']};
   const health = {status: 'ok', moduleApiVersion: MODULE_API_VERSION, lagCheck: {status: 'active', limitMs: 10000},
     modules: [{name: 'core', state: 'running', healthy: true, reasonCode: null as string | null}]};
-  if (scenario.startsWith('selected-bb8') || scenario.startsWith('retained-bb8') || scenario.startsWith('onn-bb8-')) {
-    const retained = scenario.startsWith('retained-bb8') || scenario === 'onn-bb8-retained', refused = scenario.endsWith('-refused');
-    state.durableOwners.push('bb8');
-    if (!retained) state.configured.push('bb8');
-    const healthy = !retained && !refused && !scenario.endsWith('-unhealthy');
-    health.modules.push({name: 'bb8', state: retained || refused ? 'refused' : 'running', healthy,
-      reasonCode: retained || refused ? 'not-found' : null});
-    if (!healthy) health.status = 'degraded';
-    if (!scenario.endsWith('-no-proof')) {
-      if (!scenario.endsWith('-no-linux-proof')) admission.coveredOwners.push('bb8');
-      if (!scenario.endsWith('-no-windows-proof')) admission.coveredOwners.push('bb8-windows');
-    }
-  }
-  const qualifiedOnn = ['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario) || scenario.startsWith('onn-bb8-');
+  const qualifiedOnn = ['onn-qualified', 'onn-retained-qualified', 'onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state'].includes(scenario);
   if (qualifiedOnn) {
-    if (!scenario.startsWith('onn-retained-') && scenario !== 'onn-bb8-retained') state.configured.push('onn');
+    if (!scenario.startsWith('onn-retained-')) state.configured.push('onn');
     if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
-    if (!scenario.includes('missing-coverage') && scenario !== 'onn-bb8-no-onn-proof') admission.coveredOwners.push('onn');
+    if (!scenario.includes('missing-coverage')) admission.coveredOwners.push('onn');
   }
   if (scenario.startsWith('selected-roborock-') || scenario.startsWith('retained-roborock-')) {
     const retained = scenario.startsWith('retained-roborock-');
@@ -497,7 +461,7 @@ async function runningCheck(root: string, scenario: string,
       healthy: scenario === 'onn-healthy', reasonCode: scenario === 'onn-wrong-reason' ? 'unavailable' : 'not-found'});
   }
   if (qualifiedOnn) {
-    const retainedOnly = scenario.startsWith('onn-retained-') || scenario === 'onn-bb8-retained';
+    const retainedOnly = scenario.startsWith('onn-retained-');
     const row = health.modules.find(value => value.name === 'onn');
     assert.ok(row);
     if (!retainedOnly) {row.state = 'running'; row.healthy = true; row.reasonCode = null; health.status = 'ok';}
@@ -557,13 +521,13 @@ void test('post-start observation binds the selected release and refuses drift w
   type Passed = {result: {phase: string; verified: boolean; selection: {target: string}}; counters: {http: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   const passed = await inspect('good') as Passed;
   assert.equal(passed.result.phase, 'candidate'); assert.equal(passed.result.verified, true); assert.equal(passed.counters.http, 2);
-  for (const scenario of ['onn-qualified', 'onn-retained-qualified', 'onn-bb8-qualified', 'onn-bb8-retained']) {
+  for (const scenario of ['onn-qualified', 'onn-retained-qualified']) {
     const qualified = await inspect(scenario) as Passed & {code?: string};
     assert.equal(qualified.code, undefined, scenario);
     assert.equal(qualified.result.verified, true);
     assert.equal(qualified.counters.http, 2);
   }
-  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state', 'onn-bb8-no-onn-proof', 'onn-bb8-no-windows-proof']) {
+  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
     const missing = await inspect(scenario);
     assert.equal(missing.code, 'runtime-upgrade-running-refused', scenario);
     assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
@@ -620,32 +584,7 @@ void test('companion post-start health and coverage are enforced in every select
   }
 });
 
-void test('BB8 post-start checks require both stores through candidate, recovery and re-upgrade', async t => {
-  const root = await mkdtemp(join(tmpdir(), 'bb8-running-check-'));
-  t.after(() => rm(root, {recursive: true, force: true}));
-  for (const phase of ['candidate', 'recovery', 'reupgrade']) {
-    for (const scenario of ['selected-bb8', 'retained-bb8', 'selected-bb8-onn-absent', 'retained-bb8-onn-absent']) {
-      await t.test(`${phase} ${scenario} preserves qualified coverage`, async () => {
-        const observed = await bounded(scenario, runningCheck(root, scenario, phase));
-        assert.equal(observed.code, undefined);
-        const result = observed.result as {schema: string; phase: string; verified: boolean; selection: {target: string}};
-        assert.equal(result.schema, 'runtime-running-check/1.0');
-        assert.equal(result.phase, phase);
-        assert.equal(result.verified, true);
-        assert.equal(result.selection.target, join(root, phase === 'recovery' ? 'previous' : 'target'));
-        assert.equal(observed.counters.http, 2);
-      });
-    }
-    for (const scenario of ['selected-bb8-no-linux-proof', 'selected-bb8-no-windows-proof', 'retained-bb8-no-proof',
-      'selected-bb8-unhealthy', 'selected-bb8-refused']) {
-      await t.test(`${phase} ${scenario} refuses`, async () => {
-        const observed = await bounded(scenario, runningCheck(root, scenario, phase));
-        assert.equal(observed.result, undefined);
-        assert.equal(observed.code, 'runtime-upgrade-running-refused');
-      });
-    }
-  }
-});
+
 
 void test('running-check CLI refuses an unknown phase before reading installed state', async () => {
   await assert.rejects(run(process.execPath, ['apps/runtime/bin/runtime-upgrade-check.mjs', 'verify-running',

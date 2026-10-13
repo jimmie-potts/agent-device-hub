@@ -17,6 +17,10 @@ their code, releases and stores remain for manual return. Legacy Hub/controller
 packages and 1.x contracts stay available until separately authorized retirement.
 Do not use the old Hub installer to update the new runtime.
 
+BB-8 is hibernated indefinitely after the owner's battery blocker. Its code and
+private state are retained, with no active development, robot tests or default
+CI feature checks. See the [hibernation guide](modules/bb8/README.md).
+
 The current [Tidbyt](modules/tidbyt/README.md), [LIFX](modules/lifx/README.md),
 [Pixoo](modules/pixoo/README.md), [Nanoleaf](modules/nanoleaf/README.md),
 [playback](modules/playback/README.md) and [Codex Desktop](modules/codex-desktop/README.md)

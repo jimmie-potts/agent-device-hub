@@ -191,6 +191,7 @@ function tsconfigs(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, {withFileTypes: true}).flatMap(entry => {
     const path = join(dir, entry.name);
+    if (entry.isDirectory() && existsSync(join(path, 'package.json')) && JSON.parse(readFileSync(join(path, 'package.json'), 'utf8')).bunny?.hibernated === true) return [];
     if (entry.isDirectory()) return ['node_modules', 'dist'].includes(entry.name) || staged.includes(relative(root, path)) ? [] : tsconfigs(path);
     return /^tsconfig.*\.json$/.test(entry.name) ? [path] : [];
   });

@@ -28,7 +28,7 @@ test('a narrow module change selects its suites and known consumers, and omits u
   assert.deepEqual(result.omitted, ['chompi', 'shared']);
   assert.deepEqual(result.jobs, { firmware: false, 'app-verify': true });
   assert.deepEqual(result.reasons.find(item => item.path === 'modules/pixoo/src/module.ts').groups, ['modules', 'runtime', 'maintenance']);
-  assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, ['runtime', 'maintenance', 'modules']);
+  assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
 
 test('a runtime dashboard change selects the runtime and its maintenance consumer only', () => {
@@ -323,8 +323,7 @@ const STEP_GROUPS = {
     // The Roborock consumer tests import the built runtime registry.
     'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
     'npm run test:roborock:consumer:built': 'runtime', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
-    'npm run test:onn:native': 'modules', 'npm run test:bb8:built': 'modules', 'npm run test:bb8-windows:built': 'modules',
-    'npm run test:bb8:package:built': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
+    'npm run test:onn:native': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
   },
   'app-verify': {
     'npm run test:app-verify:built': 'shared', 'npm run test:app-verify:package:built': 'shared', 'npm run test:verify-host': 'shared',
@@ -332,7 +331,7 @@ const STEP_GROUPS = {
     'npm run test:runtime:verify:built': 'runtime', 'npm run test:dashboard:smoke': 'shared',
     // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
     'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime',
-    'npm run test:bb8:browser': 'runtime', 'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:observability:browser': 'shared',
+    'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:observability:browser': 'shared',
   },
 };
 
@@ -348,7 +347,7 @@ test('a narrow change runs the suites its paths can break', () => {
   const runs = files => selectedCommands(checks, pr(files)).flatMap(job => job.commands);
   const expectations = [
     [['apps/runtime/src/main.ts'], ['npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:runtime-dashboard:built',
-      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:bb8:browser', 'npm run test:roborock:browser', 'npm run test:onn:browser',
+      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:onn:browser',
       'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:maintenance:built'],
     ['npm run test:pixoo:built', 'npm run test:chompi-bridge:built', 'npm run test:sdk:built', 'npm run test:firmware']],
     [['modules/pixoo/src/module.ts'], ['npm run test:pixoo:built', 'npm run test:nanoleaf:built', 'npm run test:onn:native', 'npm run test:runtime:built',
