@@ -133,7 +133,7 @@ export class PacketTransport {
     const stopCancel = this.#scheduler.after(BOUNDS.responseMs + BOUNDS.spacingMs, () => {stop.abort();});
     let stopped = false;
     try {completionCheck(); this.#fault = undefined; this.#notifications = 0; await this.#roll(0, this.#heading, false, stop.signal, completionCheck, () => {}); stopped = true;}
-    catch {failure ??= refusal('unavailable');}
+    catch (error) {transmissionAcknowledged ||= error instanceof ProtocolRefusal; failure ??= refusal('unavailable');}
     finally {stopCancel();}
     if (failure !== undefined) throw new StepFailure(stopped, 'uncertain-result', transmissionAcknowledged || stopped);
     return {};

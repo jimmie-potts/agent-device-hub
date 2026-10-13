@@ -49,7 +49,7 @@ void test('a later charging refusal retains acknowledged gesture transmission wi
 });
 
 void test('gesture transmission survives an unconfirmed later Stop without claiming a usable link', async () => {
-  for (const loss of ['later-both', 'first-stop', 'first-both'] as const) {
+  for (const loss of ['later-both', 'first-stop', 'first-both', 'stop-refusal'] as const) {
     const database = new DatabaseSync(':memory:'), bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE), module = bus.connect(MODULE_SOURCE), gatt = new FakeGatt();
     gatt.power[1] = 1;
     const owner = new HelperOwner({id: 'bb8', configurationRevision: 0, database, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => Promise.resolve(gatt)})});
@@ -65,6 +65,7 @@ void test('gesture transmission survives an unconfirmed later Stop without claim
         if (bytes[2] === 2 && bytes[3] === 48) {
           if (bytes[9] === 1) headings++;
           if (loss === 'later-both' && headings === 2 || loss === 'first-both' || loss === 'first-stop' && bytes[9] === 0) gatt.reply = false;
+          if (loss === 'stop-refusal') {gatt.reply = bytes[9] === 0; gatt.mrsp = 7;}
         }
         await original(uuid, bytes, signal);
       };
