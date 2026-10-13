@@ -39,7 +39,7 @@ try {
     const consumer = join(scratch, 'consumer'); await mkdir(consumer);
     assert.notEqual(spawnSync('git', ['-C', consumer, 'rev-parse', '--is-inside-work-tree'], {encoding: 'utf8'}).stdout.trim(), 'true');
     await writeFile(join(consumer, 'package.json'), JSON.stringify({name: 'isolated-bb8-consumer', private: true, type: 'module'}));
-    npm(['install', '--offline', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund', ...archives], consumer);
+    npm(['install', '--prefer-offline', '--ignore-scripts', '--omit=optional', '--no-audit', '--no-fund', ...archives], consumer);
     run(process.execPath, ['--input-type=module', '-e', `import assert from 'node:assert/strict'; import {registration} from '@jimmie-potts/bb8'; import {bb8Validator, BOUNDS} from '@jimmie-potts/bb8/link'; import {HelperOwner, NativeAdapter, parseWindowsConfig} from '@jimmie-potts/bb8-windows'; assert.equal(registration.name,'bb8'); assert.equal(BOUNDS.maxPending,8); assert.ok(bb8Validator()); assert.equal(typeof HelperOwner,'function'); assert.equal(typeof NativeAdapter,'function'); assert.equal(typeof parseWindowsConfig,'function');`], consumer);
     const frontend = join(consumer, 'node_modules/@jimmie-potts/bb8/src/frontend/index.tsx');
     const bundled = await build({entryPoints: [frontend], bundle: true, write: false, platform: 'browser', format: 'esm', jsx: 'automatic', external: ['react', 'react/jsx-runtime'], metafile: true});
