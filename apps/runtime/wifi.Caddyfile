@@ -1,0 +1,25 @@
+{
+ admin off
+ persist_config off
+ skip_install_trust
+ auto_https disable_redirects
+ storage file_system {
+  root "{$BUNNY_WIFI_DATA}"
+ }
+ servers {
+  protocols h1 h2
+ }
+}
+
+{$BUNNY_WIFI_ORIGIN} {
+ bind {$BUNNY_WIFI_BIND}
+ tls internal
+ basic_auth {
+  owner {$BUNNY_WIFI_PASSWORD_HASH}
+ }
+ reverse_proxy {$BUNNY_WIFI_UPSTREAM} {
+  header_up -Authorization
+  header_up Bunny-Wifi-Proxy {$BUNNY_WIFI_PROXY_TOKEN}
+  flush_interval -1
+ }
+}

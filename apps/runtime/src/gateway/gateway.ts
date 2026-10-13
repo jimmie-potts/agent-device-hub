@@ -16,12 +16,12 @@ import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {MAX_RESPONSE_BYTES as WISPR_MAX_BYTES, type WisprModule} from '@jimmie-potts/wispr';
 import {
   ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
-  type Cancel, type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
+  type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS, OPERATOR_ACTIONS, type ActionAnswer, type CoreActions, type CoreOperatorActions} from '../core/tracker.js';
 import type {EdgeCredential, Scope} from '../credentials.js';
-import {REGISTRY_REASONS, diagnosticWriter} from '../diagnostics.js';
+import {diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
@@ -32,6 +32,8 @@ import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, run
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
+import {wifiProxyOrigin} from './wifi-proxy.js';
+import {GatewayRefusals, methodOf} from './refusals.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
 export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
@@ -41,8 +43,6 @@ const COMMAND_TIMEOUT_MS = 5000;
 /** At most this many kept copies at once, one per family and owner. */
 const MAX_COPIES = 32;
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
-/** A refusal that repeats with the same route, code and caller is logged once, then once a minute with its count. */
-const REFUSAL_WINDOW_MS = 60_000;
 /** The largest JSON body a gateway route reads. */
 const MAX_BODY_BYTES = 16_384;
 /** The largest settings document a module may show, and the largest content it may serve. */
@@ -122,14 +122,11 @@ export type GatewayOptions = {
   trace?: SpanRecorder;
 };
 
-/** One repeated refusal: its record, the repeats since, and its window. */
-type Repeats = {fields: Record<string, string | number>; level: 'info' | 'warn' | 'error'; count: number; cancel: Cancel};
-
 export class Gateway {
   readonly edge: RemoteEdge;
   readonly access: Access;
   readonly #options: GatewayOptions;
-  readonly #log: RuntimeLogger;
+  readonly #refusals: GatewayRefusals;
   /** The principal each SDK request was admitted as, which the edge's `authenticate` reads. */
   readonly #admitted = new WeakMap<IncomingMessage, Principal>();
   /** Only validated dashboard handoffs receive a context; a later refusal keeps that request's trace. */
@@ -138,7 +135,6 @@ export class Gateway {
   readonly #wisprDelivery = new WeakMap<IncomingMessage, () => void>();
   readonly #participants = new Map<string, Participant>();
   readonly #copies = new Map<string, Promise<SyncedCopy<Record<string, unknown>>>>();
-  readonly #repeats = new Map<string, Repeats>();
   #own: Participant | undefined;
   #mcp: McpHandler | undefined;
   #closeLauncher: (() => Promise<void>) | undefined;
@@ -148,7 +144,7 @@ export class Gateway {
 
   constructor(options: GatewayOptions) {
     this.#options = options;
-    this.#log = options.log;
+    this.#refusals = new GatewayRefusals(options.log, options.scheduler);
     this.access = new Access(options.credentials, {
       clock: options.clock, scheduler: options.scheduler,
       // A browser session that ends without its logout, evicted or expired, takes its streams with it.
@@ -191,9 +187,11 @@ export class Gateway {
 
   /**
    * The request's own origin: `http://` and the host it named, either of the listener's loopback names, so a bookmark on
-   * `localhost` signs in as one on `127.0.0.1` does (Hub #276). The runtime refuses any other host before this.
+   * `localhost` signs in as one on `127.0.0.1` does (Hub #276), or the explicitly authenticated Wi-Fi HTTPS origin.
    */
   #originOf(request: IncomingMessage): string {
+    const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy);
+    if (wifi !== undefined) return wifi;
     const host = (request.headers.host ?? '').toLowerCase();
     return this.#hosts.includes(host) ? `http://${host}` : this.#origin;
   }
@@ -206,11 +204,7 @@ export class Gateway {
   /** Stops serving: the launcher, MCP, the edge's streams, the copies and every browser session. */
   async close(): Promise<void> {
     this.#closed = true;
-    for (const repeats of this.#repeats.values()) {
-      repeats.cancel();
-      this.#summarize(repeats);
-    }
-    this.#repeats.clear();
+    this.#refusals.close();
     await this.#closeLauncher?.().catch(() => {});
     await this.#mcp?.close();
     await this.edge.close();
@@ -262,7 +256,7 @@ export class Gateway {
       const body = error instanceof Refused ? error.body : errorBody('internal', {detail: 'the gateway failed'});
       const {code} = body.error;
       const retired = code === 'not-found' && route === undefined ? retiredRoute(method, path) : undefined;
-      this.#refused({
+      this.#refusals.record({
         'bunny.route': 'other', 'http.request.method': methodOf(method), 'bunny.code': code,
         ...(route !== undefined ? {'http.route': route} : retired !== undefined ? {'http.route': retired.path} : {}),
         ...(principal === undefined ? {} : {'bunny.participant': principal.source}),
@@ -339,7 +333,7 @@ export class Gateway {
     const admission = this.access.admit(request, this.#originOf(request));
     if ('refusal' in admission) {
       const {code, detail} = admission.refusal;
-      this.#refused({'bunny.route': route, 'bunny.code': code}, levelOf(code));
+      this.#refusals.record({'bunny.route': route, 'bunny.code': code}, levelOf(code));
       this.#write(response, json(statusOf(code), errorBody(code, {detail})));
       return;
     }
@@ -728,13 +722,13 @@ export class Gateway {
           requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
         });
         const code = 'error' in answer ? answer.error.code : 'internal';
-        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST',
+        this.#refusals.record({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST',
           'bunny.participant': principal.source, 'bunny.code': code}, levelOf(code), span.context);
       }
       try {await this.#call(name, () => prepared.finish(answer));}
       catch {
         // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
-        this.#refused({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error', span.context);
+        this.#refusals.record({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error', span.context);
       }
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     } finally {span.end();}
@@ -941,7 +935,9 @@ export class Gateway {
   async #browser(request: IncomingMessage, action: string): Promise<Answer> {
     const known = ['launch', 'session', 'logout'].includes(action);
     if (request.method !== 'POST' || !known) throw refuse('not-found', 'no such route');
-    if (action === 'session' && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
+    const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy) !== undefined;
+    if (action === 'launch' && wifi) throw refuse('forbidden', 'the launcher serves only local browsers');
+    if (action === 'session' && !wifi && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
     // Only this listener's own page may sign a browser in or out, on either loopback name.
     const origin = this.#originOf(request);
     if (contextOf(request, origin) === 'cross' || request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1') {
@@ -956,7 +952,7 @@ export class Gateway {
     const replace = (): Answer => {
       const previous = this.access.endSession(request);
       if (previous !== undefined) this.edge.disconnectPrincipal(previous);
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession())});
+      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession()) + (wifi ? '; Secure' : '')});
     };
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
@@ -972,7 +968,7 @@ export class Gateway {
     return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
       const ended = this.access.endSession(request);
       if (ended !== undefined) this.edge.disconnectPrincipal(ended);
-      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie});
+      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie + (wifi ? '; Secure' : '')});
     }, 'principal' in admission && admission.principal.kind === 'browser');
   }
 
@@ -999,45 +995,6 @@ export class Gateway {
     if (response.headersSent || response.destroyed) return;
     response.writeHead(answer.status, answer.headers).end(answer.body);
   }
-
-  /**
-   * Records a refusal by the repetition rule (ADR 0012, "Repetition"): the first of a run at once, then its repeats as
-   * one summary a minute with their count, until a quiet minute. A record never holds what the caller sent.
-   */
-  #refused(fields: Record<string, string | number>, level: 'debug' | 'info' | 'warn' | 'error', trace?: TraceContext): void {
-    const severity = level === 'debug' ? 'info' : level;
-    const key = JSON.stringify(fields);
-    const open = this.#repeats.get(key);
-    if (open !== undefined) {
-      open.count += 1;
-      return;
-    }
-    const code = fields['bunny.code'] as ErrorCode;
-    const reason = REGISTRY_REASONS[code];
-    const record = {...fields, ...(reason === undefined ? {} : {'bunny.reason': reason})};
-    this.#log[severity]('runtime.edge.refused', record, trace);
-    if (this.#closed) return;
-    const repeats: Repeats = {fields: record, level: severity, count: 0, cancel: () => {}};
-    this.#repeats.set(key, repeats);
-    this.#window(key, repeats);
-  }
-
-  #window(key: string, repeats: Repeats): void {
-    repeats.cancel = this.#options.scheduler.after(REFUSAL_WINDOW_MS, () => {
-      if (repeats.count === 0) {
-        this.#repeats.delete(key);
-        return;
-      }
-      this.#summarize(repeats);
-      this.#window(key, repeats);
-    });
-  }
-
-  #summarize(repeats: Repeats): void {
-    const {count} = repeats;
-    repeats.count = 0;
-    if (count > 0) this.#log[repeats.level]('runtime.edge.refused', {...repeats.fields, 'bunny.attempt_count': count});
-  }
 }
 
 /** The routes the gateway serves, as the templates its records name; undefined for a path it does not serve. */
@@ -1059,9 +1016,6 @@ function templateOf(path: string): string | undefined {
   if (/^\/modules\/[^/]+\/[^/]+$/.test(path)) return '/modules/{module}/{page}';
   return undefined;
 }
-
-/** A method as the records name it: one of the common ones, or `_OTHER`. */
-const methodOf = (method: string): string => ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'].includes(method) ? method : '_OTHER';
 
 /** An approval recovery's input: the session, its turn, the record's revision the operator read and an optional request ID. */
 type RecoveryInput = {session: string; turnId: string; expectedRevision: number; requestId?: string};
