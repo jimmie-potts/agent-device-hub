@@ -26,47 +26,42 @@ try {
     await controls.getByRole('spinbutton', {name: 'Tail brightness'}).fill('0');
     await controls.getByRole('button', {name: 'Set tail LED'}).click();
     await controls.getByRole('button', {name: 'Refresh power'}).click();
-    await controls.getByText(/^Power: OK · 4.20 V · reported at /).waitFor();
+    await controls.getByText(/^Power: Charging · 4.20 V · reported at /).waitFor();
     assert.equal(world.bb8State().operations.length, 4);
     await page.reload(); await feed(page, 'connected');
-    await controls.getByText(/^Power: OK · 4.20 V · reported at /).waitFor();
+    await controls.getByText(/^Power: Charging · 4.20 V · reported at /).waitFor();
     assert.equal(world.bb8State().operations.length, 4, 'reload does not connect or replay a command');
-    const stop = controls.getByRole('button', {name: 'Stop', exact: true});
-    const forward = controls.getByRole('button', {name: 'Forward step', exact: true});
-    assert.equal(await forward.isDisabled(), true, 'a connected robot still needs an explicit forward reference');
-    await controls.getByRole('button', {name: 'Set forward', exact: true}).click();
-    await controls.getByText('Forward reference: set for this connection', {exact: true}).waitFor();
-    let releaseStep: (() => void) | undefined;
-    const holdStepReply = new Promise<void>(resolve => {releaseStep = resolve;});
-    await page.route('**/api/v2/commands/bb8-step', async route => {const response = await route.fetch(); await holdStepReply; await route.fulfill({response});});
+    const stop = controls.getByRole('button', {name: 'Stop gesture', exact: true});
+    const gesture = controls.getByRole('button', {name: 'Look left', exact: true});
+    const docked = controls.getByRole('checkbox', {name: 'BB-8 is on its powered dock', exact: true});
+    for (const name of ['Set forward', 'Clear forward', 'Forward step', 'Right step', 'Back step', 'Left step']) assert.equal(await controls.getByRole('button', {name, exact: true}).count(), 0);
+    assert.equal(await gesture.isDisabled(), true, 'connection alone does not confirm the powered dock');
+    await docked.check();
+    let releaseGesture: (() => void) | undefined;
+    const holdReply = new Promise<void>(resolve => {releaseGesture = resolve;});
+    await page.route('**/api/v2/commands/bb8-gesture', async route => {const response = await route.fetch(); await holdReply; await route.fulfill({response});});
     try {
-    await forward.click();
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === 'Forward step' && b.matches(':disabled')));
-    assert.equal(await stop.isEnabled(), true, 'Stop remains independently tracked while the ordinary request is pending');
-    await stop.click();
-    await page.waitForFunction(() => document.querySelector('[aria-label="BB-8 controls"]')?.textContent?.includes('Stop: Completed: succeeded'));
-    } finally {releaseStep?.(); await page.unrouteAll({behavior: 'wait'});}
-    await controls.getByText('Forward reference: not set', {exact: true}).waitFor();
+      await gesture.click();
+      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === 'Look left' && b.matches(':disabled')));
+      assert.equal(await stop.isEnabled(), true, 'Stop remains independently tracked while a gesture request is pending');
+      await stop.click();
+      await page.waitForFunction(() => document.querySelector('[aria-label="BB-8 controls"]')?.textContent?.includes('Stop: Completed: succeeded'));
+    } finally {releaseGesture?.(); await page.unrouteAll({behavior: 'wait'});}
     await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
-    for (const direction of ['Forward', 'Right', 'Back', 'Left']) {
-      if (direction === 'Forward') {await controls.getByRole('button', {name: 'Set forward', exact: true}).click(); await controls.getByText('Forward reference: set for this connection', {exact: true}).waitFor();}
-      await controls.getByRole('button', {name: `${direction} step`, exact: true}).click();
-      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === 'Forward step' && !b.matches(':disabled')));
+    assert.equal(await docked.isChecked(), false, 'reconnect resets the dock assertion');
+    await docked.check();
+    for (const name of ['Look left', 'Look right', 'Head shake']) {
+      await controls.getByRole('button', {name, exact: true}).click();
+      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === 'Look left' && !b.matches(':disabled')));
     }
-    await controls.getByRole('button', {name: 'Clear forward', exact: true}).click();
-    await controls.getByText('Forward reference: not set', {exact: true}).waitFor();
-    assert.equal(await forward.isDisabled(), true);
-    const moves = world.bb8State().operations.filter(o => o.kind === 'step');
-    assert.equal(moves.length, 5);
-    await controls.getByRole('button', {name: 'Set forward', exact: true}).click();
-    await controls.getByText('Forward reference: set for this connection', {exact: true}).waitFor();
-    world.bb8Next('uncertain'); await forward.click();
+    assert.equal(world.bb8State().operations.filter(o => ['step', 'aim'].includes(o.kind)).length, 0);
+    world.bb8Next('uncertain'); await gesture.click();
     await controls.getByText('Last result: uncertain · evidence none', {exact: true}).waitFor();
     world.bb8Next('uncertain'); await stop.click();
     await controls.getByText('Connection: unavailable', {exact: true}).waitFor();
-    assert.equal(await connect.isEnabled(), true, 'an uncertain independently tracked Stop must permit explicit recovery');
+    assert.equal(await connect.isEnabled(), true, 'uncertain Stop permits explicit recovery');
     assert.equal(await controls.getByRole('button', {name: 'Disconnect', exact: true}).isEnabled(), true);
-    assert.equal(await forward.isDisabled(), true); assert.equal(await stop.isDisabled(), true);
+    assert.equal(await gesture.isDisabled(), true); assert.equal(await stop.isDisabled(), true);
     await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
     world.bb8Next('failed'); await controls.getByRole('button', {name: 'Set main LED'}).click();
     await controls.getByText('Last result: failed · evidence none', {exact: true}).waitFor();
@@ -77,11 +72,11 @@ try {
     await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
     assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isEnabled(), true);
     await page.evaluate(() => {const now = Date.now(); Date.now = () => now + 65_000;});
-    await controls.getByText(/^Power: OK · 4.20 V · stale at /).waitFor();
+    await controls.getByText(/^Power: Charging · 4.20 V · stale at /).waitFor();
     world.bb8Online(false);
     await controls.getByText('Connection: unavailable', {exact: true}).waitFor();
     assert.equal(await controls.getByRole('button', {name: 'Refresh power'}).isDisabled(), true);
-    assert.equal(await forward.isDisabled(), true); assert.equal(await stop.isDisabled(), true);
+    assert.equal(await gesture.isDisabled(), true); assert.equal(await stop.isDisabled(), true);
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     world.bb8Online(true);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
@@ -91,7 +86,7 @@ try {
     assert.equal(await controls.getByRole('button', {name: 'Connect and wake', exact: true}).isDisabled(), true);
     assert.equal(await controls.getByRole('button', {name: 'Disconnect', exact: true}).isDisabled(), true);
     assert.equal(await controls.getByRole('button', {name: 'Set main LED', exact: true}).isDisabled(), true);
-    assert.equal(await stop.isDisabled(), true); assert.equal(await forward.isDisabled(), true);
+    assert.equal(await stop.isDisabled(), true); assert.equal(await gesture.isDisabled(), true);
     assert.equal(world.bb8State().operations.length, beforeReader, 'rendered read-only context causes no effects');
     assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'bb8', transport: 'authenticated simulated runtime', inspectionWrites: 0, keyboard: true, axe: 'passed', readonly: 'UI authority interception plus real reader HTTP refusal'})}\n`);

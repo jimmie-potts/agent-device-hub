@@ -67,7 +67,7 @@ void test('durable connect receipt, consumed projection and duplicate ID never r
 void test('restart reconciles admitted and effect-start rows without opening an adapter', async () => {
   const db = new DatabaseSync(':memory:'), store = new Receipts(db), now = Date.now();
   for (const [id, effect] of [['operation-1', false], ['operation-2', true]] as const) {
-    store.admit({requestId: id, operationId: id, parentRequestId: 'parent-1', expectedConfigurationRevision: 0, expectedHelperEpoch: 'old-helper', expectedConnectionGeneration: 2, operationExpiresAtMs: now + 5000, operation: {kind: 'wake'}}, '00-11111111111111111111111111111111-1111111111111111-01');
+    store.admit({requestId: id, operationId: id, parentRequestId: 'parent-1', expectedConfigurationRevision: 0, expectedHelperEpoch: 'old-helper', expectedConnectionGeneration: 2, operationExpiresAtMs: now + 5000, operation: {kind: 'gesture', gesture: 'shake-head', docked: true}}, '00-11111111111111111111111111111111-1111111111111111-01');
     if (effect) store.effect(id, 2);
   }
   const bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE); let opens = 0;

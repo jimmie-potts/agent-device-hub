@@ -39,7 +39,7 @@ it('authenticated gateway routes BB-8 LED to its Windows writer while the helper
   };
   assert.equal(await send('bb8-connect', {}, 'invalid'), 401);
   assert.equal(await send('bb8-connect', {}, readerToken), 403);
-  for (const family of ['bb8-aim', 'bb8-step', 'bb8-stop']) {assert.equal(await send(family, {}, 'invalid'), 401); assert.equal(await send(family, {}, readerToken), 403);}
+  for (const family of ['bb8-aim', 'bb8-step', 'bb8-stop', 'bb8-gesture']) {assert.equal(await send(family, {}, 'invalid'), 401); assert.equal(await send(family, {}, readerToken), 403);}
   assert.equal(await send('bb8-link-execute'), 403);
   assert.notEqual(await send('bb8-connect', {}, operatorToken, 'other'), 200);
   assert.equal(opens, 0);

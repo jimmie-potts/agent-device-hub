@@ -60,33 +60,27 @@ void test('failed WSL completion storage cannot consume the helper receipt or re
   const copy = await operator.sync(['bb8-robot'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
   assert.equal(copy.status, 'rejected'); db.exec('DROP TRIGGER reject_completion');
 });
-void test('the module requires a reference, rejects a second step and permits Stop through an uncertain movement hold', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'bb8-move-')); t.after(() => rm(directory, {recursive: true, force: true}));
+void test('the module requires dock confirmation, rejects a second gesture and permits Stop through an uncertain hold', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-gesture-')); t.after(() => rm(directory, {recursive: true, force: true}));
   const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
   const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
   t.after(async () => {await host.stop(); await operator.close();}); await host.start();
-  const send = (family: string, extra: object = {}) => {
-    const link = transport.state();
-    return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});
-  };
+  const send = (family: string, extra: object = {}) => {const link = transport.state(); return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});};
   const flush = async () => {for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));};
   assert.equal((await send('bb8-connect')).status, 'accepted'); await flush();
-  const step = {direction: 'forward', speed: 20, durationMs: 100, forwardReference: 'old-reference'};
-  assert.equal((await send('bb8-step', {step})).status, 'rejected');
-  assert.equal((await send('bb8-aim', {action: 'set'})).status, 'accepted'); await flush();
-  const reference = transport.state().forwardReference; assert.ok(reference !== undefined);
+  assert.equal((await send('bb8-gesture', {gesture: 'look-left'})).status, 'rejected');
   transport.next('uncertain');
-  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'accepted');
-  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'rejected');
-  await new Promise(resolve => setTimeout(resolve, 120)); await flush();
+  assert.equal((await send('bb8-gesture', {gesture: 'look-left', docked: true})).status, 'accepted');
+  assert.equal((await send('bb8-gesture', {gesture: 'look-right', docked: true})).status, 'rejected');
+  await new Promise(resolve => setTimeout(resolve, 350)); await flush();
   const db = host.moduleDatabase(); assert.ok(db);
   const before = JSON.parse(String(db.prepare('SELECT state FROM bb8_state').get()?.state)) as {held?: unknown}; assert.ok(before.held !== undefined);
   assert.equal((await send('bb8-stop')).status, 'accepted'); await flush();
-  assert.equal(transport.snapshot().operations.filter(o => o.kind === 'step').length, 1);
+  assert.equal(transport.snapshot().operations.filter(o => o.kind === 'gesture').length, 1);
   assert.equal(transport.snapshot().operations.at(-1)?.kind, 'stop');
-  assert.equal((await send('bb8-step', {step: {...step, forwardReference: reference}})).status, 'rejected');
+  assert.equal((await send('bb8-gesture', {gesture: 'look-left', docked: true})).status, 'rejected');
 });
-void test('concurrent ordinary admission cannot consume the step-reserved Stop slot', async t => {
+void test('concurrent dock admission cannot consume the gesture-reserved Stop slot', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'bb8-stop-slot-')); t.after(() => rm(directory, {recursive: true, force: true}));
   const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
   const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
@@ -98,14 +92,12 @@ void test('concurrent ordinary admission cannot consume the step-reserved Stop s
   };
   const flush = async () => {for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));};
   assert.equal((await send('bb8-connect')).status, 'accepted'); await flush();
-  assert.equal((await send('bb8-aim', {action: 'set'})).status, 'accepted'); await flush();
-  const reference = transport.state().forwardReference; assert.ok(reference !== undefined);
   let release: (() => void) | undefined;
   const gate = new Promise<void>(resolve => {release = resolve;}); const execute = transport.execute.bind(transport);
   transport.execute = async (request, parent, signal) => {if (request.operation.kind !== 'stop') await gate; return execute(request, parent, signal);};
   try {
     for (let n = 0; n < 7; n++) assert.equal((await send('bb8-wake')).status, 'accepted');
-    const replies = await Promise.all([send('bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: reference}}), send('bb8-power-refresh')]);
+    const replies = await Promise.all([send('bb8-gesture', {gesture: 'look-left', docked: true}), send('bb8-power-refresh')]);
     assert.ok(replies.some(reply => reply.status === 'accepted'));
     const database = host.moduleDatabase(); assert.ok(database);
     const durable = JSON.parse(String(database.prepare('SELECT state FROM bb8_state').get()?.state)) as {revision: number};
@@ -118,4 +110,24 @@ void test('concurrent ordinary admission cannot consume the step-reserved Stop s
     assert.equal(stop.status, 'accepted', 'a concurrent stale capacity snapshot must not consume the reserved Stop slot');
   } finally {release?.(); await flush();}
   assert.equal(revisions.filter((revision, index) => {const previous = revisions[index - 1]; return previous !== undefined && revision <= previous;}).length, 0, 'each new published state revision must increase');
+});
+
+void test('hibernated aiming and floor steps refuse before responsibility or helper dispatch', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bb8-docked-')); t.after(() => rm(directory, {recursive: true, force: true}));
+  const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
+  const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
+  t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const send = (family: string, extra: object = {}) => {const link = transport.state(); return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});};
+  assert.equal((await send('bb8-connect')).status, 'accepted');
+  for (let n = 0; n < 40; n++) await new Promise(resolve => setImmediate(resolve));
+  const database = host.moduleDatabase(); assert.ok(database);
+  const prior = database.prepare('SELECT COUNT(*) AS n FROM bb8_responsibility').get()?.n;
+  const commands = transport.snapshot().operations.length;
+  for (const [family, data] of [['bb8-aim', {action: 'set'}], ['bb8-aim', {action: 'clear'}], ['bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: 'old-reference'}}]] as const) {
+    const reply = await send(family, data);
+    assert.equal(reply.status, 'rejected'); if (reply.status !== 'rejected') throw Error('movement admitted');
+    assert.equal(reply.error.error.code, 'unsupported-capability');
+  }
+  assert.equal(database.prepare('SELECT COUNT(*) AS n FROM bb8_responsibility').get()?.n, prior);
+  assert.equal(transport.snapshot().operations.length, commands);
 });

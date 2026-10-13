@@ -27,6 +27,7 @@ export class HelperOwner {
   #queue: {data: LinkRequest; command: Command<Record<string, unknown>>}[] = [];
   #running: Promise<void> | undefined;
   #stepReserved = false;
+  readonly #cancelledGestures = new Set<string>();
   #active: AbortController | undefined;
   constructor(options: HelperOptions) {
     this.#options = options; this.#store = new Receipts(options.database); this.#store.bind(options.id);
@@ -85,20 +86,22 @@ export class HelperOwner {
     if (data.operationExpiresAtMs <= now + errorMs) return refuse('expired');
     if (data.operationExpiresAtMs > now + errorMs + (data.operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs)) return refuse('invalid-request');
     if (!this.#guards(data)) return refuse('revision-conflict');
+    if (data.operation.kind === 'gesture' && this.#stepReserved) return refuse('invalid-state');
     if (data.operation.kind === 'step' && (this.#stepReserved || this.#state.forwardReference === undefined || data.operation.forwardReference !== this.#state.forwardReference)) return refuse('invalid-state');
     let reserved = false;
     try {
       if (this.#store.row(data.operationId) !== undefined) return refuse('duplicate-conflict');
-      const reserveStop = this.#stepReserved || data.operation.kind === 'step';
+      const reserveStop = this.#stepReserved || data.operation.kind === 'step' || data.operation.kind === 'gesture';
       const stop = data.operation.kind === 'stop';
       if (this.#store.count() >= BOUNDS.maxResults - (reserveStop && !stop ? 1 : 0) || this.#pending >= BOUNDS.maxPending + (reserveStop && !stop ? 0 : 1)) return refuse('capacity');
       this.#pending += 1; reserved = true;
-      if (data.operation.kind === 'step') this.#stepReserved = true;
+      if (data.operation.kind === 'step' || data.operation.kind === 'gesture') this.#stepReserved = true;
       // Admission commits before acknowledgment or any possible native effect.
       await this.#outbox.transaction(() => {this.#store.admit(data, command.traceparent);});
-    } catch (error) {if (reserved) {this.#pending -= 1; if (data.operation.kind === 'step') this.#stepReserved = false;} return refuse(storageCode(error));}
+    } catch (error) {if (reserved) {this.#pending -= 1; if (data.operation.kind === 'step' || data.operation.kind === 'gesture') this.#stepReserved = false;} return refuse(storageCode(error));}
     this.#record('info', 'command.admitted', {'bunny.request.id': data.operationId, 'bunny.outcome': 'accepted'}, command);
     if (data.operation.kind === 'stop') {
+      for (const item of this.#queue) if (item.data.operation.kind === 'gesture') this.#cancelledGestures.add(item.data.operationId);
       this.#clearReference(); this.#transport.interruptStep(); this.#queue.unshift({data, command});
     } else this.#queue.push({data, command});
     this.#running ??= Promise.resolve().then(() => this.#pump());
@@ -111,7 +114,7 @@ export class HelperOwner {
       while ((item = this.#queue.shift()) !== undefined) {
         try {await this.#execute(item.data, item.command);}
         catch (error) {this.#blocked = true; this.#options.onError?.(error);}
-        finally {this.#pending -= 1; if (item.data.operation.kind === 'step') this.#stepReserved = false;}
+        finally {this.#pending -= 1; if (item.data.operation.kind === 'step' || item.data.operation.kind === 'gesture') this.#stepReserved = false;}
       }
     } finally {this.#running = undefined;}
   }
@@ -144,22 +147,24 @@ export class HelperOwner {
     let observation: TransportObservation = {}, failure: unknown;
     let cancel: (() => void) | undefined;
     const expired = new Promise<never>((_resolve, reject) => {
-      cancel = this.#options.scheduler.after(Math.max(0, Math.min(request.operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs, request.operationExpiresAtMs - this.#options.now() - (this.#options.clockErrorMs() ?? BOUNDS.connectMs))), () => {if (request.operation.kind === 'step') this.#transport.interruptStep(); else controller.abort(); reject(new SdkError(refuse('expired')));});
+      cancel = this.#options.scheduler.after(Math.max(0, Math.min(request.operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs, request.operationExpiresAtMs - this.#options.now() - (this.#options.clockErrorMs() ?? BOUNDS.connectMs))), () => {if (request.operation.kind === 'step' || request.operation.kind === 'gesture') this.#transport.interruptStep(); else controller.abort(); reject(new SdkError(refuse('expired')));});
     });
     void expired.catch(() => {});
     try {
       check();
-      if (request.operation.kind === 'aim' || request.operation.kind === 'stop' || request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || request.operation.kind === 'wake') this.#clearReference();
+      if (this.#cancelledGestures.delete(request.operationId)) throw new SdkError(refuse('cancelled'));
+      if (request.operation.kind === 'gesture' || request.operation.kind === 'aim' || request.operation.kind === 'stop' || request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || request.operation.kind === 'wake') this.#clearReference();
       const work = this.#transport.execute(request.operation, controller.signal, check, started, completionCheck);
-      observation = request.operation.kind === 'step' ? await work : await Promise.race([work, expired]);
+      observation = request.operation.kind === 'step' || request.operation.kind === 'gesture' ? await work : await Promise.race([work, expired]);
     } catch (error) {failure = error; if (!(error instanceof StepFailure && error.stopAcknowledged)) controller.abort(); if (effect && !(error instanceof StepFailure && error.stopAcknowledged)) await this.#transport.close();}
     finally {cancel?.(); this.#active = undefined; span.end(failure === undefined || (failure instanceof SdkError && failure.body.error.code !== 'internal') ? 'unset' : 'error');}
     const code = failure instanceof SdkError ? failure.body.error.code : failure === undefined ? undefined : storageCode(failure);
     // A known protocol refusal proves failure; an unanswered or interrupted possible effect remains uncertain.
     const definitiveRefusal = failure instanceof ProtocolRefusal;
-    const result: LinkResult['result'] = code === undefined ? 'succeeded' : definitiveRefusal ? 'failed' : effect && !['unsupported-capability', 'invalid-request'].includes(code) ? 'uncertain' : 'failed';
+    const cancelled = failure instanceof StepFailure && code === 'cancelled';
+    const result: LinkResult['result'] = code === undefined ? 'succeeded' : definitiveRefusal || cancelled ? 'failed' : effect && !['unsupported-capability', 'invalid-request'].includes(code) ? 'uncertain' : 'failed';
     const keepLink = failure instanceof StepFailure && failure.stopAcknowledged;
-    if (failure !== undefined && request.operation.kind === 'step') this.#clearReference();
+    if (failure !== undefined && (request.operation.kind === 'step' || request.operation.kind === 'gesture')) this.#clearReference();
     if (failure === undefined && request.operation.kind === 'aim' && request.operation.action === 'set' && !this.#queue.some(item => item.data.operation.kind === 'stop')) this.#state.forwardReference = randomUUID();
     const before = {...this.#state};
     try {
@@ -167,7 +172,7 @@ export class HelperOwner {
         const revision = this.#store.nextRevision();
         if (effect && (request.operation.kind === 'connect' || request.operation.kind === 'disconnect' || (failure !== undefined && !keepLink))) this.#state.connectionGeneration = this.#store.nextGeneration();
         this.#state = {...this.#state, revision, changedAtMs: this.#options.now(), connection: failure !== undefined && !keepLink ? effect ? 'unavailable' : this.#state.connection : request.operation.kind === 'connect' ? 'connected' : request.operation.kind === 'disconnect' ? 'disconnected' : this.#state.connection};
-        const receipt: LinkResult = {id: request.operationId, revision, robotId: this.#state.id, parentRequestId: request.parentRequestId, requestId: request.operationId, helperEpoch: request.expectedHelperEpoch, connectionGeneration: this.#state.connectionGeneration, completedAtMs: this.#options.now(), result, evidence: code === undefined ? observation.power !== undefined || observation.version !== undefined ? 'observed' : 'transmitted' : definitiveRefusal ? 'transmitted' : 'none',
+        const receipt: LinkResult = {id: request.operationId, revision, robotId: this.#state.id, parentRequestId: request.parentRequestId, requestId: request.operationId, helperEpoch: request.expectedHelperEpoch, connectionGeneration: this.#state.connectionGeneration, completedAtMs: this.#options.now(), result, evidence: code === undefined ? observation.power !== undefined || observation.version !== undefined ? 'observed' : 'transmitted' : definitiveRefusal || (cancelled && failure instanceof StepFailure && failure.stopAcknowledged) ? 'transmitted' : 'none',
           ...(code === undefined ? observation : {error: refuse(result === 'uncertain' ? 'uncertain-result' : code).error})};
         this.#store.complete(receipt);
         add(`bunny.state.bb8-link-result.${receipt.id}`, {kind: 'state', type: 'org.bunny.bb8-link-result.updated', subject: receipt.id, dataschema: schemaOf('bb8-link-result'), data: receipt}, {parent: command});

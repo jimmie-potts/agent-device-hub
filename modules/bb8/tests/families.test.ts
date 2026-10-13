@@ -24,3 +24,10 @@ void test('closed step bounds and reference guards admit cardinal steps but refu
   assert.equal(bb8Validator().validate({...message(guards), type: commandType('bb8-stop'), dataschema: schemaOf('bb8-stop')}).ok, true);
   assert.equal(bb8Validator().validate({...message({...guards, bytes: [1]}), type: commandType('bb8-stop'), dataschema: schemaOf('bb8-stop')}).ok, false);
 });
+
+void test('dock gestures accept only named presets and explicit dock confirmation', () => {
+  const {led: _led, ...guards} = data;
+  const msg = (extra: object) => ({...message({...guards, ...extra}), type: commandType('bb8-gesture'), dataschema: schemaOf('bb8-gesture')});
+  for (const gesture of ['look-left', 'look-right', 'shake-head']) assert.equal(bb8Validator().validate(msg({gesture, docked: true})).ok, true);
+  for (const extra of [{gesture: 'look-left'}, {gesture: 'look-left', docked: false}, {gesture: 'drive', docked: true}, {gesture: 'look-left', docked: true, speed: 1}, {gesture: 'look-left', docked: true, heading: 45}, {gesture: 'look-left', docked: true, durationMs: 5000}, {gesture: 'look-left', docked: true, animationId: 1}]) assert.equal(bb8Validator().validate(msg(extra)).ok, false);
+});
