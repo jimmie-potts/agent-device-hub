@@ -48,6 +48,12 @@ Battery curves contain only observed samples from a compatible, uniquely
 associated episode. Later overlapping or contradictory run windows retire
 public sample eligibility while preserving the original observations and
 private links. Clock alignment remains unqualified until a real-run comparison.
+Returning remains active for polling and private observation retention, but does
+not advance the cleaning window used for association: a completed cleaning
+record can end before the return to dock finishes. Only samples inside the
+compatible cleaning window become eligible. Earlier unresolved episodes and
+missed map captures remain preserved without rewriting their boundaries or
+inventing retrospective captures.
 Lifetime counters remain distinct from the partial retained run inventory.
 An observed dock boundary separates later activity into a new episode without
 setting an end or completion. Delayed completed records revisit these separate

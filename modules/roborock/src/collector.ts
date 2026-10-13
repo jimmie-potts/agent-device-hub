@@ -650,7 +650,10 @@ export class Collector {
             control.activeId = episode.id;
         }
         else if (episode !== undefined && episode.endAtMs === null
-            && episode.terminal === undefined && episode.generation === control.generation && (positive || paused)) {
+            && episode.terminal === undefined && episode.generation === control.generation
+            && (currentActivity === 'cleaning' || paused)) {
+            // Returning can outlast the cleaning record. Retain its originals
+            // without extending the cleaning window used for association.
             episode = {
                 ...episode, lastObservedAtMs: entry.at,
                 lastObservationId: entry.observation.id,

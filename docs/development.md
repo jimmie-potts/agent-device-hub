@@ -1633,6 +1633,10 @@ Use Node 24 and `npm ci`, then build before type-aware lint. Run
 `npm run test:roborock:built`, `npm run test:roborock:consumer:built` and
 `npm run test:roborock:browser`. The module suite includes the SDK module test
 kit; the transport retains its separate transport and consumer suites.
+Collector regressions cover a completed cleaning record followed by returning
+and docking: eligible cleaning samples and an unverified map capture remain
+available, while returning-only observations cannot attach an old run or fetch
+its map. Returning originals remain private even when outside the run window.
 
 Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus
 `npm run check:workflow` and `npm run test:workflow`. The Roborock catalog

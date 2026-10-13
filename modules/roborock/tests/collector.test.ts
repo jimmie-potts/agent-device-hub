@@ -381,6 +381,46 @@ void test('publication refusal bounds queued states and recovers latest projecti
         revision: number;
     }).revision, committedRevision);
 });
+void test('cleaning ends before returning finishes without losing its samples or candidate map', async (context) => {
+    const w = await world(context);
+    w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    await w.clock.advance(15000);
+    w.transport.status = { state: 6, battery: 85, in_cleaning: 0, in_returning: 1 };
+    await w.clock.advance(15000);
+    assert.equal(w.transport.calls.includes('map'), false, 'returning alone is not completed-record evidence');
+    w.transport.status = { state: 8, battery: 84, in_cleaning: 0, in_returning: 0 };
+    w.transport.summary = { records: [BEGIN] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 20, duration: 20, complete: 1 });
+    await w.clock.advance(15000);
+    assert.deepEqual(w.store.listSamples(BEGIN).samples.map(sample => sample.observedAtMs), [START + 1, START + 15001]);
+    assert.ok(w.store.counts().samples >= 4, 'returning and dock originals remain privately retained');
+    const returning = w.database.prepare('SELECT run_id,data FROM rr_samples WHERE observed_at_ms=?').get(START + 30001);
+    assert.ok(returning !== undefined);
+    assert.equal(returning.run_id, null);
+    assert.equal((JSON.parse(String(returning.data)) as { batteryPercent: number }).batteryPercent, 85);
+    const captures = w.store.listMapCaptures(BEGIN);
+    assert.equal(captures.length, 1);
+    assert.equal(captures[0]?.capture.association, 'unverified');
+    assert.equal(w.store.getRun(BEGIN)?.battery.clock, 'unqualified');
+    assert.equal(w.transport.maximumActive, 1);
+});
+void test('returning-only observations after an old run cannot attach samples or capture its map', async (context) => {
+    const w = await world(context);
+    w.clock.jump(40000);
+    w.transport.status = { state: 6, battery: 85, in_cleaning: 0, in_returning: 1 };
+    w.transport.summary = { records: [BEGIN] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 20, duration: 20, complete: 1 });
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    w.transport.status = { state: 8, battery: 84, in_cleaning: 0, in_returning: 0 };
+    await w.clock.advance(15000);
+    assert.ok(w.store.counts().samples > 0, 'later originals remain private evidence');
+    assert.deepEqual(w.store.listSamples(BEGIN).samples, []);
+    assert.equal(w.store.listMapCaptures(BEGIN).length, 0);
+    assert.equal(w.transport.calls.includes('map'), false);
+});
 void test('supported record end commits before candidate map and keeps association unverified', async (context) => {
     const w = await world(context);
     w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
