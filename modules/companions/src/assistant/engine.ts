@@ -62,11 +62,11 @@ export class AssistantEngine {
     const task = this.store.unfinished();
     if (task !== undefined) {
       try {
-        if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#change(task.id, current => {current.status = 'paused'; current.code = 'unavailable';});
+        if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
         else await this.#reconcile(task.id, true);
       } catch {
         this.#recoveryUnavailable = true;
-        try {await this.#change(task.id, current => {current.status = 'paused'; current.code = 'unavailable';});} catch { /* A failed write cannot claim a saved transition. */ }
+        try {await this.#recoverUnavailable(task.id);} catch { /* A failed write cannot claim a saved transition. */ }
       }
     }
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
@@ -197,9 +197,22 @@ export class AssistantEngine {
     catch {return errorBody('unavailable');}
   }
   #config(taskId: string) {return {configurable: {thread_id: taskId}, durability: 'sync' as const, recursionLimit: 12, callbacks: []};}
+  #finishRecoveredRun(task: Task): void {
+    const run = task.runId === null ? undefined : this.store.run(task.runId);
+    if (run !== undefined && run.endedAtMs === null) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
+  }
+  #recoverUnavailable(taskId: string): Promise<void> {
+    const traceparent = this.#task(taskId).traceparent;
+    return this.#change(taskId, task => {
+      const unresolved = this.store.calls(taskId).some(call => call.status !== 'succeeded');
+      task.status = unresolved ? 'uncertain' : 'paused'; task.code = unresolved ? 'uncertain-result' : 'unavailable';
+      this.#finishRecoveredRun(task);
+    }, traceparent === null ? undefined : {traceparent});
+  }
   async #reconcile(taskId: string, startup: boolean, active?: Active): Promise<void> {
     const snapshot = await this.#graph.getState(this.#config(taskId));
     const values = snapshot.values as Partial<GraphState>;
+    const traceparent = this.#task(taskId).traceparent;
     const publication = this.#change(taskId, task => {
       if (terminal(task.status)) return;
       const unresolved = this.store.calls(taskId).some(call => call.status !== 'succeeded');
@@ -215,11 +228,8 @@ export class AssistantEngine {
         task.status = task.question.answer === null ? 'waiting' : 'paused'; task.code = null;
       } else {task.status = 'paused'; task.code = null;}
       if (active !== undefined) this.#settle(task, active);
-      if (startup && task.runId !== null) {
-        const run = this.store.run(task.runId);
-        if (run !== undefined && run.endedAtMs === null) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
-      }
-    });
+      if (startup) this.#finishRecoveredRun(task);
+    }, active?.span.context ?? (traceparent === null ? undefined : {traceparent}));
     if (active !== undefined && this.#task(taskId).status !== 'running' && this.#active === active) this.#active = undefined;
     await publication;
   }
@@ -279,7 +289,7 @@ export class AssistantEngine {
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
       if (saved.status !== 'succeeded' || saved.result === null) fail('uncertain-result');
-      await this.#change(taskId, task => {this.#fence(active); task.nextOrdinal = Math.max(task.nextOrdinal, ordinal + 1);});
+      await this.#change(taskId, task => {this.#fence(active); task.nextOrdinal = Math.max(task.nextOrdinal, ordinal + 1);}, active.span.context);
       this.#fence(active); return saved.result;
     }
     const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs, units = kind === 'model' ? LIMITS.callUnits : 0;
@@ -345,7 +355,8 @@ export class AssistantEngine {
       const code = call !== undefined && call.status !== 'succeeded' ? 'uncertain-result' : task.code;
       const outcome = event === 'assistant.run.started' ? 'accepted' : call !== undefined ? call.status === 'succeeded' ? 'succeeded' : 'uncertain'
         : ['waiting', 'paused', 'running'].includes(task.status) ? 'partial' : task.status;
-      this.context.log[code === null ? 'info' : 'warn'](event, {'bunny.assistant.task_id': active.taskId, 'bunny.assistant.run_id': active.runId,
+      const level = code === 'internal' ? 'error' : code === null || code === 'cancelled' ? 'info' : 'warn';
+      this.context.log[level](event, {'bunny.assistant.task_id': active.taskId, 'bunny.assistant.run_id': active.runId,
         'bunny.outcome': outcome, ...(effectId === undefined ? {} : {'bunny.assistant.effect_id': effectId}),
         ...(code === null ? {} : {'bunny.code': code})}, active.span.context);
     } catch { /* Diagnostics do not decide task outcomes. */ }

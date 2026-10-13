@@ -313,3 +313,62 @@ void test('private history pages remain bounded and always advance through escap
   } while (pages < 50);
   assert.equal(count, 41);
 });
+
+for (const condition of ['unavailable', 'incompatible', 'recovery-failure'] as const) {
+  void test(`recovery guards preserve uncertain receipts when ${condition}`, async context => {
+    let available = true, calls = 0;
+    const w = await world(context, {available: () => available, model: () => {calls += 1; return new Promise(() => {});}});
+    await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic uncertain recovery'); await until(() => calls === 1);
+    const id = w.module().inspectAssistant()?.tasks[0]?.taskId; assert.ok(id !== undefined);
+    if (condition === 'unavailable') available = false;
+    if (condition === 'incompatible') {const task = w.store().task(id); assert.ok(task); task.graphVersion = 'future-graph'; w.store().save(task);}
+    if (condition === 'recovery-failure') w.host().moduleDatabase()?.exec("UPDATE assistant_checkpoints SET checkpoint_type='unsupported-synthetic-format'");
+    await w.restart();
+    const state = w.module().inspectAssistant(), task = state?.tasks[0]; assert.ok(task);
+    assert.equal(task.status, 'uncertain'); assert.equal(task.code, 'uncertain-result'); assert.equal(task.usageUnits, null);
+    assert.equal(calls, 1); assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected');
+    const saved = w.store().task(id); assert.ok(saved !== undefined && saved.runId !== null);
+    const run = w.store().run(saved.runId); assert.ok(run); assert.notEqual(run.endedAtMs, null);
+    if (condition !== 'incompatible') assert.equal(state?.available, false);
+  });
+}
+
+void test('waiting, recovery and completion state retain the run trace continuity', async context => {
+  const messages: Message<object>[] = [];
+  const w = await world(context, {}, context => ({...context, sdk: {...context.sdk, publishMessage: (key, message) => {
+    if (key === 'bunny.state.assistant-state.assistant') messages.push(message);
+    return context.sdk.publishMessage(key, message);
+  }}}));
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic trace continuity');
+  await until(() => w.module().inspectAssistant()?.tasks[0]?.status === 'waiting');
+  const originalRun = w.spans.named('bunny.assistant.run')[0]; assert.ok(originalRun);
+  assert.equal(messages.at(-1)?.traceparent.split('-')[1], originalRun.traceId);
+  await w.restart(); assert.equal(messages.at(-1)?.traceparent.split('-')[1], originalRun.traceId);
+  await input(w.core, w.module(), 'Synthetic answer', true); await until(() => w.module().inspectAssistant()?.tasks[0]?.status === 'succeeded');
+  const finalRun = w.spans.named('bunny.assistant.run').at(-1); assert.ok(finalRun);
+  assert.equal(messages.at(-1)?.traceparent.split('-')[1], finalRun.traceId);
+});
+
+void test('internal projection faults use error severity without exception content', async context => {
+  const w = await world(context);
+  w.host().moduleDatabase()?.exec("CREATE TRIGGER fail_projection BEFORE UPDATE ON assistant_tasks WHEN NEW.status='waiting' BEGIN SELECT RAISE(ABORT, 'PRIVATE-SYNTHETIC-FAULT'); END;");
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic projection fault');
+  await until(() => w.host().logs.some(record => record.event === 'assistant.run.settled'));
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'failed');
+  const log = w.host().logs.find(record => record.event === 'assistant.run.settled'); assert.ok(log);
+  assert.equal(log.fields['bunny.code'], 'internal'); assert.equal(log.level, 'error');
+  assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC-FAULT'), false);
+});
+
+void test('expected cancellation before call admission uses info severity', async context => {
+  const stopped = new AbortController();
+  const w = await world(context, {}, context => ({...context, signal: stopped.signal, log: {...context.log, info: (event, fields, trace) => {
+    context.log.info(event, fields, trace); if (event === 'assistant.run.started') stopped.abort();
+  }}}));
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic cancelled activation');
+  await until(() => w.host().logs.some(record => record.event === 'assistant.run.settled'));
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'paused');
+  const log = w.host().logs.find(record => record.event === 'assistant.run.settled'); assert.ok(log);
+  assert.equal(log.fields['bunny.code'], 'cancelled'); assert.equal(log.level, 'info');
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.modelCalls, 0);
+});
