@@ -117,5 +117,5 @@ void test('concurrent ordinary admission cannot consume the step-reserved Stop s
     const stop = await send('bb8-stop');
     assert.equal(stop.status, 'accepted', 'a concurrent stale capacity snapshot must not consume the reserved Stop slot');
   } finally {release?.(); await flush();}
-  assert.equal(revisions.filter((revision, index) => index > 0 && revision <= revisions[index - 1]!).length, 0, 'each new published state revision must increase');
+  assert.equal(revisions.filter((revision, index) => {const previous = revisions[index - 1]; return previous !== undefined && revision <= previous;}).length, 0, 'each new published state revision must increase');
 });
