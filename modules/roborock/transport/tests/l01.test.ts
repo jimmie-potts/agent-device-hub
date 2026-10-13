@@ -31,3 +31,24 @@ void test('L01 authenticates both connection nonces, key and encrypted payload',
   assert.throws(() => l01.decodeL01(frame.subarray(0, 20), vector.localKey, vector.clientNonce, vector.ackNonce), refused);
   assert.throws(() => codec.decodeV1(frame, vector.localKey), (error: unknown) => error instanceof SdkError && error.body.error.code === 'unsupported-capability');
 });
+
+void test('publish and control versions reject non-ASCII high-bit aliases exactly', () => {
+  const v1 = JSON.parse(readFileSync(new URL('../../tests/fixtures/v1.json', import.meta.url), 'utf8')) as {frameHex: string; localKey: string; connackHex: string};
+  function mutated(input: Buffer, checksum: boolean): Buffer {
+    const frame = Buffer.from(input);
+    for (let index = 0; index < 3; index++) frame[index] = (frame[index] ?? 0) | 0x80;
+    if (checksum) {
+      let crc = 0xffffffff;
+      for (const byte of frame.subarray(0, -4)) {crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) === 1 ? 0xedb88320 : 0);}
+      frame.writeUInt32BE((crc ^ 0xffffffff) >>> 0, frame.length - 4);
+    }
+    return frame;
+  }
+  const unsupported = (error: unknown): boolean => error instanceof SdkError && error.body.error.code === 'unsupported-capability';
+  assert.throws(() => l01.decodeL01(mutated(Buffer.from(vector.frameHex, 'hex'), true), vector.localKey, vector.clientNonce, vector.ackNonce), unsupported);
+  assert.throws(() => codec.decodeV1(mutated(Buffer.from(v1.frameHex, 'hex'), true), v1.localKey), unsupported);
+  const control = Buffer.from(v1.connackHex, 'hex');
+  assert.throws(() => codec.decodeControl(mutated(control, false)), unsupported);
+  const l01Control = Buffer.from(control); l01Control.write('L01');
+  assert.throws(() => codec.decodeControl(mutated(l01Control, false), 'L01'), unsupported);
+});

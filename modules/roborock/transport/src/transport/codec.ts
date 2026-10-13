@@ -35,7 +35,7 @@ function crc32(input: Uint8Array): number {
   return (result ^ 0xffffffff) >>> 0;
 }
 function version(frame: Buffer, expected: LocalProtocol = '1.0'): void {
-  if (frame.subarray(0, 3).toString('ascii') !== expected) unsupported();
+  if (!frame.subarray(0, 3).equals(Buffer.from(expected, 'ascii'))) unsupported();
 }
 function protocol(value: number): void {
   if (![4, 101, 102, 301].includes(value)) unsupported();
