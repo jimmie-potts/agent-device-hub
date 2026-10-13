@@ -103,6 +103,38 @@ it('removing Wi-Fi configuration refuses that entry and leaves local access inta
   assert.equal((await call(`${runtime.url}/api/v2/build`, {headers: {authorization: 'Bearer reader_SYNTHETIC1111'}})).status, 200);
 });
 
+it('Wi-Fi listener refusals are bounded WARN records without caller data or trace context', async context => {
+  const {runtime, logs, clock} = await start(context);
+  const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+  const refused = () => logs.filter(record => record.event_name === 'runtime.edge.refused');
+  const deny = async () => {
+    const answer = await call(`${runtime.url}/api/v2/browser/session?private=SYNTHETIC_QUERY`, {
+      method: 'POST', headers: {...HEADERS, 'bunny-wifi-proxy': 'wrong_SYNTHETIC_PROOF', traceparent}, body: '{}',
+    });
+    assert.equal(answer.status, 403);
+  };
+  await deny();
+  assert.equal(refused().length, 1);
+  assert.equal(refused()[0]?.severity_text, 'WARN');
+  assert.equal(refused()[0]?.attributes['bunny.code'], 'forbidden');
+  assert.equal(refused()[0]?.attributes['bunny.reason'], 'unauthorized');
+  assert.equal(refused()[0]?.attributes['http.request.method'], 'POST');
+  for (let repeat = 0; repeat < 3; repeat += 1) await deny();
+  assert.equal(refused().length, 1);
+  clock.advance(60_000);
+  assert.equal(refused().length, 2);
+  assert.equal(refused()[1]?.attributes['bunny.attempt_count'], 3);
+  clock.advance(60_000);
+  await deny();
+  assert.equal(refused().length, 3, 'a quiet minute ends the previous window');
+  assert.equal((await call(`${runtime.url}/api/runtime/v1/health`, {headers: HEADERS})).status, 403);
+  assert.equal(refused().length, 4, 'health refusal has its own bounded method key');
+  for (const record of refused()) assert.equal(record.trace_id, undefined);
+  for (const value of [PROOF, 'wrong_SYNTHETIC_PROOF', 'SYNTHETIC_QUERY', ORIGIN, traceparent]) {
+    assert.equal(JSON.stringify(logs).includes(value), false);
+  }
+});
+
 it('Wi-Fi logout and eight-hour expiry end existing SDK streams', async context => {
   const {runtime, clock} = await start(context);
   for (const end of ['logout', 'expire'] as const) {
