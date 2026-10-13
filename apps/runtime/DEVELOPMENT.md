@@ -107,22 +107,11 @@ inspection has a 4,096-file receipt bound and never clears unresolved evidence.
 Existing runtime CI discovers it; stopped-writer backup, complete recovery
 coverage and final preflight remain separate.
 
-BB-8 upgrade coverage also runs
-`node --test apps/runtime/dist/tests/bb8-upgrade-qualification.test.js` and the
-existing admission/source/preflight suites. They cover configured and retained
-ownership without reading live database bytes, the complete Linux/Windows
-coverage pair, unhealthy or incomplete admission, and changed Windows helper
-inputs. Existing `test:runtime:built` CI discovers all of these tests.
-
-`test:bb8:built` and `test:bb8-windows:built` include their
-`upgrade-recovery.test.js` checks: separate baseline, candidate, recovery and
-re-upgrade processes use the production SQLite opener and stores, retaining
-latest state, responsibility and outcomes without executing an operation.
-Each child must report one executed test with zero failures; inherited test
-runner context is removed only from that child. Run the helper suite with native
-Windows Node 24 from an isolated Windows-local dependency closure as well.
-WSL never opens its receipt database. Source tests establish no installed,
-radio, camera or physical acceptance.
+BB-8 is hibernated. Its module/helper, browser, package, scenario and shared
+BB-8 upgrade behavior tests are inactive. Dedicated sources are retained with a
+`.hibernated` suffix. Shared upgrade suites keep other owner cases and generic
+retained-format metadata; production readers and admission refusals are unchanged.
+See [development](../../docs/development.md#bb-8-hibernation) before any resumption.
 
 `node --test apps/runtime/dist/tests/upgrade-listener.test.js` binds the selected
 loopback TCP listener to the already observed runtime PID's socket descriptors.

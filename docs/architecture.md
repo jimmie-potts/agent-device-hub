@@ -68,6 +68,11 @@ The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
 September 19, 2026 design snapshot. Its labels and open decisions reflect that
 baseline, not the current implementation.
 
+BB-8 is retained but hibernated. Its package declares `bunny.hibernated: true`;
+the build omits its runtime and browser registration. Its private stores and
+format readers remain available as retained compatibility inputs. Hibernation
+selects no robot writer, verification or automatic resumption.
+
 ## Product direction and vocabulary
 
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted

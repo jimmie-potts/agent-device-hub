@@ -29,7 +29,7 @@ void test('a newer source of the runtime, its run or a workspace package it load
     ];
     for (const file of sources) {
       await mkdir(dirname(join(repo, file)), {recursive: true});
-      await writeFile(join(repo, file), '');
+      await writeFile(join(repo, file), file.endsWith('/package.json') ? '{}' : '');
     }
     await writeFile(join(repo, 'package.json'), JSON.stringify({workspaces: ['modules/synthetic/transport']}));
     await writeFile(join(repo, 'modules/synthetic/transport/package.json'), JSON.stringify({exports: {'.': {import: './dist/src/transport/index.js'}}}));

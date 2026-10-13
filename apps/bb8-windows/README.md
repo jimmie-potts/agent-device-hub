@@ -1,5 +1,10 @@
 # Windows BB-8 transport
 
+## Hibernation
+
+The owner hibernated BB-8 indefinitely on 2026-10-13 after the battery blocker. This package is retained source, excluded from active runtime/frontend registration and default build/typecheck/lint work and npm workspace installation. Its unit, browser, scenario and package checks are not run locally or in CI. Dedicated tests and packaging sources have a `.hibernated` suffix. The Windows helper remains stopped; installed BB-8 configuration and its helper grant are disabled when applying hibernation. Private stores, schemas and compatibility readers are retained without migration. Earlier setup and protocol details below are historical; resumption requires a new owner decision and restored verification.
+
+
 This component owns native BLE, bounded PacketV1 transactions and a private Windows receipt database. WSL never opens that database. See [qualification](../../docs/bb8-controller-qualification.md) and [module](../../modules/bb8/README.md). Installation and first physical evidence belong to #605.
 
 The gateway's private `edge-credentials/1.0` file configures one helper credential with `role: "bb8-link"`, `source: "bunny/parts/bb8-windows"` and `scopes: []` and `robotId: "bb8"`. Its digest is the SHA-256 of the separately stored token. The role grants only internal respond/serve/publish and the core acknowledgment subscription, never public requests or session reads. Ordinary credentials and browser scopes remain unchanged. Both internal handlers require `bunny/modules/bb8` independently. The enrolled robot ID must agree in Windows and WSL configuration.
@@ -10,9 +15,9 @@ One operation runs at a time, eight may wait and 64 unconsumed results may remai
 
 From the repository root on Node 24:
 
-- `npm run test:bb8-windows` builds and runs fake BLE/packet/receipt/privacy/ownership tests.
-- `npm run test:bb8-windows:built` uses current build output; CI runs it after build.
-- `npm run test:bb8:package` checks the module's pure contracts and helper package consumer in isolation.
+- `test:bb8-windows` builds and runs fake BLE/packet/receipt/privacy/ownership tests.
+- `test:bb8-windows:built` uses current build output; CI runs it after build.
+- `test:bb8:package` checks the module's pure contracts and helper package consumer in isolation.
 
 Shared build/type/lint, events/Python, SDK, runtime/catalog and browser checks are required as documented in the module guide. No source test invokes a live adapter. `@stoprocent/noble@2.8.0` is pinned and optional on non-Windows hosts; its binary-load evidence in #603 qualifies ABI only. Live setup, credentials, clock qualification, other-app ownership handoff and finite radio sequence require #605's explicit inputs.
 

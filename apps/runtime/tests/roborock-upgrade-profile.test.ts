@@ -39,7 +39,7 @@ void test('inventories configured and retained Roborock through metadata and req
   await assert.rejects(inspectUpgradeState(state, config), /^Error: runtime-upgrade-inputs-refused$/);
 });
 
-void test('binds complete Roborock coverage for every fixed optional-owner combination and refuses incomplete phases', async t => {
+void test('binds complete Roborock coverage for every active optional-owner combination and refuses incomplete phases', async t => {
   const root = await mkdtemp(join(tmpdir(), 'roborock-upgrade-admission-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const evidence = 'synthetic qualification';
@@ -57,7 +57,7 @@ void test('binds complete Roborock coverage for every fixed optional-owner combi
     coverage: [...required, 'roborock'].map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))};
   const expected = {installationId: value.installationId, provenanceDirectory: root, releases, formats};
   const file = join(root, 'admission.json');
-  for (const optional of [[], ['onn'], ['bb8', 'bb8-windows'], ['onn', 'bb8', 'bb8-windows']]) {
+  for (const optional of [[], ['onn']]) {
     for (const companions of [[], ['companions']]) {
       const coverage = [...value.coverage, ...[...optional, ...companions].map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))];
       await writeFile(file, JSON.stringify({...value, coverage}), {mode: 0o600});
@@ -69,7 +69,6 @@ void test('binds complete Roborock coverage for every fixed optional-owner combi
     [...value.coverage, {owner: 'unknown', phases: value.coverage[0]?.phases}],
     value.coverage.map(row => row.owner === 'roborock' ? {...row, phases: row.phases.slice(1)} : row),
     value.coverage.map(row => row.owner === 'roborock' ? {...row, phases: phases.map(() => ({phase: 'baseline', receipt: pin}))} : row),
-    [...value.coverage, {owner: 'bb8', phases: value.coverage[0]?.phases}],
   ]) {
     await writeFile(file, JSON.stringify({...value, coverage}), {mode: 0o600});
     await assert.rejects(bindUpgradeAdmission(file, expected), /^Error: runtime-proof-admission-refused$/);

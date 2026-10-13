@@ -1,5 +1,9 @@
 # B.U.N.N.Y. runtime
 
+BB-8 is hibernated indefinitely. Normal source builds omit its module and page;
+its Windows helper stays stopped. Retained configuration/state and protocol
+details belong to the [dormant module guide](../../modules/bb8/README.md).
+
 See [Development and verification](DEVELOPMENT.md) for the canonical detailed procedures.
 
 Private workspace package `@jimmie-potts/runtime`. It is the one runtime process

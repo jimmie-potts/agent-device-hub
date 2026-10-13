@@ -18,10 +18,13 @@ const FULL = null;
 // other pattern one exact path. Everything unmatched selects every group.
 const RULES = Object.freeze([
   ['**/*.md', [], 'Markdown: no Checks test may depend on its content (docs/sdlc.md, Markdown-only CI routing)'],
-  // The runtime composes every module, and maintenance imports the runtime.
+  // Dormant source selects no product checks; root build/type/lint still protect active composition.
+  ['modules/bb8/**', [], 'hibernated BB-8 source'],
+  ['apps/bb8-windows/**', [], 'hibernated BB-8 helper source'],
+  ['scripts/package-bb8.mjs.hibernated', [], 'hibernated BB-8 packaging source'],
+  // The runtime composes active modules, and maintenance imports the runtime.
   ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
   ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
-  ['apps/bb8-windows/**', ['modules', 'runtime', 'maintenance'], 'the BB-8 link, the runtime that composes it and maintenance'],
   ['apps/maintenance/**', ['maintenance'], 'maintenance, which nothing imports'],
   // The bridge, its protocol fixtures and the controller firmware use only one another.
   ['apps/chompi-bridge/**', ['chompi'], 'the CHOMPI bridge'],

@@ -23,5 +23,8 @@
   },
   "optionalDependencies": {
     "@stoprocent/noble": "2.8.0"
+  },
+  "bunny": {
+    "hibernated": true
   }
 }

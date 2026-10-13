@@ -154,12 +154,6 @@ jobs:
         run: npm run test:onn:native
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:consumer:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        run: npm run test:bb8:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        run: npm run test:bb8-windows:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        run: npm run test:bb8:package:built
       # The old dashboard's unit tests stay, because #922 copies the dashboard into the runtime; App verification runs its browser smoke check.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:dashboard
@@ -233,8 +227,6 @@ jobs:
         run: npm run test:runtime-dashboard:smoke
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/playback-artwork.browser.ts
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: npm run test:bb8:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')

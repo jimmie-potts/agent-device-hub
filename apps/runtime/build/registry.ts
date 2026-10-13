@@ -1,6 +1,6 @@
 // Writes the runtime's module registry (Hub #999): `node apps/runtime/dist/build/registry.js`, which the build runs
 // after compiling the runtime. Every folder under `modules/` with a `package.json` is a module whose package exports
-// `registration`; the registry imports each one statically, in folder order, so the runtime and its harnesses collect
+// `registration`; hibernated packages remain dormant and the registry imports active ones statically, in folder order, so the runtime and its harnesses collect
 // the modules without a list that names them, and the runtime loads nothing at run time (ADR 0012).
 import {existsSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -11,12 +11,16 @@ export const REGISTRY_FILE = 'apps/runtime/dist/src/registry.js';
 /** A workspace package name, which the registry imports. */
 const PACKAGE = /^@jimmie-potts\/[a-z0-9][a-z0-9-]*$/;
 
-/** The module folders under `root/modules`: each folder with a `package.json`, in name order. */
+/** Active module folders under `root/modules`, excluding hibernated manifests, in name order. */
 export function moduleFolders(root: string): string[] {
   const modules = join(root, 'modules');
   if (!existsSync(modules)) return [];
   return readdirSync(modules, {withFileTypes: true})
     .filter(entry => entry.isDirectory() && existsSync(join(modules, entry.name, 'package.json')))
+    .filter(entry => {
+      const manifest = JSON.parse(readFileSync(join(modules, entry.name, 'package.json'), 'utf8')) as {bunny?: {hibernated?: boolean}};
+      return manifest.bunny?.hibernated !== true;
+    })
     .map(entry => entry.name)
     .sort();
 }
