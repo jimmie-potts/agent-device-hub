@@ -15,7 +15,9 @@ type Props = {
 /** Mount only the contribution chosen by the current authenticated catalog and the static browser build. */
 export function ModulePageView(props: Props): React.JSX.Element {
   const view = moduleView(props.module, props.page.id, props.frontends);
-  if (!props.connected || view === undefined || view.kind === 'unavailable') return <p role="status">This module page is unavailable.</p>;
+  if (view === undefined || view.kind === 'unavailable') return <p role="status">This module page is unavailable.</p>;
+  if (view.kind === 'frame' && !props.connected) return <p role="status">This module page is unavailable.</p>;
+  // Keep React state readable during reconnect; the contribution receives connected=false and the host locks commands.
   if (view.kind === 'frame') return <iframe className="module-page" title={props.page.title} src={view.path}
     sandbox={view.trusted ? undefined : 'allow-same-origin'}/>;
   return <ModuleFrontend module={props.module.name} connection={props.connection} connected={props.connected} control={props.control}

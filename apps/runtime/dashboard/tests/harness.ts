@@ -69,6 +69,8 @@ export type World = {
   onnOnline(online: boolean): void;
   readonlyOnn(): Promise<number>;
   readonlyCompanions(): Promise<number>;
+  assistantRead(): Promise<{status: number; text: string}>;
+  readonlyAssistantUpload(): Promise<number>;
   roborockAction(action:SimulationAction):Promise<void>;
   roborockRefresh():Promise<void>;
   roborockCalls():readonly string[];
@@ -222,6 +224,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     url: runtime.url, stateDir, logs, runtime: () => runtime,
     onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
     readonlyOnn: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/onn-key-press`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'onn', data: {key: 'right'}, requestId: 'readonly-onn'})}); await result.arrayBuffer(); return result.status;},
+    assistantRead: async () => {const response = await fetch(`${runtime.url}/modules/companions/content/conversation?profile=bunny`, {headers: {authorization: `Bearer ${readerToken}`}}); return {status: response.status, text: await response.text()};},
+    readonlyAssistantUpload: async () => {const query = new URLSearchParams({family: 'assistant-input', target: 'assistant', requestId: 'readonly-assistant', name: 'input.json'});
+      const response = await fetch(`${runtime.url}/api/v2/modules/companions/upload?${query}`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/octet-stream'}, body: '{}'});
+      await response.arrayBuffer(); return response.status;},
     readonlyCompanions: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/companion-fixture-run`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'reachy', data: {scenario: 'arrival', busy: false, media: false}, requestId: 'readonly-companions'})}); await result.arrayBuffer(); return result.status;},
     bb8State: () => bb8.snapshot(), bb8Online: value => {bb8.online(value);}, bb8Next: result => {bb8.next(result);},
     readonlyBb8: async data => {const result = await fetch(`${runtime.url}/api/v2/commands/bb8-connect`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'bb8', data, requestId: 'readonly-bb8'})}); await result.arrayBuffer(); return result.status;},

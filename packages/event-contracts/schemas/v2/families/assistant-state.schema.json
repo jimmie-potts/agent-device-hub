@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-state/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "enabled",
+    "available",
+    "tasks"
+  ],
+  "properties": {
+    "id": {
+      "const": "assistant"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "conversationId",
+          "profile",
+          "status",
+          "runId",
+          "questionId",
+          "hasAnswer",
+          "code",
+          "modelCalls",
+          "toolCalls",
+          "questions",
+          "activeMs",
+          "reservedUnits",
+          "usageUnits"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          },
+          "conversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          },
+          "profile": {
+            "enum": [
+              "bunny",
+              "reachy",
+              "microduck"
+            ]
+          },
+          "status": {
+            "enum": [
+              "running",
+              "waiting",
+              "paused",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "uncertain"
+            ]
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-zA-Z0-9-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "questionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-zA-Z0-9-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasAnswer": {
+            "type": "boolean"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelCalls": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "toolCalls": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "questions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "activeMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reservedUnits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "usageUnits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -31,6 +31,10 @@
     "./v2/companions": {
       "types": "./dist/v2/companions.d.ts",
       "import": "./dist/v2/companions.js"
+    },
+    "./v2/assistant": {
+      "types": "./dist/v2/assistant.d.ts",
+      "import": "./dist/v2/assistant.js"
     }
   },
   "dependencies": {

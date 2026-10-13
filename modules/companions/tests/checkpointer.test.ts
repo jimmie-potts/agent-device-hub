@@ -59,3 +59,16 @@ void test('SQLITE_FULL preserves the capacity code and rolls back every pending 
     assert.equal(database.isTransaction, false);
   } finally {database.close();}
 });
+
+void test('serialized working state and pending writes are bounded before SQLite changes', async () => {
+  const database = openModuleDatabaseFile(':memory:');
+  try {
+    const saver = new SqliteCheckpointSaver(database), root = {configurable: {thread_id: 'bounded'}};
+    const checkpoint = {...emptyCheckpoint(), channel_values: {text: 'x'.repeat(32 * 1024)}};
+    await assert.rejects(saver.put(root, checkpoint, {source: 'input', step: -1, parents: {}}, {}), /checkpoint-capacity/);
+    assert.equal(await saver.getTuple(root), undefined);
+    const config = await saver.put(root, emptyCheckpoint(), {source: 'input', step: -1, parents: {}}, {});
+    await assert.rejects(saver.putWrites(config, [['text', 'x'.repeat(32 * 1024)]], 'task'), /checkpoint-capacity/);
+    assert.deepEqual((await saver.getTuple(config))?.pendingWrites, []);
+  } finally {database.close();}
+});
