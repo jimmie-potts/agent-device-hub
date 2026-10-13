@@ -27,3 +27,23 @@ void test('Stop cancels a queued dock gesture before any heading write', async (
     assert.equal(result.result, 'failed'); assert.equal(result.error?.code, 'cancelled');
   } finally {release?.(); await owner.stop(); await sdk.close(); await module.close(); database.close();}
 });
+
+void test('a later charging refusal retains acknowledged gesture transmission without claiming success', async () => {
+  const database = new DatabaseSync(':memory:'), bus = new InProcessBus(), sdk = bus.connect(HELPER_SOURCE), module = bus.connect(MODULE_SOURCE), gatt = new FakeGatt();
+  gatt.power[1] = 1;
+  const owner = new HelperOwner({id: 'bb8', configurationRevision: 0, database, sdk, now: Date.now, scheduler, clockErrorMs: () => 0, adapter: () => ({open: () => Promise.resolve(gatt)})});
+  const send = async (operation: Operation) => {
+    const id = crypto.randomUUID(), state = owner.state;
+    const reply = await module.request('bunny.cmd.bb8-link-execute.bb8', executeDraft('bb8', {operationId: id, requestId: id, parentRequestId: id, expectedConfigurationRevision: 0, expectedHelperEpoch: state.helperEpoch, expectedConnectionGeneration: state.connectionGeneration, operationExpiresAtMs: Date.now() + 5000, operation}), {requestId: id, timeoutMs: 1000});
+    assert.equal(reply.status, 'accepted'); await owner.drain(); return owner.results.find(result => result.id === id);
+  };
+  try {
+    await owner.start(); await send({kind: 'connect'});
+    const before = gatt.writes.length, original = gatt.write.bind(gatt); let reports = 0;
+    gatt.write = async (uuid, bytes, signal) => {if (bytes[2] === 0 && bytes[3] === 32 && ++reports === 2) gatt.power[1] = 2; await original(uuid, bytes, signal);};
+    const receipt = await send({kind: 'gesture', gesture: 'shake-head', docked: true}); assert.ok(receipt);
+    assert.equal(receipt.evidence, 'transmitted', 'prior heading and selected Stop replies remain evidence');
+    assert.equal(receipt.result, 'failed'); assert.equal(receipt.error?.code, 'invalid-state');
+    assert.equal(reports, 2); assert.equal(gatt.writes.length, before + 4); assert.equal(owner.state.connection, 'connected');
+  } finally {await owner.stop(); await sdk.close(); await module.close(); database.close();}
+});

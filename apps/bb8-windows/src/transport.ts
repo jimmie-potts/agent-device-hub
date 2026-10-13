@@ -19,7 +19,7 @@ export class ProtocolRefusal extends SdkError {
 }
 /** A selected Stop reply keeps the link usable; it does not prove physical rest. */
 export class StepFailure extends SdkError {
-  constructor(readonly stopAcknowledged: boolean, code: 'uncertain-result' | 'cancelled' = 'uncertain-result') {super(errorBody(code, {detail: code === 'cancelled' ? 'BB-8 gesture was stopped' : 'BB-8 step has an uncertain result'}));}
+  constructor(readonly stopAcknowledged: boolean, code: 'uncertain-result' | 'cancelled' | 'invalid-state' = 'uncertain-result') {super(errorBody(code, {detail: code === 'cancelled' ? 'BB-8 gesture was stopped' : code === 'invalid-state' ? 'BB-8 is not charging' : 'BB-8 step has an uncertain result'}));}
 }
 export type TransportObservation = {power?: Power; version?: Version};
 const refusal = (code: 'unavailable' | 'unsupported-capability' | 'invalid-request' | 'invalid-message' | 'capacity' | 'invalid-state'): SdkError => new SdkError(errorBody(code, {detail: 'BB-8 transport refused the operation'}));
@@ -144,8 +144,10 @@ export class PacketTransport {
     for (const heading of preset.headings) {
       if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
       // Charging is checked afresh; this read is not a possible heading effect.
-      const report = await this.execute({kind: 'power-refresh'}, signal, check, () => {});
-      if (report.power?.category !== 1) throw refusal('invalid-state');
+      let report: TransportObservation;
+      try {report = await this.execute({kind: 'power-refresh'}, signal, check, () => {});}
+      catch (error) {if (stopped && !(error instanceof ProtocolRefusal)) throw new StepFailure(true); throw error;}
+      if (report.power?.category !== 1) throw new StepFailure(stopped, 'invalid-state');
       if (this.#gestureInterrupted) throw new StepFailure(stopped, 'cancelled');
       await this.#step({speed: 0, heading, durationMs: preset.durationMs}, signal, check, effect, completionCheck); stopped = true;
     }

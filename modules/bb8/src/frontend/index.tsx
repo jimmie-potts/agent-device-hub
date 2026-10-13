@@ -6,8 +6,8 @@ const STALE_MS = 60_000;
 function Controls({context, robot, live, command, now}: {context: FrontendContext; robot: RobotState; live: boolean; command: FrontendCommand; now: number}): React.JSX.Element {
   const [color, setColor] = useState('#2196ff'), [tail, setTail] = useState(64), [docked, setDocked] = useState(false);
   const link = robot.link.status === 'known' ? robot.link.value : undefined;
-  useEffect(() => {setDocked(false);}, [link?.helperEpoch, link?.connectionGeneration]);
   const ready = context.control && context.connected && context.operationsLive && live && robot.linkLive && link !== undefined;
+  useEffect(() => {setDocked(false);}, [ready, link?.helperEpoch, link?.connectionGeneration]);
   const allowed = ready && !command.locked;
   // Either tracked command may own the uncertain hold. A pending connection
   // action stays locked; recovery is a fresh explicit request, never a replay.

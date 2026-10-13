@@ -50,6 +50,13 @@ try {
     await connect.click(); await controls.getByText('Last result: succeeded · evidence observed', {exact: true}).waitFor();
     assert.equal(await docked.isChecked(), false, 'reconnect resets the dock assertion');
     await docked.check();
+    const beforeSoftwareReconnect = world.bb8State().operations.length;
+    const replacementSync = page.waitForResponse(response => new URL(response.url()).pathname === '/api/sdk/v1/sync' && (response.request().postDataJSON() as {request?: {data?: {families?: string[]}}} | null)?.request?.data?.families?.includes('bb8-robot') === true);
+    world.dropDashboardStreams(); await replacementSync; await feed(page, 'connected');
+    await page.waitForFunction(() => document.querySelector<HTMLInputElement>('[aria-label="BB-8 controls"] input[type="checkbox"]')?.checked === false);
+    assert.equal(await gesture.isDisabled(), true, 'software reconnect requires a fresh dock assertion');
+    assert.equal(world.bb8State().operations.length, beforeSoftwareReconnect, 'software reconnect is passive');
+    await docked.check();
     for (const name of ['Look left', 'Look right', 'Head shake']) {
       await controls.getByRole('button', {name, exact: true}).click();
       await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent === 'Look left' && !b.matches(':disabled')));
