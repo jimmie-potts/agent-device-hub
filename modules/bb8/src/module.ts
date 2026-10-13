@@ -56,7 +56,11 @@ class Bb8Run {
     this.#context.scheduler.after(BOUNDS.responseMs, () => {this.#track(this.#recover());});
   }
   #transaction(work: (add: AddMessage) => void): Promise<void> {
-    const write = this.#writes.then(() => this.#outbox.transaction(work));
+    const write = this.#writes.then(async () => {
+      const state = this.#state, held = this.#held;
+      try {await this.#outbox.transaction(work);}
+      catch (error) {this.#state = state; this.#held = held; throw error;}
+    });
     this.#writes = write.catch(() => {}); return write;
   }
   #track(work: Promise<void>): void {this.#work.add(work); void work.catch(error => {this.#storageFailed(error);}).finally(() => {this.#work.delete(work);});}
@@ -108,10 +112,9 @@ class Bb8Run {
     }
     const id = randomUUID(), deadline = this.#context.clock.now() + (operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs);
     const row = {source: command.source, request_id: data.requestId, digest, family, operation_id: id, helper_epoch: helper.helperEpoch, generation: helper.connectionGeneration, deadline, traceparent: command.traceparent};
-    const before = this.#state;
     try {
       await this.#transaction(add => {if (this.#store.pending().length >= capacity(this.#store.pending()) || (family === 'bb8-step' && this.#store.pending().some(row => row.family === family))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
-    } catch (error) {this.#state = before; return refuse(error instanceof SdkError ? error.body.error.code : storageCode(error));}
+    } catch (error) {return refuse(error instanceof SdkError ? error.body.error.code : storageCode(error));}
     this.#track(this.#execute({...row, stage: 'accepted', outcome: null}, operation, data, command));
     return {status: 'accepted'};
   }
@@ -140,7 +143,6 @@ class Bb8Run {
     await this.#complete(row, {requestId: row.request_id, result, evidence: 'none', error: refuse(code).error});
   }
   async #complete(row: Responsibility, outcome: CompletedOutcome, receipt?: LinkResult): Promise<boolean> {
-    const before = this.#state, held = this.#held;
     try {
       await this.#transaction(add => {
         const current = this.#store.operation(row.operation_id);
@@ -153,7 +155,7 @@ class Bb8Run {
         add(`bunny.event.${row.family}.${this.#config.id}`, {kind: 'outcome', type: completedType(row.family), subject: this.#config.id, dataschema: schemaOf('outcome'), data: outcome}, {parent: {traceparent: row.traceparent}});
       });
       this.#deadlineCancels.get(row.operation_id)?.(); this.#deadlineCancels.delete(row.operation_id); return true;
-    } catch (error) {this.#state = before; this.#held = held; this.#storageFailed(error); return false;}
+    } catch (error) {this.#storageFailed(error); return false;}
   }
   async #refresh(): Promise<void> {
     if (this.#closing) return;
@@ -161,9 +163,7 @@ class Bb8Run {
     const projection = link === undefined ? UNKNOWN : {status: 'known' as const, value: {helperEpoch: link.helperEpoch, connectionGeneration: link.connectionGeneration, connection: link.connection, changedAtMs: link.changedAtMs, ...(link.forwardReference === undefined ? {} : {forwardReference: link.forwardReference})}};
     const live = this.#link.live();
     if (JSON.stringify(projection) !== JSON.stringify(this.#state.link) || live !== this.#state.linkLive) {
-      const before = this.#state;
-      try {await this.#transaction(add => {this.#state = {...this.#state, link: projection, linkLive: live}; this.#records(add);});}
-      catch (error) {this.#state = before; throw error;}
+      await this.#transaction(add => {this.#state = {...this.#state, link: projection, linkLive: live}; this.#records(add);});
     }
     for (const receipt of this.#link.results()) {
       const row = this.#store.operation(receipt.id);

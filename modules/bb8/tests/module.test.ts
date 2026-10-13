@@ -91,6 +91,8 @@ void test('concurrent ordinary admission cannot consume the step-reserved Stop s
   const bus = new InProcessBus(), operator = bus.connect('bunny/parts/operator'), transport = new SimulatedLink();
   const host = new ModuleHarness(createBb8Module({transport}), {bus, stateDir: directory, section: {id: 'bb8', configurationRevision: 0}});
   t.after(async () => {await host.stop(); await operator.close();}); await host.start();
+  const revisions: number[] = [];
+  await operator.subscribe('bunny.state.bb8-robot.bb8', message => {revisions.push((message.data as {revision: number}).revision);});
   const send = (family: string, extra: object = {}) => {
     const link = transport.state(); return operator.request(`bunny.cmd.${family}.bb8`, {type: commandType(family), subject: 'bb8', dataschema: schemaOf(family), data: {expectedConfigurationRevision: 0, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...extra}}, {timeoutMs: 1000, requestId: crypto.randomUUID()});
   };
@@ -105,7 +107,15 @@ void test('concurrent ordinary admission cannot consume the step-reserved Stop s
     for (let n = 0; n < 7; n++) assert.equal((await send('bb8-wake')).status, 'accepted');
     const replies = await Promise.all([send('bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: reference}}), send('bb8-power-refresh')]);
     assert.ok(replies.some(reply => reply.status === 'accepted'));
+    const database = host.moduleDatabase(); assert.ok(database);
+    const durable = JSON.parse(String(database.prepare('SELECT state FROM bb8_state').get()?.state)) as {revision: number};
+    const synced = await operator.sync<{revision: number}>(['bb8-robot'], () => {}, {owner: 'bunny/modules/bb8', timeoutMs: 1000});
+    assert.equal(synced.status, 'synced');
+    if (synced.status !== 'synced') throw Error('no robot copy');
+    try {assert.equal(synced.copy.states()[0]?.data.revision, durable.revision, 'a refused concurrent admission must preserve committed owner state');}
+    finally {await synced.copy.close();}
     const stop = await send('bb8-stop');
     assert.equal(stop.status, 'accepted', 'a concurrent stale capacity snapshot must not consume the reserved Stop slot');
   } finally {release?.(); await flush();}
+  assert.equal(revisions.filter((revision, index) => index > 0 && revision <= revisions[index - 1]!).length, 0, 'each new published state revision must increase');
 });
