@@ -1,7 +1,7 @@
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
-import {commandType, PUBLIC_FAMILIES, schemaOf, type LinkResult, type LinkState, type RobotState} from './contracts.js';
+import {commandType, MOTION, PUBLIC_FAMILIES, schemaOf, type LinkResult, type LinkState, type RobotState} from './contracts.js';
 const block = (name: string): object => ({$ref: `${SCHEMA_BASE}blocks/2.0#/$defs/${name}`});
 const object = (properties: Record<string, object>, required = Object.keys(properties)): object => ({type: 'object', additionalProperties: false, required, properties});
 const byte = {type: 'integer', minimum: 0, maximum: 255};
@@ -9,7 +9,10 @@ const tuple = (length: number): object => ({type: 'array', minItems: length, max
 const unknown = block('unknown');
 const known = (value: object): object => ({oneOf: [unknown, object({status: {const: 'known'}, value})]});
 export const ledSchema = {oneOf: [object({target: {const: 'main'}, rgb: tuple(3)}), object({target: {const: 'tail'}, brightness: byte})]};
-const operationSchema = {oneOf: [...['connect', 'disconnect', 'wake', 'power-refresh'].map(kind => object({kind: {const: kind}})), object({kind: {const: 'led-set'}, led: ledSchema})]};
+export const stepSchema = object({direction: {enum: ['forward', 'right', 'back', 'left']}, speed: {type: 'integer', minimum: 1, maximum: MOTION.maxSpeed}, durationMs: {type: 'integer', minimum: MOTION.minDurationMs, maximum: MOTION.maxDurationMs}, forwardReference: block('routingId')});
+const stepProperties = (stepSchema as {properties: Record<string, object>}).properties;
+const aimAction = {enum: ['set', 'clear']};
+const operationSchema = {oneOf: [...['connect', 'disconnect', 'wake', 'power-refresh'].map(kind => object({kind: {const: kind}})), object({kind: {const: 'led-set'}, led: ledSchema}), object({kind: {const: 'aim'}, action: aimAction}), object({kind: {const: 'step'}, ...stepProperties}), object({kind: {const: 'stop'}})]};
 const guards = {expectedConfigurationRevision: block('revision'), expectedHelperEpoch: block('routingId'), expectedConnectionGeneration: block('revision')};
 const powerSchema = object({recordVersion: {const: 1}, category: {enum: [1, 2, 3, 4]}, voltageHundredths: {type: 'integer', minimum: 0, maximum: 65535}, rechargeCount: {type: 'integer', minimum: 0, maximum: 65535}, secondsAwakeSinceRecharge: {type: 'integer', minimum: 0, maximum: 65535}, observedAtMs: block('instantMs')});
 const versionSchema = object({bytes: tuple(8), observedAtMs: block('instantMs')});
@@ -21,12 +24,12 @@ const resultProperties = {
 };
 const schema = (family: string, body: object): object => ({$schema: 'https://json-schema.org/draft/2020-12/schema', $id: schemaOf(family), ...body});
 export const bb8Schemas: Readonly<Record<string, object>> = {
-  ...Object.fromEntries(PUBLIC_FAMILIES.map(family => [schemaOf(family), schema(family, object({requestId: block('requestId'), ...guards, ...(family === 'bb8-led-set' ? {led: ledSchema} : {})}))])),
+  ...Object.fromEntries(PUBLIC_FAMILIES.map(family => [schemaOf(family), schema(family, object({requestId: block('requestId'), ...guards, ...(family === 'bb8-led-set' ? {led: ledSchema} : family === 'bb8-aim' ? {action: aimAction} : family === 'bb8-step' ? {step: stepSchema} : {})}))])),
   [schemaOf('bb8-link-execute')]: schema('bb8-link-execute', object({requestId: block('requestId'), operationId: block('routingId'), parentRequestId: block('requestId'), ...guards, operationExpiresAtMs: block('instantMs'), operation: operationSchema})),
   [schemaOf('bb8-link-recorded')]: schema('bb8-link-recorded', object({requestId: block('requestId'), operationId: block('routingId')})),
-  [schemaOf('bb8-link')]: schema('bb8-link', object(linkProperties)),
+  [schemaOf('bb8-link')]: schema('bb8-link', object({...linkProperties, forwardReference: block('routingId')}, Object.keys(linkProperties))),
   [schemaOf('bb8-link-result')]: schema('bb8-link-result', object(resultProperties, Object.keys(resultProperties).filter(key => !['error', 'power', 'version'].includes(key)))),
-  [schemaOf('bb8-robot')]: schema('bb8-robot', object({id: block('routingId'), revision: block('revision'), configurationRevision: block('revision'), link: known(object(Object.fromEntries(Object.entries(linkProperties).filter(([key]) => !['id', 'revision', 'configurationRevision'].includes(key))))), linkLive: {type: 'boolean'}, desiredLed: known(ledSchema), physicalLed: unknown, power: known(powerSchema), lastResult: known(object({result: resultProperties.result, evidence: resultProperties.evidence, completedAtMs: block('instantMs')})), held: object({requestId: block('requestId'), heldAtMs: block('instantMs')})}, ['id', 'revision', 'configurationRevision', 'link', 'linkLive', 'desiredLed', 'physicalLed', 'power', 'lastResult'])),
+  [schemaOf('bb8-robot')]: schema('bb8-robot', object({id: block('routingId'), revision: block('revision'), configurationRevision: block('revision'), link: known(object({...Object.fromEntries(Object.entries(linkProperties).filter(([key]) => !['id', 'revision', 'configurationRevision'].includes(key))), forwardReference: block('routingId')}, ['helperEpoch', 'connectionGeneration', 'connection', 'changedAtMs'])), linkLive: {type: 'boolean'}, desiredLed: known(ledSchema), physicalLed: unknown, power: known(powerSchema), lastResult: known(object({result: resultProperties.result, evidence: resultProperties.evidence, completedAtMs: block('instantMs')})), held: object({requestId: block('requestId'), heldAtMs: block('instantMs')})}, ['id', 'revision', 'configurationRevision', 'link', 'linkLive', 'desiredLed', 'physicalLed', 'power', 'lastResult'])),
 };
 const commandFamilies: readonly string[] = [...PUBLIC_FAMILIES, 'bb8-link-execute', 'bb8-link-recorded'];
 function check(family: string, message: Message): string | undefined {

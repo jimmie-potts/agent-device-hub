@@ -29,4 +29,22 @@ export const scenarios: readonly Scenario[] = [{
     act('operator attempts another LED write', async h => {const reply = await h.dispatch('operator', 'offline-led', command(h, 'bb8-led-set', {led: {target: 'tail', brightness: 0}}), 'bb8-offline-1'); if (reply !== 'unavailable') throw Error(`offline reply ${reply}`);}),
     holds('offline refusal causes no device effect', h => operations(h) === 3 || `${operations(h)} operations`, 100),
   ],
+}, {
+  id: 'bb8-short-steps', title: 'supervised BB-8 reference, bounded steps, Stop and passive restart',
+  seed: {modules: ['core', 'bb8'], follows: [{owner, families: ['device', 'bb8-robot']}], sections: {bb8: {id: 'bb8', configurationRevision: 0}}},
+  steps: [
+    expect('core and BB-8 run with live membership', async h => (await running(h, ['core', 'bb8'])) === true && robot(h)?.linkLive === true || 'membership unavailable'),
+    act('operator connects', h => dispatchOnce(h, 'operator', 'connect', command(h, 'bb8-connect'), 'bb8-motion-connect')),
+    expect('connection completes', h => recorded(h, 'bb8-motion-connect', 'succeeded', 'observed')),
+    act('step without a reference refuses', async h => {const reply = await h.dispatch('operator', 'missing-reference', command(h, 'bb8-step', {step: {direction: 'forward', speed: 20, durationMs: 300, forwardReference: 'old-reference'}}), 'bb8-no-reference'); if (reply !== 'invalid-state') throw Error(`reply ${reply}`);}),
+    act('operator explicitly sets forward', h => dispatchOnce(h, 'operator', 'aim', command(h, 'bb8-aim', {action: 'set'}), 'bb8-aim-1')),
+    expect('reference is live', h => {const link = robot(h)?.link; return link?.status === 'known' && link.value.forwardReference !== undefined || 'reference missing';}),
+    act('operator selects one short right step', h => {const link = robot(h)?.link; if (link?.status !== 'known') throw Error('link missing'); return dispatchOnce(h, 'operator', 'step', command(h, 'bb8-step', {step: {direction: 'right', speed: 20, durationMs: 300, forwardReference: link.value.forwardReference}}), 'bb8-step-1');}),
+    expect('step completes with transmission evidence', h => recorded(h, 'bb8-step-1', 'succeeded', 'transmitted')),
+    act('operator selects Stop', h => dispatchOnce(h, 'operator', 'stop', command(h, 'bb8-stop'), 'bb8-stop-1')),
+    expect('Stop completes without claiming observed rest', h => recorded(h, 'bb8-stop-1', 'succeeded', 'transmitted')),
+    act('runtime restarts', h => h.restart()),
+    expect('membership returns with no valid reference', h => {const link = robot(h)?.link; return robot(h)?.linkLive === true && link?.status === 'known' && link.value.forwardReference === undefined || 'reference or membership differs';}),
+    holds('restart repeats no robot operation', h => operations(h) === 4 || `${operations(h)} operations`, 300),
+  ],
 }];

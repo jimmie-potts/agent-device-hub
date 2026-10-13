@@ -1,6 +1,6 @@
 # Windows BB-8 transport
 
-This source-only component owns native BLE, bounded PacketV1 transactions and a private Windows receipt database. WSL never opens that database. See [qualification](../../docs/bb8-controller-qualification.md) and [module](../../modules/bb8/README.md). Installation and first physical evidence belong to #605.
+This component owns native BLE, bounded PacketV1 transactions and a private Windows receipt database. WSL never opens that database. See [qualification](../../docs/bb8-controller-qualification.md) and [module](../../modules/bb8/README.md). Installation and first physical evidence belong to #605.
 
 The gateway's private `edge-credentials/1.0` file configures one helper credential with `role: "bb8-link"`, `source: "bunny/parts/bb8-windows"` and `scopes: []` and `robotId: "bb8"`. Its digest is the SHA-256 of the separately stored token. The role grants only internal respond/serve/publish and the core acknowledgment subscription, never public requests or session reads. Ordinary credentials and browser scopes remain unchanged. Both internal handlers require `bunny/modules/bb8` independently. The enrolled robot ID must agree in Windows and WSL configuration.
 
@@ -59,3 +59,8 @@ work, while a healthy SDK stream still permits a fresh explicit connect. SDK
 stream loss separately fences admission until the stream returns. A valid
 nonzero PacketV1 response produces a failed outcome with transmitted evidence;
 unknown response codes use `internal` and do not create an uncertain hold.
+
+
+Discrete movement uses the same exclusive writer and receipt store. `aim` establishes or clears an ephemeral forward reference; `step` requires it and admits speed1–32 for100–500ms in one cardinal direction; `stop` requires the current link guards without a reference. One step may exist at a time. Stop takes queue priority and interrupts the active step wait. While a step exists, ordinary admission reserves one of the existing pending/result slots for Stop.
+
+The local timer starts at the possible GO write. At its end, a separate selected Stop uses a fresh sequence and its own bounded response check, even if the GO response is missing or the original expiry has passed. The existing native child serializes writes; native callback or host delays can postpone delivery. A late GO response cannot acknowledge Stop. A received Stop reply permits a usable link to remain available while uncertain movement clears the reference; it does not prove rest. No saved move is executed on restart. No persistent firmware timeout/options or raw motor command is selected.

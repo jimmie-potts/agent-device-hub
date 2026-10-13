@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
-import type {Led, PublicFamily, RobotState} from '../contracts.js';
+import {MOTION, type Led, type PublicFamily, type RobotState} from '../contracts.js';
 const STALE_MS = 60_000;
 function Controls({context, robot, live, command, now}: {context: FrontendContext; robot: RobotState; live: boolean; command: FrontendCommand; now: number}): React.JSX.Element {
   const [color, setColor] = useState('#2196ff'), [tail, setTail] = useState(64);
@@ -9,11 +9,11 @@ function Controls({context, robot, live, command, now}: {context: FrontendContex
   const ready = context.control && context.connected && context.operationsLive && live && robot.linkLive && link !== undefined;
   const allowed = ready && !command.locked;
   // A stored uncertain hold permits a new explicit connection operation, never a replay of the held LED/wake request.
-  const release = ready && (allowed || (robot.held !== undefined && command.requestId === robot.held.requestId && robot.lastResult.status === 'known' && robot.lastResult.value.result === 'uncertain'));
+  const release = ready && (allowed || (robot.held !== undefined && command.requestId === robot.held.requestId));
   const connected = link?.connection === 'connected' && robot.held === undefined;
-  const send = (family: PublicFamily, led?: Led): void => {
+  const send = (family: PublicFamily, led?: Led, extra: object = {}): void => {
     if (!(family === 'bb8-connect' || family === 'bb8-disconnect' ? release : allowed) || link === undefined) return;
-    void command.run({family, target: robot.id, requestId: crypto.randomUUID(), data: {expectedConfigurationRevision: robot.configurationRevision, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...(led === undefined ? {} : {led})}});
+    void command.run({family, target: robot.id, requestId: crypto.randomUUID(), data: {expectedConfigurationRevision: robot.configurationRevision, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration, ...(led === undefined ? {} : {led}), ...extra}});
   };
   const power = robot.power.status === 'known' ? robot.power.value : undefined;
   const categories = ['Unknown', 'Charging', 'OK', 'Low', 'Critical'];
@@ -36,7 +36,22 @@ function Controls({context, robot, live, command, now}: {context: FrontendContex
     <p>LED completion reports transmission. Physical LED state is unknown.</p>
     <p>Power: {power === undefined ? 'unknown' : `${categories[power.category] ?? 'Unknown'} · ${(power.voltageHundredths / 100).toFixed(2)} V · ${now - power.observedAtMs > STALE_MS ? 'stale' : 'reported'} at ${new Date(power.observedAtMs).toISOString()}`}</p>
     <button disabled={!allowed || !connected} onClick={() => {send('bb8-power-refresh');}}>Refresh power</button>
-    <p>Motion is unavailable in this release.</p>
+    <fieldset disabled={!allowed || !connected}><legend>Short steps</legend>
+      <p>Place BB-8 off its dock in a clear, contained area. Stay nearby. Point it forward manually, then set the reference. Clear it before repositioning.</p>
+      <button onClick={() => {send('bb8-aim', undefined, {action: 'set'});}}>Set forward</button>{' '}
+      <button onClick={() => {send('bb8-aim', undefined, {action: 'clear'});}}>Clear forward</button>
+      <p>Forward reference: {link?.forwardReference === undefined ? 'not set' : 'set for this connection'}</p>
+      {(['forward', 'right', 'back', 'left'] as const).map(direction => <button key={direction} disabled={link?.forwardReference === undefined} onClick={() => {send('bb8-step', undefined, {step: {direction, speed: MOTION.uiSpeed, durationMs: MOTION.uiDurationMs, forwardReference: link?.forwardReference}});}}>{direction.slice(0, 1).toUpperCase() + direction.slice(1)} step</button>)}
+      <p>Each click requests speed {MOTION.uiSpeed}/255 for {MOTION.uiDurationMs} ms.</p>
+    </fieldset>
+    <context.ui.Command context={context} target={robot.id}>{stop => <>
+      <button disabled={!ready || link?.connection !== 'connected'} onClick={() => {
+        if (link === undefined) return;
+        void stop.run({family: 'bb8-stop', target: robot.id, requestId: crypto.randomUUID(), data: {expectedConfigurationRevision: robot.configurationRevision, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration}});
+      }}>Stop</button>
+      <p role="status" aria-live="polite">Stop: {stop.text}</p>
+    </>}</context.ui.Command>
+    <p>A step ends with a local Stop request. Completion confirms packets, not physical rest. A lost Bluetooth link can prevent Stop; keep the robot supervised.</p>
     <p role="status" aria-live="polite">{command.text}</p>
     {robot.lastResult.status === 'known' && <p>Last result: {robot.lastResult.value.result} · evidence {robot.lastResult.value.evidence}</p>}
   </section>;

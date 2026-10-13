@@ -89,22 +89,28 @@ class Bb8Run {
     if (this.#closing || this.#blocked || !this.#link.live()) return refuse('unavailable');
     const helper = this.#link.state(); if (helper === undefined || helper.id !== this.#config.id) return refuse('unavailable');
     if (data.expectedConfigurationRevision !== this.#config.configurationRevision || data.expectedConfigurationRevision !== helper.configurationRevision || data.expectedHelperEpoch !== helper.helperEpoch || data.expectedConnectionGeneration !== helper.connectionGeneration) return refuse('revision-conflict');
-    if (this.#held !== undefined && family !== 'bb8-connect' && family !== 'bb8-disconnect') return refuse('invalid-state');
+    if (this.#held !== undefined && family !== 'bb8-connect' && family !== 'bb8-disconnect' && family !== 'bb8-stop') return refuse('invalid-state');
     if (family !== 'bb8-connect' && family !== 'bb8-disconnect' && helper.connection !== 'connected') return refuse('unavailable');
-    if (this.#store.pending().length >= BOUNDS.maxPending + 1) return refuse('capacity');
+    const pending = this.#store.pending();
+    if (family === 'bb8-step' && (pending.some(row => row.family === family) || data.step === undefined || helper.forwardReference === undefined || data.step.forwardReference !== helper.forwardReference)) return refuse('invalid-state');
+    const capacity = BOUNDS.maxPending + (family !== 'bb8-stop' && (family === 'bb8-step' || pending.some(row => row.family === 'bb8-step')) ? 0 : 1);
+    if (pending.length >= capacity) return refuse('capacity');
     let operation: Operation;
     switch (family) {
       case 'bb8-connect': operation = {kind: 'connect'}; break;
       case 'bb8-disconnect': operation = {kind: 'disconnect'}; break;
       case 'bb8-wake': operation = {kind: 'wake'}; break;
       case 'bb8-power-refresh': operation = {kind: 'power-refresh'}; break;
+      case 'bb8-aim': if (data.action === undefined) return refuse('invalid-message'); operation = {kind: 'aim', action: data.action}; break;
+      case 'bb8-step': if (data.step === undefined) return refuse('invalid-message'); operation = {kind: 'step', ...data.step}; break;
+      case 'bb8-stop': operation = {kind: 'stop'}; break;
       case 'bb8-led-set': if (data.led === undefined) return refuse('invalid-message'); operation = {kind: 'led-set', led: data.led}; break;
     }
     const id = randomUUID(), deadline = this.#context.clock.now() + (operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs);
     const row = {source: command.source, request_id: data.requestId, digest, family, operation_id: id, helper_epoch: helper.helperEpoch, generation: helper.connectionGeneration, deadline, traceparent: command.traceparent};
     const before = this.#state;
     try {
-      await this.#transaction(add => {if (this.#store.pending().length >= BOUNDS.maxPending + 1) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
+      await this.#transaction(add => {if (this.#store.pending().length >= capacity || (family === 'bb8-step' && this.#store.pending().some(row => row.family === family))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
     } catch (error) {this.#state = before; return refuse(error instanceof SdkError ? error.body.error.code : storageCode(error));}
     this.#track(this.#execute({...row, stage: 'accepted', outcome: null}, operation, data, command));
     return {status: 'accepted'};
@@ -152,7 +158,7 @@ class Bb8Run {
   async #refresh(): Promise<void> {
     if (this.#closing) return;
     const link = this.#link.state();
-    const projection = link === undefined ? UNKNOWN : {status: 'known' as const, value: {helperEpoch: link.helperEpoch, connectionGeneration: link.connectionGeneration, connection: link.connection, changedAtMs: link.changedAtMs}};
+    const projection = link === undefined ? UNKNOWN : {status: 'known' as const, value: {helperEpoch: link.helperEpoch, connectionGeneration: link.connectionGeneration, connection: link.connection, changedAtMs: link.changedAtMs, ...(link.forwardReference === undefined ? {} : {forwardReference: link.forwardReference})}};
     const live = this.#link.live();
     if (JSON.stringify(projection) !== JSON.stringify(this.#state.link) || live !== this.#state.linkLive) {
       const before = this.#state;

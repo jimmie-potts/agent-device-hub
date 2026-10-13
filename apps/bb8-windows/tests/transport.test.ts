@@ -85,3 +85,18 @@ void test('cancellation at wake sends no ping or version', async () => {
     assert.equal(gatt.writes.filter(item => item.uuid === UUID.command).length, 0);
   } finally {await transport.close();}
 });
+
+void test('a short step sends GO followed by its own selected Stop without a browser request', async () => {
+  const gatt = new FakeGatt(), transport = new PacketTransport(() => ({open: () => Promise.resolve(gatt)}), scheduler, Date.now);
+  try {
+    await transport.execute({kind: 'connect'}, new AbortController().signal, () => {}, () => {});
+    const before = gatt.writes.length;
+    const operation = {kind: 'step', direction: 'right', speed: 20, durationMs: 100, forwardReference: 'reference-1'} as unknown as Parameters<PacketTransport['execute']>[0];
+    await transport.execute(operation, new AbortController().signal, () => {}, () => {});
+    const packets = gatt.writes.slice(before);
+    assert.equal(packets.length, 2, 'one GO and one local Stop');
+    assert.deepEqual(packets[0]?.bytes.slice(6, -1), [20, 0, 90, 1, 0]);
+    assert.deepEqual(packets[1]?.bytes.slice(6, -1), [0, 0, 90, 0, 0]);
+    assert.ok((packets[1]?.atMs ?? 0) - (packets[0]?.atMs ?? 0) >= 90);
+  } finally {await transport.close();}
+});
