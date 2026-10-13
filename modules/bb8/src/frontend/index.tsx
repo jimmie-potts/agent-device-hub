@@ -1,12 +1,13 @@
 import React, {useEffect, useState} from 'react';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
-import {MOTION, type Led, type PublicFamily, type RobotState} from '../contracts.js';
+import {type Gesture, type Led, type PublicFamily, type RobotState} from '../contracts.js';
 const STALE_MS = 60_000;
 function Controls({context, robot, live, command, now}: {context: FrontendContext; robot: RobotState; live: boolean; command: FrontendCommand; now: number}): React.JSX.Element {
-  const [color, setColor] = useState('#2196ff'), [tail, setTail] = useState(64);
+  const [color, setColor] = useState('#2196ff'), [tail, setTail] = useState(64), [docked, setDocked] = useState(false);
   const link = robot.link.status === 'known' ? robot.link.value : undefined;
   const ready = context.control && context.connected && context.operationsLive && live && robot.linkLive && link !== undefined;
+  useEffect(() => {setDocked(false);}, [ready, link?.helperEpoch, link?.connectionGeneration]);
   const allowed = ready && !command.locked;
   // Either tracked command may own the uncertain hold. A pending connection
   // action stays locked; recovery is a fresh explicit request, never a replay.
@@ -38,22 +39,20 @@ function Controls({context, robot, live, command, now}: {context: FrontendContex
     <p>LED completion reports transmission. Physical LED state is unknown.</p>
     <p>Power: {power === undefined ? 'unknown' : `${categories[power.category] ?? 'Unknown'} · ${(power.voltageHundredths / 100).toFixed(2)} V · ${now - power.observedAtMs > STALE_MS ? 'stale' : 'reported'} at ${new Date(power.observedAtMs).toISOString()}`}</p>
     <button disabled={!allowed || !connected} onClick={() => {send('bb8-power-refresh');}}>Refresh power</button>
-    <fieldset disabled={!allowed || !connected}><legend>Short steps</legend>
-      <p>Place BB-8 off its dock in a clear, contained area. Stay nearby. Point it forward manually, then set the reference. Clear it before repositioning.</p>
-      <button onClick={() => {send('bb8-aim', undefined, {action: 'set'});}}>Set forward</button>{' '}
-      <button onClick={() => {send('bb8-aim', undefined, {action: 'clear'});}}>Clear forward</button>
-      <p>Forward reference: {link?.forwardReference === undefined ? 'not set' : 'set for this connection'}</p>
-      {(['forward', 'right', 'back', 'left'] as const).map(direction => <button key={direction} disabled={link?.forwardReference === undefined} onClick={() => {send('bb8-step', undefined, {step: {direction, speed: MOTION.uiSpeed, durationMs: MOTION.uiDurationMs, forwardReference: link?.forwardReference}});}}>{direction.slice(0, 1).toUpperCase() + direction.slice(1)} step</button>)}
-      <p>Each click requests speed {MOTION.uiSpeed}/255 for {MOTION.uiDurationMs} ms.</p>
+    <fieldset disabled={!allowed || !connected}><legend>Docked gestures</legend>
+      <p>Floor driving is hibernated. Use gestures only on the powered charging dock; they can move the head and internal mechanism.</p>
+      <label><input type="checkbox" checked={docked} onChange={event => {setDocked(event.target.checked);}} /> BB-8 is on its powered dock</label>
+      {([['look-left', 'Look left'], ['look-right', 'Look right'], ['shake-head', 'Head shake']] as const satisfies readonly (readonly [Gesture, string])[]).map(([gesture, label]) => <button key={gesture} disabled={!docked} onClick={() => {if (docked) send('bb8-gesture', undefined, {gesture, docked: true});}}>{label}</button>)}
+      <p>Each gesture uses fixed zero-speed heading requests with local Stop and checks charging before each segment.</p>
     </fieldset>
     <context.ui.Command context={context} target={robot.id}>{stop => <>
       <button disabled={!ready || link?.connection !== 'connected'} onClick={() => {
         if (link === undefined) return;
         void stop.run({family: 'bb8-stop', target: robot.id, requestId: crypto.randomUUID(), data: {expectedConfigurationRevision: robot.configurationRevision, expectedHelperEpoch: link.helperEpoch, expectedConnectionGeneration: link.connectionGeneration}});
-      }}>Stop</button>
+      }}>Stop gesture</button>
       <p role="status" aria-live="polite">Stop: {stop.text}</p>
     </>}</context.ui.Command>
-    <p>A step ends with a local Stop request. Completion confirms packets, not physical rest. A lost Bluetooth link can prevent Stop; keep the robot supervised.</p>
+    <p>Gesture completion confirms transmission, not observed head position. A lost Bluetooth link can prevent Stop; stay nearby.</p>
     <p role="status" aria-live="polite">{command.text}</p>
     {robot.lastResult.status === 'known' && <p>Last result: {robot.lastResult.value.result} · evidence {robot.lastResult.value.evidence}</p>}
   </section>;

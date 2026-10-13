@@ -3,16 +3,23 @@ import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2/errors';
 import type {ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 export const MODULE_SOURCE = 'bunny/modules/bb8';
 export const HELPER_SOURCE = 'bunny/parts/bb8-windows';
-export const PUBLIC_FAMILIES = ['bb8-connect', 'bb8-disconnect', 'bb8-wake', 'bb8-led-set', 'bb8-power-refresh', 'bb8-aim', 'bb8-step', 'bb8-stop'] as const;
+export const PUBLIC_FAMILIES = ['bb8-connect', 'bb8-disconnect', 'bb8-wake', 'bb8-led-set', 'bb8-power-refresh', 'bb8-aim', 'bb8-step', 'bb8-stop', 'bb8-gesture'] as const;
 export type PublicFamily = typeof PUBLIC_FAMILIES[number];
 export type Led = {target: 'main'; rgb: [number, number, number]} | {target: 'tail'; brightness: number};
+export const GESTURES = ['look-left', 'look-right', 'shake-head'] as const;
+export type Gesture = typeof GESTURES[number];
+export const GESTURE_PRESETS = {
+  'look-left': {headings: [330], durationMs: 300},
+  'look-right': {headings: [30], durationMs: 300},
+  'shake-head': {headings: [30, 330, 30, 330, 0], durationMs: 150},
+} as const;
 export type Direction = 'forward' | 'right' | 'back' | 'left';
 export type Step = {direction: Direction; speed: number; durationMs: number; forwardReference: string};
 export const MOTION = {maxSpeed: 32, minDurationMs: 100, maxDurationMs: 500, uiSpeed: 20, uiDurationMs: 300} as const;
 export const HEADINGS: Readonly<Record<Direction, number>> = {forward: 0, right: 90, back: 180, left: 270};
-export type Operation = {kind: 'connect'} | {kind: 'disconnect'} | {kind: 'wake'} | {kind: 'power-refresh'} | {kind: 'led-set'; led: Led} | {kind: 'aim'; action: 'set' | 'clear'} | ({kind: 'step'} & Step) | {kind: 'stop'};
+export type Operation = {kind: 'connect'} | {kind: 'disconnect'} | {kind: 'wake'} | {kind: 'power-refresh'} | {kind: 'led-set'; led: Led} | {kind: 'aim'; action: 'set' | 'clear'} | ({kind: 'step'} & Step) | {kind: 'stop'} | {kind: 'gesture'; gesture: Gesture; docked: true};
 export type Guards = {expectedConfigurationRevision: number; expectedHelperEpoch: string; expectedConnectionGeneration: number};
-export type PublicRequest = Guards & {requestId: string; led?: Led; action?: 'set' | 'clear'; step?: Step};
+export type PublicRequest = Guards & {requestId: string; led?: Led; action?: 'set' | 'clear'; step?: Step; gesture?: Gesture; docked?: true};
 export type LinkRequest = Guards & {requestId: string; operationId: string; parentRequestId: string; operationExpiresAtMs: number; operation: Operation};
 export type RecordedRequest = {requestId: string; operationId: string};
 export type Power = {recordVersion: 1; category: 1 | 2 | 3 | 4; voltageHundredths: number; rechargeCount: number; secondsAwakeSinceRecharge: number; observedAtMs: number};

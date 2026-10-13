@@ -82,3 +82,69 @@ void test('sequence exhaustion refuses GO while retaining packet space for an ex
     assert.equal(gatt.writes.length, before + 1); assert.equal(gatt.writes.at(-1)?.bytes[9], 0);
   } finally {await transport.close();}
 });
+
+void test('dock gesture checks fresh charging then sends only zero-speed heading and local Stop', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    gatt.power = [1, 1, 3, 25, 0, 5, 0, 100]; const before = gatt.writes.length;
+    const gesture = {kind: 'gesture' as const, gesture: 'look-left' as const, docked: true as const};
+    const work = transport.execute(gesture, signal(), () => {}, () => {});
+    await clock.tick(1000); assert.deepEqual(await work, {});
+    const packets = gatt.writes.slice(before);
+    assert.deepEqual(packets.map(w => [w.bytes[2], w.bytes[3], w.bytes.slice(6, -1)]), [[0, 32, []], [2, 48, [0, 1, 74, 1, 0]], [2, 48, [0, 1, 74, 0, 0]]]);
+    assert.notEqual(packets[1]?.bytes[4], packets[2]?.bytes[4]);
+  } finally {await transport.close();}
+});
+void test('dock gesture refuses non-charging power before a heading write', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    const before = gatt.writes.length;
+    const work = transport.execute({kind: 'gesture', gesture: 'look-right', docked: true}, signal(), () => {}, () => {});
+    const result = work.then(() => false, () => true); await clock.tick(1000); assert.equal(await result, true);
+    assert.equal(gatt.writes.length, before + 1); assert.equal(gatt.writes.at(-1)?.bytes[3], 32);
+  } finally {await transport.close();}
+});
+
+void test('Stop during dock charging check sends no heading request', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    gatt.power[1] = 1; const before = gatt.writes.length, original = gatt.write.bind(gatt);
+    gatt.write = async (uuid, bytes, live) => {if (uuid === UUID.command && bytes[2] === 0 && bytes[3] === 32) transport.interruptStep(); await original(uuid, bytes, live);};
+    const work = transport.execute({kind: 'gesture', gesture: 'shake-head', docked: true}, signal(), () => {}, () => {});
+    const result = work.then(() => undefined, error => error as unknown); await clock.tick(1000); const failure = await result; assert.ok(failure instanceof StepFailure); assert.equal(failure.body.error.code, 'cancelled');
+    assert.equal(gatt.writes.length, before + 1); assert.equal(gatt.writes.at(-1)?.bytes[3], 32);
+  } finally {await transport.close();}
+});
+void test('Stop during dock gesture prevents all later heading segments', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    gatt.power[1] = 1; const before = gatt.writes.length;
+    const work = transport.execute({kind: 'gesture', gesture: 'shake-head', docked: true}, signal(), () => {}, () => {});
+    const result = work.then(() => undefined, error => error as unknown); await clock.tick(80); transport.interruptStep(); await clock.tick(1500); const failure = await result; assert.ok(failure instanceof StepFailure); assert.equal(failure.body.error.code, 'cancelled'); assert.equal(failure.stopAcknowledged, true);
+    assert.equal(gatt.writes.length, before + 3, 'fresh charging, one heading and selected Stop; no later segments');
+    assert.ok(gatt.writes.slice(before).filter(w => w.bytes[3] === 48).every(w => w.bytes[6] === 0));
+  } finally {await transport.close();}
+});
+void test('a missing dock heading reply still selects local Stop and aborts remaining segments', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    gatt.power[1] = 1; const before = gatt.writes.length, original = gatt.write.bind(gatt);
+    gatt.write = async (uuid, bytes, live) => {if (uuid === UUID.command && bytes[3] === 48) gatt.reply = bytes[9] === 0; await original(uuid, bytes, live);};
+    const work = transport.execute({kind: 'gesture', gesture: 'shake-head', docked: true}, signal(), () => {}, () => {});
+    const result = work.then(() => undefined, error => error as unknown);
+    await clock.tick(1000); const failure = await result; assert.ok(failure instanceof StepFailure); assert.equal(failure.stopAcknowledged, true);
+    assert.equal(gatt.writes.length, before + 3); assert.equal(gatt.writes.at(-1)?.bytes[9], 0);
+  } finally {await transport.close();}
+});
+
+void test('charging lost between gesture segments refuses the next heading', async () => {
+  const {clock, gatt, transport} = await connected();
+  try {
+    gatt.power[1] = 1; const before = gatt.writes.length, original = gatt.write.bind(gatt); let reports = 0;
+    gatt.write = async (uuid, bytes, live) => {if (uuid === UUID.command && bytes[2] === 0 && bytes[3] === 32 && ++reports === 2) gatt.power[1] = 2; await original(uuid, bytes, live);};
+    const result = transport.execute({kind: 'gesture', gesture: 'shake-head', docked: true}, signal(), () => {}, () => {}).then(() => false, () => true);
+    await clock.tick(1500); assert.equal(await result, true);
+    assert.equal(reports, 2); assert.equal(gatt.writes.length, before + 4, 'charging, one heading/Stop, then non-charging report');
+    assert.equal(gatt.writes.at(-1)?.bytes[3], 32);
+  } finally {await transport.close();}
+});

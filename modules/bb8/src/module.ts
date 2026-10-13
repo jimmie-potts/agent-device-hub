@@ -85,6 +85,7 @@ class Bb8Run {
     if (command.subject !== this.#config.id) return refuse('not-found');
     if (command.dataschema !== schemaOf(family) || !bb8Validator().validate(command).ok) return refuse('invalid-message');
     if (Date.parse(command.expiresat ?? '') <= this.#context.clock.now()) return refuse('expired');
+    if (['bb8-aim', 'bb8-step'].includes(family)) return refuse('unsupported-capability');
     const data = command.data as unknown as PublicRequest;
     const digest = createHash('sha256').update(JSON.stringify({family, data})).digest('hex');
     let prior: Responsibility | undefined;
@@ -96,8 +97,9 @@ class Bb8Run {
     if (this.#held !== undefined && family !== 'bb8-connect' && family !== 'bb8-disconnect' && family !== 'bb8-stop') return refuse('invalid-state');
     if (family !== 'bb8-connect' && family !== 'bb8-disconnect' && helper.connection !== 'connected') return refuse('unavailable');
     const pending = this.#store.pending();
+    if (family === 'bb8-gesture' && pending.some(row => row.family === 'bb8-gesture' || row.family === 'bb8-step')) return refuse('invalid-state');
     if (family === 'bb8-step' && (pending.some(row => row.family === family) || data.step === undefined || helper.forwardReference === undefined || data.step.forwardReference !== helper.forwardReference)) return refuse('invalid-state');
-    const capacity = (rows: readonly Responsibility[]): number => BOUNDS.maxPending + (family !== 'bb8-stop' && (family === 'bb8-step' || rows.some(row => row.family === 'bb8-step')) ? 0 : 1);
+    const capacity = (rows: readonly Responsibility[]): number => BOUNDS.maxPending + (family !== 'bb8-stop' && (family === 'bb8-step' || family === 'bb8-gesture' || rows.some(row => row.family === 'bb8-step' || row.family === 'bb8-gesture')) ? 0 : 1);
     if (pending.length >= capacity(pending)) return refuse('capacity');
     let operation: Operation;
     switch (family) {
@@ -108,12 +110,13 @@ class Bb8Run {
       case 'bb8-aim': if (data.action === undefined) return refuse('invalid-message'); operation = {kind: 'aim', action: data.action}; break;
       case 'bb8-step': if (data.step === undefined) return refuse('invalid-message'); operation = {kind: 'step', ...data.step}; break;
       case 'bb8-stop': operation = {kind: 'stop'}; break;
+      case 'bb8-gesture': if (data.gesture === undefined || data.docked !== true) return refuse('invalid-message'); operation = {kind: 'gesture', gesture: data.gesture, docked: true}; break;
       case 'bb8-led-set': if (data.led === undefined) return refuse('invalid-message'); operation = {kind: 'led-set', led: data.led}; break;
     }
     const id = randomUUID(), deadline = this.#context.clock.now() + (operation.kind === 'connect' ? BOUNDS.connectMs : BOUNDS.operationMs);
     const row = {source: command.source, request_id: data.requestId, digest, family, operation_id: id, helper_epoch: helper.helperEpoch, generation: helper.connectionGeneration, deadline, traceparent: command.traceparent};
     try {
-      await this.#transaction(add => {if (this.#store.pending().length >= capacity(this.#store.pending()) || (family === 'bb8-step' && this.#store.pending().some(row => row.family === family))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
+      await this.#transaction(add => {if (this.#store.pending().length >= capacity(this.#store.pending()) || (['bb8-step', 'bb8-gesture'].includes(family) && this.#store.pending().some(row => ['bb8-step', 'bb8-gesture'].includes(row.family)))) throw new SdkError(refuse('capacity')); this.#store.accept(row); if (operation.kind === 'led-set') this.#state = {...this.#state, desiredLed: {status: 'known', value: operation.led}}; this.#records(add, command);});
     } catch (error) {return refuse(error instanceof SdkError ? error.body.error.code : storageCode(error));}
     this.#track(this.#execute({...row, stage: 'accepted', outcome: null}, operation, data, command));
     return {status: 'accepted'};

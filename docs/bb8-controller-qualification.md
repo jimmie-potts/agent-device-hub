@@ -10,6 +10,10 @@ product behavior change in this documentation delivery, so it introduces no
 OpenSpec capability delta. Implemented module contracts and scenarios must be
 reviewed through the issue-linked changes before product coding.
 
+## Current operating scope
+
+The owner selected dock controls and fixed docked head gestures, with floor driving hibernated. The [module guide](../modules/bb8/README.md#docked-head-gestures) and [Windows helper guide](../apps/bb8-windows/README.md) own current controls and limits. The qualification and proposed motion briefs below are historical source/design evidence, not instructions to run additional trials, change firmware or reactivate driving. Source packet checks do not establish visible gesture acceptance.
+
 ## Evidence classes
 
 S = inspected pinned source; D = vendor documentation; H = read-only host
