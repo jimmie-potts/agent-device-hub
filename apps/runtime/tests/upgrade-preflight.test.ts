@@ -193,6 +193,29 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   if (scenario.endsWith('-onn-absent')) {
     health.modules.push({name: 'onn', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'});
   }
+  if (scenario.startsWith('selected-roborock-') || scenario.startsWith('retained-roborock-')) {
+    const retained = scenario.startsWith('retained-roborock-');
+    if (!retained) state.configured.push('roborock');
+    if (!scenario.endsWith('-missing-state')) state.durableOwners.push('roborock');
+    if (!scenario.endsWith('-no-proof')) admission.coveredOwners.push('roborock');
+    for (const artifact of Object.values(source.artifacts)) {
+      artifact.entries.push({path: 'modules/roborock/package.json', kind: 'file', sha256: 'f'.repeat(64)},
+        {path: 'modules/roborock/dist/src/store.js', kind: 'file', sha256: 'e'.repeat(64)});
+    }
+    for (const role of ['previous', 'target', 'recovery'] as const) {
+      if (scenario.endsWith(`-no-${role}-reader`)) source.artifacts[role].entries.pop();
+    }
+    if (scenario.endsWith('-no-inventory')) Reflect.deleteProperty(source.artifacts.target, 'entries');
+    health.modules.push({name: 'roborock', apiVersion: MODULE_API_VERSION, state: retained ? 'refused' : 'running',
+      healthy: !retained, reasonCode: retained ? 'not-found' : null});
+    const row = health.modules.at(-1); assert.ok(row);
+    if (scenario.endsWith('-unhealthy')) row.healthy = false;
+    if (scenario.endsWith('-refused')) {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found';}
+    if (scenario.endsWith('-missing-row')) health.modules.pop();
+    if (scenario.endsWith('-duplicate-row')) health.modules.push({...row});
+    if (scenario.endsWith('-reason')) row.reasonCode = 'unavailable';
+    if (retained || scenario.endsWith('-unhealthy') || scenario.endsWith('-refused')) health.status = 'degraded';
+  }
   const counters: Record<string, number> = {owner: 0, listener: 0, source: 0, admission: 0, baseline: 0, paths: 0, hooks: 0, state: 0, receipts: 0, http: 0, lock: 0, execution: 0};
   const count = (name: string) => (counters[name] = (counters[name] ?? 0) + 1);
   let afterHttp = false;
@@ -395,6 +418,29 @@ async function runningCheck(root: string, scenario: string,
     if (!scenario.startsWith('onn-retained-') && scenario !== 'onn-bb8-retained') state.configured.push('onn');
     if (scenario !== 'onn-missing-state') state.durableOwners.push('onn');
     if (!scenario.includes('missing-coverage') && scenario !== 'onn-bb8-no-onn-proof') admission.coveredOwners.push('onn');
+  }
+  if (scenario.startsWith('selected-roborock-') || scenario.startsWith('retained-roborock-')) {
+    const retained = scenario.startsWith('retained-roborock-');
+    if (!retained) state.configured.push('roborock');
+    if (!scenario.endsWith('-missing-state')) state.durableOwners.push('roborock');
+    if (!scenario.endsWith('-no-proof')) admission.coveredOwners.push('roborock');
+    for (const artifact of Object.values(source.artifacts)) {
+      artifact.entries.push({path: 'modules/roborock/package.json', kind: 'file', sha256: 'f'.repeat(64)},
+        {path: 'modules/roborock/dist/src/store.js', kind: 'file', sha256: 'e'.repeat(64)});
+    }
+    for (const role of ['previous', 'target', 'recovery'] as const) {
+      if (scenario.endsWith(`-no-${role}-reader`)) source.artifacts[role].entries.pop();
+    }
+    if (scenario.endsWith('-no-inventory')) Reflect.deleteProperty(source.artifacts.target, 'entries');
+    health.modules.push({name: 'roborock',  state: retained ? 'refused' : 'running',
+      healthy: !retained, reasonCode: retained ? 'not-found' : null});
+    const row = health.modules.at(-1); assert.ok(row);
+    if (scenario.endsWith('-unhealthy')) row.healthy = false;
+    if (scenario.endsWith('-refused')) {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found';}
+    if (scenario.endsWith('-missing-row')) health.modules.pop();
+    if (scenario.endsWith('-duplicate-row')) health.modules.push({...row});
+    if (scenario.endsWith('-reason')) row.reasonCode = 'unavailable';
+    if (retained || scenario.endsWith('-unhealthy') || scenario.endsWith('-refused')) health.status = 'degraded';
   }
   const companion = scenario.startsWith('companions-');
   if (companion) {
@@ -609,4 +655,42 @@ void test('running-check CLI refuses an unknown phase before reading installed s
     assert.deepEqual(JSON.parse(value.stderr), {code: 'runtime-upgrade-running-refused', verified: false});
     return true;
   });
+});
+
+void test('qualified configured or retained Roborock requires coverage and delivered readers before upgrade observation', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'roborock-preflight-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  for (const scenario of ['selected-roborock-qualified', 'retained-roborock-qualified']) {
+    const value = await composedPreflight(root, scenario);
+    assert.equal(value.code, undefined, scenario); assert.ok(value.plan !== undefined);
+    assert.equal(value.counters.http, 2);
+  }
+  for (const suffix of ['no-proof', 'missing-state', 'no-previous-reader', 'no-target-reader', 'no-recovery-reader', 'no-inventory']) {
+    for (const owner of ['selected', 'retained']) {
+      if (owner === 'retained' && suffix === 'missing-state') continue; // No configuration or retained ownership remains.
+      const value = await composedPreflight(root, `${owner}-roborock-${suffix}`);
+      assert.equal(value.code, 'runtime-upgrade-preflight-refused', suffix);
+      assert.equal(value.counters.http, 0);
+    }
+  }
+  for (const suffix of ['unhealthy', 'refused', 'missing-row', 'duplicate-row', 'reason']) {
+    assert.equal((await composedPreflight(root, `selected-roborock-${suffix}`)).code, 'runtime-upgrade-preflight-refused', suffix);
+  }
+});
+
+void test('post-start Roborock verification preserves coverage readers and configured health in every phase', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'roborock-running-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  for (const phase of ['candidate', 'recovery', 'reupgrade']) {
+    for (const owner of ['selected', 'retained']) {
+      assert.equal((await runningCheck(root, `${owner}-roborock-qualified`, phase)).code, undefined);
+      for (const suffix of ['no-proof', 'missing-state', 'no-previous-reader', 'no-target-reader', 'no-recovery-reader', 'no-inventory']) {
+        if (owner === 'retained' && suffix === 'missing-state') continue; // An absent optional owner needs no archive.
+        assert.equal((await runningCheck(root, `${owner}-roborock-${suffix}`, phase)).code, 'runtime-upgrade-running-refused', `${phase} ${owner} ${suffix}`);
+      }
+    }
+    for (const suffix of ['unhealthy', 'refused', 'missing-row', 'duplicate-row', 'reason']) {
+      assert.equal((await runningCheck(root, `selected-roborock-${suffix}`, phase)).code, 'runtime-upgrade-running-refused', `${phase} ${suffix}`);
+    }
+  }
 });

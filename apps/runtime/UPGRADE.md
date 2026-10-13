@@ -326,13 +326,37 @@ incompatible formats before a service stop. These checks do not establish physic
 accuracy or installed client behavior.
 
 Unconfigured BB-8, ONN and Roborock retain their exact `refused`, `healthy: false`,
-`not-found` health exceptions. Roborock must remain unconfigured without retained
-state. Configured or retained ONN requires its durable owner and complete ONN
+`not-found` health exceptions. Configured or retained Roborock requires its
+private primary archive, complete `roborock` coverage and the delivered package
+and compiled store reader in previous, target and recovery artifact inventories.
+Configuration, sidecars or a directory alone cannot substitute for its primary
+archive. The verified inventory binds reader bytes; the coordinator must still
+execute each selected compatible reader against latest candidate state.
+Configured or retained ONN requires its durable owner and complete ONN
 coverage; configured or retained BB-8 requires its durable owner and the complete
 `bb8`/`bb8-windows` pair. Configured qualified modules must report running and
 healthy without a refusal reason. Unknown owners still refuse. Legacy seven-owner
 certificates remain valid for absent BB-8 and ONN; adding ONN extends either the
 legacy set or the qualified BB-8 pair by that one fixed owner.
+
+Roborock extends each existing exact owner set, including combinations with ONN,
+paired BB-8 and companions, by one complete baseline/candidate/recovery/reupgrade
+owner. The certificate schema stays `runtime-proof-admission/1.0`. Missing or
+duplicate phases, unknown or duplicate owners, changed bound evidence and partial
+BB-8 pairs refuse before effects. An absent unconfigured/unretained Roborock
+requires no fabricated receipt. Both preflight and post-start verification apply
+ordinary running, healthy, null-reason health to configured Roborock.
+
+The Roborock source fixture uses four separate processes with one built
+production store and SDK outbox. Candidate writes add distinct original readings,
+record versions, room mappings, battery samples/gaps and unverified map bytes with
+provenance. Recovery reads those latest private rows before republishing the exact
+retained state envelopes, without collection or control replay. Restoring the
+older stopped baseline fails qualification. This establishes persistence under
+that build, not compatibility between historical releases. Qualify the actual
+previous/target/recovery readers and bind their private receipts before installed
+admission. Keep owner account material, history, maps and all admission evidence
+private. This profile selects no activation or physical vacuum operation.
 
 The delivered `companions` registration always starts its private store, even
 when its card feature is disabled. A verified artifact containing its fixed

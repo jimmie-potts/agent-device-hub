@@ -42,7 +42,7 @@ void test('upgrade state inspection covers configured and retained owners withou
     assert.equal(await readFile(unknown, 'utf8'), 'retained opaque state');
     await rm(unknown);
   });
-  await t.test('Roborock configuration and retained state remain outside the qualified profile', async () => {
+  await t.test('Roborock ownership requires its primary archive', async () => {
     await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {roborock: {id: 'roborock', configurationRevision: 0}}}), {mode: 0o600});
     await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
     await writeFile(configFile, config, {mode: 0o600});
@@ -51,12 +51,14 @@ void test('upgrade state inspection covers configured and retained owners withou
       if (name === 'roborock') await mkdir(path, {mode: 0o700});
       else await writeFile(path, 'retained synthetic Roborock state', {mode: 0o600});
       try {
-        await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+        if (name === 'roborock.sqlite') {
+          assert.ok((await inspectUpgradeState(state, configFile)).durableOwners.includes('roborock'));
+        } else await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
         if (name !== 'roborock') assert.equal(await readFile(path, 'utf8'), 'retained synthetic Roborock state');
       } finally {await rm(path, {recursive: true});}
     }
   });
-  await t.test('unqualified Roborock configuration and retained state refuse without modification', async () => {
+  await t.test('Roborock directories and sidecars alone refuse without modification', async () => {
     await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {roborock: {id: 'vacuum'}}}), {mode: 0o600});
     await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
     await writeFile(configFile, config, {mode: 0o600});
@@ -65,7 +67,9 @@ void test('upgrade state inspection covers configured and retained owners withou
       if (name === 'roborock') await mkdir(path, {mode: 0o700});
       else await writeFile(path, 'retained synthetic Roborock state', {mode: 0o600});
       try {
-        await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+        if (name === 'roborock.sqlite') {
+          assert.ok((await inspectUpgradeState(state, configFile)).durableOwners.includes('roborock'));
+        } else await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
         if (name !== 'roborock') assert.equal(await readFile(path, 'utf8'), 'retained synthetic Roborock state');
       } finally {await rm(path, {recursive: true});}
     }

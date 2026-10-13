@@ -43,6 +43,22 @@ function requireCoverage(admission, state, source) {
   const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
   if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
     || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
+  const roborock = state.configured.includes('roborock') || state.durableOwners.includes('roborock');
+  if (roborock) {
+    if (!state.durableOwners.includes('roborock') || !Array.isArray(admission.coveredOwners)
+      || !admission.coveredOwners.includes('roborock')) refused();
+    // Verified inventories bind the delivered reader bytes; actual compatible
+    // reader execution still belongs to the coordinator's pinned phase proof.
+    for (const role of ['previous', 'target', 'recovery']) {
+      const entries = source.artifacts?.[role]?.entries;
+      if (!Array.isArray(entries)) refused();
+      for (const path of ['modules/roborock/package.json', 'modules/roborock/dist/src/store.js']) {
+        const matches = entries.filter(entry => entry.path === path);
+        if (matches.length !== 1 || matches[0].kind !== 'file'
+          || !/^[0-9a-f]{64}$/.test(matches[0].sha256)) refused();
+      }
+    }
+  }
   const roles = companionRoles(source);
   const retained = state.durableOwners.includes('companions');
   const configured = state.configured.includes('companions');
@@ -60,7 +76,7 @@ function stateAfterStart(state, source, role) {
 function requireHealth(health, configured, lagLimitMs, companions) {
   if (health.moduleApiVersion !== MODULE_API_VERSION || health.lagCheck.status !== 'active'
     || health.lagCheck.limitMs !== lagLimitMs || !Array.isArray(health.modules)
-    || configured.some(name => name === 'roborock' || !knownModules.includes(name))
+    || configured.some(name => !knownModules.includes(name))
     || new Set(health.modules.map(row => row.name)).size !== health.modules.length
     || health.modules.some(row => !knownModules.includes(row.name))
     || !['core', ...configured, ...(companions ? ['companions'] : [])]
@@ -68,8 +84,8 @@ function requireHealth(health, configured, lagLimitMs, companions) {
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN and Roborock. Qualified BB8/ONN coverage is checked separately;
-    // configured or retained Roborock remains outside this profile.
+    // BB8, ONN and Roborock. Configured/retained owner coverage and delivered
+    // Roborock readers are checked separately before health observation.
     if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
