@@ -5,7 +5,8 @@ import {TextDecoder} from 'node:util';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
 export type Region = 'us' | 'eu' | 'cn' | 'asia';
-export type Config = {schemaVersion: 1; deviceId: string; address: string; broker: string; region: Region};
+export type LocalProtocol = '1.0' | 'L01';
+export type Config = {localProtocol?: LocalProtocol; schemaVersion: 1; deviceId: string; address: string; broker: string; region: Region};
 export type Session = {schemaVersion: 1; deviceId: string; model: 'roborock.vacuum.a97'; protocol: '1.0'; localKey: string; rriot: {u: string; s: string; k: string}; broker: string};
 const MAX_BYTES = 64 * 1024;
 const DIRECTORY_FLAGS = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
@@ -55,10 +56,12 @@ function broker(value: unknown): string {
   return `mqtts://${host}:8883`;
 }
 function parseConfig(value: unknown): Config {
-  const fields = exactObject(value, ['schemaVersion', 'deviceId', 'address', 'broker', 'region']);
+  const selected = typeof value === 'object' && value !== null && Object.hasOwn(value, 'localProtocol');
+  const fields = exactObject(value, ['schemaVersion', 'deviceId', 'address', 'broker', 'region', ...(selected ? ['localProtocol'] : [])]);
+  if (selected && fields.localProtocol !== '1.0' && fields.localProtocol !== 'L01') invalid();
   const region = fields.region;
   if (fields.schemaVersion !== 1 || (region !== 'us' && region !== 'eu' && region !== 'cn' && region !== 'asia')) invalid();
-  return {schemaVersion: 1, deviceId: segment(fields.deviceId), address: address(fields.address), broker: broker(fields.broker), region};
+  return {schemaVersion: 1, deviceId: segment(fields.deviceId), address: address(fields.address), broker: broker(fields.broker), region, ...(selected ? {localProtocol: fields.localProtocol as LocalProtocol} : {})};
 }
 function parseSession(value: unknown, target?: Config): Session {
   const fields = exactObject(value, ['schemaVersion', 'deviceId', 'model', 'protocol', 'localKey', 'rriot', 'broker']);

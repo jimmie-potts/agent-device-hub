@@ -4,7 +4,7 @@ import {createConnection, createServer, type Socket} from 'node:net';
 import {once} from 'node:events';
 import {test} from 'node:test';
 import {SdkError} from '@jimmie-potts/sdk';
-import {decodeV1, encodeV1, TcpFrames, wrapTcp} from '../src/transport/codec.js';
+import {decodeL01, encodeL01, decodeV1, encodeV1, TcpFrames, wrapTcp} from '../src/transport/codec.js';
 import {localRead, MqttPacketGuard} from '../src/transport/network.js';
 import type {Config, Session} from '../src/transport/private.js';
 import type {WireRequest} from '../src/transport/reader.js';
@@ -83,5 +83,72 @@ void test('abort after handshake retires a pending socket; later bytes cannot sa
     const pending = localRead(config, session, request, abort.signal, {connect: () => createConnection({host: '127.0.0.1', port: server.port})});
     await handshake.promise; abort.abort(); await assert.rejects(pending, (error: unknown) => error instanceof SdkError && error.body.error.code === 'cancelled');
     assert.ok(connection !== undefined); if (!connection.destroyed) await new Promise<void>(resolve => {connection?.once('close', () => resolve());}); assert.equal(connection.destroyed, true);
+  } finally {await server.close();}
+});
+
+void test('selected L01 loopback read uses connection nonces, fragmented controls and the final allowlist', async () => {
+  const selected: Config = {...config, localProtocol: 'L01'};
+  const methods: string[] = []; const controls: Buffer[] = [];
+  const ackNonce = 0x87654321; let clientNonce = 0;
+  const server = await peer((socket, frames) => { for (const frame of frames) {
+    const kind = frame.readUInt16BE(15);
+    if (kind === 0) {
+      controls.push(frame); clientNonce = frame.readUInt32BE(7);
+      const ack = Buffer.alloc(21); ack.write('L01'); ack.writeUInt32BE(ackNonce, 7); ack.writeUInt16BE(1, 15);
+      const control = Buffer.alloc(17); control.write('L01'); control.writeUInt16BE(5, 15);
+      const bytes = Buffer.concat([wrapTcp(ack), wrapTcp(control)]); socket.write(bytes.subarray(0, 3)); socket.write(bytes.subarray(3)); continue;
+    }
+    if (kind === 5) {controls.push(frame); continue;}
+    if (kind !== 4) return;
+    const envelope = JSON.parse(decodeL01(frame, session.localKey, clientNonce, ackNonce).payload.toString()) as {dps: {'101': string}};
+    const rpc = JSON.parse(envelope.dps['101']) as {id: number; method: string; params: unknown[]}; methods.push(rpc.method);
+    const payload = Buffer.from(JSON.stringify({id: rpc.id, result: [{battery: 95}]}));
+    const bytes = wrapTcp(encodeL01(payload, session.localKey, {seq: 20, random: 1234, seconds: request.seconds, protocol: 4}, clientNonce, ackNonce));
+    socket.write(bytes.subarray(0, 13)); socket.write(bytes.subarray(13));
+  }});
+  try {
+    const reads: WireRequest['method'][] = ['get_status', 'get_consumable', 'get_clean_summary', 'get_clean_record', 'get_room_mapping'];
+    for (const method of reads) {
+      const result = await localRead(selected, session, {...request, method, params: method === 'get_clean_record' ? [1700000000] : []}, AbortSignal.timeout(1000), {connect: () => createConnection({host: '127.0.0.1', port: server.port})});
+      assert.deepEqual(result, {kind: 'json', value: [{battery: 95}]});
+    }
+    assert.deepEqual(methods, reads);
+    assert.equal(controls[0]?.subarray(0, 3).toString(), 'L01'); assert.equal(controls[0]?.readUInt32BE(3), 1);
+    assert.equal(controls[0]?.length, 21); assert.equal(controls[0]?.readUInt32BE(11), request.seconds);
+  } finally {await server.close();}
+  let opened = 0;
+  await assert.rejects(localRead(selected, session, {...request, method: 'app_start' as WireRequest['method']}, AbortSignal.timeout(1000), {connect: () => {opened++; assert.fail('prohibited RPC must not connect');}}), (error: unknown) => error instanceof SdkError && error.body.error.code === 'forbidden');
+  assert.equal(opened, 0);
+});
+
+void test('L01 refuses wrong connection authentication, response identity and wire version without fallback', async () => {
+  for (const failure of ['nonce', 'id', 'version', 'refusal', 'duplicate-ack']) {
+    let reads = 0; let opens = 0;
+    const server = await peer((socket, frames) => {for (const frame of frames) {
+      const kind = frame.readUInt16BE(15);
+      if (kind === 0) {
+        const ack = Buffer.alloc(21); ack.write('L01'); ack.writeUInt32BE(9, 7); ack.writeUInt16BE(1, 15); ack.writeUInt32BE(failure === 'refusal' ? 1 : 0, 17);
+        socket.write(failure === 'duplicate-ack' ? Buffer.concat([wrapTcp(ack), wrapTcp(ack)]) : wrapTcp(ack));
+      } else if (kind === 4) {
+        reads++;
+        const payload = Buffer.from(JSON.stringify({id: failure === 'id' ? 43 : 42, result: []}));
+        const header = {seq: 7, random: 1234, seconds: request.seconds, protocol: 102};
+        const bytes = failure === 'version' ? encodeV1(payload, session.localKey, header) : encodeL01(payload, session.localKey, header, frame.readUInt32BE(7), failure === 'nonce' ? 10 : 9);
+        socket.write(wrapTcp(bytes));
+      }
+    }});
+    try {
+      await assert.rejects(localRead({...config, localProtocol: 'L01'}, session, request, AbortSignal.timeout(1000), {connect: () => {opens++; return createConnection({host: '127.0.0.1', port: server.port});}}), (error: unknown) => error instanceof SdkError && error.body.error.code === (failure === 'version' ? 'unsupported-capability' : failure === 'refusal' ? 'unauthenticated' : 'unavailable'));
+      assert.equal(opens, 1); assert.ok(reads <= 1); if (failure === 'refusal') assert.equal(reads, 0);
+    } finally {await server.close();}
+  }
+});
+void test('L01 cancellation retires the pending socket before a late reply', async () => {
+  const hello = deferred<void>(); const abort = new AbortController(); let connection: Socket | undefined;
+  const server = await peer((socket, frames) => {connection = socket; for (const frame of frames) if (frame.readUInt16BE(15) === 0) hello.resolve();});
+  try {
+    const pending = localRead({...config, localProtocol: 'L01'}, session, request, abort.signal, {connect: () => createConnection({host: '127.0.0.1', port: server.port})});
+    await hello.promise; abort.abort(); await assert.rejects(pending, (error: unknown) => error instanceof SdkError && error.body.error.code === 'cancelled');
+    assert.ok(connection !== undefined); if (!connection.destroyed) await new Promise<void>(resolve => {connection?.once('close', resolve);}); assert.equal(connection.destroyed, true);
   } finally {await server.close();}
 });

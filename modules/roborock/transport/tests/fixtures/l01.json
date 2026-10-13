@@ -1,0 +1,13 @@
+{
+  "localKey": "0123456789abcdef",
+  "header": {
+    "seq": 7,
+    "random": 9,
+    "seconds": 1700000000,
+    "protocol": 4
+  },
+  "clientNonce": 305419896,
+  "ackNonce": 2271560481,
+  "payload": "{\"dps\":{\"102\":\"{\\\"id\\\":42,\\\"result\\\":[{\\\"battery\\\":95}]}\"}}",
+  "frameHex": "4c303100000007000000096553f1000004004bc48896130c8e8bec5847fedf54e5ee63c352d6abcdf1a5d5b7b73c0e930b0b86d4c5c997a0db07eb5e8b453ec837af725fcb047e1fbb34ca7f9d233cc5f232c4369d8a80b8994bec96166a4818e493"
+}
