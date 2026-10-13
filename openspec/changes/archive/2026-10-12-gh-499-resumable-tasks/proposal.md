@@ -17,7 +17,7 @@ The existing companions module presents fixed Reachy cards but cannot retain a t
 
 ### Modified Capabilities
 
-None. Existing companion behavior remains intact.
+- `runtime-dashboard`: keep integrated React page drafts visible during a connection loss while disabling mutation.
 
 ## Impact
 

@@ -7,7 +7,7 @@ Run commands from the repository root with Node 24 and the dependencies in
 ## Shared observability contract checks
 
 The source contract in `packages/observability` uses Node 24 and Python 3.14. From the assigned worktree, run `npm ci`, install
-`requirements-contracts.txt` in an isolated Python environment, then run
+`requirements-contracts.txt` and `packages/observability/requirements-host.txt` in an isolated Python environment, then run
 `npm run build`, `npm run typecheck`, `npm run test:observability`,
 `npm run test:observability:python`, `npm run test:observability:query` and
 `npm run test:observability:package` and `npm run test:observability:browser`

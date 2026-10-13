@@ -70,8 +70,14 @@ try {
   if (output !== undefined) await page.screenshot({path: `${output}/assistant-browser.png`, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+  await assistant.getByRole('textbox', {name: 'Task text', exact: true}).fill('SYNTHETIC-CANCELLATION-CHECK');
+  await startTask.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+  const cancel = assistant.getByRole('button', {name: 'Cancel task', exact: true}); await cancel.focus(); await cancel.press('Enter');
+  await assistant.getByText('Task status: cancelled', {exact: true}).waitFor();
+  const draft = assistant.getByRole('textbox', {name: 'Task text', exact: true}); await draft.fill('UNSENT-DISCONNECTION-DRAFT');
   await context.setOffline(true); world.dropDashboardStreams();
   await assistant.getByText('Disconnected.', {exact: false}).waitFor(); assert.equal(await startTask.isDisabled(), true);
+  assert.equal(await draft.inputValue(), 'UNSENT-DISCONNECTION-DRAFT');
   await context.setOffline(false); await page.reload(); await feed(page, 'connected');
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected');
@@ -82,5 +88,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: Reachy cards preserved; private task start, reload, restart, answer, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
 } finally {await browser.close(); await world.close();}

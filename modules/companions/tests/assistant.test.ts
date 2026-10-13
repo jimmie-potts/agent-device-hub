@@ -161,6 +161,21 @@ void test('per-task counters and usage ceilings survive restart and refuse calls
   }
 });
 
+void test('the persisted question ceiling prevents another question from being published', async context => {
+  const result = deferred<{text: string; units: number}>(); let calls = 0;
+  const w = await world(context, {model: () => {calls += 1; return result.promise;}});
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic question ceiling');
+  await until(() => calls === 1);
+  const id = w.module().inspectAssistant()?.tasks[0]?.taskId; assert.ok(id !== undefined);
+  const task = w.store().task(id); assert.ok(task); task.questions = LIMITS.questions; w.store().save(task);
+  result.resolve({text: 'Synthetic interpretation', units: 10});
+  await until(() => w.module().inspectAssistant()?.tasks[0]?.status === 'failed');
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.code, 'capacity');
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.questionId, null);
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.toolCalls, 0);
+  await w.restart(); assert.equal(calls, 1); assert.equal(w.module().inspectAssistant()?.tasks[0]?.questions, LIMITS.questions);
+});
+
 void test('human wait and downtime use no active budget; profiles keep independent conversations', async context => {
   const w = await world(context);
   await control(w.core, w.module(), 'enable');
@@ -295,6 +310,6 @@ void test('private history pages remain bounded and always advance through escap
     assert.ok(Buffer.byteLength(JSON.stringify(page)) <= LIMITS.pageBytes); count += page.messages.length;
     if (page.next === null) break;
     assert.ok(page.next > after); after = page.next;
-  } while (true);
+  } while (pages < 50);
   assert.equal(count, 41);
 });

@@ -16,7 +16,9 @@ The graph interprets a bounded prompt, interrupts for clarification, reads an im
 
 Stage JSON through the SDK upload hook; command payloads contain only opaque bound references. Use additive assistant-input/control/state families. Current state contains metadata only; content reads paginate retained messages under the existing read permission. The ordinary Command UI reports local admission separately from task outcome. Existing Reachy functionality and first-live coding eligibility remain independent.
 
-Use the existing outbox for atomic domain/state/outcome commits and original-trace republishing. Use context clock/scheduler/signal/log/trace. Extend the versioned diagnostic catalog for minimal run/model/tool records; no exporter dependency or private text. New runs link prior context and do not keep spans open across human waits or downtime.
+Share one module revision and one sync handler across Reachy and assistant state so the SDK owner revision floor cannot suppress either family. Keep an already mounted React contribution visible during disconnection; the existing connection/authority gates still disable mutations and the page can retain its draft.
+
+Use the existing outbox for atomic domain/state/outcome commits and original-trace republishing. Use context clock/scheduler/signal/log/trace. Use additive diagnostic profile 1.6.0 and extend the versioned diagnostic catalog for minimal run/model/tool records; no exporter dependency or private text. New runs link prior context and do not keep spans open across human waits or downtime.
 
 Model functions are bounded text inference seams. Future coding-worker dispatch is a separate capability. Future workspace links use `{owner: "companions", conversationId, taskId, questionId?}`; neither connector work nor personal-memory storage belongs here.
 

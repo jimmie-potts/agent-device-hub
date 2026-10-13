@@ -161,6 +161,10 @@ The dashboard SHALL show navigation only for pages declared by current module me
 - **WHEN** a person opens a feature page and edits a local draft before explicitly saving
 - **THEN** opening and drafting change no device, media or scene; an authorized save sends one tracked command and distinguishes acceptance from its completed or uncertain outcome
 
+#### Scenario: Connection lost while drafting
+- **WHEN** an already mounted integrated page loses its connection while the owner has an unsent draft
+- **THEN** the draft and saved context remain visible, disconnection is explicit, and mutation stays disabled until current authority and state return
+
 ### Requirement: Small running-build identity
 Connections SHALL display the runtime's frozen build revision, package version, build time and dirty status when available, with unknown values stated honestly. The authenticated read SHALL reveal no settings, host paths or credentials.
 

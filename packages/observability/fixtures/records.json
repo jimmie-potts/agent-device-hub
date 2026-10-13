@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.6",
+      "name": "unsupported-1.7",
       "valid": false,
       "record": {
-        "schema_version": "1.6",
+        "schema_version": "1.7",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
