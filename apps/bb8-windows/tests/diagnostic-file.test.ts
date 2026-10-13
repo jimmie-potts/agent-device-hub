@@ -64,7 +64,7 @@ void test('a helper accepts and completes an explicit connect after diagnostic i
       const id = crypto.randomUUID();
       const result = await module.request('bunny.cmd.bb8-link-execute.bb8', executeDraft('bb8', {requestId: id, operationId: id, parentRequestId: 'parent-1', expectedConfigurationRevision: 0, expectedHelperEpoch: owner.state.helperEpoch, expectedConnectionGeneration: owner.state.connectionGeneration, operationExpiresAtMs: Date.now() + 14_000, operation: {kind: 'connect'}}), {requestId: id, timeoutMs: 1000});
       assert.equal(result.status, 'accepted'); await owner.drain();
-      assert.equal(owner.results[0]?.result, 'succeeded'); assert.equal(gatt.writes.length, 4);
+      assert.equal(owner.results[0]?.result, 'succeeded'); assert.equal(gatt.writes.length, 5);
     } finally {await owner.stop(); await sdk.close(); await module.close(); database.close(); await diagnostics?.shutdown();}
   });
 });

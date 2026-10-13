@@ -55,7 +55,7 @@ it('authenticated gateway routes BB-8 LED to its Windows writer while the helper
   await waitFor(() => state()?.lastResult.status === 'known', 5000, 'connect completion');
   assert.equal(await send('bb8-led-set', {led: {target: 'main', rgb: [10, 20, 30]}}), 200, JSON.stringify({logs, errors, helper: helper.state, robot: state()}));
   await helper.drain();
-  await waitFor(() => gatt.writes.length === 5 && helper.results.length === 0, 5000, 'LED persisted and helper receipt retired');
+  await waitFor(() => gatt.writes.length === 6 && helper.results.length === 0, 5000, 'wake initialization and LED persisted, helper receipt retired');
   assert.deepEqual(gatt.writes.at(-1)?.bytes.slice(2, -1), [2, 32, 2, 4, 10, 20, 30]);
   assert.equal(opens, 1); assert.deepEqual(errors, []);
   const publicResults: import('@jimmie-potts/event-contracts/v2/devices').CompletedOutcome[] = [];
