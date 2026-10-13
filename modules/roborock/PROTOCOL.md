@@ -1,4 +1,4 @@
-# Read-only V1 adaptation
+# Read-only V1 family adaptation
 
 Protocol source: MIT [ioBroker.roborock at `ce998f6980b9928af800d8083cbe794f3b93ca97`](https://github.com/copystring/ioBroker.roborock/tree/ce998f6980b9928af800d8083cbe794f3b93ca97).
 `UPSTREAM-LICENSE.txt` retains its complete notice. This package adapts protocol
@@ -6,7 +6,7 @@ primitives, not the adapter runtime or its fixture data.
 
 | Source path at that revision | Adapted behavior |
 | --- | --- |
-| `src/lib/cryptoEngine.ts` | V1 timestamp shuffle, salt, MD5 key derivation and AES-128-ECB |
+| `src/lib/cryptoEngine.ts` | V1 timestamp shuffle, salt, MD5/AES-128-ECB and L01 SHA256/AES-256-GCM |
 | `src/lib/messageParser.ts` | V1 publish header, CRC32, nested RPC envelope and map security context |
 | `src/lib/localApi.ts` | TCP 58867 length prefix, CONNECT/CONNACK/control frames and inner request-ID correlation |
 | `src/lib/mqttApi.ts` | RRIOT-derived client credentials, exact device topic, protocol 301 map envelope and inner AES-CBC/gzip |
@@ -35,6 +35,29 @@ from socket sequence. Accepted envelope forms are nested `102`, nested `101`
 or a direct response with an explicit `id` and result/error field. Missing
 domain fields remain missing for #376 to normalize; an envelope without a
 result or error is unusable.
+
+### Explicit L01 local socket selection
+
+Account API protocol `1.0` is separate from local socket framing. An optional
+private target `localProtocol` selects `1.0` (the default) or `L01`; there is no
+negotiation, discovery or fallback. The existing vendor-MQTT map path stays V1.
+
+L01 publish frames retain the length prefix, 19-byte header and CRC32 but use
+ASCII `L01`. SHA256 replaces MD5 for timestamp/local-key/salt key derivation.
+AES-256-GCM appends a 16-byte authentication tag. Its 12-byte IV is
+SHA256(sequence || random || seconds)[0:12]; AAD is sequence || client nonce ||
+acknowledgment nonce || random || seconds. Each value is uint32 BE. Nonces are
+held only for the current socket. Replies must pass CRC, authentication and
+inner request-ID validation before returning an observation.
+
+The L01 HELLO has sequence 1, the request timestamp and fresh client nonce;
+a CRC follows its 17-byte header. The successful control acknowledgment supplies
+the peer nonce. PUBACK uses the selected wire version. No initialization RPC is
+sent. L01 adaptations use the same pinned MIT source above; the explicit local
+versus vacuum-protocol distinction is also documented in
+[python-roborock v7.10.0](https://github.com/Python-Roborock/python-roborock/blob/v7.10.0/roborock/protocols/v1_protocol.py).
+Synthetic L01 vectors were authored independently with Python cryptography;
+loopback peers cover valid reads and authentication/correlation refusals.
 
 MQTT uses protocol 101 for the one allowed map RPC. Its security includes
 `endpoint = Base64(MD5(k)[8:14])` and a fresh 16-byte nonce in uppercase hex.

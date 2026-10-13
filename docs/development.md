@@ -1661,3 +1661,13 @@ and Reachy states use one owner revision sequence and the SDK's combined sync
 contract. The dashboard keeps React contributions mounted during reconnect so
 private history and drafts remain readable; the existing host command control
 locks writes against stale operations.
+
+### Home-Wi-Fi dashboard verification
+
+The optional HTTPS browser entry uses `apps/runtime/tests/wifi-proxy.test.ts`,
+discovered by existing runtime core CI, alongside the gateway suite. The owning
+[runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) and
+[setup recipe](../apps/runtime/WIFI.md#source-verification) describe the focused
+Caddy/phone-width browser journey. It uses synthetic controls and keeps actual
+installed iPhone acceptance separate; the root build, typecheck, JavaScript lint,
+SDK, contracts and workflow checks remain applicable.

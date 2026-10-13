@@ -19,10 +19,10 @@ Hub #494 implements the lifecycle once in the private workspace package
 consume through one plug-in each. Use Node 24 from the worktree root and run
 `npm run build`, `npm run typecheck` (which also type-checks the package's
 caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
-The `verify`, `verify:compose`, `verify:chompi` and `verify:runtime` scripts set
-`APP_VERIFY_SINGLE_RUN=1`, so a second `start` beside a live run is refused
-([one run at a time](../../docs/app-verification.md#one-run-at-a-time)); the test suites
-do not set it.
+The `verify`, `verify:compose`, `verify:chompi` and `verify:runtime` scripts and
+host route allow concurrent task runtimes by default. The shared core retains
+its [optional one-run guard](../../docs/app-verification.md#one-run-at-a-time);
+only tests of that guard opt in explicitly.
 `npm run -s verify -- prerequisites` is the Hub's read-only local inspection;
 it never qualifies launch, capture or Windows browser handoff. Pinned Nanoleaf
 and Pixoo adapters remain on core 1.1.0 and report the operation unsupported.
@@ -101,7 +101,9 @@ Run `npm run test:verify-host` with Node 24 from the Hub worktree. CI runs this
 in the App verification job. It checks explicit selection, named adapter and
 checkout identity, literal arguments, minimal environment, denied supervisor,
 command-only cleanup, timeout/abort, preserved nonzero adapter results, and
-unknown outcomes without a start retry. The transport test starts only a
+unknown outcomes without a start retry. It also executes all four npm launch
+commands against adapter probes to check unguarded defaults and explicit opt-in,
+and checks every supported host route leaves the guard unset. The transport test starts only a
 disposable Node subprocess; supervisor fixtures start no systemd units.
 These source checks do not qualify the named host or Windows browser. Keep
 shared build/type, controller-contract and workflow checks for this source

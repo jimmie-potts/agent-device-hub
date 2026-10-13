@@ -6,6 +6,15 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
+After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
+for configured proxy admission, browser sessions, refused origins and preserved
+local clients. Run the existing gateway suite alongside it for expiry, streaming,
+grants and diagnostic checks. The setup recipe's Caddy check and phone-width
+browser journey establish forwarding and UI behavior separately from actual
+installed iPhone acceptance; no physical device command is required by these tests.
+
+
 After the root build, run
 `node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
 Existing `test:runtime:built` discovery runs these checks in active core CI; no
@@ -393,9 +402,8 @@ consumers, rather than by file paths (owner decision, 2026-10-08):
   scenario file alone does not require the full local verification suite.
 - Run `test:runtime:verify:built` locally when the change alters shared
   supervisor, isolation, lifecycle or run-adapter behavior across scenarios.
-  This includes shared boundary guards and build-freshness checks. Run it alone,
-  because it starts real runs; do not overlap it with another verification or
-  Acceptance run.
+  This includes shared boundary guards and build-freshness checks. Its runs
+  retain their own synthetic state and exact cleanup ownership.
 - Documentation-only changes need no product run. Keep the applicable workflow
   and specification checks.
 
@@ -403,9 +411,12 @@ Build once from the candidate before its local `:built` checks and disposable
 runs. Record the candidate revision, selected tests and scenarios, why they
 cover the affected behavior, their results and any skips or evidence limits.
 Required checks must pass. The [Acceptance review policy](../../docs/sdlc.md#acceptance-review)
-still requires an independent reviewer and at most one run at a time on this
-host. All runs keep synthetic data, simulated devices and an outside-checkout
-`TMPDIR`; they grant no installed-system or physical-device authority.
+still requires an independent reviewer. Independent tasks may run simulated
+runtimes concurrently, each from its own worktree and build outputs, with
+separate ports, credentials and state. There is no default run-count limit.
+All runs keep the existing leases, synthetic data, simulated devices and an
+outside-checkout `TMPDIR`; they grant no installed-system or physical-device
+authority. Reset and stop only owned runs.
 
 The App verification CI job still runs the full `test:runtime:verify:built`
 suite on every main push and every PR whose
@@ -460,6 +471,7 @@ by the owning story's focused browser and disposable Acceptance checks.
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
+BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts # local HTTPS, phone width; optional BUNNY_TEST_BROWSER=webkit
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline

@@ -164,7 +164,15 @@ separate evidence; do not contact a real target to make source checks pass.
 The owner selects a Linux private directory outside every Git checkout, including
 ignored directories, with mode `0700`. Configuration and session files must be
 owned by that user, have one hard link and mode `0600` or `0400`. Symlinks in
-any pathname component are refused. The configuration has these exact fields:
+any pathname component are refused. The configuration has the required fields
+shown below and one optional field, `localProtocol`, accepting only `1.0` or
+`L01`. Omission preserves the existing `1.0` local socket behavior. An L01
+selection changes only local read framing; session protocol and vendor-MQTT
+maps remain `1.0`. Extra fields or unsupported selections are refused.
+Changing an installed target still follows its owner-authorized setup and
+recovery procedure; an older reader without L01 cannot serve that target.
+
+Required fields:
 
 ```json
 {

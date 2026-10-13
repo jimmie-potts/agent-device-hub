@@ -27,6 +27,11 @@ on demand when browser exposure is enabled (#927). They do not subscribe to an
 analytics event family. The Automation page comes with #925. Device-specific
 feature pages remain their own module stories.
 
+The same dashboard can use the optional [home-Wi-Fi HTTPS entry](../WIFI.md).
+It keeps the existing controls and browser sessions; its HTTPS cookie is Secure.
+The forwarder's owner password prompt precedes the ordinary dashboard sign-in.
+Actual phone/certificate verification is separate from desktop browser tests.
+
 ## Pages, routes and widgets
 
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
@@ -167,9 +172,9 @@ that needs one. A browser session is an `HttpOnly`, `SameSite=Strict` cookie tha
 all tabs of the origin share, so the page never holds a token. On load the page
 asks whether the browser already holds a live session
 (`GET /api/v2/authority?scope=read`), so a reload or a second tab opens no new
-one. Without one it asks for a trusted loopback session
+one. Without one it asks for a browser session from trusted loopback or the authenticated home-Wi-Fi entry
 (`POST /api/v2/browser/session`) when the runtime's edge section sets
-`browserAccess` to `trusted-loopback`, and otherwise shows the launcher's page.
+`browserAccess` to `trusted-loopback` or the request uses the authenticated Wi-Fi entry, and otherwise shows the launcher's page.
 The launcher opens the page with `#launch=<code>`, which the page removes from
 the address and exchanges once (`POST /api/v2/browser/launch`). Every change
 the page makes carries `bunny-request: 1` and its own `Origin`.
