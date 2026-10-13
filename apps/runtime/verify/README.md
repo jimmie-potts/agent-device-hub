@@ -190,9 +190,11 @@ the run, so even a control never touches the owner's files.
 
 ## Entry points
 
-Run at most one Acceptance run at a time on this host, because memory is the constraint
-([docs/sdlc.md](../../../docs/sdlc.md#acceptance-review)). `npm run -s verify:runtime` refuses a second `start` with
-`run-active` while any run is live ([one run at a time](../../../docs/app-verification.md#one-run-at-a-time)). Run with Node 24 from the repository root, and build first:
+Independent tasks may start simulated runtime runs concurrently, each from its own
+worktree and build outputs with separate ports, credentials and state
+([docs/sdlc.md](../../../docs/sdlc.md#acceptance-review)). Normal launches have no
+run-count limit; keep the existing leases and reset or stop only owned runs.
+Run with Node 24 from the repository root, and build first:
 `start` serves the built candidate, and the `build-current` check fails a start whose sources are newer than the
 build.
 

@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {SdkError} from '@jimmie-potts/sdk';
-import {loadPrivateConfig, loadPrivateSession, savePrivateSession, validateConfig, type Config, type Session} from '../src/transport/private.js';
+import {loadPrivateConfig, loadPrivateSession, savePrivateSession, validateConfig, validateSession, type Config, type Session} from '../src/transport/private.js';
 const config: Config = {schemaVersion: 1, deviceId: 'synthetic-robot', address: '192.168.10.20', broker: 'mqtts://mqtt-us.roborock.com:8883', region: 'us'};
 const session: Session = {schemaVersion: 1, deviceId: config.deviceId, model: 'roborock.vacuum.a97', protocol: '1.0', localKey: '0123456789abcdef', rriot: {u: 'synthetic-user', s: 'sentinel-auth-secret', k: 'sentinel-auth-key'}, broker: config.broker};
 const safe = (error: unknown): boolean => error instanceof SdkError && !JSON.stringify(error.body).includes('sentinel');
@@ -79,4 +79,14 @@ void test('Git markers, symlink ancestors and hard-linked sessions are refused',
     assert.throws(() => validateConfig({...config, broker: 'mqtts://roborock.com.attacker.invalid:8883'}), safe);
     assert.throws(() => validateConfig({...config, address: '192.168.1.1\n'}), safe);
   } finally {await rm(dir, {recursive: true, force: true});}
+});
+
+void test('explicit local framing selection preserves the legacy target and account session', () => {
+  assert.deepEqual(validateConfig(config), config);
+  for (const localProtocol of ['1.0', 'L01'] as const) {
+    assert.deepEqual(validateConfig({...config, localProtocol}), {...config, localProtocol});
+    assert.deepEqual(validateSession(session, {...config, localProtocol}), session);
+  }
+  for (const localProtocol of ['A01', '', null, undefined, 1]) assert.throws(() => validateConfig({...config, localProtocol}), safe);
+  assert.throws(() => validateConfig({...config, localProtocol: 'L01', extra: 'sentinel'}), safe);
 });

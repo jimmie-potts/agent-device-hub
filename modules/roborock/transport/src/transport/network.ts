@@ -8,7 +8,7 @@ import debug from 'debug';
 import * as mqtt from 'mqtt';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
-import {decodeControl, decodeMap, decodeV1, encodeControl, encodeV1, MAX_FRAME_BYTES, TcpFrames, wrapTcp} from './codec.js';
+import {decodeControl, decodeMap, decodeL01, decodeV1, encodeControl, encodeL01, encodeV1, MAX_FRAME_BYTES, TcpFrames, wrapTcp} from './codec.js';
 import {ConnectionFailure} from './failure.js';
 import {validateConfig, validateSession, type Config, type Session} from './private.js';
 import type {WireRequest, WireResult} from './reader.js';
@@ -106,7 +106,7 @@ export async function localRead(config: Config, session: Session, request: WireR
   try {if (signal.aborted) throw cancelled(); target = validateConfig(config); credentials = validateSession(session, target); read = snapshot(request, 'local'); random = randomBytes(4).readUInt32BE(0);} catch (error) {throw safeFailure(error);}
   return new Promise<WireResult>((resolve, reject) => {
     let socket: Socket | undefined; let finished = false; let connected = false; let acknowledged = false; let delivering = false;
-    const frames = new TcpFrames();
+    const frames = new TcpFrames(); const localProtocol = target.localProtocol ?? '1.0'; let ackNonce = 0;
     function finish(error?: SdkError, result?: WireResult): void {
       if (finished) return; finished = true; signal.removeEventListener('abort', onAbort);
       const current = socket;
@@ -127,7 +127,7 @@ export async function localRead(config: Config, session: Session, request: WireR
     }
     function onConnect(): void {
       if (finished) return; if (signal.aborted) {finish(cancelled()); return;} if (connected) {finish(malformed()); return;} connected = true;
-      try {write(encodeControl(0, 0, random, 10));} catch (error) {finish(safeFailure(error));}
+      try {write(encodeControl(0, localProtocol === 'L01' ? 1 : 0, random, 10, localProtocol, localProtocol === 'L01' ? read.seconds : 0));} catch (error) {finish(safeFailure(error));}
     }
     function onData(chunk: Buffer): void {
       if (finished || delivering) return; if (signal.aborted) {finish(cancelled()); return;}
@@ -135,21 +135,22 @@ export async function localRead(config: Config, session: Session, request: WireR
         for (const frame of frames.push(chunk)) {
           if (finished || delivering) break;
           if (frame.byteLength === 17 || frame.byteLength === 21) {
-            const control = decodeControl(frame);
+            const control = decodeControl(frame, localProtocol);
             if (control.protocol === 1) {
-              if (!connected || acknowledged) throw malformed(); if (control.returnCode !== 0) throw unauthenticated(); acknowledged = true;
+              if (!connected || acknowledged) throw malformed(); if (control.returnCode !== 0) throw unauthenticated(); acknowledged = true; ackNonce = control.random;
               const payload = encodeRpc(read.method, 'local', read.params, read.id, read.seconds);
-              write(wrapTcp(encodeV1(payload, credentials.localKey, {seq: read.seq, random, seconds: read.seconds, protocol: 4})));
+              const header = {seq: read.seq, random, seconds: read.seconds, protocol: 4};
+              write(wrapTcp(localProtocol === 'L01' ? encodeL01(payload, credentials.localKey, header, random, ackNonce) : encodeV1(payload, credentials.localKey, header)));
             } else if (!acknowledged) throw malformed();
             continue;
           }
           if (!acknowledged) throw malformed();
-          const decoded = decodeV1(frame, credentials.localKey);
+          const decoded = localProtocol === 'L01' ? decodeL01(frame, credentials.localKey, random, ackNonce) : decodeV1(frame, credentials.localKey);
           if (decoded.protocol !== 4 && decoded.protocol !== 102) throw unsupported();
           const value = response(decoded.payload, read.id);
           if (typeof value !== 'object' || value === null) throw malformed();
           const result: WireResult = {kind: 'json', value};
-          if (decoded.protocol === 4) {delivering = true; write(encodeControl(5, decoded.seq, 0), () => {finish(undefined, result);});}
+          if (decoded.protocol === 4) {delivering = true; write(encodeControl(5, decoded.seq, 0, undefined, localProtocol), () => {finish(undefined, result);});}
           else finish(undefined, result);
         }
       } catch (error) {finish(safeFailure(error));}

@@ -238,8 +238,7 @@ A control holds only when it fails at its named assertion. `compose` records
 the expected assertion and whether the control held, and exits 0 only for a
 held control. A control that passes, or fails anywhere else, exits 1. Run the
 controls after `handoff`, so the verified sets hold only passed captures, or in
-a separate composition started once the first has stopped
-([one run at a time](../../../docs/app-verification.md#one-run-at-a-time)), whose runs are never cited as
+a separate composition with its own worktrees and build outputs, whose runs are never cited as
 delivery receipts.
 
 "Follows the Hub" means the consumer's feed is `current`, names the owner
