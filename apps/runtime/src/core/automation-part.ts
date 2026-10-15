@@ -4,7 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {Cancel, ModuleScheduler, SyncedCopy} from '@jimmie-potts/sdk';
+import {levelOf,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
@@ -13,13 +13,15 @@ import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTIN
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
+import {createPowerSchedules, type PowerSchedules} from './power-schedules.js';
+import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
 
 const KINDS = new Map([
   ['org.bunny.attention.raised','attention-raised'], ['org.bunny.attention.cleared','attention-cleared'],
   ['org.bunny.turn.ended','turn-ended'], ['org.bunny.session.ended','session-ended'],
 ]);
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
-export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
+export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {power?:Omit<PowerSchedules,'close'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
 
 type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
 
@@ -29,6 +31,8 @@ export class AutomationPart implements CorePart {
   constructor(scheduler: ModuleScheduler, signal: AbortSignal) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
+  #power:PowerSchedules|undefined;
+  #configured:readonly AutomationDevice[]=[];
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
   readonly #devices = new Map<string, DeviceFollower>();
@@ -38,11 +42,20 @@ export class AutomationPart implements CorePart {
     this.#participants=participants;
     this.#followDevices();
   }
+  setDevices(devices:readonly AutomationDevice[]):void {
+    this.#configured=checkAutomationDevices(devices);this.#followDevices();
+  }
+  #device(id:string):DeviceRecord|undefined {
+    const target=this.#configured.find(item=>item.id===id);
+    if(target===undefined) return undefined;
+    const message=this.#devices.get(target.owner)?.copy?.get({family:'device',id});
+    return message?.source===target.owner && message.data.id===id?message.data:undefined;
+  }
   /** One SDK copy per qualified owner supplies the initial snapshot and resyncs after gaps. */
   #followDevices(): void {
     const handle=this.#handle;
     if(handle===undefined || this.#closed || this.#signal.aborted) return;
-    const owners=new Set(this.#participants.map(participant=>`bunny/modules/${participant.kind}`));
+    const owners=new Set([...this.#participants.map(participant=>`bunny/modules/${participant.kind}`),...this.#configured.map(device=>device.owner)]);
     for(const [owner,follow] of this.#devices) if(!owners.has(owner)) {
       this.#devices.delete(owner);
       follow.cancel?.();
@@ -83,6 +96,21 @@ export class AutomationPart implements CorePart {
     if (handle===undefined) throw new Error('automation-not-started');
     const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
       {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+    this.#power=createPowerSchedules({store,clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
+      targets:()=>this.#configured.filter(device=>this.#device(device.id)?.capabilities.power.supported===true).map(device=>device.id),
+      owner:id=>this.#configured.find(device=>device.id===id)?.owner,
+      read:id=>Promise.resolve(structuredClone(this.#device(id))),current:id=>this.#device(id),
+      refused:(requestId,parent)=>handle.log[levelOf('unavailable')]('command.rejected',{'bunny.participant':'bunny/core',
+        'bunny.request.id':requestId,'bunny.outcome':'rejected','bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
+      failed:(requestId,parent,target)=>handle.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',
+        'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.power-set.${target}`},parent),
+      send:async(target,on,record,requestId,parent)=>{
+        const answer=await handle.dispatch({requestId,key:`bunny.cmd.power-set.${target}`,requestedBy:'bunny/core',parent,
+          draft:{type:'org.bunny.power.set.requested',subject:target,dataschema:'https://bunny.invalid/events/power-set/2.0',
+            data:{on,expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation}}});
+        return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?'uncertain':'not-sent',requestId,reason:answer.error.code}
+          : {outcome:'receipt',requestId};
+      }});
     this.#automation=createAutomation({store,clock:()=>handle.clock.now(),monotonic:()=>handle.clock.now(),active:()=>!this.#closed && !this.#signal.aborted,
       routed:()=>this.#participants.map(p=>p.id),
       targets:id=>{
@@ -132,12 +160,13 @@ export class AutomationPart implements CorePart {
     const engine=this.#automation;
     if(engine===undefined || this.#closed) throw new AutomationError('unavailable',503);
     return {
+      ...(this.#power===undefined?{}:{power:this.#power}),
       rules:()=>engine.rules(),rule:id=>engine.rule(id),
       create:(value,owner,authorize)=>engine.create(value,owner,authorize),
       update:(id,value,authorize)=>engine.update(id,value,authorize),
       setEnabled:(id,enabled)=>engine.setEnabled(id,enabled),remove:id=>engine.remove(id),
       interruptSet:()=>engine.interruptSet(),replaceInterruptSet:value=>engine.replaceInterruptSet(value),
-      settings:()=>engine.settings(),replaceSettings:value=>engine.replaceSettings(value),settled:()=>engine.settled(),
+      settings:()=>engine.settings(),replaceSettings:value=>engine.replaceSettings(value),settled:async()=>{await Promise.all([engine.settled(),this.#power?.settled()]);},
       log:(limit,before)=>engine.log(limit,before).map(entry=>{
       const operation=entry.requestId===undefined?undefined:this.#handle?.operation(entry.requestId);
       return {...entry,...(operation===undefined?{}:{operation})};
@@ -145,6 +174,7 @@ export class AutomationPart implements CorePart {
   }
   async close(): Promise<void> {
     this.#closed=true;this.#eligibility.clear();
+    await this.#power?.close();
     await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
     await this.#automation?.close();

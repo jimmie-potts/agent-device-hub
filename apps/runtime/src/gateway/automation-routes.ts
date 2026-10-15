@@ -33,6 +33,29 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     return work();
   };
   try {
+    if(path==='power-schedules' || path.startsWith('power-schedules/')) {
+      const power=controls.power;
+      if(power===undefined) throw new AutomationError('unavailable',503);
+      noQuery();
+      if(path==='power-schedules') {
+        if(method==='GET') return answer(200,{schedules:power.list(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
+        if(method==='POST') {const input=await request.body(1024);return write(()=>answer(201,power.create(input,true)));}
+        return undefined;
+      }
+      const match=/^power-schedules\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable))?$/.exec(path),id=match?.[1];
+      if(id===undefined) return undefined;
+      const action=match?.[2];
+      if(action!==undefined) {
+        if(method!=='POST') return undefined;
+        const input=await request.body(16);
+        if(typeof input!=='object' || input===null || Array.isArray(input) || Object.keys(input).length>0) invalid();
+        return write(()=>answer(200,power.setEnabled(id,action==='enable')));
+      }
+      if(method==='GET') return answer(200,power.get(id));
+      if(method==='PUT') {const input=await request.body(1024);return write(()=>answer(200,power.update(id,input)));}
+      if(method==='DELETE') return write(()=>{power.remove(id);return answer(200,{deleted:true,id});});
+      return undefined;
+    }
     if (path === 'rules') {
       noQuery();
       if (method === 'GET') return answer(200, {rules: controls.rules()});

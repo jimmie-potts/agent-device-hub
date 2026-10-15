@@ -55,6 +55,13 @@ module that is not as expected, its state and its registry code, such as
 
 ## Run scenarios
 
+`weekly-power-schedules` uses the core and a simulated LIFX consumer. It saves,
+enables and edits a future definition, rejects read-only enabling, restarts on
+the same private state and confirms no catch-up command. It does not wait for a
+weekly boundary: the focused fake-clock and real-dispatcher tests cover due
+boundaries. Use it with the Automation browser journey for shared schedule
+acceptance. Neither establishes Wemo, installed or physical acceptance.
+
 For [fresh setup](../SETUP.md), use `shipped`. The two migrated scenarios below
 exercise optional legacy utilities; neither is part of the fresh cutover.
 

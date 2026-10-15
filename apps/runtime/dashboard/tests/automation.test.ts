@@ -26,7 +26,7 @@ await build({stdin: {contents: `
   alias: {react, 'react/jsx-runtime': jsxRuntime}, external: [react, jsxRuntime]});
 type Page = {
   automationRuleInput(draft: typeof rule, creating: boolean): typeof rule;
-  automationOutcome(entry: {requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
+  automationOutcome(entry: {family?:'power-set';requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
   AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
@@ -94,6 +94,8 @@ void test('admission is distinct from current operation outcomes; stale or unrel
   assert.match(page.automationOutcome(entry, [{...operation, status: 'uncertain', result: 'uncertain', evidence: 'none'}], true), /uncertain/);
   assert.match(page.automationOutcome(entry, [{...operation, target: 'other', status: 'completed', result: 'succeeded'}], true), /No current operation/);
   assert.match(page.automationOutcome(entry, [operation], false), /stale/);
+  assert.match(page.automationOutcome({...entry,family:'power-set'},[operation],true),/No current operation/);
+  assert.match(page.automationOutcome({...entry,family:'power-set'},[{...operation,family:'power-set'}],true),/awaiting completion/);
 });
 
 void test('settings readback removes the response envelope before an explicit settings replacement', async context => {
@@ -103,7 +105,7 @@ void test('settings readback removes the response envelope before an explicit se
   context.mock.method(globalThis, 'fetch', (path: string, init?: RequestInit) => {
     if (init?.method !== 'GET') { assert.equal(typeof init?.body, 'string'); writes.push(JSON.parse(init?.body as string) as unknown); }
     const value = path.endsWith('/rules') ? {rules: []} : path.endsWith('/settings') ? settings
-      : path.endsWith('/interrupt-set') ? {kinds: ['turn-ended']} : {entries: []};
+      : path.endsWith('/interrupt-set') ? {kinds: ['turn-ended']} : path.endsWith('/power-schedules') ? {schedules:[],timeZone:'UTC'} : {entries: []};
     return Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...value}), {status: 200}));
   });
   const snapshot = await page.readAutomation(new AbortController().signal);

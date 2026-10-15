@@ -29,6 +29,24 @@ BB-8 state still belongs to its recorded format owners: hibernation does not
 remove the existing paired-owner admission requirement or permit a migration.
 Do not run the dormant BB-8 qualification suites as routine CI.
 
+## Weekly power schedule state
+
+Core automation stores weekly power definitions as `rules.kind = routine` with
+`trigger.schema = power-window/1.0`. The trigger contains selected weekday numbers
+and same-day `HH:MM` times; the action contains the configured target and an opaque
+definition identity. A bounded per-rule occurrence guard records the latest claimed
+boundary before dispatch, never a pending command to replay. Definitions and guards
+remain in the private core database under its existing lease.
+
+The release format inventory includes all `apps/runtime/src/` inputs, including the
+schedule reader and store. Changed readers require fresh admission; unchanged SQL
+table names do not establish compatibility. Event-only releases reject routine rows
+and are not qualified recovery readers once schedules exist. Execute each selected
+candidate and recovery reader against latest candidate state, preserving definitions
+and occurrence guards, before an installed upgrade or recovery. Do not remove saved
+schedules to make an older release appear compatible. Source restart tests do not
+qualify an installed release pair. This delivery activates no installed schedule.
+
 ## Initial qualification checklist
 
 1. Verify reviewed merged source, successful applicable CI, release provenance

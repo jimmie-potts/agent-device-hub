@@ -165,12 +165,12 @@ export function inQuietHours(settings:AutomationSettings['quietHours'], atMs:num
 const momentId = (rule:Rule, event:HubEvent) => 'm-' + createHash('sha256').update(`${rule.id}\0${event.source}\0${event.id}`).digest('hex').slice(0,40);
 
 /** Acceptance is a 2.0 dispatch receipt, never an execution outcome. */
-export type LogEntry = {seq:number; atMs:number; ruleId:string; event:EventText & {source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
+export type LogEntry = {family?:'moment-play'|'power-set';seq:number; atMs:number; ruleId:string; event:EventText & {source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
   momentId:string; priorityClass:string; coversStatus:boolean; target:string; outcome:LogRow['outcome']; reason?:string;
   requestId?:string; receipt?:{status:'accepted';requestId:string}};
 function entry(row:LogRow): LogEntry {
-  const detail = row.detail===null ? {} : JSON.parse(row.detail) as {event?:EventText;requestId?:string;receipt?:LogEntry['receipt']};
-  return {seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
+  const detail = row.detail===null ? {} : JSON.parse(row.detail) as {family?:unknown;event?:EventText;requestId?:string;receipt?:LogEntry['receipt']};
+  return {...(detail.family==='power-set'?{family:'power-set' as const}:{}),seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
     ...(row.eventAlias===null?{}:{alias:row.eventAlias}),...(row.agent===null?{}:{agent:row.agent}),...(row.task===null?{}:{task:row.task}),
     ...(eventText(detail.event??{})??{})},momentId:row.momentId,priorityClass:row.priorityClass,coversStatus:row.coversStatus,target:row.target,outcome:row.outcome,
     ...(row.reason===null?{}:{reason:row.reason}),...(detail.requestId!==undefined?{requestId:detail.requestId}:{}),...(detail.receipt?{receipt:detail.receipt}:{})};
@@ -191,7 +191,7 @@ export type Automation = ReturnType<typeof createAutomation>;
 
 export function createAutomation(options:AutomationOptions) {
   const {store} = options;
-  let rules = store.rules().map(ruleFromRow);
+  let rules = store.rules().filter(row=>row.kind==='event').map(ruleFromRow);
   const storedKinds = store.interruptSet();
   if (!storedKinds.every(eventKind)) throw new Error('invalid-state');
   let interruptSet = new Set(storedKinds);
@@ -200,7 +200,7 @@ export function createAutomation(options:AutomationOptions) {
   const recent = new Set<string>();
   const queue: {event:HubEvent; matched:Rule[]; parent?:TraceContext}[] = [];
   let running: Promise<void> | undefined, closed = false;
-  const reload = () => { rules = store.rules().map(ruleFromRow); };
+  const reload = () => { rules = store.rules().filter(row=>row.kind==='event').map(ruleFromRow); };
   const stopped = () => closed || !options.active();
   const matching = (event:HubEvent) => rules.filter(rule => rule.trigger.source === event.source &&
     rule.trigger.kind === event.kind && (rule.trigger.alias === undefined || rule.trigger.alias === event.alias));

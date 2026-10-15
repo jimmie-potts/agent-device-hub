@@ -5,6 +5,7 @@ import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
 import type {DashboardConnection} from './connection.ts';
 import {Badge, Facts} from './ui.tsx';
+import {PowerSchedulesEditor,type PowerSchedule} from './power-schedules.tsx';
 
 export type AutomationPageProps = {connection: DashboardConnection; live: boolean; control: boolean};
 // The existing core route shapes, kept browser-safe. Importing the Node core's source types pulls in its SQLite graph.
@@ -13,7 +14,7 @@ type RuleInput = {name: string; kind: 'event'; enabled?: boolean; trigger: {sour
 type Rule = RuleInput & {id: string; enabled: boolean; createdAtMs: number; updatedAtMs: number};
 type AutomationSettings = {noFlourishes: boolean; quietHours: {enabled: boolean; start: string; end: string; timeZone: string | null};
   budgets: {perAgentTask: number; perAgentHour: number; globalHour: number; deviceSpacingMs: number}};
-type LogEntry = {seq: number; atMs: number; ruleId: string; target: string; outcome: string; reason?: string; requestId?: string;
+type LogEntry = {family?:'moment-play'|'power-set';seq: number; atMs: number; ruleId: string; target: string; outcome: string; reason?: string; requestId?: string;
   receipt?: {status: 'accepted'; requestId: string}};
 const KINDS = ['attention-raised', 'attention-cleared', 'turn-ended', 'session-ended'];
 const BUDGETS = [{key: 'perAgentTask', label: 'Per agent task', maximum: 100}, {key: 'perAgentHour', label: 'Per agent hour', maximum: 1000},
@@ -21,7 +22,7 @@ const BUDGETS = [{key: 'perAgentTask', label: 'Per agent task', maximum: 100}, {
 const newRule = (): RuleInput => ({name: '', kind: 'event', trigger: {source: 'core', kind: 'turn-ended'},
   action: {mood: 'celebrate', priorityClass: 'event', durationMs: 1000, targets: []}});
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-type Snapshot = {rules: Rule[]; settings: AutomationSettings; kinds: string[]; entries: LogEntry[]};
+type Snapshot = {schedules:PowerSchedule[];timeZone:string;rules: Rule[]; settings: AutomationSettings; kinds: string[]; entries: LogEntry[]};
 
 class AutomationFailure extends Error {
   readonly uncertain: boolean;
@@ -39,7 +40,7 @@ export function automationOutcome(entry: LogEntry, operations: readonly Operatio
   if (entry.requestId === undefined) return 'No tracked command.';
   if (!live) return 'Operation evidence is stale.';
   const operation = operations.find(item => item.requestId === entry.requestId && item.target === entry.target &&
-    item.family === 'moment-play' && item.requestedBy === 'bunny/core');
+    item.family === (entry.family??'moment-play') && item.requestedBy === 'bunny/core');
   if (operation === undefined) return 'No current operation record.';
   if (operation.status === 'accepted') return 'Accepted; awaiting completion.';
   return [operation.status, operation.result, operation.evidence, operation.error?.code].filter(value => value !== undefined).join(' · ');
@@ -49,6 +50,7 @@ function mutationReply(path: string, method: string, answer: Record<string, unkn
   if (path === 'interrupt-set') return Array.isArray(answer.kinds) && answer.kinds.every(value => typeof value === 'string');
   if (path === 'settings') return typeof answer.noFlourishes === 'boolean' && object(answer.quietHours) && object(answer.budgets);
   if (method === 'DELETE') return answer.deleted === true && typeof answer.id === 'string';
+  if(path==='power-schedules' || path.startsWith('power-schedules/')) return typeof answer.id==='string' && typeof answer.name==='string' && typeof answer.enabled==='boolean' && typeof answer.target==='string' && Array.isArray(answer.days) && typeof answer.onTime==='string' && typeof answer.offTime==='string';
   return typeof answer.id === 'string' && typeof answer.name === 'string' && typeof answer.enabled === 'boolean' && object(answer.trigger) && object(answer.action);
 }
 
@@ -80,12 +82,12 @@ export async function automationRequest(path: string, method = 'GET', body?: obj
 }
 
 export async function readAutomation(signal: AbortSignal): Promise<Snapshot> {
-  const [rules, settings, interrupt, log] = await Promise.all(['rules', 'settings', 'interrupt-set', 'log?limit=100'].map(path => automationRequest(path, 'GET', undefined, signal)));
-  if (rules === undefined || settings === undefined || interrupt === undefined || log === undefined ||
+  const [rules, settings, interrupt, log, power] = await Promise.all(['rules', 'settings', 'interrupt-set', 'log?limit=100','power-schedules'].map(path => automationRequest(path, 'GET', undefined, signal)));
+  if(power===undefined || !Array.isArray(power.schedules) || typeof power.timeZone!=='string' || rules === undefined || settings === undefined || interrupt === undefined || log === undefined ||
       !Array.isArray(rules.rules) || !Array.isArray(interrupt.kinds) || !Array.isArray(log.entries) ||
       !object(settings.quietHours) || !object(settings.budgets) || typeof settings.noFlourishes !== 'boolean')
     throw new AutomationFailure('Automation returned an invalid snapshot. Refresh to read again.');
-  return {rules: rules.rules as Rule[], settings: {noFlourishes: settings.noFlourishes,
+  return {schedules:power.schedules as PowerSchedule[],timeZone:power.timeZone,rules: rules.rules as Rule[], settings: {noFlourishes: settings.noFlourishes,
     quietHours: structuredClone(settings.quietHours) as AutomationSettings['quietHours'],
     budgets: structuredClone(settings.budgets) as AutomationSettings['budgets']},
   kinds: interrupt.kinds as string[], entries: log.entries as LogEntry[]};
@@ -160,6 +162,9 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
     <div className="actions"><button type="button" className="secondary" disabled={!live || reading || busy}
       onClick={() => { void refresh(true, true); }}>Refresh rules and logs</button></div>
     <p role="status">{status}</p>
+    <PowerSchedulesEditor schedules={snapshot?.schedules??[]} timeZone={snapshot?.timeZone??'loading'} available={available} mutate={mutate}
+      devices={deviceCopies.flatMap(copy=>(copy.records as DeviceRecord[]).filter(record=>copy.owner===`bunny/modules/${record.kind}` && record.capabilities.power.supported)
+        .map(record=>({record,current:live && copy.synced})))}/>
     <div className="cards two"><article className="card"><h2>Rules</h2>
       {snapshot?.rules.length === 0 && <p>No rules yet. Create a rule, then enable it explicitly.</p>}
       {snapshot?.rules.map(rule => <article key={rule.id} className="session"><h3>{rule.name} <Badge>{rule.enabled ? 'Enabled' : 'Disabled'}</Badge></h3>
@@ -224,10 +229,10 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
           <button>Save settings</button>
         </fieldset></form>
     </article></div>
-    <article className="card"><h2>Recent moments</h2><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
-      {snapshot?.entries.length === 0 && <p>No moment evaluations yet.</p>}
+    <article className="card"><h2>Recent automation attempts</h2><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
+      {snapshot?.entries.length === 0 && <p>No automation evaluations yet.</p>}
       <ol>{snapshot?.entries.map(entry => <li key={entry.seq}><Facts items={[
-        ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? entry.ruleId],
+        ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? snapshot.schedules.find(saved=>saved.id===entry.ruleId)?.name ?? entry.ruleId],
         ['Target', entry.target], ['Admission', entry.receipt?.status ?? entry.outcome], ['Policy', entry.reason ?? '—'],
         ['Operation', automationOutcome(entry, operations, operationLive)],
       ]}/></li>)}</ol>

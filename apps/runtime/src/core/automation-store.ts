@@ -19,12 +19,13 @@ export const EVENT_LIMIT = 10000;
  * shared connection. `check` throws once the lease is released.
  */
 export class AutomationStore {
-  private readonly statements: Record<'rules'|'rule'|'insertRule'|'updateRule'|'deleteRule'|'countRules'|'interruptSet'|'clearInterruptSet'|'insertKind'|'settings'|'writeSettings'|'meta'|'writeMeta'|'seenEvent'|'recordEvent'|'pruneEvents'|'appendLog'|'pruneLog'|'readLog'|'handed'|'handedByAgent'|'handedByTask'|'lastToTarget',StatementSync>;
+  private readonly statements: Record<'rules'|'rule'|'insertRule'|'updateRule'|'deleteRule'|'countRules'|'interruptSet'|'clearInterruptSet'|'insertKind'|'settings'|'writeSettings'|'meta'|'writeMeta'|'seenEvent'|'recordEvent'|'pruneEvents'|'appendLog'|'pruneLog'|'readLog'|'handed'|'handedByAgent'|'handedByTask'|'lastToTarget'|'powerGuard'|'claimPower'|'deletePowerGuard',StatementSync>;
   constructor(private readonly db: DatabaseSync, private readonly check: () => void, seed: {interruptSet:string[]; settings:unknown}) {
     db.exec(`CREATE TABLE IF NOT EXISTS automation_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS rules (id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
         kind TEXT NOT NULL CHECK(kind IN ('event','routine')), trigger TEXT NOT NULL, action TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS automation_power_guard (rule_id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS interrupt_set (kind TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS automation_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_events (key TEXT PRIMARY KEY, seq INTEGER NOT NULL);
@@ -38,6 +39,9 @@ export class AutomationStore {
     this.statements = {
       rules:prepare('SELECT * FROM rules ORDER BY created_at_ms, id'),
       rule:prepare('SELECT * FROM rules WHERE id=?'),
+      powerGuard:prepare('SELECT at_ms FROM automation_power_guard WHERE rule_id=?'),
+      claimPower:prepare('INSERT INTO automation_power_guard VALUES(?,?) ON CONFLICT(rule_id) DO UPDATE SET at_ms=excluded.at_ms'),
+      deletePowerGuard:prepare('DELETE FROM automation_power_guard WHERE rule_id=?'),
       insertRule:prepare('INSERT INTO rules VALUES(?,?,?,?,?,?,?,?)'),
       updateRule:prepare('UPDATE rules SET name=?, enabled=?, kind=?, trigger=?, action=?, updated_at_ms=? WHERE id=?'),
       deleteRule:prepare('DELETE FROM rules WHERE id=?'),
@@ -92,7 +96,21 @@ export class AutomationStore {
     this.check();
     return Number(this.statements.updateRule.run(rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.updatedAtMs,rule.id).changes) === 1;
   }
-  deleteRule(id: string): boolean { this.check(); return Number(this.statements.deleteRule.run(id).changes) === 1; }
+  deleteRule(id: string): boolean {
+    return this.transaction(()=>{this.statements.deletePowerGuard.run(id);return Number(this.statements.deleteRule.run(id).changes)===1;});
+  }
+  powerBoundary(id:string): number|undefined {
+    this.check();const row=this.statements.powerGuard.get(id);return row===undefined?undefined:Number(row.at_ms);
+  }
+  /** Durable claim precedes dispatch; recovery never replays it. Only one bounded watermark per saved rule. */
+  claimPowerBoundary(id:string,definitionId:string,atMs:number): boolean {
+    return this.transaction(()=>{
+      const row=this.rule(id),last=this.powerBoundary(id);
+      if(row===undefined || row.kind!=='routine' || !row.enabled ||
+        (JSON.parse(row.action) as {definitionId?:unknown}).definitionId!==definitionId || (last!==undefined && last>=atMs)) return false;
+      this.statements.claimPower.run(id,atMs);return true;
+    });
+  }
   interruptSet(): string[] { this.check(); return this.statements.interruptSet.all().map(row => String(row.kind)); }
   replaceInterruptSet(kinds: readonly string[]): void {
     this.transaction(() => { this.statements.clearInterruptSet.run(); for (const kind of kinds) this.statements.insertKind.run(kind); });
