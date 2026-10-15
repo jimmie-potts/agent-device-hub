@@ -1003,7 +1003,8 @@ function templateOf(path: string): string | undefined {
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
   if (path === '/api/v2/history' || path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
-  if (/^\/api\/v2\/automation\/(rules|interrupt-set|settings|log)$/.test(path)) return path;
+  if (/^\/api\/v2\/automation\/(rules|power-schedules|interrupt-set|settings|log)$/.test(path)) return path;
+  if (/^\/api\/v2\/automation\/power-schedules\/[A-Za-z0-9_.-]{1,128}(?:\/(enable|disable))?$/.test(path)) return '/api/v2/automation/power-schedules/{id}';
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}$/.test(path)) return '/api/v2/automation/rules/{id}';
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}\/(enable|disable)$/.test(path)) return '/api/v2/automation/rules/{id}/{action}';
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';

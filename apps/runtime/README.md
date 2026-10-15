@@ -372,9 +372,28 @@ Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `tu
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
 
+The core also owns weekly power schedules for configured devices that declare
+power support. This registry is separate from Nanoleaf/Pixoo mode participation.
+Each schedule selects weekdays and one same-day on/off window on the Hub host's
+local clock. New schedules default to disabled; edits preserve enabled state.
+The core stores definitions and a bounded per-rule occurrence watermark under its
+existing lease, and submits each admitted boundary once through the tracked,
+configuration/generation-guarded `power-set` path. It never calls a transport.
+Unavailable, held or externally controlled devices are refused independently.
+
+Restart, reconnect, editing and enabling select future boundaries only. Callbacks
+more than 60 seconds late are discarded, and duplicate intent is never replayed.
+Manual off during an on window causes no automatic re-on. The Hub must remain
+running with a reachable device; this is separate from any device maximum-on
+feature and provides no offline protection. No Wemo transport or maximum-on
+qualification follows from these shared-source checks. Saved routine rows need
+actual release and recovery admission under [UPGRADE.md](UPGRADE.md).
+
 The shared dashboard's Automation page manages these fresh rules and settings.
 The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
 (GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
+`power-schedules` (GET/POST), `power-schedules/<id>` (GET/PUT/DELETE),
+`power-schedules/<id>/enable` and `disable` (POST with `{}`),
 `interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
 1–500 and `before` sequence). Success responses use schema `automation/2.0`.
 Reads require read scope; all mutations require control and `bunny-request: 1`,

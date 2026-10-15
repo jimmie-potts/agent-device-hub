@@ -9,6 +9,7 @@ import {MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type Re
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
+import {automationDevices} from './core/automation-devices.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
@@ -291,7 +292,10 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const core = modules.find(isCoreModule);
   const wispr = modules.find(isWisprModule);
   const hosted = host.modules();
-  if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) core?.setModeParticipants(modeParticipants(hosted));
+  if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
+    core?.setModeParticipants(modeParticipants(hosted));
+    core?.setAutomationDevices(automationDevices(hosted));
+  }
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
     const actions = core?.actions, operatorActions = core?.operatorActions;

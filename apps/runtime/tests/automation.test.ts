@@ -341,3 +341,18 @@ void test('Work dispatch requires an owner-approved interrupt kind',async()=>{
     await w.automation.close();
   }finally {w.db.close();}
 });
+
+void test('event rules can reopen beside saved shared power schedules without interpreting them as moments',async()=>{
+  const w=world();
+  try {
+    const created=w.automation.create(rule,true);
+    const store=new AutomationStore(w.db,()=>{}, {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+    store.insertRule({id:'power-test',name:'Desk light',enabled:false,kind:'routine',
+      trigger:JSON.stringify({schema:'power-window/1.0',days:[1,2,3,4,5],onTime:'17:00',offTime:'20:00'}),
+      action:JSON.stringify({target:'lamp-a',definitionId:'test-definition'}),createdAtMs:1,updatedAtMs:1},64);
+    await w.automation.close();
+    const reopened=world(w.db);
+    try {assert.deepEqual(reopened.automation.rules().map(saved=>saved.id),[created.id]);}
+    finally {await reopened.automation.close();}
+  }finally {w.db.close();}
+});

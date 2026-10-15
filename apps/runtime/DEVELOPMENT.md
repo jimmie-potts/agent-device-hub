@@ -6,6 +6,22 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Weekly power scheduling uses the existing runtime/core and dashboard test discovery.
+After the root build, run
+`node --test apps/runtime/dist/tests/power-schedules.test.js apps/runtime/dist/tests/automation*.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
+The fake clock covers on/off boundaries, disabled creation, independent targets,
+obsolete callbacks during reads, configuration/owner drift, duplicates, late
+callbacks, restart without catch-up and storage refusal before dispatch. A generic
+synthetic owner exercises actual SDK sync and tracked guarded power commands.
+The upgrade inventory test includes the schedule/store inputs; restart tests
+establish persistence, not compatibility between historical releases.
+The `weekly-power-schedules` catalog scenario exercises authenticated management,
+read-only refusal and future-only restart in memory and disposable runtime runs.
+Run that scenario and `automation-lines-moment` after changes to this shared path.
+The Automation browser journey covers independent devices, invalid drafts, passive
+reconnect, lost mutation replies, read-only controls and axe accessibility.
+No check here contacts Wemo or qualifies an installed schedule or maximum-on limit.
+
 Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
 After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
 for configured proxy admission, browser sessions, refused origins and preserved
@@ -464,7 +480,7 @@ BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
-node apps/runtime/dashboard/tests/automation.browser.ts # fresh rules, one simulated moment and safe restoration
+node apps/runtime/dashboard/tests/automation.browser.ts # weekly power schedules, event rules, lost replies and accessibility
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion

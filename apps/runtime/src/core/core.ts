@@ -25,6 +25,7 @@ import {ModePart} from './mode.js';
 import {AutomationError} from './automation.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
+import type {AutomationDevice} from './automation-devices.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
@@ -165,6 +166,7 @@ export interface CoreModule extends BunnyModule {
   readonly operatorActions: CoreOperatorActions;
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
+  setAutomationDevices(devices:readonly AutomationDevice[]):void;
   readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
 }
 
@@ -178,6 +180,11 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
   };
+  const power=()=>{
+    const controls=automation().power;
+    if(controls===undefined) throw new AutomationError('unavailable',503);
+    return controls;
+  };
   return {
     manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
@@ -189,6 +196,9 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
+      power:{list:()=>power().list(),get:id=>power().get(id),create:(value,owner)=>power().create(value,owner),
+        update:(id,value)=>power().update(id,value),setEnabled:(id,enabled)=>power().setEnabled(id,enabled),
+        remove:id=>power().remove(id),settled:()=>power().settled()},
       rules: () => automation().rules(), rule: id => automation().rule(id),
       create: (value, owner, authorize) => automation().create(value, owner, authorize),
       update: (id, value, authorize) => automation().update(id, value, authorize),
@@ -199,6 +209,10 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    setAutomationDevices:devices=>{
+      if(core===undefined) throw new Error('core-not-started');
+      core.setAutomationDevices(devices);
+    },
     setModeParticipants: participants => {
       if (core === undefined) throw new Error('core-not-started');
       core.setModeParticipants(participants);
@@ -210,6 +224,7 @@ class Core {
   readonly #automation: AutomationPart;
   readonly #companions = new CompanionPart();
   get automation(): AutomationControls {return this.#automation.controls;}
+  setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
   readonly #mode: ModePart;
   readonly #sdk: Sdk;
   readonly #log: Logger;

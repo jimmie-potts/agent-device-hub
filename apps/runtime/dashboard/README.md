@@ -24,7 +24,16 @@ The runtime copy includes:
 
 The module-owned Wispr page and numeric home widget read selected collector files
 on demand when browser exposure is enabled (#927). They do not subscribe to an
-analytics event family. The Automation page comes with #925. Device-specific
+analytics event family. The Automation page manages event rules and shared weekly power schedules.
+Weekly schedules select a configured power-capable device, weekdays and same-day
+on/off times on the Hub clock. New schedules are disabled; enable/disable is
+separate from editing. Next-switch evidence is labelled as of the last explicit
+refresh, while SDK copies supply current tracked outcomes and timestamped device
+observations. An accepted command never establishes an observed lamp state. A lost mutation
+reply locks further edits until explicit refresh, without retry. The Hub runs the
+schedule with the page closed, skips missed boundaries and never restores an
+on window after an early manual or device-limit off. Schedules require a running
+Hub and reachable target; device maximum-on protection is a separate feature. Device-specific
 feature pages remain their own module stories.
 
 The same dashboard can use the optional [home-Wi-Fi HTTPS entry](../WIFI.md).

@@ -20,7 +20,7 @@ const anchors = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json',
   'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
 
 void test('ONN production stores, configuration and native reader remain bound format inputs while legacy absence is supported', async () => {
-  const onn = ['modules/onn/package.json', 'modules/onn/src/module.ts', 'modules/onn/src/store.ts',
+  const onn = ['apps/runtime/src/core/power-schedules.ts', 'apps/runtime/src/core/automation-store.ts', 'modules/onn/package.json', 'modules/onn/src/module.ts', 'modules/onn/src/store.ts',
     'modules/onn/src/history.ts', 'modules/onn/src/configuration.ts', 'modules/onn/src/reader-artifact.ts',
     'modules/onn/native/release.json', 'modules/onn/native/src/OnnMetadataReader.java', 'modules/onn/native/artifact/reader.dex'];
   for (const paths of [anchors, [...anchors, ...onn]]) {

@@ -7,7 +7,7 @@ import {chromium, type Browser, type Page} from 'playwright';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
 
-const world = await startWorld({nanoleaf: true});
+const world = await startWorld({nanoleaf: true,devices:true});
 let browser: Browser | undefined;
 const waitFor = async (check: () => boolean, label: string, ms = 12_000): Promise<void> => {
   const until = Date.now() + ms;
@@ -98,12 +98,52 @@ try {
     await save('Delete Edited Celebrate'); await automation().getByText('No rules yet. Create a rule, then enable it explicitly.', {exact: true}).waitFor();
     assert.ok(writes.every(write => write.header === '1'), 'every mutation, including DELETE, carries bunny-request:1');
     assert.equal(writes.filter(write => write.method === 'DELETE').length, 1);
+    const schedules=()=>automation().getByRole('region',{name:'Weekly power schedules',exact:true});
+    const device=schedules().getByLabel('Power device',{exact:true});
+    const choices=await device.locator('option').evaluateAll(options=>options.map(option=>(option as HTMLOptionElement).value).filter(Boolean));
+    const firstTarget=choices[0],secondTarget=choices[1];
+    assert.ok(firstTarget!==undefined && secondTarget!==undefined,'independent configured power targets are available');
+    const schedule=async(name:string,target:string):Promise<void>=>{
+      await schedules().getByLabel('Schedule name',{exact:true}).fill(name);await device.selectOption(target);
+      await schedules().getByLabel('On time',{exact:true}).fill('00:00');await schedules().getByLabel('Off time',{exact:true}).fill('00:01');
+      await save('Create disabled schedule');
+      await schedules().getByRole('heading',{name:`${name} Disabled`,exact:true}).waitFor();
+    };
+    await schedule('Weekday desk',firstTarget);await schedule('Weekend reading',secondTarget);
+    await save('Enable schedule Weekday desk');
+    await schedules().getByRole('heading',{name:'Weekday desk Enabled',exact:true}).waitFor();
+    await schedules().getByRole('heading',{name:'Weekend reading Disabled',exact:true}).waitFor();
+    await schedules().getByRole('button',{name:'Edit schedule Weekday desk',exact:true}).click();
+    await schedules().getByLabel('Off time',{exact:true}).fill('00:00');
+    assert.equal(await schedules().getByRole('button',{name:'Save schedule',exact:true}).isDisabled(),true);
+    await schedules().getByLabel('Off time',{exact:true}).fill('00:02');await save('Save schedule');
+    await schedules().getByRole('heading',{name:'Weekday desk Enabled',exact:true}).waitFor();
+    const scheduleWrites=writes.length;
+    world.dropDashboardStreams();await feed(page,'connected');await pause(300);
+    assert.equal(writes.length,scheduleWrites,'power schedules are not resent after reconnect');
+    const powerViolations=(await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations;
+    assert.deepEqual(powerViolations.map(item=>item.id),[]);
+    await save('Disable schedule Weekday desk');
+    await page.route('**/api/v2/automation/power-schedules',async route=>{
+      if(route.request().method()==='POST'){await route.fetch();await route.abort('failed');}else await route.continue();
+    });
+    await schedules().getByLabel('Schedule name',{exact:true}).fill('Reply lost');await device.selectOption(firstTarget);
+    const beforeLost=Number(writes.length);
+    await schedules().getByRole('button',{name:'Create disabled schedule',exact:true}).click();
+    await automation().getByRole('alert').filter({hasText:'The last change has no reliable reply.'}).waitFor();
+    await pause(200);assert.equal(writes.length,beforeLost+1,'a lost mutation reply is not retried');
+    assert.equal(await schedules().getByRole('button',{name:'Create disabled schedule',exact:true}).isDisabled(),true);
+    await page.unroute('**/api/v2/automation/power-schedules');
+    await automation().getByRole('button',{name:'Refresh rules and logs',exact:true}).click();await loaded();
+    await schedules().getByRole('heading',{name:'Reply lost Disabled',exact:true}).waitFor();
+    for(const name of ['Weekday desk','Weekend reading','Reply lost']) await save(`Delete schedule ${name}`);
+    await schedules().getByText('No power schedules yet.',{exact:true}).waitFor();
     const beforeReadonly = writes.length;
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await loaded(); await automation().getByText('Your session is read-only.', {exact: true}).waitFor();
-    for (const button of ['Create disabled rule', 'Save settings', 'Save interrupt set']) assert.equal(await automation().getByRole('button', {name: button, exact: true}).isDisabled(), true);
+    for (const button of ['Create disabled rule', 'Create disabled schedule', 'Save settings', 'Save interrupt set']) assert.equal(await automation().getByRole('button', {name: button, exact: true}).isDisabled(), true);
     assert.equal(writes.length, beforeReadonly); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'automation', checks: ['explicit disabled-create/enable', 'interrupt and settings persisted', 'passive drafts and reconnect',
-      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'keyboard', 'axe', 'read-only UI interception only'], mutations: writes.length})}\n`);
+      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'keyboard', 'axe', 'read-only UI interception only','independent power schedules','invalid power windows','power reconnect passive','lost power mutation reply','power axe'], mutations: writes.length})}\n`);
   } finally { await context.close(); }
 } finally { try { await browser?.close(); } finally { await world.close(); } }
