@@ -102,7 +102,8 @@ export class AutomationPart implements CorePart {
       read:id=>Promise.resolve(structuredClone(this.#device(id))),current:id=>this.#device(id),
       refused:(requestId,parent)=>handle.log[levelOf('unavailable')]('command.rejected',{'bunny.participant':'bunny/core',
         'bunny.request.id':requestId,'bunny.outcome':'rejected','bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
-      failed:()=>handle.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal'}),
+      failed:(requestId,parent,target)=>handle.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',
+        'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.power-set.${target}`},parent),
       send:async(target,on,record,requestId,parent)=>{
         const answer=await handle.dispatch({requestId,key:`bunny.cmd.power-set.${target}`,requestedBy:'bunny/core',parent,
           draft:{type:'org.bunny.power.set.requested',subject:target,dataschema:'https://bunny.invalid/events/power-set/2.0',

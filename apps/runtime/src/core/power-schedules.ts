@@ -18,7 +18,7 @@ export type PowerScheduleOptions = {
   read:(target:string)=>Promise<DeviceRecord|undefined>;
   current:(target:string)=>DeviceRecord|undefined;
   refused?:(requestId:string,parent:TraceContext)=>void;
-  failed?:()=>void;
+  failed?:(requestId:string,parent:TraceContext,target:string)=>void;
   send:(target:string,on:boolean,record:DeviceRecord,requestId:string,parent:TraceContext)=>Promise<PowerSendResult>;
 };
 const invalid = (code='invalid-power-schedule',status=400):never=>{throw new AutomationError(code,status);};
@@ -90,9 +90,9 @@ export function createPowerSchedules(options:PowerScheduleOptions) {
       outcome:result.outcome,reason:result.reason??null,detail:JSON.stringify({family:'power-set',...(requestId===undefined?{}:{requestId}),
         ...(result.outcome==='receipt'?{receipt:{status:'accepted',requestId}}:{})})}]);
   };
-  async function fire(saved:PowerSchedule,boundary:PowerBoundary):Promise<void> {
+  async function fire(saved:PowerSchedule,boundary:PowerBoundary,requestId:string,parent:TraceContext):Promise<void> {
     if(!current(saved) || !inWindow(boundary)) return;
-    const owner=options.owner(saved.target),requestId=`schedule-${randomUUID()}`,parent=childOf(undefined);
+    const owner=options.owner(saved.target);
     let device:DeviceRecord|undefined;
     try {device=await options.read(saved.target);} catch {/* A read failure is unavailable evidence. */}
     if(!current(saved) || !inWindow(boundary)) return;
@@ -131,7 +131,8 @@ export function createPowerSchedules(options:PowerScheduleOptions) {
       for(const {saved} of due) planned.delete(saved.id);
       rearm();
       for(const {saved,boundary} of due) {
-        const task=fire(saved,boundary).catch(()=>{try {options.failed?.();} catch {/* Diagnostics fail open; the callback is never retried. */}});
+        const requestId=`schedule-${randomUUID()}`,parent=childOf(undefined);
+        const task=fire(saved,boundary,requestId,parent).catch(()=>{try {options.failed?.(requestId,parent,saved.target);} catch {/* Diagnostics fail open; the callback is never retried. */}});
         pending.add(task);void task.finally(()=>{pending.delete(task);});
       }
     });

@@ -211,3 +211,51 @@ void test('editing one definition cannot discard another target boundary whose t
     assert.deepEqual(w.sent,[{target:'lamp-b',on:true}]);
   }finally {await power.close();w.db.close();}
 });
+
+import {AutomationPart} from '../src/core/automation-part.js';
+import type {LogFields,TraceContext} from '@jimmie-potts/sdk';
+import {traceFields} from '@jimmie-potts/sdk';
+
+for(const table of ['automation_power_guard','automation_log'] as const) void test(`storage failure in ${table} retains attempt correlation without retry`,async()=>{
+  const clock=manualClock(monday(16)),db=new DatabaseSync(':memory:'),bus=new InProcessBus({now:clock.now,scheduler:clock.scheduler});
+  const sdk=bus.connect('bunny/core'),owner=bus.connect('bunny/modules/test-power');
+  const record=deviceRecord('lamp-a',1,'test-power','available');record.capabilities.power={supported:true};
+  await owner.serveSync(['device'],()=>({revision:record.revision,states:[deviceState(record)]}));
+  const actions:{requestId?:string;parent?:TraceContext}[]=[],errors:{event:string;fields:LogFields|undefined;trace:TraceContext|undefined}[]=[];
+  const part=new AutomationPart(clock.scheduler,new AbortController().signal);
+  await part.start({sdk,clock:{now:clock.now},ready:Promise.resolve(),received:()=> 'new',
+    transaction:()=>Promise.reject(new Error('unexpected transaction')),operation:()=>undefined,
+    log:{debug:()=>{},info:()=>{},warn:()=>{},error:(event,fields,trace)=>{errors.push({event,fields,trace});}},
+    dispatch:action=>{actions.push(action);return Promise.resolve({requestId:action.requestId??'missing',status:'accepted'});}});
+  part.open(db);part.setDevices([{id:'lamp-a',owner:owner.source}]);await flush();
+  try {
+    const power=part.controls.power;assert.ok(power);power.create({...input,enabled:true});
+    db.exec(`CREATE TRIGGER refuse_write BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic storage refusal'); END`);
+    clock.advance(60*60*1000);await power.settled();
+    assert.equal(actions.length,table==='automation_power_guard'?0:1);
+    assert.equal(errors.length,1);const failure=errors[0];assert.ok(failure);
+    assert.equal(failure.event,'operation.failed');assert.equal(failure.fields?.['bunny.code'],'internal');
+    assert.equal(typeof failure.fields?.['bunny.request.id'],'string');
+    assert.equal(failure.fields?.['bunny.routing.key'],'bunny.cmd.power-set.lamp-a');
+    assert.ok(failure.trace,'storage failure retains its existing attempt context');
+    const trace=traceFields(failure.trace);assert.ok(trace,'storage failure retains its existing attempt trace');
+    if(table==='automation_log') {
+      assert.equal(failure.fields?.['bunny.request.id'],actions[0]?.requestId);
+      const action=actions[0];assert.ok(action?.parent);
+      assert.equal(trace.traceId,traceFields(action.parent)?.traceId);
+    }
+    clock.advance(1000);await power.settled();assert.equal(actions.length,table==='automation_power_guard'?0:1);
+  }finally {await part.close();await sdk.close();await owner.close();db.close();}
+});
+
+void test('a throwing storage-failure diagnostic cannot change admission or trigger a retry',async()=>{
+  const w=world();await w.power.close();let reports=0;
+  w.options.failed=()=>{reports++;throw new Error('synthetic diagnostic sink refusal');};
+  const power=createPowerSchedules(w.options);
+  try {
+    power.create({...input,enabled:true});
+    w.db.exec("CREATE TRIGGER refuse_guard_insert BEFORE INSERT ON automation_power_guard BEGIN SELECT RAISE(ABORT,'synthetic storage refusal'); END");
+    w.clock.advance(60*60*1000);await power.settled();
+    w.clock.advance(1000);await power.settled();assert.equal(reports,1);assert.equal(w.sent.length,0);
+  }finally {await power.close();w.db.close();}
+});
