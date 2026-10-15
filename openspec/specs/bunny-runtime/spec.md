@@ -1343,7 +1343,7 @@ The core SHALL own fresh event rules, interrupt sets, quiet hours and budgets in
 
 ### Requirement: Automation controls
 
-The dashboard SHALL provide one Automation page for rules, interrupt set, budgets, quiet hours and logs through the authenticated gateway. Read calls SHALL require read scope; mutations SHALL require control scope and bunny-request:1. Rules created without explicit owner enabling SHALL remain disabled. No new rule kind, scheduler, model call or personal-content field SHALL be introduced.
+The dashboard SHALL provide one Automation page for event rules, weekly power schedules, interrupt set, budgets, quiet hours and logs through the authenticated gateway. Read calls SHALL require read scope; mutations SHALL require control scope and bunny-request:1. Rules created without explicit owner enabling SHALL remain disabled. Weekly power schedules SHALL use the Hub-owned scheduling path and operating limits in bunny-power-schedules; event rules SHALL retain their existing behavior. No model call, device-specific browser scheduler or personal-content publication SHALL be introduced.
 
 #### Scenario: Owner creates a rule
 - **WHEN** the owner creates and enables a valid event rule through the authenticated page
