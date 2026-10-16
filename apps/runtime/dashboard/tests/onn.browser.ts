@@ -21,7 +21,7 @@ try {
     assert.equal(await world.readonlyOnn(), 403, 'real reader credentials cannot control');
     let count = 0;
     for (const label of ['Up', 'Down', 'Left', 'Right', 'Select', 'Back', 'Home', 'Play / pause', 'Open YouTube', 'Open Stremio']) {
-      const button = controls.getByRole('button', {name: label, exact: true}); await button.focus(); await button.press('Enter');
+      const button = controls.getByRole('button', {name: label, exact: true}); await button.click({trial: true}); await button.focus(); await button.press('Enter');
       await effectCount(++count);
       await controls.getByText('Completed: succeeded. Transmitted; physical effect was not observed.', {exact: true}).waitFor();
     }
