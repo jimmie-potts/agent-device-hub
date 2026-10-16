@@ -62,6 +62,14 @@ weekly boundary: the focused fake-clock and real-dispatcher tests cover due
 boundaries. Use it with the Automation browser journey for shared schedule
 acceptance. Neither establishes Wemo, installed or physical acceptance.
 
+`wemo-power-limit` uses the actual core, Wemo module and authenticated controls
+with two supervisor-owned synthetic plugs. It checks read-only refusal, explicit
+limit enablement, a tracked on command, one automatic off, an untouched second
+plug and restart without replay. Its SDK status copy retains the setting. Use
+`npm run test:wemo:browser` for the card and page-closed enforcement journey.
+These source checks establish neither historical-release compatibility nor
+installed or physical acceptance.
+
 For [fresh setup](../SETUP.md), use `shipped`. The two migrated scenarios below
 exercise optional legacy utilities; neither is part of the fresh cutover.
 

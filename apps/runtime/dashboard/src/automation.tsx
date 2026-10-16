@@ -50,6 +50,7 @@ function mutationReply(path: string, method: string, answer: Record<string, unkn
   if (path === 'interrupt-set') return Array.isArray(answer.kinds) && answer.kinds.every(value => typeof value === 'string');
   if (path === 'settings') return typeof answer.noFlourishes === 'boolean' && object(answer.quietHours) && object(answer.budgets);
   if (method === 'DELETE') return answer.deleted === true && typeof answer.id === 'string';
+  if(path.startsWith('power-limits/')) return answer.id===path.slice('power-limits/'.length)&&typeof answer.settingsRevision==='number'&&typeof answer.enabled==='boolean'&&typeof answer.durationMs==='number';
   if(path==='power-schedules' || path.startsWith('power-schedules/')) return typeof answer.id==='string' && typeof answer.name==='string' && typeof answer.enabled==='boolean' && typeof answer.target==='string' && Array.isArray(answer.days) && typeof answer.onTime==='string' && typeof answer.offTime==='string';
   return typeof answer.id === 'string' && typeof answer.name === 'string' && typeof answer.enabled === 'boolean' && object(answer.trigger) && object(answer.action);
 }

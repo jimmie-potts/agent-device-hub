@@ -149,3 +149,11 @@ test('inbox conflict is additive, preserves opposite evidence, and handling inpu
   handle.data.actor = 'forged';
   assert.equal(v.validate(handle).ok, false, 'handling actor comes from authentication');
 });
+
+ test('power-limit state is closed and keeps nullable elapsed time separate from a deadline',()=>{
+  const v=validator(),base=structuredClone(fixtures.valid['power-limit']);
+  for(const patch of [{deadlineMs:1000},{enabled:true},{durationMs:0},{extra:1},{status:'armed',enabled:true}]){
+    const message=structuredClone(base);Object.assign(message.data,patch);assert.equal(v.validate(message).ok,false,JSON.stringify(patch));
+  }
+  Object.assign(base.data,{enabled:true,status:'armed',startedAtMs:1000,deadlineMs:14401000});assert.equal(v.validate(base).ok,true);
+ });

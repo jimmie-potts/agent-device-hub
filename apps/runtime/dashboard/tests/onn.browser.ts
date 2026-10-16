@@ -21,14 +21,14 @@ try {
     assert.equal(await world.readonlyOnn(), 403, 'real reader credentials cannot control');
     let count = 0;
     for (const label of ['Up', 'Down', 'Left', 'Right', 'Select', 'Back', 'Home', 'Play / pause', 'Open YouTube', 'Open Stremio']) {
-      const button = controls.getByRole('button', {name: label, exact: true}); await button.focus(); await button.press('Enter');
+      const button = controls.getByRole('button', {name: label, exact: true}); await button.click({trial: true}); await button.focus(); await button.press('Enter');
       await effectCount(++count);
       await controls.getByText('Completed: succeeded. Transmitted; physical effect was not observed.', {exact: true}).waitFor();
     }
     const input = controls.getByRole('textbox', {name: 'Focused text'}), insert = controls.getByRole('button', {name: 'Insert text', exact: true});
     await input.fill('unsupported 😊'); assert.equal(await insert.isDisabled(), true);
     await controls.getByText('This input contains unsupported characters.', {exact: true}).waitFor();
-    const marker = 'SYNTHETIC_ONN_BROWSER_TEXT'; await input.fill(marker); await input.press('Enter');
+    const marker = 'SYNTHETIC_ONN_BROWSER_TEXT'; await input.fill(marker); await insert.click({trial: true}); await input.press('Enter');
     await effectCount(11);
     await controls.getByText('Completed: succeeded. Transmitted; physical effect was not observed.', {exact: true}).waitFor();
     assert.equal(await input.inputValue(), '', 'submitted text is immediately removed from the draft');

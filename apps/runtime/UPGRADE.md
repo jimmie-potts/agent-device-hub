@@ -47,6 +47,23 @@ and occurrence guards, before an installed upgrade or recovery. Do not remove sa
 schedules to make an older release appear compatible. Source restart tests do not
 qualify an installed release pair. This delivery activates no installed schedule.
 
+Maximum-on definitions and run evidence add `automation_power_limits` to the core
+store. Preserve each target's owner/configuration binding, enable/duration,
+settings and definition revisions, original known/unknown start, observed run
+state and one shutoff-attempt identity. The core also publishes `power-limit/2.0`
+through its transaction/outbox. Wemo adds private `wemo.sqlite` request/device
+fences and its module folder's writer leases. A retained uncertain hold and
+unacknowledged outcomes must survive without another device write.
+
+Configured or retained Wemo requires its primary store and complete `wemo`
+baseline/candidate/recovery/reupgrade coverage. Source preflight supports its
+exact unconfigured `refused`, `healthy: false`, `not-found` health row; this does
+not admit an actual installed artifact pair. Execute the selected candidate and
+recovery readers on latest limit and Wemo state before installation. Current-source
+four-process fixtures establish restart persistence only. Do not clear settings,
+fences or holds, omit retained owners, or restore an older stopped snapshot to
+make an incompatible recovery release appear eligible.
+
 ## Initial qualification checklist
 
 1. Verify reviewed merged source, successful applicable CI, release provenance

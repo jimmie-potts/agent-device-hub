@@ -1,3 +1,5 @@
+import {createPowerLimits,PowerLimitStore} from '../src/core/power-limits.js';
+import {deviceRecord} from './fixtures/device.js';
 import {createPowerSchedules} from '../src/core/power-schedules.js';
 // The Automation HTTP boundary with the real gateway and rule store, without a listener or device.
 import assert from 'node:assert/strict';
@@ -5,7 +7,7 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 import {DatabaseSync} from 'node:sqlite';
 import {Readable} from 'node:stream';
 import {test, type TestContext} from 'node:test';
-import {InProcessBus, edgeValidator, traceFields, type Scheduler} from '@jimmie-potts/sdk';
+import {InProcessBus, edgeValidator, traceFields, type Scheduler,type TraceContext} from '@jimmie-potts/sdk';
 import {RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from '../src/core/automation.js';
@@ -30,7 +32,11 @@ async function boundary(context: TestContext) {
     targets: () => Promise.resolve({presentation: 'quiet', alert: 'none'})});
   const power=createPowerSchedules({store,clock:clock.now,scheduler,active:()=>true,targets:()=>['lines'],owner:()=> 'bunny/modules/test-power',
     read:()=>Promise.resolve(undefined),current:()=>undefined,send:()=>Promise.reject(new Error('unexpected dispatch'))});
-  const controls={...automation,power};
+  const published:TraceContext[]=[],record=deviceRecord('desk-lamp',1,'wemo','available');record.capabilities.power={supported:true};
+  let revision=0;
+  const limits=createPowerLimits({store:new PowerLimitStore(database,work=>Promise.resolve(work({database,atMs:clock.now(),revision:()=>++revision,take:()=>{},record:()=>{},step:()=>{},add:(_key,draft,options)=>{if(options?.parent!==undefined)published.push(options.parent);return {...draft,specversion:'1.0',bunnyprofile:'2.0',id:'synthetic-publication',source:'bunny/core',time:new Date(clock.now()).toISOString(),datacontenttype:'application/json',...parent};}}))),
+    clock:clock.now,scheduler,active:()=>true,targets:()=>['desk-lamp'],owner:()=> 'bunny/modules/wemo',current:()=>record,read:()=>Promise.resolve(record),send:()=>Promise.reject(new Error('unexpected dispatch'))});
+  const controls={...automation,power,limits};
   const logs: LogRecord[] = [], writer = new LogWriter(record => { logs.push(record); }, 'debug', clock), spans = new RecordedSpans();
   let ownerFailures = 0;
   const host = {modules: () => [], invoke: async <T>(_name: string, work: () => T | Promise<T>): Promise<T> => {
@@ -42,7 +48,7 @@ async function boundary(context: TestContext) {
     edge: {credentials: 'unused', launcher: false, mcp: false, editorLinks: {}, placeLinks: {}}};
   const gateway = new Gateway(options);
   await gateway.start('http://127.0.0.1:0', ['127.0.0.1:0']);
-  context.after(async () => {await gateway.close(); await automation.close(); await power.close(); database.close();});
+  context.after(async () => {await gateway.close(); await automation.close(); await power.close(); await limits.close(); database.close();});
   const call = (method: string, path: string, input?: object | AsyncIterable<Buffer>, token: string | undefined = controlToken,
     header: string | undefined = '1'): Promise<Answer> => {
     const chunks = input === undefined ? [] : Symbol.asyncIterator in input ? input : [Buffer.from(JSON.stringify(input))];
@@ -54,7 +60,7 @@ async function boundary(context: TestContext) {
       writeHead: (status: number) => ({end: (body: string) => {resolve({status, body: JSON.parse(body) as Record<string, unknown>});}}),
     } as unknown as ServerResponse));
   };
-  return {gateway, automation:controls, call, logs, spans, ownerFailures: () => ownerFailures};
+  return {gateway, automation:controls, call, logs, spans, published, ownerFailures: () => ownerFailures};
 }
 
 void test('Automation reads and CRUD require their scopes and every mutation requires the request header', async context => {
@@ -145,4 +151,13 @@ void test('weekly power mutation loses authority during its body read without ch
   assert.equal((await pending).status,401);assert.deepEqual(w.automation.power.list(),[]);
   assert.equal(JSON.stringify(w.logs).includes('Desk light'),false);
   assert.equal(w.logs.some(record=>record.attributes['http.route']==='/api/v2/automation/power-schedules'),true);
+});
+
+void test('saving a maximum-on definition keeps the authenticated request trace through publication',async context=>{
+  const w=await boundary(context);
+  const answer=await w.call('PUT','power-limits/desk-lamp',{enabled:false,durationMs:60000});
+  assert.equal(answer.status,200);assert.equal(w.published.length,1);
+  assert.equal(traceFields(w.published[0] as TraceContext)?.traceId,traceFields(parent)?.traceId);
+  const span=w.spans.spans.find(value=>value.name==='bunny.command.request');assert.ok(span);
+  assert.equal(traceFields(w.published[0] as TraceContext)?.spanId,span.spanId);
 });

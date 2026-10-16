@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {DatabaseSync} from 'node:sqlite';
+import {createPowerLimits,PowerLimitStore} from '../src/core/power-limits.js';
+import {automationRoute} from '../src/gateway/automation-routes.js';
+import type {AutomationControls} from '../src/core/automation-part.js';
+import {deviceRecord} from './fixtures/device.js';
+void test('limit routes bound bodies, read independently and reauthorize after a delayed body',async t=>{
+ const db=new DatabaseSync(':memory:'),record=deviceRecord('desk-lamp',1,'wemo','available');record.capabilities.power={supported:true};
+ const limits=createPowerLimits({store:new PowerLimitStore(db),clock:()=>1800000000000,scheduler:{after:()=>()=>{}},active:()=>true,targets:()=>['desk-lamp'],owner:()=> 'bunny/modules/wemo',current:()=>record,read:()=>Promise.resolve(record),send:()=>Promise.reject(new Error('unexpected write'))});
+ t.after(async()=>{await limits.close();db.close();});const controls={limits} as unknown as AutomationControls;
+ let authority=true,release=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
+ const pending=automationRoute(controls,{method:'PUT',url:new URL('http://127.0.0.1/api/v2/automation/power-limits/desk-lamp'),body:async maximum=>{assert.equal(maximum,1024);await gate;return {enabled:true,durationMs:4000};},authorize:()=>{if(!authority)throw new Error('synthetic authorization revoked');}});
+ authority=false;release();await assert.rejects(pending,/authorization revoked/);assert.deepEqual(limits.list(),[]);
+ const call=(method:string,path:string,value?:unknown)=>automationRoute(controls,{method,url:new URL(`http://127.0.0.1/api/v2/automation/${path}`),body:()=>Promise.resolve(value),authorize:()=>{}});
+ assert.equal((await call('PUT','power-limits/desk-lamp',{enabled:false,durationMs:4000,expectedSettingsRevision:0}))?.status,200);
+ assert.equal((await call('GET','power-limits'))?.status,200);assert.equal(((await call('GET','power-limits/desk-lamp'))?.body as {enabled:boolean}).enabled,false);
+ assert.equal((await call('PUT','power-limits/desk-lamp',{enabled:true,durationMs:4000,expectedSettingsRevision:0}))?.status,409);
+ assert.equal((await call('PUT','power-limits/desk-lamp',{enabled:true,durationMs:4000,other:true}))?.status,400);
+ assert.equal((await call('GET','power-limits?extra=1'))?.status,400);assert.equal((await call('GET','power-limits/missing'))?.status,404);
+});

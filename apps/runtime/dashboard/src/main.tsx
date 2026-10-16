@@ -8,7 +8,7 @@ import {AutomationPage} from './automation.tsx';
 import React, {useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {InboxItem, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
 import {DeviceCard, PlaybackCard} from './device-controls.tsx';
 import {playbackArtworkUrl} from './playback-artwork.ts';
@@ -243,6 +243,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
   const modeCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
   const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
+  const limitsCopy=runtime.copies.find(copy=>copy.owner==='bunny/core'&&copy.family==='power-limit');
+  const limits=(limitsCopy?.records??[]) as readonly PowerLimitRecord[];
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
@@ -309,7 +311,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
         <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id}>
           <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
-            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} compact={route.kind === 'home'}/>
+            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>
         </div>)}</div>
       </section>}
       {(route.kind === 'home' || route.kind === 'playback') && <section aria-label="Music"><div className="cards">{playback.map(({record, copy}) =>

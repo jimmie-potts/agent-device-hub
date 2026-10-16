@@ -154,7 +154,7 @@ carries a device-specific payload: modules define those.
 
 | Kind | Family | Type |
 | --- | --- | --- |
-| state | `session`, `mode`, `inbox-item`, `playback`, `operation` | `org.bunny.<family>.updated` |
+| state | `session`, `mode`, `inbox-item`, `playback`, `operation`, `power-limit` | `org.bunny.<family>.updated` |
 | occurrence | `lifecycle` (hook or Desktop metadata evidence for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
@@ -369,7 +369,12 @@ the hold:
 - **How it clears.** The module releases the hold after a person's next
   command to the device, or once a later definitive outcome settles the held
   operation. Its next record has no `held`. Each module's README names the
-  commands that release a hold; no command family exists only for that.
+  commands that release a hold. Power-only Wemo plugs use the explicit
+  `wemo-hold-release/2.0` command as a narrow exception: it requires the held
+  request, current configuration and generation, then reads fresh identity and
+  power before clearing the hold. It sends no power command and does not retry
+  or change the original uncertain operation. Other modules keep their existing
+  command-based recovery.
 - **Availability.** A held device is never `available`: it is `degraded` while
   it answers, `unavailable` while it does not, and `unknown` before it has
   answered. The checks refuse a held `available` record and a hold that begins
