@@ -55,6 +55,10 @@ Its [guide](../../modules/wispr/README.md) documents the separate browser exposu
 and text-sharing choices. All authenticated read-scoped clients may read its
 analytics routes; browser exposure remains off until explicitly enabled.
 
+The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
+qualified local F7C063 plugs. It supplies power/observations only; schedules and
+maximum-on enforcement stay in the core.
+
 ## Adding a module
 
 The [ONN module](../../modules/onn/README.md) owns one configured streaming
@@ -385,16 +389,28 @@ Restart, reconnect, editing and enabling select future boundaries only. Callback
 more than 60 seconds late are discarded, and duplicate intent is never replayed.
 Manual off during an on window causes no automatic re-on. The Hub must remain
 running with a reachable device; this is separate from any device maximum-on
-feature and provides no offline protection. No Wemo transport or maximum-on
-qualification follows from these shared-source checks. Saved routine rows need
+feature and provides no offline protection. Source checks do not establish
+installed or physical qualification. Saved routine rows need
 actual release and recovery admission under [UPGRADE.md](UPGRADE.md).
+
+The core separately stores per-target maximum-on definitions and continuous-run
+state in `automation_power_limits`. Its `power-limit/2.0` state family uses the
+core's transaction/outbox and SDK sync. Duration and enable are independent of
+weekly schedules; a new target has no enabled limit. A known run keeps its
+original start through edits, repeated on and restart. Fresh off ends it; enabled
+unknown-elapsed on requests off conservatively. Due work uses the tracked
+`power-set` dispatcher once per run; blocked, admitted and uncertain attempts are
+never replayed. Disabling sends nothing. Enforcement requires a running Hub and
+reachable device, with no offline guarantee. New private rows and the Wemo owner
+require actual release/latest-state/recovery admission before installation.
 
 The shared dashboard's Automation page manages these fresh rules and settings.
 The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
 (GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
 `power-schedules` (GET/POST), `power-schedules/<id>` (GET/PUT/DELETE),
 `power-schedules/<id>/enable` and `disable` (POST with `{}`),
-`interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
+`power-limits` (GET), `power-limits/<target>` (GET/PUT with enabled, durationMs
+and optional expectedSettingsRevision), `interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
 1–500 and `before` sequence). Success responses use schema `automation/2.0`.
 Reads require read scope; all mutations require control and `bunny-request: 1`,
 including client credentials. Rule bodies and interrupt sets are bounded to

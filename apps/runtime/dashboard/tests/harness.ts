@@ -1,3 +1,4 @@
+import {createWemoModule,SimulatedWemo,WEMO_SIMULATED_SECTION,wemoSchemas} from '@jimmie-potts/wemo';
 import {createCompanionsModule} from '@jimmie-potts/companions';
 import {createRoborockModule,SimulatedRoborock,roborockSchemas,type RoborockModule,type SimulationAction,type VacuumStatus} from '@jimmie-potts/roborock';
 import {createOnnModule, SimulatedOnn, onnSchemas, ONN_SIMULATED_SECTION} from '@jimmie-potts/onn';
@@ -40,6 +41,7 @@ export type WorldOptions = {
   wifiProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   onn?: boolean;
+  wemo?:boolean;
   roborock?: boolean;
   /** The actual file reader on explicitly selected private synthetic collector files. */
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
@@ -65,6 +67,8 @@ export type WorldOptions = {
 };
 
 export type World = {
+  wemo:SimulatedWemo;
+  wemoLoseReply():void;
   onnState(): ReturnType<SimulatedOnn['state']>;
   onnOnline(online: boolean): void;
   readonlyOnn(): Promise<number>;
@@ -142,6 +146,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
   const onn = new SimulatedOnn();
+  const wemo=new SimulatedWemo();let loseWemoReply=false;
   const bulbs = new SimulatedLifx();
   const lines = new SimulatedNanoleaf();
   const gadget = new Gadget();
@@ -163,6 +168,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
+    ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
@@ -193,12 +199,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -217,7 +223,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       try{const ready=await call({jsonrpc:'2.0',method:'notifications/initialized'});await ready.arrayBuffer();const response=await call({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'roborock_status',arguments:{}}});assert.equal(response.status,200);const body:unknown=await response.json();assert.ok(typeof body==='object'&&body!==null&&'result'in body);const result:unknown=body.result;assert.ok(typeof result==='object'&&result!==null&&'structuredContent'in result);const content:unknown=result.structuredContent;assert.ok(typeof content==='object'&&content!==null&&'data'in content);const data:unknown=content.data;assert.ok(typeof data==='object'&&data!==null&&'result'in data);return data.result;}finally{const ended=await fetch(`${runtime.url}/mcp`,{method:'DELETE',headers});await ended.arrayBuffer();}
     },
     url: runtime.url, stateDir, logs, runtime: () => runtime,
-    onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
+    wemo,wemoLoseReply:()=>{loseWemoReply=true;},onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
     readonlyOnn: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/onn-key-press`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'onn', data: {key: 'right'}, requestId: 'readonly-onn'})}); await result.arrayBuffer(); return result.status;},
     assistantRead: async () => {const response = await fetch(`${runtime.url}/modules/companions/content/conversation?profile=bunny`, {headers: {authorization: `Bearer ${readerToken}`}}); return {status: response.status, text: await response.text()};},
     readonlyAssistantUpload: async () => {const query = new URLSearchParams({family: 'assistant-input', target: 'assistant', requestId: 'readonly-assistant', name: 'input.json'});

@@ -20,7 +20,7 @@ read-only refusal and future-only restart in memory and disposable runtime runs.
 Run that scenario and `automation-lines-moment` after changes to this shared path.
 The Automation browser journey covers independent devices, invalid drafts, passive
 reconnect, lost mutation replies, read-only controls and axe accessibility.
-No check here contacts Wemo or qualifies an installed schedule or maximum-on limit.
+These shared-scheduling checks contact no household plug and qualify no installed schedule or maximum-on limit.
 
 Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
 After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
@@ -335,6 +335,27 @@ a private temporary directory outside Git and Windows mounts, as the production
 state contract does. Other source scratch remains under the repository's
 ignored `.local/`. Tests use only their own synthetic databases and fake SDK
 inputs, and do not qualify installed health, native readers or physical devices.
+
+### Wemo and maximum-on checks
+
+Run `npm run test:wemo:built` after the root build. It covers identity-checked
+loopback SOAP, bounded transport, independent queues, final-effect fences,
+persistent holds, explicit read-only release, storage refusal, silent-device
+startup/shutdown and SDK module conformance. `npm run test:wemo:browser` exercises
+the real module/core/gateway/dashboard with synthetic plugs, including page-closed
+enforcement, reload without replay and desktop/phone accessibility.
+
+`power-limits*.test.ts` covers unknown starts, original run deadlines through
+edits/restart, offline/held binding, durable attempt identity and authenticated
+bounded routes. `wemo-upgrade-profile.test.ts` covers configured/retained owner
+inventory and admission. `wemo-upgrade-qualification.test.ts` starts four separate
+current-source processes on the latest synthetic stores and preserves the limit
+attempt, Wemo hold, request fence and unacknowledged outcome. Phase labels do not
+substitute historical release artifacts or establish installed compatibility.
+The `wemo-power-limit` catalog scenario runs over both SDK transports and in
+selected disposable verification. Use an outside-checkout private `TMPDIR`.
+Actual installation still requires UPGRADE.md's release/latest-state/recovery
+admission; none of these checks contact a household device.
 
 ### Runtime test layers
 

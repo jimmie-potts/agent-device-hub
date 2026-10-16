@@ -154,7 +154,7 @@ carries a device-specific payload: modules define those.
 
 | Kind | Family | Type |
 | --- | --- | --- |
-| state | `session`, `mode`, `inbox-item`, `playback`, `operation` | `org.bunny.<family>.updated` |
+| state | `session`, `mode`, `inbox-item`, `playback`, `operation`, `power-limit` | `org.bunny.<family>.updated` |
 | occurrence | `lifecycle` (hook or Desktop metadata evidence for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |

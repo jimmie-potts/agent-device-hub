@@ -23,6 +23,13 @@ legacy Hub installer and does not establish routine upgrade automation.
 | Per-device writers and private state/outboxes | `modules/` and their owning READMEs |
 | Browser shell and module feature pages | `apps/runtime/dashboard/` and browser-only module entries |
 
+Weekly power schedules and maximum-on run state live in the core's automation
+part. Both use tracked generic power dispatch; the Wemo module owns bounded
+local I/O, identity checks, its per-plug queues, request fences and held-write
+recovery. Limit status uses core SDK state, with no dashboard state polling.
+These fit the diagram's existing core/module boundaries; its topology is unchanged.
+Source delivery does not establish installed or physical acceptance.
+
 The optional [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated
 Windows HTTPS forwarder before that same loopback gateway. The runtime admits its
 one configured origin with private proxy proof and uses ordinary browser sessions;

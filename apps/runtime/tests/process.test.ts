@@ -66,7 +66,7 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation', 'inbox-item', 'mode']}, ...UNCONFIGURED]);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.2', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation', 'inbox-item', 'mode', 'power-limit']}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -80,7 +80,7 @@ it('the shipped runtime runs every shipped module with --simulate and each facto
   assert.deepEqual(body.modules.map(module => [module.name, module.state]), shippedModules.map(({name}) => [name, 'running']));
   assert.equal(body.status, 'ok');
   // The device modules all serve the shared device family, each for its own devices (#967): none is refused it.
-  assert.deepEqual(body.modules.filter(module => module.serves?.includes('device') === true).map(module => module.name), ['lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'onn', 'roborock']);
+  assert.deepEqual(body.modules.filter(module => module.serves?.includes('device') === true).map(module => module.name), ['lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'onn', 'wemo', 'roborock']);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.deepEqual(runtime.records().filter(record => record.severity_number >= 17).map(record => record.event_name), [], 'no error record');

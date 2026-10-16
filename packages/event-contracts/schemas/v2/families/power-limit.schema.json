@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://bunny.invalid/events/power-limit/2.0",
+  "type":"object","additionalProperties":false,
+  "required":["id","revision","settingsRevision","enabled","durationMs","enforcement","status","startedAtMs","deadlineMs","observedAtMs","lastAttempt","updatedAtMs"],
+  "properties":{
+    "id":{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "revision":{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "settingsRevision":{"type":"integer","minimum":1},
+    "enabled":{"type":"boolean"},"durationMs":{"type":"integer","minimum":1000,"maximum":604800000},
+    "enforcement":{"const":"hub-dependent"},
+    "status":{"enum":["disabled","unavailable","off","armed","elapsed-unknown","due","attempted","blocked"]},
+    "startedAtMs":{"anyOf":[{"type":"null"},{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}]},
+    "deadlineMs":{"anyOf":[{"type":"null"},{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}]},
+    "observedAtMs":{"anyOf":[{"type":"null"},{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}]},
+    "updatedAtMs":{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "lastAttempt":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["requestId","outcome"],"properties":{"requestId":{"$ref":"https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},"outcome":{"enum":["intent","receipt","not-sent","uncertain"]},"reason":{"type":"string","maxLength":64}}}]}
+  }
+}

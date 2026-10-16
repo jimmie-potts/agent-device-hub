@@ -8,6 +8,8 @@ import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 
 export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
+/** Core-derived optional maximum-on state, independent of observed device power and tracked operation outcomes. */
+export type PowerLimitRecord={id:string;revision:number;settingsRevision:number;enabled:boolean;durationMs:number;enforcement:'hub-dependent';status:'disabled'|'unavailable'|'off'|'armed'|'elapsed-unknown'|'due'|'attempted'|'blocked';startedAtMs:number|null;deadlineMs:number|null;observedAtMs:number|null;lastAttempt:null|{requestId:string;outcome:'intent'|'receipt'|'not-sent'|'uncertain';reason?:string};updatedAtMs:number};
 /** A core payload family. */
 export type CoreFamily = PayloadFamily;
 
@@ -254,6 +256,14 @@ const checkPlaybackArtwork: PayloadCheck = message => {
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
+  define('power-limit', 'state', 'org.bunny.power-limit.updated', message=>{
+    const issue=checkEntity(message);if(issue!==undefined)return issue;
+    const record=message.data as PowerLimitRecord;
+    if(record.deadlineMs!==(record.startedAtMs===null?null:record.startedAtMs+record.durationMs))return 'power-limit deadline must retain its original start';
+    if(!record.enabled&&record.status!=='disabled'||record.enabled&&record.status==='disabled')return 'power-limit enabled/status mismatch';
+    if((record.status==='armed'||record.status==='due')&&record.startedAtMs===null)return 'timed limit requires a known start';
+    return undefined;
+  }),
   define('inbox-item', 'state', 'org.bunny.inbox-item.updated', checkEntity),
   define('inbox-item', 'state', 'org.bunny.inbox-item.updated', message => {
     const checked = checkEntity(message);

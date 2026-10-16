@@ -33,6 +33,15 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     return work();
   };
   try {
+    if(path==='power-limits'||path.startsWith('power-limits/')) {
+      const limits=controls.limits;if(limits===undefined)throw new AutomationError('unavailable',503);
+      noQuery();
+      if(path==='power-limits')return method==='GET'?answer(200,{limits:limits.list()}):undefined;
+      const id=/^power-limits\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(path)?.[1];if(id===undefined||id.length>128)return undefined;
+      if(method==='GET'){const record=limits.get(id);return record===undefined?{status:404,body:errorBody('not-found')}:answer(200,record);}
+      if(method==='PUT'){const input=await request.body(1024);request.authorize();return answer(200,await limits.save(id,input));}
+      return undefined;
+    }
     if(path==='power-schedules' || path.startsWith('power-schedules/')) {
       const power=controls.power;
       if(power===undefined) throw new AutomationError('unavailable',503);

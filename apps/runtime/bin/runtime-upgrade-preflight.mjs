@@ -20,7 +20,7 @@ import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
 const maximum = 256 * 1024;
 const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
-const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr'];
+const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr', 'wemo'];
 
 // The delivered companion registration always starts. Its fixed package path
 // in a verified artifact is conservative evidence of that ownership; missing
@@ -37,6 +37,8 @@ function companionRoles(source) {
 }
 
 function requireCoverage(admission, state, source) {
+  if ((state.configured.includes('wemo') || state.durableOwners.includes('wemo'))
+    && (!state.durableOwners.includes('wemo') || !admission.coveredOwners?.includes('wemo'))) refused();
   const onn = state.configured.includes('onn') || state.durableOwners.includes('onn');
   if (onn && (!state.durableOwners.includes('onn') || !Array.isArray(admission.coveredOwners)
     || !admission.coveredOwners.includes('onn'))) refused();
@@ -86,7 +88,7 @@ function requireHealth(health, configured, lagLimitMs, companions) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
     // BB8, ONN and Roborock. Configured/retained owner coverage and delivered
     // Roborock readers are checked separately before health observation.
-    if (['wispr', 'bb8', 'onn', 'roborock'].includes(row.name) && !configured.includes(row.name)) {
+    if (['wispr', 'bb8', 'onn', 'roborock', 'wemo'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
     } else if ((row.name !== 'core' && !configured.includes(row.name)

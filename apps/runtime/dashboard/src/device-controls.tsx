@@ -4,15 +4,16 @@ import type {DeviceRecord, MediaAction, Tagged} from '@jimmie-potts/event-contra
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {useAttempt} from './command-control.tsx';
 import {contentBlocked, deviceAction, deviceBlocked, operationView, type DeviceIntent} from './devices.ts';
+import {PowerLimitPanel,type PowerLimitProps} from './power-limit.tsx';
 import {Facts, Select} from './ui.tsx';
 
 const shown = <T,>(value: Tagged<T>): string => value.status === 'known' ? String(value.value) : 'Unknown';
 const title = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 const choices = (values: readonly string[]): {value: string; label: string}[] => [{value: '', label: 'Choose…'}, ...values.map(value => ({value, label: title(value)}))];
 
-export function DeviceCard({record, owner, live, control, operations, operationsLive, refresh, compact = false}: {
+export function DeviceCard({record, owner, live, control, operations, operationsLive, refresh, limit, now=Date.now(), compact = false}: {
   record: DeviceRecord; owner: string; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
-  refresh: () => Promise<void>; compact?: boolean;
+  refresh: () => Promise<void>; limit?:PowerLimitProps; now?:number; compact?: boolean;
 }): React.JSX.Element {
   const action = useAttempt(record.id, operations, operationsLive);
   const [brightness, setBrightness] = useState<string>();
@@ -40,17 +41,18 @@ export function DeviceCard({record, owner, live, control, operations, operations
       ['Desired brightness', record.desired.brightness.status === 'known' ? `${record.desired.brightness.value}%` : 'Unknown'],
       ['Observed power', record.observed.status === 'known' ? shown(record.observed.power) : 'Unknown'],
       ['Observed brightness', record.observed.status === 'known' ? shown(record.observed.brightness) : 'Unknown'],
+      ['Observation age', record.observed.status==='known'?`${Math.max(0,Math.floor((now-record.observed.observedAtMs)/1000))} seconds`:'Unknown'],
       ['Pending changes', record.pending === 0 ? 'None' : `${record.pending} queued: ${record.pendingKinds.join(', ')}`],
       ['Last successful transmission', record.lastTransmission.status === 'known' ? new Date(record.lastTransmission.transmittedAtMs).toISOString() : 'Unknown'],
     ]}/>
-    {held !== undefined && <p className="warning">Held since {new Date(held.heldAtMs).toISOString()} by operation <a href={`#held-${held.requestId}`} onClick={event => { event.preventDefault(); document.getElementById(`held-${held.requestId}`)?.focus(); }}>{held.requestId}</a>. A fresh explicit mode command releases the hold; refresh alone does not.</p>}
+    {held !== undefined && <p className="warning">Held since {new Date(held.heldAtMs).toISOString()} by operation <a href={`#held-${held.requestId}`} onClick={event => { event.preventDefault(); document.getElementById(`held-${held.requestId}`)?.focus(); }}>{held.requestId}</a>. {record.kind==='wemo'?'Release the hold explicitly before another power change. Releasing sends no power command.':'A fresh explicit mode command releases the hold; refresh alone does not.'}</p>}
     {held !== undefined && <p id={`held-${held.requestId}`} tabIndex={-1} className="hint">Held operation {held.requestId}: {operations.find(item => item.requestId === held.requestId) === undefined ? 'No current operation record.' : operationView(operations.find(item => item.requestId === held.requestId) as OperationRecord).text}</p>}
     {!control && <p className="hint">Your session is read-only.</p>}
     {control && <>
       {blocked !== undefined && <p className="hint">Unavailable: {blocked}.</p>}
       <div className="cards quick-controls">
         {cap.power.supported && <div className="edit"><h3>{record.kind === 'pixoo' ? 'Screen power' : 'Power'}</h3><fieldset disabled={disabled}>
-          {(power === undefined ? [true, false] : [!power]).map(on => <button type="button" key={String(on)} onClick={() => { run({family: 'power-set', data: {on}}); }}>Turn {on ? 'on' : 'off'}</button>)}
+          {(power === undefined || record.kind==='wemo' ? [true, false] : [!power]).map(on => <button type="button" key={String(on)} onClick={() => { run({family: 'power-set', data: {on}}); }}>Turn {on ? 'on' : 'off'}</button>)}
         </fieldset></div>}
         {cap.modes.supported && <div className="edit"><h3>Mode</h3><fieldset disabled={disabled}>
           <Select label="Device mode" value={record.desired.mode.status === 'known' ? record.desired.mode.value : ''} options={choices(cap.modes.values)}
@@ -89,9 +91,11 @@ export function DeviceCard({record, owner, live, control, operations, operations
       {held !== undefined && cap.modes.supported && <div className="actions" aria-label="Release device hold">{cap.modes.values.map(mode =>
         <button type="button" className="secondary" disabled={blocked !== undefined || record.pending > 0} key={mode}
           onClick={() => { run({family: 'device-mode-set', data: {mode}}); }}>Release hold and apply {title(mode)}</button>)}</div>}
+      {record.kind==='wemo'&&held!==undefined&&<button type="button" disabled={!live||!operationsLive||record.pending>0||action.locked&&action.requestId!==held.requestId} onClick={()=>{const value=latest.current;if(value.held===undefined)return;void action.run({family:'wemo-hold-release',target:value.id,requestId:crypto.randomUUID(),data:{heldRequestId:value.held.requestId,expectedConfigurationRevision:value.configurationRevision,expectedGeneration:value.generation}});}}>Release Wemo hold</button>}
       <p role="status" id={action.requestId === undefined ? undefined : `operation-${action.requestId}`}>{action.text}</p>
       {action.locked && <button type="button" className="secondary" onClick={() => { void refresh(); }}>Refresh current state</button>}
     </>}
+    {limit!==undefined&&<PowerLimitPanel {...limit}/>}
     {!compact && <details><summary>Device details</summary><Facts items={[
       ['Owner', owner], ['Device ID', record.id], ['Revision', record.revision], ['Configuration revision', record.configurationRevision],
       ['Last device outcome', record.lastOutcome.status === 'known' ? `${record.lastOutcome.outcome.result} (${record.lastOutcome.outcome.evidence})` : 'Unknown'],

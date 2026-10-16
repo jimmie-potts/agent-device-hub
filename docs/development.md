@@ -14,6 +14,16 @@ The headings below preserve existing links and route component detail to its own
 [Documentation checks](documentation-checks.md) report source-pin drift and validate
 current commands and paths in CI, including Markdown-only changes.
 
+## Wemo checks
+
+Use Node 24. Run `npm run test:wemo` for configured local SOAP transport and module
+checks, or build once and run `npm run test:wemo:built`. The modules CI group runs
+the built suite. These use loopback HTTP and simulated plugs, never household
+addresses. Runtime maximum-on, management and scheduling integration use
+`npm run test:runtime:built` and `npm run test:wemo:browser` (desktop/phone accessibility), plus the dashboard checks under
+`apps/runtime/DEVELOPMENT.md`. Build/type/lint, shared contract/workflow checks,
+independent review, installed qualification and named physical trials remain separate.
+
 ## Current architecture diagram
 
 The current runtime view is authored in `docs/runtime-architecture.json` and

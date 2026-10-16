@@ -146,6 +146,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:onn:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:wemo:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
@@ -233,6 +235,8 @@ jobs:
         run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:companions:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:wemo:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   gate:
