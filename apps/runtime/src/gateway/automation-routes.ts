@@ -1,12 +1,14 @@
 // Hub #925: legacy route shapes from apps/hub/src/automation-routes.ts at bf11587c, using the core's fresh controls.
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {statusOf} from '@jimmie-potts/sdk';
+import {statusOf,type TraceContext} from '@jimmie-potts/sdk';
 import type {AutomationControls} from '../core/automation-part.js';
 import {AutomationError} from '../core/automation.js';
 
 export const AUTOMATION_PREFIX = '/api/v2/automation/';
 export type AutomationRequest = {
   method: string;
+  /** Trusted gateway span, kept across the settings publication handoff. */
+  parent?: TraceContext;
   url: URL;
   /** The gateway bounds JSON and re-admits the original principal after reading it. */
   body(maximumBytes: number): Promise<unknown>;
@@ -39,7 +41,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       if(path==='power-limits')return method==='GET'?answer(200,{limits:limits.list()}):undefined;
       const id=/^power-limits\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(path)?.[1];if(id===undefined||id.length>128)return undefined;
       if(method==='GET'){const record=limits.get(id);return record===undefined?{status:404,body:errorBody('not-found')}:answer(200,record);}
-      if(method==='PUT'){const input=await request.body(1024);request.authorize();return answer(200,await limits.save(id,input));}
+      if(method==='PUT'){const input=await request.body(1024);request.authorize();return answer(200,await limits.save(id,input,request.parent));}
       return undefined;
     }
     if(path==='power-schedules' || path.startsWith('power-schedules/')) {

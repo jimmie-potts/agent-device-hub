@@ -197,7 +197,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
-      limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value)=>limits().save(id,value),settled:()=>limits().settled()},
+      limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       power:{list:()=>power().list(),get:id=>power().get(id),create:(value,owner)=>power().create(value,owner),
         update:(id,value)=>power().update(id,value),setEnabled:(id,enabled)=>power().setEnabled(id,enabled),
         remove:id=>power().remove(id),settled:()=>power().settled()},

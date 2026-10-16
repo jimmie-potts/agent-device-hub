@@ -53,11 +53,17 @@ class Owner {
     this.#store.deviceSave(target.record);
     add(`bunny.state.device.${target.config.id}`,{kind:'state',type:'org.bunny.device.updated',subject:target.config.id,dataschema:'https://bunny.invalid/events/device/2.1',data:target.record},parent===undefined?{}:{parent});
   }
-  #transaction(work:(add:AddMessage)=>void):Promise<void>{
+  #transaction(work:(add:AddMessage)=>void,target?:Target,parent?:TraceContext,requestId?:string):Promise<void>{
     const task=this.#committing.then(async()=>{
       const before=new Map([...this.#targets].map(([id,t])=>[id,structuredClone(t.record)]));
-      try{await this.#outbox.transaction(work);}catch(error){for(const [id,value] of before){const target=this.#targets.get(id);if(target!==undefined)target.record=value;}throw error;}
+      try{await this.#outbox.transaction(work);}catch(error){for(const [id,value] of before){const target=this.#targets.get(id);if(target!==undefined)target.record=value;}this.#storageFailed(target,parent,requestId);throw error;}
     });this.#committing=task.then(()=>{},()=>{});return task;
+  }
+  #storageFailed(target?:Target,parent?:TraceContext,requestId?:string):void{
+    if(this.#storageDown)return;
+    this.#storageDown=true;
+    for(const item of this.#targets.values()){item.poll?.();item.stale?.();}
+    this.#context.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',...(target===undefined?{}:{'bunny.device.id':target.config.id}),...(requestId===undefined?{}:{'bunny.request.id':requestId})},parent);
   }
   #guard(target:Target,command:Command<Input>,release:boolean):ErrorBody|undefined{
     const value=command.data,now=this.#context.clock.now(),record=target.record;
@@ -80,13 +86,13 @@ class Owner {
       if(target.pending.size>=MAX_PENDING){answer=errorBody('capacity');return;}
       this.#store.save({requestId:id,target:target.config.id,family,digest,traceparent:command.traceparent,state:'accepted'});
       target.pending.set(id,{family,command});this.#record(add,target,command);accepted=true;answer={status:'accepted'};
-    });}catch(error){target.pending.delete(id);return errorBody(fullDisk(error)?'capacity':'internal');}
+    },target,command,command.data.requestId);}catch(error){target.pending.delete(id);return errorBody(fullDisk(error)?'capacity':'internal');}
     if(accepted){this.#context.log.info('command.queued',{'bunny.device.id':target.config.id,'bunny.request.id':id},command);target.queue.push({family,command});this.#drain(target);}
     return answer;
   }
   #drain(target:Target):void{
     if(target.running!==undefined)return;
-    target.running=(async()=>{await Promise.resolve();while(!this.#stopped){const next=target.queue.shift();if(next===undefined)break;if(next==='poll'){target.pollQueued=false;await this.#read(target);}else await this.#execute(target,next);}})().catch(()=>{this.#storageDown=true;this.#context.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal','bunny.device.id':target.config.id});}).finally(()=>{delete target.running;});
+    target.running=(async()=>{await Promise.resolve();while(!this.#stopped){const next=target.queue.shift();if(next===undefined)break;if(next==='poll'){target.pollQueued=false;await this.#read(target);}else await this.#execute(target,next);}})().catch(()=>{this.#storageFailed(target);}).finally(()=>{delete target.running;});
   }
   #bounded<T>(work:(signal:AbortSignal)=>Promise<T>,ms:number):Promise<T>{
     const controller=new AbortController(),cancel=this.#context.scheduler.after(ms,()=>controller.abort());
@@ -96,7 +102,7 @@ class Owner {
   async #execute(target:Target,pending:Pending):Promise<void>{
     const {command,family}=pending,row=this.#store.get(command.data.requestId);if(row===undefined||row.state!=='accepted')return;
     const release=family===RELEASE,guard=this.#guard(target,command,release);if(guard!==undefined){await this.#finish(target,row,completed(row.requestId,guard.error.code));return;}
-    try{await this.#transaction(()=>{const live=this.#store.get(row.requestId);if(live?.state!=='accepted'||live.digest!==row.digest)throw new Error('Wemo fence changed');this.#store.save({...row,state:'started'});});}
+    try{await this.#transaction(()=>{const live=this.#store.get(row.requestId);if(live?.state!=='accepted'||live.digest!==row.digest)throw new Error('Wemo fence changed');this.#store.save({...row,state:'started'});},target,command,command.data.requestId);}
     catch(error){await this.#finish(target,row,completed(row.requestId,fullDisk(error)?'capacity':'internal'));return;}
     const trace=this.#context.trace.start('bunny.device.call',{parent:command,kind:'client',attributes:{'bunny.device.id':target.config.id,'bunny.operation':release?'snapshot':'power'}});
     this.#context.log.info('command.executing',{'bunny.device.id':target.config.id,'bunny.request.id':row.requestId},command);
@@ -108,7 +114,7 @@ class Owner {
         const after=this.#guard(target,command,true);
         if(observation===undefined||after!==undefined)attempt={result:'failed',evidence:'none',code:after?.error.code??'unavailable',connection:observation===undefined?'unavailable':'available'};
         else {
-          await this.#transaction(add=>{const current=this.#store.get(row.requestId);if(current?.state!=='started'||current.digest!==row.digest)throw new Error('Wemo fence changed');delete target.record.held;this.#observation(target,observation);this.#record(add,target,command);});
+          await this.#transaction(add=>{const current=this.#store.get(row.requestId);if(current?.state!=='started'||current.digest!==row.digest)throw new Error('Wemo fence changed');delete target.record.held;this.#observation(target,observation);this.#record(add,target,command);},target,command,command.data.requestId);
           attempt={result:'succeeded',evidence:'none',connection:'available'};
         }
       }else attempt=await this.#bounded(signal=>target.transport.setPower(command.data.on,signal,()=>{
@@ -130,7 +136,7 @@ class Owner {
       if(outcome.evidence==='transmitted')target.record.lastTransmission={status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
       this.#record(add,target,row);
       add(`bunny.event.${row.family}.${row.target}`,{kind:'outcome',type:typeOf(row.family).replace(/\.requested$/,'.completed'),subject:row.target,dataschema:'https://bunny.invalid/events/outcome/2.0',data:outcome},{parent:row});
-    });}catch{this.#storageDown=true;this.#context.log.warn('command.completed',{'bunny.device.id':target.config.id,'bunny.request.id':row.requestId,'bunny.outcome':'uncertain','bunny.code':'internal'},row);}
+    },target,row,row.requestId);}catch{/* The transaction recorded the storage fence; never replay. */}
   }
   #observation(target:Target,value:Observation|undefined):void{
     const before=target.record.availability,next=target.lease===undefined?'unavailable':value===undefined?'unavailable':target.record.held===undefined?'available':'degraded';
@@ -139,18 +145,19 @@ class Owner {
     target.record.observed=value===undefined?unknown:{status:'known',observedAtMs:this.#context.clock.now(),power:{status:'known',value:value.power},brightness:unknown};
   }
   #schedule(target:Target,delay=POLL_MS):void{
-    if(this.#stopped)return;target.poll=this.#context.scheduler.after(delay,()=>{if(this.#stopped||target.pollQueued)return;target.pollQueued=true;target.queue.push('poll');this.#drain(target);});
+    if(this.#stopped||this.#storageDown)return;target.poll=this.#context.scheduler.after(delay,()=>{if(this.#stopped||target.pollQueued)return;target.pollQueued=true;target.queue.push('poll');this.#drain(target);});
   }
   async #read(target:Target):Promise<void>{
+    if(this.#storageDown)return;
     let value:Observation|undefined;
     if(target.lease!==undefined&&!this.#storageDown)try{value=await this.#bounded(signal=>target.transport.read(signal),ACTION_LIMIT_MS);}catch{/* Unavailable is not off. */}
     if(this.#stopped)return;
     if(value===undefined)this.#availability.unreachable(target.config.id,'unavailable');else this.#availability.reached(target.config.id);
-    try{await this.#transaction(add=>{if(value===undefined&&target.record.availability==='unavailable'&&target.record.observed.status==='unknown')return;this.#observation(target,value);this.#record(add,target);});}catch{this.#storageDown=true;}
+    try{await this.#transaction(add=>{if(value===undefined&&target.record.availability==='unavailable'&&target.record.observed.status==='unknown')return;this.#observation(target,value);this.#record(add,target);},target);}catch{return;}
     target.stale?.();const observed=target.record.observed;
     if(observed.status==='known')target.stale=this.#context.scheduler.after(STALE_MS,()=>{
-      if(this.#stopped||target.record.observed.status!=='known'||target.record.observed.observedAtMs!==observed.observedAtMs)return;
-      void this.#transaction(add=>{target.record.availability='degraded';target.record.generation.sequence++;this.#record(add,target);}).catch(()=>{this.#storageDown=true;});
+      if(this.#stopped||this.#storageDown||target.record.observed.status!=='known'||target.record.observed.observedAtMs!==observed.observedAtMs)return;
+      void this.#transaction(add=>{target.record.availability='degraded';target.record.generation.sequence++;this.#record(add,target);},target).catch(()=>{/* The transaction recorded the storage fence. */});
     });
     this.#schedule(target);
   }

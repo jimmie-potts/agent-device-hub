@@ -101,7 +101,7 @@ export function createPowerLimits(options:PowerLimitOptions){
     records:():PowerLimitRecord[]=>store.all().flatMap(entry=>entry.record===undefined?[]:[structuredClone(entry.record)]),
     list:()=>store.all().map(entry=>structuredClone(entry.record as PowerLimitRecord)),
     get:(target:string)=>{const entry=store.get(target);return entry?.record===undefined?undefined:structuredClone(entry.record);},
-    async save(target:string,value:unknown):Promise<PowerLimitRecord>{
+    async save(target:string,value:unknown,parent?:TraceContext):Promise<PowerLimitRecord>{
       if(stopped())invalid('unavailable',503);
       if(!options.targets().includes(target))invalid('unknown-target');
       if(!object(value)||Object.keys(value).some(k=>!['enabled','durationMs','expectedSettingsRevision'].includes(k))||typeof value.enabled!=='boolean'||typeof value.durationMs!=='number'||!Number.isSafeInteger(value.durationMs)||value.durationMs<1000||value.durationMs>604800000)return invalid();
@@ -112,7 +112,7 @@ export function createPowerLimits(options:PowerLimitOptions){
       const preserve=previous!==undefined&&bound(previous,record);
       const entry:Entry={target,owner,configurationRevision:record.configurationRevision,definitionId:randomUUID(),settingsRevision:(previous?.settingsRevision??0)+1,enabled:value.enabled,durationMs:value.durationMs,
         lastPower:preserve?previous.lastPower:null,startedAtMs:preserve?previous.startedAtMs:null,observedAtMs:preserve?previous.observedAtMs:null,runId:preserve?previous.runId:null,attempt:preserve?previous.attempt:null};
-      await store.save(entry,view(entry),previous?.definitionId??'none',childOf(undefined),previous?.record?.revision??0);return structuredClone(entry.record as PowerLimitRecord);
+      await store.save(entry,view(entry),previous?.definitionId??'none',parent??childOf(undefined),previous?.record?.revision??0);return structuredClone(entry.record as PowerLimitRecord);
     },tick,
     async settled(){await Promise.all(pending);},
     async close(){closed=true;cancel?.();let timer:NodeJS.Timeout|undefined;try{await Promise.race([Promise.all(pending),new Promise<void>(resolve=>{timer=setTimeout(resolve,10000);})]);}finally{clearTimeout(timer);}},

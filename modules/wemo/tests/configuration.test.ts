@@ -12,3 +12,9 @@ void test('configuration admits at most two explicit qualified unique plugs and 
   assert.equal(checkConfiguration(manifest,{plugs:[]}).status,'refused');
   const plug=WEMO_SIMULATED_SECTION.plugs[0];assert.equal(checkConfiguration(manifest,{plugs:[plug,plug]}).status,'refused');
 });
+
+void test('distinct plugs must also have distinct owner aliases',()=>{
+  const config=structuredClone(WEMO_SIMULATED_SECTION);
+  assert.ok(config.plugs[0]&&config.plugs[1]);config.plugs[1].label=config.plugs[0].label;
+  assert.equal(checkConfiguration(createWemoModule().manifest,config).status,'refused');
+});

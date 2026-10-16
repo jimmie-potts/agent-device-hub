@@ -301,7 +301,7 @@ export class Gateway {
     try {
       const answer = await this.#options.host.invoke(CORE_MODULE, async () => {
         try {
-          return await automationRoute(controls, {method, url, authorize, body: async maximum => {
+          return await automationRoute(controls, {method, url, authorize, parent:span.context, body: async maximum => {
             try {return await readBody(request, maximum);} catch (error) {
               if (error instanceof Refused) throw error;
               throw refuse('invalid-request', 'the request body could not be read');
