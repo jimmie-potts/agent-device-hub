@@ -44,6 +44,12 @@ try {
       await card.getByText('Physical display unobserved.', {exact: true}).waitFor();
       await card.getByRole('tab', {name: 'Content', exact: true}).click();
       await card.getByText('Now playing · optional', {exact: true}).waitFor();
+      if (route === '#/component/tidbyt') {
+        await page.getByText('Device evidence', {exact: true}).click();
+        await page.locator('summary').filter({hasText: /^Device details$/}).click();
+        await page.getByText('Configuration revision', {exact: true}).waitFor();
+        await page.getByText('Device evidence', {exact: true}).click();
+      }
       assert.equal(world.browserSessions(), 1);
       const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
       assert.deepEqual(violations.map(value => value.id), []);

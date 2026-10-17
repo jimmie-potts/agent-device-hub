@@ -30,7 +30,8 @@ The module declares API 1.3 for its React contribution and exports `TidbytCard`
 and `TidbytDisplay` from `@jimmie-potts/tidbyt/frontend`. The card is pure
 presentation; the adapter follows this module's device copy through the shell's
 existing authenticated participant. Home, the device page and
-`#/module/tidbyt/display` use that same adapter.
+`#/module/tidbyt/display` use that same adapter. The device page keeps its
+existing detailed evidence in a collapsed Device evidence section.
 
 Status shows cloud availability and the last known cloud acceptance time.
 Disconnected or failed copies keep saved evidence marked stale until a complete

@@ -10,4 +10,4 @@
 
 ## 3. Integration evidence
 
-- [ ] 3.1 Update the owning guides and pass applicable build/type/lint/contract/workflow, Tidbyt and dashboard checks; verify the results in retained source evidence.
+- [x] 3.1 Update the owning guides and pass applicable build/type/lint/contract/workflow, Tidbyt and dashboard checks; verify the results in retained source evidence.

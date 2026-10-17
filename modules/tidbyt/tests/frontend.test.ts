@@ -18,7 +18,7 @@ const record = (): DeviceRecord => ({id: 'tidbyt', revision: 1, kind: 'tidbyt', 
 const message = <T>(data: T): Message<T> => ({specversion: '1.0', bunnyprofile: '2.0', id: '00000000-0000-4000-8000-000000000001', source: 'bunny/modules/tidbyt',
   type: 'org.bunny.device.updated', subject: 'tidbyt', time: '2026-10-17T12:00:00.000Z', kind: 'state', datacontenttype: 'application/json',
   dataschema: 'https://bunny.invalid/events/device/2.0', traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data});
-const completed = (): Message<SyncCompleted> => ({...message({requestId: 'synthetic-sync', revision: 1, members: []}), kind: 'sync-completed', type: 'org.bunny.sync.completed', dataschema: 'https://bunny.invalid/events/sync-completed/2.0'});
+const completed = (devices: DeviceRecord[] = []): Message<SyncCompleted> => ({...message({requestId: 'synthetic-sync', revision: 1, members: devices.map(device => ({family: 'device', id: device.id}))}), kind: 'sync-completed', type: 'org.bunny.sync.completed', dataschema: 'https://bunny.invalid/events/sync-completed/2.0'});
 function fixture(initial: DeviceRecord[] = []) {
   let changed: SyncHandler<DeviceRecord> = () => {};
   let resolve: (result: SyncResult<DeviceRecord>) => void = () => {};
@@ -26,9 +26,13 @@ function fixture(initial: DeviceRecord[] = []) {
   const pending = new Promise<SyncResult<DeviceRecord>>(settle => { resolve = settle; });
   return {
     sync: (handler: SyncHandler<DeviceRecord>) => { calls++; changed = handler; return pending; },
-    change: async (change: Parameters<SyncHandler<DeviceRecord>>[0]) => { await changed(change); },
+    change: async (change: Parameters<SyncHandler<DeviceRecord>>[0]) => {
+      if (change.type === 'updated') states = [...states.filter(item => item.data.id !== change.entity.id), change.message];
+      else if (change.type === 'removed') states = states.filter(item => item.data.id !== change.entity.id);
+      await changed(change);
+    },
     replace: (next: DeviceRecord[]) => { states = next.map(message); },
-    answer: () => { resolve({status: 'synced', message: completed(), copy: {states: () => states, get: entity => states.find(item => item.data.id === entity.id), close: () => { closed++; return Promise.resolve(); }}}); },
+    answer: () => { resolve({status: 'synced', message: completed(states.map(item => item.data)), copy: {states: () => states, get: entity => states.find(item => item.data.id === entity.id), close: () => { closed++; return Promise.resolve(); }}}); },
     refuse: () => { resolve({status: 'rejected', requestId: 'synthetic-sync', error: errorBody('forbidden')}); },
     counts: () => ({closed, calls}),
   };
@@ -46,7 +50,7 @@ void test('replacement commits complete membership and live removals remove the 
   assert.equal(views.at(-1)?.device?.id, 'tidbyt');
   await owner.change({type: 'removed', entity: {family: 'device', id: 'tidbyt'}});
   assert.equal(views.at(-1)?.device, undefined);
-  owner.replace([record()]); await owner.change({type: 'synced', message: completed()});
+  owner.replace([record()]); await owner.change({type: 'synced', message: completed([record()])});
   assert.equal(views.at(-1)?.device?.id, 'tidbyt');
   stop(); assert.deepEqual(owner.counts(), {closed: 1, calls: 1});
 });
