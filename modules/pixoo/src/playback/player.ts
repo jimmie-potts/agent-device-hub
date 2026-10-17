@@ -166,8 +166,10 @@ export class Player {
       {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});});
     // A card aborted while it waits for its turn ends at once, as it did in the device queue; its turn then finds it cancelled.
     const signal=options.signal;
+    let end:(()=>void)|undefined;
     const result=signal===undefined?await turn:await Promise.race([turn,new Promise<OperationResult<UploadResult>>(resolve=>{
-      const end=()=>{if(waiting)resolve(notAdmitted());};if(signal.aborted)end();else signal.addEventListener('abort',end,{once:true});})]);
+      end=()=>{if(waiting)resolve(notAdmitted());};if(signal.aborted)end();else signal.addEventListener('abort',end,{once:true});})])
+      .finally(()=>{if(end!==undefined)signal.removeEventListener('abort',end);});
     // Superseded private card work with no effects is no evidence about the device or user intent.
     if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')return result;
     // Evidence from a retired write cannot alter the current player or revive it.

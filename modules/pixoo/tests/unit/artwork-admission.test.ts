@@ -147,6 +147,42 @@ it('cancels a superseded queued card without changing player evidence or user br
   } finally {await player.close();}
 });
 
+it('rereads card eligibility inside the device turn when it lapses while brightness holds the turn (#1074 285-F1)', async () => {
+  const clock = new ManualClock(), device = new FakeDeviceAdapter({clock, latencyMs: 1000});
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
+  try {
+    await player.pause();
+    const brightness = player.setBrightness(60); await flush(clock);
+    let eligible = true;
+    const upload = player.uploadDashboard([frame(11)], player.getState().generation, {current: () => eligible});
+    await flush(clock);
+    // Eligibility lapses without an abort while the brightness write still holds the device turn.
+    eligible = false;
+    clock.advance(1000); await flush(clock); clock.advance(1000); await flush(clock);
+    expect(await brightness).toMatchObject({ok: true});
+    expect(await upload).toMatchObject({ok: false, code: 'cancelled', priorEffects: 'none'});
+    expect(device.operations.filter(e => e.kind === 'uploadAnimation')).toEqual([]);
+  } finally {await player.close();}
+});
+
+it('removes its abort listener when the device turn ends normally', async () => {
+  const clock = new ManualClock(), device = new FakeDeviceAdapter({clock, latencyMs: 0});
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
+  try {
+    await player.pause();
+    const controller = new AbortController(), signal = controller.signal;
+    let listeners = 0;
+    const add = signal.addEventListener.bind(signal), remove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((...args: Parameters<typeof add>) => {if (args[0] === 'abort') listeners++; add(...args);}) as typeof add;
+    signal.removeEventListener = ((...args: Parameters<typeof remove>) => {if (args[0] === 'abort') listeners--; remove(...args);}) as typeof remove;
+    const before = listeners;
+    const upload = player.uploadDashboard([frame(11)], player.getState().generation, {signal});
+    clock.advance(1000); await flush(clock);
+    expect(await upload).toMatchObject({ok: true});
+    expect(listeners).toBe(before);
+  } finally {await player.close();}
+});
+
 it('retains possible partial effects from an internally cancelled card', async () => {
   const clock = new ManualClock(), device = new FakeDeviceAdapter({clock, latencyMs: 1000});
   const player = await Player.open({device, clock, store: new MemoryPlaybackStore(), pauseOnUncertain: true});
