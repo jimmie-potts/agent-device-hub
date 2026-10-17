@@ -5,8 +5,10 @@ This is the art-direction preview the owner iterated on October 16 and 17,
 It preserves the accepted look of the first slice: six candle-lit burrows in a
 2-by-3 grid on the wide B.U.N.N.Y. dashboard, one scene and one bunny repeated,
 each burrow showing the state of one of the six most recent Codex or Claude
-sessions. The epic owns the delivery scope; the implementation story drafted
-from this preview owns the behavior. This reference changes no release gate.
+sessions. The epic owns the delivery scope;
+[the implementation story](https://github.com/jimmie-potts/agent-device-hub/issues/1145)
+drafted from this preview owns the behavior. This reference changes no release
+gate.
 
 ## Open the preview
 
@@ -17,8 +19,10 @@ there is no network request, model request, Hub connection or device operation.
 
 The six burrows start in a mixed set of states. Use the controls under the grid
 to change any slot's state, apply a day, evening, mixed or night scenario, start
-all six loops in step, or simulate the reduced-motion preference. The clip table
-at the end lists each clip's length and how much of the frame moves.
+all six loops in step, or simulate the reduced-motion preference. The checkbox
+stills the canvases and cuts state changes; only the real system preference also
+stops the uncertain shade's CSS transition. The clip table at the end lists each
+clip's length and how much of the frame moves.
 
 ![Six burrows in the states the first slice shows](workshops-states-grid.png)
 
@@ -27,9 +31,9 @@ at the end lists each clip's length and how much of the frame moves.
 - **One burrow, six states.** Working: the bunny hammers at the bench by
   candlelight. Needs input or approval: the bunny holds up a sign with a
   question mark. Turn ended and unread: evening, the bunny sits by the stove.
-  Uncertain: the same evening room, dimmed, running at half speed. Idle: night,
-  candles out, the bunny asleep in moonlight. Empty: the cold night burrow with
-  nobody home.
+  Uncertain: a second evening clip, the bunny facing out with a mug, under a
+  light shade and running at half speed. Idle: night, candles out, the bunny
+  asleep in moonlight. Empty: the cold night burrow with nobody home.
 - **Continuous motion.** Every occupied state is a full loop of the owner's
   generated animation at 10 frames per second: 60 seconds for the working loop,
   40 seconds for the others. The six slots start at different phases so
@@ -81,8 +85,12 @@ Session titles, providers, hosts and states are synthetic fixtures chosen for
 the preview, not a snapshot of any installation; the page reads no session
 records. The timings, dip depth, dusk strength, clip lengths and the 2-by-3
 arrangement are the design examples the owner reviewed, not a contract. Open
-calls recorded on the page itself: the pace and depth of the dip and dusk, the
-length of the sign loop, and 2-by-3 against 3-by-2.
+calls recorded on the page itself: whether the state-to-clip mapping should
+change (the implementation story's state-to-clip list answers it), the pace and
+depth of the dip and dusk, the length of the sign loop, and 2-by-3 against
+3-by-2. Chip and tag wording is the preview's; the implementation takes chip
+text from the dashboard's existing session helper, which also has a question
+state the preview does not show.
 
 The page runs continuous decorative motion with no pause control, which the
 current motion rule in `docs/application-ui-style-guide.md` section 9 does not
