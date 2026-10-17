@@ -20,6 +20,7 @@ type Helpers = {
   createRuntimeUpgradePreflight(io: Readers): (request: string, approved?: string) => Promise<unknown>;
   createRuntimeUpgradeRecoveryCheck(io: Readers): (request: string, plan: string) => Promise<unknown>;
   createRuntimeUpgradeRunningCheck(io: Readers): (request: string, plan: string, phase: string) => Promise<unknown>;
+  withFinalRecheck<T>(guard: () => Promise<void>, effect: () => Promise<T>): Promise<T>;
 };
 type Files = {canonical: (value: unknown) => string; sha256: (bytes: string | Buffer) => string};
 const helpers = await import(pathToFileURL(join(process.cwd(), 'apps/runtime/bin/runtime-upgrade-preflight.mjs')).href) as Helpers;
@@ -735,4 +736,11 @@ void test('recovery guard refuses protected-input drift and evidence changed dur
       else await assert.rejects(check(requestFile, planFile), /runtime-upgrade-recovery-refused/);
     });
   }
+});
+
+void test('withFinalRecheck guards again after the effect\'s last await (#1142, #1134 F1)', async () => {
+  let pinned = 'approved';
+  const guard = () => pinned === 'approved' ? answer(undefined) : refuse('pinned input changed');
+  assert.equal(await helpers.withFinalRecheck(guard, () => answer('scanned')), 'scanned');
+  await assert.rejects(helpers.withFinalRecheck(guard, async () => {await answer(undefined); pinned = 'changed during scan'; return 'scanned';}), /pinned input changed/);
 });
