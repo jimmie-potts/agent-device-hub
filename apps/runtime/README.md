@@ -391,7 +391,7 @@ Manual off during an on window causes no automatic re-on. The Hub must remain
 running with a reachable device; this is separate from any device maximum-on
 feature and provides no offline protection. Source checks do not establish
 installed or physical qualification. Saved routine rows need
-actual release and recovery admission under [UPGRADE.md](UPGRADE.md).
+actual release verification and focused storage-change assessment under [UPGRADE.md](UPGRADE.md).
 
 The core separately stores per-target maximum-on definitions and continuous-run
 state in `automation_power_limits`. Its `power-limit/2.0` state family uses the
@@ -402,7 +402,9 @@ unknown-elapsed on requests off conservatively. Due work uses the tracked
 `power-set` dispatcher once per run; blocked, admitted and uncertain attempts are
 never replayed. Disabling sends nothing. Enforcement requires a running Hub and
 reachable device, with no offline guarantee. New private rows and the Wemo owner
-require actual release/latest-state/recovery admission before installation.
+require actual release verification and focused storage-change assessment before installation.
+Recovery eligibility is independent; unknown recovery does not block a forward
+upgrade and cannot authorize an older reader.
 
 The shared dashboard's Automation page manages these fresh rules and settings.
 The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`

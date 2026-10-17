@@ -3,11 +3,10 @@ import {join} from 'node:path';
 import {validateInstallReceipt} from '@jimmie-potts/device-contracts';
 import {childOf, MODULE_API_VERSION, noSpans, startSpan} from '@jimmie-potts/sdk';
 import {canonical, readRegular, sha256} from '../../hub/dist/install/files.js';
-import {createUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
+import {createRoutineUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {inspectRuntimeBaselineClosure} from './runtime-upgrade-baseline.mjs';
 import {readPrivateFile, readRuntimeConfig} from '../dist/src/state.js';
 import {parseUpgradeRequest, inspectUpgradePaths, inspectUpgradeExecution, inspectUpgradeRunningPaths} from '../dist/src/upgrade-paths.js';
-import {bindUpgradeAdmission} from '../dist/src/upgrade-admission.js';
 import {createInstalledUpgradeOwnerObserver} from '../dist/src/upgrade-owner.js';
 import {createInstalledUpgradeListenerObserver} from '../dist/src/upgrade-listener.js';
 import {inspectUpgradeProtectedHooks} from '../dist/src/upgrade-hooks.js';
@@ -27,7 +26,9 @@ const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nan
 // inventory is unknown, never a legacy exemption or dynamic module discovery.
 function companionRoles(source) {
   return Object.fromEntries(['previous', 'target', 'recovery'].map(role => {
-    const entries = source.artifacts?.[role]?.entries;
+    const artifact = source.artifacts?.[role];
+    if (role === 'recovery' && artifact === undefined) return [role, false];
+    const entries = artifact?.entries;
     if (!Array.isArray(entries)) refused();
     const matches = entries.filter(entry => entry.path === 'modules/companions/package.json');
     if (matches.length > 1 || matches.some(entry => entry.kind !== 'file'
@@ -36,39 +37,18 @@ function companionRoles(source) {
   }));
 }
 
-function requireCoverage(admission, state, source) {
-  if ((state.configured.includes('wemo') || state.durableOwners.includes('wemo'))
-    && (!state.durableOwners.includes('wemo') || !admission.coveredOwners?.includes('wemo'))) refused();
-  const onn = state.configured.includes('onn') || state.durableOwners.includes('onn');
-  if (onn && (!state.durableOwners.includes('onn') || !Array.isArray(admission.coveredOwners)
-    || !admission.coveredOwners.includes('onn'))) refused();
-  const bb8 = state.configured.includes('bb8') || state.durableOwners.includes('bb8');
-  if (bb8 && (!state.durableOwners.includes('bb8') || !Array.isArray(admission.coveredOwners)
-    || !['bb8', 'bb8-windows'].every(owner => admission.coveredOwners.includes(owner)))) refused();
-  const roborock = state.configured.includes('roborock') || state.durableOwners.includes('roborock');
-  if (roborock) {
-    if (!state.durableOwners.includes('roborock') || !Array.isArray(admission.coveredOwners)
-      || !admission.coveredOwners.includes('roborock')) refused();
-    // Verified inventories bind the delivered reader bytes; actual compatible
-    // reader execution still belongs to the coordinator's pinned phase proof.
-    for (const role of ['previous', 'target', 'recovery']) {
-      const entries = source.artifacts?.[role]?.entries;
-      if (!Array.isArray(entries)) refused();
-      for (const path of ['modules/roborock/package.json', 'modules/roborock/dist/src/store.js']) {
-        const matches = entries.filter(entry => entry.path === path);
-        if (matches.length !== 1 || matches[0].kind !== 'file'
-          || !/^[0-9a-f]{64}$/.test(matches[0].sha256)) refused();
-      }
-    }
+function requireOwnership(state, source) {
+  for (const name of ['wemo', 'onn', 'bb8', 'roborock', 'companions']) {
+    if (state.configured.includes(name) && !state.durableOwners.includes(name)) refused();
   }
-  const roles = companionRoles(source);
-  const retained = state.durableOwners.includes('companions');
-  const configured = state.configured.includes('companions');
-  if ((retained || configured || Object.values(roles).some(Boolean))
-    && (!Array.isArray(admission.coveredOwners) || !admission.coveredOwners.includes('companions')
-      || !roles.target || !roles.recovery || ((retained || configured) && !roles.previous))) refused();
-  if (roles.previous && !retained) refused();
+  // Companions always starts in artifacts shipping its package. Keep its
+  // current primary owner and health explicit, without historical phase proof.
+  if (companionRoles(source).previous && !state.durableOwners.includes('companions')) refused();
 }
+
+const sourceInputFor = request => ({installationId: request.installationId,
+  provenanceDirectory: join(request.installationRoot, 'provenance'), releases: {...request.releases,
+    ...(request.recovery === null ? {} : {recovery: request.recovery.release})}});
 
 function stateAfterStart(state, source, role) {
   if (!companionRoles(source)[role]) return state;
@@ -86,8 +66,8 @@ function requireHealth(health, configured, lagLimitMs, companions) {
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN and Roborock. Configured/retained owner coverage and delivered
-    // Roborock readers are checked separately before health observation.
+    // BB8, ONN, Roborock and Wemo. Configured ownership and retained
+    // state are inspected separately before health observation.
     if (['wispr', 'bb8', 'onn', 'roborock', 'wemo'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
@@ -115,11 +95,9 @@ export function createRuntimeUpgradePreflight(io) {
       const original = async () => {
         if (!same(owner, await io.owner()) || !same(listener, await io.listener(owner.pid, owner.options.port))) refused();
       };
-      const sourceInput = {installationId: request.installationId, provenanceDirectory: join(request.installationRoot, 'provenance'),
-        releases: request.releases, qualificationRevision: request.qualificationRevision, formatInventoryFiles: request.formatInventoryFiles};
+      const sourceInput = sourceInputFor(request);
       const source = await io.source(sourceInput);
-      const admission = await io.admission(request.admissionFile, source.expected);
-      const baselineInput = {path: request.installedBaselineClosureFile, pin: admission.installedBaselineClosure,
+      const baselineInput = {path: request.installedBaselineClosure.path, pin: request.installedBaselineClosure,
         installationId: request.installationId, owner, previous: {...source.artifacts.previous, inputs: source.inputs}};
       const baseline = await io.baseline(baselineInput);
       const configBytes = await io.privateFile(owner.options.config, 1024 * 1024);
@@ -127,20 +105,20 @@ export function createRuntimeUpgradePreflight(io) {
       if (config.edge === undefined || !configBytes.equals(await io.privateFile(owner.options.config, 1024 * 1024))) refused();
       const credentialsFile = config.edge.credentials;
       const verifiedPaths = {previous: source.artifacts.previous.root, target: source.artifacts.target.root,
-        recovery: source.artifacts.recovery.root, baselineRoot: baseline.baselineRoot,
+        ...(source.artifacts.recovery === undefined ? {} : {recovery: source.artifacts.recovery.root}), baselineRoot: baseline.baselineRoot,
         revisions: {previous: source.expected.releases.previous.sourceRevision, target: source.expected.releases.target.sourceRevision,
-          recovery: source.expected.releases.recovery.sourceRevision}};
+          ...(source.expected.releases.recovery === undefined ? {} : {recovery: source.expected.releases.recovery.sourceRevision})}};
       const paths = await io.paths(request, owner, verifiedPaths, credentialsFile);
-      const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: admission.installedBaselineClosure};
+      const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: request.installedBaselineClosure};
       const hooks = await io.hooks(hookInput);
       const state = await io.state(owner.options.stateDir, owner.options.config);
-      requireCoverage(admission, state, source);
+      requireOwnership(state, source);
       const receiptDirectory = join(request.installationRoot, 'receipts');
       const receipts = await io.receipts(receiptDirectory, request.installationId);
-      requireCoverage(admission, state, source);
+      requireOwnership(state, source);
       const protectedBindings = async () => {
         if (!same(execution, await io.execution(request))
-          || !same(source, await io.source(sourceInput)) || !same(admission, await io.admission(request.admissionFile, source.expected))
+          || !same(source, await io.source(sourceInput))
           || !same(baseline, await io.baseline(baselineInput)) || !same(paths, await io.paths(request, owner, verifiedPaths, credentialsFile))
           || !same(hooks, await io.hooks(hookInput)) || !same(state, await io.state(owner.options.stateDir, owner.options.config))
           || !same(receipts, await io.receipts(receiptDirectory, request.installationId))) refused();
@@ -167,10 +145,10 @@ export function createRuntimeUpgradePreflight(io) {
         || !credentialBytes.equals(await io.privateFile(credentialsFile, 65536))
         || !tokenBytes.equals(await io.privateFile(request.tokenFile, 65536))) refused();
       await original();
-      const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission',
+      const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible',
         requestSha256: io.sha256(requestBytes), operation: request.operation, installationId: request.installationId, execution,
         owner, listener, baseline, paths, hooks, state, receipts, privateInputs,
-        source: {expected: source.expected, stamps: source.stamps}, admission, http};
+        source: {expected: source.expected, stamps: source.stamps}, changeAssessment: request.changeAssessment, recovery: request.recovery, http};
       const plan = {...body, planSha256: io.sha256(io.canonical(body))};
       if (Buffer.byteLength(io.canonical(plan)) > maximum) refused();
       if (approvedPlanFile !== undefined) {
@@ -181,6 +159,33 @@ export function createRuntimeUpgradePreflight(io) {
       }
       return plan;
     } catch {return refused();}
+  };
+}
+
+/** Pre-effect recovery guard; no stop, selection, startup or database access. */
+export function createRuntimeUpgradeRecoveryCheck(io) {
+  return async (requestFile, approvedPlanFile) => {
+    try {
+      const requestBytes = await io.privateFile(requestFile, maximum);
+      const request = io.parseRequest(parse(requestBytes));
+      const approvedBytes = await io.privateFile(approvedPlanFile, maximum);
+      const approved = parse(approvedBytes);
+      const {planSha256, ...body} = approved;
+      if (request.recovery === null || approved.schema !== 'runtime-upgrade-plan/2.0'
+        || approved.eligibility !== 'forward-eligible' || io.sha256(io.canonical(body)) !== planSha256
+        || io.sha256(requestBytes) !== approved.requestSha256
+        || request.operation !== approved.operation || request.installationId !== approved.installationId
+        || io.canonical(request.recovery) !== io.canonical(approved.recovery)
+        || io.canonical(await io.execution(request)) !== io.canonical(approved.execution)) refused();
+      await io.lock(request.installationRoot);
+      const source = await io.source(sourceInputFor(request));
+      if (io.canonical({expected: source.expected, stamps: source.stamps}) !== io.canonical(approved.source)
+        || !requestBytes.equals(await io.privateFile(requestFile, maximum))
+        || !approvedBytes.equals(await io.privateFile(approvedPlanFile, maximum))) refused();
+      await io.lock(request.installationRoot);
+      return {schema: 'runtime-recovery-check/1.0', eligible: true, planSha256,
+        release: source.expected.releases.recovery, directory: source.artifacts.recovery.root};
+    } catch {throw new Error('runtime-upgrade-recovery-refused');}
   };
 }
 
@@ -198,10 +203,12 @@ export function createRuntimeUpgradeRunningCheck(io) {
       const approvedBytes = await io.privateFile(approvedPlanFile, maximum);
       const approved = parse(approvedBytes);
       const {planSha256, ...body} = approved;
-      if (approved.schema !== 'runtime-upgrade-plan/1.0' || approved.eligibility !== 'eligible-under-coordinator-admission'
+      if (approved.schema !== 'runtime-upgrade-plan/2.0' || approved.eligibility !== 'forward-eligible'
         || io.sha256(io.canonical(body)) !== planSha256 || io.sha256(requestBytes) !== approved.requestSha256
         || request.operation !== approved.operation || request.installationId !== approved.installationId
         || !same(request.execution, approved.execution)) fail();
+      if (phase === 'recovery' && request.recovery === null) fail();
+      if (!same(approved.recovery, request.recovery) || !same(approved.changeAssessment, request.changeAssessment)) fail();
       await io.lock(request.installationRoot);
       const owner = await io.owner();
       const argv = [...approved.owner.argv]; argv[1] = join(request.installationRoot, 'current/apps/runtime/dist/src/main.js');
@@ -211,21 +218,17 @@ export function createRuntimeUpgradeRunningCheck(io) {
         || owner.startTicks === approved.owner.startTicks && owner.pid === approved.owner.pid
         || owner.startMonotonic === approved.owner.startMonotonic) fail();
       const listener = await io.listener(owner.pid, owner.options.port);
-      const sourceInput = {installationId: request.installationId, provenanceDirectory: join(request.installationRoot, 'provenance'),
-        releases: request.releases, qualificationRevision: request.qualificationRevision, formatInventoryFiles: request.formatInventoryFiles};
+      const sourceInput = sourceInputFor(request);
       const source = await io.source(sourceInput);
       if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) fail();
-      const admission = await io.admission(request.admissionFile, source.expected);
-      requireCoverage(admission, approved.state, source);
-      if (!same(admission, approved.admission)) fail();
-      requireCoverage(admission, approved.state, source);
+      requireOwnership(approved.state, source);
       const role = phase === 'recovery' ? 'recovery' : 'target';
       const runningState = stateAfterStart(approved.state, source, role);
       const selected = source.artifacts[role].root;
       const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};
-      const baselineInput = {path: request.installedBaselineClosureFile, pin: admission.installedBaselineClosure,
+      const baselineInput = {path: request.installedBaselineClosure.path, pin: request.installedBaselineClosure,
         installationId: request.installationId, owner: baselineOwner, previous: {...source.artifacts.previous, inputs: source.inputs}};
-      const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: admission.installedBaselineClosure};
+      const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: request.installedBaselineClosure};
       const config = await io.config(owner.options.config);
       if (config.edge === undefined) fail();
       const privateInputs = async () => ({configSha256: io.sha256(await io.privateFile(owner.options.config, 1024 * 1024)),
@@ -239,7 +242,6 @@ export function createRuntimeUpgradeRunningCheck(io) {
       };
       const bindings = async () => {
         if (!same(await io.execution(request), approved.execution) || !same(await io.source(sourceInput), source)
-          || !same(await io.admission(request.admissionFile, source.expected), admission)
           || !same(await io.baseline(baselineInput), approved.baseline) || !same(await io.hooks(hookInput), approved.hooks)
           || !same(await io.state(owner.options.stateDir, owner.options.config), runningState)
           || !same(await privateInputs(), approved.privateInputs)
@@ -289,11 +291,13 @@ async function observeUpgradeHttp(owner, tokenFile, expected, recheck, operation
 const installedReaders = {
   privateFile: readPrivateFile, parseRequest: parseUpgradeRequest, canonical, sha256, execution: inspectUpgradeExecution,
   lock: requireUpgradeLock, owner: createInstalledUpgradeOwnerObserver(readRegular),
-  listener: createInstalledUpgradeListenerObserver(readRegular), source: createUpgradeSourceAdapter(verifyRuntimeUpgradeRelease),
-  admission: bindUpgradeAdmission, baseline: inspectRuntimeBaselineClosure, config: readRuntimeConfig, paths: inspectUpgradePaths,
+  listener: createInstalledUpgradeListenerObserver(readRegular), source: createRoutineUpgradeSourceAdapter(verifyRuntimeUpgradeRelease),
+  baseline: inspectRuntimeBaselineClosure, config: readRuntimeConfig, paths: inspectUpgradePaths,
   hooks: inspectUpgradeProtectedHooks, state: inspectUpgradeState,
   receipts: (path, installationId) => inspectUpgradeReceipts(path, installationId, validateInstallReceipt), http: observeUpgradeHttp,
   runningPaths: inspectUpgradeRunningPaths,
 };
 export const runtimeUpgradePreflight = createRuntimeUpgradePreflight(installedReaders);
 export const runtimeUpgradeRunningCheck = createRuntimeUpgradeRunningCheck(installedReaders);
+
+export const runtimeUpgradeRecoveryCheck = createRuntimeUpgradeRecoveryCheck(installedReaders);

@@ -156,10 +156,16 @@ The accepted #840 cutover stopped and disabled the old writers while retaining
 their units, releases and stores for manual return. The legacy Hub installer
 below does not update `bunny-runtime.service`. Before planning, running or
 checking a current-runtime upgrade or recovery, read the owning
-[runtime upgrade procedure](apps/runtime/UPGRADE.md) and its qualification status.
-Keep its plan, admission, lock, receipts and state evidence private. Routine
-installation authority applies after that procedure is qualified; first adoption
-of its release anchor needs the named one-time override/startup approval. Do not
+[runtime upgrade procedure](apps/runtime/UPGRADE.md) and its current-runtime policy.
+Keep its plan, focused change assessment, lock, receipts and state evidence private.
+Routine forward upgrades do not require historical per-owner recovery certificates
+or qualification of inactive integrations. Assess actual storage changes with
+focused evidence. Recovery eligibility is independent: unknown recovery permits
+forward planning and refuses recovery selection. Preserve inactive data and prefer
+fixing forward; snapshot restoration needs a separate explicit owner decision,
+preservation of failed latest state and a stated data gap. Standing installation
+authority covers the established installation; first adoption of its release
+anchor needs the named one-time override/startup approval. Do not
 substitute the legacy installer or infer qualification from source checks. Until
 the owning installed gate is accepted, preserve the source result and report
 installation pending. Documentation-only work needs instruction/readback evidence

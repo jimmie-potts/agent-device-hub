@@ -219,7 +219,7 @@ void test('adoption draft preserves the complete observed invocation and creates
   const destination = join(root, 'provenance', 'anchor.conf');
   const plannedArgv = [...argv]; plannedArgv[1] = join(root, 'current/apps/runtime/dist/src/main.js');
   const plannedBytes = '[Service]\nWorkingDirectory=' + join(root, 'current') + '\nExecStart=\nExecStart=' + plannedArgv.join(' ') + '\n';
-  const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission', operation: 'adoption',
+  const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible', operation: 'adoption',
     paths: {directories: [{path: root}], adoptionDraftSha256: digest(Buffer.from(plannedBytes))},
     execution: {adoption: {draftFile: destination}}, owner: {executable: process.execPath, entry, argv}};
   const planFile = join(root, 'provenance', 'synthetic-plan.json');

@@ -137,8 +137,15 @@ This profile permits an explicit manual operator procedure with narrowly scoped
 preflight and receipt checks. One exclusive operation lock must cover input
 rechecks, durable intent, stopped-writer backup, release selection, restart,
 identity/health verification, recovery and final receipt readback. Manual steps
-retain every release-integrity, compatibility and latest-state requirement in
-sections 1 and 4; an automatic recovery engine is not required. Retain all owned
+retain release integrity, stopped-writer backup and latest-state preservation.
+For this current-runtime profile only, the focused policy in
+[UPGRADE.md](../apps/runtime/UPGRADE.md) supersedes the blanket forward-admission
+compatibility gate in sections 1 and 4: assess actual storage changes with focused
+evidence, and record recovery eligibility independently. Unknown recovery permits
+forward planning but refuses recovery selection/checks. Historical owner/phase
+certificates and broad production-input requalification are not routine gates.
+An automatic recovery engine is not required. Released legacy installers retain
+their existing contracts; the shared receipt schema is unchanged. Retain all owned
 recovery releases for this initial procedure without pruning.
 
 Use the current runtime's startup-scoped build interface and operational health
@@ -146,12 +153,13 @@ interface to verify the running revision and configured owners. A legacy health
 response, schema-valid receipt or selected link cannot substitute for those
 observations. Exact interface checks belong to the owning procedure.
 
-Compatibility evidence covers all configured durable owners and retained files.
-An ONN owner may be excluded only when the exact configuration omits it, no ONN
-database, sidecar or folder exists, and its omitted/refused factory creates no
-state or effects. Configuration absence alone cannot exclude existing data.
-Activation or any ONN state invalidates that absence-bound recovery proof;
-subsequent recovery requires a qualified ONN-capable release.
+Inventory and preserve known retained owners without opening live databases.
+Inactive owners need no historical reader certification or execution. Configured
+modules retain ordinary health requirements. A storage-format change needs focused
+forward evidence; qualified recovery needs evidence for latest state and selected
+owners. Unknown recovery is not permission to restore a backup. Prefer fixing
+forward. Snapshot restoration requires separate explicit owner approval, preserving
+the failed latest state and reporting the data gap.
 
 This profile defines requirements; it does not establish that the current
 installation's upgrade procedure or first adoption has been qualified.

@@ -7,7 +7,7 @@ import {canonical, sha256} from '../../hub/dist/install/files.js';
 import {createUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {checkStateDirectory, readPrivateFile} from '../dist/src/state.js';
 import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
-import {runtimeUpgradePreflight, runtimeUpgradeRunningCheck} from './runtime-upgrade-preflight.mjs';
+import {runtimeUpgradePreflight, runtimeUpgradeRunningCheck, runtimeUpgradeRecoveryCheck} from './runtime-upgrade-preflight.mjs';
 
 const maximum = 256 * 1024;
 const missing = error => error instanceof Error && error.code === 'ENOENT';
@@ -57,8 +57,8 @@ async function inspectedResolution(file, directory, previousBytes, previous, fin
   if (plan === null || typeof plan !== 'object' || Array.isArray(plan)) refuse();
   const {planSha256, ...body} = plan;
   if (!hash(planSha256) || sha256(canonical(body)) !== planSha256 || previous.approval === null
-    || previous.approval.planSha256 !== planSha256 || plan.schema !== 'runtime-upgrade-plan/1.0'
-    || plan.eligibility !== 'eligible-under-coordinator-admission' || plan.installationId !== receipt.installationId
+    || previous.approval.planSha256 !== planSha256 || !((plan.schema === 'runtime-upgrade-plan/1.0' && plan.eligibility === 'eligible-under-coordinator-admission')
+      || (plan.schema === 'runtime-upgrade-plan/2.0' && plan.eligibility === 'forward-eligible')) || plan.installationId !== receipt.installationId
     || plan.execution?.operationId !== receipt.operationId) refuse();
   const retained = join(provenance, 'unresolved-' + receipt.operationId + '-' + resolution.receiptSha256 + '.json');
   let saved;
@@ -160,6 +160,9 @@ try {
     failureCode = 'runtime-upgrade-preflight-refused';
     const plan = await runtimeUpgradePreflight(input, directory);
     process.stdout.write(JSON.stringify({verified: true, planSha256: plan.planSha256, operation: plan.operation}) + '\n');
+  } else if (command === 'check-recovery' && directory && rest.length === 0) {
+    failureCode = 'runtime-upgrade-recovery-refused';
+    process.stdout.write(JSON.stringify(await runtimeUpgradeRecoveryCheck(input, directory)) + '\n');
   } else if (command === 'verify-running' && directory && rest.length === 1) {
     failureCode = 'runtime-upgrade-running-refused';
     const observation = await runtimeUpgradeRunningCheck(input, directory, rest[0]);

@@ -15,11 +15,9 @@ void test('request binds operational choices and refuses missing or unbounded ex
     stopTimeoutMs: 30000, postStart: {attempts: 5, timeoutMs: 15000, intervalMs: 500},
     startupEffects: {assessment: pin, authority: pin}, adoption: null};
   const artifact = {identity: root + '/identity', directory: root + '/release', archive: root + '/archive'};
-  const document = {schema: 'runtime-upgrade-request/1.0', operation: 'upgrade', installationId: 'synthetic',
-    installationRoot: root, tokenFile: '/synthetic/token', admissionFile: root + '/provenance/admission',
-    installedBaselineClosureFile: root + '/provenance/closure', qualificationRevision: 'a'.repeat(40),
-    releases: {previous: artifact, target: artifact, recovery: artifact},
-    formatInventoryFiles: {previous: root + '/p', target: root + '/t', recovery: root + '/r', qualification: root + '/q'}, execution};
+  const document = {schema: 'runtime-upgrade-request/2.0', operation: 'upgrade', installationId: 'synthetic',
+    installationRoot: root, tokenFile: '/synthetic/token', installedBaselineClosure: {path: root + '/provenance/closure', sha256: 'a'.repeat(64)}, changeAssessment: pin, recovery: null,
+    releases: {previous: artifact, target: artifact}, execution};
   assert.deepEqual(parseUpgradeRequest(document), document);
   const longerObservation = {...document, execution: {...execution,
     postStart: {...execution.postStart, timeoutMs: 180000}}};
@@ -27,6 +25,10 @@ void test('request binds operational choices and refuses missing or unbounded ex
   for (const timeoutMs of [0, 999, 180001, Infinity, NaN, Number.MAX_SAFE_INTEGER]) {
     assert.throws(() => parseUpgradeRequest({...longerObservation, execution: {...longerObservation.execution,
       postStart: {...longerObservation.execution.postStart, timeoutMs}}}), /^Error: runtime-upgrade-paths-refused$/);
+  }
+  assert.throws(() => parseUpgradeRequest({...document, schema: 'runtime-upgrade-request/1.0'}), /runtime-upgrade-paths-refused/);
+  for (const recovery of [false, {release: artifact}, {release: artifact, evidence: {...pin, sha256: 'wrong'}}]) {
+    assert.throws(() => parseUpgradeRequest({...document, recovery}), /runtime-upgrade-paths-refused/);
   }
   const missing: Partial<typeof document> = {...document};
   delete missing.execution;
@@ -55,11 +57,11 @@ void test('upgrade paths preserve the direct baseline for adoption and require t
     options: parseArguments(['--port', '8788', '--state-dir', join(root, 'state'), '--config', files.config, '--edge', '--environment', 'production'])};
   owner.argv = [owner.executable, owner.entry, '--port', '8788'];
   const artifact = (directory: string) => ({identity: join(root, 'identity'), directory, archive: join(root, 'archive')});
-  const document = {schema: 'runtime-upgrade-request/1.0', operation: 'adoption', installationId: 'synthetic',
-    installationRoot: installation, tokenFile: files.token, admissionFile: join(installation, 'provenance/admission.json'),
-    installedBaselineClosureFile: join(installation, 'provenance/closure.json'), qualificationRevision: target,
-    releases: {previous: artifact(previousRoot), target: artifact(targetRoot), recovery: artifact(previousRoot)},
-    formatInventoryFiles: {previous: join(root, 'p.json'), target: join(root, 't.json'), recovery: join(root, 'r.json'), qualification: join(root, 'q.json')},
+  const document = {schema: 'runtime-upgrade-request/2.0', operation: 'adoption', installationId: 'synthetic',
+    installationRoot: installation, tokenFile: files.token, installedBaselineClosure: {path: join(installation, 'provenance/closure.json'), sha256: 'a'.repeat(64)},
+    changeAssessment: {path: join(installation, 'provenance/change.json'), sha256: 'a'.repeat(64)},
+    recovery: {release: artifact(previousRoot), evidence: {path: join(installation, 'provenance/recovery.json'), sha256: 'a'.repeat(64)}},
+    releases: {previous: artifact(previousRoot), target: artifact(targetRoot)},
     execution: {operationId: 'synthetic', backupDirectory: join(installation, 'backups/synthetic'), stopTimeoutMs: 30000,
       postStart: {attempts: 5, timeoutMs: 15000, intervalMs: 500},
       startupEffects: {assessment: {path: join(installation, 'provenance/effects'), sha256: 'a'.repeat(64)},
@@ -71,13 +73,19 @@ void test('upgrade paths preserve the direct baseline for adoption and require t
   const request = parseUpgradeRequest(document);
   await t.test('operational evidence is pinned privately and changed bytes refuse', async () => {
     const bytes = 'synthetic approved operational evidence\n';
-    const pins = [...Object.values(request.execution.startupEffects),
+    const pins = [request.changeAssessment, ...(request.recovery === null ? [] : [request.recovery.evidence]), ...Object.values(request.execution.startupEffects),
       ...(request.execution.adoption === null ? [] : [...request.execution.adoption.originals, request.execution.adoption.restoration])];
     for (const pin of pins) {
       pin.sha256 = createHash('sha256').update(bytes).digest('hex');
       await writeFile(pin.path, bytes, {mode: 0o600});
     }
     assert.deepEqual(await inspectUpgradeExecution(request), request.execution);
+    assert.ok(request.recovery);
+    for (const pin of [request.changeAssessment, request.recovery.evidence]) {
+      await writeFile(pin.path, 'changed assessment/recovery', {mode: 0o600});
+      await assert.rejects(inspectUpgradeExecution(request), /runtime-upgrade-paths-refused/);
+      await writeFile(pin.path, bytes, {mode: 0o600});
+    }
     const authority = request.execution.startupEffects.authority;
     await writeFile(authority.path, 'changed authority', {mode: 0o600});
     await assert.rejects(inspectUpgradeExecution(request), /^Error: runtime-upgrade-paths-refused$/);

@@ -81,6 +81,21 @@ void test('release source comparison binds exact inventories and refuses unbound
   const result = await run(process.execPath, [helper, 'verify-formats', request]);
   assert.deepEqual(JSON.parse(result.stdout), {verified: true, scope: 'runtime-durable-formats/1.0', inputs: anchors.length});
 
+  await t.test('routine integrity verifies two releases without a certificate, format inventories or recovery artifact', async () => {
+    const routine = {installationId: 'synthetic-runtime', provenanceDirectory: root,
+      releases: {previous: releases.previous, target: releases.target}};
+    const result = await run(process.execPath, ['--input-type=module', '-e',
+      'import {createRoutineUpgradeSourceAdapter,verifyRuntimeUpgradeRelease} from "./apps/runtime/bin/runtime-upgrade-source.mjs";const x=await createRoutineUpgradeSourceAdapter(verifyRuntimeUpgradeRelease)(JSON.parse(process.argv[1]));process.stdout.write(JSON.stringify(Object.keys(x.artifacts)))', JSON.stringify(routine)]);
+    assert.deepEqual(JSON.parse(result.stdout), ['previous', 'target']);
+    const target = releases.target; assert.ok(target);
+    const file = join(target.directory, 'apps/runtime/src/state.ts');
+    const original = await readFile(file);
+    await writeFile(file, 'changed without resealing');
+    await assert.rejects(run(process.execPath, ['--input-type=module', '-e',
+      'import {createRoutineUpgradeSourceAdapter,verifyRuntimeUpgradeRelease} from "./apps/runtime/bin/runtime-upgrade-source.mjs";await createRoutineUpgradeSourceAdapter(verifyRuntimeUpgradeRelease)(JSON.parse(process.argv[1]))', JSON.stringify(routine)]));
+    await writeFile(file, original);
+  });
+
   await t.test('a changed producer, outbox, controller, lockfile or registry generator refuses despite resealed artifacts', async () => {
     const target = releases.target;
     assert.ok(target);

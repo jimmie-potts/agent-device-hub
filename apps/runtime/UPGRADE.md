@@ -7,27 +7,24 @@ The [fresh setup procedure](SETUP.md) remains separate.
 
 The initial established-runtime qualification is accepted under
 [#1037](https://github.com/jimmie-potts/agent-device-hub/issues/1037#issuecomment-6102421021).
-That acceptance covers its selected profile and one successful forward upgrade;
-later configured owners require their own complete compatibility evidence.
-The source checks and private recovery artifacts produced during qualification
-are not an installed upgrade. Routine installed use requires recorded reviewed
-source and established-installation acceptance. The initial installed qualification
-may run only from reviewed merged source with successful applicable CI and a
-separately approved exact single forward-upgrade plan, including expected startup
-effects and at most one compatible recovery after an actual failure. Retain the
-disposable synthetic upgrade, recovery, re-upgrade and pre-effect refusal evidence.
-Deliberate live recovery and re-upgrade are not required for initial qualification;
-report them as untested unless separately exercised. First adoption remains a
-separate one-time operation and is not repeated when already accepted. A failed,
-refused or interrupted forward upgrade does not pass initial qualification, even
-if recovery succeeds. Until the forward upgrade is verified, report installation
-qualification pending and retain the owning qualification issue open. This
-initial gate does not reopen an already accepted qualification or repeat adoption.
+That acceptance is historical and is not repeated. Routine upgrades use the
+smaller policy selected in [#1133](https://github.com/jimmie-potts/agent-device-hub/issues/1133):
+verify reviewed release bytes, preserve one installation lock, take a consistent
+stopped-writer backup, and verify running identity/health and durable receipts.
+Assess actual storage changes with focused evidence. Historical per-owner
+baseline/candidate/recovery/reupgrade certificates and broad format inventories
+are no longer routine forward gates. Independent reviews and CI still apply.
 
-BB-8 is hibernated. Its feature tests and helper startup are inactive. Retained
-BB-8 state still belongs to its recorded format owners: hibernation does not
-remove the existing paired-owner admission requirement or permit a migration.
-Do not run the dormant BB-8 qualification suites as routine CI.
+Recovery eligibility is separate. Unknown recovery permits a forward plan and
+refuses recovery selection/checks. A failed forward update may require fixing
+forward. Never silently restore a snapshot: that requires a separate explicit
+owner decision, preservation of failed latest state and an honest data-gap report.
+First release-anchor adoption remains separately authorized and is not repeated.
+
+BB-8 is hibernated. Inventory and preserve its retained Linux files without
+opening its database, requiring historical reader certificates, running dormant
+suites or starting its Windows helper. This upgrade does not touch the separately
+owned Windows data or qualify/reactivate either BB-8 component.
 
 ## Weekly power schedule state
 
@@ -38,14 +35,11 @@ definition identity. A bounded per-rule occurrence guard records the latest clai
 boundary before dispatch, never a pending command to replay. Definitions and guards
 remain in the private core database under its existing lease.
 
-The release format inventory includes all `apps/runtime/src/` inputs, including the
-schedule reader and store. Changed readers require fresh admission; unchanged SQL
-table names do not establish compatibility. Event-only releases reject routine rows
-and are not qualified recovery readers once schedules exist. Execute each selected
-candidate and recovery reader against latest candidate state, preserving definitions
-and occurrence guards, before an installed upgrade or recovery. Do not remove saved
-schedules to make an older release appear compatible. Source restart tests do not
-qualify an installed release pair. This delivery activates no installed schedule.
+Assess changed schedule readers/stores with focused write/reopen evidence.
+Event-only releases reject routine rows and cannot be assumed compatible recovery
+readers once schedules exist. Preserve definitions and occurrence guards. An
+unknown older reader does not block a reviewed forward upgrade, and cannot be
+selected for recovery. This delivery activates no installed schedule.
 
 Maximum-on definitions and run evidence add `automation_power_limits` to the core
 store. Preserve each target's owner/configuration binding, enable/duration,
@@ -55,41 +49,28 @@ through its transaction/outbox. Wemo adds private `wemo.sqlite` request/device
 fences and its module folder's writer leases. A retained uncertain hold and
 unacknowledged outcomes must survive without another device write.
 
-Configured or retained Wemo requires its primary store and complete `wemo`
-baseline/candidate/recovery/reupgrade coverage. Source preflight supports its
-exact unconfigured `refused`, `healthy: false`, `not-found` health row; this does
-not admit an actual installed artifact pair. Execute the selected candidate and
-recovery readers on latest limit and Wemo state before installation. Current-source
-four-process fixtures establish restart persistence only. Do not clear settings,
-fences or holds, omit retained owners, or restore an older stopped snapshot to
-make an incompatible recovery release appear eligible.
+Configured Wemo requires its primary store and ordinary healthy running state.
+Preserve retained inactive Wemo state without mandatory phase certificates.
+Assess changes to limit/Wemo formats using focused production-store evidence;
+four same-source processes establish persistence only. Recovery eligibility
+must reflect the actual older reader on latest state. Do not clear settings,
+fences or holds, omit retained ownership or restore an older snapshot to make
+a recovery appear eligible.
 
-## Initial qualification checklist
+## Routine operation checklist
 
-1. Verify reviewed merged source, successful applicable CI, release provenance
-   and retained disposable recovery/refusal evidence under
-   [release and recovery proof](#release-and-recovery-proof). Verify accepted
-   first adoption separately; do not repeat it.
-2. Prepare a fresh operation ID, backup destination and exact plan using the
-   [required inputs and authority](#inputs-and-authority). Obtain initial approval
-   for the single forward upgrade, its startup effects and at most one compatible
-   recovery after an actual failure. An earlier three-selection proposal is not
-   authority for this operation.
-3. [Hold the operation lock and recheck the plan](#plan-and-hold-the-operation-lock).
-   Follow [stop, backup, selection and verification](#stop-back-up-select-and-verify),
-   including durable intent and final receipt readback. Perform one forward upgrade.
-4. If it fails or is interrupted, inspect the intent and actual selection before
-   following [recovery and finalization](#recover-and-finalize). Perform only the
-   one compatible recovery covered by the approved plan when indicated, then end
-   the window. Do not re-upgrade or replay effects. Record the actual outcome;
-   initial installed qualification remains pending.
-5. For success, verify the running revision, required module health, preserved
-   latest state and finalized receipt. Retain the verified previous release,
-   compatible recovery path and stopped-writer backup. Report deliberate live
-   recovery and re-upgrade as untested unless separately exercised.
-6. Record source, installed, actual-client and physical results separately under
-   [installation and evidence](../../docs/sdlc.md#installation-and-evidence).
-   Independent reviews, applicable CI and normal protected merges remain required.
+1. Verify reviewed merged source, applicable CI and release integrity. Assess
+   actual stored-format changes and accept focused forward evidence.
+2. Prepare a fresh request/operation ID, backup destination and read-only plan.
+   Record recovery as unknown unless latest-state reader evidence is qualified.
+   Review expected startup effects against existing authority.
+3. Hold the operation lock, recheck the exact plan, persist intent, stop and
+   verify writer exit, back up, select once and start.
+4. Verify running identity/health, preserved latest state and final receipt.
+   Retain releases and backup. A failure requires inspection, not blind replay.
+5. Recover only if separately qualified in the plan and still valid for latest
+   state. Otherwise retain the failed state and inspect a fix forward. Report
+   source, installed, client and physical results separately.
 
 ## Inputs and authority
 
@@ -107,15 +88,15 @@ another device.
 
 The request names the following inputs:
 
-- Previous, target and recovery release identities, manifests, archives and
+- Previous and target release identities, manifests, archives and
   trusted source/build evidence. All revisions are full immutable SHAs.
 - The existing runtime state directory, private configuration file, Node
   executable, service unit fragments and protected hook paths.
-- The source comparison, applicable successful CI and complete compatibility
-  evidence for configured owners and any retained unconfigured owner state.
+- The source comparison, applicable successful CI and a focused assessment of actual
+  stored-format changes and evidence for the affected forward readers.
 - The authenticated build-read credential file, loopback health origin,
   required module health and any specifically accepted existing exception.
-- The exact backup and latest-state recovery sequence, including bounds and
+- The exact backup and independently stated latest-state recovery eligibility, including bounds and
   the expected startup effects of the selected modules.
 
 Standing installation authority covers the established installation's
@@ -322,165 +303,65 @@ This command reads files and verifies supplied hashes; it changes no service,
 release selection or runtime state. Retain its result alongside the trusted
 source/build and extraction evidence.
 
-Compare retained production inputs with:
+## Focused change assessment and request
 
-```bash
-node apps/runtime/bin/runtime-upgrade-check.mjs verify-formats "$BUNNY_FORMAT_REQUEST"
-```
+Compare the reviewed release change with the installation's configuration and
+known retained owners. Record affected storage formats/readers and focused
+forward write/reopen evidence when those paths change. Unchanged owners need no
+new phase receipts. Preserve inactive files and permanent referenced media;
+never open live SQLite databases merely to inventory them. Source fingerprint
+equality is not a semantic compatibility verdict. Historical `verify-formats`
+and certificate readers remain optional evidence tools, outside routine admission.
 
-The private request binds previous, target and recovery release identities,
-directories and archives, the reviewed qualification revision and four private
-format inventories. The helper derives production inputs from verified release
-contents, including runtime, SDK, module and controller sources, dependency and
-toolchain manifests, and build/registry scripts. It requires matching inventories
-and required source anchors. It parses clean build stamps as data. Explicitly
-named operator helpers are excluded; independent review must establish that the
-runtime entry graph does not import them. Hash agreement does not establish
-trusted source provenance, semantic compatibility or upgrade eligibility.
+Prepare a new private `runtime-upgrade-request/2.0` JSON document with exactly:
 
-For first adoption, prove the actual installed baseline before changing its
-service path. Preserve its existing built bytes and build timestamp. Compare its
-source and dependency closure with the named revision, explain every difference
-and retain an independently verifiable recovery archive. A revision string alone
-is insufficient. Do not silently replace the baseline with a new build or call a
-known release unknown legacy.
+- `schema`, `operation` (`upgrade`, or separately authorized first `adoption`),
+  `installationId`, `installationRoot`, `tokenFile`.
+- `releases`: `previous` and `target`, each `{identity, directory, archive}`
+  naming verified private artifact paths. No mandatory third release.
+- `installedBaselineClosure`: `{path, sha256}` for the established
+  `runtime-installed-closure/2.0` record, including Node, units and protected
+  hook completeness. Preserve actual built bytes/timestamp and independently
+  verify this executable/dependency closure. A revision string is insufficient.
+- `changeAssessment`: private `{path, sha256}` under provenance. Name the exact
+  previous/target comparison, actual affected storage and forward evidence;
+  explicitly state unchanged/inactive paths and preservation. The coordinator
+  reviews meaning. Hash pins establish unchanged bytes, not compatibility.
+- `recovery`: `null` means unknown. To qualify recovery use
+  `{release: {identity, directory, archive}, evidence: {path, sha256}}`. Evidence
+  stays private under provenance and binds the exact release, current config,
+  selected owners and latest-state write/reopen proof for affected formats. A
+  certificate from a different build or same-source restart test cannot substitute.
+- `execution`: the bounded operation frame described below.
 
-The installed closure uses `runtime-installed-closure/2.0` and includes the
-qualified hook list. Each entry records its link path, directory/file shape,
-exact link target and complete client invocation paths, with resolved script
-paths and hashes. Obtain this list from the installation's qualified record;
-do not discover or guess client configuration. The coordinator's admission
-establishes completeness. The hook reader verifies the actual links and script
-bytes twice, then rechecks identities and resolutions. Hook paths and resolved
-producers must remain outside installation storage so release selection cannot
-silently retarget them. An empty list needs accepted evidence that no hooks apply.
-Earlier byte-only closure observations do not qualify this protection.
+Request/plan 1.0 is superseded and refuses new execution. Recreate a fresh request
+and review plan 2.0; do not edit an old approval or receipt. Receipt schema 1.0
+and historical interrupted-operation resolution remain supported. Record
+the forward assessment in receipt `compatibility.evidence`, using
+`compatibility.status: "compatible"` only for the reviewed forward path. The
+approval pins plan 2.0, whose `recovery: null` records unknown recovery; do not
+add fields to receipt 1.0 or claim a downgrade guarantee. `rollback.status` stays
+`not-attempted` unless an actual qualified recovery was observed. Use the existing
+receipt validation contract. The same private file may hold the change and startup
+assessment; no extra dossier is required.
 
-Qualify recovery on latest state, not just empty stores. Synthetic checks use
-production core/module stores and SDK outboxes in separate processes:
-baseline → candidate writes → previous release → candidate. Check newer
-records, preferences, original media hashes and references, command fences,
-truthful interrupted outcomes and no command replay. Preserve documented startup
-uncertainty and normal policy rendering as separate effects. Refuse unknown or
-incompatible formats before a service stop. These checks do not establish physical
-accuracy or installed client behavior.
+Protect hook paths and resolved producers outside installation storage. Obtain
+the complete hook list from accepted installation evidence; no guessed client
+configuration or silent hook retargeting. The existing readers verify exact
+bytes and resolutions. An empty list still needs accepted completeness evidence.
 
-Unconfigured BB-8, ONN and Roborock retain their exact `refused`, `healthy: false`,
-`not-found` health exceptions. Configured or retained Roborock requires its
-private primary archive, complete `roborock` coverage and the delivered package
-and compiled store reader in previous, target and recovery artifact inventories.
-Configuration, sidecars or a directory alone cannot substitute for its primary
-archive. The verified inventory binds reader bytes; the coordinator must still
-execute each selected compatible reader against latest candidate state.
-Configured or retained ONN requires its durable owner and complete ONN
-coverage; configured or retained BB-8 requires its durable owner and the complete
-`bb8`/`bb8-windows` pair. Configured qualified modules must report running and
-healthy without a refusal reason. Unknown owners still refuse. Legacy seven-owner
-certificates remain valid for absent BB-8 and ONN; adding ONN extends either the
-legacy set or the qualified BB-8 pair by that one fixed owner.
-
-Roborock extends each existing exact owner set, including combinations with ONN,
-paired BB-8 and companions, by one complete baseline/candidate/recovery/reupgrade
-owner. The certificate schema stays `runtime-proof-admission/1.0`. Missing or
-duplicate phases, unknown or duplicate owners, changed bound evidence and partial
-BB-8 pairs refuse before effects. An absent unconfigured/unretained Roborock
-requires no fabricated receipt. Both preflight and post-start verification apply
-ordinary running, healthy, null-reason health to configured Roborock.
-
-The Roborock source fixture uses four separate processes with one built
-production store and SDK outbox. Candidate writes add distinct original readings,
-record versions, room mappings, battery samples/gaps and unverified map bytes with
-provenance. Recovery reads those latest private rows before republishing the exact
-retained state envelopes, without collection or control replay. Restoring the
-older stopped baseline fails qualification. This establishes persistence under
-that build, not compatibility between historical releases. Qualify the actual
-previous/target/recovery readers and bind their private receipts before installed
-admission. Keep owner account material, history, maps and all admission evidence
-private. This profile selects no activation or physical vacuum operation.
-
-The delivered `companions` registration always starts its private store, even
-when its card feature is disabled. A verified artifact containing its fixed
-package requires complete `companions` baseline/candidate/recovery/reupgrade
-coverage in addition to the applicable existing owner set. The certificate
-schema remains unchanged; exact names and all four phases are required. An
-older initial baseline may lack the module only while it has no companion
-configuration or retained state. Target and recovery bytes must contain its
-reader: leaving an unread database untouched does not prove reopened latest
-state. A future change to the registration requires fresh qualification rather
-than a new inference from package presence.
-
-Artifacts shipping companions require its ordinary running, healthy,
-null-reason health row without an absent-device exception. After a qualified
-first startup, the state inventory must equal the original inventory plus only
-that named owner; missing state or any unrelated addition/removal refuses.
-Configuration, sidecars or an owner directory alone cannot establish that
-store: its private primary database must remain present.
-Compatibility fixtures retain settings, consumed origins, admissions,
-live/scenario allowances, presentation history and pending outcome identities,
-without reconstructing a reaction or replaying commands. Live databases are
-never opened by inventory checks. These source proofs do not select companion
-enablement, #643's desk acceptance or installed startup effects; inspect their
-separate authority in the exact operation plan.
-
-The ONN source tests exercise four separate processes using one built module.
-They establish retained originals, reported progress, gaps, private identities,
-outcomes and no replay across restarts. They do not establish compatibility
-between actual releases. Bind actual baseline, candidate and recovery artifacts
-and inspect every changed production input before coordinator admission. A
-recovery release must accept the complete current ONN configuration and latest
-history/command formats. Release `52ee8f28` predates `historyEnabled` support and refuses
-that setting; it cannot be used for configured-history recovery. Do not remove
-settings or observations to make an incompatible recovery appear eligible. An
-absent-ONN routine upgrade may precede a separately approved ONN activation.
-
-For BB-8, retain four phase receipts (`baseline`, `candidate`, `recovery`,
-`reupgrade`) for both the WSL production module store/SDK outbox and independently
-owned Windows receipt store. Qualify latest LED intent, original power observation
-time, completed and interrupted responsibility, pending outcomes, consumed/history
-receipts and enrollment preservation in separate stopped/reopened processes.
-No phase may execute saved radio work or infer visible success. Bind the actual
-previous/target/recovery reader inputs and compiled dependency closure; source
-byte equality supports reuse only for the unchanged named readers.
-
-The Windows owner prepares and reads its receipt evidence on Windows. WSL may
-retain copied private qualification receipts, but never opens the Windows
-database. Coordinate the helper's writer handoff, quiescence and private backup
-before the actual installed operation; the coordinator inspects those exact
-steps and effects in its private admission/startup assessment. A Linux state
-backup does not back up the helper. Preserve the selected helper release,
-enrollment, credentials and latest receipts through recovery, with no second
-writer or automatic reconnect/command replay. Synthetic recovery or source
-qualification alone does not activate either component or accept a robot trial.
-
-The conservative format inventory includes BB-8 module inputs and Windows
-helper production source/package inputs. A changed helper format cannot reuse
-an unchanged compatibility inventory. Existing seven-owner certificates retain
-their coverage shape for the original profile; source, procedure and format
-bindings must still match each selected release. Adding only one member of the
-BB-8 pair, or omitting any of its four phases, refuses. Configured or retained BB-8 cannot use
-a seven-owner certificate. Native and physical acceptance remain separate.
-
-Each previous, target and recovery inventory must match that release's actual
-verified production inputs. The qualification inventory matches the target's
-production inputs and records the qualification revision. Their combined digest
-binds all four roles. `verify-formats` verifies those bindings; changed inputs
-are reported as `changed-requires-admission` with compatibility `not-established`.
-It does not accept recovery. The coordinator must assess every difference using
-the complete production-store evidence and independent reviews. Stale inventories,
-unclassified ownership, missing coverage or unknown recovery still refuse.
-
-Record the coordinator's acceptance of the qualification in one private proof
-admission certificate. Bind its exact release identities, source-format inventory,
-complete owner coverage, phase receipts, installed-baseline closure and reviewed
-procedure. The preflight verifies these current bindings and file hashes; the
-coordinator and independent reviews accept what the evidence demonstrates. A
-caller-supplied `passed` flag cannot substitute for that acceptance. Missing,
-incompatible or unknown admission refuses before service effects.
+Configured modules require running, healthy, null-reason health. Unconfigured
+Wispr, BB-8, ONN, Roborock and Wemo may report only the exact absent-module
+`refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
+Retained inactive files do not convert absence into healthy active ownership.
+Unknown owners and unsafe files still refuse. The always-started companions
+owner needs release-specific ordinary health and its private primary store;
+only that first-created owner may be added after startup.
 
 ## Plan and hold the operation lock
 
 Capture the exact read-only preflight plan. Review its installed identity,
-running process/build identity, target, compatibility coverage, protected paths,
+running process/build identity, target, change assessment, protected paths,
 configuration, backup, recovery and expected effects. Retain the canonical plan
 and digest privately. A missing observation is a refusal, not a matching baseline.
 
@@ -533,19 +414,10 @@ failure does not change the observation result.
 
 Require exit zero and inspect the complete private plan. A failed command may
 leave an incomplete file; retain it as failed evidence and do not use it. The
-preflight requires coordinator admission and current baseline/hook protection;
-it cannot derive acceptance from a supplied flag. It pins configuration,
-credential and read-token file hashes without including their contents. Keep
-the plan private, including these hashes. Accepted degraded-health exceptions
-are the intentionally unconfigured Wispr (#840), BB-8, ONN and Roborock modules,
-each refused with `not-found` and `healthy: false`. State/configuration inspection
-must establish configuration and retained ownership. Configured or retained
-BB-8 additionally requires the complete Linux/Windows proof pair and ordinary
-configured-module health; configured or retained ONN additionally requires its complete proof and ordinary
-configured-module health. Configured or retained Roborock still refuses.
-These production registrations were
-checked with no configuration: each refuses before start and creates no owner
-state. Other module refusals require separate qualification.
+preflight binds the focused assessment, optional recovery and current
+baseline/hook protection. It pins configuration, credentials and read-token
+hashes without their contents; keep all of these private. It does not interpret
+operator evidence as approval or establish actual-client/physical acceptance.
 
 During initial qualified setup, create `install.lock` once as an owned regular
 file with mode 600. Creation must refuse an existing path. Never delete,
@@ -571,17 +443,17 @@ properties. It does not acquire a lock or prove that `flock` succeeded; the
 manual shell must stop on a failed acquisition and retain the descriptor.
 
 Recompute the approved plan while locked. Configuration, protected paths,
-selected release, running process/start identity, source evidence or compatibility
-coverage drift requires a fresh plan. Ordinary changes to counters or durable
+selected release, running process/start identity, source evidence or assessment/recovery
+evidence drift requires a fresh plan. Ordinary changes to counters or durable
 record contents do not justify treating state as unchanged; they are handled by
-the stopped-writer backup and latest-state recovery proof.
+the stopped-writer backup and focused latest-state evidence.
 
 ```bash
 node apps/runtime/bin/runtime-upgrade-check.mjs recheck "$BUNNY_REQUEST_FILE" "$BUNNY_INSTALL_ROOT/provenance/plan.json"
 ```
 
 Require exit zero before writing intent or stopping the writer. This recollects
-the original process/listener, build/health and all source/admission/baseline,
+the original process/listener, build/health and all source/assessment/baseline,
 hook, state and receipt bindings. The result must equal the reviewed plan. FD9
 must match the persistent lock before and after collection; the manual shell
 still owns successful `flock` acquisition. A plan file alone authorizes no
@@ -810,16 +682,25 @@ upgrade health check pass.
 
 ## Recover and finalize
 
-If selection, startup or candidate verification fails, inspect the observed state
-and follow only the
-named qualified recovery sequence while retaining the same lock. Stop and verify
+If selection, startup or candidate verification fails, inspect the observed state.
+If `plan.recovery` is null, do not select an older release: preserve the failed
+latest state and intent and assess a fix forward. Record an interrupted handoff
+when effects remain unresolved. Snapshot restoration needs the separate explicit
+decision described above. Otherwise follow only the named qualified recovery sequence while retaining the same lock. Stop and verify
 writer exit, select the verified previous release atomically and start the same
 service on the **latest durable state**. Verify its process/build identity,
 health and retained state again. Do not restore an older backup automatically,
 repeat an uncertain device action or activate an omitted module. A failed recovery
 remains a failed or interrupted operation with its evidence retained.
 
-For recovery, use the same stopped-writer checks and selection command, setting
+Before a recovery stop or selection, hold FD9 and require this read-only guard
+to exit zero:
+
+```bash
+node apps/runtime/bin/runtime-upgrade-check.mjs check-recovery "$BUNNY_REQUEST_FILE" "$BUNNY_PLAN_FILE"
+```
+
+Then use the same stopped-writer checks and selection command, setting
 `BUNNY_SELECTION_DIRECTORY` to the verified recovery release from the approved
 request. Leave the state directory in place. Do not copy the backup over it.
 Make one selected recovery attempt; a failure requires inspection, not another
@@ -966,8 +847,8 @@ import {readPrivateFile} from './apps/runtime/dist/src/state.js';
 import {renderUpgradeAdoptionDraft} from './apps/runtime/dist/src/upgrade-paths.js';
 const [planFile, root, destination] = process.argv.slice(2);
 const {planSha256, ...plan} = JSON.parse((await readPrivateFile(planFile, 256 * 1024)).toString('utf8'));
-if (sha256(canonical(plan)) !== planSha256 || plan.schema !== 'runtime-upgrade-plan/1.0' || plan.operation !== 'adoption'
-  || plan.eligibility !== 'eligible-under-coordinator-admission' || plan.paths.directories[0].path !== root
+if (sha256(canonical(plan)) !== planSha256 || plan.schema !== 'runtime-upgrade-plan/2.0' || plan.operation !== 'adoption'
+  || plan.eligibility !== 'forward-eligible' || plan.paths.directories[0].path !== root
   || dirname(destination) !== join(root, 'provenance') || destination !== plan.execution.adoption.draftFile
   || plan.owner.argv[0] !== plan.owner.executable
   || plan.owner.argv[1] !== plan.owner.entry) throw new Error('adoption-draft-refused');
