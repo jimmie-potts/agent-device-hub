@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {parseArguments} from '../src/process.js';
 import type {UpgradeOwner} from '../src/upgrade-owner.js';
-import {inspectUpgradePaths, inspectUpgradeExecution, inspectUpgradeRunningPaths, parseUpgradeRequest, renderUpgradeAdoptionDraft} from '../src/upgrade-paths.js';
+import {inspectUpgradePaths, inspectUpgradeExecution, inspectUpgradeRunningPaths, inspectUpgradeRecoveryPaths, parseUpgradeRequest, renderUpgradeAdoptionDraft} from '../src/upgrade-paths.js';
 
 void test('request binds operational choices and refuses missing or unbounded execution frames', () => {
   const root = '/synthetic/install';
@@ -122,6 +122,19 @@ void test('upgrade paths preserve the direct baseline for adoption and require t
     const currentOwner = {...anchoredOwner, entry: join(installation, 'current/apps/runtime/dist/src/main.js')};
     assert.equal((await inspectUpgradePaths(parseUpgradeRequest(upgradeDocument), currentOwner,
       {...verified, baselineRoot: previousRoot}, files.credentials)).selection.kind, 'previous');
+  });
+  await t.test('pre-recovery filesystem checks protect paths without assuming a running service', async () => {
+    const routine = parseUpgradeRequest(upgradeDocument);
+    const approved = {owner: anchoredOwner, paths: {...result, adoptionDraftSha256: null}};
+    const allowed = [previousRoot, targetRoot];
+    assert.equal((await inspectUpgradeRecoveryPaths(routine, approved, allowed)).target, previousRoot);
+    await chmod(files.config, 0o644);
+    await assert.rejects(inspectUpgradeRecoveryPaths(routine, approved, allowed), /runtime-upgrade-paths-refused/);
+    await chmod(files.config, 0o600);
+    await rm(join(installation, 'current')); await symlink(join(root, 'direct'), join(installation, 'current'));
+    await assert.rejects(inspectUpgradeRecoveryPaths(routine, approved, allowed), /runtime-upgrade-paths-refused/);
+    await rm(join(installation, 'current')); await symlink(previousRoot, join(installation, 'current'));
+    assert.equal((await inspectUpgradeRecoveryPaths(routine, approved, allowed)).target, previousRoot);
   });
   await t.test('post-start paths bind the target, original paths and exact adoption override', async () => {
     assert.ok(request.execution.adoption);

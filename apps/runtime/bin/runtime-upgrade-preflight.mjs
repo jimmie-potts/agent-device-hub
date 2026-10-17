@@ -6,8 +6,8 @@ import {canonical, readRegular, sha256} from '../../hub/dist/install/files.js';
 import {createRoutineUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {inspectRuntimeBaselineClosure} from './runtime-upgrade-baseline.mjs';
 import {readPrivateFile, readRuntimeConfig} from '../dist/src/state.js';
-import {parseUpgradeRequest, inspectUpgradePaths, inspectUpgradeExecution, inspectUpgradeRunningPaths} from '../dist/src/upgrade-paths.js';
-import {createInstalledUpgradeOwnerObserver} from '../dist/src/upgrade-owner.js';
+import {parseUpgradeRequest, inspectUpgradePaths, inspectUpgradeExecution, inspectUpgradeRunningPaths, inspectUpgradeRecoveryPaths} from '../dist/src/upgrade-paths.js';
+import {createInstalledUpgradeOwnerObserver, createInstalledUpgradeUnitObserver} from '../dist/src/upgrade-owner.js';
 import {createInstalledUpgradeListenerObserver} from '../dist/src/upgrade-listener.js';
 import {inspectUpgradeProtectedHooks} from '../dist/src/upgrade-hooks.js';
 import {inspectUpgradeState, inspectUpgradeReceipts} from '../dist/src/upgrade-inputs.js';
@@ -178,11 +178,42 @@ export function createRuntimeUpgradeRecoveryCheck(io) {
         || io.canonical(request.recovery) !== io.canonical(approved.recovery)
         || io.canonical(await io.execution(request)) !== io.canonical(approved.execution)) refused();
       await io.lock(request.installationRoot);
-      const source = await io.source(sourceInputFor(request));
-      if (io.canonical({expected: source.expected, stamps: source.stamps}) !== io.canonical(approved.source)
-        || !requestBytes.equals(await io.privateFile(requestFile, maximum))
-        || !approvedBytes.equals(await io.privateFile(approvedPlanFile, maximum))) refused();
-      await io.lock(request.installationRoot);
+      const same = (a, b) => io.canonical(a) === io.canonical(b);
+      const sourceInput = sourceInputFor(request);
+      const source = await io.source(sourceInput);
+      if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) refused();
+      const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};
+      const baselineInput = {path: request.installedBaselineClosure.path, pin: request.installedBaselineClosure,
+        installationId: request.installationId, owner: baselineOwner, previous: {...source.artifacts.previous, inputs: source.inputs}};
+      const hookInput = {installationRoot: request.installationRoot, installationId: request.installationId, pin: request.installedBaselineClosure};
+      const config = await io.config(approved.owner.options.config);
+      if (config.edge === undefined) refused();
+      const selections = [source.artifacts.previous.root, source.artifacts.target.root];
+      const paths = await io.recoveryPaths(request, approved, selections);
+      const candidateState = stateAfterStart(approved.state, source, 'target');
+      const adoption = request.execution.adoption;
+      const units = [...approved.owner.units, ...(adoption === null ? [] : [adoption.overrideFile])].sort();
+      const bindings = async () => {
+        // Finish the long closure scans before checking the small mutable pins
+        // and private inputs. A change during either final scan must refuse.
+        if (!same(await io.baseline(baselineInput), approved.baseline) || !same(await io.hooks(hookInput), approved.hooks)
+          || !same(await io.recoveryPaths(request, approved, selections), paths) || !same(await io.units(), units)) refused();
+        const state = await io.state(approved.owner.options.stateDir, approved.owner.options.config);
+        if (!(same(state, approved.state) || same(state, candidateState))
+          || !same(await io.execution(request), approved.execution)) refused();
+        const privateInputs = {configSha256: io.sha256(await io.privateFile(approved.owner.options.config, 1024 * 1024)),
+          credentialsSha256: io.sha256(await io.privateFile(config.edge.credentials, 65536)),
+          readTokenSha256: io.sha256(await io.privateFile(request.tokenFile, 65536))};
+        if (!same(privateInputs, approved.privateInputs)
+          || !requestBytes.equals(await io.privateFile(requestFile, maximum))
+          || !approvedBytes.equals(await io.privateFile(approvedPlanFile, maximum))) refused();
+        await io.lock(request.installationRoot);
+      };
+      await bindings();
+      if (!same(await io.source(sourceInput), source)) refused();
+      // Source collection is asynchronous; evidence/private bindings must still
+      // match after its last await. No health assumption or service effect here.
+      await bindings();
       return {schema: 'runtime-recovery-check/1.0', eligible: true, planSha256,
         release: source.expected.releases.recovery, directory: source.artifacts.recovery.root};
     } catch {throw new Error('runtime-upgrade-recovery-refused');}
@@ -290,12 +321,13 @@ async function observeUpgradeHttp(owner, tokenFile, expected, recheck, operation
 
 const installedReaders = {
   privateFile: readPrivateFile, parseRequest: parseUpgradeRequest, canonical, sha256, execution: inspectUpgradeExecution,
+  units: createInstalledUpgradeUnitObserver(readRegular),
   lock: requireUpgradeLock, owner: createInstalledUpgradeOwnerObserver(readRegular),
   listener: createInstalledUpgradeListenerObserver(readRegular), source: createRoutineUpgradeSourceAdapter(verifyRuntimeUpgradeRelease),
   baseline: inspectRuntimeBaselineClosure, config: readRuntimeConfig, paths: inspectUpgradePaths,
   hooks: inspectUpgradeProtectedHooks, state: inspectUpgradeState,
   receipts: (path, installationId) => inspectUpgradeReceipts(path, installationId, validateInstallReceipt), http: observeUpgradeHttp,
-  runningPaths: inspectUpgradeRunningPaths,
+  runningPaths: inspectUpgradeRunningPaths, recoveryPaths: inspectUpgradeRecoveryPaths,
 };
 export const runtimeUpgradePreflight = createRuntimeUpgradePreflight(installedReaders);
 export const runtimeUpgradeRunningCheck = createRuntimeUpgradeRunningCheck(installedReaders);

@@ -36,4 +36,3 @@ Retained legacy consumer operations MUST stage and verify before outage, prove r
 - **THEN** recovery stops that process, switches to the verified compatible previous release, reopens the latest state and verifies recovery without restoring an old database
 
 The current TypeScript successor SHALL instead apply focused forward assessment and independent recovery eligibility under bunny-runtime-upgrades. Unknown recovery MUST NOT block its forward plan and MUST refuse recovery execution.
-

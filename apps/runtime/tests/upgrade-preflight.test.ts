@@ -9,7 +9,7 @@ import {test} from 'node:test';
 import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
 import {readPrivateFile} from '../src/state.js';
 import {inspectUpgradeState} from '../src/upgrade-inputs.js';
-import {parseUpgradeRequest} from '../src/upgrade-paths.js';
+import {parseUpgradeRequest, inspectUpgradeExecution} from '../src/upgrade-paths.js';
 const run = promisify(execFile);
 
 // The composed checks run in this process against injected readers: each case is a call, not a Node process that imports
@@ -496,6 +496,7 @@ async function runningCheck(root: string, scenario: string,
     privateFile: (path: string) => readFile(path), parseRequest: (value: unknown) => value, canonical, sha256,
     lock: () => { count('lock'); return scenario === 'missing-lock' ? refuse('no') : answer(undefined); },
     execution: () => answer(request.execution),
+    recoveryPaths: () => answer(paths), units: () => answer(original.units),
     source: () => answer(scenario === 'source-drift' && (counters.http ?? 0) > 1 ? {...source, inputs: [{changed: true}]} : source),
     admission: () => answer(admission), baseline: () => answer(baseline),
     hooks: () => answer(scenario === 'hook-drift' && (counters.http ?? 0) > 1 ? {hooks: [{changed: true}]} : hooks),
@@ -674,4 +675,57 @@ void test('unknown recovery allows forward verification but refuses recovery bef
   assert.equal(before.counters.owner, 0);
   assert.equal(before.counters.http, 0);
   assert.equal((await runningCheck(root, 'qualified', 'pre-recovery')).code, undefined);
+});
+
+void test('recovery guard refuses protected-input drift and evidence changed during artifact verification', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-recovery-bindings-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const provenance = join(root, 'provenance'); await mkdir(provenance, {mode: 0o700});
+  const evidence = join(provenance, 'evidence');
+  const approvedEvidence = 'synthetic reviewed latest-state evidence';
+  const pin = {path: evidence, sha256: sha256(approvedEvidence)};
+  const artifact = {identity: join(root, 'identity'), directory: join(root, 'release'), archive: join(root, 'archive')};
+  const request = {schema: 'runtime-upgrade-request/2.0', operation: 'upgrade', installationId: 'synthetic', installationRoot: root,
+    tokenFile: join(root, 'token'), installedBaselineClosure: pin, changeAssessment: pin,
+    releases: {previous: artifact, target: artifact}, recovery: {release: artifact, evidence: pin},
+    execution: {operationId: 'recovery', backupDirectory: join(root, 'backups/recovery'), stopTimeoutMs: 1000,
+      postStart: {attempts: 1, timeoutMs: 1000, intervalMs: 100}, startupEffects: {assessment: pin, authority: pin}, adoption: null}};
+  const requestFile = join(root, 'request'), planFile = join(root, 'plan'), configFile = join(root, 'config');
+  await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
+  const credentialsFile = join(root, 'credentials');
+  const baseline = {baselineRoot: artifact.directory}, hooks = {hooks: []}, paths = {selection: 'synthetic'};
+  const state = {configured: [] as string[], durableOwners: ['core']};
+  const entries: unknown[] = [];
+  const source = {expected: {releases: {recovery: {sourceRevision: 'a'.repeat(40)}}}, stamps: {}, inputs: [],
+    artifacts: {previous: {root: artifact.directory, entries}, target: {root: artifact.directory, entries}, recovery: {root: artifact.directory, entries}}};
+  const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible', requestSha256: sha256(await readFile(requestFile)),
+    operation: request.operation, installationId: request.installationId, recovery: request.recovery, changeAssessment: pin, execution: request.execution,
+    owner: {units: [], options: {config: configFile, stateDir: join(root, 'state')}}, baseline, hooks, state, paths,
+    source: {expected: source.expected, stamps: source.stamps},
+    privateInputs: {configSha256: sha256('config'), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('token')}};
+  await writeFile(planFile, JSON.stringify({...body, planSha256: sha256(canonical(body))}), {mode: 0o600});
+  for (const scenario of ['unchanged', 'late-evidence', 'config', 'credentials', 'token', 'baseline', 'hooks', 'state', 'paths', 'unit-set', 'late-baseline-evidence']) {
+    await t.test(scenario, async () => {
+      await writeFile(evidence, approvedEvidence, {mode: 0o600});
+      await writeFile(configFile, scenario === 'config' ? 'changed config' : 'config', {mode: 0o600});
+      await writeFile(credentialsFile, scenario === 'credentials' ? 'changed credentials' : 'credentials', {mode: 0o600});
+      await writeFile(request.tokenFile, scenario === 'token' ? 'changed token' : 'token', {mode: 0o600});
+      let baselineReads = 0;
+      const io: Readers = {privateFile: readPrivateFile, parseRequest: parseUpgradeRequest, canonical, sha256,
+        execution: inspectUpgradeExecution, lock: () => answer(undefined),
+        source: async () => {if (scenario === 'late-evidence') await writeFile(evidence, 'changed during source scan'); return source;},
+        config: () => answer({edge: {credentials: credentialsFile}}),
+        baseline: async () => {
+          if (scenario === 'late-baseline-evidence' && ++baselineReads === 2) await writeFile(evidence, 'changed during final closure scan');
+          return scenario === 'baseline' ? {...baseline, changed: true} : baseline;
+        },
+        hooks: () => answer(scenario === 'hooks' ? {hooks: ['changed']} : hooks),
+        state: () => answer(scenario === 'state' ? {...state, durableOwners: ['core', 'unknown']} : state),
+        units: () => answer(scenario === 'unit-set' ? ['/synthetic/new-override.conf'] : []),
+        recoveryPaths: () => scenario === 'paths' ? refuse('unsafe protected path') : answer(paths)};
+      const check = helpers.createRuntimeUpgradeRecoveryCheck(io);
+      if (scenario === 'unchanged') assert.equal((await check(requestFile, planFile) as {eligible: boolean}).eligible, true);
+      else await assert.rejects(check(requestFile, planFile), /runtime-upgrade-recovery-refused/);
+    });
+  }
 });

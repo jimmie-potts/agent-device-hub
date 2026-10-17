@@ -155,6 +155,21 @@ export async function inspectUpgradeRunningPaths(request: UpgradePreflightReques
   } catch {return refused();}
 }
 
+/** Check filesystem protection before recovery even if the service is stopped.
+ * The expected invocation below is not an observation of a running process. */
+export async function inspectUpgradeRecoveryPaths(request: UpgradePreflightRequest,
+  approved: Parameters<typeof inspectUpgradeRunningPaths>[2], allowedSelections: string[]) {
+  try {
+    const current = join(request.installationRoot, 'current');
+    const selected = await realpath(current);
+    if (!allowedSelections.includes(selected)) return refused();
+    const adoption = request.execution.adoption;
+    const expected = {...approved.owner, cwd: selected, entry: join(current, 'apps/runtime/dist/src/main.js'),
+      units: [...approved.owner.units, ...(adoption === null ? [] : [adoption.overrideFile])].sort()};
+    return await inspectUpgradeRunningPaths(request, expected, approved, selected);
+  } catch {return refused();}
+}
+
 /** Verified roots and baselineRoot come from the source/closure adapters, never observation flags. */
 export async function inspectUpgradePaths(request: UpgradePreflightRequest, owner: UpgradeOwner,
   verified: {previous: string; target: string; recovery?: string; baselineRoot: string;

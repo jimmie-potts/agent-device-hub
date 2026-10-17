@@ -571,7 +571,8 @@ exclusion. Credential and read-token files remain at their pinned external
 paths; recovery does not replace them with archived values.
 
 Publish the verified target through an atomic replacement of the owned `current`
-link. Verify the exact target and retained recovery release again. Routine
+link. Verify the exact previous and target releases again. Verify a recovery
+artifact only when the approved plan contains one. Routine
 upgrades do not rewrite service units, configuration or hooks.
 
 From the reviewed helper checkout, use the existing filesystem publication
@@ -579,8 +580,9 @@ primitive below. It creates a temporary link beside `current`, renames it over
 the anchor, fsyncs the installation root and verifies the resulting target.
 It invokes no installer or service. `BUNNY_SELECTION_DIRECTORY` must be the
 verified target directory from the locked request. Before this command, repeat
-`verify-release` for that exact target and the retained recovery release, and
-confirm the current link still has the plan's original target (or remains absent
+`verify-release` for the exact previous and target artifacts, and for recovery
+only when it is qualified in the approved plan. If recovery is null, no third
+artifact is required. Confirm the current link still has the plan's original target (or remains absent
 for initial adoption). A different anchor requires inspection and a new plan.
 
 <!-- qualification: select-release -->
@@ -694,7 +696,10 @@ repeat an uncertain device action or activate an omitted module. A failed recove
 remains a failed or interrupted operation with its evidence retained.
 
 Before a recovery stop or selection, hold FD9 and require this read-only guard
-to exit zero:
+to exit zero. It rechecks source/evidence, protected paths/configuration/credentials,
+baseline Node/units/hooks and retained owner layout without requiring a healthy
+candidate. It accepts only the approved inventory, optionally plus the planned
+first-created companions owner; unexplained drift refuses before effects:
 
 ```bash
 node apps/runtime/bin/runtime-upgrade-check.mjs check-recovery "$BUNNY_REQUEST_FILE" "$BUNNY_PLAN_FILE"
