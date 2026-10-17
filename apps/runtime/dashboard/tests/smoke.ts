@@ -62,3 +62,6 @@ try {
   await browser.close();
   await world.close();
 }
+
+// Keep the focused real-owner Tidbyt journey in the hosted smoke entry.
+await import('./tidbyt-card.browser.ts');
