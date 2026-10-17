@@ -21,8 +21,7 @@ import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type MomentPlayRequest, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
+import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange, type ModuleContent, type ModuleContentRequest,
 } from '@jimmie-potts/sdk';
 import {admitCommand, Refused as PortRefused} from '../controls.js';
@@ -229,9 +228,9 @@ export class NanoleafRuntime {
     // follows the core's acknowledgments first (Hub #782), so it forgets each outcome the core recorded.
     try {
       const count = await this.#outbox.republish();
-      log.info('outbox.republished', {'bunny.outbox.republished_count': count});
+      recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': count});
     } catch (error) {
-      log.warn('outbox.deferred', {'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
+      recordLog(log, 'outbox.deferred', {'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
     }
     await this.#endStoredCommands();
     this.#feed.configure(sharedConfig(this.#config.qualifiedSources));
@@ -347,7 +346,7 @@ export class NanoleafRuntime {
       for (const id of devices) this.#dirty.add(id);
       if (this.#publishing === undefined) {
         this.#publishing = {sinceMs: clock.now(), failed: 1};
-        log.warn('operation.failed', {'bunny.operation': 'snapshot', 'error.type': errorType(error)});
+        recordLog(log, 'operation.failed', {'bunny.operation': 'snapshot', 'error.type': errorType(error)});
       } else {
         this.#publishing.failed += 1;
       }
@@ -364,7 +363,7 @@ export class NanoleafRuntime {
     const run = this.#publishing;
     if (run === undefined) return;
     this.#publishing = undefined;
-    log.info('operation.completed', {'bunny.operation': 'snapshot', 'bunny.attempt_count': run.failed,
+    recordLog(log, 'operation.completed', {'bunny.operation': 'snapshot', 'bunny.attempt_count': run.failed,
       'bunny.duration_ms': Math.min(86_400_000, Math.max(0, clock.now() - run.sinceMs))});
   }
 
@@ -414,11 +413,11 @@ export class NanoleafRuntime {
     const {log} = this.#context;
     if (holding) {
       this.#holds.add(device);
-      log.warn('operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.code': 'uncertain-result', 'bunny.write.possible': true});
+      recordLog(log, 'operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.code': 'uncertain-result', 'bunny.write.possible': true});
       return;
     }
     this.#holds.delete(device);
-    log.info('operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.outcome': 'current'});
+    recordLog(log, 'operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.outcome': 'current'});
   }
 
   #publish(family: keyof typeof STATE_TYPES, id: string, data: Record<string, unknown>): void {
@@ -526,10 +525,10 @@ export class NanoleafRuntime {
     this.#syncAttempts = 0;
     if (this.#feedFailing) {
       this.#feedFailing = false;
-      this.#context.log.info('operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'current'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'current'});
     }
     if (outcome === 'selected') {
-      this.#context.log.info('feed.changed', {'bunny.generation': this.#feed.generation, 'bunny.outcome': 'current'});
+      recordLog(this.#context.log, 'feed.changed', {'bunny.generation': this.#feed.generation, 'bunny.outcome': 'current'});
       for (const id of this.#ids) this.#ensureSupervisor(id);
     }
     this.#changed();
@@ -538,7 +537,7 @@ export class NanoleafRuntime {
   #feedFailure(code: ErrorCode, error?: unknown): void {
     if (this.#feedFailing) return;
     this.#feedFailing = true;
-    this.#context.log.warn('operation.failed', {'bunny.operation': 'feed', 'bunny.code': code, ...(error === undefined ? {} : {'error.type': errorType(error)})});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'feed', 'bunny.code': code, ...(error === undefined ? {} : {'error.type': errorType(error)})});
   }
 
   // Controllers
@@ -577,7 +576,7 @@ export class NanoleafRuntime {
         const restarts = this.#restarts.get(device);
         if (restarts === undefined) return;
         this.#restarts.delete(device);
-        this.#context.log.info('operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.attempt_count': restarts.attempts,
+        recordLog(this.#context.log, 'operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.attempt_count': restarts.attempts,
           'bunny.duration_ms': Math.min(86_400_000, Math.max(0, clock.now() - restarts.sinceMs))});
         this.#changed(device);
       });
@@ -598,7 +597,7 @@ export class NanoleafRuntime {
     if (restarts === undefined) {
       restarts = {sinceMs: clock.now(), attempts: 0};
       this.#restarts.set(device, restarts);
-      log.error('operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', ...why});
+      recordLog(log, 'operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', ...why});
     } else {
       // Each later end of the same run is a bounded retry, at DEBUG.
       log.debug('operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', ...why, 'bunny.attempt_count': restarts.attempts});
@@ -629,7 +628,7 @@ export class NanoleafRuntime {
     const run = this.#runs.get(device);
     if (run === undefined) {
       this.#runs.set(device, {sinceMs: now, failed: 1, unsummarized: 0, summarizedAtMs: now});
-      this.#context.log.warn('operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', 'error.type': errorType(error), 'bunny.attempt_count': 1});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.device.id': device, 'bunny.operation': 'status', 'error.type': errorType(error), 'bunny.attempt_count': 1});
       return;
     }
     run.failed += 1;
@@ -684,7 +683,7 @@ export class NanoleafRuntime {
     const {error} = controlState(this.#db, device);
     if (error !== null && error !== '') return;
     this.#runs.delete(device);
-    this.#context.log.info('operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.attempt_count': run.failed,
+    recordLog(this.#context.log, 'operation.completed', {'bunny.device.id': device, 'bunny.operation': 'status', 'bunny.attempt_count': run.failed,
       'bunny.duration_ms': Math.min(86_400_000, Math.max(0, this.#context.clock.now() - run.sinceMs))});
   }
 
@@ -726,7 +725,7 @@ export class NanoleafRuntime {
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: PORT_REFUSALS[error.code] ?? OTHER_REFUSAL});
       if (error instanceof Failure) return errorBody(error.code, {requestId, detail: FAVORITE_REFUSALS[error.code]});
       if (fullDisk(error)) return errorBody('capacity', {requestId, detail: 'the module\'s store is full; nothing changed'});
-      this.#context.log.error('command.rejected', {'bunny.request.id': requestId, 'bunny.code': 'internal', 'error.type': errorType(error)}, command);
+      recordLog(this.#context.log, 'command.rejected', {'bunny.request.id': requestId, 'bunny.code': 'internal', 'error.type': errorType(error)}, command);
       return errorBody('internal', {requestId, detail: 'the module could not take the command; nothing changed'});
     }
     after();

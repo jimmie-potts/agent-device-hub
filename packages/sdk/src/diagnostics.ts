@@ -4,6 +4,7 @@
 // message or a credential.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {ErrorScope} from './in-process.js';
+import type {LogFields, Logger} from './module.js';
 import {SdkError, type TraceContext} from './sdk.js';
 
 /** ADR 0012's levels. The boundary that decides sets it; it never changes a result. */
@@ -94,8 +95,88 @@ const LEVELS: Readonly<Record<ErrorCode, DiagnosticLevel>> = {
   internal: 'error',
 };
 
-/** The level of a decision that ends with `code`, wherever it is made. */
-export const levelOf = (code: ErrorCode): DiagnosticLevel => LEVELS[code];
+/**
+ * The level of each record that has no registry code (ADR 0012 amendment of 2026-10-17, Hub #1143). This table and
+ * `LEVELS` own every level: a call site names its code or event, never a level. An event added here fails to compile
+ * until it has a level, and an event missing here cannot be recorded through `recordLog`.
+ */
+const EVENT_LEVELS = {
+  // SDK boundary decisions with a fixed level.
+  'command.admitted': 'info',
+  'command.replied': 'info',
+  'sync.served': 'info',
+  'sync.restarted': 'debug',
+  'remote.disconnected': 'warn',
+  'remote.reconnected': 'info',
+  'remote.command.uncertain': 'warn',
+  'edge.connected': 'info',
+  'edge.failed': 'error',
+  // Module and runtime records without a code: accepted work, success and recovery are INFO; failed outcomes, lost
+  // capacity and a stop that did not finish are WARN; a module or runtime fault is ERROR.
+  'assistant.call.settled': 'info',
+  'assistant.run.settled': 'info',
+  'assistant.run.started': 'info',
+  'command.completed': 'info',
+  'command.executing': 'info',
+  'command.queued': 'info',
+  'command.rejected': 'info',
+  'feed.changed': 'info',
+  'message.received': 'info',
+  'operation.completed': 'info',
+  'operation.failed': 'warn',
+  'outbox.deferred': 'warn',
+  'outbox.republished': 'info',
+  'runtime.delivery.dropped': 'warn',
+  'runtime.edge.reloaded': 'info',
+  'runtime.edge.serving': 'info',
+  'runtime.handler.failed': 'error',
+  'runtime.module.error-after-stop': 'warn',
+  'runtime.module.failed': 'error',
+  'runtime.module.refused': 'error',
+  'runtime.module.started': 'info',
+  'runtime.module.stop-failed': 'warn',
+  'runtime.module.stop-timed-out': 'warn',
+  'runtime.module.stopped': 'info',
+  'runtime.ready': 'info',
+  'runtime.started': 'info',
+  'runtime.stopped': 'info',
+  'runtime.tracing.failed': 'error',
+  'runtime.watchdog.failed': 'error',
+  'runtime.watchdog.stopped': 'error',
+} as const satisfies Record<string, DiagnosticLevel>;
+
+/** An event whose level the table owns when its record carries no registry code. */
+export type LogEvent = keyof typeof EVENT_LEVELS;
+
+/**
+ * What a record is named by for its level: a registry code or a table event. `LEVELS` and `EVENT_LEVELS` together are
+ * the DiagnosticCode table that ADR 0012's 2026-10-17 amendment makes the owner of levels.
+ */
+export type DiagnosticCode = ErrorCode | LogEvent;
+
+const isErrorCode = (value: unknown): value is ErrorCode => typeof value === 'string' && Object.hasOwn(LEVELS, value);
+
+/** The level of a decision that ends with registry `code`, or of a record of `event` that carries no code. */
+export const levelOf = (code: DiagnosticCode): DiagnosticLevel => isErrorCode(code) ? LEVELS[code] : EVENT_LEVELS[code];
+
+/**
+ * Record one log entry at the level the table gives it (see `recordLevel`). Module and runtime code logs INFO, WARN and ERROR records only through this.
+ */
+export function recordLog(log: Logger, event: LogEvent, fields: LogFields = {}, trace?: TraceContext): void {
+  log[recordLevel(event, fields)](event, fields, trace);
+}
+
+/**
+ * A record's level. A fault event (ERROR in the table) stays ERROR whatever its code, because a module or runtime fault
+ * is ERROR, and a success or recovery takes its event's level. Otherwise a registry `bunny.code` decides, raised to WARN for a failed or uncertain `bunny.outcome`, since
+ * ADR 0012 logs failed and uncertain outcomes at WARN. A record without a code takes its event's level.
+ */
+export function recordLevel(event: LogEvent, fields: LogFields = {}): DiagnosticLevel {
+  const byEvent = EVENT_LEVELS[event], code = fields['bunny.code'], outcome = fields['bunny.outcome'];
+  if (byEvent === 'error' || outcome === 'succeeded' || !isErrorCode(code)) return byEvent;
+  const byCode = LEVELS[code];
+  return (outcome === 'failed' || outcome === 'uncertain') && (byCode === 'debug' || byCode === 'info') ? 'warn' : byCode;
+}
 
 /** Receives each diagnostic. It should return promptly; a throw is ignored. */
 export type OnDiagnostic = (diagnostic: Diagnostic) => void;

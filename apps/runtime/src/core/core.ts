@@ -13,8 +13,7 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Messag
 import {
   registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {
-  type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+import {recordLog, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import type {HistoryFilter, HistoryRow} from './history.js';
@@ -490,8 +489,8 @@ class Core {
     const now = this.#clock.now();
     const fields = {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': code};
     const record = (extra: LogFields = {}): void => {
-      if (code === 'internal') this.#log.error('operation.failed', {...fields, ...extra});
-      else this.#log.warn('operation.failed', {...fields, ...extra});
+      if (code === 'internal') recordLog(this.#log, 'operation.failed', {...fields, ...extra});
+      else recordLog(this.#log, 'operation.failed', {...fields, ...extra});
     };
     if (this.#degradedSince === undefined) {
       this.#degradedSince = now;
@@ -512,7 +511,7 @@ class Core {
     if (this.#degradedSince === undefined) return;
     const duration = Math.min(MAX_DURATION_MS, Math.max(0, this.#clock.now() - this.#degradedSince));
     this.#degradedSince = undefined;
-    this.#log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'current', 'bunny.duration_ms': duration});
+    recordLog(this.#log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'current', 'bunny.duration_ms': duration});
   }
 
   /**
@@ -542,7 +541,7 @@ class Core {
       // record carries only its well-formed fields and no trace, so the record is still written.
       const checked = this.#validator.validate(message);
       if (!checked.ok || message.type !== LIFECYCLE_TYPE) {
-        this.#log.info('message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
+        recordLog(this.#log, 'message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
         return;
       }
       // A store that could not open, as on a first start on a full disk, holds nothing to check against: the owner
@@ -550,7 +549,7 @@ class Core {
       if (!this.#store.open) {
         const owner = await this.#ensureOwner();
         if (!('ingest' in owner)) {
-          this.#log.info('message.received', {...fields, ...refused(owner.code)}, message);
+          recordLog(this.#log, 'message.received', {...fields, ...refused(owner.code)}, message);
           return;
         }
       }
@@ -560,13 +559,13 @@ class Core {
         return;
       }
       if (verdict === 'conflict') {
-        this.#log.warn('message.received', {...fields, ...refused('duplicate-conflict')}, message);
+        recordLog(this.#log, 'message.received', {...fields, ...refused('duplicate-conflict')}, message);
         return;
       }
       const observation = message.data;
       if (observation.event.kind === 'metadata-observed') {
         if (message.source !== 'bunny/modules/codex-desktop') {
-          this.#log.warn('message.received', {...fields, ...refused('forbidden')}, message);
+          recordLog(this.#log, 'message.received', {...fields, ...refused('forbidden')}, message);
           return;
         }
         const key = sessionEntityId(observation.identity), nowMs = this.#clock.now();
@@ -583,7 +582,7 @@ class Core {
         }
         const cause = {message, kind: 'metadata.observed', entity: key, observation};
         const result = await this.#store.during(cause, () => this.#call(owner => owner.setTitle(observation.identity, title, observation.observedAtMs)));
-        this.#log.info('message.received', {...fields, ...(result.ok ? {'bunny.outcome': result.outcome === 'applied' ? 'accepted' : result.outcome} : refused(result.refusal.code))}, message);
+        recordLog(this.#log, 'message.received', {...fields, ...(result.ok ? {'bunny.outcome': result.outcome === 'applied' ? 'accepted' : result.outcome} : refused(result.refusal.code))}, message);
         return;
       }
       const cause = {message, kind: reducedKind(observation), entity: sessionEntityId(observation.identity), observation};
@@ -592,10 +591,10 @@ class Core {
         const outcome = result.outcome === 'duplicate' ? 'duplicate' : result.outcome === 'stale' ? 'stale' : 'accepted';
         const record = {...fields, 'bunny.outcome': outcome, 'bunny.state.revision': this.#store.revision, ...(outcome === 'stale' ? {'bunny.reason': 'stale'} : {})};
         if (outcome === 'duplicate') this.#log.debug('message.received', record, message);
-        else this.#log.info('message.received', record, message);
+        else recordLog(this.#log, 'message.received', record, message);
       } else {
         // A refusal is a domain outcome; a store that keeps refusing is the condition `#degraded` records.
-        this.#log.info('message.received', {...fields, ...refused(result.refusal.code)}, message);
+        recordLog(this.#log, 'message.received', {...fields, ...refused(result.refusal.code)}, message);
       }
       this.#schedule();
     });
@@ -614,8 +613,8 @@ class Core {
       const fields: LogFields = {'bunny.participant': command.source, 'bunny.operation': 'status', ...requestField(requestId)};
       const refuse = (code: ErrorCode, detail: string): ErrorBody => {
         // A correct consumer never sends one for another; the store's own condition is recorded by `#degraded`.
-        if (code === 'forbidden') this.#log.warn('command.rejected', {...fields, ...refused(code)}, command);
-        else this.#log.info('command.rejected', {...fields, ...refused(code)}, command);
+        if (code === 'forbidden') recordLog(this.#log, 'command.rejected', {...fields, ...refused(code)}, command);
+        else recordLog(this.#log, 'command.rejected', {...fields, ...refused(code)}, command);
         return errorBody(code, {detail});
       };
       const checked = this.#validator.validate(command);
@@ -629,7 +628,7 @@ class Core {
       const cause = {message: command, kind: 'notice.acknowledged', entity: record.id};
       const result = await this.#store.during(cause, () => this.#call(owner => owner.acknowledge(record.identity, noticeId, consumerId)));
       if (!result.ok) return refuse(result.refusal.code, result.refusal.detail);
-      this.#log.info('command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
+      recordLog(this.#log, 'command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
   }
@@ -780,7 +779,7 @@ class Core {
       const {requestId, turnId, expectedRevision} = command.data;
       const fields: LogFields = {'bunny.participant': command.source, 'bunny.operation': 'status', ...requestField(requestId)};
       const refuse = (code: ErrorCode, detail: string): ErrorBody => {
-        this.#log.info('command.rejected', {...fields, ...refused(code)}, command);
+        recordLog(this.#log, 'command.rejected', {...fields, ...refused(code)}, command);
         return errorBody(code, {detail});
       };
       const checked = this.#validator.validate(command);
@@ -797,7 +796,7 @@ class Core {
         // `not-found`; the session exists, so it is the session's state that does not allow it.
         return code === 'not-found' ? refuse('invalid-state', 'the session holds no uncertain approval without an ID on that turn') : refuse(code, detail);
       }
-      this.#log.info('command.completed', {...fields, 'bunny.outcome': 'accepted', 'bunny.state.revision': this.#store.revision}, command);
+      recordLog(this.#log, 'command.completed', {...fields, 'bunny.outcome': 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
     });
   }

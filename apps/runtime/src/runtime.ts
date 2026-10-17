@@ -5,7 +5,7 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
@@ -278,16 +278,16 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     lagCheck = {status: 'active', limitMs};
     // Started before the modules, so that a start that blocks the event loop is caught too.
     watchdog = startWatchdog(limitMs, {
-      failed: error => { log.error('runtime.watchdog.failed', errorFields(error)); },
+      failed: error => { recordLog(log, 'runtime.watchdog.failed', errorFields(error)); },
       stopped: exitCode => {
         lagCheck = {status: 'stopped', limitMs};
-        log.error('runtime.watchdog.stopped', {'bunny.exit_code': exitCode});
+        recordLog(log, 'runtime.watchdog.stopped', {'bunny.exit_code': exitCode});
       },
     }, worker, logs.resource);
   }
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   // A record carries the listener's port, never its URL.
-  log.info('runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
+  recordLog(log, 'runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   await host.start();
   const core = modules.find(isCoreModule);
   const wispr = modules.find(isWisprModule);
@@ -317,7 +317,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       throw error;
     }
     edge = {state: 'serving', gateway};
-    log.info('runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': credentials.length});
+    recordLog(log, 'runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': credentials.length});
     options.edge.onServing?.(gateway.edge);
   }
   let stopping: Promise<void> | undefined;
@@ -335,9 +335,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
         try {
           const next = await readEdgeCredentials(edgeConfig.credentials);
           gateway.reload(next);
-          log.info('runtime.edge.reloaded', {'bunny.outcome': 'succeeded', 'bunny.grant_count': next.length});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'succeeded', 'bunny.grant_count': next.length});
         } catch (error) {
-          log.error('runtime.edge.reloaded', {'bunny.outcome': 'failed', ...errorFields(error)});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'failed', 'bunny.code': 'internal', ...errorFields(error)});
           throw error;
         }
       });
@@ -356,7 +356,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       // The records this runtime's writer dropped or its sink lost, and the spans lost, so the journal shows the loss.
       const {dropped, failed} = logs.counts();
       const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
-      log.info('runtime.stopped', {
+      recordLog(log, 'runtime.stopped', {
         'bunny.telemetry.dropped_count': Math.min(Number.MAX_SAFE_INTEGER, dropped + spans.dropped),
         'bunny.telemetry.failure_count': Math.min(Number.MAX_SAFE_INTEGER, failed + spans.failed),
       });

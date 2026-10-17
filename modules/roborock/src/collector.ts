@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { errorBody, isErrorCode, type ErrorCode, } from '@jimmie-potts/event-contracts/v2';
-import { fullDisk, SdkError, type AddMessage, type Cancel, type ModuleContext, type Outbox, } from '@jimmie-potts/sdk';
+import {recordLog, fullDisk, SdkError, type AddMessage, type Cancel, type ModuleContext, type Outbox, } from '@jimmie-potts/sdk';
 import type { ReadOptions, ReadTransport, Reading, VendorJson, } from '@jimmie-potts/roborock-transport';
 import type { RoborockConfig } from './configuration.js';
 import { emptyStatus, UNKNOWN, type RunRecord, type VacuumStatus } from './contracts.js';
@@ -246,8 +246,9 @@ export class Collector {
         if (this.#reported === code)
             return;
         this.#reported = code;
-        this.#context.log[code === 'internal' ? 'error' : 'warn']('operation.failed', {
+        recordLog(this.#context.log, 'operation.failed', {
             'bunny.operation': 'status',
+            'bunny.outcome': 'failed',
             'bunny.code': code,
         });
     }

@@ -4,7 +4,7 @@
 // manager. A span's context never goes to a device or vendor.
 import {ROOT_CONTEXT, SpanKind, SpanStatusCode, trace, type Context, type Link} from '@opentelemetry/api';
 import {createHostDiagnostics} from '@jimmie-potts/bunny-observability/host';
-import {errorType, noSpans, traceFields, type LogFields, type SpanKind as Kind, type SpanRecorder, type TraceContext} from '@jimmie-potts/sdk';
+import {recordLog, errorType, noSpans, traceFields, type LogFields, type SpanKind as Kind, type SpanRecorder, type TraceContext} from '@jimmie-potts/sdk';
 import type {RuntimeLogger} from './log.js';
 import {SCHEMA_VERSION, withoutForeignIds, type Resource} from './record.js';
 
@@ -55,7 +55,7 @@ export async function startTracing(
     });
   } catch (error) {
     // Only the type: an error's code, such as a module loader's, is not part of this record.
-    log.error('runtime.tracing.failed', {'error.type': errorType(error)});
+    recordLog(log, 'runtime.tracing.failed', {'error.type': errorType(error)});
     return undefined;
   }
   return {

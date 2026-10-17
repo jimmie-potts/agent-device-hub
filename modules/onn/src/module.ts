@@ -1,7 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContentRequest, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContentRequest, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {APPS, KEYS, keyCommand, textCommand} from './actions.js';
 import {configureOnn, type OnnConfig} from './configuration.js';
 import {FAMILIES, schemaOf, types, type Family, type Input, type OnnState} from './contracts.js';
@@ -215,7 +215,7 @@ class OnnOwner {
     if (remaining <= 0 || this.#stopped) {await this.#finish(row, failure(requestId, 'expired')); return;}
     const call = this.#context.trace.start('bunny.device.call', {kind: 'client', parent: command, attributes: {'bunny.device.id': this.#config.id, 'bunny.request.id': requestId}});
     const trace = {traceparent: command.traceparent};
-    this.#context.log.info('command.executing', {'bunny.device.id': this.#config.id, 'bunny.request.id': requestId, 'bunny.routing.key': `bunny.cmd.${family}.${this.#config.id}`}, trace);
+    recordLog(this.#context.log, 'command.executing', {'bunny.device.id': this.#config.id, 'bunny.request.id': requestId, 'bunny.routing.key': `bunny.cmd.${family}.${this.#config.id}`}, trace);
     let result: Attempt;
     try {result = await this.#bounded(signal => this.#transport.execute(action, signal, () => {
       // Transport preparation may yield. Check the live guard and fence at its effect write.
@@ -248,7 +248,7 @@ class OnnOwner {
     this.#pending.delete(row.requestId);
     try {await this.#commitOutcome(row, outcome, connection);} catch {
       // Its accepted/started fence remains. Restart settles it; no effect is retried.
-      this.#context.log.warn('command.completed', {'bunny.device.id': this.#config.id, 'bunny.request.id': row.requestId, 'bunny.outcome': 'uncertain', 'bunny.code': 'internal'}, row);
+      recordLog(this.#context.log, 'command.completed', {'bunny.device.id': this.#config.id, 'bunny.request.id': row.requestId, 'bunny.outcome': 'uncertain', 'bunny.code': 'internal'}, row);
     }
   }
   async #commitOutcome(row: RequestRow, outcome: CompletedOutcome, connection?: Attempt['connection']): Promise<void> {

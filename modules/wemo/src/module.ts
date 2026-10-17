@@ -2,7 +2,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody,type ErrorBody,type ErrorCode,type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome,DeviceRecord,PowerSetRequest} from '@jimmie-potts/event-contracts/v2/devices';
-import {DeviceAvailability,fullDisk,Outbox,type AddMessage,type BunnyModule,type Cancel,type Command,type ModuleContext,type Reply,type TraceContext} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability,fullDisk,Outbox,type AddMessage,type BunnyModule,type Cancel,type Command,type ModuleContext,type Reply,type TraceContext} from '@jimmie-potts/sdk';
 import {configureWemo,type WemoConfig} from './configuration.js';
 import {wemoValidator,RELEASE,RELEASE_SCHEMA,RELEASE_TYPE} from './families.js';
 import {acquireLease,type Lease} from './lease.js';
@@ -63,7 +63,7 @@ class Owner {
     if(this.#storageDown)return;
     this.#storageDown=true;
     for(const item of this.#targets.values()){item.poll?.();item.stale?.();}
-    this.#context.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',...(target===undefined?{}:{'bunny.device.id':target.config.id}),...(requestId===undefined?{}:{'bunny.request.id':requestId})},parent);
+    recordLog(this.#context.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',...(target===undefined?{}:{'bunny.device.id':target.config.id}),...(requestId===undefined?{}:{'bunny.request.id':requestId})},parent);
   }
   #guard(target:Target,command:Command<Input>,release:boolean):ErrorBody|undefined{
     const value=command.data,now=this.#context.clock.now(),record=target.record;
@@ -87,7 +87,7 @@ class Owner {
       this.#store.save({requestId:id,target:target.config.id,family,digest,traceparent:command.traceparent,state:'accepted'});
       target.pending.set(id,{family,command});this.#record(add,target,command);accepted=true;answer={status:'accepted'};
     },target,command,command.data.requestId);}catch(error){target.pending.delete(id);return errorBody(fullDisk(error)?'capacity':'internal');}
-    if(accepted){this.#context.log.info('command.queued',{'bunny.device.id':target.config.id,'bunny.request.id':id},command);target.queue.push({family,command});this.#drain(target);}
+    if(accepted){recordLog(this.#context.log, 'command.queued',{'bunny.device.id':target.config.id,'bunny.request.id':id},command);target.queue.push({family,command});this.#drain(target);}
     return answer;
   }
   #drain(target:Target):void{
@@ -105,7 +105,7 @@ class Owner {
     try{await this.#transaction(()=>{const live=this.#store.get(row.requestId);if(live?.state!=='accepted'||live.digest!==row.digest)throw new Error('Wemo fence changed');this.#store.save({...row,state:'started'});},target,command,command.data.requestId);}
     catch(error){await this.#finish(target,row,completed(row.requestId,fullDisk(error)?'capacity':'internal'));return;}
     const trace=this.#context.trace.start('bunny.device.call',{parent:command,kind:'client',attributes:{'bunny.device.id':target.config.id,'bunny.operation':release?'snapshot':'power'}});
-    this.#context.log.info('command.executing',{'bunny.device.id':target.config.id,'bunny.request.id':row.requestId},command);
+    recordLog(this.#context.log, 'command.executing',{'bunny.device.id':target.config.id,'bunny.request.id':row.requestId},command);
     let attempt:Attempt;
     try{
       const remaining=Math.min(ACTION_LIMIT_MS,Date.parse(command.expiresat??'')-this.#context.clock.now());

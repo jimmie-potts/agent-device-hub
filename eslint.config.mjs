@@ -135,6 +135,20 @@ export default defineConfig(
     },
   },
   {
+    // ADR 0012 amendment of 2026-10-17 (Hub #1143): the SDK code table owns INFO, WARN and ERROR levels, so module and
+    // runtime code records them through recordLog, never by naming a level at the call site.
+    name: 'bunny/log-levels',
+    files: ['modules/*/src/**/*.{ts,tsx}', 'apps/runtime/src/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...['log', '#log'].flatMap(name => [
+        {selector: `CallExpression > MemberExpression.callee[computed=false][property.name=/^(info|warn|error)$/][object.name='${name}']`, message: 'Record INFO, WARN and ERROR through recordLog from @jimmie-potts/sdk; the code table owns the level.'},
+        {selector: `CallExpression > MemberExpression.callee[computed=false][property.name=/^(info|warn|error)$/][object.property.name='${name}']`, message: 'Record INFO, WARN and ERROR through recordLog from @jimmie-potts/sdk; the code table owns the level.'},
+        {selector: `CallExpression > MemberExpression.callee[computed=true][property.type=/^(ConditionalExpression|Literal|CallExpression)$/][object.name='${name}']`, message: 'Record through recordLog from @jimmie-potts/sdk instead of choosing a log level at the call site.'},
+        {selector: `CallExpression > MemberExpression.callee[computed=true][property.type=/^(ConditionalExpression|Literal|CallExpression)$/][object.property.name='${name}']`, message: 'Record through recordLog from @jimmie-potts/sdk instead of choosing a log level at the call site.'},
+      ])],
+    },
+  },
+  {
     name: 'bunny/strict',
     files: strict,
     ignores: staged,

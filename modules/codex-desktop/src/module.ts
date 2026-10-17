@@ -11,7 +11,7 @@
 import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {DeviceAvailability, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
 import {configureCodexDesktop, type CodexDesktopConfig} from './configuration.js';
 import {readEvidence, readObservation, type Evidence} from './evidence.js';
 import type {MarkerRead, MarkerTransport} from './transport.js';
@@ -162,14 +162,14 @@ class DesktopRun {
     this.#resyncDelayMs = RESYNC_FIRST_MS;
     if (this.#feedDown) {
       this.#feedDown = false;
-      this.#context.log.info('operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
     }
   }
 
   #feedLost(code: ErrorCode): void {
     if (!this.#feedDown) {
       this.#feedDown = true;
-      this.#context.log.warn('operation.failed', {'bunny.operation': 'feed', 'bunny.code': code});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'feed', 'bunny.code': code});
     }
     if (this.#closing || this.#resync !== undefined) return;
     const delayMs = this.#resyncDelayMs;
@@ -232,7 +232,7 @@ class DesktopRun {
       this.#track(this.#settled(deadline, read).finally(() => { this.#reading = false; }));
     };
     void reading.then(settled, () => { settled(undefined); }).catch((error: unknown) => {
-      this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
   }
 
@@ -289,8 +289,8 @@ class DesktopRun {
     if (this.#usable === usable) return;
     const before = this.#usable;
     this.#usable = usable;
-    if (!usable) this.#context.log.warn('operation.failed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'unavailable', 'bunny.reason': 'invalid-input'});
-    else if (before === false) this.#context.log.info('operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'current'});
+    if (!usable) recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'unavailable', 'bunny.reason': 'invalid-input'});
+    else if (before === false) recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'current'});
   }
 
   /** Metadata is independent of marker usability. Archive absence/unavailability clears earlier positives. */
@@ -391,7 +391,7 @@ class DesktopRun {
   /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once, by type. */
   #track(work: Promise<void>): void {
     const tracked = work.catch((error: unknown) => {
-      this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
     this.#work.add(tracked);
     void tracked.finally(() => { this.#work.delete(tracked); });

@@ -4,6 +4,7 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import type {RemoteEdge} from '@jimmie-potts/sdk';
+import {recordLog} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
 import {INSTANCE_ID, LogWriter, Redactions, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
@@ -157,7 +158,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   if (reloadPending) void runtime.reload().catch(() => {});
   // The ready line is machine-readable stdout with its own contract, which readiness checks parse; the record is the
   // journal's.
-  log.info('runtime.ready', {'bunny.module_count': options.modules.length});
+  recordLog(log, 'runtime.ready', {'bunny.module_count': options.modules.length});
   process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtime.url})}\n`);
 }
 

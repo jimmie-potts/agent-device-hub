@@ -178,7 +178,7 @@ class RemoteClient {
           subscribe: (pattern, deliver, subscribeOptions) => this.#subscribe(pattern, deliver, subscribeOptions),
           request: outgoing => this.#syncRequest(outgoing),
           report: error => { this.#report(error, `sync ${families.join(',')}`); },
-          restarted: () => { this.#diagnose({event: 'sync.restarted', level: 'debug', source, pattern: `sync ${families.join(',')}`}); },
+          restarted: () => { this.#diagnose({event: 'sync.restarted', level: levelOf('sync.restarted'), source, pattern: `sync ${families.join(',')}`}); },
           track: copy => {
             this.#copies.add(copy);
             return () => { this.#copies.delete(copy); };
@@ -277,7 +277,7 @@ class RemoteClient {
   /** A lost stream: reconnect, register again, then tell every subscription of the gap. Nothing is replayed. */
   #lost(controller: AbortController): void {
     if (this.#closed || controller !== this.#stream) return;
-    this.#diagnose({event: 'remote.disconnected', level: 'warn', source: this.#source});
+    this.#diagnose({event: 'remote.disconnected', level: levelOf('remote.disconnected'), source: this.#source});
     this.#connected = this.#reconnect();
     this.#connected.catch(() => {});
   }
@@ -316,7 +316,7 @@ class RemoteClient {
           registered();
         }
         this.#delayMs = this.#firstDelayMs;
-        this.#diagnose({event: 'remote.reconnected', level: 'info', source: this.#source, attempts});
+        this.#diagnose({event: 'remote.reconnected', level: levelOf('remote.reconnected'), source: this.#source, attempts});
         return connection;
       } catch (error) {
         attempts += 1;
@@ -490,7 +490,7 @@ class RemoteClient {
       }, {signal: abandon.signal, answer: abandoned});
       if (own.has(result)) {
         this.#diagnose({
-          event: 'remote.command.uncertain', level: 'warn', source: this.#source, key, requestId, messageId: command.id, outcome: 'uncertain',
+          event: 'remote.command.uncertain', level: levelOf('remote.command.uncertain'), source: this.#source, key, requestId, messageId: command.id, outcome: 'uncertain',
           code: 'uncertain-result', trace: {traceparent: command.traceparent},
         });
       }

@@ -5,7 +5,7 @@ import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {Outbox, fullDisk, levelOf, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
+import {recordLog, Outbox, fullDisk, levelOf, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
@@ -123,7 +123,7 @@ class Companions {
     if (!checked.ok || message.source !== 'bunny/core' || message.data.context !== 'live') {
       const code = message.source !== 'bunny/core' || checked.ok ? 'forbidden' : checked.error.code;
       if (message.source === 'bunny/core') this.#decision('invalid-input', message, false, code);
-      else context.log[levelOf(code)]('message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
+      else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
       return;
     }
     this.#enqueue({event: structuredClone(message.data), parent: {traceparent: message.traceparent}});
@@ -220,9 +220,9 @@ class Companions {
     // No card is generated. A failed decision save cannot affect core attention or retry the opportunity.
     void outbox.transaction(add => {store.save(saved); add('bunny.state.companion-state.reachy', {kind: 'state', ...stateDraft(saved.state)},
       parent === undefined ? {} : {parent});}).catch(() => {});
-    if (unavailable) context.log.warn('message.received', {'bunny.operation': 'status', 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, parent);
-    else if (rejection !== undefined) context.log[levelOf(rejection)]('message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': rejection}, parent);
-    else context.log.info('message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : 'rejected'}, parent);
+    if (unavailable) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, parent);
+    else if (rejection !== undefined) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': rejection}, parent);
+    else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : 'rejected'}, parent);
   }
   #admit(command: Command<object>): ErrorCode | undefined {
     const context = this.#context;

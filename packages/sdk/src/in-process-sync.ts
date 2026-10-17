@@ -210,7 +210,7 @@ function decisionOf(request: Message<SyncRequest>, answer: SyncAnswer): Diagnost
     source: request.source, pattern: `sync ${request.data.families.join(',')}`, requestId: request.data.requestId, messageId: request.id,
     trace: {traceparent: request.traceparent},
   };
-  if (answer.status === 'served') return {event: 'sync.served', level: 'info', outcome: 'succeeded', ...facts};
+  if (answer.status === 'served') return {event: 'sync.served', level: levelOf('sync.served'), outcome: 'succeeded', ...facts};
   const {code} = answer.error.error;
   return {event: 'sync.refused', level: levelOf(code), outcome: code === 'cancelled' ? 'cancelled' : 'rejected', code, ...facts};
 }

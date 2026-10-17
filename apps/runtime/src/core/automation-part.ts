@@ -4,7 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {levelOf,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
+import {recordLog, levelOf,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
@@ -104,9 +104,9 @@ export class AutomationPart implements CorePart {
       targets:()=>this.#configured.filter(device=>this.#device(device.id)?.capabilities.power.supported===true).map(device=>device.id),
       owner:id=>this.#configured.find(device=>device.id===id)?.owner,
       read:id=>Promise.resolve(structuredClone(this.#device(id))),current:id=>this.#device(id),
-      refused:(requestId,parent)=>handle.log[levelOf('unavailable')]('command.rejected',{'bunny.participant':'bunny/core',
+      refused:(requestId,parent)=>recordLog(handle.log, 'command.rejected',{'bunny.participant':'bunny/core',
         'bunny.request.id':requestId,'bunny.outcome':'rejected','bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
-      failed:(requestId,parent,target)=>handle.log.error('operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',
+      failed:(requestId,parent,target)=>recordLog(handle.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',
         'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.power-set.${target}`},parent),
       send:async(target:string,on:boolean,record:DeviceRecord,requestId:string,parent:import('@jimmie-potts/sdk').TraceContext)=>{
         const answer=await handle.dispatch({requestId,key:`bunny.cmd.power-set.${target}`,requestedBy:'bunny/core',parent,

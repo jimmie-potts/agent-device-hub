@@ -8,6 +8,7 @@
 // showed them, and it reports each write that reached the device, with the command it served. A write made for a
 // command records a `bunny.device.call` span in that command's trace. Its context never reaches the device.
 import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, Tracing} from '@jimmie-potts/sdk';
+import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
 import {HttpError, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
 
@@ -181,12 +182,12 @@ export class DeviceLink {
     const {log} = this.#options;
     if (refusal !== undefined) {
       if (this.status !== 'refusing') {
-        log.warn('operation.failed', {'bunny.device.id': this.device, 'bunny.operation': 'status', 'bunny.code': refusal === 401 ? 'unauthenticated' : 'forbidden'});
+        recordLog(log, 'operation.failed', {'bunny.device.id': this.device, 'bunny.operation': 'status', 'bunny.code': refusal === 401 ? 'unauthenticated' : 'forbidden'});
       }
       this.status = 'refusing';
       return;
     }
-    if (this.status === 'refusing') log.info('operation.completed', {'bunny.device.id': this.device, 'bunny.operation': 'status', 'bunny.outcome': 'current'});
+    if (this.status === 'refusing') recordLog(log, 'operation.completed', {'bunny.device.id': this.device, 'bunny.operation': 'status', 'bunny.outcome': 'current'});
     this.status = 'reached';
   }
 
