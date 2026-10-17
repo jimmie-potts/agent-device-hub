@@ -71,6 +71,8 @@ export default defineConfig(
       'docs/system-design/reference/assets/**', 'docs/system-design/reference/database/**',
       // Saved source copies from other repositories, kept as architecture evidence.
       'docs/diagrams/legacy/sources/**',
+      // Type-error fixtures that must not compile; packages/sdk/tests/evidence.test.ts checks them with tsc.
+      'packages/sdk/tests/fixtures/evidence/**',
     ],
   },
   {
