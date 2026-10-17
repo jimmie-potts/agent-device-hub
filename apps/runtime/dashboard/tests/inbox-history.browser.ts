@@ -25,7 +25,7 @@ try {
     await panel.getByText('No commands need handling.').waitFor();
     assert.equal(sent.length, 1, 'one explicit resend handling command');
     assert.ok(world.logs.some(record => record.event_name === 'command.completed' && record.attributes['bunny.outcome'] === 'succeeded'));
-    await page.getByRole('link', {name: /pendant/i}).first().click();
+    await page.goto(`${world.url}/#/component/pendant-1`); await feed(page, 'connected');
     const card = page.locator('[data-device="pendant-1"]');
     const off = card.getByRole('button', {name: 'Turn off', exact: true});
     await off.waitFor(); await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-device="pendant-1"] button')?.disabled === false);

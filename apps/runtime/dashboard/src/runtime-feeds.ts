@@ -1,10 +1,12 @@
 // Device owners, operations and playback share the dashboard's existing participant; no second connection or polling.
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {LightingLayoutRecord, InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {LifxLight} from '@jimmie-potts/lifx';
+import type {WallRecord} from '@jimmie-potts/nanoleaf/frontend';
 import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {mayControl, moduleOwner, readModules, type ModuleEntry} from './modules.ts';
-export type RuntimeRecord = DeviceRecord | OperationRecord | PlaybackState | ModeState | InboxItem | PowerLimitRecord;
-export type RuntimeCopy = {owner: string; family: 'device' | 'operation' | 'playback' | 'mode' | 'inbox-item' | 'power-limit'; synced: boolean; records: readonly RuntimeRecord[]; refused?: string};
+export type RuntimeRecord = DeviceRecord | OperationRecord | PlaybackState | ModeState | InboxItem | PowerLimitRecord | LightingLayoutRecord | LifxLight | WallRecord;
+export type RuntimeCopy = {owner: string; family: 'device' | 'operation' | 'playback' | 'mode' | 'inbox-item' | 'power-limit' | 'lighting-layout' | 'lifx-light' | 'nanoleaf-wall'; synced: boolean; records: readonly RuntimeRecord[]; refused?: string};
 export type RuntimeData = {modules: readonly ModuleEntry[] | undefined; control: boolean; copies: readonly RuntimeCopy[]; catalogFailed: boolean};
 type Follow = {state: RuntimeCopy; copy?: SyncedCopy<RuntimeRecord> | undefined; epoch: number; retryMs: number; cancel: () => void};
 
@@ -27,6 +29,7 @@ export class RuntimeFeeds {
       if (this.#closed) return;
       this.#state = {...this.#state, modules, control, catalogFailed: false};
       this.#follows = modules.flatMap(module => module.serves.flatMap(family => family === 'device' || family === 'operation' || family === 'playback' || family === 'mode' || family === 'inbox-item' || family === 'power-limit'
+        || (family === 'lighting-layout' && module.name === 'core') || (family === 'lifx-light' && module.name === 'lifx') || (family === 'nanoleaf-wall' && module.name === 'nanoleaf')
         ? [{state: {owner: moduleOwner(module.name), family, synced: false, records: []}, epoch: 0, retryMs: 1000, cancel: () => {}}] : []));
       this.#show();
       await Promise.all(this.#follows.map(follow => this.#sync(follow)));

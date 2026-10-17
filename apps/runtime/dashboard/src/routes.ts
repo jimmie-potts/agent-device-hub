@@ -6,6 +6,8 @@
  */
 export type Route =
   | {kind: 'home'}
+  | {kind: 'lighting-brand'; brand: string}
+  | {kind: 'rooms'}
   | {kind: 'timeline'}
   | {kind: 'automation'}
   | {kind: 'component'; id: string}
@@ -35,6 +37,8 @@ export function parseRoute(hash: string): Route {
   const parts = path.slice(1).split('/').map(decode);
   const [first, second, third] = parts;
   if (parts.length === 3 && first === 'module' && second !== undefined && third !== undefined && second !== '' && third !== '') return {kind: 'module', module: second, page: third};
+  if (parts.length === 1 && first === 'rooms') return {kind: 'rooms'};
+  if (parts.length === 2 && first === 'lights' && second !== undefined && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(second)) return {kind: 'lighting-brand', brand: second};
   if (parts.length === 1 && first === 'timeline') return {kind: 'timeline'};
   if (parts.length === 1 && first === 'automation') return {kind: 'automation'};
   if (parts.length === 1 && first === 'connections') return {kind: 'connections'};
@@ -48,6 +52,8 @@ export function routeHash(route: Route): string {
   switch (route.kind) {
     case 'home':
       return '#/';
+    case 'rooms': return '#/rooms';
+    case 'lighting-brand': return `#/lights/${encodeURIComponent(route.brand)}`;
     case 'timeline': return '#/timeline';
     case 'automation': return '#/automation';
     case 'module':

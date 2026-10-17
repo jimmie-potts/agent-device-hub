@@ -44,7 +44,7 @@ Actual phone/certificate verification is separate from desktop browser tests.
 ## Pages, routes and widgets
 
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
-home, `#/connections`, `#/component/<device>`, `#/music/<source>` and
+home, `#/lights/<brand>` and `#/rooms` for lighting, `#/connections`, `#/component/<device>`, `#/music/<source>` and
 `#/module/<module>/<page>`. `src/routes.ts` parses a hash into a discriminated
 route, so built-in pages and component aliases are distinct kinds and an alias
 of `activity` or `connections` opens only that component
@@ -68,6 +68,40 @@ saved choice separately from each device's result for the most recent completed
 selection request. Current mode evidence and control authority enable the
 buttons, including explicit same-mode reapplication. A lost reply stays
 uncertain; reload, reconnect and restart never resend a selection.
+
+## Reusable lighting
+
+`LightCard` renders the same glass surface on Home, brand pages and Rooms.
+It receives a resolved target, capabilities, artwork, options and an action
+callback. Power, Color, Scenes and Timer tabs replace only the controls; the
+artwork stays mounted. Arrow keys, Home and End select tabs, and reduced motion
+removes the flip. Drag handles and the Group with selector perform the same
+layout edit. Each brand has its own grouping scope; Home permits mixed brands.
+
+`lighting.ts` resolves device, custom-group and current room membership and
+prepares guarded actions only after every member passes freshness, ownership,
+capability, hold and operation checks. `LightingWorkspace` owns composition and
+binds each light to the existing retained-attempt hook. It never creates a
+second participant or retries an uncertain action. Per-light outcomes remain
+separate: a group is not an atomic device transaction. Advanced device and
+module routes retain mode selection, hold recovery and wall editing.
+
+The core owns `lighting-layout` and the tracked operator command
+`lighting-layout-set`. Rooms, assignments, groups and Home selections live in
+its private database, with revision-checked atomic replacement. The empty layout
+uses automatic discovery; explicit Home selections can include room cards.
+A room resolves its current assignments even after adding it to Home. Removing
+its Home card preserves the room. Missing device references stay visible and
+block group commands. A conflict requires reading the current layout before a
+new explicit save; lost replies retain their request identity without replay.
+
+Only declared module capabilities enable controls. The qualified LIFX model
+supports color and temperature; temperature preserves saturation, so Use white
+is a separate explicit color command. Beam remains unsupported. Scenes are
+native IDs common to every member in its current mode; no sample mood is sent
+to hardware. The Timer tab explains that off timers are unavailable. Nanoleaf
+exports its read-only artwork component through the public frontend entry and
+uses saved geometry. Other artwork and missing geometry use labelled placeholders.
 
 ## Module interfaces
 

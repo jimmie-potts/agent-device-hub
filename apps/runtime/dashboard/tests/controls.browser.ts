@@ -72,10 +72,13 @@ try {
     await page.getByRole('link', {name: 'Home', exact: false}).first().click(); await axe();
     await screenshot('phone-home');
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
-    await page.reload(); await feed(page, 'connected');
+    await page.goto(`${world.url}/#/component/pendant-1`); await page.reload(); await feed(page, 'connected');
     await card.getByText('Your session is read-only.').waitFor();
     assert.equal(await card.getByRole('button').count(), 0, 'read-only callers see no write controls');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({journey: 'controls-navigation', actions: sent.length, acceptedThenCompleted: true, uncertainLockedAfterReload: true, modulePage: true, keyboard: true, axe: 'desktop and phone passed'}));
   } finally { await context.close(); }
 } finally { await browser?.close(); await world.close(); }
+
+// This suite also exercises the shared lighting composition against its own disposable world.
+await import('./lighting.browser.ts');

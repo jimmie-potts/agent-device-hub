@@ -55,6 +55,8 @@ export type WorldOptions = {
   modeDevices?: boolean;
   /** Adds only simulated bulbs and the configured sign for the controls journey. */
   devices?: boolean;
+  /** Three qualified synthetic lamps and an unsupported Beam for reusable lighting acceptance. */
+  lighting?: boolean;
   /** Adds the real Nanoleaf module over synthetic Lines for module editor and Automation journeys. */
   nanoleaf?: boolean;
   inbox?: boolean;
@@ -85,6 +87,7 @@ export type World = {
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
   runtime(): Runtime;
+  lifxState(): ReturnType<SimulatedLifx['state']>;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
@@ -129,6 +132,7 @@ async function writePrivate(file: string, text: string): Promise<void> {
 /** The runtime, the core, its gateway and the hook, in a private directory. */
 export async function startWorld(options: WorldOptions = {}): Promise<World> {
   assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
+  const withDevices = options.devices === true || options.lighting === true;
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));
   const stateDir = join(root, 's');
   const configDir = join(root, 'c');
@@ -161,7 +165,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     }, close: () => {},
   })};
   const signToken = join(configDir, 'sign-token');
-  if (options.devices === true) await writePrivate(signToken, SYNTHETIC_TOKEN);
+  if (withDevices) await writePrivate(signToken, SYNTHETIC_TOKEN);
   const nanoleafToken = join(configDir, 'nanoleaf-token');
   if (options.nanoleaf === true) await writePrivate(nanoleafToken, NANOLEAF_TOKEN);
   const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, Date.now(), {
@@ -172,7 +176,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
-    ...options.devices === true ? {lifx: LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
+    ...withDevices ? {lifx: options.lighting === true ? {bulbs: [...['a', 'b', 'c'].map((suffix, index) => ({...LIFX_SIMULATED_SECTION.bulbs[0], id: `lamp-${suffix}`, address: `192.0.2.${42 + index}`})), LIFX_SIMULATED_SECTION.bulbs[1]]} : LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
     ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
@@ -199,12 +203,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(options.devices === true ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...options.devices === true ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime = await start(0);
   const port = Number(new URL(runtime.url).port);
@@ -248,6 +252,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       });
       await response.arrayBuffer(); return response.status;
     },
+    lifxState: () => bulbs.state(),
     pixooState: () => panel.state(),
     wisprPrivacy: (expose, text) => { wispr.privacy(expose, text); },
     readonlyWispr: async ref => {

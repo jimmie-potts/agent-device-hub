@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/lighting-layout-set/2.0",
+  "description": "Tracked operator command replacing private lighting metadata at an exact prior revision. It sends no light command (Hub #1135).",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "expectedRevision", "layout"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "layout": {"$ref": "https://bunny.invalid/events/lighting-layout/2.0#/$defs/layout"}
+  }
+}

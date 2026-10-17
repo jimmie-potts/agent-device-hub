@@ -183,15 +183,14 @@ try {
 
     // Observe power before publishing active tasks that legitimately start Work rendering.
     await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
-    const card = page.locator('[data-device="wall"]'); await card.waitFor();
+    const card = page.locator('[data-light-card="wall"]'); await card.waitFor();
     for (const on of [false, true]) {
       world.nanoleafPower(on);
       try {
-        await page.waitForFunction(wanted => Array.from(document.querySelectorAll('[data-device="wall"] .facts > div')).some(row =>
-          row.querySelector('dt')?.textContent === 'Observed power' && row.querySelector('dd')?.textContent === wanted), String(on), {timeout: 15_000});
+        await page.waitForFunction(wanted => document.querySelector('[data-light-card="wall"] .light-card-heading p')?.textContent?.includes(wanted), on ? 'On · observed' : 'Off · observed', {timeout: 15_000});
       } catch (error) {
         await screenshot('nanoleaf-power-failure');
-        process.stdout.write(`${JSON.stringify({checkpoint: 'power', wanted: on, simulation: effect(), facts: await card.locator('.facts').innerText()})}\n`);
+        process.stdout.write(`${JSON.stringify({checkpoint: 'power', wanted: on, simulation: effect(), facts: await card.locator('.light-card-heading').innerText()})}\n`);
         throw error;
       }
       assert.equal(world.nanoleafState().devices[LINES_ADDRESS]?.on, on, 'the Home card matches the actual simulated observation');

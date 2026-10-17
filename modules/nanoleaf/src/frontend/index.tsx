@@ -135,3 +135,6 @@ function Wall({context}: {context: FrontendContext}): React.JSX.Element {
 }
 
 export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 'wall', Component: Wall}]};
+
+export type {WallRecord} from './model.js';
+export {NanoleafLightVisual} from './light-visual.js';

@@ -22,6 +22,7 @@ import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
+import {LightingLayoutPart} from './lighting-layout.js';
 import {AutomationError} from './automation.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
@@ -273,7 +274,12 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, this.#automation, this.#companions, ...added];
+    const lightingLayout = new LightingLayoutPart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    });
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, this.#automation, this.#companions, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);

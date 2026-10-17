@@ -1,4 +1,6 @@
 import {assistantFamilies} from './assistant.js';
+import {lightingLayoutFamilies} from './lighting-layout.js';
+export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, LightingRoom, LightingGroup, LightingSelection} from './lighting-layout.js';
 // The core payload families of profile 2.0 (Hub #842, #918): the facts every module can rely on, and the commands
 // that change them. Each payload schema lives in `schemas/v2/families/<family>.schema.json` and is built from the
 // shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
@@ -291,6 +293,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
   ...companionFamilies,
   ...assistantFamilies,
+  ...lightingLayoutFamilies,
 ];
 
 /**
