@@ -1,6 +1,6 @@
 // The code table owns log levels (ADR 0012 amendment of 2026-10-17, Hub #1143).
 import assert from 'node:assert/strict';
-import {levelOf, recordLog, type Logger} from '../src/index.js';
+import {levelOf, recordLevel, recordLog, type Logger} from '../src/index.js';
 import {it} from './support.js';
 
 function recorder(): {log: Logger; records: [string, string, Readonly<Record<string, unknown>> | undefined][]} {
@@ -39,4 +39,14 @@ it('an event outside the table cannot be recorded', () => {
     levelOf('warn');
   };
   assert.equal(typeof forbidden, 'function');
+});
+
+it('a failed or uncertain outcome is at least WARN, with or without a code (ADR 0012)', () => {
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'failed'}), 'warn');
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'uncertain'}), 'warn');
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'failed', 'bunny.code': 'internal'}), 'error');
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'failed', 'bunny.code': 'invalid-request'}), 'warn');
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'duplicate'}), 'info');
+  assert.equal(recordLevel('runtime.edge.refused', {'bunny.code': 'internal'}), 'error');
+  assert.equal(recordLevel('runtime.edge.refused', {'bunny.code': 'forbidden'}), 'warn');
 });

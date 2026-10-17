@@ -152,11 +152,11 @@ export default defineConfig(
     rules: {'no-restricted-syntax': ['error', ...namedLevel, ...computedLevel]},
   },
   {
-    // Writers that pass a level straight through from the SDK table (recordLevel or levelOf), never choosing one:
-    // the runtime's diagnostics sink, the gateway's refusal records and the core tracker. Only the computed form is
-    // lifted here; a named log.info/warn/error is still refused.
+    // The one writer that passes a level straight through: the runtime's diagnostics sink forwards the level the SDK
+    // producer took from the table (levelOf). Only the computed form is lifted here; a named log.info/warn/error is
+    // still refused. The gateway refusals and the core tracker derive their levels with recordLog (Hub #1143).
     name: 'bunny/log-levels/table-pass-through',
-    files: ['apps/runtime/src/diagnostics.ts', 'apps/runtime/src/gateway/refusals.ts', 'apps/runtime/src/core/tracker.ts'],
+    files: ['apps/runtime/src/diagnostics.ts'],
     rules: {'no-restricted-syntax': ['error', ...namedLevel]},
   },
   {

@@ -27,7 +27,7 @@ import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type Error
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
   PrivateRequestDigest, SdkError,
-  acknowledgmentOf, levelOf, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
+  acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing,
 } from '@jimmie-potts/sdk';
 import {REGISTRY_REASONS} from '../diagnostics.js';
@@ -317,7 +317,7 @@ export class Tracker {
     const requestId = action.requestId ?? randomUUID();
     const refuse = (code: ErrorCode, detail: string): ErrorBody => {
       const body = errorBody(code, {...ID.test(requestId) ? {requestId} : {}, detail});
-      this.#record(levelOf(code), 'command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': 'rejected', ...refusedFields(code)});
+      this.#record('command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': 'rejected', ...refusedFields(code)});
       return body;
     };
     const parsed = KEY.exec(action.key);
@@ -388,7 +388,7 @@ export class Tracker {
     const admission: Admission | undefined = operator || family === 'mode-set' ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
     if (admission !== undefined) this.#admitted.set(requestId, admission);
     this.#schedule();
-    this.#record('info', 'command.queued', {...fields, 'bunny.outcome': 'queued'}, span);
+    this.#record('command.queued', {...fields, 'bunny.outcome': 'queued'}, span);
     let result: RequestResult;
     try {
       result = await sdk.request(action.key, {...draft, data}, {timeoutMs: DEADLINES[kind].replyMs, requestId, parent: span});
@@ -400,9 +400,9 @@ export class Tracker {
     const replied = await this.#apply(requestId, replyEvent(result, clock.now()));
     const answer: ActionAnswer = result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
     if (replied === undefined) return answer;
-    if (result.status === 'accepted') this.#record('info', 'command.admitted', {...fields, 'bunny.outcome': 'accepted'}, span);
-    else if (result.status === 'rejected') this.#record(levelOf(result.error.error.code), 'command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(result.error.error.code)}, span);
-    else this.#record('warn', 'command.completed', {...fields, 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, span);
+    if (result.status === 'accepted') this.#record('command.admitted', {...fields, 'bunny.outcome': 'accepted'}, span);
+    else if (result.status === 'rejected') this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(result.error.error.code)}, span);
+    else this.#record('command.completed', {...fields, 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, span);
     return answer;
   }
 
@@ -418,10 +418,10 @@ export class Tracker {
         : earlier.payload?.status === 'omitted' && earlier.payload.hmac === payload.hmac);
     const fields = {'bunny.participant': action.requestedBy, ...requestField(requestId)};
     if (!same) {
-      this.#record('warn', 'command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, earlier);
+      this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, earlier);
       return errorBody('duplicate-conflict', {requestId, detail: 'another action already used this request ID'});
     }
-    this.#record('info', 'command.completed', {...fields, 'bunny.outcome': 'duplicate'}, earlier);
+    this.#record('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, earlier);
     if (earlier.reply === 'accepted') return {status: 'accepted', requestId};
     if (earlier.reply !== undefined && earlier.error !== undefined && (earlier.status === 'rejected' || earlier.status === 'expired')) return {error: earlier.error};
     return errorBody('uncertain-result', {requestId, detail: 'the action with this request ID has no known reply; it is never sent again'});
@@ -583,7 +583,7 @@ export class Tracker {
 
   /** An outcome, occurrence or removal the group took: accepted work at INFO once it commits, or refused with the commit. */
   #settled(message: Message<unknown>, fields: LogFields, refusal: Refused | undefined): void {
-    if (refusal === undefined) this.#record('info', 'message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
+    if (refusal === undefined) this.#record('message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
     else this.#refused(message, fields, refusal.code);
   }
 
@@ -592,7 +592,8 @@ export class Tracker {
    * as a crash's resend, is a duplicate observation, at DEBUG.
    */
   #duplicate(message: Message<unknown>, fields: LogFields): void {
-    this.#record(message.kind === 'outcome' ? 'info' : 'debug', 'message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
+    if (message.kind === 'outcome') this.#record('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
+    else this.#debug('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
   }
 
   /** Acknowledges an outcome history already holds again, directly, with no durable work. */
@@ -603,7 +604,7 @@ export class Tracker {
 
   /** A refused message's intake record, at its code's level. */
   #refused(message: Message<unknown>, fields: LogFields, code: ErrorCode): void {
-    this.#record(levelOf(code), 'message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(code)}, message);
+    this.#record('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(code)}, message);
   }
 
   /**
@@ -612,7 +613,7 @@ export class Tracker {
    * a state's change shows in its entity's next one.
    */
   #overflowed(dropped: number | undefined): void {
-    this.#record(levelOf('capacity'), 'operation.failed', {
+    this.#record('operation.failed', {
       'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
       ...(dropped === undefined ? {} : {'bunny.delivery.dropped_count': dropped}),
     });
@@ -620,8 +621,7 @@ export class Tracker {
 
   /** The record of an outcome that advanced an action: INFO for success, WARN for a failed, uncertain or conflicting result. */
   #completed(operation: Operation, data: CompletedOutcome): void {
-    const level = operation.result === 'succeeded' ? 'info' : 'warn';
-    this.#record(level, 'command.completed', {
+    this.#record('command.completed', {
       'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': data.result,
       ...(data.error === undefined ? {} : {'bunny.code': data.error.code}),
     }, operation);
@@ -726,7 +726,7 @@ export class Tracker {
     }
     this.#retry = SWEEP_RETRY_MS;
     for (const operation of ended) {
-      this.#record('warn', 'command.completed', {
+      this.#record('command.completed', {
         'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result',
         'bunny.reason': 'timeout',
       }, operation);
@@ -734,10 +734,19 @@ export class Tracker {
     this.#schedule();
   }
 
-  /** Writes one record in the action's trace; a logger that throws loses it. */
-  #record(level: 'debug' | 'info' | 'warn' | 'error', event: string, fields: LogFields, trace?: TraceContext): void {
+  /** Writes one record in the action's trace at the SDK table's level (Hub #1143); a logger that throws loses it. */
+  #record(event: LogEvent, fields: LogFields, trace?: TraceContext): void {
     try {
-      this.#options.log[level](event, fields, trace === undefined ? undefined : {traceparent: trace.traceparent});
+      recordLog(this.#options.log, event, fields, trace === undefined ? undefined : {traceparent: trace.traceparent});
+    } catch {
+      // Telemetry is never acknowledged.
+    }
+  }
+
+  /** A DEBUG record: a repeated non-outcome delivery, below every table level. */
+  #debug(event: LogEvent, fields: LogFields, trace?: TraceContext): void {
+    try {
+      this.#options.log.debug(event, fields, trace === undefined ? undefined : {traceparent: trace.traceparent});
     } catch {
       // Telemetry is never acknowledged.
     }

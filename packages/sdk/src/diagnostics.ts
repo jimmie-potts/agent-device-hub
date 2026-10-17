@@ -127,6 +127,7 @@ const EVENT_LEVELS = {
   'outbox.deferred': 'warn',
   'outbox.republished': 'info',
   'runtime.delivery.dropped': 'warn',
+  'runtime.edge.refused': 'info',
   'runtime.edge.reloaded': 'info',
   'runtime.edge.serving': 'info',
   'runtime.handler.failed': 'error',
@@ -176,9 +177,12 @@ export function recordLog(log: Logger, event: LogEvent, fields: LogFields = {}, 
  */
 export function recordLevel(event: LogEvent, fields: LogFields = {}): DiagnosticLevel {
   const byEvent = EVENT_LEVELS[event], code = fields['bunny.code'], outcome = fields['bunny.outcome'];
-  if (byEvent === 'error' || outcome === 'succeeded' || !isErrorCode(code)) return byEvent;
+  const failed = outcome === 'failed' || outcome === 'uncertain';
+  if (byEvent === 'error' || outcome === 'succeeded') return byEvent;
+  // ADR 0012: a failed or uncertain outcome is at least WARN, with or without a code.
+  if (!isErrorCode(code)) return failed && (byEvent === 'debug' || byEvent === 'info') ? 'warn' : byEvent;
   const byCode = LEVELS[code];
-  return (outcome === 'failed' || outcome === 'uncertain') && (byCode === 'debug' || byCode === 'info') ? 'warn' : byCode;
+  return failed && (byCode === 'debug' || byCode === 'info') ? 'warn' : byCode;
 }
 
 /** Receives each diagnostic. It should return promptly; a throw is ignored. */

@@ -163,6 +163,18 @@ it('an accepted action with no outcome by its deadline is uncertain, and a late 
   assert.equal(t.gadget.commands.length, 1, 'nothing was sent again');
 });
 
+it('a completed action takes its record level from the SDK table: failed with internal is ERROR (Hub #1143)', async context => {
+  const t = await trackerRun(context);
+  t.gadget.script({outcome: {result: 'failed', evidence: 'none', error: {code: 'internal', retryable: false}}});
+  assert.deepEqual(await t.dispatch('req-fault'), {status: 'accepted', requestId: 'req-fault'});
+  await waitFor(() => t.operation('req-fault')?.status === 'completed', 5000, 'the failed outcome');
+  await waitFor(() => records(t.logs, 'req-fault').some(entry => entry.startsWith('command.completed ')), 5000, 'the record');
+  assert.ok(records(t.logs, 'req-fault').includes('command.completed ERROR failed'), records(t.logs, 'req-fault').join('; '));
+  t.gadget.script({outcome: {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}}});
+  assert.deepEqual(await t.dispatch('req-down'), {status: 'accepted', requestId: 'req-down'});
+  await waitFor(() => records(t.logs, 'req-down').includes('command.completed WARN failed'), 5000, 'a failed outcome with a WARN code is WARN');
+});
+
 it('a restart while an action is pending: it ends uncertain at its deadline, and the command is never sent again', async context => {
   const dir = await stateDir(context);
   const gadget = new Gadget();

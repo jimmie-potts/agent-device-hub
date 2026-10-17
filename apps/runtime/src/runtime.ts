@@ -168,7 +168,7 @@ function serve(port: number, health: () => RuntimeHealth, gateway: () => Gateway
     const local = hosts.includes(host) && request.headers[WIFI_PROXY_HEADER] === undefined;
     if ((!local && !wifi) || (wifi && (isHealth || route.state === 'off'))) {
       if (wifiProxy !== undefined || request.headers[WIFI_PROXY_HEADER] !== undefined) {
-        refusals.record({'bunny.route': 'other', 'http.request.method': methodOf(request.method ?? 'GET'), 'bunny.code': 'forbidden'}, 'warn');
+        refusals.record({'bunny.route': 'other', 'http.request.method': methodOf(request.method ?? 'GET'), 'bunny.code': 'forbidden'});
       }
       answer(response, 403, errorBody('forbidden', {detail: isHealth || route.state === 'off' ? 'health answers only local requests that name this listener' : 'the gateway answers only requests that name this listener'}));
       return;
