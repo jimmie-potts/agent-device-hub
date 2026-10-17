@@ -10,5 +10,5 @@
 
 ## 3. Delivery
 
-- [ ] 3.1 Run applicable shared and affected tests, browser/accessibility checks and runtime scenarios; retain red/green and private visual receipts.
+- [x] 3.1 Run applicable shared and affected tests, browser/accessibility checks and runtime scenarios; retain red/green and private visual receipts.
 - [x] 3.2 Update the component guides and verify their source, installed-client and physical evidence boundaries against the implementation.
