@@ -20,6 +20,7 @@ try {
     const requestCount = (): number => sent.length;
     await page.goto(`${world.url}/#/module/pixoo/playlists`); await feed(page, 'connected');
     await page.getByRole('link', {name: 'Player', exact: true}).click();
+    await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
     await page.getByText('No active session.', {exact: true}).waitFor();
     assert.equal(sent.length, 0, 'opening and reading the player sends nothing');
@@ -64,10 +65,12 @@ try {
       assert.equal(reading.state.state, state); return reading;
     };
     await page.getByRole('link', {name: 'Player', exact: true}).click();
+    await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('combobox', {name: 'Playlist to play', exact: true}).selectOption(saved.id);
     assert.equal(sent.length, setupRequests, 'player selection sends no command');
     assert.equal(world.pixooState().sent, 0, 'synthetic setup and reads do not paint');
-    const play = page.getByRole('button', {name: 'Play playlist', exact: true});
+    const advanced = page.getByRole('region', {name: 'Pixoo player', exact: true});
+    const play = advanced.getByRole('button', {name: 'Play playlist', exact: true});
     await play.focus(); await play.press('Enter');
     const started = await waitState('playing'); assert.ok(started.session);
     assert.equal(started.simulated, true); assert.ok(Number.isFinite(started.sampledAtMs));
@@ -77,13 +80,13 @@ try {
     const afterStart = world.pixooState().sent; assert.ok(afterStart > 0);
     await page.getByRole('button', {name: 'Pause playlist', exact: true}).click();
     await waitState('paused'); assert.equal(world.pixooState().sent, afterStart);
-    await page.getByRole('button', {name: 'Resume', exact: true}).click();
+    await advanced.getByRole('button', {name: 'Resume', exact: true}).click();
     await waitState('playing');
-    await page.getByRole('button', {name: 'Next', exact: true}).click();
+    await advanced.getByRole('button', {name: 'Next', exact: true}).click();
     let second = await waitState('playing');
     for (let attempt = 0; second.state.itemId === started.state.itemId && attempt < 100; attempt++) { await delay(20); second = await readPlayer(); }
     assert.notEqual(second.state.itemId, started.state.itemId);
-    await page.getByRole('button', {name: 'Previous', exact: true}).click();
+    await advanced.getByRole('button', {name: 'Previous', exact: true}).click();
     let previous = await waitState('playing');
     for (let attempt = 0; previous.state.itemId !== started.state.itemId && attempt < 100; attempt++) { await delay(20); previous = await readPlayer(); }
     assert.equal(previous.state.itemId, started.state.itemId); assert.equal(sent.length, setupRequests + 5);
@@ -92,7 +95,7 @@ try {
     assert.equal((await readPlayer()).session?.playlist.name, 'Synthetic player', 'the session retains its frozen saved snapshot');
     await page.getByText('Saved changes are waiting for the next session. Restart with changes applies them now.', {exact: true}).waitFor();
     // Restart while already playing keeps the coarse display fields unchanged. Detailed frozen metadata must still refresh.
-    await page.getByRole('button', {name: 'Restart with changes', exact: true}).click();
+    await advanced.getByRole('button', {name: 'Restart with changes', exact: true}).click();
     let liveRestart = await waitState('playing');
     for (let attempt = 0; liveRestart.session?.id === started.session.id && attempt < 100; attempt++) { await delay(20); liveRestart = await readPlayer(); }
     assert.ok(liveRestart.session); assert.notEqual(liveRestart.session.id, started.session.id);
@@ -103,9 +106,10 @@ try {
     const stopped = await waitState('idle'); assert.equal(stopped.state.intent, 'stopped'); assert.ok(stopped.session);
     const afterStop = world.pixooState().sent;
     await page.reload(); await feed(page, 'connected');
+    await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
     assert.equal(sent.length, setupRequests + 8, 'reload never resends'); assert.equal(world.pixooState().sent, afterStop);
-    await page.getByRole('button', {name: 'Restart with changes', exact: true}).click();
+    await advanced.getByRole('button', {name: 'Restart with changes', exact: true}).click();
     const restarted = await waitState('playing'); assert.ok(restarted.session);
     assert.notEqual(restarted.session.id, started.session.id);
     assert.equal(restarted.session.playlist.name, 'Saved player changes'); assert.equal(restarted.session.playlist.revision, saved.playlistRevision + 1);
@@ -121,10 +125,11 @@ try {
     await page.getByRole('button', {name: 'Set display mode', exact: true}).click();
     await page.getByText('media', {exact: true}).waitFor();
     assert.equal(sent.length, beforeMode + 2);
-    await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
+    await advanced.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
-    await page.reload(); await feed(page, 'connected'); await page.getByText('Read-only access.', {exact: true}).waitFor();
+    await page.reload(); await feed(page, 'connected');
+    await page.getByText('Advanced player', {exact: true}).click(); await advanced.getByText('Read-only access.', {exact: true}).waitFor();
     assert.equal(await play.count(), 0);
     const readerRequests = sent.length; await readPlayer(); assert.equal(sent.length, readerRequests);
     assert.equal(sent.length, 14); assert.deepEqual(errors, []);

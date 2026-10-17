@@ -12,6 +12,19 @@ const roots:string[]=[]; const libraries:Library[]=[];
 afterEach(async()=>{for(const library of libraries) await library.close(); libraries.length=0; for(const root of roots) await rm(root,{recursive:true,force:true}); roots.length=0;});
 async function setup() {const directory=await mkdtemp(join(tmpdir(),'pixoo-library-'));roots.push(directory); const library=await Library.open({directory});libraries.push(library);return {directory,library};}
 async function* upload() {yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:50},{width:1,height:1,pixels:[2],delay:50}]));}
+it('creates requested playlist identity and initial items atomically without changing legacy creation',async()=>{
+  const {library}=await setup();
+  const {rendition}=await library.importMedia(upload(),'initial.gif');
+  const id='123e4567-e89b-42d3-a456-426614174000';
+  const create=(name:string,playlistId:string,items:{renditionId:string}[]):Promise<Playlist>=>library.createPlaylist(name,{repeat:true},{playlistId,items});
+  const created=await create('Populated',id,[{renditionId:rendition.id}]);
+  expect(created).toMatchObject({id,name:'Populated',revision:1,repeat:true});
+  expect(created.items.map(item=>item.renditionId)).toEqual([rendition.id]);
+  await expect(create('Duplicate',id,[])).rejects.toMatchObject({code:'invalid-input'});
+  await expect(create('Invalid','123e4567-e89b-42d3-a456-426614174001',[{renditionId:'f'.repeat(64)}])).rejects.toMatchObject({code:'not-found'});
+  expect(await library.listPlaylists()).toEqual([created]);
+  expect((await library.createPlaylist('Legacy')).items).toEqual([]);
+});
 /** The item at an index; a missing item fails the test. */
 const item=(playlist:Playlist,index:number)=>playlist.items[index]??expect.unreachable(`no item ${index}`);
 it('persists immutable media and stable playlist items across reopen',async()=>{

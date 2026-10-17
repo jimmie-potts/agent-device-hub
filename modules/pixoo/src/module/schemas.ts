@@ -91,7 +91,7 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
   [schemaOf(FAMILIES.monitor)]: guarded({filter, cadenceMs: integer(1000, 10000)}),
   [schemaOf(FAMILIES.nowPlaying)]: guarded({media: {enum: ['off', 'popup', 'whole']}}),
   [schemaOf(FAMILIES.playlistChange)]: guarded({change: {oneOf: [
-    closed({operation: {const: 'create'}, name, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'}}, ['repeat', 'shuffle']),
+    closed({operation: {const: 'create'}, name, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'}, playlistId: uuid, items: {type: 'array', maxItems: 1000, items: closed({renditionId: hash, playback: policy}, ['playback'])}}, ['repeat', 'shuffle', 'playlistId', 'items']),
     closed({operation: {const: 'rename'}, playlistId: uuid, revision, name}),
     closed({operation: {const: 'options'}, playlistId: uuid, revision, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'}}, ['repeat', 'shuffle']),
     closed({operation: {const: 'items'}, playlistId: uuid, revision, items: {type: 'array', maxItems: 1000, items: closed({id: uuid, renditionId: hash, playback: policy}, ['id', 'playback'])}}),
@@ -144,7 +144,7 @@ export type ShowRequest = Guards & {requestId: string; renditionId: string; play
 export type MonitorSetRequest = Guards & {requestId: string; filter: Filter; cadenceMs: number};
 export type NowPlayingSetRequest = Guards & {requestId: string; media: 'off' | 'popup' | 'whole'};
 export type PlaylistChangeRequest = Guards & {requestId: string; change:
-  | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean}
+  | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean; playlistId?: string; items?: {renditionId: string; playback?: Policy}[]}
   | {operation: 'rename'; playlistId: string; revision: number; name: string}
   | {operation: 'options'; playlistId: string; revision: number; repeat?: boolean; shuffle?: boolean}
   | {operation: 'items'; playlistId: string; revision: number; items: {id?: string; renditionId: string; playback?: Policy}[]}

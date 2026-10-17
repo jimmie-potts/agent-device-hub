@@ -1,0 +1,213 @@
+// Shared card journeys against a disposable real owner and synthetic GIFs; no installed services or devices.
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {setTimeout as delay} from 'node:timers/promises';
+import {AxeBuilder} from '@axe-core/playwright';
+import {chromium} from 'playwright';
+import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
+import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
+import {changes, feed, startWorld} from './harness.ts';
+
+const world = await startWorld({pixooPages: true});
+const browser = await chromium.launch({headless: true});
+const evidence = process.env.DASHBOARD_RECEIPTS;
+try {
+  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'no-preference'});
+  const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
+  const page = await context.newPage(); page.setDefaultTimeout(12000);
+  page.on('dialog', dialog => { void dialog.accept(); });
+  // Count owned decoded resources as well as reads: hidden faces must actually close their bitmaps.
+  await page.addInitScript(() => {
+    const native = window.createImageBitmap.bind(window);
+    const stats = {opened: 0, closed: 0};
+    Object.assign(window, {pixooBitmaps: stats});
+    window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => {
+      const bitmap: ImageBitmap = await Reflect.apply(native, window, args);
+      stats.opened++;
+      const close = bitmap.close.bind(bitmap); let closed = false;
+      bitmap.close = () => { if (!closed) { closed = true; stats.closed++; } close(); };
+      return bitmap;
+    }) as typeof createImageBitmap;
+  });
+  const sent = changes(page);
+  await page.goto(`${world.url}/#/module/pixoo/library`); await feed(page, 'connected');
+  for (let index = 0; index < 8; index++) {
+    const gif = gifFixture(2, 2, [{width: 2, height: 2, pixels: [index % 4, (index >> 2) + 1, 1, 2], delay: 50},
+      {width: 2, height: 2, pixels: [3, 2, index % 4, (index >> 2) + 1], delay: 50}]);
+    await page.getByLabel('Media file', {exact: true}).setInputFiles({name: `Synthetic ${index + 1}.gif`, mimeType: 'image/gif', buffer: gif});
+    await page.getByRole('button', {name: 'Add media', exact: true}).click();
+    for (let attempt = 0; (await world.pixooMedia()).items.length !== index + 1 && attempt < 100; attempt++) await delay(20);
+    assert.equal((await world.pixooMedia()).items.length, index + 1);
+  }
+  const setupRequests = sent.length;
+  await page.getByRole('link', {name: /^Home /}).click();
+  const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
+  await card.getByRole('tab', {name: 'Display', exact: true}).waitFor();
+  const artwork = await card.locator('[data-pixoo-artwork]').elementHandle(); assert.notEqual(artwork, null);
+  await card.getByRole('tab', {name: 'Display', exact: true}).focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await card.getByRole('tab', {name: 'Content', exact: true}).getAttribute('aria-selected'), 'true');
+  assert.equal(await artwork.evaluate(node => node === document.querySelector('[data-pixoo-artwork]')), true);
+  await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
+  const picker = card.getByRole('region', {name: 'Media picker', exact: true});
+  await picker.scrollIntoViewIfNeeded();
+  await picker.locator('[data-preview-state="animating"]').nth(5).waitFor();
+  assert.equal(await picker.getByRole('img').count(), 6, 'only six visible previews are decoded');
+  const firstTile = picker.locator('button.pixoo-media-tile').first();
+  const canvas = firstTile.locator('canvas');
+  const firstPixel = await canvas.evaluate(node => Array.from((node as HTMLCanvasElement).getContext('2d')?.getImageData(0, 0, 1, 1).data ?? []).join(','));
+  await page.waitForFunction(({node, pixel}) => {
+    const drawing = (node as HTMLCanvasElement | null)?.getContext('2d');
+    return drawing !== null && drawing !== undefined && Array.from(drawing.getImageData(0, 0, 1, 1).data).join(',') !== pixel;
+  }, {node: await canvas.elementHandle(), pixel: firstPixel});
+  await firstTile.click();
+  await picker.getByRole('button', {name: 'Next media', exact: true}).click();
+  await picker.getByText('7–8 of 8', {exact: true}).waitFor();
+  await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
+  await picker.getByRole('searchbox').fill('Synthetic 1');
+  await picker.getByText('1–1 of 1', {exact: true}).waitFor();
+  await picker.getByRole('button', {name: 'Pause GIFs', exact: true}).click();
+  await picker.locator('[data-preview-state="still"]').waitFor();
+  assert.equal(sent.length, setupRequests, 'browsing, selection and preview animation send no command');
+  assert.equal(world.pixooState().sent, 0);
+  await page.emulateMedia({reducedMotion: 'reduce'});
+  await picker.getByRole('button', {name: 'Animate GIFs', exact: true}).click();
+  await picker.locator('[data-preview-state="still"]').waitFor();
+  await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('playlists');
+  await card.getByRole('button', {name: 'New playlist', exact: true}).click();
+  const editor = card.getByRole('region', {name: 'Playlist editor', exact: true});
+  await editor.getByRole('textbox', {name: 'Playlist name', exact: true}).fill('Synthetic card mix');
+  assert.equal(await editor.getByRole('button', {name: 'Create playlist', exact: true}).isDisabled(), true);
+  await editor.getByRole('button', {name: 'Add GIFs', exact: true}).click();
+  const addPicker = editor.getByRole('region', {name: 'Media picker', exact: true});
+  await addPicker.locator('button.pixoo-media-tile').first().click();
+  await addPicker.getByRole('button', {name: 'Next media', exact: true}).click();
+  await addPicker.getByText('7–8 of 8', {exact: true}).waitFor();
+  await addPicker.locator('button.pixoo-media-tile').first().click();
+  await editor.getByRole('button', {name: 'Add selected (2)', exact: true}).click();
+  await editor.getByRole('button', {name: 'Select playlist item 1', exact: true}).click();
+  await editor.getByRole('button', {name: 'Move later', exact: true}).click();
+  // Draft survives switching the control face; artwork remains the same DOM node.
+  await card.getByRole('tab', {name: 'Display', exact: true}).click();
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  assert.equal(await editor.getByRole('textbox', {name: 'Playlist name', exact: true}).inputValue(), 'Synthetic card mix');
+  assert.equal(await editor.getByRole('button', {name: /^Select playlist item/}).count(), 2);
+  assert.deepEqual(await world.pixooPlaylists(), []); assert.equal(sent.length, setupRequests);
+  await editor.getByRole('button', {name: 'Create playlist', exact: true}).click();
+  await editor.getByText('Playlist created. 2 items · Loops automatically.', {exact: true}).waitFor();
+  const saved = (await world.pixooPlaylists())[0]; assert.ok(saved);
+  assert.equal(saved.repeat, true); assert.equal(saved.items.length, 2); assert.equal(saved.playlistRevision, 1);
+  assert.equal(sent.length, setupRequests + 1); assert.equal(world.pixooState().sent, 0);
+  await editor.getByRole('button', {name: 'Back to content', exact: true}).click();
+  await card.getByRole('combobox', {name: 'Saved playlist', exact: true}).selectOption(saved.id);
+  // An older non-repeating list needs an explicit options save; enabling never auto-plays.
+  await page.goto(`${world.url}/#/module/pixoo/playlists`);
+  await page.getByRole('combobox', {name: 'Playlist', exact: true}).selectOption(saved.id);
+  await page.getByRole('checkbox', {name: 'Repeat playlist', exact: true}).uncheck();
+  await page.getByRole('button', {name: 'Save options', exact: true}).click();
+  for (let attempt = 0; (await world.pixooPlaylists())[0]?.repeat !== false && attempt < 100; attempt++) await delay(20);
+  await page.goto(`${world.url}/#/home`);
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  await card.getByRole('combobox', {name: 'Saved playlist', exact: true}).selectOption(saved.id);
+  assert.equal(await card.getByRole('button', {name: 'Play playlist', exact: true}).isDisabled(), true);
+  const beforeEnable = sent.length;
+  await card.getByRole('button', {name: 'Enable loop', exact: true}).click();
+  for (let attempt = 0; (await world.pixooPlaylists())[0]?.repeat !== true && attempt < 100; attempt++) await delay(20);
+  assert.equal(sent.length, beforeEnable + 1); assert.equal(world.pixooState().sent, 0, 'enabling loop never auto-plays');
+  await card.getByRole('button', {name: 'Play playlist', exact: true}).click();
+  type PlayerReading = {state: {state: string; itemId: string}; session: {id: string; source?: {kind: string}; playlist: {revision: number; items: {id: string}[]}}};
+  const readPlayer = (): Promise<PlayerReading> => page.evaluate(async () => await (await fetch('/modules/pixoo/content/player')).json() as PlayerReading);
+  await card.getByRole('button', {name: 'Pause', exact: true}).waitFor();
+  await card.getByRole('button', {name: 'Pause', exact: true}).click();
+  await card.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+  const frozen = await readPlayer(); assert.equal(frozen.state.state, 'paused');
+  await card.getByRole('button', {name: 'Edit playlist', exact: true}).click();
+  await editor.getByRole('button', {name: 'Select playlist item 2', exact: true}).click();
+  await editor.getByRole('button', {name: 'Remove item', exact: true}).click();
+  await editor.getByRole('button', {name: 'Save playlist', exact: true}).click();
+  await editor.getByText('The saved playlist changed. Reload before saving.', {exact: true}).waitFor();
+  assert.equal((await world.pixooPlaylists())[0]?.items.length, 1);
+  assert.deepEqual((await readPlayer()).session, frozen.session, 'saved edits preserve the frozen active session');
+  assert.equal(await editor.getByRole('button', {name: 'Save playlist', exact: true}).isDisabled(), true);
+  await card.getByRole('button', {name: 'Restart with changes', exact: true}).click();
+  for (let attempt = 0; (await readPlayer()).session.id === frozen.session.id && attempt < 100; attempt++) await delay(20);
+  assert.notEqual((await readPlayer()).session.id, frozen.session.id);
+  assert.equal((await readPlayer()).session.playlist.revision, frozen.session.playlist.revision + 1);
+  await card.getByRole('button', {name: 'Pause', exact: true}).click();
+  await card.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+  await editor.getByRole('button', {name: 'Reload saved playlist', exact: true}).click();
+  await editor.getByRole('button', {name: 'Back to content', exact: true}).click();
+  await card.getByRole('button', {name: 'Next', exact: true}).click();
+  await card.getByRole('button', {name: 'Previous', exact: true}).click();
+  assert.equal((await readPlayer()).session.playlist.items.length, 1);
+  const beforeReload = sent.length;
+  await page.reload(); await feed(page, 'connected');
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  assert.equal(sent.length, beforeReload, 'reload never resends');
+  for (const route of [`#/component/${SIMULATED_SECTION.config.device.id}`, '#/module/pixoo/player']) {
+    await page.goto(`${world.url}/${route}`); await card.getByRole('tab', {name: 'Content', exact: true}).click();
+    assert.equal(await card.count(), 1, 'the same card is mounted on each surface');
+    assert.equal(sent.length, beforeReload);
+  }
+  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+  await page.setViewportSize({width: 390, height: 844});
+  await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
+  await card.locator('button.pixoo-media-tile').nth(5).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+  if (evidence !== undefined) { await mkdir(evidence, {recursive: true}); await page.screenshot({path: `${evidence}/pixoo-card-phone.png`, fullPage: true}); }
+  await card.locator('button.pixoo-media-tile').first().click();
+  await card.getByRole('button', {name: 'Play selected media', exact: true}).click();
+  await card.getByRole('button', {name: 'Pause', exact: true}).click();
+  await card.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+  assert.equal((await readPlayer()).session.source?.kind, 'media', 'explicit single-media play uses the existing temporary session');
+  await card.getByRole('tab', {name: 'Display', exact: true}).click();
+  await page.emulateMedia({reducedMotion: 'no-preference'});
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
+  await picker.scrollIntoViewIfNeeded();
+  await picker.locator('[data-preview-state="animating"]').first().waitFor();
+  let releaseSync = (): void => {};
+  const heldSync = new Promise<void>(resolve => { releaseSync = resolve; });
+  await page.route('**/api/sdk/v1/sync', async route => { await heldSync; await route.continue(); });
+  const beforeReconnect = sent.length;
+  try {
+    const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
+    world.dropDashboardStreams(); await replacement;
+    await card.getByText('Pixoo records are stale.', {exact: true}).waitFor();
+    await feed(page, 'connected');
+    // A connected transport is not a fresh owner copy: visible previews must release
+    // their frames until the replacement sync is complete, just like hidden faces.
+    await page.waitForFunction(() => {
+      const previews = [...document.querySelectorAll('.pixoo-picker [data-preview-state]')];
+      return previews.length > 0 && previews.every(node => node.getAttribute('data-preview-state') === 'still');
+    });
+    await card.getByRole('tab', {name: 'Display', exact: true}).click();
+    assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
+  } finally { releaseSync(); await page.unrouteAll({behavior: 'wait'}); }
+  await feed(page, 'connected');
+  for (let attempt = 0; await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled() && attempt < 100; attempt++) await delay(20);
+  assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), false);
+  assert.equal(sent.length, beforeReconnect, 'reconnecting sends no command');
+  await delay(100);
+  const bitmaps = await page.evaluate(() => (window as unknown as {pixooBitmaps: {opened: number; closed: number}}).pixooBitmaps);
+  assert.ok(bitmaps.opened - bitmaps.closed <= 1, 'hidden picker frames are released; only artwork may remain');
+  // A lost reply retains its request without retry, including across a reload.
+  await page.route('**/api/v2/commands/brightness-set', route => route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"uncertain-result","retryable":false}}'}));
+  await card.getByRole('slider').fill('42');
+  await card.getByRole('button', {name: 'Apply brightness', exact: true}).click();
+  await card.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
+  const uncertainCount = sent.length;
+  await page.reload(); await feed(page, 'connected');
+  await card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
+  assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
+  assert.equal(sent.length, uncertainCount);
+  await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
+  await page.reload(); await feed(page, 'connected');
+  await card.getByText('Read-only access.', {exact: true}).waitFor();
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  assert.equal(await card.getByRole('button', {name: 'New playlist', exact: true}).count(), 0);
+  assert.equal(sent.length, uncertainCount); assert.deepEqual(errors, []);
+  await context.close();
+  process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-reusable-cards', surfaces: 3, animation: true, boundedPages: true, bitmapCleanup: bitmaps, frozenSession: true, noReplay: true, readOnly: true, axe: 'desktop and phone passed', requests: sent.length})}\n`);
+} finally { await browser.close(); await world.close(); }

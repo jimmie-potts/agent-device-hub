@@ -514,7 +514,7 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # weekly power schedules, event rules, lost replies and accessibility
-node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # real playlist edit and trusted editor bundle
+node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
 node apps/runtime/dashboard/tests/pixoo-library.browser.ts # saved rendition rendering and media deletion without display writes
@@ -566,7 +566,14 @@ fresh synthetic library and simulated display. It checks a revision-bound name
 save through the shared shell, owner-confirmed state, read-only refusal,
 reload without resend, no display write and accessibility. It also executes a
 separately bundled trusted editor fixture while retaining passive-page script
-refusal. The full local browser command includes this journey and the Library,
+refusal. It also imports `pixoo-cards.browser.ts` (#1154), covering the shared card on
+Home/device/Player, animated visible pages, selection across searches/pages,
+bitmap cleanup, reduced motion, populated creation, draft preservation,
+revision refusal, frozen playback, restart, lost replies, reload and phone axe.
+The CI smoke mounts the same card passively. The `pixoo-pages` catalog scenario
+also covers atomic populated creation and duplicate/invalid-item refusal through
+both transports and disposable verification. The full local browser command
+includes this journey and the Library,
 Playlists, Player, Monitor and Settings journeys. They cover saved renditions,
 referenced previews, explicit controls, read-only access and accessibility.
 Monitor's synthetic Desktop module publishes metadata through its own SDK;

@@ -7,7 +7,7 @@ type PreviewData = {renditionId: string; frameCount: number; durationMs: number 
   warnings: {frame: number; code: 'missing-delay' | 'zero-delay'; effectiveDelayMs: number}[]};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
-function previewOf(value: unknown, id: string): PreviewData {
+export function previewOf(value: unknown, id: string): PreviewData {
   if (!object(value) || value.renditionId !== id || value.width !== 64 || value.height !== 64
     || !positive(value.frameCount) || value.frameCount > 1000 || !(value.durationMs === null || positive(value.durationMs))
     || !Array.isArray(value.frames) || value.frames.length !== value.frameCount
