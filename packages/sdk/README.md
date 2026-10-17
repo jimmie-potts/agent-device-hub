@@ -1036,6 +1036,13 @@ trace?)` after failures logs one `device.available` record with
 logs nothing. A device ID that the contract's `bunny.device.id` pattern refuses,
 such as an address with a path, is left out of its records, which are kept.
 
+`Evidence<T>` is what a device result can claim: `absent`, `transmitted`,
+`uncertain` or `observed`, in that order. Create a claim with the function of
+the same name, and change it only with `merge(prev, next)`, which keeps the
+stronger claim. Its type does too, so treating an uncertain result as a
+confident `transmitted` or `absent` claim, or replacing a transmission with
+`absent`, is a compile error. Only `observed` moves past `uncertain` (#1140).
+
 ## Remote transport
 
 Remote parts, such as the CHOMPI bridge, the Wispr collector, agent hooks, the

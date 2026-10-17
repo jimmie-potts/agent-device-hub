@@ -6,6 +6,7 @@ import {Readable} from 'node:stream';
 import {AdbServerClient, AdbShellProtocolProcessImpl, AdbShellProtocolSpawner} from '@yume-chan/adb';
 import {MaybeConsumable, type ReadableStream as AdbReadable} from '@yume-chan/stream-extra';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {absent, merge, transmitted as transmission, type Evidence} from '@jimmie-potts/sdk';
 import {CURRENT_APP_COMMAND, currentApp, keyCommand, launchCommand, launcherCommand, textCommand, type App, type CurrentApp, type Key} from './actions.js';
 import type {OnnConfig} from './configuration.js';
 import {parseMetadataReply, type MetadataSample} from './metadata.js';
@@ -110,8 +111,11 @@ export class AdbTransport implements OnnTransport {
     } finally {end.abort();}
   }
   async execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined = () => undefined): Promise<Attempt> {
-    let possible = false, sent = false, answered = false;
-    const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {sent = true;};
+    let possible = false, answered = false;
+    // Transmission evidence only grows (Hub #1140): a later failure cannot erase an acknowledged write.
+    let delivery: Evidence<'absent' | 'transmitted'> = absent();
+    const sent = (): Attempt['evidence'] => delivery.level === 'transmitted' ? 'transmitted' : 'none';
+    const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {delivery = merge(delivery, transmission());};
     try {
       let command: string | undefined;
       if (action.kind === 'key') command = keyCommand(action.key);
@@ -128,11 +132,11 @@ export class AdbTransport implements OnnTransport {
       const response = await this.#shell(command, signal, true, wrote, transmitted);
       const launchOkay = action.kind !== 'app' || /^Status: ok\r?$/m.test(response.stdout);
       const outputOkay = action.kind === 'app' || response.stdout === '';
-      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: 'uncertain', evidence: sent ? 'transmitted' : 'none', code: 'uncertain-result', connection: 'available'};
+      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: 'uncertain', evidence: sent(), code: 'uncertain-result', connection: 'available'};
       return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};
     } catch (error) {
       if (error instanceof EffectRefused) return {result: 'failed', evidence: 'none', code: error.code, connection: answered ? 'available' : 'unknown'};
-      return {result: possible ? 'uncertain' : 'failed', evidence: sent ? 'transmitted' : 'none', code: possible ? 'uncertain-result' : 'unavailable', connection: 'unavailable'};
+      return {result: possible ? 'uncertain' : 'failed', evidence: sent(), code: possible ? 'uncertain-result' : 'unavailable', connection: 'unavailable'};
     }
   }
   async read(signal: AbortSignal): Promise<AppObservation | undefined> {
