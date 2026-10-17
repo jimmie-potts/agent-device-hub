@@ -2,6 +2,7 @@
 // docs/development.md "Static analysis" describes the strict profile and where each rule applies.
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {Outcome} from '../../packages/sdk/src/evidence.ts';
 
 /** The module directory a file belongs to, found relative to the repository root, not the working directory. */
 const moduleRoot = (root, filename) => {
@@ -497,6 +498,36 @@ const errorBodyFromRegistry = {
   },
 };
 
+/**
+ * An outcome or evidence word is never a raw string value outside sdk/evidence (Hub #1141): a hand-picked literal is how
+ * an uncertain result was summarised as rejected (#736 F1) and acknowledged transmission was rebuilt as none (#1126
+ * F1). The vocabulary is read from sdk/evidence.ts, so the rule and the SDK cannot drift. Types, property keys and
+ * module specifiers are not values and are not checked; ErrorCode values such as 'uncertain-result' are other words.
+ */
+const outcomeWords = new Set(Object.values(Outcome));
+const noRawOutcomeLiteral = {
+  meta: {
+    type: 'problem',
+    docs: {description: 'Take outcome and evidence words from sdk/evidence, and change claims only with merge'},
+    schema: [],
+    messages: {
+      raw: "'{{value}}' is an outcome word; take it from the SDK `Outcome` vocabulary and change a claim only through sdk/evidence.merge.",
+    },
+  },
+  create(context) {
+    const check = node => {
+      const value = literal(node);
+      if (value === undefined || !outcomeWords.has(value)) return;
+      const parent = node.parent;
+      if (parent?.type === 'TSLiteralType' || (parent?.type === 'Property' && parent.key === node && !parent.computed)) return;
+      if (parent?.source === node || ['ImportSpecifier', 'ExportSpecifier'].includes(parent?.type)) return;
+      if (['TSPropertySignature', 'PropertyDefinition', 'MethodDefinition', 'TSEnumMember'].includes(parent?.type) && parent.key === node) return;
+      context.report({node, messageId: 'raw', data: {value}});
+    };
+    return {Literal: check, TemplateLiteral: check};
+  },
+};
+
 export default {
   meta: {name: 'bunny'},
   rules: {
@@ -504,5 +535,6 @@ export default {
     'no-console': noConsole,
     'no-raw-error-text': noRawErrorText,
     'error-body-from-registry': errorBodyFromRegistry,
+    'no-raw-outcome-literal': noRawOutcomeLiteral,
   },
 };

@@ -198,6 +198,15 @@ and the runtime's tests cover the rest.
   `{error: {...refused.error, requestId}}`, is allowed; overriding its `code` is
   not. It misses an error block built in a separate variable and a body written
   as JSON text.
+- **`bunny/no-raw-outcome-literal`** (#1141, block `bunny/outcome-vocabulary`):
+  no raw string value from the SDK `Outcome` vocabulary in `sdk/evidence.ts`
+  (`absent`, `transmitted`, `uncertain`, `observed`, `none`, `succeeded`,
+  `failed`, `rejected`) in production code outside that file. Take the word from
+  `Outcome` and change a claim only with `merge`. Types, property keys and module
+  specifiers are skipped; ErrorCode values such as `uncertain-result` are other
+  words. Tests and page code are not checked. Existing hits are held in
+  `eslint-suppressions.json` as a ratchet, the one baseline allowed under the
+  strict profile. It misses a word built at run time or held in a variable.
 
 Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
 profile blocks, never inline comments, and each is listed here.
