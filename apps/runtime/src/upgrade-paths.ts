@@ -16,10 +16,11 @@ type ExecutionFrame = {
   adoption: null | {draftFile: string; overrideFile: string; originals: EvidencePin[]; restoration: EvidencePin};
 };
 export type UpgradePreflightRequest = {
-  schema: 'runtime-upgrade-request/1.0'; operation: 'adoption' | 'upgrade'; installationId: string;
-  installationRoot: string; tokenFile: string; admissionFile: string; installedBaselineClosureFile: string;
-  qualificationRevision: string; releases: {previous: ArtifactPaths; target: ArtifactPaths; recovery: ArtifactPaths};
-  formatInventoryFiles: {previous: string; target: string; recovery: string; qualification: string};
+  schema: 'runtime-upgrade-request/2.0'; operation: 'adoption' | 'upgrade'; installationId: string;
+  installationRoot: string; tokenFile: string;
+  installedBaselineClosure: EvidencePin; changeAssessment: EvidencePin;
+  releases: {previous: ArtifactPaths; target: ArtifactPaths};
+  recovery: null | {release: ArtifactPaths; evidence: EvidencePin};
   execution: ExecutionFrame;
 };
 const refused = (): never => {throw new Error('runtime-upgrade-paths-refused');};
@@ -60,16 +61,17 @@ function executionFrame(value: unknown, root: string, operation: string): value 
 }
 
 export function parseUpgradeRequest(value: unknown): UpgradePreflightRequest {
-  if (!closed(value, ['schema', 'operation', 'installationId', 'installationRoot', 'tokenFile', 'admissionFile',
-    'installedBaselineClosureFile', 'qualificationRevision', 'releases', 'formatInventoryFiles', 'execution'])
-    || value.schema !== 'runtime-upgrade-request/1.0' || !['adoption', 'upgrade'].includes(String(value.operation))
+  const artifact = (row: unknown): boolean => closed(row, ['identity', 'directory', 'archive']) && Object.values(row).every(path);
+  if (!closed(value, ['schema', 'operation', 'installationId', 'installationRoot', 'tokenFile',
+    'installedBaselineClosure', 'changeAssessment', 'releases', 'recovery', 'execution'])
+    || value.schema !== 'runtime-upgrade-request/2.0' || !['adoption', 'upgrade'].includes(String(value.operation))
     || typeof value.installationId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value.installationId)
-    || ![value.installationRoot, value.tokenFile, value.admissionFile, value.installedBaselineClosureFile].every(path)
-    || typeof value.qualificationRevision !== 'string' || !/^[0-9a-f]{40}$/.test(value.qualificationRevision)
-    || !closed(value.releases, ['previous', 'target', 'recovery'])
-    || !Object.values(value.releases).every(row => closed(row, ['identity', 'directory', 'archive']) && Object.values(row).every(path))
-    || !closed(value.formatInventoryFiles, ['previous', 'target', 'recovery', 'qualification'])
-    || !Object.values(value.formatInventoryFiles).every(path)
+    || ![value.installationRoot, value.tokenFile].every(path)
+    || !evidencePin(value.installedBaselineClosure) || !evidencePin(value.changeAssessment)
+    || !closed(value.releases, ['previous', 'target']) || !Object.values(value.releases).every(artifact)
+    || !(value.recovery === null || closed(value.recovery, ['release', 'evidence'])
+      && artifact(value.recovery.release) && isDeepStrictEqual(value.recovery.release, value.releases.previous)
+      && evidencePin(value.recovery.evidence))
     || !executionFrame(value.execution, String(value.installationRoot), String(value.operation))) return refused();
   return value as UpgradePreflightRequest;
 }
@@ -80,7 +82,8 @@ export async function inspectUpgradeExecution(request: UpgradePreflightRequest):
     const frame = request.execution;
     const provenance = join(request.installationRoot, 'provenance');
     await checkStateDirectory(provenance);
-    const pins = [...Object.values(frame.startupEffects), ...(frame.adoption === null ? [] :
+    const pins = [request.changeAssessment, ...(request.recovery === null ? [] : [request.recovery.evidence]),
+      ...Object.values(frame.startupEffects), ...(frame.adoption === null ? [] :
       [...frame.adoption.originals, frame.adoption.restoration])];
     for (const pin of pins) {
       // Retained original-fragment copies and authored evidence are private.
@@ -153,10 +156,25 @@ export async function inspectUpgradeRunningPaths(request: UpgradePreflightReques
   } catch {return refused();}
 }
 
+/** Check filesystem protection before recovery even if the service is stopped.
+ * The expected invocation below is not an observation of a running process. */
+export async function inspectUpgradeRecoveryPaths(request: UpgradePreflightRequest,
+  approved: Parameters<typeof inspectUpgradeRunningPaths>[2], allowedSelections: string[]) {
+  try {
+    const current = join(request.installationRoot, 'current');
+    const selected = await realpath(current);
+    if (!allowedSelections.includes(selected)) return refused();
+    const adoption = request.execution.adoption;
+    const expected = {...approved.owner, cwd: selected, entry: join(current, 'apps/runtime/dist/src/main.js'),
+      units: [...approved.owner.units, ...(adoption === null ? [] : [adoption.overrideFile])].sort()};
+    return await inspectUpgradeRunningPaths(request, expected, approved, selected);
+  } catch {return refused();}
+}
+
 /** Verified roots and baselineRoot come from the source/closure adapters, never observation flags. */
 export async function inspectUpgradePaths(request: UpgradePreflightRequest, owner: UpgradeOwner,
-  verified: {previous: string; target: string; recovery: string; baselineRoot: string;
-    revisions: {previous: string; target: string; recovery: string}}, credentialsFile: string) {
+  verified: {previous: string; target: string; recovery?: string; baselineRoot: string;
+    revisions: {previous: string; target: string; recovery?: string}}, credentialsFile: string) {
   try {
     const root = request.installationRoot;
     const directories = [];
@@ -166,13 +184,15 @@ export async function inspectUpgradePaths(request: UpgradePreflightRequest, owne
     if (names.some(name => !allowed.includes(name)) || names.length > allowed.length) return refused();
     const releases = join(root, 'releases');
     for (const key of ['previous', 'target', 'recovery'] as const) {
-      const declared = request.releases[key].directory;
-      if (declared !== verified[key] || !/^[0-9a-f]{40}$/.test(verified.revisions[key])
-        || declared !== join(releases, verified.revisions[key])) return refused();
+      const artifact = key === 'recovery' ? request.recovery?.release : request.releases[key];
+      if (artifact === undefined) {if (verified[key] !== undefined || verified.revisions[key] !== undefined) return refused(); continue;}
+      const revision = verified.revisions[key];
+      if (artifact.directory !== verified[key] || revision === undefined || !/^[0-9a-f]{40}$/.test(revision)
+        || artifact.directory !== join(releases, revision)) return refused();
     }
-    for (const name of [...new Set([verified.previous, verified.target, verified.recovery])].sort()) directories.push(await directory(name));
+    for (const name of [...new Set([verified.previous, verified.target, ...(verified.recovery === undefined ? [] : [verified.recovery])])].sort()) directories.push(await directory(name));
     const provenance = join(root, 'provenance');
-    if (![request.admissionFile, request.installedBaselineClosureFile].every(name => inside(provenance, name) && name !== provenance)) return refused();
+    if (![request.changeAssessment.path, request.installedBaselineClosure.path, ...(request.recovery === null ? [] : [request.recovery.evidence.path])].every(name => inside(provenance, name) && name !== provenance)) return refused();
     await absent(request.execution.backupDirectory);
     let adoptionDraftSha256: string | null = null;
     if (request.execution.adoption !== null) {

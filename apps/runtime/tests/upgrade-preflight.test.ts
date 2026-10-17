@@ -9,7 +9,7 @@ import {test} from 'node:test';
 import {MODULE_API_VERSION} from '@jimmie-potts/sdk';
 import {readPrivateFile} from '../src/state.js';
 import {inspectUpgradeState} from '../src/upgrade-inputs.js';
-import {parseUpgradeRequest} from '../src/upgrade-paths.js';
+import {parseUpgradeRequest, inspectUpgradeExecution} from '../src/upgrade-paths.js';
 const run = promisify(execFile);
 
 // The composed checks run in this process against injected readers: each case is a call, not a Node process that imports
@@ -18,6 +18,7 @@ type Reader = (...values: never[]) => unknown;
 type Readers = Record<string, Reader>;
 type Helpers = {
   createRuntimeUpgradePreflight(io: Readers): (request: string, approved?: string) => Promise<unknown>;
+  createRuntimeUpgradeRecoveryCheck(io: Readers): (request: string, plan: string) => Promise<unknown>;
   createRuntimeUpgradeRunningCheck(io: Readers): (request: string, plan: string, phase: string) => Promise<unknown>;
 };
 type Files = {canonical: (value: unknown) => string; sha256: (bytes: string | Buffer) => string};
@@ -80,6 +81,15 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
       adoption: scenario === 'upgrade' ? null : {draftFile: join(root, 'provenance/draft'), overrideFile: join(root, 'unit.d/anchor.conf'),
         originals: [{path: join(root, 'provenance/original'), sha256: 'c'.repeat(64)}], restoration: {path: join(root, 'provenance/restoration'), sha256: 'd'.repeat(64)}}},
   };
+  request.schema = 'runtime-upgrade-request/2.0';
+  delete request.admissionFile; delete request.qualificationRevision; delete request.formatInventoryFiles;
+  const declaredReleases = request.releases as Record<string, unknown>;
+  const recoveryRelease = declaredReleases.recovery;
+  delete declaredReleases.recovery;
+  request.installedBaselineClosure = {path: request.installedBaselineClosureFile, sha256: 'e'.repeat(64)};
+  request.changeAssessment = {path: join(root, 'provenance/change'), sha256: 'f'.repeat(64)};
+  request.recovery = scenario === 'routine-inactive-bb8' ? null : {release: recoveryRelease, evidence: request.changeAssessment};
+  Reflect.deleteProperty(request, 'installedBaselineClosureFile');
   if (scenario === 'unknown-field') request.observations = {passed: true};
   await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
   const owner = {service: 'bunny-runtime.service', pid: 123, startTicks: '100', options: {port: 8788, stateDir: join(root, 'state'), config: join(root, 'config'),
@@ -131,6 +141,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const configSha256 = sha256(await readPrivateFile(owner.options.config, 1024 * 1024));
   const credentialsSha256 = sha256(await readPrivateFile(join(root, 'credentials'), 65536));
   const state = {configSha256, configured, durableOwners: ['core', 'lifx', 'nanoleaf', 'pixoo', 'playback', 'tidbyt']};
+  if (scenario === 'routine-inactive-bb8') state.durableOwners.push('bb8');
   if (scenario.startsWith('companions-')) {
     for (const artifact of Object.values(source.artifacts)) {
       artifact.entries.push({path: 'modules/companions/package.json', kind: 'file', sha256: 'f'.repeat(64)});
@@ -151,19 +162,19 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     if (scenario === 'companions-reason') row.reasonCode = 'unavailable';
     if (scenario === 'companions-refused') {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found';}
     if (scenario === 'companions-introduced') {
-      // Distinct verified roles model an older baseline without this owner.
+      // The new owner has no qualified previous reader; forward admission
+      // remains available with recovery explicitly unknown.
       source.artifacts.previous.entries = [];
       state.durableOwners.splice(state.durableOwners.indexOf('companions'), 1);
       health.modules.pop();
       const target = {...release, sourceRevision: 'd'.repeat(40), archiveSha256: 'e'.repeat(64)};
-      const recovery = {...release, sourceRevision: 'f'.repeat(40), archiveSha256: '9'.repeat(64)};
-      source.expected.releases.target = target; source.expected.releases.recovery = recovery;
+      source.expected.releases.target = target;
       source.stamps.target = {...stamp, revision: target.sourceRevision};
-      source.stamps.recovery = {...stamp, revision: recovery.sourceRevision};
-      source.artifacts.target.root = join(root, 'target'); source.artifacts.recovery.root = join(root, 'recovery');
+      source.artifacts.target.root = join(root, 'target');
+      for (const record of [source.expected.releases, source.stamps, source.artifacts]) Reflect.deleteProperty(record, 'recovery');
       const paths = request.releases as Record<string, typeof artifact>;
       paths.target = {...artifact, directory: source.artifacts.target.root, identity: join(root, 'target-identity')};
-      paths.recovery = {...artifact, directory: source.artifacts.recovery.root, identity: join(root, 'recovery-identity')};
+      request.recovery = null;
       await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
     }
   }
@@ -214,7 +225,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     owner: () => { count('owner'); return answer(scenario === 'owner-drift' && afterHttp ? {...owner, pid: 124} : owner); },
     listener: () => { count('listener'); return answer(scenario === 'listener-drift' && afterHttp ? {...listener, inode: 'socket-2'} : listener); },
     source: () => answer(drift('source', count('source')) ? {...source, inputs: [{changed: true}]} : source),
-    admission: () => answer(drift('admission', count('admission')) ? {...admission, admissionSha256: '0'.repeat(64)} : admission),
+    admission: () => {count('admission'); return refuse('historical admission must not run');},
     baseline: () => answer({baselineRoot: drift('baseline', count('baseline')) ? join(root, 'changed-baseline') : artifact.directory,
       closureSha256: admission.installedBaselineClosure.sha256}),
     config: () => answer({edge: {credentials: join(root, 'credentials')}, modules: {}}),
@@ -255,10 +266,21 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   }
 }
 
+void test('routine forward plan retains inactive BB-8 without certificates or a recovery reader', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-routine-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const result = await composedPreflight(root, 'routine-inactive-bb8');
+  assert.equal(result.code, undefined);
+  assert.equal(result.counters.admission, 0);
+  const plan = result.plan as {state: {durableOwners: string[]}; recovery: unknown};
+  assert.ok(plan.state.durableOwners.includes('bb8'));
+  assert.equal(plan.recovery, null);
+});
+
 void test('composed upgrade preflight binds original observations and the exact locked plan', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-preflight-'));
   t.after(() => rm(root, {recursive: true, force: true}));
-  type Planned = {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
+  type Planned = {plan: {operation: string; planSha256: string; recovery: unknown}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   const inspect = (scenario: string) => bounded(scenario, composedPreflight(root, scenario));
   const first = await inspect('adoption') as Planned;
   // Neither the outcome nor anything the case writes holds the read token, as the subprocess's stdout did not.
@@ -275,12 +297,12 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(companion.counters.http, 2);
   const introduced = await inspect('companions-introduced') as Planned & {code?: string};
   assert.equal(introduced.code, undefined, 'a qualified first introduction does not fabricate current companion health/state');
+  assert.equal(introduced.plan.recovery, null);
   assert.equal(introduced.counters.http, 2);
   const unqualifiedCompanion = await inspect('companions-no-proof');
-  assert.equal(unqualifiedCompanion.code, 'runtime-upgrade-preflight-refused');
-  assert.equal(unqualifiedCompanion.counters.http, 0, 'missing companion qualification refuses before observation');
-  for (const scenario of ['companions-no-baseline-code', 'companions-no-recovery-code', 'companions-no-target-code',
-    'companions-no-state', 'companions-no-inventory']) {
+  assert.equal(unqualifiedCompanion.code, undefined, 'no historical companion certificate is required');
+  assert.equal(unqualifiedCompanion.counters.admission, 0);
+  for (const scenario of ['companions-no-state', 'companions-no-inventory']) {
     const missing = await inspect(scenario);
     assert.equal(missing.code, 'runtime-upgrade-preflight-refused', scenario);
     assert.equal(missing.counters.http, 0, 'unqualified companion roles refuse before authenticated observation');
@@ -297,10 +319,13 @@ void test('composed upgrade preflight binds original observations and the exact 
     assert.equal(qualified.plan.operation, 'adoption');
     assert.equal(qualified.counters.http, 2);
   }
-  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
+  for (const scenario of ['onn-missing-state']) {
     const missing = await inspect(scenario);
     assert.equal(missing.code, 'runtime-upgrade-preflight-refused', scenario);
     assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
+  }
+  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'companions-no-recovery-code', 'companions-no-target-code']) {
+    assert.equal((await inspect(scenario)).code, undefined, scenario + ' needs no historical reader coverage');
   }
   assert.equal(first.plan.operation, 'adoption'); assert.match(first.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(first.counters.http, 2); assert.equal(first.counters.lock, 0);
@@ -322,8 +347,8 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(locked.code, undefined, 'the approved plan is accepted under the lock');
   assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(locked.counters.lock, 2);
-  for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','admission-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-admission-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+  for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
+    'late-source-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       const result = await inspect(scenario);
       assert.equal(result.plan, undefined, `${scenario} returned a plan`);
@@ -351,7 +376,8 @@ void test('production preflight CLI rejects unknown request fields before instal
 async function runningCheck(root: string, scenario: string,
   phase = ['recovery', 'reupgrade'].includes(scenario) ? scenario : 'candidate'): Promise<Outcome> {
   const requestFile = join(root, 'request'), planFile = join(root, 'plan');
-  const request = {operation: 'upgrade', installationId: 'synthetic', installationRoot: root, tokenFile: join(root, 'token'), admissionFile: join(root, 'admission'),
+  const request = {recovery: scenario === 'unknown-recovery' ? null : {release: {}, evidence: {}}, changeAssessment: {},
+    installedBaselineClosure: {path: join(root, 'closure'), sha256: 'd'.repeat(64)}, operation: 'upgrade', installationId: 'synthetic', installationRoot: root, tokenFile: join(root, 'token'), admissionFile: join(root, 'admission'),
     installedBaselineClosureFile: join(root, 'closure'), execution: {operationId: 'one', postStart: {attempts: 2, timeoutMs: 10000, intervalMs: 100}, adoption: null}};
   const options = {environment: 'production', simulate: false, edge: true, config: join(root, 'config'), stateDir: join(root, 'state'), port: 8788, lagLimitMs: 10000};
   const entry = join(root, 'current/apps/runtime/dist/src/main.js');
@@ -446,9 +472,9 @@ async function runningCheck(root: string, scenario: string,
     }
   }
   await writeFile(join(root, 'credentials'), 'credentials', {mode: 0o600});
-  const body = {schema: 'runtime-upgrade-plan/1.0', eligibility: 'eligible-under-coordinator-admission', requestSha256: sha256(await readFile(requestFile)),
+  const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible', requestSha256: sha256(await readFile(requestFile)),
     operation: request.operation, installationId: request.installationId, execution: request.execution, owner: original, paths, baseline, hooks, state,
-    source: {expected, stamps}, admission,
+    source: {expected, stamps}, recovery: request.recovery, changeAssessment: request.changeAssessment,
     privateInputs: {configSha256: sha256(configText), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('synthetic private token')}};
   const plan = {...body, planSha256: scenario === 'wrong-plan-hash' ? '0'.repeat(64) : sha256(canonical(body))};
   await writeFile(planFile, JSON.stringify(plan), {mode: 0o600});
@@ -471,6 +497,7 @@ async function runningCheck(root: string, scenario: string,
     privateFile: (path: string) => readFile(path), parseRequest: (value: unknown) => value, canonical, sha256,
     lock: () => { count('lock'); return scenario === 'missing-lock' ? refuse('no') : answer(undefined); },
     execution: () => answer(request.execution),
+    recoveryPaths: () => answer(paths), units: () => answer(original.units),
     source: () => answer(scenario === 'source-drift' && (counters.http ?? 0) > 1 ? {...source, inputs: [{changed: true}]} : source),
     admission: () => answer(admission), baseline: () => answer(baseline),
     hooks: () => answer(scenario === 'hook-drift' && (counters.http ?? 0) > 1 ? {hooks: [{changed: true}]} : hooks),
@@ -507,7 +534,9 @@ async function runningCheck(root: string, scenario: string,
     },
   };
   try {
-    const result = await helpers.createRuntimeUpgradeRunningCheck(io)(requestFile, planFile, phase);
+    const result = phase === 'pre-recovery'
+      ? await helpers.createRuntimeUpgradeRecoveryCheck(io)(requestFile, planFile)
+      : await helpers.createRuntimeUpgradeRunningCheck(io)(requestFile, planFile, phase);
     return {result, counters, observations};
   } catch (error) {
     return {code: errorCode(error), counters, observations};
@@ -527,7 +556,7 @@ void test('post-start observation binds the selected release and refuses drift w
     assert.equal(qualified.result.verified, true);
     assert.equal(qualified.counters.http, 2);
   }
-  for (const scenario of ['onn-missing-coverage', 'onn-retained-missing-coverage', 'onn-missing-state']) {
+  for (const scenario of ['onn-missing-state']) {
     const missing = await inspect(scenario);
     assert.equal(missing.code, 'runtime-upgrade-running-refused', scenario);
     assert.equal(missing.counters.http, 0, 'missing qualification refuses before authenticated observation');
@@ -555,7 +584,7 @@ void test('post-start observation binds the selected release and refuses drift w
   }
 });
 
-void test('companion post-start health and coverage are enforced in every selected phase', async t => {
+void test('companion post-start health and ownership are enforced in every selected phase', async t => {
   const root = await mkdtemp(join(tmpdir(), 'companions-running-check-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   for (const phase of ['candidate', 'recovery', 'reupgrade']) {
@@ -575,7 +604,7 @@ void test('companion post-start health and coverage are enforced in every select
       assert.equal(changed.code, 'runtime-upgrade-running-refused', `${phase} ${drift}`);
       assert.equal(changed.counters.http, 0, 'ownership drift refuses before observation');
     }
-    for (const scenario of ['companions-no-proof', 'companions-no-recovery-code', 'companions-missing-row',
+    for (const scenario of ['companions-missing-row',
       'companions-duplicate-row', 'companions-stopped', 'companions-unhealthy', 'companions-reason', 'companions-refused']) {
       const refused = await bounded(scenario, runningCheck(root, scenario, phase));
       assert.equal(refused.code, 'runtime-upgrade-running-refused', `${phase} ${scenario}`);
@@ -596,7 +625,7 @@ void test('running-check CLI refuses an unknown phase before reading installed s
   });
 });
 
-void test('qualified configured or retained Roborock requires coverage and delivered readers before upgrade observation', async t => {
+void test('configured or retained Roborock keeps state and health guards without phase certificates', async t => {
   const root = await mkdtemp(join(tmpdir(), 'roborock-preflight-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   for (const scenario of ['selected-roborock-qualified', 'retained-roborock-qualified']) {
@@ -604,7 +633,7 @@ void test('qualified configured or retained Roborock requires coverage and deliv
     assert.equal(value.code, undefined, scenario); assert.ok(value.plan !== undefined);
     assert.equal(value.counters.http, 2);
   }
-  for (const suffix of ['no-proof', 'missing-state', 'no-previous-reader', 'no-target-reader', 'no-recovery-reader', 'no-inventory']) {
+  for (const suffix of ['missing-state', 'no-inventory']) {
     for (const owner of ['selected', 'retained']) {
       if (owner === 'retained' && suffix === 'missing-state') continue; // No configuration or retained ownership remains.
       const value = await composedPreflight(root, `${owner}-roborock-${suffix}`);
@@ -617,13 +646,13 @@ void test('qualified configured or retained Roborock requires coverage and deliv
   }
 });
 
-void test('post-start Roborock verification preserves coverage readers and configured health in every phase', async t => {
+void test('post-start Roborock verification preserves state and configured health in every phase', async t => {
   const root = await mkdtemp(join(tmpdir(), 'roborock-running-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   for (const phase of ['candidate', 'recovery', 'reupgrade']) {
     for (const owner of ['selected', 'retained']) {
       assert.equal((await runningCheck(root, `${owner}-roborock-qualified`, phase)).code, undefined);
-      for (const suffix of ['no-proof', 'missing-state', 'no-previous-reader', 'no-target-reader', 'no-recovery-reader', 'no-inventory']) {
+      for (const suffix of ['missing-state', 'no-inventory']) {
         if (owner === 'retained' && suffix === 'missing-state') continue; // An absent optional owner needs no archive.
         assert.equal((await runningCheck(root, `${owner}-roborock-${suffix}`, phase)).code, 'runtime-upgrade-running-refused', `${phase} ${owner} ${suffix}`);
       }
@@ -631,5 +660,79 @@ void test('post-start Roborock verification preserves coverage readers and confi
     for (const suffix of ['unhealthy', 'refused', 'missing-row', 'duplicate-row', 'reason']) {
       assert.equal((await runningCheck(root, `selected-roborock-${suffix}`, phase)).code, 'runtime-upgrade-running-refused', `${phase} ${suffix}`);
     }
+  }
+});
+
+void test('unknown recovery allows forward verification but refuses recovery before observation', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-unknown-recovery-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  assert.equal((await runningCheck(root, 'unknown-recovery', 'candidate')).code, undefined);
+  const recovery = await runningCheck(root, 'unknown-recovery', 'recovery');
+  assert.equal(recovery.code, 'runtime-upgrade-running-refused');
+  assert.equal(recovery.counters.owner, 0);
+  assert.equal(recovery.counters.http, 0);
+  const before = await runningCheck(root, 'unknown-recovery', 'pre-recovery');
+  assert.equal(before.code, 'runtime-upgrade-recovery-refused');
+  assert.equal(before.counters.owner, 0);
+  assert.equal(before.counters.http, 0);
+  assert.equal((await runningCheck(root, 'qualified', 'pre-recovery')).code, undefined);
+});
+
+void test('recovery guard refuses protected-input drift and evidence changed during artifact verification', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'bunny-recovery-bindings-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const provenance = join(root, 'provenance'); await mkdir(provenance, {mode: 0o700});
+  const evidence = join(provenance, 'evidence');
+  const approvedEvidence = 'synthetic reviewed latest-state evidence';
+  const pin = {path: evidence, sha256: sha256(approvedEvidence)};
+  const artifact = {identity: join(root, 'identity'), directory: join(root, 'release'), archive: join(root, 'archive')};
+  const request = {schema: 'runtime-upgrade-request/2.0', operation: 'upgrade', installationId: 'synthetic', installationRoot: root,
+    tokenFile: join(root, 'token'), installedBaselineClosure: pin, changeAssessment: pin,
+    releases: {previous: artifact, target: artifact}, recovery: {release: artifact, evidence: pin},
+    execution: {operationId: 'recovery', backupDirectory: join(root, 'backups/recovery'), stopTimeoutMs: 1000,
+      postStart: {attempts: 1, timeoutMs: 1000, intervalMs: 100}, startupEffects: {assessment: pin, authority: pin}, adoption: null}};
+  const requestFile = join(root, 'request'), planFile = join(root, 'plan'), configFile = join(root, 'config');
+  await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
+  const credentialsFile = join(root, 'credentials');
+  const baseline = {baselineRoot: artifact.directory}, hooks = {hooks: []}, paths = {selection: 'synthetic'};
+  const state = {configured: [] as string[], durableOwners: ['core']};
+  const entries: unknown[] = [];
+  const identity = {sourceRevision: 'a'.repeat(40), archiveSha256: 'b'.repeat(64), manifestSha256: 'c'.repeat(64)};
+  const source = {expected: {releases: {previous: identity, recovery: {...identity}}}, stamps: {}, inputs: [],
+    artifacts: {previous: {root: artifact.directory, entries}, target: {root: artifact.directory, entries}, recovery: {root: artifact.directory, entries}}};
+  const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible', requestSha256: sha256(await readFile(requestFile)),
+    operation: request.operation, installationId: request.installationId, recovery: request.recovery, changeAssessment: pin, execution: request.execution,
+    owner: {units: [], options: {config: configFile, stateDir: join(root, 'state')}}, baseline, hooks, state, paths,
+    source: {expected: source.expected, stamps: source.stamps},
+    privateInputs: {configSha256: sha256('config'), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('token')}};
+  await writeFile(planFile, JSON.stringify({...body, planSha256: sha256(canonical(body))}), {mode: 0o600});
+  for (const scenario of ['unchanged', 'late-evidence', 'config', 'credentials', 'token', 'baseline', 'hooks', 'state', 'paths', 'unit-set', 'late-baseline-evidence', 'different-recovery-revision', 'different-recovery-inventory']) {
+    await t.test(scenario, async () => {
+      source.expected.releases.recovery = {...identity,
+        ...(scenario === 'different-recovery-revision' ? {sourceRevision: 'd'.repeat(40)} : {}),
+        ...(scenario === 'different-recovery-inventory' ? {manifestSha256: 'e'.repeat(64)} : {})};
+      const approvedBody = {...body, source: {expected: source.expected, stamps: source.stamps}};
+      await writeFile(planFile, JSON.stringify({...approvedBody, planSha256: sha256(canonical(approvedBody))}), {mode: 0o600});
+      await writeFile(evidence, approvedEvidence, {mode: 0o600});
+      await writeFile(configFile, scenario === 'config' ? 'changed config' : 'config', {mode: 0o600});
+      await writeFile(credentialsFile, scenario === 'credentials' ? 'changed credentials' : 'credentials', {mode: 0o600});
+      await writeFile(request.tokenFile, scenario === 'token' ? 'changed token' : 'token', {mode: 0o600});
+      let baselineReads = 0;
+      const io: Readers = {privateFile: readPrivateFile, parseRequest: parseUpgradeRequest, canonical, sha256,
+        execution: inspectUpgradeExecution, lock: () => answer(undefined),
+        source: async () => {if (scenario === 'late-evidence') await writeFile(evidence, 'changed during source scan'); return source;},
+        config: () => answer({edge: {credentials: credentialsFile}}),
+        baseline: async () => {
+          if (scenario === 'late-baseline-evidence' && ++baselineReads === 2) await writeFile(evidence, 'changed during final closure scan');
+          return scenario === 'baseline' ? {...baseline, changed: true} : baseline;
+        },
+        hooks: () => answer(scenario === 'hooks' ? {hooks: ['changed']} : hooks),
+        state: () => answer(scenario === 'state' ? {...state, durableOwners: ['core', 'unknown']} : state),
+        units: () => answer(scenario === 'unit-set' ? ['/synthetic/new-override.conf'] : []),
+        recoveryPaths: () => scenario === 'paths' ? refuse('unsafe protected path') : answer(paths)};
+      const check = helpers.createRuntimeUpgradeRecoveryCheck(io);
+      if (scenario === 'unchanged') assert.equal((await check(requestFile, planFile) as {eligible: boolean}).eligible, true);
+      else await assert.rejects(check(requestFile, planFile), /runtime-upgrade-recovery-refused/);
+    });
   }
 });

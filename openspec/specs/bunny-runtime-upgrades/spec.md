@@ -10,7 +10,7 @@ to a qualified previous release while preserving the latest private durable stat
 The current runtime SHALL provide an owning upgrade/recovery procedure for the
 established installation. Its pre-effect plan MUST bind the candidate and previous
 release identities, configuration, state owners, protected paths, operation scope,
-restart effects, compatibility evidence and recovery procedure. Existing scoped
+restart effects, a focused storage-change assessment and explicit recovery eligibility. Existing scoped
 standing authority SHALL satisfy the authorization checkpoint. The procedure
 MUST refuse unknown targets, changed inputs and effects outside that authority.
 
@@ -30,6 +30,10 @@ MUST refuse unknown targets, changed inputs and effects outside that authority.
 - **WHEN** an operator attempts to satisfy this procedure with the retained Hub installer or repeats fresh cutover against current state
 - **THEN** the procedure refuses that execution path and preserves current state and unrelated services
 
+#### Scenario: Stale operator request
+- **WHEN** an operator supplies a request or plan using the superseded routine admission schema
+- **THEN** new execution refuses it and requires a fresh request and plan without rewriting historical evidence
+
 ### Requirement: Verified release and exclusive operation
 
 The procedure MUST verify clean merged source, dependency closure and release
@@ -48,24 +52,23 @@ operation or unresolved interrupted operation MUST prevent a new mutation.
 
 ### Requirement: Latest durable state survives compatible recovery
 
-The procedure MUST prove compatibility for every selected production durable
-store and permanent referenced file before effects. It MUST quiesce the named
-writers before taking a consistent private backup. Recovery SHALL reopen the
-latest durable state with qualified previous bytes; it MUST NOT silently restore
-an older database, resend a device command or activate unselected modules.
-Unknown or incompatible recovery MUST refuse before stopping a writer.
-
-#### Scenario: Candidate writes newer records before recovery
-- **WHEN** a synthetic candidate writes identifiable preferences, history, retained media references and command outcomes and the previous release is selected for recovery
-- **THEN** recovery and re-upgrade retain those latest records and referenced originals while producing no replay of admitted device commands
+The current runtime SHALL assess actual storage changes using focused evidence before a forward upgrade, without requiring historical certificates for every owner or unchanged format. It MUST quiesce named writers and verify a consistent private backup before switching. Recovery eligibility SHALL be independent: unknown recovery MUST allow forward planning and MUST refuse recovery selection/checks. Qualified recovery MUST use the exact approved previous artifact and complete identity, reopen latest state with verified bytes and focused evidence for affected formats and selected owners, and remain representable by the unchanged receipt contract. No operation SHALL silently restore an older snapshot, replay commands or activate unselected modules. Snapshot restoration requires a separate explicit owner decision, preservation of the failed latest state and an honest data-gap report.
 
 #### Scenario: Recovery format is unknown or incompatible
-- **WHEN** the previous release cannot be proved to reopen the candidate's selected durable formats
-- **THEN** the operation refuses before a service stop, release switch or mutable-state write
+- **WHEN** a reviewed forward release has no qualified older reader
+- **THEN** its otherwise valid forward plan is eligible, reports recovery as unknown and refuses a recovery check before selection
+
+#### Scenario: Stored formats change
+- **WHEN** the target changes a stored format or reader
+- **THEN** the change assessment includes focused forward write/reopen evidence and independently states any qualified latest-state recovery evidence
 
 #### Scenario: Stopping or backup fails
 - **WHEN** a named writer remains active or a consistent backup cannot be verified
-- **THEN** the procedure does not switch releases and records the observed state and remaining recovery work truthfully
+- **THEN** the procedure does not switch releases and records the observed state truthfully
+
+#### Scenario: Candidate writes newer records before recovery
+- **WHEN** recovery is selected after a candidate has written records or command outcomes
+- **THEN** qualified recovery preserves that latest state without replay, and unknown/incompatible readers refuse rather than restoring older data
 
 ### Requirement: Running identity and truthful durable result
 
@@ -100,7 +103,7 @@ evidence plus pre-effect refusal evidence. Initial established-installation
 acceptance MUST independently verify one separately authorized successful forward
 upgrade: its exact plan, stopped-writer private backup, finalized durable receipt,
 running revision, required health and preserved latest state. The previous verified
-release and compatible recovery path MUST remain available. Deliberate live
+release MUST remain available; recovery eligibility MUST be reported independently. Deliberate live
 recovery and re-upgrade SHALL NOT be required for initial qualification and MUST
 be reported as untested unless separately exercised. A failed, refused or
 interrupted forward upgrade MUST leave initial installed qualification pending,
@@ -108,11 +111,11 @@ even when an authorized recovery succeeds. Source checks and service health MUST
 NOT stand in for actual-client or physical-device acceptance of dependent features.
 
 #### Scenario: Synthetic rehearsal succeeds
-- **WHEN** the disposable rehearsal preserves production-adapter records and refuses an incompatible candidate before effects
+- **WHEN** the disposable rehearsal exercises forward admission, running checks and recovery refusal with synthetic records
 - **THEN** it establishes only the measured synthetic qualification, while established-installation acceptance remains pending
 
 #### Scenario: Established runtime upgrade is verified
-- **WHEN** the separately authorized single forward upgrade verifies its exact plan, stopped-writer backup, finalized receipt, running identity, required health and latest state while retaining the previous verified release and compatible recovery path
+- **WHEN** the separately authorized single forward upgrade verifies its exact plan, stopped-writer backup, finalized receipt, running identity, required health and latest state while retaining the previous verified release and recording recovery eligibility
 - **THEN** its installed acceptance can be recorded separately from dependent ONN client and physical outcomes, with deliberate live recovery and re-upgrade explicitly untested unless separately exercised
 
 #### Scenario: Initial upgrade needs recovery
@@ -121,15 +124,15 @@ NOT stand in for actual-client or physical-device acceptance of dependent featur
 
 ### Requirement: Bounded absent ONN health qualification
 
-The routine upgrade procedure SHALL recognize a reported ONN health row only when ONN is unconfigured, no ONN state is retained, and that row has state `refused`, reason code `not-found` and `healthy: false`. Preflight and post-start verification MUST apply the same bounded exception while retaining every other source, admission, state, health, ownership and recovery check. Configured or retained ONN MUST NOT use this absence exception; it requires the separately bound configured/retained ONN qualification. Unknown modules MUST remain outside the qualified profiles. The exception MUST NOT activate ONN or establish installed or physical acceptance.
+The routine upgrade procedure SHALL recognize a reported ONN health row only when ONN is unconfigured, and that row has state `refused`, reason code `not-found` and `healthy: false`. Preflight and post-start verification MUST apply the same bounded exception while retaining every other source, state, health, ownership and recovery check. Configured ONN MUST NOT use this absence exception. Retained inactive state is inventoried and preserved without mandatory historical qualification. Unknown modules MUST remain outside the qualified profiles. The exception MUST NOT activate ONN or establish installed or physical acceptance.
 
 #### Scenario: Shipped ONN is absent from the selected configuration
-- **WHEN** the qualified configuration/state inspection finds no ONN configuration or retained state and ONN reports the exact refused/not-found/unhealthy row with the required degraded aggregate health
+- **WHEN** the qualified configuration/state inspection finds no ONN configuration and ONN reports the exact refused/not-found/unhealthy row with the required degraded aggregate health
 - **THEN** preflight and post-start health verification admit that exception only after their other gates pass
 
 #### Scenario: ONN is configured or has retained state
-- **WHEN** ONN configuration or any retained ONN state is present
-- **THEN** the unqualified owner is refused without opening, modifying or removing its database or files
+- **WHEN** ONN configuration is present
+- **THEN** ordinary running, healthy, null-reason module health is required
 
 #### Scenario: ONN health does not describe the bounded absence
 - **WHEN** ONN reports running, healthy, a different refusal reason or an inconsistent aggregate status
@@ -140,109 +143,8 @@ The routine upgrade procedure SHALL recognize a reported ONN health row only whe
 - **THEN** verification refuses without treating that row as an absent ONN exception
 
 #### Scenario: Qualified previous release does not report ONN
-- **WHEN** an otherwise qualified previous release reports no ONN row and no ONN configuration or state exists
-- **THEN** its existing health/admission checks remain applicable without requiring a fabricated ONN row or changing the legacy seven-owner certificate format
-
-### Requirement: Configured and retained BB-8 qualification
-
-The established-runtime procedure SHALL admit configured or retained BB-8 only
-with coordinator-bound compatibility coverage for its latest production state,
-accepted responsibility, SDK outbox and independently owned Windows receipts.
-Storage-bearing Windows helper inputs MUST participate in conservative format
-classification. Recovery and re-upgrade MUST preserve latest durable evidence
-without replaying any robot operation, changing enrollment or opening the
-Windows receipt database from WSL. Configured BB-8 MUST satisfy ordinary running
-module health; an absent-module exception SHALL apply only when unconfigured.
-Admission SHALL preserve the separately qualified boundaries for all other
-modules. Source qualification MUST NOT establish installation or physical
-acceptance.
-
-Admission MUST preserve the legacy seven-owner coverage shape. Configured or
-retained BB-8 MUST require the complete `bb8` and `bb8-windows` pair, each with
-`baseline`, `candidate`, `recovery` and `reupgrade` evidence. A partial pair or
-missing phase MUST refuse; a seven-owner certificate MUST NOT admit configured
-or retained BB-8.
-
-#### Scenario: Configured or retained BB-8 has complete compatible evidence
-- **WHEN** the selected releases have complete bound production-store recovery and re-upgrade evidence for configured or retained BB-8
-- **THEN** the read-only plan includes BB-8's durable ownership and admits it only with the required configured-module health
-
-#### Scenario: Latest BB-8 state survives recovery
-- **WHEN** a disposable candidate commits LED intent, reported power, interrupted responsibility and completed outcomes before compatible recovery and re-upgrade
-- **THEN** every latest record remains readable, interrupted effects remain uncertain or failed as appropriate, and no robot operation replays
-
-#### Scenario: Windows helper storage-bearing input changes
-- **WHEN** a selected helper input differs between the qualified and candidate releases
-- **THEN** format classification requires renewed compatibility evidence rather than treating the change as documentation or operator-only work
-
-#### Scenario: Missing coverage or unhealthy configured BB-8
-- **WHEN** BB-8 is configured or retained without complete compatible evidence, or its configured module is refused, stopped or unhealthy
-- **THEN** admission refuses before any service, mutable state or device effect
-
-#### Scenario: Unconfigured BB-8 remains absent
-- **WHEN** BB-8 is unconfigured and its health row is refused with not-found and healthy false
-- **THEN** the existing bounded absent-module exception remains available without activating the module or contacting a robot
-
-#### Scenario: Legacy coverage remains available without selected BB-8
-- **WHEN** no BB-8 configuration or retained state is selected and the original seven-owner certificate has complete matching source, format and phase bindings
-- **THEN** that coverage shape remains accepted without requiring either additional BB-8 owner
-
-#### Scenario: Qualified BB-8 coexists with absent ONN
-- **WHEN** configured or retained BB-8 has its complete paired evidence and ONN is unconfigured without retained state, with its exact refused/not-found/unhealthy health row
-- **THEN** initial and post-start checks preserve the BB-8 coverage requirement and the separately qualified ONN absence boundary together
-
-### Requirement: Configured and retained ONN upgrade qualification
-
-The fixed production upgrade profile SHALL accept the selected ONN configuration
-and private durable state only with complete ONN baseline, candidate,
-compatible-recovery and re-upgrade qualification bound to the actual release
-and format identities. Existing seven-owner and paired BB-8 certificates SHALL
-remain valid for their qualified scopes. Unknown owners, missing coverage,
-unsafe entries and incompatible recovery SHALL refuse before service effects.
-
-#### Scenario: ONN is configured or retained
-- **WHEN** ONN is configured or any selected ONN durable state remains
-- **THEN** preflight requires complete bound ONN qualification and configured ONN must report running, healthy, reason-free state
-
-#### Scenario: ONN coverage is missing or incomplete
-- **WHEN** ONN is configured or retained but its four qualification phases are missing, duplicated, unbound or incompatible
-- **THEN** preflight refuses before any service stop, release selection or device command
-
-#### Scenario: ONN is absent
-- **WHEN** ONN is unconfigured with no retained state and reports refused, not-found and unhealthy
-- **THEN** the existing absent-ONN exception remains valid and requires no ONN coverage; running, healthy, wrong-reason or unknown states still refuse
-
-#### Scenario: Candidate writes title observations and command outcomes
-- **WHEN** the synthetic candidate writes title originals, gaps, reported progress, request identities, fences and outcomes before compatible recovery and re-upgrade
-- **THEN** each separate process retains those latest records and private identities, settles interrupted responsibility truthfully, and never re-executes an earlier device command
-
-#### Scenario: Recovery predates enabled history
-- **WHEN** a proposed recovery cannot parse the selected history configuration or reopen its retained formats
-- **THEN** qualification refuses that recovery rather than stripping settings, restoring older data or treating source tests as installed acceptance
-
-### Requirement: Always-shipped companion owner qualification
-
-For [#1044](https://github.com/jimmie-potts/agent-device-hub/issues/1044), the procedure SHALL require complete coordinator-bound companions coverage whenever that owner is configured, retained or present in a selected release. Coverage MUST bind baseline, candidate, recovery and reupgrade evidence to the exact releases and format inventories. The existing certificate schema and legacy seven-owner, ONN eight-owner, paired BB-8 nine-owner and combined ten-owner sets MUST remain supported. Adding companions SHALL require that one complete owner in addition to each applicable set; unknown owners, duplicates, partial BB-8 pairs and missing phases MUST refuse.
-
-#### Scenario: New candidate introduces the companion owner
-- **WHEN** the baseline has no companion state and the selected candidate ships that owner
-- **THEN** preflight requires its complete four-phase evidence before any effect, including verified initial absence and a recovery release that reopens the candidate's latest companion data
-
-#### Scenario: Proposed recovery lacks the companion reader
-- **WHEN** a selected release creates or retains companion state but the recovery artifact cannot reopen it
-- **THEN** preflight refuses rather than accepting opaque file retention, deleting state, restoring an earlier database or stripping configuration
-
-#### Scenario: Retained owner is absent from the current artifact
-- **WHEN** companion configuration or retained state exists but the current artifact has no qualified companion reader
-- **THEN** preflight refuses that unqualified current ownership instead of inventing a healthy or compatible baseline
-
-#### Scenario: Legacy coverage remains applicable
-- **WHEN** no selected artifact, configuration or retained state requires companions
-- **THEN** the existing exact coverage sets remain valid without a fabricated companion receipt or certificate-schema change
-
-#### Scenario: Coverage is incomplete or unrelated
-- **WHEN** companions coverage lacks a phase, a BB-8 pair is partial, or a certificate names an unknown or duplicate owner
-- **THEN** admission or preflight refuses through the existing safe failure surface
+- **WHEN** an otherwise qualified previous release reports no ONN row and ONN is unconfigured
+- **THEN** its existing health checks remain applicable without requiring a fabricated ONN row or certificate
 
 ### Requirement: Companion ownership and health remain explicit
 
@@ -268,50 +170,18 @@ The procedure SHALL inventory the companion owner's files with the same private 
 - **WHEN** synthetic production-store and refusal checks pass
 - **THEN** only source qualification is evidenced; exact installed startup authority and ONN client/physical acceptance remain separate
 
-### Requirement: Configured and retained Roborock upgrade qualification
+### Requirement: Routine forward admission preserves inactive owners
 
-For [#376](https://github.com/jimmie-potts/agent-device-hub/issues/376), routine upgrade admission SHALL support configured or retained Roborock only with complete coordinator-bound baseline, candidate, recovery and reupgrade evidence for the actual releases and format inventories. Existing fixed owner sets SHALL remain available; Roborock SHALL be an additional complete owner for each supported combination. Unknown owners, duplicate owners, partial BB-8 pairs, missing or duplicate phases and changed evidence MUST refuse. Source qualification MUST NOT establish installed or physical acceptance.
+Routine forward admission SHALL require verified previous/target releases, installed baseline protection, a focused change assessment and the existing lock, private-input, state-layout, health and receipt checks. It MUST NOT require broad source-format requalification, fixed owner phase certificates, a third recovery release or execution of inactive integrations. Known retained inactive owners SHALL remain inventoried and preserved. Unknown owners, unsafe files, configured missing primary stores and unhealthy configured modules MUST still refuse.
 
-#### Scenario: Complete configured Roborock coverage
-- **WHEN** an upgrade selects configured Roborock and complete bound coverage for every applicable owner
-- **THEN** the profile admits only the exact qualified releases and evidence
+#### Scenario: Hibernated integration data remains
+- **WHEN** the installation retains inactive BB-8 files and the new release omits its compiled readers
+- **THEN** the otherwise valid forward plan includes that ownership without running dormant code, reading a Windows database or requiring BB-8 phase certificates
 
-#### Scenario: Incomplete or changed proof
-- **WHEN** Roborock coverage lacks a phase, repeats an owner or phase, names an unknown owner, or its bound evidence changes
-- **THEN** admission refuses before installed effects
+#### Scenario: Recovery evidence is independently bound
+- **WHEN** the original previous release is qualified for recovery
+- **THEN** its exact artifact paths, complete verified identity and private latest-state evidence are bound to the reviewed request and any drift refuses
 
-#### Scenario: Existing optional-owner combinations
-- **WHEN** Roborock coverage accompanies any supported legacy, ONN, paired BB-8 or companions coverage set
-- **THEN** complete coverage is supported and the original sets remain available without Roborock receipts when it is unconfigured and unretained
-
-### Requirement: Private Roborock ownership and reader admission
-
-The procedure SHALL classify configured and retained Roborock using private metadata without opening live databases. Configured or retained Roborock MUST have a regular private primary store; configuration, directories and sidecars alone MUST NOT substitute. Selected previous, target and recovery artifacts MUST contain the delivered Roborock store reader when Roborock is configured or retained. Preflight and post-start checks SHALL require configured Roborock to report running, healthy and null-reason state. An unconfigured Roborock row SHALL retain only the existing refused, unhealthy, not-found exception. No qualification SHALL authorize account setup, device commands or installed activation.
-
-#### Scenario: Metadata-only inventory
-- **WHEN** a private regular primary store and supported sidecars belong to the configured or retained Roborock owner
-- **THEN** inventory identifies that owner without reading or changing database bytes
-
-#### Scenario: Primary store or reader missing
-- **WHEN** Roborock is configured or retained but its primary store or a selected artifact's delivered reader is missing
-- **THEN** the procedure refuses before effects and preserves original files
-
-#### Scenario: Configured and absent health differ
-- **WHEN** initial or post-start verification observes configured Roborock
-- **THEN** only ordinary running healthy null-reason health passes; absence remains valid only for unconfigured Roborock
-
-### Requirement: Latest Roborock archive and publication recovery
-
-Qualification SHALL demonstrate preservation of private identity, original observation and record versions, room mappings, observed battery samples and gaps, unverified map bytes and provenance, and SDK outbox publication state across baseline, candidate, compatible recovery and reupgrade. Recovery MUST read distinct newer candidate observations before creating replacement observations or publishing retained state. Republish MUST preserve original envelope identity and MUST NOT replay collection or control effects. All fixture evidence SHALL be synthetic and private; four same-build source processes SHALL establish persistence only, while cross-release compatibility requires the exact artifact qualification used by installed admission.
-
-#### Scenario: Candidate observations survive compatible recovery
-- **WHEN** a candidate commits newer durable observations and a compatible recovery starts on that latest archive
-- **THEN** recovery and reupgrade read those observations, original versions and private maps unchanged before any new collection
-
-#### Scenario: Recovery silently restores older state
-- **WHEN** a negative-control recovery starts from the older baseline instead of the candidate's latest state
-- **THEN** qualification fails on missing newer observations rather than accepting a healthy process
-
-#### Scenario: Pending state publication resumes
-- **WHEN** a prior publication was refused and compatible recovery starts
-- **THEN** retained state envelopes can be published unchanged while originals and latest projection remain intact and zero collection or vacuum-control effects occur
+#### Scenario: A different recovery release cannot finalize this operation
+- **WHEN** recovery names artifact paths or a complete verified identity different from the original previous release
+- **THEN** the request or pre-effect recovery check refuses without effects; the original receipt identity remains unchanged and another release needs a separately assessed operation

@@ -1578,7 +1578,10 @@ marks `bunny.hibernated: true`, so generated runtime and frontend registries omi
 it; root build/typecheck/lint and workspace installation omit the dormant module/helper. Build removes their
 obsolete generated output so an existing checkout cannot rediscover old tests.
 
-Retain schemas, source, private state and production format/admission guards.
+Retain schemas, source, private state and ownership/layout guards. Routine
+upgrades follow the focused change-assessment and independent recovery policy
+in [UPGRADE.md](../apps/runtime/UPGRADE.md); dormant phase certificates are not
+a forward-admission gate.
 Generic inventory fixtures may name retained source paths without importing or
 executing BB-8. A new owner decision and restored validation are prerequisites
 for resumption. The owning [module](../modules/bb8/README.md) and
@@ -1684,3 +1687,15 @@ discovered by existing runtime core CI, alongside the gateway suite. The owning
 Caddy/phone-width browser journey. It uses synthetic controls and keeps actual
 installed iPhone acceptance separate; the root build, typecheck, JavaScript lint,
 SDK, contracts and workflow checks remain applicable.
+
+## Runtime upgrade operator checks
+
+Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
+`npm run lint:js`, `npm run test:runtime:built`, `npm run check:workflow` and
+`npm run test:workflow`. The existing runtime CI job runs these operator tests.
+Focused request/source/path/composition regressions cover retained inactive owners,
+two-release integrity, stale requests, optional recovery, drift, lock, ownership
+and bounded health. Procedure fixtures exercise stopped-writer backup, selection,
+receipts and interrupted resolution using synthetic state. Recovery remains
+independent of forward eligibility; no checks execute hibernated BB-8 code or
+qualify an installed/physical device.

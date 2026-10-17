@@ -83,7 +83,7 @@ function selected(path) {
     && /\.(mjs|cjs|js|ts|py)$/.test(path);
 }
 
-export function runtimeFormatInputs(entries) {
+function sourceInputs(entries) {
   const inputs = [];
   for (const entry of entries) {
     if (!selected(entry.path) || entry.kind === 'directory') continue;
@@ -92,8 +92,36 @@ export function runtimeFormatInputs(entries) {
   }
   inputs.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   if (inputs.length === 0 || inputs.length > 10000 || new Set(inputs.map(item => item.path)).size !== inputs.length
-    || required.some(path => !inputs.some(item => item.path === path))) refused();
+    ) refused();
   return inputs;
+}
+
+// Historical broad format inventory remains available as an optional diagnostic.
+export function runtimeFormatInputs(entries) {
+  const inputs = sourceInputs(entries);
+  if (required.some(path => !inputs.some(item => item.path === path))) refused();
+  return inputs;
+}
+
+/** Routine release integrity is independent of historical recovery certification. */
+export function createRoutineUpgradeSourceAdapter(verify) {
+  return async input => {
+    try {
+      if (!closed(input, ['installationId', 'provenanceDirectory', 'releases'])
+        || !text(input.installationId) || input.installationId.length > 128 || !text(input.provenanceDirectory)
+        || !(closed(input.releases, ['previous', 'target']) || closed(input.releases, ['previous', 'target', 'recovery']))) refused();
+      await checkStateDirectory(input.provenanceDirectory);
+      const releases = {}, stamps = {}, artifacts = {};
+      for (const name of Object.keys(input.releases).sort()) {
+        const paths = input.releases[name];
+        if (!closed(paths, ['identity', 'directory', 'archive']) || !Object.values(paths).every(text)) refused();
+        const release = await verify(paths.identity, paths.directory, paths.archive);
+        releases[name] = release.identity; stamps[name] = await buildStamp(release); artifacts[name] = release;
+      }
+      return {expected: {installationId: input.installationId, provenanceDirectory: input.provenanceDirectory, releases},
+        stamps, artifacts, inputs: sourceInputs(artifacts.previous.entries)};
+    } catch {return refused();}
+  };
 }
 
 async function buildStamp(release) {

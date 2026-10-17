@@ -41,7 +41,7 @@ const production = (readRegular: BoundedReader): UpgradeOwnerReader => ({
   link: (pid, name) => readlink(`/proc/${pid}/${name}`),
 });
 
-function readService(text: string): {
+function readService(text: string, requireRunning = true): {
   pid: number; startMonotonic: string; units: string[]; controlGroup: string;
 } {
   if (Buffer.byteLength(text) > 64 * 1024) return refused();
@@ -53,9 +53,10 @@ function readService(text: string): {
     fields[key] = line.slice(at + 1);
   }
   if (!isDeepStrictEqual(Object.keys(fields).sort(), [...properties].sort())
-    || fields.LoadState !== 'loaded' || fields.ActiveState !== 'active' || fields.SubState !== 'running'
-    || !/^[1-9]\d*$/.test(fields.MainPID ?? '') || !/^[1-9]\d*$/.test(fields.ExecMainStartTimestampMonotonic ?? '')
-    || !absolute(fields.FragmentPath ?? '') || !absolute(fields.ControlGroup ?? '')) return refused();
+    || fields.LoadState !== 'loaded' || !/^\d+$/.test(fields.MainPID ?? '')
+    || (requireRunning && (fields.ActiveState !== 'active' || fields.SubState !== 'running'
+      || !/^[1-9]\d*$/.test(fields.MainPID ?? '') || !/^[1-9]\d*$/.test(fields.ExecMainStartTimestampMonotonic ?? '')
+      || !absolute(fields.ControlGroup ?? ''))) || !absolute(fields.FragmentPath ?? '')) return refused();
   const pid = Number(fields.MainPID);
   if (!Number.isSafeInteger(pid) || pid > 2147483647) return refused();
   const fragment = fields.FragmentPath ?? '';
@@ -118,3 +119,17 @@ export function createUpgradeOwnerObserver(reader: UpgradeOwnerReader): () => Pr
 
 export const createInstalledUpgradeOwnerObserver = (readRegular: BoundedReader): (() => Promise<UpgradeOwner>) =>
   createUpgradeOwnerObserver(production(readRegular));
+
+/** Unit membership remains observable when the candidate is failed or stopped. */
+export function createUpgradeUnitObserver(show: () => Promise<string>): () => Promise<string[]> {
+  return async () => {
+    try {
+      const before = readService(await show(), false).units;
+      if (!isDeepStrictEqual(before, readService(await show(), false).units)) return refused();
+      return before;
+    } catch {return refused();}
+  };
+}
+
+export const createInstalledUpgradeUnitObserver = (readRegular: BoundedReader): (() => Promise<string[]>) =>
+  createUpgradeUnitObserver(() => production(readRegular).show());

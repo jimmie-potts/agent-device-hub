@@ -736,8 +736,11 @@ Identify the selected installation before planning an upgrade. The current
 B.U.N.N.Y. installation is `apps/runtime`, whose [setup guide](../apps/runtime/SETUP.md)
 owns fresh setup and manual return to retained old services. Before planning,
 running or checking its upgrades/recovery, read the owning
-[runtime upgrade procedure](../apps/runtime/UPGRADE.md), including its qualification
-status, private plan/admission, held operation lock and receipt requirements.
+[runtime upgrade procedure](../apps/runtime/UPGRADE.md), including its private plan, focused storage-change assessment, held operation
+lock and receipt requirements. Routine forward admission is independent of recovery
+eligibility and inactive integration qualification. Unknown recovery permits a
+forward plan but refuses recovery selection; snapshot restoration requires a separate
+explicit owner decision, preservation of failed latest state and a stated data gap.
 Its first release-anchor adoption has a separately approved one-time override
 and startup sequence; qualified routine upgrades retain standing authority.
 Source delivery must not silently use the legacy installer or infer installed

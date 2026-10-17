@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {createUpgradeOwnerObserver} from '../src/upgrade-owner.js';
+import {createUpgradeOwnerObserver, createUpgradeUnitObserver} from '../src/upgrade-owner.js';
 
 void test('observes the fixed runtime service and binds its live process start and arguments', async t => {
   const uid = process.getuid?.();
@@ -69,4 +69,20 @@ void test('observes the fixed runtime service and binds its live process start a
         ? Promise.resolve(command) : io.read(pid, name)})(), /^Error: runtime-upgrade-owner-refused$/);
     }
   });
+});
+
+void test('recovery observes unit membership while stopped and refuses changed or malformed declarations', async () => {
+  const stopped = ['LoadState=loaded', 'ActiveState=inactive', 'SubState=dead', 'MainPID=0',
+    'ExecMainStartTimestampMonotonic=0', 'FragmentPath=/synthetic/runtime.service',
+    'DropInPaths=/synthetic/anchor.conf', 'ControlGroup='].join('\n') + '\n';
+  assert.deepEqual(await createUpgradeUnitObserver(() => Promise.resolve(stopped))(),
+    ['/synthetic/anchor.conf', '/synthetic/runtime.service']);
+  let reads = 0;
+  await assert.rejects(createUpgradeUnitObserver(() => Promise.resolve(++reads === 1
+    ? stopped : stopped.replace('DropInPaths=/synthetic/anchor.conf', 'DropInPaths=/synthetic/anchor.conf /synthetic/new.conf')))(),
+  /runtime-upgrade-owner-refused/);
+  for (const invalid of [stopped.replace('LoadState=loaded', 'LoadState=not-found'),
+    stopped.replace('DropInPaths=/synthetic/anchor.conf', 'DropInPaths=relative.conf'), stopped + 'FragmentPath=/synthetic/other\n']) {
+    await assert.rejects(createUpgradeUnitObserver(() => Promise.resolve(invalid))(), /runtime-upgrade-owner-refused/);
+  }
 });
