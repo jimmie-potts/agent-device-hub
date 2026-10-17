@@ -47,7 +47,27 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 
 ## Frontend
 
-The explicit `./frontend` entry exports the module's `frontend` contribution.
+The explicit `./frontend` entry exports the module's `frontend` contribution,
+`PixooDisplay`, `MediaPicker` and `PlaylistEditor` (#1154). The same glass card
+appears on Home, the Pixoo device page and Player. Display/Content tabs keep the
+artwork mounted; drafts survive tab switches. Advanced Library, Playlists,
+Player, Monitor and Settings remain available.
+
+The picker shows six referenced media previews per page. Visible GIFs animate
+from decoded frames; pause, reduced motion, hidden pages and unmount release
+animation frames. Search, paging and selection send no command. Play is explicit
+and requires fresh owner, mode, capability and command records. Previews remain
+illustrative, never physical observations.
+
+The card's playlist editor creates a named, populated, repeating playlist in one
+owner transaction. The existing create operation accepts optional `playlistId`
+and `items`; legacy empty creation remains valid. Duplicate identities and
+invalid initial items leave no partial row. Saved edits carry the captured
+playlist revision. Existing item identities and timing survive reorder/removal;
+new items use the library defaults. Save does not replace a frozen active
+session. Restart with changes is explicit. Older non-repeating lists require an
+explicit Enable loop save before Play is available.
+
 The dashboard's build collects it separately from the Node registration. Its
 Playlists page follows this module's `device` and `pixoo-playlist` records through
 the shell's existing connection and uses the shell's shared UI and command

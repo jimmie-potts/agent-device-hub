@@ -13,7 +13,7 @@ type State = {
 };
 type Session = {id: string; playlist: {id: string; name: string; revision: number; repeat: boolean; shuffle: boolean;
   items: {id: string; renditionId: string; playback: Policy}[]}; source?: {kind: 'playlist' | 'media'}};
-type Reading = {state: State; session: Session | null; sampledAtMs: number; simulated: boolean};
+export type Reading = {state: State; session: Session | null; sampledAtMs: number; simulated: boolean};
 type Sample = Reading & {receivedAtMs: number; revision: number};
 type Props = {context: FrontendContext; device: DeviceRecord | undefined; display: DisplayRecord | undefined;
   live: boolean; playlists: readonly PlaylistRecord[]};
@@ -25,7 +25,7 @@ const member = (value: unknown, values: readonly string[]): boolean => typeof va
 const nullableId = (value: unknown): boolean => value === null || uuid(value);
 const codeOf = (error: unknown): string => object(error) && object(error.body) && object(error.body.error) && typeof error.body.error.code === 'string'
   ? error.body.error.code : 'unavailable';
-function readingOf(value: unknown): Reading {
+export function readingOf(value: unknown): Reading {
   if (!object(value) || !object(value.state) || !finite(value.sampledAtMs) || typeof value.simulated !== 'boolean') throw new Error('invalid player');
   const state = value.state;
   if (!member(state.state, ['idle', 'loading', 'playing', 'paused', 'reconnecting', 'error'])

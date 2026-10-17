@@ -9,6 +9,9 @@ import {PlaylistsPage} from './playlists.js';
 import {PlayerPage} from './player.js';
 import {SettingsPage} from './settings.js';
 import {MonitorPage} from './monitor.js';
+import {PixooCard} from './display-card.js';
+export {MediaPicker} from './media-picker.js';
+export {PlaylistEditor} from './playlist-editor.js';
 
 type Record = DeviceRecord | PlaylistRecord | DisplayRecord;
 const object = (value: unknown): value is {body: unknown} => typeof value === 'object' && value !== null && 'body' in value;
@@ -18,7 +21,7 @@ const codeOf = (error: unknown): string => object(error) && typeof error.body ==
 type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined; pending: boolean; retry: () => void};
 
 /** Follow owned device and playlist facts on the shell participant; media reads use bounded content pages. */
-function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = false): Catalog {
+function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = false, connected = true): Catalog {
   const [catalog, setCatalog] = useState<Omit<Catalog, 'retry'>>({live: false, device: undefined, display: undefined, playlists: [], error: undefined, pending: true});
   const [attempt, setAttempt] = useState(0);
   const kept = useRef(new Map<string, Record>());
@@ -26,7 +29,8 @@ function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = 
     let disposed = false;
     let copy: SyncedCopy<Record> | undefined;
     const records = kept.current;
-    setCatalog(previous => ({...previous, live: false, pending: true, error: undefined}));
+    setCatalog(previous => ({...previous, live: false, pending: connected, error: undefined}));
+    if (!connected) return;
     const show = (live: boolean, error?: string): void => {
       if (disposed) return;
       const values = [...records.values()];
@@ -78,7 +82,7 @@ function useCatalog(api: FrontendApi, includePlaylists = true, includeDisplay = 
       show(false, codeOf(error));
     });
     return () => { disposed = true; void copy?.close(); };
-  }, [api, includePlaylists, includeDisplay, attempt]);
+  }, [api, includePlaylists, includeDisplay, attempt, connected]);
   return {...catalog, retry: () => { setAttempt(value => value + 1); }};
 }
 
@@ -91,27 +95,44 @@ function CatalogStatus({catalog}: {catalog: Catalog}): React.JSX.Element | null 
 }
 
 function Playlists({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useCatalog(context.api);
+  const catalog = useCatalog(context.api, true, false, context.connected);
   return <><CatalogStatus catalog={catalog}/><PlaylistsPage context={context} device={catalog.device} live={catalog.live} playlists={catalog.playlists}/></>;
 }
 
 function Library({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useCatalog(context.api, false);
+  const catalog = useCatalog(context.api, false, false, context.connected);
   return <><CatalogStatus catalog={catalog}/><LibraryPage context={context} device={catalog.device} live={catalog.live}/></>;
 }
 
+function CatalogCard({context, catalog}: {context: FrontendContext; catalog: Catalog}): React.JSX.Element {
+  const {Command} = context.ui;
+  const device = catalog.device;
+  return <><CatalogStatus catalog={catalog}/>{device === undefined ? <p role="status">Loading Pixoo device…</p>
+    : <Command context={context} target={device.id} key={device.id}>{command =>
+      <PixooCard context={context} device={device} display={catalog.display} live={catalog.live} playlists={catalog.playlists} command={command}/>
+    }</Command>}</>;
+}
+
+export function PixooDisplay({context}: {context: FrontendContext}): React.JSX.Element {
+  const catalog = useCatalog(context.api, true, true, context.connected);
+  return <CatalogCard context={context} catalog={catalog}/>;
+}
+
 function Player({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useCatalog(context.api, true, true);
-  return <><CatalogStatus catalog={catalog}/><PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/></>;
+  const catalog = useCatalog(context.api, true, true, context.connected);
+  const [advanced, setAdvanced] = useState(false);
+  return <><CatalogCard context={context} catalog={catalog}/><details onToggle={event => { setAdvanced(event.currentTarget.open); }}><summary>Advanced player</summary>
+    {advanced && <><CatalogStatus catalog={catalog}/><PlayerPage context={context} device={catalog.device} display={catalog.display} live={catalog.live} playlists={catalog.playlists}/></>}
+  </details></>;
 }
 
 function Settings({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useCatalog(context.api, false);
+  const catalog = useCatalog(context.api, false, false, context.connected);
   return <><CatalogStatus catalog={catalog}/><SettingsPage context={context} device={catalog.device} live={catalog.live}/></>;
 }
 
 function Monitor({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useCatalog(context.api, false, true);
+  const catalog = useCatalog(context.api, false, true, context.connected);
   return <><CatalogStatus catalog={catalog}/><MonitorPage context={context} device={catalog.device} display={catalog.display} live={catalog.live}/></>;
 }
 

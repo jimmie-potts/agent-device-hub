@@ -9,7 +9,7 @@ import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
 const started = performance.now();
-const world = await startWorld();
+const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
 const output = process.env.DASHBOARD_RECEIPTS;
 if (output !== undefined) await mkdir(output, {recursive: true});
@@ -41,6 +41,13 @@ try {
   assert.equal(await inbox.count(), 1, 'the inbox panel');
   await inbox.getByText('No commands need handling.', {exact: true}).waitFor();
   checks.push('the home shows the synced session\'s finished turn unread, with the Hub mode and inbox panels');
+
+  const pixoo = page.getByRole('article', {name: 'Pixoo display', exact: true});
+  await pixoo.getByRole('tab', {name: 'Display', exact: true}).waitFor();
+  await pixoo.getByRole('tab', {name: 'Content', exact: true}).click();
+  assert.equal(await pixoo.getByRole('tab', {name: 'Content', exact: true}).getAttribute('aria-selected'), 'true');
+  assert.equal(world.pixooState().sent, 0);
+  checks.push('the reusable Pixoo card mounts and changes tabs without a display command');
 
   const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
   assert.deepEqual(a11y.violations.map(violation => ({id: violation.id, nodes: violation.nodes.map(node => `${node.target.join(' ')}: ${node.failureSummary ?? ''}`)})), []);

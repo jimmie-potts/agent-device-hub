@@ -59,3 +59,5 @@ try {
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-playlist-rename', requests: sent.length, ownerRevision: after.playlistRevision, displayWrites: world.pixooState().sent, trustedBundle: true, passiveScriptBlocked: true, readOnlyRefused: true, axe: 'passed'})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
+
+await import('./pixoo-cards.browser.ts');

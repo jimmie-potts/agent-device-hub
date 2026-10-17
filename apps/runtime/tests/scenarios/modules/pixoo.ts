@@ -158,6 +158,29 @@ const pixooPages: Scenario = {
     }),
     expect('the refused change and completed library edit leave the display alone', h =>
       pixooState(h).sent === 0 && h.reader.states<PlaylistRecord>(PIXOO.playlist)[0]?.data.name === 'Page edit' || 'unexpected owner or display change'),
+    act('create saves a requested identity with its initial media atomically', h => {
+      const media = h.reader.states<RenditionRecord>(PIXOO.rendition)[0]?.data;
+      if (media === undefined) throw new StepFailure('the media is missing');
+      return dispatchOnce(h, 'operator', 'pixoo-card-create', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+        change: {operation: 'create', playlistId: '123e4567-e89b-42d3-a456-426614174000', name: 'Card create', repeat: true, items: [{renditionId: media.id}]},
+      }), 'pixoo-card-create-1');
+    }),
+    expect('the populated playlist is owner-confirmed without starting playback', h => {
+      const list = h.reader.states<PlaylistRecord>(PIXOO.playlist).find(record => record.data.id === '123e4567-e89b-42d3-a456-426614174000')?.data;
+      return completedAs(h, 'pixoo-card-create-1', 'succeeded', 'observed') === true && list?.name === 'Card create'
+        && list.repeat && list.playlistRevision === 1 && list.items.length === 1 && pixooState(h).sent === 0 || 'populated creation did not commit atomically';
+    }),
+    act('a duplicate requested identity is refused', h => dispatchOnce(h, 'operator', 'pixoo-card-duplicate', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+      change: {operation: 'create', playlistId: '123e4567-e89b-42d3-a456-426614174000', name: 'Collision', items: []},
+    }), 'pixoo-card-duplicate-1')),
+    expect('a duplicate leaves the original playlist unchanged', h => completedAs(h, 'pixoo-card-duplicate-1', 'failed', 'none') === true
+      && !h.reader.states<PlaylistRecord>(PIXOO.playlist).some(record => record.data.name === 'Collision') || 'duplicate creation changed the catalog'),
+    act('invalid initial media is refused', h => dispatchOnce(h, 'operator', 'pixoo-card-invalid', pixooCommand(PIXOO.playlistChange, 'pixoo-playlist.change', {
+      change: {operation: 'create', playlistId: '123e4567-e89b-42d3-a456-426614174001', name: 'Invalid initial media', items: [{renditionId: 'f'.repeat(64)}]},
+    }), 'pixoo-card-invalid-1')),
+    expect('invalid initial media leaves no empty playlist', h => completedAs(h, 'pixoo-card-invalid-1', 'failed', 'none') === true
+      && !h.reader.states<PlaylistRecord>(PIXOO.playlist).some(record => record.data.id === '123e4567-e89b-42d3-a456-426614174001')
+      && pixooState(h).sent === 0 || 'invalid creation left a partial playlist'),
     followsItsOwners(),
   ],
 };

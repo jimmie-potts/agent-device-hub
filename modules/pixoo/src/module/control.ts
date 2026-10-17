@@ -24,7 +24,7 @@ export type Completion = {
 export type MediaAction = 'pause' | 'resume' | 'stop' | 'next' | 'previous' | 'restart-with-changes' | 'clear';
 /** One change to the library's playlists. */
 export type PlaylistChange =
-  | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean}
+  | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean; playlistId?: string; items?: ItemInput[]}
   | {operation: 'rename'; playlistId: string; revision: number; name: string}
   | {operation: 'options'; playlistId: string; revision: number; repeat?: boolean; shuffle?: boolean}
   | {operation: 'items'; playlistId: string; revision: number; items: ItemInput[]}
@@ -215,7 +215,7 @@ export class PixooControl {
     if (library === undefined) return failed('unavailable', 'the library is not open');
     try {
       switch (change.operation) {
-        case 'create': await library.createPlaylist(change.name, options(change)); break;
+        case 'create': await library.createPlaylist(change.name, options(change), {playlistId:change.playlistId,items:change.items}); break;
         case 'rename': await library.renamePlaylist(change.playlistId, change.revision, change.name); break;
         case 'options': await library.setPlaylistOptions(change.playlistId, change.revision, options(change)); break;
         case 'items': await library.replaceItems(change.playlistId, change.revision, change.items); break;

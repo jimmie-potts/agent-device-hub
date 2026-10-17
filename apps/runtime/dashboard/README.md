@@ -69,6 +69,20 @@ selection request. Current mode evidence and control authority enable the
 buttons, including explicit same-mode reapplication. A lost reply stays
 uncertain; reload, reconnect and restart never resend a selection.
 
+## Reusable Pixoo controls
+
+Home, the Pixoo device page and Player mount the module's `PixooDisplay` through
+`ModuleFrontend`. They share the shell's connection, authentication and retained
+command attempts. The module owns media reads, playlist drafts and playback
+controls; the shell owns the glass styles. Display/Content tabs retain artwork
+and drafts, with keyboard navigation and reduced motion. The device and Player
+pages retain advanced controls, and other module pages remain reachable.
+
+See the [Pixoo frontend guide](../../../modules/pixoo/README.md#frontend) for
+bounded animated previews, populated playlist creation, looping and explicit
+restart. Source browser checks use synthetic media and simulated devices;
+installation and physical-display evidence remain separate.
+
 ## Reusable lighting
 
 `LightCard` renders the same glass surface on Home, brand pages and Rooms.

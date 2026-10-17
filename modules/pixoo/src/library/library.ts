@@ -308,14 +308,20 @@ export class Library {
     this.db.prepare('UPDATE playlists SET revision=revision+1,updated_at=? WHERE id=?').run(new Date().toISOString(),id);
     return this.playlist(id);
   }
-  private newPlaylist(name:string,options:z.infer<typeof optionsSchema>):Playlist {
-    const id = randomUUID(), now = new Date().toISOString();
+  private newPlaylist(name:string,options:z.infer<typeof optionsSchema>,id:string=randomUUID()):Playlist {
+    const now = new Date().toISOString();
     this.db.prepare('INSERT INTO playlists VALUES (?,?,?,?,?,?,?)').run(id,name,1,Number(options.repeat??true),Number(options.shuffle??false),now,now);
     return this.playlist(id);
   }
-  async createPlaylist(name:string,options:z.infer<typeof optionsSchema>={}):Promise<Playlist> {
+  async createPlaylist(name:string,options:z.infer<typeof optionsSchema>={},initial:{playlistId?:string|undefined;items?:ItemInput[]|undefined}={}):Promise<Playlist> {
     name = validate(nameSchema,name); options = validate(optionsSchema,options);
-    return this.run(()=>transaction(this.db,()=>this.newPlaylist(name,options)));
+    initial = validate(z.object({playlistId:idSchema.optional(),items:itemsSchema.optional()}).strict(),initial);
+    return this.run(()=>transaction(this.db,()=>{
+      if(initial.playlistId!==undefined && this.db.prepare('SELECT id FROM playlists WHERE id=?').get(initial.playlistId)) throw new LibraryError('invalid-input');
+      const playlist=this.newPlaylist(name,options,initial.playlistId);
+      this.writeItems(playlist.id,this.prepareItems(initial.items??[],[]));
+      return this.playlist(playlist.id);
+    }));
   }
   async getPlaylist(id:string):Promise<Playlist> {validate(idSchema,id);return this.run(()=>this.playlist(id));}
   listPlaylists():Promise<Playlist[]> {
@@ -339,19 +345,22 @@ export class Library {
     const insert = this.db.prepare('INSERT INTO items VALUES (?,?,?,?,?)');
     items.forEach((item,position)=>insert.run(item.id,id,position,item.renditionId,JSON.stringify(item.playback)));
   }
+  private prepareItems(input:ItemInput[],previous:PlaylistItem[]):PlaylistItem[] {
+    const seen = new Set<string>();
+    return input.map(item=>{
+      const rendition = this.manifest(item.renditionId);
+      if(item.id!==undefined && !previous.some(old=>old.id===item.id) || item.id!==undefined && seen.has(item.id)) throw new LibraryError('invalid-input');
+      const itemId = item.id??randomUUID(); seen.add(itemId);
+      const animated = rendition.frames.length>1;
+      const playback = item.playback??(animated ? {mode:'plays' as const,totalPlays:3} : {mode:'duration' as const,durationMs:30000});
+      if(playback.mode==='plays' && !animated) throw new LibraryError('invalid-input');
+      return {id:itemId,renditionId:item.renditionId,playback};
+    });
+  }
   async replaceItems(id:string,revision:number,input:ItemInput[]):Promise<Playlist> {
     this.validateEdit(id,revision); input = validate(itemsSchema,input);
     return this.run(()=>transaction(this.db,()=>{
-      const previous = this.expected(id,revision), seen = new Set<string>();
-      const items = input.map(item=>{
-        const rendition = this.manifest(item.renditionId);
-        if(item.id!==undefined && !previous.items.some(old=>old.id===item.id) || item.id!==undefined && seen.has(item.id)) throw new LibraryError('invalid-input');
-        const itemId = item.id??randomUUID(); seen.add(itemId);
-        const animated = rendition.frames.length>1;
-        const playback = item.playback??(animated ? {mode:'plays' as const,totalPlays:3} : {mode:'duration' as const,durationMs:30000});
-        if(playback.mode==='plays' && !animated) throw new LibraryError('invalid-input');
-        return {id:itemId,renditionId:item.renditionId,playback};
-      });
+      const items = this.prepareItems(input,this.expected(id,revision).items);
       this.writeItems(id,items); return this.bump(id);
     }));
   }
