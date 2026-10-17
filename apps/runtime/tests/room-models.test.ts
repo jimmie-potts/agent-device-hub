@@ -49,7 +49,7 @@ it('core serves a private prepared room only through authenticated content reads
 it('prepared geometry refuses excessive, external, non-finite and mismatched data',()=>{
   const valid=parseRoomModel(roomModelFixture());assert.ok(valid);
   const mutations:((v:RoomModel,b:RoomBatch,a:RoomAnchor,c:RoomAnchor)=>void)[]=[
-    v=>{v.schema='other' as 'room-model/1.0';},v=>{v.scene.width=Infinity;},(_v,b)=>{b.count=300_003;},
+    v=>{v.schema='other' as 'room-model/1.0';},v=>{v.id='catalog';},v=>{v.scene.width=Infinity;},(_v,b)=>{b.count=300_003;},
     (_v,b)=>{b.indices=Buffer.from(new Uint16Array([65535,0,1]).buffer).toString('base64');b.count=3;},
     (_v,b)=>{b.vertices=Buffer.from(new Float32Array([NaN,0,0,0,1,0]).buffer).toString('base64');},
     (_v,_b,a)=>{a.owner='bunny/modules/other';a.deviceId=null;},
@@ -60,6 +60,7 @@ it('prepared geometry refuses excessive, external, non-finite and mismatched dat
     assert.ok(batch!==undefined&&a!==undefined&&c!==undefined);change(candidate,batch,a,c);assert.equal(parseRoomModel(candidate),undefined);
   }
   assert.equal(parseRoomModel({...valid,url:'https://external.invalid/scan'}),undefined);
+  assert.equal(parseRoomCatalog({schema:'room-model-catalog/1.0',models:[{id:'catalog',roomId:'studio'}]}),undefined,'the catalog route and filename are reserved');
   assert.equal(parseRoomCatalog({schema:'room-model-catalog/1.0',models:[{id:'studio',roomId:'studio'},{id:'other',roomId:'studio'}]}),undefined);
 });
 

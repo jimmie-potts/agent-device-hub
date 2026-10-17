@@ -43,7 +43,8 @@ try{
   const distance=Number(await canvas.getAttribute('data-distance'));await page.mouse.wheel(0,-90);
   await page.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,distance);
   const axe=async():Promise<void>=>{const report=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(report.violations.map(v=>v.id),[]);};
-  await axe();await page.setViewportSize({width:390,height:844});await axe();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  for(const name of ['Select Desk lamp','Select Desk lamp in 3D model','Select Wall lamp','Select Wall lamp in 3D model']){const button=view.getByRole('button',{name,exact:true});await button.hover();await axe();}
+  await page.setViewportSize({width:390,height:844});await axe();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/room-model-phone.png',fullPage:true});
   await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
   await view.locator('.room-selected').getByText('Room assignments are stale.',{exact:true}).waitFor();

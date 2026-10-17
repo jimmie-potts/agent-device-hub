@@ -16,7 +16,7 @@ const finite=(v:unknown,min:number,max:number):v is number=>typeof v==='number'&
 const integer=(v:unknown,min:number,max:number):v is number=>finite(v,min,max)&&Number.isInteger(v);
 const vector=(v:unknown,min:number,max:number):v is number[]=>Array.isArray(v)&&v.length===3&&v.every(n=>finite(n,min,max));
 const encoded=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length%4===0&&v.length<=MAX_ROOM_MODEL_BYTES&&BASE64.test(v);
-export const roomModelId=(v:unknown):v is string=>id(v)&&v.length<=64;
+export const roomModelId=(v:unknown):v is string=>id(v)&&v.length<=64&&v!=='catalog';
 
 export function parseRoomCatalog(value:unknown):RoomModelCatalog|undefined {
   if(!object(value)||!keys(value,['schema','models'])||value.schema!=='room-model-catalog/1.0'||!Array.isArray(value.models)||value.models.length>32)return undefined;
