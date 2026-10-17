@@ -390,8 +390,7 @@ class LifxRun {
   #storageFailed(code: ErrorCode): void {
     if (this.#storageDown === code) return;
     this.#storageDown = code;
-    const level = code === 'internal' ? 'error' : 'warn';
-    this.#context.log[level]('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code});
   }
 
   async #publish(bulb: Bulb, light: boolean, parent: TraceContext | undefined, device = true): Promise<void> {

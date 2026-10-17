@@ -82,7 +82,6 @@ export type PixooOptions = {
 };
 
 /** Each refusal code's level, as ADR 0012's "Levels" sets it: domain refusals are INFO, refusals a correct caller never gets WARN. */
-const WARNED: readonly ErrorCode[] = ['unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict', 'capacity', 'unavailable', 'expired', 'uncertain-result'];
 const known = <T>(value: T): {status: 'known'; value: T} => ({status: 'known', value});
 const UNKNOWN = {status: 'unknown'} as const;
 /** A promise and the function that resolves it. */
@@ -937,8 +936,7 @@ class PixooRuntime {
     const {requestId} = command.data;
     const fields: LogFields = {'bunny.device.id': this.#device, ...requestField(requestId)};
     const refuse = (body: ErrorBody): ErrorBody => {
-      const level = body.error.code === 'internal' ? 'error' : WARNED.includes(body.error.code) ? 'warn' : 'info';
-      log[level]('command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
+      recordLog(log, 'command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
       return body;
     };
     if (this.#store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
