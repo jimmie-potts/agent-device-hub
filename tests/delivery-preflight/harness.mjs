@@ -1,6 +1,8 @@
 // Runs representative preflight scenarios inside Node's permission model, where
 // file writes and child processes are denied. The parent test grants only file
 // reads, so any write, installation or runtime command would fail the run.
+// The changed-file lint runner (git and eslint) is the one deliberate child
+// process; it is replaced here so the GitHub evaluation itself stays process-free.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -14,7 +16,7 @@ import {
 
 const [proof] = process.argv.slice(2);
 const now = () => new Date('2026-09-27T08:00:00Z');
-const run = (world, overrides) => runPreflight({ github: createReadOnlyClient(fakeTransport(world)), declaration: declaration(overrides), now });
+const run = (world, overrides) => runPreflight({ github: createReadOnlyClient(fakeTransport(world)), declaration: declaration(overrides), now, lint: () => ({ ran: true, ok: true, problems: [] }) });
 
 const outcomes = {};
 outcomes.clean = (await run(cleanWorld(), { receipts: [proof] })).result;

@@ -12,7 +12,8 @@ const REPO = 'jimmie-potts/agent-device-hub';
 export const USAGE = `Usage: npm run preflight -- --pr <number> [options]
 
 Reports current evidence and pending gates for one Hub PR. It only reads GitHub
-and local proof files; it never merges, comments, labels, approves or installs.
+and local proof files, and lints the PR's changed files in the current checkout,
+which must be at the PR head; it never merges, comments, labels, approves or installs.
 
   --pr <number>             the delivery PR (required)
   --head <sha>              expected 40-character head; a different live head is unresolved
@@ -87,10 +88,10 @@ function parse(argv) {
 }
 
 /**
- * Run the preflight for command-line arguments. `run` and `transport` are
+ * Run the preflight for command-line arguments. `run`, `transport` and `lint` are
  * injectable for tests; by default the live read-only GitHub transport is used.
  */
-export async function main({ argv, env = process.env, stdout = process.stdout, stderr = process.stderr, run = defaultRun, transport } = {}) {
+export async function main({ argv, env = process.env, stdout = process.stdout, stderr = process.stderr, run = defaultRun, transport, lint } = {}) {
   let parsed;
   try {
     parsed = parse(argv);
@@ -112,7 +113,7 @@ export async function main({ argv, env = process.env, stdout = process.stdout, s
   }
   let report;
   try {
-    report = await run({ github: createReadOnlyClient(reader), declaration: parsed.declaration });
+    report = await run({ github: createReadOnlyClient(reader), declaration: parsed.declaration, ...(lint ? { lint } : {}) });
   } catch (error) {
     // An internal error: report it without local paths.
     stderr.write(`delivery preflight stopped by an internal error: ${redactPaths(error && error.message)}\n`);
