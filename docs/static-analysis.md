@@ -206,7 +206,10 @@ and the runtime's tests cover the rest.
   specifiers are skipped; ErrorCode values such as `uncertain-result` are other
   words. Tests and page code are not checked. Existing hits are held in
   `eslint-suppressions.json` as a ratchet, the one baseline allowed under the
-  strict profile. It misses a word built at run time or held in a variable.
+  strict profile. `scripts/eslint/outcome-literal-pin.json` pins each file's count
+  (total at most 787) and `tests/strict_profile.test.mjs` fails when a file goes
+  above its pin; lower the pin when hits are converted. It misses a word built at
+  run time or held in a variable.
 
 Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
 profile blocks, never inline comments, and each is listed here.

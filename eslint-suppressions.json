@@ -922,11 +922,6 @@
       "count": 2
     }
   },
-  "modules/lifx/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 19
-    }
-  },
   "modules/lifx/src/queue.ts": {
     "bunny/no-raw-outcome-literal": {
       "count": 3
@@ -1052,11 +1047,6 @@
       "count": 2
     }
   },
-  "modules/pixoo/src/playback/player.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
   "modules/pixoo/src/presentation/agent-dashboard.ts": {
     "bunny/no-raw-outcome-literal": {
       "count": 3
@@ -1077,11 +1067,6 @@
       "count": 6
     }
   },
-  "modules/playback/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 14
-    }
-  },
   "modules/roborock/src/normalize.ts": {
     "bunny/no-raw-outcome-literal": {
       "count": 4
@@ -1095,11 +1080,6 @@
   "modules/tidbyt/src/lease.ts": {
     "bunny/no-raw-outcome-literal": {
       "count": 2
-    }
-  },
-  "modules/tidbyt/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 16
     }
   },
   "modules/tidbyt/src/simulated.ts": {

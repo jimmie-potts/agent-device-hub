@@ -18,8 +18,7 @@ import {commandSupported, type Capabilities, type CompletedOutcome, type DeviceC
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
-  type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
-} from '@jimmie-potts/sdk';
+  type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
 import {DEVICE_SCHEMA, LIFX_COLOR_SET_SCHEMA, LIFX_LIGHT_SCHEMA, LIFX_TEMPERATURE_SET_SCHEMA, lifxValidator, OUTCOME_SCHEMA, type LifxLight} from './families.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
@@ -140,11 +139,11 @@ const lightReading = (observed: Observation | undefined): string => {
 
 /** The outcome of a command's device work, by ADR 0012 and MAPPING.md's receipt rule. */
 function outcomeOf(requestId: string, attempt: Attempt): CompletedOutcome {
-  if (attempt.effect === 'sent') return {requestId, result: 'succeeded', evidence: 'transmitted'};
+  if (attempt.effect === 'sent') return {requestId, result: Outcome.succeeded, evidence: Outcome.transmitted};
   if (attempt.effect === 'possible') {
-    return {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the write went out and the bulb did not acknowledge it'}).error};
+    return {requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the write went out and the bulb did not acknowledge it'}).error};
   }
-  const failed = (code: ErrorCode, detail: string): CompletedOutcome => ({requestId, result: 'failed', evidence: 'none', error: errorBody(code, {detail}).error});
+  const failed = (code: ErrorCode, detail: string): CompletedOutcome => ({requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody(code, {detail}).error});
   if (attempt.failure === 'cancelled') return failed('cancelled', 'the module stopped before the command reached the bulb');
   if (attempt.failure === 'expired') return failed('expired', 'the command\'s deadline passed before it reached the bulb');
   return failed('unavailable', 'the bulb did not answer');
@@ -381,7 +380,7 @@ class LifxRun {
     }
     if (this.#storageDown !== undefined) {
       this.#storageDown = undefined;
-      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.succeeded});
     }
     return undefined;
   }
@@ -390,7 +389,7 @@ class LifxRun {
   #storageFailed(code: ErrorCode): void {
     if (this.#storageDown === code) return;
     this.#storageDown = code;
-    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.code': code});
   }
 
   async #publish(bulb: Bulb, light: boolean, parent: TraceContext | undefined, device = true): Promise<void> {
@@ -428,7 +427,7 @@ class LifxRun {
       return errorBody('revision-conflict', {detail: 'the bulb\'s generation has moved on; read its record again'});
     }
     if (!this.#supports(bulb, family, data)) return errorBody('unsupported-capability', {detail: 'the bulb does not offer this operation'});
-    if (bulb.queue === undefined) return errorBody('unavailable', {detail: LEASE_REASONS[bulb.leaseRefusal ?? 'failed'].detail});
+    if (bulb.queue === undefined) return errorBody('unavailable', {detail: LEASE_REASONS[bulb.leaseRefusal ?? Outcome.failed].detail});
     if (this.#closing) return errorBody('unavailable', {detail: 'the LIFX module is stopping'});
     const reservation = bulb.queue.reserve();
     if (reservation === undefined) return errorBody('capacity', {detail: 'the bulb\'s queue is full'});
@@ -520,7 +519,7 @@ class LifxRun {
       this.#observe(bulb, attempt, spec.sent, requestId, call?.context ?? trace.span(command));
       if (attempt.failure === 'unrecorded') {
         const error = errorBody(unrecorded, {detail: 'the module could not record the work before it began'}).error;
-        await this.#complete(bulb, family, command, {requestId, result: 'failed', evidence: 'none', error}, attempt.observed !== undefined);
+        await this.#complete(bulb, family, command, {requestId, result: Outcome.failed, evidence: Outcome.none, error}, attempt.observed !== undefined);
         return;
       }
     }
@@ -537,7 +536,7 @@ class LifxRun {
     const mode = NATIVE_MODES.find(value => value === command.data.mode) ?? 'free';
     bulb.mode = mode;
     bulb.shown = undefined;
-    const committed = await this.#complete(bulb, 'device-mode-set', command, {requestId: command.data.requestId, result: 'succeeded', evidence: 'transmitted'}, false);
+    const committed = await this.#complete(bulb, 'device-mode-set', command, {requestId: command.data.requestId, result: Outcome.succeeded, evidence: Outcome.transmitted}, false);
     if (!committed) {
       bulb.mode = before.mode;
       bulb.shown = before.shown;
@@ -591,8 +590,8 @@ class LifxRun {
         if (!isFamily(row.family)) continue;
         const begun = row.state === 'started' && row.family !== 'device-mode-set';
         const outcome: CompletedOutcome = begun
-          ? {requestId: row.requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the runtime stopped while the write was under way'}).error}
-          : {requestId: row.requestId, result: 'failed', evidence: 'none', error: errorBody('cancelled', {detail: 'the runtime stopped before the command reached the bulb'}).error};
+          ? {requestId: row.requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the runtime stopped while the write was under way'}).error}
+          : {requestId: row.requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('cancelled', {detail: 'the runtime stopped before the command reached the bulb'}).error};
         add(`bunny.event.${row.family}.${row.bulb}`, {
           kind: 'outcome', type: `${COMMANDS[row.family].entity}.completed`, subject: row.bulb, dataschema: OUTCOME_SCHEMA, data: outcome,
         }, {parent: {traceparent: row.traceparent}});
@@ -687,7 +686,7 @@ class LifxRun {
       // The module is stopping, and its participant refuses use.
       return;
     }
-    if (result.status === 'rejected') {
+    if (result.status === Outcome.rejected) {
       this.#feedLost(result.error.error.code);
       return;
     }
@@ -695,7 +694,7 @@ class LifxRun {
     this.#resyncDelayMs = RESYNC_FIRST_MS;
     if (this.#feedDown) {
       this.#feedDown = false;
-      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.succeeded});
     }
   }
 
@@ -710,7 +709,7 @@ class LifxRun {
       case 'synced':
         this.#synced = true;
         break;
-      case 'failed':
+      case Outcome.failed:
         // The copy stopped following the core: the status is unknown, which paints nothing, until a new sync.
         this.#synced = false;
         this.#copy = undefined;

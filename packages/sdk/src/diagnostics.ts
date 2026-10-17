@@ -2,6 +2,7 @@
 // decision they make once, through one optional callback that the runtime connects to its sink. A diagnostic is a
 // closed record of values the SDK has already checked. It never holds a payload, an error object, an exception's
 // message or a credential.
+import {Outcome} from './evidence.js';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {ErrorScope} from './in-process.js';
 import type {LogFields, Logger} from './module.js';
@@ -177,8 +178,8 @@ export function recordLog(log: Logger, event: LogEvent, fields: LogFields = {}, 
  */
 export function recordLevel(event: LogEvent, fields: LogFields = {}): DiagnosticLevel {
   const byEvent = EVENT_LEVELS[event], code = fields['bunny.code'], outcome = fields['bunny.outcome'];
-  const failed = outcome === 'failed' || outcome === 'uncertain';
-  if (byEvent === 'error' || outcome === 'succeeded') return byEvent;
+  const failed = outcome === Outcome.failed || outcome === Outcome.uncertain;
+  if (byEvent === 'error' || outcome === Outcome.succeeded) return byEvent;
   // ADR 0012: a failed or uncertain outcome is at least WARN, with or without a code.
   if (!isErrorCode(code)) return failed && (byEvent === 'debug' || byEvent === 'info') ? 'warn' : byEvent;
   const byCode = LEVELS[code];

@@ -17,8 +17,7 @@ import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} fr
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
-  type SyncedCopy, type TraceContext,
-} from '@jimmie-potts/sdk';
+  type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
@@ -258,7 +257,7 @@ class TidbytRun {
     }[]).map(row => [row.installation, {
       ...(row.frame_key === null ? {} : {key: row.frame_key}), ...(row.sent_at_ms === null ? {} : {sentAtMs: row.sent_at_ms}),
       ...(row.last_write_at_ms === null ? {} : {lastWriteAtMs: row.last_write_at_ms}),
-      presence: row.presence === 'present' || row.presence === 'absent' ? row.presence : 'unknown',
+      presence: row.presence === 'present' || row.presence === Outcome.absent ? row.presence : 'unknown',
     } satisfies TileMemory]));
     this.#tiles.push(this.#tile('status', statusInstallation, undefined, this.#timing.statusPollMs, remembered.get(statusInstallation)));
     if (nowPlaying !== undefined) {
@@ -349,13 +348,13 @@ class TidbytRun {
   #storageFailed(code: ErrorCode): void {
     if (this.#storageDown !== undefined) return;
     this.#storageDown = code;
-    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.code': code});
   }
 
   #storageWorked(): void {
     if (this.#storageDown === undefined) return;
     this.#storageDown = undefined;
-    recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+    recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.succeeded});
   }
 
   #remember(installation: string, memory: TileMemory): void {
@@ -383,7 +382,7 @@ class TidbytRun {
       return;
     }
     if (this.#closing) return;
-    if (result.status === 'rejected') {
+    if (result.status === Outcome.rejected) {
       this.#lost(family, result.error.error.code);
       this.#updateFor(family, undefined);
       return;
@@ -396,7 +395,7 @@ class TidbytRun {
     copy.resyncDelayMs = RESYNC_FIRST_MS;
     if (copy.down) {
       copy.down = false;
-      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.outcome': Outcome.succeeded});
     }
     this.#updateFor(family, result.message);
   }
@@ -411,7 +410,7 @@ class TidbytRun {
       case 'removed':
         if (copy.following) this.#updateFor(family, change.message);
         return;
-      case 'failed':
+      case Outcome.failed:
         // The copy stopped following its owner and keeps its last records: the tile shows them as uncertain.
         this.#lost(family, change.error.error.code);
         this.#updateFor(family, undefined);
@@ -568,7 +567,7 @@ class TidbytRun {
         recordLog(this.#context.log, 'operation.failed', {...fields, 'bunny.code': reply.artworkCode}, parent);
       } else if (reply.artworkCode === undefined && request.artwork?.status === 'ready' && tile.artworkFailing !== undefined) {
         tile.artworkFailing = undefined;
-        recordLog(this.#context.log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+        recordLog(this.#context.log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
       }
     }
     return reply.webp;
@@ -602,12 +601,12 @@ class TidbytRun {
     const answered = answeredOf(result);
     const device = this.#config.id;
     if (answered) this.#availability.reached(device, parent);
-    else this.#availability.unreachable(device, 'outcome' in result && result.outcome === 'uncertain' ? 'uncertain-result' : 'unavailable', parent);
+    else this.#availability.unreachable(device, 'outcome' in result && result.outcome === Outcome.uncertain ? 'uncertain-result' : 'unavailable', parent);
     let lastTransmission = this.#wanted.lastTransmission;
     if ('outcome' in result && result.outcome === 'sent') {
       lastTransmission = {status: 'known', transmittedAtMs: clock.now(), operationIds: [call.call]};
       tile.failing = undefined;
-      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
       tile.trigger = undefined;
     } else if (answered && !('ok' in result && result.ok)) {
       this.#failed(tile, fields, codeOfResult(result), parent);
@@ -623,7 +622,7 @@ class TidbytRun {
     const holding = code === 'unauthenticated' || code === 'forbidden';
     if (tile.failing !== undefined && !(holding && tile.failing !== code)) return;
     tile.failing = code;
-    recordLog(this.#context.log, 'operation.failed', {...fields, 'bunny.outcome': 'failed', 'bunny.code': code}, parent);
+    recordLog(this.#context.log, 'operation.failed', {...fields, 'bunny.outcome': Outcome.failed, 'bunny.code': code}, parent);
   }
 
   /** An evaluation of the tile finished: a run of the module's own faults, if any, has ended. */
@@ -631,7 +630,7 @@ class TidbytRun {
     if (!tile.faulting && !this.#escaped) return;
     tile.faulting = false;
     this.#escaped = false;
-    recordLog(this.#context.log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.outcome': 'succeeded'});
+    recordLog(this.#context.log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.outcome': Outcome.succeeded});
   }
 
   /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once per run, by type. */
@@ -655,16 +654,16 @@ function answeredOf(result: WriteResult | ListResult): boolean {
   switch (result.outcome) {
     case 'sent':
       return true;
-    case 'failed':
+    case Outcome.failed:
       return result.failure !== 'transport-failure';
-    case 'uncertain':
+    case Outcome.uncertain:
       return result.answered;
   }
 }
 
 /** The registry code of a call the cloud answered without success. */
 function codeOfResult(result: WriteResult | ListResult): ErrorCode {
-  const failure = 'ok' in result ? (result.ok ? undefined : result.failure) : result.outcome === 'failed' ? result.failure : 'uncertain';
+  const failure = 'ok' in result ? (result.ok ? undefined : result.failure) : result.outcome === Outcome.failed ? result.failure : Outcome.uncertain;
   switch (failure) {
     case 'unauthenticated':
     case 'forbidden':
@@ -675,7 +674,7 @@ function codeOfResult(result: WriteResult | ListResult): ErrorCode {
       return 'not-found';
     case 'transport-failure':
       return 'unavailable';
-    case 'uncertain':
+    case Outcome.uncertain:
       return 'uncertain-result';
     case undefined:
       return 'internal';
@@ -696,9 +695,9 @@ function availabilityAfter(result: WriteResult | ListResult, answered: boolean):
   switch (result.outcome) {
     case 'sent':
       return 'available';
-    case 'uncertain':
+    case Outcome.uncertain:
       return 'degraded';
-    case 'failed':
+    case Outcome.failed:
       return result.failure === 'capacity' || result.failure === 'invalid-request' ? 'degraded' : 'unavailable';
   }
 }

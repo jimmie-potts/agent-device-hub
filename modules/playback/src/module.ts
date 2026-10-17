@@ -7,8 +7,7 @@ import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contra
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
-  type TraceContext,
-} from '@jimmie-potts/sdk';
+  type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
 import {Presentation, isAction, type PlaybackAction, type PresentedView} from './playback.js';
 import {createSimulatedArtworkFetch} from './simulated-artwork.js';
@@ -135,7 +134,7 @@ BunnyModule<PlaybackConfig> {
           for (const {seq, request_id: requestId} of lost) {
             abandon.run(seq);
             add(outcomeKey, completed({
-              requestId, result: 'uncertain', evidence: 'none',
+              requestId, result: Outcome.uncertain, evidence: Outcome.none,
               error: errorBody('uncertain-result', {detail: 'the module restarted before the speaker answered'}).error,
             }));
           }
@@ -164,12 +163,12 @@ BunnyModule<PlaybackConfig> {
         if (storageFailing) return;
         storageFailing = true;
         const code = storageCode(error);
-        recordLog(log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code, ...fields}, parent);
+        recordLog(log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.code': code, ...fields}, parent);
       };
       const storageWorked = (): void => {
         if (!storageFailing) return;
         storageFailing = false;
-        recordLog(log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+        recordLog(log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.succeeded});
       };
 
       // The optimistic record drives existing revision admission/rollback; content uses only successful commits.
@@ -217,7 +216,7 @@ BunnyModule<PlaybackConfig> {
           const fields: LogFields = {'bunny.operation': 'media', 'bunny.code': diagnostic.code,
             'bunny.attempt_count': diagnostic.attempts, ...deviceField(`${id}.sony`)};
           if (diagnostic.kind === 'recovery') {
-            recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+            recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded});
           } else if (diagnostic.kind !== 'failure') {
             log.debug('operation.failed', fields);
           } else {
@@ -383,7 +382,7 @@ BunnyModule<PlaybackConfig> {
               return errorBody('capacity', {detail: 'the playback module could not record the command'});
             }
             await saveOutcome(command, requestId, {
-              requestId, result: 'failed', evidence: 'none',
+              requestId, result: Outcome.failed, evidence: Outcome.none,
               error: errorBody('expired', {detail: 'the command\'s deadline passed before it reached the speaker'}).error,
             });
             return {status: 'accepted'};
@@ -422,18 +421,18 @@ BunnyModule<PlaybackConfig> {
             const sent = await source.command(action);
             switch (sent) {
               case 'sent':
-                outcome = {requestId, result: 'succeeded', evidence: 'transmitted'};
+                outcome = {requestId, result: Outcome.succeeded, evidence: Outcome.transmitted};
                 break;
               case 'refused':
-                outcome = {requestId, result: 'failed', evidence: 'transmitted', error: errorBody('invalid-state', {detail: 'the speaker refused the action'}).error};
+                outcome = {requestId, result: Outcome.failed, evidence: Outcome.transmitted, error: errorBody('invalid-state', {detail: 'the speaker refused the action'}).error};
                 break;
               case 'unsent':
-                outcome = {requestId, result: 'failed', evidence: 'none', error: errorBody('unsupported-capability', {detail: 'the speaker has no command for this action'}).error};
+                outcome = {requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('unsupported-capability', {detail: 'the speaker has no command for this action'}).error};
                 break;
             }
             call.end(sent === 'sent' ? 'unset' : 'error');
           } catch {
-            outcome = {requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
+            outcome = {requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
             call.end('error');
           }
           // The reply follows the outcome's commit and publication. A database refusal never escapes: the outcome is
