@@ -3,6 +3,7 @@
 // missing, pending, skipped, failed or stale evidence stays unresolved, and a
 // failed read is a read failure, never success.
 import { evaluateCi } from './ci.mjs';
+import { evaluateLint, localLint } from './lint.mjs';
 import { COMPARE_FILE_LIMIT, Gate, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
@@ -36,12 +37,13 @@ function publicDeclaration(declaration) {
   };
 }
 
-export async function runPreflight({ github, declaration, now = () => new Date() }) {
+export async function runPreflight({ github, declaration, now = () => new Date(), lint = localLint }) {
   const readAt = now().toISOString();
   const repo = declaration.repo;
   const readFailures = [];
   const gates = {
     identity: new Gate('identity', 'Source identity', `${SDLC}#review-and-merge`),
+    lint: new Gate('lint', 'Changed-file lint', 'docs/development.md#delivery-preflight'),
     ciPr: new Gate('ci-pr', 'CI on the PR head', `${SDLC}#ci-evidence`),
     ciMain: new Gate('ci-main', 'CI on the merged main revision', `${SDLC}#ci-evidence`),
     review: new Gate('review', 'Independent Standards and Specification review', `${SDLC}#review-and-merge`),
@@ -97,6 +99,7 @@ export async function runPreflight({ github, declaration, now = () => new Date()
     mergeCommit: ctx.merged ? ctx.pr.merge_commit_sha : null,
   };
   evaluateIdentity(ctx);
+  await evaluateLint(ctx, lint);
   await evaluateCiGates(ctx);
   const comments = await ctx.read(gates.review, () => github.getAll(`/repos/${repo}/issues/${ctx.pr.number}/comments?per_page=100`));
   if (comments.ok) {
@@ -144,6 +147,7 @@ async function loadCandidate(ctx) {
 
   const files = await ctx.read(gates.ciPr, () => github.getAll(`/repos/${repo}/pulls/${pr.number}/files?per_page=100`));
   ctx.filesRead = files.ok;
+  ctx.files = files.ok ? files.value : [];
   ctx.paths = files.ok ? touchedPaths(files.value) : [];
   ctx.filesComplete = files.ok && files.value.length === pr.changed_files && files.value.length < PR_FILE_LIMIT;
   if (files.ok && !ctx.filesComplete) gates.ciPr.note(`the changed-file list is incomplete (${files.value.length} of ${pr.changed_files})`);

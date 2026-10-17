@@ -486,14 +486,25 @@ All UI follows [UI verification](sdlc.md#ui-approval-scope).
 The tool only reads. Before any network use, its GitHub client refuses every
 request except `GET` and the tool's own two GraphQL query documents, matched by
 exact text, so it cannot merge, comment, label, approve, dispatch or change
-issue state. It writes no file. The only process it starts is `gh auth token`,
-and only when neither `GH_TOKEN` nor `GITHUB_TOKEN` is set. The output names
+issue state. It writes no file. Besides the changed-file lint below, the only
+process it starts is `gh auth token`, and only when neither `GH_TOKEN` nor
+`GITHUB_TOKEN` is set.
+
+Run it from a checkout of the PR head before review dispatch: the changed-file
+lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
+TypeScript files there (#1139). A checkout at another revision, or with local
+edits to those files, leaves the gate unresolved rather than linting the wrong
+content. Run `npm ci && npm run build` in that checkout first. Type-aware rules
+resolve workspace packages through their built output, so an unbuilt checkout
+reports unrelated `no-unsafe-*` errors that can push the real finding past the
+first 20 listed. Lint findings are listed as `path:line rule`. The output names
 revisions, check IDs, comment URLs, digests and run IDs, plus short structured
 fields from the evidence it reads, such as receipt capture reasons. It never
 prints tokens, local paths or reviewer return text.
 
 | Gate | What it reads | Rule |
 | --- | --- | --- |
+| Changed-file lint | The PR's added, modified and renamed `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.jsx` and `.tsx` files, linted in the local checkout at the live head | Any ESLint error or warning, a checkout not at the head, or local edits to those files is unresolved; not applicable after merge |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
 | CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose published `Affected checks` notice is missing, malformed or omits a group this selection needs, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |

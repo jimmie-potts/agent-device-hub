@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
 import { main } from '../scripts/delivery-preflight/cli.mjs';
+import { lintTargets, localLint } from '../scripts/delivery-preflight/lint.mjs';
 import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
@@ -26,11 +27,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(root, 'scripts', 'delivery-preflight.mjs');
 const READ_AT = new Date('2026-09-27T08:00:00Z');
 
-async function preflight(world, overrides = {}) {
+const cleanLint = () => ({ ran: true, ok: true, problems: [] });
+
+async function preflight(world, overrides = {}, lint = cleanLint) {
   return runPreflight({
     github: createReadOnlyClient(fakeTransport(world)),
     declaration: declaration(overrides),
     now: () => READ_AT,
+    lint,
   });
 }
 
@@ -1238,10 +1242,63 @@ test('the CLI accepts legacy UI flags without inspecting their unused value', as
   const code = await main({
     argv: ['--pr', String(PR), '--ui', '--ui-approval', '/private/obsolete-record', '--json'],
     transport: fakeTransport(cleanWorld()),
+    lint: cleanLint,
     stdout: { write: text => output.push(text) },
     stderr: { write: text => assert.fail(text) },
   });
   assert.equal(code, 0);
   assert.equal(gate(JSON.parse(output.join('')), 'ui-approval').status, 'not-applicable');
   assert.doesNotMatch(output.join(''), /private\/obsolete-record/);
+});
+
+// ---- Changed-file lint (#1139) ----
+
+// ESLint's JSON report for PR #1121 head 30ddeb0f, reduced to the review finding r4254416206.
+const PR_1121_HEAD = '30ddeb0fed65e6d0815536f32e5275dbb58ce373';
+const PR_1121_ESLINT = [{
+  filePath: '/checkout/modules/bb8/tests/module.test.ts',
+  messages: [{ ruleId: '@typescript-eslint/no-non-null-assertion', severity: 2, line: 120 }],
+}];
+
+function fakeSpawn({ head, dirty = '', eslint, status }) {
+  const calls = [];
+  const spawn = (command, args) => {
+    calls.push([command, ...args]);
+    if (command === 'git' && args[0] === 'rev-parse') return { status: 0, stdout: `${head}\n` };
+    if (command === 'git' && args[0] === 'status') return { status: 0, stdout: dirty };
+    return { status, stdout: JSON.stringify(eslint) };
+  };
+  return { spawn, calls };
+}
+
+test('changed-file lint fails #1121 head 30ddeb0f on the non-null assertion in the BB-8 module test', async () => {
+  const { spawn, calls } = fakeSpawn({ head: PR_1121_HEAD, eslint: PR_1121_ESLINT, status: 1 });
+  const paths = lintTargets([
+    { filename: 'modules/bb8/tests/module.test.ts', status: 'modified' },
+    { filename: 'modules/bb8/README.md', status: 'modified' },
+    { filename: 'modules/bb8/src/old.ts', status: 'removed' },
+  ]);
+  assert.deepEqual(paths, ['modules/bb8/tests/module.test.ts']);
+  const result = localLint({ head: PR_1121_HEAD, paths, cwd: '/checkout', spawn });
+  assert.deepEqual(result, { ran: true, ok: false, problems: ['modules/bb8/tests/module.test.ts:120 @typescript-eslint/no-non-null-assertion error'] });
+  const eslint = calls.find(call => call[0] === process.execPath);
+  assert.ok(eslint.includes('--max-warnings=0'));
+  assert.deepEqual(eslint.slice(-2), ['--', 'modules/bb8/tests/module.test.ts']);
+
+  const world = cleanWorld();
+  const report = await preflight(world, {}, ({ head, paths: targets }) => localLint({ head, paths: targets, cwd: '/checkout', spawn: fakeSpawn({ head, eslint: PR_1121_ESLINT, status: 1 }).spawn }));
+  assertUnresolved(report, 'lint', /eslint --max-warnings=0 failed on changed files/);
+  assert.ok(gate(report, 'lint').reasons.includes('modules/bb8/tests/module.test.ts:120 @typescript-eslint/no-non-null-assertion error'));
+});
+
+test('changed-file lint passes a clean head and does not run against another revision or local edits', async () => {
+  const clean = await preflight(cleanWorld(), {}, ({ head, paths }) => localLint({ head, paths, cwd: '/checkout', spawn: fakeSpawn({ head, eslint: [{ filePath: '/checkout/a.mjs', messages: [] }], status: 0 }).spawn }));
+  assert.equal(gate(clean, 'lint').status, 'satisfied');
+  assert.equal(clean.result, 'satisfied');
+
+  const elsewhere = await preflight(cleanWorld(), {}, ({ head, paths }) => localLint({ head, paths, cwd: '/checkout', spawn: fakeSpawn({ head: OLD_HEAD, eslint: [], status: 0 }).spawn }));
+  assertUnresolved(elsewhere, 'lint', /not the PR head/);
+
+  const edited = await preflight(cleanWorld(), {}, ({ head, paths }) => localLint({ head, paths, cwd: '/checkout', spawn: fakeSpawn({ head, dirty: ' M scripts/delivery-preflight.mjs\n', eslint: [], status: 0 }).spawn }));
+  assertUnresolved(edited, 'lint', /local modifications/);
 });
