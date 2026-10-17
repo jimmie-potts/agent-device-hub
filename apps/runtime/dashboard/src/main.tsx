@@ -18,6 +18,7 @@ import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
+import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
@@ -321,7 +322,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
               control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
             {route.kind === 'component' && <details><summary>Advanced device controls</summary><DeviceCard record={record} owner={copy.owner}
               live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
+          </> : record.kind === 'tidbyt' && copy.owner === 'bunny/modules/tidbyt' && runtime.modules?.some(module => module.name === 'tidbyt' && module.state === 'running' && module.pages.some(page => page.id === 'display')) === true && (route.kind === 'home' || record.id === route.id) ? <ModuleFrontend
+            module="tidbyt" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
+            control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/> : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
             control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>}
         </div>)}</div>
       </section>}

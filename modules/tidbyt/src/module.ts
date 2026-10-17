@@ -98,7 +98,8 @@ export const deviceKey = (id: string): string => `bunny.state.device.${id}`;
 export function createTidbytModule(options: TidbytModuleOptions): BunnyModule<TidbytConfig> {
   let run: TidbytRun | undefined;
   return {
-    manifest: {name: TIDBYT_MODULE, apiVersion: '1.1', configure: configureTidbyt},
+    manifest: {name: TIDBYT_MODULE, apiVersion: '1.3', configure: configureTidbyt,
+      pages: [{id: 'display', title: 'Tidbyt display', presentation: 'react'}]},
     async start(context) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (context.config === undefined) throw new Error('the Tidbyt module started without its configuration');

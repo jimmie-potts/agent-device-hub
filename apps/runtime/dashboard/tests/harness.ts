@@ -24,6 +24,7 @@ import {observation, type ObservationOptions} from '../../dist/tests/fixtures/ag
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, playbackFactory, type PlaybackModuleOptions, type SimulatedSpeakers} from '@jimmie-potts/playback';
+import {createTidbytModule, SimulatedCloud, SIMULATED_SECTION as TIDBYT_SECTION, SIMULATED_API_KEY as TIDBYT_KEY} from '@jimmie-potts/tidbyt';
 
 type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['fetch']>;
 import {createWisprModule} from '@jimmie-potts/wispr';
@@ -37,6 +38,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
+  /** The real read-only Tidbyt module over its synthetic cloud. */
+  tidbyt?: boolean;
   /** Synthetic HTTPS forwarder for the home-Wi-Fi browser journey. */
   wifiProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
@@ -172,6 +175,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
+    ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
@@ -183,6 +187,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
+  if (options.tidbyt === true) await writePrivate(join(configDir, 'tidbyt-token'), TIDBYT_KEY);
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
     credentials, mcp: options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
@@ -203,7 +208,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [createCompanionsModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
