@@ -494,7 +494,10 @@ Run it from a checkout of the PR head before review dispatch: the changed-file
 lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
 TypeScript files there (#1139). A checkout at another revision, or with local
 edits to those files, leaves the gate unresolved rather than linting the wrong
-content. Lint findings are listed as `path:line rule`. The output names
+content. Run `npm ci && npm run build` in that checkout first. Type-aware rules
+resolve workspace packages through their built output, so an unbuilt checkout
+reports unrelated `no-unsafe-*` errors that can push the real finding past the
+first 20 listed. Lint findings are listed as `path:line rule`. The output names
 revisions, check IDs, comment URLs, digests and run IDs, plus short structured
 fields from the evidence it reads, such as receipt capture reasons. It never
 prints tokens, local paths or reviewer return text.

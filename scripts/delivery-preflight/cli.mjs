@@ -13,7 +13,7 @@ export const USAGE = `Usage: npm run preflight -- --pr <number> [options]
 
 Reports current evidence and pending gates for one Hub PR. It only reads GitHub
 and local proof files, and lints the PR's changed files in the current checkout,
-which must be at the PR head; it never merges, comments, labels, approves or installs.
+which must be at the PR head and built (npm run build) first; it never merges, comments, labels, approves or installs.
 
   --pr <number>             the delivery PR (required)
   --head <sha>              expected 40-character head; a different live head is unresolved
