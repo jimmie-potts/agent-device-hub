@@ -915,3 +915,15 @@ an actual failure under the exact approved plan; end that window without
 re-upgrade. Record source qualification, first adoption, installed running/health
 verification and dependent ONN physical acceptance separately, with deliberate
 live recovery and re-upgrade untested unless separately exercised.
+
+## Lighting composition state
+
+`lighting_layout` adds one private core row containing bounded room names,
+assignments, scoped groups and Home selections. The core initializes an absent
+row to automatic discovery, then replaces it only with an exact-revision
+operator save in the same transaction as its state and tracked outcome. Normal
+core backup preserves it; no device configuration or room assignment is inferred.
+The focused lighting-layout tests verify rollback on a failed transaction,
+conflicting saves and reopening the production store on restart. This is forward
+persistence evidence, not qualification of an older reader on latest state;
+recovery eligibility remains separately stated by the upgrade plan.

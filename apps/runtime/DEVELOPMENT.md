@@ -474,6 +474,18 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Reusable lighting (#1135) uses the existing event and core test discovery in CI.
+After the root build, run
+`node --test packages/event-contracts/tests/lighting-layout.test.mjs apps/runtime/dist/tests/lighting-layout.test.js`
+for bounded composition, authenticated admission, revision conflicts, durable
+restart and metadata-only effects. The shared dashboard model tests join
+`test:runtime-dashboard:built`; the focused browser journey is
+`node apps/runtime/dashboard/tests/lighting.browser.ts` (also called by the
+controls browser suite). The `lighting-layout` catalog scenario runs in disposable verification. These tests use synthetic
+rooms and simulated devices. They do not establish installed/client or physical
+acceptance. Keep runtime-private test directories outside Git checkouts under
+an owned private `TMPDIR`.
+
 `apps/runtime/dashboard` is the B.U.N.N.Y. dashboard on the runtime (Hub #922),
 copied from `apps/dashboard`; its [README](dashboard/README.md)
 covers what it has and [PROVENANCE.md](dashboard/PROVENANCE.md)

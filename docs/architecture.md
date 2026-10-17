@@ -28,6 +28,11 @@ part. Both use tracked generic power dispatch; the Wemo module owns bounded
 local I/O, identity checks, its per-plug queues, request fences and held-write
 recovery. Limit status uses core SDK state, with no dashboard state polling.
 These fit the diagram's existing core/module boundaries; its topology is unchanged.
+The core also owns private lighting composition (`lighting-layout`): rooms,
+assignments, scoped groups and Home selections. The browser reuses one card on
+Home, brand and room views; module-owned artwork comes through public frontend
+entries. Saving composition changes no device. Explicit group controls use the
+existing guarded per-device commands and retain independent tracked outcomes.
 Source delivery does not establish installed or physical acceptance.
 
 The optional [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated

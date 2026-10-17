@@ -344,3 +344,10 @@ every suite in `dist/tests/`, the port's translated and recorded tests, the modu
 test kit run (`module-kit.test.ts`), the journal's outcome errors and the migration (`migration.test.ts`). The runtime's `nanoleaf.test.ts`, the catalog's `nanoleaf-wall` scenario
 and its disposable run cover the module under the runtime. See
 [Nanoleaf port](../../docs/development.md#nanoleaf-port).
+
+The public `./frontend` entry also exports `NanoleafLightVisual` and its
+`WallRecord` input for shared lighting cards (#1135). The read-only visual takes
+the shell's authenticated read function, reuses the retained Prism renderer for
+saved Lines geometry and draws saved panel polygons. It creates no connection
+and sends no command. Missing geometry has a labelled placeholder; advanced wall
+editing remains on the module page.
