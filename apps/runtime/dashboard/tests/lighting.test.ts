@@ -59,3 +59,29 @@ void test('native scene groups intersect IDs and never switch status-owned modes
   assert.deepEqual(lightCapabilities(['a', 'b'], [a, free], true, true).scenes, ['rain']);
   assert.deepEqual(lightCapabilities(['a', 'b'], [{...a, record: {...a.record, capabilities: {...a.record.capabilities, scenes: {supported: true, sceneIds: ['other']}}}}, free], true, true).scenes, []);
 });
+void test('regrouping selected individuals retires overlapping hidden Home membership only', () => {
+  const devices = [lamp('a'), lamp('b'), lamp('c'), lamp('d')];
+  const layout = {...emptyLightingLayout(), groups: [
+    {id: 'hidden', name: 'Hidden', scope: 'home', devices: ['a', 'b', 'c']},
+    {id: 'brand', name: 'Brand', scope: 'brand-lifx', devices: ['a', 'b']},
+  ], home: [{kind: 'device' as const, id: 'a'}, {kind: 'device' as const, id: 'd'}]};
+  const next = groupCards(layout, 'home', {kind: 'device', id: 'a'}, {kind: 'device', id: 'd'}, devices, 'new');
+  assert.notEqual(typeof next, 'string'); if (typeof next === 'string') return;
+  assert.deepEqual(next.groups.find(group => group.id === 'hidden')?.devices, ['b', 'c']);
+  assert.deepEqual(next.groups.find(group => group.id === 'brand')?.devices, ['a', 'b']);
+  const selected = {...next, home: [{kind: 'device' as const, id: 'b'}, {kind: 'device' as const, id: 'c'}]};
+  const pair = groupCards(selected, 'home', {kind: 'device', id: 'b'}, {kind: 'device', id: 'c'}, devices, 'pair');
+  assert.notEqual(typeof pair, 'string'); if (typeof pair === 'string') return;
+  assert.equal(pair.groups.some(group => group.id === 'hidden'), false);
+  assert.equal(new Set(pair.groups.filter(group => group.scope === 'home').flatMap(group => group.devices)).size,
+    pair.groups.filter(group => group.scope === 'home').flatMap(group => group.devices).length);
+});
+void test('persisted brand groups require current brand membership before rendering or preparing shared commands', () => {
+  const devices = [lamp('a'), {...lamp('b'), owner: 'bunny/modules/nanoleaf', record: {...device, id: 'b'}}];
+  const layout = {...emptyLightingLayout(), groups: [{id: 'changed', name: 'Changed', scope: 'brand-lifx', devices: ['a', 'b']}]};
+  const card = cardsFor('brand-lifx', layout, devices)[0]; assert.ok(card !== undefined);
+  assert.equal(card.brand, 'lifx');
+  assert.equal(lightCapabilities(card.members, devices, true, true, new Set(), card.brand).power, false);
+  assert.equal(typeof prepareLighting(card.members, devices, {family: 'power-set', data: {on: false}}, true, true, new Set(), () => 'must-not-send', card.brand), 'string');
+  assert.equal(typeof prepareLighting(card.members, devices, {family: 'power-set', data: {on: false}}, true, true, new Set(), () => 'home-allowed'), 'object', 'Home and rooms still allow cross-brand control');
+});

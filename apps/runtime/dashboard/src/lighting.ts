@@ -7,7 +7,7 @@ import type {BrowserAction} from './actions.ts';
 import {contentBlocked, deviceAction, deviceBlocked, type DeviceIntent} from './devices.ts';
 import type {RuntimeCopy} from './runtime-feeds.ts';
 export type LightingDevice = {record: DeviceRecord; owner: string; live: boolean; color?: LifxLight; colorLive?: boolean; wall?: WallRecord; wallLive?: boolean};
-export type LightingCard = {selection: LightingSelection; name: string; members: string[]};
+export type LightingCard = {selection: LightingSelection; name: string; members: string[]; brand?: string};
 export type LightingIntent = Extract<DeviceIntent, {family: 'power-set' | 'brightness-set' | 'scene-activate'}>
   | {family: 'lifx-color-set'; data: {hue: number; saturation: number}} | {family: 'lifx-temperature-set'; data: {kelvin: number}};
 export const emptyLightingLayout = (): LightingLayout => ({rooms: [], assignments: [], groups: [], home: null});
@@ -40,9 +40,12 @@ export function cardsFor(scope: string, layout: LightingLayout, devices: readonl
   const automatic: LightingSelection[] = eligible.filter(device => !groups.some(group => group.devices.includes(device.record.id))).map(device => ({kind: 'device', id: device.record.id}));
   // Keep a deterministic order so ungrouping does not reorder the remaining cards.
   const selections = scope === 'home' && layout.home !== null ? layout.home : [...groups.map(group => ({kind: 'group' as const, id: group.id})), ...automatic];
-  return selections.map(selection => resolveCard(selection, layout, devices));
+  return selections.map(selection => {
+    const card = resolveCard(selection, layout, devices);
+    return scope.startsWith('brand-') ? {...card, brand: scope.slice(6)} : card;
+  });
 }
-export function lightCapabilities(ids: readonly string[], devices: readonly LightingDevice[], control: boolean, operationsLive: boolean, locks: ReadonlySet<string> = new Set()): {
+export function lightCapabilities(ids: readonly string[], devices: readonly LightingDevice[], control: boolean, operationsLive: boolean, locks: ReadonlySet<string> = new Set(), brand?: string): {
   blocked: string | undefined; power: boolean; brightness: boolean; color: boolean; temperature: boolean; scenes: string[];
 } {
   let blocked: string | undefined = !control ? 'Read-only access' : !operationsLive ? 'Operation records are stale' : ids.length === 0 ? 'No lights in this room or group' : undefined;
@@ -52,6 +55,7 @@ export function lightCapabilities(ids: readonly string[], devices: readonly Ligh
     const member = matches[0];
     if (matches.length !== 1 || member === undefined) { blocked ??= 'A light is unavailable or has conflicting owners'; continue; }
     members.push(member);
+    if (brand !== undefined && brandOf(member) !== brand) blocked ??= 'A light no longer belongs to this brand';
     blocked ??= deviceBlocked(member.record, member.live, control);
     if (member.record.held !== undefined) blocked ??= 'A light is held after an uncertain write';
     if (member.record.availability !== 'available') blocked ??= 'A light is unavailable or its status is unknown';
@@ -68,8 +72,8 @@ export function lightCapabilities(ids: readonly string[], devices: readonly Ligh
       ? scenes.sceneIds.filter(id => members.every(member => member.record.capabilities.scenes.supported && member.record.capabilities.scenes.sceneIds.includes(id))) : [],
   };
 }
-export function prepareLighting(ids: readonly string[], devices: readonly LightingDevice[], intent: LightingIntent, control: boolean, operationsLive: boolean, locks: ReadonlySet<string>, requestId: () => string): BrowserAction[] | string {
-  const cap = lightCapabilities(ids, devices, control, operationsLive, locks);
+export function prepareLighting(ids: readonly string[], devices: readonly LightingDevice[], intent: LightingIntent, control: boolean, operationsLive: boolean, locks: ReadonlySet<string>, requestId: () => string, brand?: string): BrowserAction[] | string {
+  const cap = lightCapabilities(ids, devices, control, operationsLive, locks, brand);
   if (cap.blocked !== undefined) return cap.blocked;
   const supported = intent.family === 'power-set' ? cap.power : intent.family === 'brightness-set' ? cap.brightness : intent.family === 'lifx-color-set' ? cap.color
     : intent.family === 'lifx-temperature-set' ? cap.temperature : cap.scenes.includes(intent.data.sceneId);
@@ -97,7 +101,13 @@ export function groupCards(layout: LightingLayout, scope: string, first: Lightin
   if (members.length < 2 || members.length > 64) return 'A group needs between 2 and 64 lights';
   if (scope !== 'home' && members.some(member => !devices.some(device => device.record.id === member && scope === `brand-${brandOf(device)}`))) return 'Brand groups can contain only that brand';
   const next = structuredClone(layout);
-  next.groups = next.groups.filter(group => ![first, second].some(selection => selection.kind === 'group' && selection.id === group.id));
+  next.groups = next.groups.flatMap(group => {
+    if ([first, second].some(selection => selection.kind === 'group' && selection.id === group.id)) return [];
+    if (group.scope !== scope) return [group];
+    // A hidden Home group may still own these IDs. Reuse them without leaving overlapping saved membership.
+    const remaining = group.devices.filter(device => !members.includes(device));
+    return remaining.length < 2 ? [] : [{...group, devices: remaining}];
+  });
   next.groups.push({id, name: 'Light group', scope, devices: members});
   if (scope === 'home') {
     const removed = new Set([selectionKey(first), selectionKey(second)]);

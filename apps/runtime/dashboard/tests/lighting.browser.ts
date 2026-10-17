@@ -32,6 +32,15 @@ try {
   await group.waitFor();
   assert.equal(await a.count(), 0, 'group replaces individual controls');
   assert.equal(sent.filter(value => !value.includes('lighting-layout-set')).length, 0, 'group save sends only metadata');
+  await lights.getByText('Arrange', {exact: true}).click();
+  await lights.getByRole('checkbox', {name: 'Light group · group', exact: true}).uncheck();
+  await lights.getByRole('checkbox', {name: 'lamp-a', exact: true}).check();
+  await lights.getByRole('checkbox', {name: 'lamp-b', exact: true}).check();
+  await lights.getByText('Arrange', {exact: true}).click();
+  await a.getByLabel('Options for lamp-a', {exact: true}).click();
+  await a.getByLabel('Group lamp-a with', {exact: true}).selectOption('device:lamp-b');
+  await group.waitFor();
+  assert.equal(await a.count(), 0, 'regrouping previously hidden members succeeds');
   await group.getByLabel('Options for Light group', {exact: true}).click();
   await group.getByLabel('Group Light group with', {exact: true}).selectOption('device:lamp-c');
   await group.getByText('3 lights · group', {exact: false}).waitFor();
@@ -52,6 +61,32 @@ try {
   assert.equal(await brand.locator('.light-card').count(), 4, 'brand layout remains independent');
   const beam = brand.locator('[data-light-card="beam"]');
   assert.equal(await beam.getByRole('button', {name: 'On', exact: true}).isDisabled(), true, 'Beam remains unsupported');
+  // Lose an actual committed layout reply while the SDK stream is unavailable, then reconcile by reading.
+  const faultContext = await browser.newContext();
+  try {
+    const faultPage = await faultContext.newPage(); faultPage.setDefaultTimeout(15_000);
+    const layoutSends = changes(faultPage); let forwarded = 0;
+    await faultPage.goto(`${world.url}/#/rooms`); await feed(faultPage, 'connected');
+    await faultPage.getByText('Manage rooms', {exact: true}).click();
+    await faultPage.getByLabel('New room name', {exact: true}).fill('Reading room');
+    await faultPage.route('**/api/sdk/v1/stream', route => route.abort());
+    await faultPage.route('**/api/v2/commands/lighting-layout-set', async route => {
+      world.dropDashboardStreams();
+      const response = await route.fetch(); forwarded += 1; assert.equal(response.status(), 200); await response.dispose();
+      await route.abort();
+    });
+    await faultPage.getByRole('button', {name: 'Create room', exact: true}).click();
+    await faultPage.getByRole('status').filter({hasText: /Layout: Uncertain result/}).waitFor();
+    assert.equal(await faultPage.getByRole('button', {name: 'Create room', exact: true}).isDisabled(), true);
+    await faultPage.getByText('Manage rooms', {exact: true}).click();
+    await faultPage.getByRole('button', {name: 'Refresh records', exact: true}).click();
+    assert.equal(layoutSends.filter(url => url.includes('/commands/')).length, 1, 'refresh never repeats an uncertain layout save');
+    await faultPage.unroute('**/api/sdk/v1/stream'); await feed(faultPage, 'connected');
+    await faultPage.getByRole('heading', {name: 'Reading room', exact: true}).waitFor();
+    await faultPage.reload(); await feed(faultPage, 'connected');
+    await faultPage.getByRole('heading', {name: 'Reading room', exact: true}).waitFor();
+    assert.equal(forwarded, 1); assert.equal(layoutSends.filter(url => url.includes('/commands/')).length, 1, 'committed layout survives reload without replay');
+  } finally { await faultContext.close(); }
   await page.getByRole('link', {name: 'Rooms', exact: true}).click();
   const rooms = page.getByRole('region', {name: 'Rooms', exact: true});
   await rooms.getByText('Manage rooms', {exact: true}).click();
@@ -106,6 +141,6 @@ try {
   assert.equal(await brand.getByRole('button', {name: 'Create room', exact: true}).isDisabled(), true);
   assert.equal(sent.length, readOnlyCount);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'reusable-lighting', stationaryArtwork: true, keyboard: true, groupSends: 3, roomReloadSecondBrowserRestart: true, uncertainNoReplay: true, axe: 'desktop and phone passed', physical: false}));
+  console.log(JSON.stringify({journey: 'reusable-lighting', stationaryArtwork: true, keyboard: true, groupSends: 3, roomReloadSecondBrowserRestart: true, uncertainNoReplay: true, layoutLostReplyNoReplay: true, hiddenRegroup: true, axe: 'desktop and phone passed', physical: false}));
   await context.close();
 } finally { await browser.close(); await world.close(); }
