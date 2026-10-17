@@ -1,5 +1,6 @@
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
+import {setTimeout as pause} from 'node:timers/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -33,9 +34,21 @@ try {
   assert.equal(await a.count(), 0, 'group replaces individual controls');
   assert.equal(sent.filter(value => !value.includes('lighting-layout-set')).length, 0, 'group save sends only metadata');
   await lights.getByText('Arrange', {exact: true}).click();
-  await lights.getByRole('checkbox', {name: 'Light group · group', exact: true}).uncheck();
-  await lights.getByRole('checkbox', {name: 'lamp-a', exact: true}).check();
-  await lights.getByRole('checkbox', {name: 'lamp-b', exact: true}).check();
+  // Synthetic transport delay makes waiting for committed checkbox values observable.
+  await page.route('**/api/v2/commands/lighting-layout-set', async route => { await pause(150); await route.continue(); });
+  const selectHome = async (name: string, checked: boolean): Promise<void> => {
+    await lights.getByRole('checkbox', {name, exact: true}).click();
+    // The visible value is the committed layout. Wait for that value and the completed save before the next edit.
+    await page.waitForFunction(({name, checked}) => {
+      const label = Array.from(document.querySelectorAll('.lighting-workspace .lighting-organize label')).find(node => node.textContent?.trim() === name);
+      const input = label?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      return input !== null && input !== undefined && input.checked === checked && !input.disabled;
+    }, {name, checked});
+  };
+  await selectHome('Light group · group', false);
+  await selectHome('lamp-a', true);
+  await selectHome('lamp-b', true);
+  await page.unroute('**/api/v2/commands/lighting-layout-set');
   await lights.getByText('Arrange', {exact: true}).click();
   await a.getByLabel('Options for lamp-a', {exact: true}).click();
   await a.getByLabel('Group lamp-a with', {exact: true}).selectOption('device:lamp-b');
