@@ -1,3 +1,4 @@
+import {serializedAdmission} from '@jimmie-potts/sdk';
 import {systemClock,type Animation,type Clock,type DeviceAdapter,type OperationResult,type UploadResult} from '../device/index.js';
 import {checkpointSchema,type PlaybackCheckpoint,type CaptureHooks,type PlaybackPolicy} from '../library/index.js';
 import {PlaybackError,type PlaybackStore,type PlayerState} from './contracts.js';
@@ -14,6 +15,8 @@ export type DisplayEvidenceSource = 'brightness'|'screen'|'probe'|'upload'|'dash
 export type MediaOperationEvent = {operationId:number;generation:number} & ({phase:'pending'}|{phase:'complete';result:OperationResult<UploadResult>});
 
 export class Player {
+  /** Dashboard uploads and brightness writes take device turns in order; admission is read inside the turn. */
+  private readonly deviceTurns=serializedAdmission();
   private mediaListeners=new Set<(event:MediaOperationEvent)=>void>();
   private mediaSequence=0;
   subscribeMediaOperations(listener:(event:MediaOperationEvent)=>void):()=>void {this.mediaListeners.add(listener);return ()=>{this.mediaListeners.delete(listener);};}
@@ -153,9 +156,20 @@ export class Player {
     if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
     const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
     if(this.closing||expectedGeneration!==this.epoch||this.intent!=='paused'||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
-    const generation=this.adapterGeneration;
-    const result=await this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
-      {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});
+    // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
+    // eligibility (#1074 285-F1). A card no longer admitted ends as a cancellation with no effect, as the adapter reports it.
+    const generation=this.adapterGeneration,submittedAtMs=this.clock.now();
+    const notAdmitted=():OperationResult<UploadResult>=>{const completedAtMs=this.clock.now();
+      return {ok:false,code:'cancelled',priorEffects:'none',generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}};};
+    let waiting=true;
+    const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
+      {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});});
+    // A card aborted while it waits for its turn ends at once, as it did in the device queue; its turn then finds it cancelled.
+    const signal=options.signal;
+    let end:(()=>void)|undefined;
+    const result=signal===undefined?await turn:await Promise.race([turn,new Promise<OperationResult<UploadResult>>(resolve=>{
+      end=()=>{if(waiting)resolve(notAdmitted());};if(signal.aborted)end();else signal.addEventListener('abort',end,{once:true});})])
+      .finally(()=>{if(end!==undefined)signal.removeEventListener('abort',end);});
     // Superseded private card work with no effects is no evidence about the device or user intent.
     if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')return result;
     // Evidence from a retired write cannot alter the current player or revive it.
@@ -207,7 +221,7 @@ export class Player {
     if(this.closing)throw new PlaybackError('closed');
     const generation=this.adapterGeneration;
     this.requestedBrightness=percent;
-    const result=await this.device.setBrightness(percent,{generation,timeoutMs:this.operationTimeoutMs});
+    const result=await this.deviceTurns('device',()=>this.device.setBrightness(percent,{generation,timeoutMs:this.operationTimeoutMs}));
     this.observeResult(result,generation,'brightness');
     if(generation===this.adapterGeneration&&!this.closing&&result.ok)this.evidence.brightness.acknowledged={value:percent,atMs:result.timing.completedAtMs};
     await this.observedControl(result,generation);return result;

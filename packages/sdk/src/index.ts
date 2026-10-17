@@ -41,3 +41,4 @@ export {IDLE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type Remote
 export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';
 export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
 export {HeldEvidence, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged} from './evidence.js';
+export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';

@@ -162,6 +162,18 @@ export function createRuntimeUpgradePreflight(io) {
   };
 }
 
+/**
+ * Run `effect` between two runs of `guard` (Hub #1142). The second guard runs
+ * after the effect's last await, so an input that changed while the effect
+ * awaited refuses (#1134 F1). `guard` throws to refuse.
+ */
+export async function withFinalRecheck(guard, effect) {
+  await guard();
+  const result = await effect();
+  await guard();
+  return result;
+}
+
 /** Pre-effect recovery guard; no stop, selection, startup or database access. */
 export function createRuntimeUpgradeRecoveryCheck(io) {
   return async (requestFile, approvedPlanFile) => {
@@ -210,11 +222,9 @@ export function createRuntimeUpgradeRecoveryCheck(io) {
           || !approvedBytes.equals(await io.privateFile(approvedPlanFile, maximum))) refused();
         await io.lock(request.installationRoot);
       };
-      await bindings();
-      if (!same(await io.source(sourceInput), source)) refused();
       // Source collection is asynchronous; evidence/private bindings must still
       // match after its last await. No health assumption or service effect here.
-      await bindings();
+      await withFinalRecheck(bindings, async () => {if (!same(await io.source(sourceInput), source)) refused();});
       return {schema: 'runtime-recovery-check/1.0', eligible: true, planSha256,
         release: source.expected.releases.recovery, directory: source.artifacts.recovery.root};
     } catch {throw new Error('runtime-upgrade-recovery-refused');}
