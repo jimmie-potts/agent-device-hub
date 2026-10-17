@@ -11,3 +11,9 @@ for (const scope of ['--all', '--archived']) {
   if (result.signal) process.stderr.write(`Workflow validation stopped by ${result.signal}.\n`);
   if (result.status !== 0) process.exitCode = 1;
 }
+
+// Suppression keys must name files on disk; ESLint does not report them otherwise.
+const stale = spawnSync(process.execPath, [path.join(__dirname, 'check-stale-suppressions.cjs')], { stdio: 'inherit' });
+if (stale.error) process.stderr.write(`${stale.error.message}\n`);
+if (stale.signal) process.stderr.write(`Stale suppression check stopped by ${stale.signal}.\n`);
+if (stale.status !== 0) process.exitCode = 1;

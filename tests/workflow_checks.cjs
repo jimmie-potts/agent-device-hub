@@ -775,3 +775,29 @@ test('runtime storage consumers delegate full-disk classification to the SDK', (
     assert.equal(hasLocalFullDiskCheck(source), false, `${file} must use the SDK helper`);
   }
 });
+
+test('a suppression key for a missing file fails and names that path', (t) => {
+  const directory = fixture(t);
+  fs.mkdirSync(path.join(directory, 'src'));
+  fs.writeFileSync(path.join(directory, 'src', 'kept.ts'), '');
+  fs.writeFileSync(path.join(directory, 'eslint-suppressions.json'), JSON.stringify({
+    'src/kept.ts': { 'no-console': { count: 1 } },
+    'src/renamed.ts': { 'no-console': { count: 1 } },
+  }));
+  const result = run(check, directory);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /stale key for missing file src\/renamed\.ts/);
+  assert.doesNotMatch(result.stderr, /src\/kept\.ts/);
+});
+
+test('a stale suppression check stopped by a signal fails and says so', (t) => {
+  const directory = fixture(t);
+  const scripts = path.join(directory, 'scripts');
+  fs.mkdirSync(scripts);
+  fs.copyFileSync(check, path.join(scripts, 'check-workflow.cjs'));
+  fs.writeFileSync(path.join(scripts, 'openspec.cjs'), '');
+  fs.writeFileSync(path.join(scripts, 'check-stale-suppressions.cjs'), "process.kill(process.pid, 'SIGKILL');\n");
+  const result = run(path.join(scripts, 'check-workflow.cjs'), directory);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Stale suppression check stopped by SIGKILL/);
+});
