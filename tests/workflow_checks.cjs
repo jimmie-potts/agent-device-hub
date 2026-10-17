@@ -775,3 +775,17 @@ test('runtime storage consumers delegate full-disk classification to the SDK', (
     assert.equal(hasLocalFullDiskCheck(source), false, `${file} must use the SDK helper`);
   }
 });
+
+test('a suppression key for a missing file fails and names that path', (t) => {
+  const directory = fixture(t);
+  fs.mkdirSync(path.join(directory, 'src'));
+  fs.writeFileSync(path.join(directory, 'src', 'kept.ts'), '');
+  fs.writeFileSync(path.join(directory, 'eslint-suppressions.json'), JSON.stringify({
+    'src/kept.ts': { 'no-console': { count: 1 } },
+    'src/renamed.ts': { 'no-console': { count: 1 } },
+  }));
+  const result = run(check, directory);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /stale key for missing file src\/renamed\.ts/);
+  assert.doesNotMatch(result.stderr, /src\/kept\.ts/);
+});
