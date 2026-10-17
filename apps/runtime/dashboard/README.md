@@ -77,6 +77,9 @@ command attempts. The module owns media reads, playlist drafts and playback
 controls; the shell owns the glass styles. Display/Content tabs retain artwork
 and drafts, with keyboard navigation and reduced motion. The device and Player
 pages retain advanced controls, and other module pages remain reachable.
+All controls for one target share the shell's pending attempt, including a lost
+HTTP reply without an operation record. Opening advanced controls or switching
+pages preserves that lock; a completed older request cannot clear its identity.
 
 See the [Pixoo frontend guide](../../../modules/pixoo/README.md#frontend) for
 bounded animated previews, populated playlist creation, looping and explicit

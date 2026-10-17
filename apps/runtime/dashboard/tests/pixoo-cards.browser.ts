@@ -162,6 +162,11 @@ try {
   await card.getByRole('button', {name: 'Resume', exact: true}).waitFor();
   assert.equal((await readPlayer()).session.source?.kind, 'media', 'explicit single-media play uses the existing temporary session');
   await card.getByRole('tab', {name: 'Display', exact: true}).click();
+  await page.emulateMedia({reducedMotion: 'no-preference'});
+  await card.getByRole('tab', {name: 'Content', exact: true}).click();
+  await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
+  await picker.scrollIntoViewIfNeeded();
+  await picker.locator('[data-preview-state="animating"]').first().waitFor();
   let releaseSync = (): void => {};
   const heldSync = new Promise<void>(resolve => { releaseSync = resolve; });
   await page.route('**/api/sdk/v1/sync', async route => { await heldSync; await route.continue(); });
@@ -170,6 +175,14 @@ try {
     const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
     world.dropDashboardStreams(); await replacement;
     await card.getByText('Pixoo records are stale.', {exact: true}).waitFor();
+    await feed(page, 'connected');
+    // A connected transport is not a fresh owner copy: visible previews must release
+    // their frames until the replacement sync is complete, just like hidden faces.
+    await page.waitForFunction(() => {
+      const previews = [...document.querySelectorAll('.pixoo-picker [data-preview-state]')];
+      return previews.length > 0 && previews.every(node => node.getAttribute('data-preview-state') === 'still');
+    });
+    await card.getByRole('tab', {name: 'Display', exact: true}).click();
     assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
   } finally { releaseSync(); await page.unrouteAll({behavior: 'wait'}); }
   await feed(page, 'connected');

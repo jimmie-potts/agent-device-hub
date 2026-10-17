@@ -61,3 +61,5 @@ try {
 } finally {try {await browser?.close();} finally {await world.close();}}
 
 await import('./pixoo-cards.browser.ts');
+
+await import('./pixoo-command-lock.browser.ts');

@@ -1456,9 +1456,12 @@ The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to
 `apps/runtime/dashboard/tests/pixoo-pages.browser.ts`. Run that browser file
 after the root build for animated media browsing, playlist drafts and the shared
-Home/device/Player card. The library regression is discovered by the existing
-core CI `test:pixoo:built` suite; the dashboard smoke journey covers the card's
-passive Home mount in App verification. These checks use synthetic media and a
+Home/device/Player card. The browser suite also checks HTTP-only uncertainty in
+both directions between card and advanced controls, retained identity across
+navigation/reload, and
+visible preview cleanup while a replacement owner sync is held. The library
+regression is discovered by the existing core CI `test:pixoo:built` suite;
+the dashboard smoke journey covers the card's passive Home mount in App verification. These checks use synthetic media and a
 disposable simulated owner, and make no physical-device claim.
 
 `test:pixoo:built` runs two suites from the build:

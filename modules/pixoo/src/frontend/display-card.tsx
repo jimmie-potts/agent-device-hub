@@ -83,7 +83,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
         <p className="light-note">Preview is illustrative. Screen on does not resume playback.</p>
       </>
     </div><div className="light-face" hidden={tab !== 'Content'} id={`${id}-Content-face`} role="tabpanel" aria-labelledby={`${id}-Content`} tabIndex={0}>
-      {editor !== undefined ? <PlaylistEditor key={editor.saved?.id ?? 'new'} context={context} device={device} live={live} command={command} playlists={playlists} saved={editor.saved} active={tab === 'Content'} close={() => { setEditor(undefined); }}/>
+      {editor !== undefined ? <PlaylistEditor key={editor.saved?.id ?? 'new'} context={context} device={device} live={live} command={command} playlists={playlists} saved={editor.saved} active={live && tab === 'Content'} close={() => { setEditor(undefined); }}/>
         : <>
           <label>Browse<select value={source} onChange={event => { setSource(event.target.value); }}><option value="playlists">Playlists</option><option value="media">GIFs &amp; images</option></select></label>
           {source === 'playlists' ? <>
@@ -93,7 +93,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
             {selected !== undefined && <>
               <p className="light-note">{selected.items.length} items · {selected.repeat ? 'Loops automatically' : 'Loop is off'}</p>
               <div className="pixoo-media-grid" aria-label="Saved playlist contents">{selected.items.slice(playlistOffset, playlistOffset + 6).map((item, index) => <div key={item.id}>
-                <AnimatedMedia api={context.api} renditionId={item.renditionId} label={`Saved item ${playlistOffset + index + 1} preview`} active={tab === 'Content' && context.connected}/>
+                <AnimatedMedia api={context.api} renditionId={item.renditionId} label={`Saved item ${playlistOffset + index + 1} preview`} active={live && tab === 'Content' && context.connected}/>
               </div>)}</div>
               {selected.items.length > 6 && <div className="actions"><button type="button" className="secondary" disabled={playlistOffset === 0} onClick={() => { setPlaylistOffset(Math.max(0, playlistOffset - 6)); }}>Previous saved items</button>
                 <span>{playlistOffset + 1}–{Math.min(playlistOffset + 6, selected.items.length)} of {selected.items.length}</span>
@@ -109,7 +109,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
               <button type="button" className="secondary" disabled={blocked !== undefined} onClick={() => { setEditor({}); }}>New playlist</button>
             </div>}
           </> : <>
-            <MediaPicker context={context} active={tab === 'Content'} selected={selection} onSelect={item => { setSelection(new Map([[item.renditionId, item]])); }}/>
+            <MediaPicker context={context} active={live && tab === 'Content'} selected={selection} onSelect={item => { setSelection(new Map([[item.renditionId, item]])); }}/>
             {media !== undefined && <p className="light-note">Selected: {media.name}</p>}
             {context.control && <button type="button" disabled={contentBlocked || media === undefined || !device.capabilities.media.supported} onClick={() => {
               if (media !== undefined) send('pixoo-media-show', {renditionId: media.renditionId});
