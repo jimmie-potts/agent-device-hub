@@ -19,6 +19,13 @@ void test('request binds operational choices and refuses missing or unbounded ex
     installationRoot: root, tokenFile: '/synthetic/token', installedBaselineClosure: {path: root + '/provenance/closure', sha256: 'a'.repeat(64)}, changeAssessment: pin, recovery: null,
     releases: {previous: artifact, target: artifact}, execution};
   assert.deepEqual(parseUpgradeRequest(document), document);
+  const qualifiedRecovery = {...document, recovery: {release: artifact, evidence: pin}};
+  assert.deepEqual(parseUpgradeRequest(qualifiedRecovery), qualifiedRecovery);
+  for (const field of ['identity', 'directory', 'archive'] as const) {
+    assert.throws(() => parseUpgradeRequest({...qualifiedRecovery,
+      recovery: {...qualifiedRecovery.recovery, release: {...artifact, [field]: artifact[field] + '-other'}}}),
+    /runtime-upgrade-paths-refused/);
+  }
   const longerObservation = {...document, execution: {...execution,
     postStart: {...execution.postStart, timeoutMs: 180000}}};
   assert.deepEqual(parseUpgradeRequest(longerObservation), longerObservation);

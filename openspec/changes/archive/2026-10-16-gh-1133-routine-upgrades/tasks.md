@@ -7,3 +7,7 @@
 
 - [x] 2.1 Reconcile instructions, procedure, applicability and capability deltas; inspect representative routine, failure, recovery and stale-request flows.
 - [x] 2.2 Run applicable build/type/lint/runtime/contract/workflow checks, synchronize affected specs and archive the complete change before final review.
+
+## 3. Review corrections
+
+- [x] 3.1 Refuse recovery paths or complete identities different from the original previous release; verify the receipt boundary and correct the qualification checklist link.

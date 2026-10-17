@@ -70,7 +70,8 @@ export function parseUpgradeRequest(value: unknown): UpgradePreflightRequest {
     || !evidencePin(value.installedBaselineClosure) || !evidencePin(value.changeAssessment)
     || !closed(value.releases, ['previous', 'target']) || !Object.values(value.releases).every(artifact)
     || !(value.recovery === null || closed(value.recovery, ['release', 'evidence'])
-      && artifact(value.recovery.release) && evidencePin(value.recovery.evidence))
+      && artifact(value.recovery.release) && isDeepStrictEqual(value.recovery.release, value.releases.previous)
+      && evidencePin(value.recovery.evidence))
     || !executionFrame(value.execution, String(value.installationRoot), String(value.operation))) return refused();
   return value as UpgradePreflightRequest;
 }

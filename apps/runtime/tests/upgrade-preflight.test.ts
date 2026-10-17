@@ -162,19 +162,19 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
     if (scenario === 'companions-reason') row.reasonCode = 'unavailable';
     if (scenario === 'companions-refused') {row.state = 'refused'; row.healthy = false; row.reasonCode = 'not-found';}
     if (scenario === 'companions-introduced') {
-      // Distinct verified roles model an older baseline without this owner.
+      // The new owner has no qualified previous reader; forward admission
+      // remains available with recovery explicitly unknown.
       source.artifacts.previous.entries = [];
       state.durableOwners.splice(state.durableOwners.indexOf('companions'), 1);
       health.modules.pop();
       const target = {...release, sourceRevision: 'd'.repeat(40), archiveSha256: 'e'.repeat(64)};
-      const recovery = {...release, sourceRevision: 'f'.repeat(40), archiveSha256: '9'.repeat(64)};
-      source.expected.releases.target = target; source.expected.releases.recovery = recovery;
+      source.expected.releases.target = target;
       source.stamps.target = {...stamp, revision: target.sourceRevision};
-      source.stamps.recovery = {...stamp, revision: recovery.sourceRevision};
-      source.artifacts.target.root = join(root, 'target'); source.artifacts.recovery.root = join(root, 'recovery');
+      source.artifacts.target.root = join(root, 'target');
+      for (const record of [source.expected.releases, source.stamps, source.artifacts]) Reflect.deleteProperty(record, 'recovery');
       const paths = request.releases as Record<string, typeof artifact>;
       paths.target = {...artifact, directory: source.artifacts.target.root, identity: join(root, 'target-identity')};
-      request.recovery = {release: {...artifact, directory: source.artifacts.recovery.root, identity: join(root, 'recovery-identity')}, evidence: request.changeAssessment};
+      request.recovery = null;
       await writeFile(requestFile, JSON.stringify(request), {mode: 0o600});
     }
   }
@@ -280,7 +280,7 @@ void test('routine forward plan retains inactive BB-8 without certificates or a 
 void test('composed upgrade preflight binds original observations and the exact locked plan', async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-upgrade-preflight-'));
   t.after(() => rm(root, {recursive: true, force: true}));
-  type Planned = {plan: {operation: string; planSha256: string}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
+  type Planned = {plan: {operation: string; planSha256: string; recovery: unknown}; counters: {http: number; lock: number}; observations: {operationId: string; trace: {traceparent: string}}[]};
   const inspect = (scenario: string) => bounded(scenario, composedPreflight(root, scenario));
   const first = await inspect('adoption') as Planned;
   // Neither the outcome nor anything the case writes holds the read token, as the subprocess's stdout did not.
@@ -297,6 +297,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.equal(companion.counters.http, 2);
   const introduced = await inspect('companions-introduced') as Planned & {code?: string};
   assert.equal(introduced.code, undefined, 'a qualified first introduction does not fabricate current companion health/state');
+  assert.equal(introduced.plan.recovery, null);
   assert.equal(introduced.counters.http, 2);
   const unqualifiedCompanion = await inspect('companions-no-proof');
   assert.equal(unqualifiedCompanion.code, undefined, 'no historical companion certificate is required');
@@ -696,7 +697,8 @@ void test('recovery guard refuses protected-input drift and evidence changed dur
   const baseline = {baselineRoot: artifact.directory}, hooks = {hooks: []}, paths = {selection: 'synthetic'};
   const state = {configured: [] as string[], durableOwners: ['core']};
   const entries: unknown[] = [];
-  const source = {expected: {releases: {recovery: {sourceRevision: 'a'.repeat(40)}}}, stamps: {}, inputs: [],
+  const identity = {sourceRevision: 'a'.repeat(40), archiveSha256: 'b'.repeat(64), manifestSha256: 'c'.repeat(64)};
+  const source = {expected: {releases: {previous: identity, recovery: {...identity}}}, stamps: {}, inputs: [],
     artifacts: {previous: {root: artifact.directory, entries}, target: {root: artifact.directory, entries}, recovery: {root: artifact.directory, entries}}};
   const body = {schema: 'runtime-upgrade-plan/2.0', eligibility: 'forward-eligible', requestSha256: sha256(await readFile(requestFile)),
     operation: request.operation, installationId: request.installationId, recovery: request.recovery, changeAssessment: pin, execution: request.execution,
@@ -704,8 +706,13 @@ void test('recovery guard refuses protected-input drift and evidence changed dur
     source: {expected: source.expected, stamps: source.stamps},
     privateInputs: {configSha256: sha256('config'), credentialsSha256: sha256('credentials'), readTokenSha256: sha256('token')}};
   await writeFile(planFile, JSON.stringify({...body, planSha256: sha256(canonical(body))}), {mode: 0o600});
-  for (const scenario of ['unchanged', 'late-evidence', 'config', 'credentials', 'token', 'baseline', 'hooks', 'state', 'paths', 'unit-set', 'late-baseline-evidence']) {
+  for (const scenario of ['unchanged', 'late-evidence', 'config', 'credentials', 'token', 'baseline', 'hooks', 'state', 'paths', 'unit-set', 'late-baseline-evidence', 'different-recovery-revision', 'different-recovery-inventory']) {
     await t.test(scenario, async () => {
+      source.expected.releases.recovery = {...identity,
+        ...(scenario === 'different-recovery-revision' ? {sourceRevision: 'd'.repeat(40)} : {}),
+        ...(scenario === 'different-recovery-inventory' ? {manifestSha256: 'e'.repeat(64)} : {})};
+      const approvedBody = {...body, source: {expected: source.expected, stamps: source.stamps}};
+      await writeFile(planFile, JSON.stringify({...approvedBody, planSha256: sha256(canonical(approvedBody))}), {mode: 0o600});
       await writeFile(evidence, approvedEvidence, {mode: 0o600});
       await writeFile(configFile, scenario === 'config' ? 'changed config' : 'config', {mode: 0o600});
       await writeFile(credentialsFile, scenario === 'credentials' ? 'changed credentials' : 'credentials', {mode: 0o600});

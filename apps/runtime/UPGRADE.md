@@ -328,7 +328,11 @@ Prepare a new private `runtime-upgrade-request/2.0` JSON document with exactly:
   explicitly state unchanged/inactive paths and preservation. The coordinator
   reviews meaning. Hash pins establish unchanged bytes, not compatibility.
 - `recovery`: `null` means unknown. To qualify recovery use
-  `{release: {identity, directory, archive}, evidence: {path, sha256}}`. Evidence
+  `{release: {identity, directory, archive}, evidence: {path, sha256}}`, with
+  `release` exactly equal to `releases.previous`. Recovery under this operation
+  must use that same verified artifact and complete identity so receipt 1.0 can
+  truthfully record its result. A different release needs a separately assessed
+  operation; do not change the original intent's previous identity. Evidence
   stays private under provenance and binds the exact release, current config,
   selected owners and latest-state write/reopen proof for affected formats. A
   certificate from a different build or same-source restart test cannot substitute.
@@ -706,7 +710,7 @@ node apps/runtime/bin/runtime-upgrade-check.mjs check-recovery "$BUNNY_REQUEST_F
 ```
 
 Then use the same stopped-writer checks and selection command, setting
-`BUNNY_SELECTION_DIRECTORY` to the verified recovery release from the approved
+`BUNNY_SELECTION_DIRECTORY` to the verified original previous release from the approved
 request. Leave the state directory in place. Do not copy the backup over it.
 Make one selected recovery attempt; a failure requires inspection, not another
 automatic switch or start. In a successful recovery, the receipt records
@@ -905,7 +909,7 @@ latest state. A mismatched override or failed recovery needs inspection and a
 truthful failed/interrupted receipt, not an automatic retry or backup restore.
 
 Verify the baseline through the anchor before the candidate upgrade. Use the
-[initial qualification checklist](#initial-qualification-checklist) for one
+[routine operation checklist](#routine-operation-checklist) for one
 forward upgrade in the coordinated runtime window. Recovery occurs only after
 an actual failure under the exact approved plan; end that window without
 re-upgrade. Record source qualification, first adoption, installed running/health

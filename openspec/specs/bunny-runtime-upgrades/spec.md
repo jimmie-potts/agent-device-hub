@@ -52,7 +52,7 @@ operation or unresolved interrupted operation MUST prevent a new mutation.
 
 ### Requirement: Latest durable state survives compatible recovery
 
-The current runtime SHALL assess actual storage changes using focused evidence before a forward upgrade, without requiring historical certificates for every owner or unchanged format. It MUST quiesce named writers and verify a consistent private backup before switching. Recovery eligibility SHALL be independent: unknown recovery MUST allow forward planning and MUST refuse recovery selection/checks. Qualified recovery MUST reopen latest state with verified bytes and focused evidence for affected formats and selected owners. No operation SHALL silently restore an older snapshot, replay commands or activate unselected modules. Snapshot restoration requires a separate explicit owner decision, preservation of the failed latest state and an honest data-gap report.
+The current runtime SHALL assess actual storage changes using focused evidence before a forward upgrade, without requiring historical certificates for every owner or unchanged format. It MUST quiesce named writers and verify a consistent private backup before switching. Recovery eligibility SHALL be independent: unknown recovery MUST allow forward planning and MUST refuse recovery selection/checks. Qualified recovery MUST use the exact approved previous artifact and complete identity, reopen latest state with verified bytes and focused evidence for affected formats and selected owners, and remain representable by the unchanged receipt contract. No operation SHALL silently restore an older snapshot, replay commands or activate unselected modules. Snapshot restoration requires a separate explicit owner decision, preservation of the failed latest state and an honest data-gap report.
 
 #### Scenario: Recovery format is unknown or incompatible
 - **WHEN** a reviewed forward release has no qualified older reader
@@ -179,5 +179,9 @@ Routine forward admission SHALL require verified previous/target releases, insta
 - **THEN** the otherwise valid forward plan includes that ownership without running dormant code, reading a Windows database or requiring BB-8 phase certificates
 
 #### Scenario: Recovery evidence is independently bound
-- **WHEN** a recovery release is qualified
-- **THEN** its verified artifact and private latest-state evidence are bound to the reviewed request and any drift refuses
+- **WHEN** the original previous release is qualified for recovery
+- **THEN** its exact artifact paths, complete verified identity and private latest-state evidence are bound to the reviewed request and any drift refuses
+
+#### Scenario: A different recovery release cannot finalize this operation
+- **WHEN** recovery names artifact paths or a complete verified identity different from the original previous release
+- **THEN** the request or pre-effect recovery check refuses without effects; the original receipt identity remains unchanged and another release needs a separately assessed operation

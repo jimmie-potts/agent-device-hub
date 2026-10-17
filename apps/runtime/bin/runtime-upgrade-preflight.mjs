@@ -181,7 +181,8 @@ export function createRuntimeUpgradeRecoveryCheck(io) {
       const same = (a, b) => io.canonical(a) === io.canonical(b);
       const sourceInput = sourceInputFor(request);
       const source = await io.source(sourceInput);
-      if (!same({expected: source.expected, stamps: source.stamps}, approved.source)) refused();
+      if (!same({expected: source.expected, stamps: source.stamps}, approved.source)
+        || !same(source.expected.releases.recovery, source.expected.releases.previous)) refused();
       const baselineOwner = {...approved.owner, entry: join(approved.baseline.baselineRoot, 'apps/runtime/dist/src/main.js')};
       const baselineInput = {path: request.installedBaselineClosure.path, pin: request.installedBaselineClosure,
         installationId: request.installationId, owner: baselineOwner, previous: {...source.artifacts.previous, inputs: source.inputs}};
