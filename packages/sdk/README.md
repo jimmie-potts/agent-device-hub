@@ -1042,6 +1042,8 @@ the same name, and change it only with `merge(prev, next)`, which keeps the
 stronger claim. Its type does too, so treating an uncertain result as a
 confident `transmitted` or `absent` claim, or replacing a transmission with
 `absent`, is a compile error. Only `observed` moves past `uncertain` (#1140).
+A claim that changes over time is held with `const held = hold(absent())`:
+`held.claim` is read-only and `held.merge(next)` is the only way it changes.
 
 ## Remote transport
 

@@ -38,3 +38,28 @@ export const observed = (): Evidence<'observed'> => make('observed');
 export function merge<P extends EvidenceLevel, N extends EvidenceLevel>(prev: Evidence<P>, next: Evidence<N>): Evidence<Merged<P, N>> {
   return (RANK[next.level] > RANK[prev.level] ? next : prev) as Evidence<EvidenceLevel> as Evidence<Merged<P, N>>;
 }
+
+/**
+ * A held claim that changes only through `merge` (Hub #1140). Bind it with `const`; the claim is read-only, so a
+ * held claim cannot be replaced by assignment, only merged with new evidence, and it never drops.
+ */
+export class HeldEvidence<T extends EvidenceLevel> {
+  #claim: Evidence<T>;
+
+  constructor(initial: Evidence<T>) {
+    this.#claim = initial;
+  }
+
+  get claim(): Evidence<T> {
+    return this.#claim;
+  }
+
+  /** Combine new evidence with the held claim, keeping the stronger. */
+  merge(next: Evidence<T>): Evidence<T> {
+    this.#claim = merge(this.#claim, next);
+    return this.#claim;
+  }
+}
+
+/** Hold a claim whose later evidence stays within the levels `T`. */
+export const hold = <T extends EvidenceLevel>(initial: Evidence<T>): HeldEvidence<T> => new HeldEvidence<T>(initial);

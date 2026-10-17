@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
-import {absent, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel} from '../src/index.js';
+import {absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel} from '../src/index.js';
 import {it} from './support.js';
 
 it('merge keeps the stronger claim in either order', () => {
@@ -43,4 +43,17 @@ it('the #1126 F1 pre-fix refused-Stop shape fails to compile', () => {
   const errors = ts.getPreEmitDiagnostics(program).filter(diagnostic => diagnostic.file?.fileName === fixture);
   assert.equal(errors.length, 1, errors.map(error => ts.flattenDiagnosticMessageText(error.messageText, '\n')).join('\n'));
   assert.match(ts.flattenDiagnosticMessageText(errors[0]?.messageText, '\n'), /'Evidence<"absent">' is not assignable to type 'Evidence<"transmitted">'/);
+});
+
+it('a held claim changes only through merge and never drops', () => {
+  const held = hold<'absent' | 'transmitted'>(absent());
+  assert.equal(held.merge(transmitted()).level, 'transmitted');
+  assert.equal(held.merge(absent()).level, 'transmitted');
+  const forbidden = (): void => {
+    // @ts-expect-error the held claim is read-only.
+    held.claim = absent();
+    // @ts-expect-error new evidence must stay within the held levels.
+    held.merge(observed());
+  };
+  assert.equal(typeof forbidden, 'function');
 });

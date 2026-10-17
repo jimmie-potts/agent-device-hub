@@ -6,7 +6,7 @@ import {Readable} from 'node:stream';
 import {AdbServerClient, AdbShellProtocolProcessImpl, AdbShellProtocolSpawner} from '@yume-chan/adb';
 import {MaybeConsumable, type ReadableStream as AdbReadable} from '@yume-chan/stream-extra';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {absent, merge, transmitted as transmission, type Evidence} from '@jimmie-potts/sdk';
+import {absent, hold, transmitted as transmission, type HeldEvidence} from '@jimmie-potts/sdk';
 import {CURRENT_APP_COMMAND, currentApp, keyCommand, launchCommand, launcherCommand, textCommand, type App, type CurrentApp, type Key} from './actions.js';
 import type {OnnConfig} from './configuration.js';
 import {parseMetadataReply, type MetadataSample} from './metadata.js';
@@ -15,6 +15,8 @@ import {READER_CHECK, READER_DEVICE_PATH, READER_INVOCATION, READER_SHA256} from
 export type OnnAction = {kind: 'key'; key: Key} | {kind: 'app'; app: App} | {kind: 'text'; text: string};
 /** Connection evidence is independent of action success; local refusals leave it unknown. */
 export type Attempt = {result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'none' | 'transmitted'; code?: ErrorCode; connection: 'available' | 'unavailable' | 'unknown'};
+/** An attempt's transmission claim: it starts absent and changes only through `merge` (Hub #1140). */
+export const deliveryEvidence = (): HeldEvidence<'absent' | 'transmitted'> => hold<'absent' | 'transmitted'>(absent());
 export type AppObservation = {app?: CurrentApp; metadata?: MetadataSample; metadataFailure?: true};
 export interface OnnTransport {
   execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined): Promise<Attempt>;
@@ -113,9 +115,9 @@ export class AdbTransport implements OnnTransport {
   async execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined = () => undefined): Promise<Attempt> {
     let possible = false, answered = false;
     // Transmission evidence only grows (Hub #1140): a later failure cannot erase an acknowledged write.
-    let delivery: Evidence<'absent' | 'transmitted'> = absent();
-    const sent = (): Attempt['evidence'] => delivery.level === 'transmitted' ? 'transmitted' : 'none';
-    const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {delivery = merge(delivery, transmission());};
+    const delivery = deliveryEvidence();
+    const sent = (): Attempt['evidence'] => delivery.claim.level === 'transmitted' ? 'transmitted' : 'none';
+    const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {delivery.merge(transmission());};
     try {
       let command: string | undefined;
       if (action.kind === 'key') command = keyCommand(action.key);
