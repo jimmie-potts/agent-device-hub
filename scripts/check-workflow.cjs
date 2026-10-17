@@ -14,4 +14,6 @@ for (const scope of ['--all', '--archived']) {
 
 // Suppression keys must name files on disk; ESLint does not report them otherwise.
 const stale = spawnSync(process.execPath, [path.join(__dirname, 'check-stale-suppressions.cjs')], { stdio: 'inherit' });
+if (stale.error) process.stderr.write(`${stale.error.message}\n`);
+if (stale.signal) process.stderr.write(`Stale suppression check stopped by ${stale.signal}.\n`);
 if (stale.status !== 0) process.exitCode = 1;
