@@ -34,6 +34,7 @@ import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
+import {readRoomContent} from './room-models.js';
 
 export {CORE_MODULE};
 /** The agent-state owner ID the core persists with its store. */
@@ -177,6 +178,7 @@ export const isCoreModule = (module: BunnyModule): module is CoreModule => modul
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
+  let contentContext: ModuleContext | undefined;
   const automation = (): AutomationControls => {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
@@ -188,9 +190,13 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   };
   const limits=()=>{const value=automation().limits;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
   return {
-    manifest: {name: CORE_MODULE, apiVersion: '1.2', tools: [sessionsTool(() => core?.sessions()),
+    manifest: {name: CORE_MODULE, apiVersion: '1.3',
+      content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
+        ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
+      tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
     start: context => {
+      contentContext = context;
       core = new Core(context, options);
       return core.start();
     },

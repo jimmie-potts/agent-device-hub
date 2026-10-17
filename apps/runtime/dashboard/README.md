@@ -88,6 +88,53 @@ installation and physical-display evidence remain separate.
 
 ## Reusable lighting
 
+Rooms also reads manually prepared private 3D models from the core. A room's
+3D button opens local orbit/zoom and cutaway inspection. Fixture buttons select
+the existing individual LightCard using current room membership, unique device
+identity and exact owner; an unbound, missing or reassigned fixture stays visible
+with its reason and cannot send a command. Stale layout/device copies retain
+the ordinary lighting guards. Selection, camera changes and reconnect send no
+light command. Reported power is shown schematically; neutral materials do not
+mirror per-zone animations, scene colors or physical illumination. WebGL failure
+retains the fixture list and existing controls.
+
+### Prepare a private model
+
+Under the runtime state directory, the core owns
+`modules/core/room-models/catalog.json` and `<model-id>.json`. Keep the original
+GLB and editing source in an unserved `source/` folder beside those files.
+All real geometry, measurements, names and bindings stay outside Git, build
+output, GitHub and CI. Use owner-private directories (0700) and single-link
+regular files (0600), with no symlinks. Do not read the live core SQLite file
+from another process. Create/assign a room using the existing Rooms interface
+or its revision-guarded layout command.
+
+The catalog is `room-model-catalog/1.0` with at most 32 distinct `{id, roomId}`
+entries, one model per existing room ID. Prepared files use `room-model/1.0`
+with the same `id` and `roomId`, `calibration` (`wallLengthMeters`, measured or
+estimated `source`, and `otherDimensions: estimated`), `anchors` and `scene`.
+Each anchor has a stable `id`, display `label`, meter `position: [x,y,z]`,
+mesh `group`, and either both `deviceId`/`owner` or both `null` for unbound.
+Aliases never rename routing IDs. A device may bind only once per model.
+
+`scene` supplies positive meter `width`, `depth`, `height`, up to 64 materials
+(`color: [r,g,b]` in 0–1 and `roughness` in 0–1), and up to 128 batches.
+Each batch has `group`, material index, triangle index `count`, and base64
+`vertices`/`indices`: little-endian interleaved Float32 position XYZ/normal XYZ
+(24-byte stride), and Uint16 triangle indices. Use +Y up. Semantic wall groups
+`wall-left`, `wall-right`, `wall-front`, `wall-back` support cutaway at X=0,
+X=width, Z=0 and Z=depth. Fixture groups match their anchors. There are no
+external URLs, scripts or textures. Prepared JSON is capped at 2 MiB and
+100,000 triangles; each batch has at most 65,535 vertices. Invalid files leave
+ordinary room controls available. The pure validator in `src/room-model.ts`
+under the runtime owns the exact closed data contract.
+
+Authenticated core content references are `room-model-catalog` and
+`room-model-<id>`; they accept no query fields. Refresh 3D models rereads private
+content explicitly, while device state follows the existing SDK connection.
+The page never exposes a filesystem path. Installation and physical acceptance
+use their separate existing procedures.
+
 `LightCard` renders the same glass surface on Home, brand pages and Rooms.
 It receives a resolved target, capabilities, artwork, options and an action
 callback. Power, Color, Scenes and Timer tabs replace only the controls; the

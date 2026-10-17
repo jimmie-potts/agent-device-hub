@@ -1,0 +1,9 @@
+.room-models{margin-block:var(--space-l);min-width:0}.room-models .actions{display:flex;gap:var(--space-s);flex-wrap:wrap;align-items:center}
+.room-models button,.room-models .actions label{min-height:44px}.room-models .actions label{display:flex;align-items:center;gap:var(--space-s)}
+.room-model{margin-block:var(--space-l);min-width:0}.room-model h3{overflow-wrap:anywhere}.room-model .hint{color:var(--muted-dense);font-size:var(--type-small);line-height:1.5}
+.room-inspection canvas{display:block;width:100%;height:500px;touch-action:none;cursor:grab}.room-inspection canvas:active{cursor:grabbing}.room-inspection canvas[hidden]{display:none}
+.room-fixtures{display:flex;flex-wrap:wrap;gap:var(--space-l);margin-block:var(--space-l)}.room-fixtures>div{flex:1;min-width:min(100%,180px)}.room-fixtures p{font-size:var(--type-small);overflow-wrap:anywhere}
+.room-fixtures button[aria-pressed=true]{background:var(--light-selected);color:var(--text)}.room-selected{max-width:620px}.room-selected .light-card{width:100%}
+@media(max-width:600px){.room-inspection canvas{height:350px}.room-fixtures{gap:var(--space-s)}}
+
+.room-stage{position:relative}.room-markers{position:absolute;inset:0;pointer-events:none}.room-markers[hidden]{display:none}.room-markers>svg{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}.room-markers line{stroke:var(--text);stroke-width:1}.room-markers circle{fill:var(--accent);stroke:var(--bg);stroke-width:2}.room-markers button{position:absolute;pointer-events:auto;max-width:calc(100% - 8px);overflow-wrap:anywhere;background:var(--light-menu);color:var(--text);border:1px solid var(--light-edge);border-radius:var(--light-control-radius);font-size:var(--type-small)}.room-markers button[hidden]{display:none}.room-markers button[aria-pressed=true]{background:var(--light-selected);border-color:var(--accent)}

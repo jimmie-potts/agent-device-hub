@@ -6,6 +6,21 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Private room models use the existing runtime/core and dashboard test discovery.
+After the root build, run `node --test apps/runtime/dist/tests/room-models.test.js`
+and `node --test apps/runtime/dashboard/tests/room-bindings.test.ts`, then
+`node apps/runtime/dashboard/tests/room-models.browser.ts`. The browser journey
+runs in the runtime-selected App verification CI job and the local dashboard
+browser suite. It uses synthetic private geometry, real authenticated content
+reads, current room assignments and simulated light queues; it checks selection,
+reported power, unbound fixtures, reload without replay and desktop/phone axe.
+Reader tests cover unsafe permissions, links, malformed buffers, limits and
+cancellation. The negative control is the same authenticated read against a
+core without room content (404), and the initial browser journey without its
+model entry point. None contacts a household device or qualifies iPhone behavior.
+Use a private `TMPDIR` outside any checkout when the system temporary directory
+contains a `.git` entry; never remove another task's entry to make tests pass.
+
 Weekly power scheduling uses the existing runtime/core and dashboard test discovery.
 After the root build, run
 `node --test apps/runtime/dist/tests/power-schedules.test.js apps/runtime/dist/tests/automation*.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
