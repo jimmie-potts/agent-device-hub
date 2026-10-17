@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Workshops Preview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the real B.U.N.N.Y. shell (220px sidebar, grid-textured main) holding a 2-by-3 grid of the
+   owner's generated burrow. Each chamber is one canvas at the art's native 656 by 600. Every state has a
+   clip: a base still plus patch sheets masked to the pixels that move, composited at native size, so the
+   browser scales one bitmap and nothing resamples against its surroundings. Single dark theme by choice. */
+:root{
+  color-scheme:dark;
+  --bg:#05070d;--panel:#080c16;--raised:#223048;--inset:#0d1420;
+  --text:#d7e3ff;--muted:#a6b4ca;--edge:#34415a;--edge-faint:#2a3549;
+  --accent:#22d3ee;--accent-ink:#101724;--pending:#e879f9;--focus:#fff;
+  --nav-selected:#103241;--badge-bg:#1b2940;--badge-edge:#476086;
+  --chip-question:#ffe600;--chip-working:#2bff63;--chip-idle:#8fb0ff;--chip-unread:#5b9bff;
+  --font:Bahnschrift,"Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
+  --dark:#070503;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:.92rem;line-height:1.5}
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100%}
+.shell>aside{background:var(--panel);border-right:1px solid var(--edge);padding:20px 12px;display:flex;flex-direction:column;gap:20px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:.16em;font-size:1.2rem;color:var(--accent)}
+.brand .rabbit{font-size:1.8rem;line-height:1}
+.brand small{display:block;font-size:.55rem;letter-spacing:.18em;color:var(--muted);margin-top:4px;font-weight:650}
+.nav-label,.eyebrow{font-size:.68rem;letter-spacing:.17em;color:var(--muted);font-weight:650;font-family:var(--mono);margin:0 0 4px}
+.nav-label{margin:12px 12px 4px}
+nav{display:grid;gap:2px}
+nav a{display:block;padding:8px 12px;text-decoration:none;color:var(--text);border-left:2px solid transparent;border-radius:2px;font-size:.9rem}
+nav a[aria-current="page"]{background:var(--nav-selected);border-left-color:var(--accent);box-shadow:0 0 14px rgba(34,211,238,.07)}
+.sidebar-foot{margin-top:auto;font-size:.78rem;color:var(--muted)}
+.shell>main{padding:0 32px 40px;min-width:0;background-image:linear-gradient(rgba(34,211,238,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.025) 1px,transparent 1px);background-size:32px 32px;
+  padding-left:max(32px,env(safe-area-inset-left,0px));padding-right:max(32px,env(safe-area-inset-right,0px))}
+.page-head{padding-block:28px 16px;display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+h1{font-size:1.5rem;letter-spacing:-.03em;font-weight:550;line-height:1.15;margin:0;text-wrap:balance}
+.page-head p{margin:4px 0 0;color:var(--muted);max-width:60ch}
+.summary{font-family:var(--mono);font-size:.78rem;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap}
+.summary b{color:var(--text);font-weight:600}
+
+.workshops{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;list-style:none;margin:0;padding:0}
+@media (max-width:1100px){.workshops{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.workshops{grid-template-columns:1fr}.shell{grid-template-columns:1fr}.shell>aside{display:none}}
+.workshop{background:var(--panel);border:1px solid var(--edge);border-radius:2px;display:grid;grid-template-rows:auto auto;min-width:0;overflow:hidden}
+.workshop:focus-within{outline:2px solid var(--focus);outline-offset:-2px}
+.caption{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 12px 12px;border-top:1px solid var(--edge-faint);align-items:center}
+.caption .title{grid-column:1;grid-row:1;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.caption .meta{grid-column:1;grid-row:2;margin:0;font-family:var(--mono);font-size:.74rem;color:var(--muted);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip{grid-column:2;grid-row:1/3;font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;padding:4px 8px;border:1px solid var(--badge-edge);background:var(--badge-bg);border-radius:2px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.chip::before{content:"";width:7px;height:7px;background:var(--chip-working);box-shadow:0 0 6px var(--chip-working)}
+.workshop[data-state="input"] .chip::before,.workshop[data-state="approval"] .chip::before{background:var(--chip-question);box-shadow:0 0 6px var(--chip-question)}
+.workshop[data-state="unread"] .chip::before{background:var(--chip-unread);box-shadow:0 0 6px var(--chip-unread)}
+.workshop[data-state="uncertain"] .chip::before{background:var(--muted);box-shadow:none}
+.workshop[data-state="idle"] .chip::before{background:var(--chip-idle);box-shadow:0 0 6px var(--chip-idle)}
+.workshop[data-state="empty"] .chip::before{background:var(--edge);box-shadow:none}
+.workshop[data-state="empty"] .caption{color:var(--muted)}
+
+/* The chamber: one canvas at the art's native size, scaled as a whole */
+.room{position:relative;aspect-ratio:656/600;max-width:100%;overflow:hidden;background:var(--dark)}
+.room canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.pending-art{position:absolute;left:10px;bottom:10px;font-family:var(--mono);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--pending);border:1px dashed var(--pending);background:rgba(8,12,22,.8);padding:3px 7px;border-radius:2px;opacity:0;transition:opacity .3s}
+.workshop[data-pending="1"] .pending-art{opacity:1}
+.shade{position:absolute;inset:0;background:var(--dark);opacity:0;transition:opacity 1s steps(5)}
+.workshop[data-state="uncertain"] .shade{opacity:.35}
+.mark{position:absolute;right:10px;top:10px;font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;padding:3px 8px;border-radius:2px;opacity:0;transition:opacity .3s;background:rgba(8,12,22,.85)}
+.workshop[data-state="input"] .mark,.workshop[data-state="approval"] .mark{opacity:1;color:var(--chip-question);border:1px solid var(--chip-question)}
+.workshop[data-state="unread"] .mark{opacity:1;color:var(--chip-unread);border:1px solid var(--chip-unread)}
+.workshop[data-state="uncertain"] .mark{opacity:1;color:var(--muted);border:1px solid var(--muted)}
+.loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;background:var(--dark);transition:opacity .4s}
+.loading[hidden]{display:none}
+
+@media (prefers-reduced-motion:reduce){.room *{transition:none!important}}
+
+.preview{margin-top:36px;border:1px dashed var(--pending);border-radius:2px;padding:16px 20px 20px;background:rgba(8,12,22,.85)}
+.preview h2{font-size:1rem;margin:0 0 4px;letter-spacing:.02em}
+.preview .note{color:var(--pending);font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;margin:0 0 14px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px 28px}
+fieldset{border:1px solid var(--edge-faint);border-radius:2px;padding:10px 14px 14px;margin:0;min-width:0}
+legend{font-family:var(--mono);font-size:.7rem;letter-spacing:.15em;color:var(--muted);padding:0 6px}
+select{background:var(--inset);color:var(--text);border:1px solid var(--badge-edge);border-radius:2px;padding:4px 6px;font:inherit;font-size:.82rem;min-width:0;max-width:100%}
+.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
+.slots label{display:grid;grid-template-columns:3ch minmax(0,1fr);align-items:center;gap:6px;font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+button{background:var(--inset);color:var(--text);border:1px solid var(--badge-edge);border-radius:2px;padding:6px 10px;font:inherit;font-size:.82rem;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.84rem}
+table.clips{border-collapse:collapse;width:100%;font-size:.82rem}
+table.clips th{text-align:left;font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;color:var(--muted);font-weight:650;padding:4px 8px 6px 0;border-bottom:1px solid var(--edge-faint)}
+table.clips td{padding:5px 8px 5px 0;border-bottom:1px solid var(--edge-faint);vertical-align:top}
+table.clips td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.questions{margin:16px 0 0;padding-left:1.2em;color:var(--muted);font-size:.84rem;max-width:72ch}
+.questions li{margin:4px 0}
+</style>
+</head>
+<body>
+
+<template id="scene">
+  <div class="room" role="img" aria-label="Workshop">
+    <canvas width="656" height="600"></canvas>
+    <div class="shade"></div>
+    <span class="mark"></span>
+    <span class="pending-art">Clip pending for this state</span>
+    <div class="loading">Loading burrow</div>
+  </div>
+</template>
+
+<div class="shell">
+  <aside>
+    <div class="brand"><span class="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
+    <div>
+      <p class="nav-label">PLACES</p>
+      <nav aria-label="Pages">
+        <a href="#home">Home</a>
+        <a href="#timeline">Timeline</a>
+        <a href="#automation">Automation</a>
+        <a href="#workshops" aria-current="page">Workshops</a>
+        <a href="#connections">Connections</a>
+      </nav>
+    </div>
+    <div class="sidebar-foot"><p>Preview shell. Signed in as owner.</p></div>
+  </aside>
+  <main>
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">B.U.N.N.Y. / LOCAL INTEGRATION</p>
+        <h1>Workshops</h1>
+        <p>Six burrows, one for each of the most recent Codex and Claude sessions. Candles lit and the bunny at the bench is a session at work. A raised sign needs you. A finished turn you have not read sits by the fire. A dim burrow is uncertain. A sleeping bunny is resting. A cold burrow is empty.</p>
+      </div>
+      <div class="summary"><span><b id="n-active">0</b> at work</span><span><b id="n-attention">0</b> need you</span><span><b id="n-unread">0</b> unread</span><span><b id="n-uncertain">0</b> uncertain</span><span><b id="n-idle">0</b> napping</span></div>
+    </div>
+    <ul class="workshops" id="grid"></ul>
+
+    <section class="preview" aria-labelledby="preview-h">
+      <h2 id="preview-h">Preview controls</h2>
+      <p class="note">Preview only. Not part of the dashboard page.</p>
+      <div class="controls">
+        <fieldset>
+          <legend>Slot states</legend>
+          <div class="slots" id="slot-controls"></div>
+          <div class="buttons">
+            <button type="button" data-scenario="day">Busy day</button>
+            <button type="button" data-scenario="evening">Evening</button>
+            <button type="button" data-scenario="mixed">One of everything</button>
+            <button type="button" data-scenario="night">All napping</button>
+            <button type="button" id="depart">Session 6 leaves</button>
+            <button type="button" id="arrive" class="primary">New session arrives</button>
+          </div>
+          <div class="check"><input type="checkbox" id="rm"><label for="rm">Simulate reduced motion (everything still, meaning kept)</label></div>
+          <div class="check"><input type="checkbox" id="sync"><label for="sync">Move in step (off: each burrow starts its loop at a different point)</label></div>
+        </fieldset>
+        <fieldset>
+          <legend>Clips and the states they serve</legend>
+          <table class="clips"><thead><tr><th>Clip</th><th>States</th><th>Length</th><th>Patches</th><th>Moving</th></tr></thead><tbody id="clip-rows"></tbody></table>
+        </fieldset>
+      </div>
+      <ul class="questions">
+        <li>Mapping as of this round: Working is the workshop clip, Needs input and Needs approval are the "?" sign, a finished turn you have not read is the bunny turned to the fire, Uncertain is the bunny with his mug facing you under a light shade, Idle is asleep, Empty is the cold burrow. Anything else to change?</li>
+        <li>On a state change the room's light dips to about a third over the old clip, with a soft edge, the scene swaps under the dip, and the light comes back up, about 1.6 seconds in all. When the change crosses between a lit scene and an evening scene, the hillside goes through a slow dusk or dawn over about 2.8 seconds, with a touch of warmth at the midpoint. Right pace and depth?</li>
+        <li>The sign clip was rendered here from your layer archive with its own script, 40 seconds, so every state now has a clip. Do you want a longer or shorter one?</li>
+        <li>Keep the 2 by 3 grid with these near-square cards, or go 3 by 2 with smaller ones?</li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var MANIFEST={"asleep": {"base": "asleep-base.png", "frames": 400, "fps": 10, "patches": [{"sheet": "asleep-p0.webp", "x": 477, "y": 253, "w": 110, "h": 93, "cols": 19, "frames": 400, "moving_px": 4100}, {"sheet": "asleep-p1.webp", "x": 592, "y": 286, "w": 40, "h": 58, "cols": 25, "frames": 400, "moving_px": 543}, {"sheet": "asleep-p2.webp", "x": 574, "y": 230, "w": 33, "h": 27, "cols": 19, "frames": 400, "moving_px": 308}, {"sheet": "asleep-p3.webp", "x": 566, "y": 266, "w": 28, "h": 22, "cols": 18, "frames": 400, "moving_px": 179}, {"sheet": "asleep-p4.webp", "x": 540, "y": 351, "w": 28, "h": 21, "cols": 18, "frames": 400, "moving_px": 172}]}, "fireside": {"base": "fireside-base.png", "frames": 400, "fps": 10, "patches": [{"sheet": "fireside-p0.webp", "x": 427, "y": 283, "w": 102, "h": 120, "cols": 22, "frames": 400, "moving_px": 5917}]}, "profile": {"base": "profile-base.png", "frames": 400, "fps": 10, "patches": [{"sheet": "profile-p0.webp", "x": 356, "y": 239, "w": 105, "h": 127, "cols": 22, "frames": 400, "moving_px": 5147}]}, "workshop": {"base": "workshop-base.png", "frames": 600, "fps": 10, "patches": [{"sheet": "workshop-p0.webp", "x": 266, "y": 207, "w": 105, "h": 152, "cols": 30, "frames": 600, "moving_px": 7264}, {"sheet": "workshop-p1.webp", "x": 198, "y": 285, "w": 44, "h": 45, "cols": 25, "frames": 600, "moving_px": 394}, {"sheet": "workshop-p2.webp", "x": 299, "y": 149, "w": 32, "h": 33, "cols": 25, "frames": 600, "moving_px": 376}, {"sheet": "workshop-p3.webp", "x": 430, "y": 306, "w": 29, "h": 25, "cols": 23, "frames": 600, "moving_px": 222}, {"sheet": "workshop-p4.webp", "x": 389, "y": 146, "w": 24, "h": 28, "cols": 27, "frames": 600, "moving_px": 209}, {"sheet": "workshop-p5.webp", "x": 362, "y": 328, "w": 23, "h": 29, "cols": 28, "frames": 600, "moving_px": 210}, {"sheet": "workshop-p6.webp", "x": 203, "y": 232, "w": 23, "h": 27, "cols": 27, "frames": 600, "moving_px": 189}, {"sheet": "workshop-p7.webp", "x": 577, "y": 241, "w": 23, "h": 27, "cols": 27, "frames": 600, "moving_px": 189}, {"sheet": "workshop-p8.webp", "x": 497, "y": 208, "w": 23, "h": 26, "cols": 27, "frames": 600, "moving_px": 177}]}, "sign": {"base": "sign-base.png", "frames": 400, "fps": 10, "patches": [{"sheet": "sign-p0.webp", "x": 183, "y": 185, "w": 189, "h": 164, "cols": 19, "frames": 400, "moving_px": 15201}, {"sheet": "sign-p1.webp", "x": 299, "y": 149, "w": 32, "h": 33, "cols": 21, "frames": 400, "moving_px": 377}, {"sheet": "sign-p2.webp", "x": 430, "y": 306, "w": 30, "h": 25, "cols": 19, "frames": 400, "moving_px": 255}, {"sheet": "sign-p3.webp", "x": 362, "y": 329, "w": 24, "h": 29, "cols": 22, "frames": 400, "moving_px": 220}, {"sheet": "sign-p4.webp", "x": 389, "y": 146, "w": 23, "h": 28, "cols": 23, "frames": 400, "moving_px": 196}, {"sheet": "sign-p5.webp", "x": 577, "y": 240, "w": 23, "h": 28, "cols": 23, "frames": 400, "moving_px": 189}, {"sheet": "sign-p6.webp", "x": 497, "y": 208, "w": 23, "h": 26, "cols": 22, "frames": 400, "moving_px": 178}]}, "empty": {"base": "empty-base.png", "frames": 1, "fps": 10, "patches": []}};
+  var STATES={active:'Working',input:'Needs input',approval:'Needs approval',unread:'Turn ended, unread',uncertain:'Uncertain',idle:'Idle',empty:'No session'};
+  var CLIP_FOR={active:'workshop',input:'sign',approval:'sign',unread:'profile',uncertain:'fireside',idle:'asleep',empty:'empty'};
+  var MARKS={input:'needs input',approval:'needs approval',unread:'finished, unread',uncertain:'uncertain'};
+  var META={idle:'resting',unread:'finished, unread',uncertain:'last seen a while ago'};
+  function clipFor(state){var c=CLIP_FOR[state];return MANIFEST[c]?c:'workshop';}
+  function pendingArt(state){return !MANIFEST[CLIP_FOR[state]];}
+  var slots=[
+    {title:'Weekly power schedules',provider:'codex',host:'desk-pc',state:'active'},
+    {title:'Roborock L01 local reads',provider:'claude',host:'desk-pc',state:'input'},
+    {title:'BB-8 docked gestures',provider:'codex',host:'mac-mini',state:'unread'},
+    {title:'ONN title history',provider:'claude',host:'desk-pc',state:'active'},
+    {title:'Pixoo card upload fix',provider:'codex',host:'desk-pc',state:'idle'},
+    {title:'Home Wi-Fi dashboard access',provider:'claude',host:'mac-mini',state:'uncertain'}
+  ];
+  var tpl=document.getElementById('scene'),grid=document.getElementById('grid'),slotControls=document.getElementById('slot-controls'),items=[];
+  /* assets */
+  var images={},pending=0,ready=false,MASK='interior-mask.png',BASE='assets/';
+  function load(src){if(images[src])return;pending++;var im=new Image();im.addEventListener('load',done);im.addEventListener('error',done);im.src=BASE+src;images[src]=im;}
+  load(MASK);
+  Object.keys(MANIFEST).forEach(function(k){var c=MANIFEST[k];load(c.base);c.patches.forEach(function(p){load(p.sheet);});});
+  function done(){if(--pending)return;ready=true;items.forEach(function(li){li.querySelector('.loading').hidden=true;});for(var i=0;i<items.length;i++)paint(i,true);setInterval(tick,50);}
+  slots.forEach(function(s,i){
+    s.phase=i*67;s.prev=null;
+    var li=document.createElement('li');li.className='workshop';li.dataset.slot=String(i+1);
+    li.appendChild(tpl.content.firstElementChild.cloneNode(true));
+    var cap=document.createElement('div');cap.className='caption';
+    cap.innerHTML='<p class="title"></p><span class="chip"></span><p class="meta"></p>';
+    li.appendChild(cap);grid.appendChild(li);items.push(li);
+    var lab=document.createElement('label');lab.innerHTML='<span>'+(i+1)+'</span>';
+    var sel=document.createElement('select');sel.id='slot-'+(i+1);
+    Object.keys(STATES).forEach(function(k){var o=document.createElement('option');o.value=k;o.textContent=STATES[k];sel.appendChild(o);});
+    sel.addEventListener('change',function(){setState(i,sel.value);});
+    lab.appendChild(sel);slotControls.appendChild(lab);
+    render(i);
+  });
+  function render(i){
+    var li=items[i],s=slots[i],st=s.state;li.dataset.state=st;li.dataset.pending=pendingArt(st)?'1':'0';
+    li.querySelector('.title').textContent=st==='empty'?'Burrow '+(i+1)+' is empty':s.title;
+    li.querySelector('.meta').textContent=st==='empty'?'waiting for the next session':s.provider+' · '+s.host+(META[st]?' · '+META[st]:'');
+    li.querySelector('.chip').textContent=STATES[st];
+    li.querySelector('.mark').textContent=MARKS[st]||'';
+    li.querySelector('.room').setAttribute('aria-label',st==='empty'?'Empty burrow':'Burrow for '+s.title+', '+STATES[st].toLowerCase());
+    var sel=document.getElementById('slot-'+(i+1));if(sel&&sel.value!==st)sel.value=st;
+    summary();paint(i,true);
+  }
+  function setState(i,st){
+    var s=slots[i];if(s.state===st)return;
+    var from=clipFor(s.state),to=clipFor(st);
+    if(from!==to&&!stillMotion())s.prev={clip:from,t0:performance.now()};
+    s.state=st;render(i);
+  }
+  function summary(){
+    var a=0,n=0,u=0,r=0,z=0;slots.forEach(function(s){var st=s.state;if(st==='active')a++;if(st==='input'||st==='approval'){a++;n++;}if(st==='uncertain'){a++;u++;}if(st==='unread')r++;if(st==='idle')z++;});
+    document.getElementById('n-active').textContent=a;document.getElementById('n-attention').textContent=n;document.getElementById('n-unread').textContent=r;document.getElementById('n-uncertain').textContent=u;document.getElementById('n-idle').textContent=z;
+  }
+  /* the compositor: one clock, every burrow reads its own frame from it */
+  var rm=document.getElementById('rm'),sync=document.getElementById('sync'),mql=window.matchMedia('(prefers-reduced-motion: reduce)');
+  function stillMotion(){return rm.checked||mql.matches;}
+  /* A state change. Inside the room: the light dips most of the way down over the old clip, the content swaps
+     under the dip, and the light comes back up on the new clip. Outside: when the change crosses between a lit
+     scene and an evening scene, the hillside goes through a slow dusk or dawn, longer than the room's dip. */
+  var DAY={workshop:true,sign:true};
+  var start=performance.now(),last=[],ROOM=1600,DOWN=.4,UP=.52,DARK=.7,SKY=2800,DUSK=.12;
+  function ease(t){t=Math.min(1,Math.max(0,t));return t*t*(3-2*t);}
+  function roomDark(t){return DARK*(t<DOWN?ease(t/DOWN):t<UP?1:ease((1-t)/(1-UP)));}
+  function roomSwap(t){return t<DOWN?0:t<UP?(t-DOWN)/(UP-DOWN):1;}
+  function bell(t){return t<.5?ease(t/.5):ease((1-t)/.5);}
+  var scratch=document.createElement('canvas');scratch.width=656;scratch.height=600;var sctx=scratch.getContext('2d');
+  var tintLayer=null;
+  function exteriorTint(){ /* a warm wash that covers only the outside of the room */
+    if(tintLayer)return tintLayer;tintLayer=document.createElement('canvas');tintLayer.width=656;tintLayer.height=600;
+    var c=tintLayer.getContext('2d');c.fillStyle='#e8702a';c.fillRect(0,0,656,600);c.globalCompositeOperation='destination-out';c.drawImage(images[MASK],0,0);return tintLayer;
+  }
+  function currentFrame(i,clipName,now){
+    var c=MANIFEST[clipName];if(!c||c.frames<2||stillMotion())return 0;
+    var rate=slots[i].state==='uncertain'?c.fps/2:c.fps,phase=sync.checked?0:slots[i].phase;
+    return (Math.floor((now-start)/1000*rate)+phase)%c.frames;
+  }
+  function drawClip(ctx,clipName,f){
+    var c=MANIFEST[clipName];ctx.drawImage(images[c.base],0,0);
+    c.patches.forEach(function(p){var sx=(f%p.cols)*p.w,sy=Math.floor(f/p.cols)*p.h;ctx.drawImage(images[p.sheet],sx,sy,p.w,p.h,p.x,p.y,p.w,p.h);});
+  }
+  function paint(i,force){
+    if(!ready)return;
+    var s=slots[i],now=performance.now(),clip=clipFor(s.state),f=currentFrame(i,clip,now);
+    var sky=s.prev&&(!!DAY[s.prev.clip]!==!!DAY[clip]);
+    var span=sky?SKY:ROOM,el=s.prev?now-s.prev.t0:span;
+    var t=Math.min(1,el/ROOM),tx=Math.min(1,el/SKY);
+    if(el>=span)s.prev=null;
+    var key=clip+':'+f+':'+(s.prev?Math.round(t*80)+'/'+Math.round(tx*80):'');
+    if(!force&&last[i]===key)return;last[i]=key;
+    var ctx=items[i].querySelector('canvas').getContext('2d');
+    ctx.globalAlpha=1;
+    if(s.prev){
+      drawClip(ctx,s.prev.clip,currentFrame(i,s.prev.clip,now));            // the old scene
+      if(sky){ctx.globalAlpha=ease(tx);drawClip(ctx,clip,f);}              // the hillside eases toward the new scene
+      sctx.globalCompositeOperation='source-over';sctx.globalAlpha=1;drawClip(sctx,clip,f);
+      sctx.globalCompositeOperation='destination-in';sctx.drawImage(images[MASK],0,0);   // the new room only
+      ctx.globalAlpha=roomSwap(t);ctx.drawImage(scratch,0,0);              // swapped in under the dip
+      ctx.globalAlpha=roomDark(t);ctx.drawImage(images[MASK],0,0);         // the dip itself
+      if(sky){ctx.globalAlpha=DUSK*bell(tx);ctx.drawImage(exteriorTint(),0,0);}   // dusk or dawn warmth outside
+    } else drawClip(ctx,clip,f);
+    ctx.globalAlpha=1;
+  }
+  function tick(){if(!document.hidden)for(var i=0;i<items.length;i++)paint(i,false);}
+  rm.addEventListener('change',function(){for(var i=0;i<items.length;i++)paint(i,true);});
+  mql.addEventListener('change',function(){for(var i=0;i<items.length;i++)paint(i,true);});
+  sync.addEventListener('change',function(){for(var i=0;i<items.length;i++)paint(i,true);});
+  var scenarios={day:['active','active','input','active','unread','active'],evening:['active','unread','idle','approval','idle','active'],mixed:['active','approval','unread','uncertain','idle','empty'],night:['idle','idle','idle','idle','idle','idle']};
+  document.querySelectorAll('[data-scenario]').forEach(function(b){b.addEventListener('click',function(){scenarios[b.dataset.scenario].forEach(function(s,i){setState(i,s);});});});
+  document.getElementById('depart').addEventListener('click',function(){setState(5,'empty');});
+  document.getElementById('arrive').addEventListener('click',function(){
+    var idx=-1;slots.forEach(function(s,i){if(idx<0&&s.state==='empty')idx=i;});if(idx<0)idx=5;
+    slots[idx].title='Reachy fixed-text cards';slots[idx].provider='claude';slots[idx].host='desk-pc';setState(idx,'active');render(idx);
+  });
+  /* clip table */
+  var rows=document.getElementById('clip-rows'),served={};
+  Object.keys(CLIP_FOR).forEach(function(st){(served[CLIP_FOR[st]]=served[CLIP_FOR[st]]||[]).push(STATES[st]);});
+  Object.keys(MANIFEST).forEach(function(k){
+    var c=MANIFEST[k],moving=c.patches.reduce(function(a,p){return a+p.moving_px;},0);
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td>'+k+'</td><td>'+(served[k]||[]).join(', ')+'</td><td class="n">'+(c.frames<2?'still':(c.frames/c.fps)+' s, '+c.frames+' frames')+'</td><td class="n">'+c.patches.length+'</td><td class="n">'+(c.frames<2?'—':(100*moving/(656*600)).toFixed(1)+'% of pixels')+'</td>';
+    rows.appendChild(tr);
+  });
+  summary();
+})();
+</script>
+</body>
+</html>

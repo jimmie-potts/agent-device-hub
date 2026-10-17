@@ -1,0 +1,273 @@
+{
+ "asleep": {
+  "base": "asleep-base.png",
+  "frames": 400,
+  "fps": 10,
+  "patches": [
+   {
+    "sheet": "asleep-p0.webp",
+    "x": 477,
+    "y": 253,
+    "w": 110,
+    "h": 93,
+    "cols": 19,
+    "frames": 400,
+    "moving_px": 4100
+   },
+   {
+    "sheet": "asleep-p1.webp",
+    "x": 592,
+    "y": 286,
+    "w": 40,
+    "h": 58,
+    "cols": 25,
+    "frames": 400,
+    "moving_px": 543
+   },
+   {
+    "sheet": "asleep-p2.webp",
+    "x": 574,
+    "y": 230,
+    "w": 33,
+    "h": 27,
+    "cols": 19,
+    "frames": 400,
+    "moving_px": 308
+   },
+   {
+    "sheet": "asleep-p3.webp",
+    "x": 566,
+    "y": 266,
+    "w": 28,
+    "h": 22,
+    "cols": 18,
+    "frames": 400,
+    "moving_px": 179
+   },
+   {
+    "sheet": "asleep-p4.webp",
+    "x": 540,
+    "y": 351,
+    "w": 28,
+    "h": 21,
+    "cols": 18,
+    "frames": 400,
+    "moving_px": 172
+   }
+  ]
+ },
+ "fireside": {
+  "base": "fireside-base.png",
+  "frames": 400,
+  "fps": 10,
+  "patches": [
+   {
+    "sheet": "fireside-p0.webp",
+    "x": 427,
+    "y": 283,
+    "w": 102,
+    "h": 120,
+    "cols": 22,
+    "frames": 400,
+    "moving_px": 5917
+   }
+  ]
+ },
+ "profile": {
+  "base": "profile-base.png",
+  "frames": 400,
+  "fps": 10,
+  "patches": [
+   {
+    "sheet": "profile-p0.webp",
+    "x": 356,
+    "y": 239,
+    "w": 105,
+    "h": 127,
+    "cols": 22,
+    "frames": 400,
+    "moving_px": 5147
+   }
+  ]
+ },
+ "workshop": {
+  "base": "workshop-base.png",
+  "frames": 600,
+  "fps": 10,
+  "patches": [
+   {
+    "sheet": "workshop-p0.webp",
+    "x": 266,
+    "y": 207,
+    "w": 105,
+    "h": 152,
+    "cols": 30,
+    "frames": 600,
+    "moving_px": 7264
+   },
+   {
+    "sheet": "workshop-p1.webp",
+    "x": 198,
+    "y": 285,
+    "w": 44,
+    "h": 45,
+    "cols": 25,
+    "frames": 600,
+    "moving_px": 394
+   },
+   {
+    "sheet": "workshop-p2.webp",
+    "x": 299,
+    "y": 149,
+    "w": 32,
+    "h": 33,
+    "cols": 25,
+    "frames": 600,
+    "moving_px": 376
+   },
+   {
+    "sheet": "workshop-p3.webp",
+    "x": 430,
+    "y": 306,
+    "w": 29,
+    "h": 25,
+    "cols": 23,
+    "frames": 600,
+    "moving_px": 222
+   },
+   {
+    "sheet": "workshop-p4.webp",
+    "x": 389,
+    "y": 146,
+    "w": 24,
+    "h": 28,
+    "cols": 27,
+    "frames": 600,
+    "moving_px": 209
+   },
+   {
+    "sheet": "workshop-p5.webp",
+    "x": 362,
+    "y": 328,
+    "w": 23,
+    "h": 29,
+    "cols": 28,
+    "frames": 600,
+    "moving_px": 210
+   },
+   {
+    "sheet": "workshop-p6.webp",
+    "x": 203,
+    "y": 232,
+    "w": 23,
+    "h": 27,
+    "cols": 27,
+    "frames": 600,
+    "moving_px": 189
+   },
+   {
+    "sheet": "workshop-p7.webp",
+    "x": 577,
+    "y": 241,
+    "w": 23,
+    "h": 27,
+    "cols": 27,
+    "frames": 600,
+    "moving_px": 189
+   },
+   {
+    "sheet": "workshop-p8.webp",
+    "x": 497,
+    "y": 208,
+    "w": 23,
+    "h": 26,
+    "cols": 27,
+    "frames": 600,
+    "moving_px": 177
+   }
+  ]
+ },
+ "sign": {
+  "base": "sign-base.png",
+  "frames": 400,
+  "fps": 10,
+  "patches": [
+   {
+    "sheet": "sign-p0.webp",
+    "x": 183,
+    "y": 185,
+    "w": 189,
+    "h": 164,
+    "cols": 19,
+    "frames": 400,
+    "moving_px": 15201
+   },
+   {
+    "sheet": "sign-p1.webp",
+    "x": 299,
+    "y": 149,
+    "w": 32,
+    "h": 33,
+    "cols": 21,
+    "frames": 400,
+    "moving_px": 377
+   },
+   {
+    "sheet": "sign-p2.webp",
+    "x": 430,
+    "y": 306,
+    "w": 30,
+    "h": 25,
+    "cols": 19,
+    "frames": 400,
+    "moving_px": 255
+   },
+   {
+    "sheet": "sign-p3.webp",
+    "x": 362,
+    "y": 329,
+    "w": 24,
+    "h": 29,
+    "cols": 22,
+    "frames": 400,
+    "moving_px": 220
+   },
+   {
+    "sheet": "sign-p4.webp",
+    "x": 389,
+    "y": 146,
+    "w": 23,
+    "h": 28,
+    "cols": 23,
+    "frames": 400,
+    "moving_px": 196
+   },
+   {
+    "sheet": "sign-p5.webp",
+    "x": 577,
+    "y": 240,
+    "w": 23,
+    "h": 28,
+    "cols": 23,
+    "frames": 400,
+    "moving_px": 189
+   },
+   {
+    "sheet": "sign-p6.webp",
+    "x": 497,
+    "y": 208,
+    "w": 23,
+    "h": 26,
+    "cols": 22,
+    "frames": 400,
+    "moving_px": 178
+   }
+  ]
+ },
+ "empty": {
+  "base": "empty-base.png",
+  "frames": 1,
+  "fps": 10,
+  "patches": []
+ }
+}
