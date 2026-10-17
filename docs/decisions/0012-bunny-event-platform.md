@@ -1,6 +1,6 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07 and 2026-10-08 (see
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08 and 2026-10-17 (see
 [Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
@@ -376,7 +376,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
     operation.
   - FATAL: the runtime cannot continue.
 
-  Severity never changes a domain outcome.
+  Severity never changes a domain outcome. The SDK's code table (`levelOf` in
+  `packages/sdk/src/diagnostics.ts`) owns these levels; see the
+  [2026-10-17 amendment](#amendments).
 - **Repetition.** A repeated condition logs its transition, then bounded
   summaries: the first dropped delivery is logged at once, then a count each
   minute. A polled device that stays offline logs one degradation and one
@@ -640,3 +642,21 @@ playback. See the [title-history qualification](../onn-history-qualification.md)
 for the field, privacy, retention, query and acceptance boundaries. Production
 source and installed acceptance must qualify the new reader; the earlier
 experimental reader is not automatically a production dependency.
+
+**2026-10-17, the code table owns log levels.** Review corrections kept
+finding hand-set log levels that disagreed with "Levels" under Observability
+(four in the findings behind
+[epic #1137](https://github.com/jimmie-potts/agent-device-hub/issues/1137)).
+The SDK's existing `DiagnosticCode` table, `levelOf` in
+`packages/sdk/src/diagnostics.ts`, is now the single owner of a record's
+level. A module or SDK log call names its code or event, and its level comes
+from that table. The table is extended in the same file for events that have
+no registry code, rather than a level being written at the call site. A hand-set
+level that differs from the table is a defect, even when it matches a reading
+of the prose above. The prose rules stay the definition the table must meet,
+so changing a level means changing the table, reviewed against those rules.
+The trade-off is less local discretion: a call site cannot raise or lower one
+record's severity on its own. This amendment changes no message format, error
+code, domain outcome or module API, and needs no module API version bump.
+[#1143](https://github.com/jimmie-potts/agent-device-hub/issues/1143) owns
+moving the existing calls onto the table and the lint that enforces it.
