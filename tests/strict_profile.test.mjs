@@ -545,7 +545,7 @@ test('the outcome-word rule reads its words from sdk/evidence and covers product
 });
 
 // Hub #1141 ratchet: the outcome-word baseline only shrinks. scripts/eslint/outcome-literal-pin.json holds each file's
-// count (735 when the rule landed on top of #1156); `eslint --suppress-rule` can raise a count or add a
+// count (the counts when the rule landed on top of #1156); `eslint --suppress-rule` can raise a count or add a
 // file, and this test then fails. Lower a file's pin (or delete its key) when its hits are converted.
 test('no file gains outcome-word suppressions beyond its pin', () => {
   const rule = 'bunny/no-raw-outcome-literal';

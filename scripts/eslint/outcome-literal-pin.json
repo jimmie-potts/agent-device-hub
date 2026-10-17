@@ -57,7 +57,7 @@
   "apps/runtime/src/core/power-limits.ts": 4,
   "apps/runtime/src/core/power-schedules.ts": 1,
   "apps/runtime/src/core/store.ts": 2,
-  "apps/runtime/src/core/tracker.ts": 21,
+  "apps/runtime/src/core/tracker.ts": 20,
   "apps/runtime/src/gateway/access.ts": 4,
   "apps/runtime/src/gateway/gateway.ts": 4,
   "apps/runtime/src/hook/hook.ts": 1,
