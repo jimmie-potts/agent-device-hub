@@ -5,7 +5,7 @@ import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outbox, fullDisk, levelOf, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
+import {recordLog, Outbox, fullDisk, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';

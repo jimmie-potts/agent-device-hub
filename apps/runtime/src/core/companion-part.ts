@@ -1,6 +1,6 @@
 // The core alone mints coding opportunities from the first publication of a committed live reduction (Hub #1096).
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, SdkError, levelOf} from '@jimmie-potts/sdk';
+import {recordLog, SdkError} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import type {AgentOccurrence, AttentionRaised, SessionRecord, TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';

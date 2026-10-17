@@ -143,6 +143,9 @@ const EVENT_LEVELS = {
   'runtime.tracing.failed': 'error',
   'runtime.watchdog.failed': 'error',
   'runtime.watchdog.stopped': 'error',
+  // A storage cost condition: WARN as it starts, INFO as it ends.
+  'storage.cost.high': 'warn',
+  'storage.cost.normal': 'info',
 } as const satisfies Record<string, DiagnosticLevel>;
 
 /** An event whose level the table owns when its record carries no registry code. */

@@ -28,7 +28,7 @@ import {
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
-  fullDisk, Outbox, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
+  fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
 import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
@@ -496,8 +496,7 @@ export class CoreStore implements Storage {
     if (holds === held) return holds;
     const log = this.#options.log;
     try {
-      if (holds) log?.warn('storage.cost.high', {'bunny.operation': 'storage', ...fields});
-      else log?.info('storage.cost.normal', {'bunny.operation': 'storage', ...fields});
+      if (log !== undefined) recordLog(log, holds ? 'storage.cost.high' : 'storage.cost.normal', {'bunny.operation': 'storage', ...fields});
     } catch {
       // Telemetry never changes a save that committed.
     }

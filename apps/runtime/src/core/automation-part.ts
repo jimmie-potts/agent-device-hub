@@ -4,7 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, levelOf,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
+import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';

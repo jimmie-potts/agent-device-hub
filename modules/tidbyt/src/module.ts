@@ -16,7 +16,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, DeviceAvailability, fullDisk, levelOf, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
   type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
