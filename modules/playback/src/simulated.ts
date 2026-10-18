@@ -4,7 +4,7 @@
 // recorded, so the module's own parsing runs on them. Like real speakers, they keep their state when the runtime
 // restarts. A test can play, pause or stop either one, switch it to another input, make it stop answering or answer
 // each call slowly, or make its next command fail or never answer. They ignore the endpoint they are called at.
-import {SIMULATED_ARTWORK_MARKER, simulatedArtworkReply} from './simulated-artwork.js';
+import {SIMULATED_ARTWORK_MARKER, SIMULATED_ARTWORK_PATH, simulatedArtworkReply} from './simulated-artwork.js';
 import type {Scheduler} from '@jimmie-potts/sdk';
 import type {PlaybackSection} from './configuration.js';
 import type {PlaybackAction} from './playback.js';
@@ -120,8 +120,8 @@ export class SimulatedSpeakers implements SpeakerTransport {
     }
   }
 
-  /** Select the one synthetic PNG fixture for the Sony speaker. */
-  artwork(): void { this.#speakers.sony.syntheticArtwork = true; }
+  /** Select the synthetic PNG fixture for one speaker. */
+  artwork(kind: SimulatedKind = 'sony'): void { this.#speakers[kind].syntheticArtwork = true; }
 
   pause(kind: SimulatedKind): void {
     this.#speakers[kind].status = 'paused';
@@ -163,7 +163,7 @@ export class SimulatedSpeakers implements SpeakerTransport {
   state(): SpeakersState {
     const copy = (speaker: SpeakerState): SpeakerState => ({...speaker, commands: [...speaker.commands]});
     return {sony: copy(this.#speakers.sony), sonos: copy(this.#speakers.sonos),
-      ...(this.#speakers.sony.syntheticArtwork ? {artworkAcquisitions: this.#artworkAcquisitions} : {})};
+      ...((this.#speakers.sony.syntheticArtwork || this.#speakers.sonos.syntheticArtwork) ? {artworkAcquisitions: this.#artworkAcquisitions} : {})};
   }
 
   async #call<T>(kind: SimulatedKind, signal: AbortSignal, reply: () => T | 'hang'): Promise<T> {
@@ -240,7 +240,7 @@ export class SimulatedSpeakers implements SpeakerTransport {
       case 'GetPositionInfo': {
         const airplay = speaker.input === 'airplay';
         const {title, artist, album} = speaker;
-        const didl = `<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="-1" parentID="-1" restricted="true">${title === undefined ? '' : `<dc:title>${escapeXml(title)}</dc:title>`}${artist === undefined ? '' : `<dc:creator>${escapeXml(artist)}</dc:creator>`}${album === undefined ? '' : `<upnp:album>${escapeXml(album)}</upnp:album>`}</item></DIDL-Lite>`;
+        const didl = `<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="-1" parentID="-1" restricted="true">${title === undefined ? '' : `<dc:title>${escapeXml(title)}</dc:title>`}${artist === undefined ? '' : `<dc:creator>${escapeXml(artist)}</dc:creator>`}${album === undefined ? '' : `<upnp:album>${escapeXml(album)}</upnp:album>`}${speaker.syntheticArtwork ? `<upnp:albumArtURI>${SIMULATED_ARTWORK_PATH}</upnp:albumArtURI>` : ''}</item></DIDL-Lite>`;
         return ok(response(action, `<Track>1</Track><TrackDuration>0:03:41</TrackDuration><TrackMetaData>${escapeXml(didl)}</TrackMetaData><TrackURI>${escapeXml(airplay ? SONOS_AIRPLAY_URI : SONOS_OTHER_URI)}</TrackURI><RelTime>0:01:03</RelTime>`));
       }
       case 'GetCurrentTransportActions':

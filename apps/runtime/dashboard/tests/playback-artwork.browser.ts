@@ -264,7 +264,7 @@ try {
     // Source identity changes although every displayed metadata field remains identical.
     await heldImage(() => {select('Identical speaker text');}, async (a, old) => {
       speakers.stop('sony'); speakers.play('sonos', {title: titleOf(a), artist: ARTIST});
-      const b = await current({title: titleOf(a), artwork: 'unsupported', after: a.revision});
+      const b = await current({title: titleOf(a), artwork: 'missing', after: a.revision});
       assert.notEqual(b.artwork?.generation, a.artwork?.generation); await noImage(); await textAndControls(titleOf(a));
       assert.equal(await old.evaluate(node => node.isConnected), false);
     }); await noImage(); checks.push('same-title Sony/Sonos');

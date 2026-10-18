@@ -11,7 +11,7 @@ const RECORD: PlaybackState = {id: 'living-room', revision: 5, availability: 'av
   playback: {status: 'known', player: 'playing', title: 'Synthetic song', controls: ['pause']}, artwork: IMAGE};
 const REF = `artwork.${GENERATION}.5`;
 const state = (): CurrentArtworkRead => ({record: structuredClone(RECORD), current: structuredClone(IMAGE), stopped: false,
-  presentedSonyIsEligible: true, presentedMetadataMatchesRecord: true});
+  presentedSourceIsEligible: true, presentedMetadataMatchesRecord: true});
 
 void test('current bytes are copied; reference parsing admits only the exact canonical current identity', () => {
   const current = state();
@@ -33,7 +33,7 @@ void test('current bytes are copied; reference parsing admits only the exact can
 void test('private observation disagreement and every retired eligibility refuse an unchanged committed reference', () => {
   const current = state();
   const variants: Partial<CurrentArtworkRead>[] = [
-    {record: undefined}, {current: undefined}, {stopped: true}, {presentedSonyIsEligible: false}, {presentedMetadataMatchesRecord: false},
+    {record: undefined}, {current: undefined}, {stopped: true}, {presentedSourceIsEligible: false}, {presentedMetadataMatchesRecord: false},
     {current: {status: 'missing', generation: GENERATION}}, {current: {status: 'unsupported', generation: GENERATION}},
     {current: {...IMAGE, generation: '00000000-0000-4000-8000-000000000002'}}, {current: {...IMAGE, base64: PNG_B.toString('base64')}},
     {current: {...IMAGE, width: 2}}, {record: {id: RECORD.id, revision: RECORD.revision, availability: RECORD.availability, playback: RECORD.playback}},

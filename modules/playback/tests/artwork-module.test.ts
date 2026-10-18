@@ -99,7 +99,7 @@ test('artwork generation survives duplicates, pause and freshness but changes ac
   assert.equal(h.record().artwork?.generation, generation);
   speakers.play('sonos', {title: playing.title, artist: playing.artist});
   await h.advance(2000);
-  assert.equal(h.record().artwork?.status, 'unsupported');
+  assert.equal(h.record().artwork?.status, 'missing');
   assert.notEqual(h.record().artwork?.generation, generation);
   const sonosGeneration = h.record().artwork?.generation;
   speakers.silent('sonos');
@@ -293,4 +293,19 @@ test('successful paused-next retains receiver-lagged metadata and artwork until 
   assert.equal(h.record().artwork?.status, 'ready');
   assert.equal(h.record().artwork?.generation, current.artwork?.generation);
   assert.deepEqual(h.problems(), []);
+});
+
+test('Sonos media failure diagnostics identify Sonos and do not expose the private candidate', async context => {
+  const speakers = new SimulatedSpeakers({sonos: {...playing, syntheticArtwork: true}});
+  const h = await host(context, speakers, {artwork: {
+    fetch: () => Promise.resolve(artworkFailure('unavailable', true)),
+    decode: () => Promise.resolve({ok: true, value: {mediaType: 'image/png', width: 1, height: 1, base64: 'unused'}}),
+  }});
+  await h.advance(8000);
+  const diagnostics = h.logs().filter(log => log.fields['bunny.operation'] === 'media');
+  assert.ok(diagnostics.length >= 3, 'failure, retry and exhausted records are present');
+  assert.ok(diagnostics.every(log => log.fields['bunny.device.id'] === `${SECTION.id}.sonos`));
+  assert.ok(!JSON.stringify(diagnostics).includes('/synthetic/'));
+  assert.equal(h.record().artwork?.status, 'missing');
+  assert.equal(h.record().availability, 'available');
 });

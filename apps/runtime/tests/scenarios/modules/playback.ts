@@ -137,7 +137,7 @@ const acquiredOnce = (h: Harness): Outcome => speakerState(h).artworkAcquisition
   `fixture byte acquisitions: ${String(speakerState(h).artworkAcquisitions)}`;
 const speakerArtwork: Scenario = {
   id: 'speaker-artwork',
-  title: 'shared Sony artwork uses the real decoder and clears on an identical-title Sonos handoff',
+  title: 'shared artwork uses the real decoder for Sony and Sonos and preserves both display policies',
   seed: {modules: ['core', 'playback', 'tidbyt', 'pixoo'],
     follows: [CORE_FAMILIES, ['playback'], {families: ['device'], owner: 'bunny/modules/tidbyt'}, {families: ['device', 'pixoo-display'], owner: 'bunny/modules/pixoo'}],
     config: {playback: PLAYBACK_SECTION, tidbyt: TIDBYT_SECTION, pixoo: {...PIXOO_SECTION.config, playback: PLAYBACK_SECTION.id}}},
@@ -189,15 +189,28 @@ const speakerArtwork: Scenario = {
       h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
       h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
     }),
-    expect('Sonos has the same title with unsupported artwork and a different generation', h => {
+    expect('Sonos has the same title with missing artwork and a different generation', h => {
       const text = playbackShows(h, 'available playing "A" [pause,next,previous]');
       if (text !== true) return text;
       const image = artworkRecord(h)?.artwork;
-      return image?.status === 'unsupported' && image.generation !== firstReadyGeneration(h) || 'Sony artwork crossed the handoff';
+      return image?.status === 'missing' && image.generation !== firstReadyGeneration(h) || 'Sony artwork crossed the handoff';
     }, 5000),
     expect('Pixoo clears Sony artwork while preserving identical Sonos text', h => displayArtwork(h, false, 'pixoo'), 5000),
     expect('Tidbyt clears Sony artwork while preserving identical Sonos text', h => displayArtwork(h, false, 'tidbyt'), 18_000),
     holds('pause, freshness changes and handoff caused no extra fixture acquisition', acquiredOnce, 100),
+    act('the phone stops the text-only Sonos session', h => {
+      h.simulate({device: 'playback', speaker: 'sonos', action: 'stop'});
+    }),
+    expect('the stopped Sonos session retires the previous popup', h => playbackShows(h, 'available stopped "A" []'), 5000),
+    act('the operator selects the synthetic Sonos PNG and the phone starts a new session', h => {
+      h.simulate({device: 'playback', speaker: 'sonos', action: 'artwork'});
+      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
+    }),
+    expect('the Sonos image becomes ready through the real decoder', h => hasArtwork(h, 'ready'), 8000),
+    expect('Pixoo sends the Sonos image through its existing card renderer', h => displayArtwork(h, true, 'pixoo'), 5000),
+    expect('Tidbyt uploads the Sonos image after its existing gate', h => displayArtwork(h, true, 'tidbyt'), 18_000),
+    expect('one acquisition per speaker supplied both displays', h => speakerState(h).artworkAcquisitions === 2 ||
+      `fixture byte acquisitions: ${String(speakerState(h).artworkAcquisitions)}`),
     holds('shared state and logs expose no private source URL, secret or raw logged image', async h => {
       const address = noSpeakerAddress(h);
       if (address !== true) return address;
