@@ -15,7 +15,7 @@ import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type Er
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {MAX_RESPONSE_BYTES as WISPR_MAX_BYTES, type WisprModule} from '@jimmie-potts/wispr';
 import {
-  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, levelOf, noSpans, startSpan, statusOf, traceFields,
+  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, noSpans, startSpan, statusOf, traceFields,
   type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
@@ -260,7 +260,7 @@ export class Gateway {
         'bunny.route': 'other', 'http.request.method': methodOf(method), 'bunny.code': code,
         ...(route !== undefined ? {'http.route': route} : retired !== undefined ? {'http.route': retired.path} : {}),
         ...(principal === undefined ? {} : {'bunny.participant': principal.source}),
-      }, code === 'internal' ? 'error' : levelOf(code), this.#dashboardTraces.get(request));
+      }, this.#dashboardTraces.get(request));
       this.#write(response, json(statusOf(code), body));
     }
   }
@@ -333,7 +333,7 @@ export class Gateway {
     const admission = this.access.admit(request, this.#originOf(request));
     if ('refusal' in admission) {
       const {code, detail} = admission.refusal;
-      this.#refusals.record({'bunny.route': route, 'bunny.code': code}, levelOf(code));
+      this.#refusals.record({'bunny.route': route, 'bunny.code': code});
       this.#write(response, json(statusOf(code), errorBody(code, {detail})));
       return;
     }
@@ -723,12 +723,12 @@ export class Gateway {
         });
         const code = 'error' in answer ? answer.error.code : 'internal';
         this.#refusals.record({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST',
-          'bunny.participant': principal.source, 'bunny.code': code}, levelOf(code), span.context);
+          'bunny.participant': principal.source, 'bunny.code': code}, span.context);
       }
       try {await this.#call(name, () => prepared.finish(answer));}
       catch {
         // An upload cleanup failure cannot turn a known accepted command into a claim that nothing happened.
-        this.#refusals.record({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, 'error', span.context);
+        this.#refusals.record({'bunny.route': 'other', 'http.route': '/api/v2/modules/{module}/upload', 'http.request.method': 'POST', 'bunny.code': 'internal'}, span.context);
       }
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     } finally {span.end();}

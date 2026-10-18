@@ -16,8 +16,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  DeviceAvailability, fullDisk, levelOf, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
   type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
@@ -223,12 +222,12 @@ class TidbytRun {
     };
     signal.addEventListener('abort', () => { this.#close(); }, {once: true});
 
-    log.info('outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
+    recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
     // The record as last committed. Each start publishes a new revision: unknown until the cloud answers.
     const stored = db.prepare('SELECT revision FROM tidbyt_records WHERE id = ?').get(id) as {revision: number} | undefined;
     const taken = acquireLease(join(files(), 'leases'), this.#config.cloudDeviceId);
     if (taken.status === 'held') this.#lease = taken.lease;
-    else log.warn('operation.failed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[taken.reason]});
+    else recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[taken.reason]});
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
     const key = await secrets.read(API_KEY_SECRET);
     this.#nextRevision = (stored?.revision ?? 0) + 1;
@@ -351,13 +350,13 @@ class TidbytRun {
   #storageFailed(code: ErrorCode): void {
     if (this.#storageDown !== undefined) return;
     this.#storageDown = code;
-    this.#context.log[code === 'internal' ? 'error' : 'warn']('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code});
   }
 
   #storageWorked(): void {
     if (this.#storageDown === undefined) return;
     this.#storageDown = undefined;
-    this.#context.log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+    recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
   }
 
   #remember(installation: string, memory: TileMemory): void {
@@ -398,7 +397,7 @@ class TidbytRun {
     copy.resyncDelayMs = RESYNC_FIRST_MS;
     if (copy.down) {
       copy.down = false;
-      this.#context.log.info('operation.completed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.outcome': 'succeeded'});
     }
     this.#updateFor(family, result.message);
   }
@@ -427,7 +426,7 @@ class TidbytRun {
     copy.following = false;
     if (!copy.down) {
       copy.down = true;
-      this.#context.log.warn('operation.failed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.code': code});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'feed', 'bunny.participant': family === 'session' ? CORE : PLAYBACK, 'bunny.code': code});
     }
     if (this.#closing || copy.resync !== undefined) return;
     const delayMs = copy.resyncDelayMs;
@@ -536,7 +535,7 @@ class TidbytRun {
         // next poll (ADR 0012, "Repetition").
         if (!tile.faulting) {
           tile.faulting = true;
-          this.#context.log.error('operation.failed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.code': 'internal', 'error.type': errorType(error)});
+          recordLog(this.#context.log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.code': 'internal', 'error.type': errorType(error)});
         }
       }
       if (this.#closing) return;
@@ -567,10 +566,10 @@ class TidbytRun {
       const fields = {...this.#deviceField(), 'bunny.operation': 'playback'};
       if (reply.artworkCode !== undefined && reply.artworkCode !== tile.artworkFailing) {
         tile.artworkFailing = reply.artworkCode;
-        this.#context.log[levelOf(reply.artworkCode)]('operation.failed', {...fields, 'bunny.code': reply.artworkCode}, parent);
+        recordLog(this.#context.log, 'operation.failed', {...fields, 'bunny.code': reply.artworkCode}, parent);
       } else if (reply.artworkCode === undefined && request.artwork?.status === 'ready' && tile.artworkFailing !== undefined) {
         tile.artworkFailing = undefined;
-        this.#context.log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+        recordLog(this.#context.log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
       }
     }
     return reply.webp;
@@ -609,7 +608,7 @@ class TidbytRun {
     if ('outcome' in result && result.outcome === 'sent') {
       lastTransmission = {status: 'known', transmittedAtMs: clock.now(), operationIds: [call.call]};
       tile.failing = undefined;
-      log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
       tile.trigger = undefined;
     } else if (answered && !('ok' in result && result.ok)) {
       this.#failed(tile, fields, codeOfResult(result), parent);
@@ -625,7 +624,7 @@ class TidbytRun {
     const holding = code === 'unauthenticated' || code === 'forbidden';
     if (tile.failing !== undefined && !(holding && tile.failing !== code)) return;
     tile.failing = code;
-    this.#context.log.warn('operation.failed', {...fields, 'bunny.code': code}, parent);
+    recordLog(this.#context.log, 'operation.failed', {...fields, 'bunny.outcome': 'failed', 'bunny.code': code}, parent);
   }
 
   /** An evaluation of the tile finished: a run of the module's own faults, if any, has ended. */
@@ -633,7 +632,7 @@ class TidbytRun {
     if (!tile.faulting && !this.#escaped) return;
     tile.faulting = false;
     this.#escaped = false;
-    this.#context.log.info('operation.completed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.outcome': 'succeeded'});
+    recordLog(this.#context.log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': tile.operation, 'bunny.outcome': 'succeeded'});
   }
 
   /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once per run, by type. */
@@ -641,7 +640,7 @@ class TidbytRun {
     const tracked = work.catch((error: unknown) => {
       if (this.#escaped) return;
       this.#escaped = true;
-      this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
     this.#work.add(tracked);
     void tracked.finally(() => { this.#work.delete(tracked); });

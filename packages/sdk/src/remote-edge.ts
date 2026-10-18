@@ -458,7 +458,7 @@ export class RemoteEdge {
         this.#refused({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
       } else {
         const about = dispatched === undefined ? {} : commandFacts(dispatched);
-        this.#diagnose({event: 'edge.failed', level: 'error', route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
+        this.#diagnose({event: 'edge.failed', level: levelOf('edge.failed'), route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
       }
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');
@@ -825,7 +825,7 @@ export class RemoteEdge {
     response.on('close', () => { this.#drop(connection); });
     this.#send(connection, frame('ready', {connection: connection.id}));
     this.#beat(connection);
-    this.#diagnose({event: 'edge.connected', level: 'info', route: 'stream', source});
+    this.#diagnose({event: 'edge.connected', level: levelOf('edge.connected'), route: 'stream', source});
   }
 
   /**

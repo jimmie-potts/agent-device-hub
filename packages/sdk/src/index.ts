@@ -1,7 +1,7 @@
 export {InProcessBus, type BusOptions, type ErrorScope} from './in-process.js';
 export {DeviceAvailability, SUMMARY_MS, type AvailabilityOptions} from './availability.js';
 export {
-  errorType, levelOf, type Diagnostic, type DiagnosticEvent, type DiagnosticLevel, type DiagnosticOutcome, type EdgeRoute, type OnDiagnostic,
+  errorType, levelOf, recordLevel, recordLog, type DiagnosticCode, type LogEvent, type Diagnostic, type DiagnosticEvent, type DiagnosticLevel, type DiagnosticOutcome, type EdgeRoute, type OnDiagnostic,
 } from './diagnostics.js';
 export {
   noSpans, startSpan, type Span, type SpanAttributes, type SpanKind, type SpanName, type SpanOptions, type SpanRecorder, type SpanStatus,

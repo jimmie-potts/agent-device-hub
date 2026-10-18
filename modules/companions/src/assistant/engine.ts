@@ -4,7 +4,7 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode} from '@jimm
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantControl, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
-  type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type Span, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
+  type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type Span, type Subscription, type TraceContext, recordLog, type LogEvent} from '@jimmie-potts/sdk';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, type Call, type StagedInput, type Task} from './store.js';
 
@@ -349,14 +349,13 @@ export class AssistantEngine {
       return await Promise.race([pending, deadline]);
     } finally {settled = true; cancel?.(); if (stopped !== undefined) active.controller.signal.removeEventListener('abort', stopped);}
   }
-  #log(event: string, active: Active, effectId?: string): void {
+  #log(event: LogEvent, active: Active, effectId?: string): void {
     try {
       const task = this.#task(active.taskId), call = effectId === undefined ? undefined : this.store.call(effectId);
       const code = call !== undefined && call.status !== 'succeeded' ? 'uncertain-result' : task.code;
       const outcome = event === 'assistant.run.started' ? 'accepted' : call !== undefined ? call.status === 'succeeded' ? 'succeeded' : 'uncertain'
         : ['waiting', 'paused', 'running'].includes(task.status) ? 'partial' : task.status;
-      const level = code === 'internal' ? 'error' : code === null || code === 'cancelled' ? 'info' : 'warn';
-      this.context.log[level](event, {'bunny.assistant.task_id': active.taskId, 'bunny.assistant.run_id': active.runId,
+      recordLog(this.context.log, event, {'bunny.assistant.task_id': active.taskId, 'bunny.assistant.run_id': active.runId,
         'bunny.outcome': outcome, ...(effectId === undefined ? {} : {'bunny.assistant.effect_id': effectId}),
         ...(code === null ? {} : {'bunny.code': code})}, active.span.context);
     } catch { /* Diagnostics do not decide task outcomes. */ }

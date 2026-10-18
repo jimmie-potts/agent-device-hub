@@ -17,8 +17,7 @@ import {errorBody, SCHEMA_BASE, type ErrorBody, type ErrorCode, type Message} fr
 import {commandSupported, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord, type Tagged} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
-import {
-  DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
+import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
   type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
@@ -232,7 +231,7 @@ class LifxRun {
 
     // The outbox follows the core's acknowledgments first, so a resent outcome's acknowledgment is heard, then sends
     // what is stored.
-    log.info('outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
+    recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
     await this.#settle();
 
     await sdk.serveSync(['device', 'lifx-light'], request => this.#snapshot(request.data.families));
@@ -282,7 +281,7 @@ class LifxRun {
     const taken = acquireLease(leases, config.address);
     const lease = taken.status === 'held' ? taken.lease : undefined;
     const leaseRefusal = taken.status === 'refused' ? taken.reason : undefined;
-    if (leaseRefusal !== undefined) log.warn('operation.failed', {'bunny.device.id': config.id, 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[leaseRefusal].reason});
+    if (leaseRefusal !== undefined) recordLog(log, 'operation.failed', {'bunny.device.id': config.id, 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[leaseRefusal].reason});
     const queue = isQualified && lease !== undefined ? new BulbQueue({
       transport: this.#options.transport.connect(config.address), timeoutMs: this.#config.timeoutMs, retries: this.#config.retries,
       maxPending: this.#config.maxPending, now: () => clock.now(), scheduler,
@@ -382,7 +381,7 @@ class LifxRun {
     }
     if (this.#storageDown !== undefined) {
       this.#storageDown = undefined;
-      this.#context.log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
     }
     return undefined;
   }
@@ -391,8 +390,7 @@ class LifxRun {
   #storageFailed(code: ErrorCode): void {
     if (this.#storageDown === code) return;
     this.#storageDown = code;
-    const level = code === 'internal' ? 'error' : 'warn';
-    this.#context.log[level]('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code});
+    recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code});
   }
 
   async #publish(bulb: Bulb, light: boolean, parent: TraceContext | undefined, device = true): Promise<void> {
@@ -495,7 +493,7 @@ class LifxRun {
     // never began, so it has no `command.executing` record and no device call span.
     let call: Span | undefined;
     const onTurn = (): void => {
-      log.info('command.executing', fields, command);
+      recordLog(log, 'command.executing', fields, command);
       if (family !== 'device-mode-set') call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
     };
     const within = {...(Number.isNaN(deadline) ? {} : {deadlineMs: deadline}), onTurn};
@@ -697,7 +695,7 @@ class LifxRun {
     this.#resyncDelayMs = RESYNC_FIRST_MS;
     if (this.#feedDown) {
       this.#feedDown = false;
-      this.#context.log.info('operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
     }
   }
 
@@ -725,7 +723,7 @@ class LifxRun {
   #feedLost(code: ErrorCode): void {
     if (!this.#feedDown) {
       this.#feedDown = true;
-      this.#context.log.warn('operation.failed', {'bunny.operation': 'feed', 'bunny.code': code});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'feed', 'bunny.code': code});
     }
     if (this.#closing || this.#resync !== undefined) return;
     const delayMs = this.#resyncDelayMs;
@@ -760,7 +758,7 @@ class LifxRun {
       } catch (error) {
         this.#storageFailed(storageCode(error));
       }
-      this.#context.log.info('feed.changed', {'bunny.device.id': bulb.config.id, 'bunny.operation': 'status'}, parent);
+      recordLog(this.#context.log, 'feed.changed', {'bunny.device.id': bulb.config.id, 'bunny.operation': 'status'}, parent);
       const paint = paintFor(key, bulb.mode, bulb.caps);
       if (paint !== undefined) this.#track(this.#paint(bulb, paint, parent));
     }
@@ -783,7 +781,7 @@ class LifxRun {
   /** Work the module runs on its own. An error that escapes it is the module's fault: it is logged once, by type. */
   #track(work: Promise<void>): void {
     const tracked = work.catch((error: unknown) => {
-      this.#context.log.error('operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
+      recordLog(this.#context.log, 'operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
     });
     this.#work.add(tracked);
     void tracked.finally(() => { this.#work.delete(tracked); });

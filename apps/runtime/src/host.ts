@@ -9,8 +9,7 @@ import {Ajv2020} from 'ajv/dist/2020.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {Worker, type WorkerOptions} from 'node:worker_threads';
 import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {
-  InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkContributions, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
+import {recordLog, InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkConfiguration, checkContributions, checkModuleName, childOf, noSpans, startSpan, type BunnyModule, type Cancel,
   type Clock, type CommandDraft, type Draft, type ErrorScope, type Handler, type ModuleContext, type Participant, type RequestOptions, type Responder,
   type Scheduler, type Sdk, type SendOptions, type SpanRecorder, type SubscribeOptions, type SyncHandler, type SyncOptions, type SyncProvider,
   type WorkerCallOptions,
@@ -379,7 +378,7 @@ export class ModuleHost {
   #refuse(slot: Slot, reason: Reason, error?: unknown): void {
     slot.state = 'refused';
     slot.reason = reason;
-    this.#log.error('runtime.module.refused', {...named(slot.name), ...reasonFields({...reason, phase: 'manifest'}), ...(error === undefined ? {} : this.#errorFields(error))});
+    recordLog(this.#log, 'runtime.module.refused', {...named(slot.name), ...reasonFields({...reason, phase: 'manifest'}), ...(error === undefined ? {} : this.#errorFields(error))});
     // The runtime cannot continue without the one owner of agent sessions (Hub #831), whether it failed or was refused,
     // as by a malformed `core` section of the configuration file.
     if (slot.name === CORE_MODULE) this.#options.onCoreFailure?.(error);
@@ -416,7 +415,7 @@ export class ModuleHost {
     switch (outcome.status) {
       case 'done':
         slot.state = 'running';
-        this.#log.info('runtime.module.started', {'bunny.module': slot.name});
+        recordLog(this.#log, 'runtime.module.started', {'bunny.module': slot.name});
         return;
       case 'failed':
         this.#fail(slot, {code: 'internal', detail: 'start failed', phase: 'start'}, outcome.error);
@@ -513,7 +512,7 @@ export class ModuleHost {
       return;
     }
     if (slot === undefined) {
-      this.#log.error('runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...this.#errorFields(error)});
+      recordLog(this.#log, 'runtime.handler.failed', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, ...this.#errorFields(error)});
       return;
     }
     this.#fail(slot, {code: 'internal', detail: 'a handler threw', phase: 'handler'}, error);
@@ -526,7 +525,7 @@ export class ModuleHost {
       open.count += 1;
       return;
     }
-    this.#log.warn('runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': 1});
+    recordLog(this.#log, 'runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': 1});
     const drops: Drops = {scope, count: 0, cancel: () => {}};
     this.#drops.set(key, drops);
     this.#openWindow(key, drops);
@@ -551,19 +550,19 @@ export class ModuleHost {
   #logDrops(drops: Drops): void {
     const {scope, count} = drops;
     drops.count = 0;
-    if (count > 0) this.#log.warn('runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': count});
+    if (count > 0) recordLog(this.#log, 'runtime.delivery.dropped', {'bunny.participant': scope.source, 'bunny.pattern': scope.pattern, 'bunny.delivery.dropped_count': count});
   }
 
   /** Marks the module failed and stops it. Later errors from a module that has already stopped are only logged. */
   #fail(slot: Slot, failure: Failure, error: unknown): void {
     const fields = {'bunny.module': slot.name, ...(error === undefined ? {} : this.#errorFields(error))};
     if (slot.state === 'failed' || slot.state === 'stopped' || slot.state === 'refused') {
-      this.#log.warn('runtime.module.error-after-stop', {...fields, 'bunny.phase': failure.phase});
+      recordLog(this.#log, 'runtime.module.error-after-stop', {...fields, 'bunny.phase': failure.phase});
       return;
     }
     slot.state = 'failed';
     slot.reason = {code: failure.code, detail: failure.detail};
-    this.#log.error('runtime.module.failed', {...fields, ...reasonFields(failure)});
+    recordLog(this.#log, 'runtime.module.failed', {...fields, ...reasonFields(failure)});
     void this.#teardown(slot);
     if (slot.name === CORE_MODULE) this.#options.onCoreFailure?.(error);
   }
@@ -590,14 +589,14 @@ export class ModuleHost {
     const {stopTimeoutMs} = this.#options;
     const fields = {'bunny.module': slot.name, 'bunny.timeout_ms': stopTimeoutMs};
     const closed = await this.#within(slot.participant?.close() ?? Promise.resolve(), stopTimeoutMs);
-    if (closed.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'handlers'});
+    if (closed.status === 'timed-out') recordLog(this.#log, 'runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'handlers'});
     const ended = await this.#within(running.run(slot.flow, () => attempt(() => slot.module.stop())), stopTimeoutMs);
-    if (ended.status === 'timed-out') this.#log.warn('runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'stop'});
-    if (ended.status === 'failed') this.#log.warn('runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...this.#errorFields(ended.error)});
+    if (ended.status === 'timed-out') recordLog(this.#log, 'runtime.module.stop-timed-out', {...fields, 'bunny.phase': 'stop'});
+    if (ended.status === 'failed') recordLog(this.#log, 'runtime.module.stop-failed', {'bunny.module': slot.name, 'bunny.phase': 'stop', ...this.#errorFields(ended.error)});
     await Promise.allSettled([...slot.workers].map(worker => worker.terminate()));
     if (slot.database?.isOpen === true) slot.database.close();
     if (slot.state === 'stopping') slot.state = 'stopped';
-    this.#log.info('runtime.module.stopped', {'bunny.module': slot.name});
+    recordLog(this.#log, 'runtime.module.stopped', {'bunny.module': slot.name});
   }
 
   /** How `work` ended within `timeoutMs` on the runtime's scheduler. A rejection after the deadline is still handled. */

@@ -6,8 +6,7 @@
 import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  DeviceAvailability, fullDisk, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
   type TraceContext,
 } from '@jimmie-potts/sdk';
 import {configurePlayback, type PlaybackConfig} from './configuration.js';
@@ -123,7 +122,7 @@ BunnyModule<PlaybackConfig> {
       // What a crash kept from going out, and every outcome the core has not acknowledged, go out again. The outbox
       // follows the core's acknowledgments first (Hub #782), so it forgets each outcome the core recorded.
       const republished = await outbox.republish();
-      log.info('outbox.republished', {'bunny.outbox.republished_count': republished});
+      recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': republished});
       const outcomeKey = `bunny.event.playback-control.${id}`;
       const completed = (outcome: CompletedOutcome) => ({
         kind: 'outcome' as const, type: 'org.bunny.playback.control.completed', subject: id, dataschema: OUTCOME_SCHEMA, data: outcome,
@@ -165,12 +164,12 @@ BunnyModule<PlaybackConfig> {
         if (storageFailing) return;
         storageFailing = true;
         const code = storageCode(error);
-        log[code === 'internal' ? 'error' : 'warn']('operation.failed', {'bunny.operation': 'storage', 'bunny.code': code, ...fields}, parent);
+        recordLog(log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.code': code, ...fields}, parent);
       };
       const storageWorked = (): void => {
         if (!storageFailing) return;
         storageFailing = false;
-        log.info('operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
+        recordLog(log, 'operation.completed', {'bunny.operation': 'storage', 'bunny.outcome': 'succeeded'});
       };
 
       // The optimistic record drives existing revision admission/rollback; content uses only successful commits.
@@ -218,13 +217,11 @@ BunnyModule<PlaybackConfig> {
           const fields: LogFields = {'bunny.operation': 'media', 'bunny.code': diagnostic.code,
             'bunny.attempt_count': diagnostic.attempts, ...deviceField(`${id}.${diagnostic.source}`)};
           if (diagnostic.kind === 'recovery') {
-            log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
+            recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
           } else if (diagnostic.kind !== 'failure') {
             log.debug('operation.failed', fields);
           } else {
-            const level = diagnostic.code === 'internal' ? 'error' :
-              ['capacity', 'unavailable', 'uncertain-result', 'unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict'].includes(diagnostic.code) ? 'warn' : 'info';
-            log[level]('operation.failed', fields);
+            recordLog(log, 'operation.failed', fields);
           }
         },
       });
@@ -413,7 +410,7 @@ BunnyModule<PlaybackConfig> {
             storageFailed(error, {...deviceField(device), 'bunny.request.id': requestId}, command);
             return errorBody('capacity', {detail: 'the playback module could not record the command'});
           }
-          log.info('command.executing', {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId}, command);
+          recordLog(log, 'command.executing', {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId}, command);
           // The speaker call has its own span, the command's child; the speaker gets no trace context.
           const call = trace.start('bunny.device.call', {
             parent: command, kind: 'client', attributes: {...deviceField(device), 'bunny.operation': 'playback', 'bunny.request.id': requestId},

@@ -260,7 +260,8 @@ it('a full disk refuses an observation before anything reports it accepted, chan
   const sent = await core.hook.publish(key, draft);
   await waitFor(() => received(core.logs, 'rejected').length === 1, 5000, 'the refusal');
   const [refusal] = received(core.logs, 'rejected');
-  assert.deepEqual([refusal?.attributes['bunny.code'], refusal?.attributes['bunny.reason'], refusal?.severity_text], ['capacity', 'busy', 'INFO']);
+  // Hub #1143: the code table gives `capacity` WARN (ADR 0012 "lost capacity"); this refusal used a hand-set INFO.
+  assert.deepEqual([refusal?.attributes['bunny.code'], refusal?.attributes['bunny.reason'], refusal?.severity_text], ['capacity', 'busy', 'WARN']);
   assert.deepEqual(storage(core.logs).map(record => [record.event_name, record.severity_text, record.attributes['bunny.code']]),
     [['operation.failed', 'WARN', 'capacity']], 'the condition is recorded once');
   assert.equal(received(core.logs, 'accepted').length, 1, 'only the first observation was accepted');

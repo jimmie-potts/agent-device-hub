@@ -79,7 +79,7 @@ const spanFields = (source: string, key: string, requestId: string): SpanAttribu
 /** How the bus records a request's end: the owner's reply, its own refusal or cancellation, or an uncertain result. */
 type Decision = Pick<Diagnostic, 'event' | 'level' | 'outcome' | 'code'> & {status: SpanStatus};
 function decisionOf(result: RequestResult): Decision {
-  if (result.status === 'accepted') return {event: 'command.replied', level: 'info', outcome: 'accepted', status: 'unset'};
+  if (result.status === 'accepted') return {event: 'command.replied', level: levelOf('command.replied'), outcome: 'accepted', status: 'unset'};
   const {code} = result.error.error;
   const level = levelOf(code);
   if (result.status === 'uncertain') return {event: 'command.uncertain', level, outcome: 'uncertain', code, status: 'error'};
@@ -192,7 +192,7 @@ export class InProcessBus {
           request: outgoing => this.#sync.request(source, outgoing),
           report: error => { this.#report(error, scope); },
           restarted: () => {
-            this.#diagnose({event: 'sync.restarted', level: 'debug', source, pattern: scope.pattern});
+            this.#diagnose({event: 'sync.restarted', level: levelOf('sync.restarted'), source, pattern: scope.pattern});
             try {
               this.#onSyncRestart(scope);
             } catch {
@@ -427,7 +427,7 @@ export class InProcessBus {
         return;
       }
       delivery.queue = startSpan(this.#spans, 'bunny.command.queue', {parent: request.context, attributes: spanFields(command.source, key, requestId)});
-      this.#diagnose({event: 'command.admitted', level: 'info', outcome: 'queued', ...facts});
+      this.#diagnose({event: 'command.admitted', level: levelOf('command.admitted'), outcome: 'queued', ...facts});
     });
   }
 

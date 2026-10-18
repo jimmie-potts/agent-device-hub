@@ -15,8 +15,7 @@ import {
   commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  DeviceAvailability, levelOf, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
+import {recordLog, DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type ModuleStagedUpload, type ModuleUploadRequest,
   type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext,
 } from '@jimmie-potts/sdk';
@@ -83,7 +82,6 @@ export type PixooOptions = {
 };
 
 /** Each refusal code's level, as ADR 0012's "Levels" sets it: domain refusals are INFO, refusals a correct caller never gets WARN. */
-const WARNED: readonly ErrorCode[] = ['unauthenticated', 'forbidden', 'too-large', 'duplicate-conflict', 'capacity', 'unavailable', 'expired', 'uncertain-result'];
 const known = <T>(value: T): {status: 'known'; value: T} => ({status: 'known', value});
 const UNKNOWN = {status: 'unknown'} as const;
 /** A promise and the function that resolves it. */
@@ -244,7 +242,7 @@ class PixooRuntime {
     // The outbox follows the core's acknowledgments itself (Hub #782), first, so one of a resent outcome is not missed,
     // then sends what is still stored.
     const republished = await outbox.republish();
-    log.info('outbox.republished', {'bunny.outbox.republished_count': republished});
+    recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': republished});
 
     const {device, hostedGif} = this.#config;
     const simulated = this.#options.transport.simulated;
@@ -335,7 +333,7 @@ class PixooRuntime {
     }
     this.#catalogRead.resolve();
     if (this.#catalogFailures > 0) {
-      this.#context.log.info('operation.completed', {
+      recordLog(this.#context.log, 'operation.completed', {
         'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.outcome': 'succeeded', 'bunny.attempt_count': this.#catalogFailures,
       });
       this.#catalogFailures = 0;
@@ -479,20 +477,20 @@ class PixooRuntime {
         const code = Array.isArray(reply) ? undefined : reply.artworkCode;
         const fields = {'bunny.device.id': this.#device, 'bunny.operation': 'playback'};
         if (code !== undefined && code !== this.#artworkFailing) {
-          this.#artworkFailing = code; log[levelOf(code)]('operation.failed', {...fields, 'bunny.code': code}, parent);
+          this.#artworkFailing = code; recordLog(log, 'operation.failed', {...fields, 'bunny.code': code}, parent);
         } else if (code === undefined && request.artwork?.status === 'ready' && this.#artworkFailing !== undefined) {
-          this.#artworkFailing = undefined; log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+          this.#artworkFailing = undefined; recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
         }
       }
       if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
-        log.info('operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'}, parent);
+        recordLog(log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'}, parent);
       }
       return frames;
     } catch (error) {
       if (!this.#renderFailing && !signal.aborted && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = true;
-        log.warn('operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'}, parent);
+        recordLog(log, 'operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'}, parent);
       }
       throw error;
     }
@@ -515,7 +513,7 @@ class PixooRuntime {
       const delay = Math.min(this.#timing.syncRetryMaxMs, this.#timing.firstRetryMs * 2 ** Math.min(failures, 16));
       if (!copy.warned && (copy.state === 'stale' || delay >= this.#timing.syncRetryMaxMs)) {
         copy.warned = true;
-        log.warn('operation.failed', {...fields, 'bunny.code': code, 'bunny.attempt_count': failures + 1});
+        recordLog(log, 'operation.failed', {...fields, 'bunny.code': code, 'bunny.attempt_count': failures + 1});
       } else {
         log.debug('operation.failed', {...fields, 'bunny.code': code, 'bunny.attempt_count': failures + 1});
       }
@@ -563,7 +561,7 @@ class PixooRuntime {
     }
     if (copy.warned) {
       copy.warned = false;
-      log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded', 'bunny.attempt_count': failures});
+      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded', 'bunny.attempt_count': failures});
     } else if (failures > 0) {
       log.debug('operation.completed', {...fields, 'bunny.outcome': 'succeeded', 'bunny.attempt_count': failures});
     }
@@ -806,7 +804,7 @@ class PixooRuntime {
   /** A storage failure while the module runs: one ERROR record; the change waits for the next one. */
   #failedWrite(error: unknown): void {
     if (this.#stopping) return;
-    this.#context.log.error('operation.failed', {
+    recordLog(this.#context.log, 'operation.failed', {
       'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.code': 'internal', 'error.type': error instanceof Error ? error.name : 'unknown',
     });
   }
@@ -938,8 +936,7 @@ class PixooRuntime {
     const {requestId} = command.data;
     const fields: LogFields = {'bunny.device.id': this.#device, ...requestField(requestId)};
     const refuse = (body: ErrorBody): ErrorBody => {
-      const level = body.error.code === 'internal' ? 'error' : WARNED.includes(body.error.code) ? 'warn' : 'info';
-      log[level]('command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
+      recordLog(log, 'command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
       return body;
     };
     if (this.#store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
@@ -952,7 +949,7 @@ class PixooRuntime {
       const earlier = store.request(command.source, requestId);
       if (earlier !== undefined) {
         if (earlier !== digest) return refuse(errorBody('duplicate-conflict', {detail: 'the requestId was used for another command'}));
-        log.info('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, command);
+        recordLog(log, 'command.completed', {...fields, 'bunny.outcome': 'duplicate'}, command);
         return {status: 'accepted'};
       }
       const guards = command.data as {expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number}};
@@ -977,7 +974,7 @@ class PixooRuntime {
       } catch {
         return refuse(errorBody('capacity', {detail: 'the Pixoo could not store the command'}));
       }
-      log.info('command.executing', fields, command);
+      recordLog(log, 'command.executing', fields, command);
       this.#running += 1;
       void this.#run(command, family, work, catalog).finally(() => { this.#running -= 1; });
       return {status: 'accepted'};

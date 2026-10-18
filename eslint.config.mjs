@@ -58,6 +58,16 @@ const pageDrivers = [
   'scripts/performance/standalone-worker.mjs',
 ];
 
+// ADR 0012 (2026-10-17 amendment, Hub #1143): the SDK table owns every level, so a call site never names one, and
+// a computed log[...] call of any kind is refused because its level was chosen at the call site.
+const logLevelScope = ['modules/*/src/**/*.{ts,tsx}', 'apps/runtime/src/**/*.ts'];
+const namedLevel = ['log', '#log'].flatMap(name => ['object.name', 'object.property.name'].map(path => ({
+  selector: `CallExpression > MemberExpression.callee[computed=false][property.name=/^(info|warn|error)$/][${path}='${name}']`,
+  message: 'Record INFO, WARN and ERROR through recordLog from @jimmie-potts/sdk; the code table owns the level.'})));
+const computedLevel = ['log', '#log'].flatMap(name => ['object.name', 'object.property.name'].map(path => ({
+  selector: `CallExpression > MemberExpression.callee[computed=true][${path}='${name}']`,
+  message: 'Record through recordLog from @jimmie-potts/sdk instead of choosing a log level at the call site.'})));
+
 export default defineConfig(
   // Everything Git ignores: build output, dependencies, local data and agent worktrees.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url)), 'bunny/git-ignored'),
@@ -133,6 +143,21 @@ export default defineConfig(
       // Entry points declare a handle before signal handlers that read it, then assign it once.
       'prefer-const': ['error', {ignoreReadBeforeAssign: true}],
     },
+  },
+  {
+    // ADR 0012 amendment of 2026-10-17 (Hub #1143): the SDK code table owns INFO, WARN and ERROR levels, so module and
+    // runtime code records them through recordLog, never by naming a level at the call site.
+    name: 'bunny/log-levels',
+    files: logLevelScope,
+    rules: {'no-restricted-syntax': ['error', ...namedLevel, ...computedLevel]},
+  },
+  {
+    // The one writer that passes a level straight through: the runtime's diagnostics sink forwards the level the SDK
+    // producer took from the table (levelOf). Only the computed form is lifted here; a named log.info/warn/error is
+    // still refused. The gateway refusals and the core tracker derive their levels with recordLog (Hub #1143).
+    name: 'bunny/log-levels/table-pass-through',
+    files: ['apps/runtime/src/diagnostics.ts'],
+    rules: {'no-restricted-syntax': ['error', ...namedLevel]},
   },
   {
     name: 'bunny/strict',
