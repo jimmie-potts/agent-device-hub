@@ -35,6 +35,13 @@ entries. Saving composition changes no device. Explicit group controls use the
 existing guarded per-device commands and retain independent tracked outcomes.
 Source delivery does not establish installed or physical acceptance.
 
+Private prepared room geometry and fixture aliases live under the core's
+existing private files owner and are read through authenticated module content.
+The Rooms view uses current core membership and module device records to select
+the existing individual light controls. Geometry adds no event family, device
+writer, state polling or database format; its neutral materials are separate
+from reported device evidence. The runtime dashboard guide owns preparation.
+
 The optional [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated
 Windows HTTPS forwarder before that same loopback gateway. The runtime admits its
 one configured origin with private proxy proof and uses ordinary browser sessions;

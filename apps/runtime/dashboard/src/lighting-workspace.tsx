@@ -9,6 +9,8 @@ import {useAttempt} from './command-control.tsx';
 import {LightCard} from './light-card.tsx';
 import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
 import './lighting.css';
+import {RoomModels} from './room-models.tsx';
+import {roomBinding} from './room-bindings.ts';
 type Bindings = Map<string, FrontendCommand>;
 function AttemptBinding({target, operations, operationsLive, bindings, changed}: {target: string; operations: readonly OperationRecord[]; operationsLive: boolean; bindings: Bindings; changed: () => void}): null {
   const command = useAttempt(target, operations, operationsLive);
@@ -116,6 +118,21 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       {!layoutLive && <p role="status">Layout records are unavailable or stale. Arrangement is read-only.</p>}
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}
+      {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices}
+        renderLight={(anchor, model) => {
+          const bound = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
+          if ('reason' in bound) return <p>{bound.reason}</p>;
+          const {card, device} = bound;
+          return <LightCard key={card.selection.id} card={card} devices={devices}
+            capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks())}
+            act={intent => {
+              const current = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
+              if ('reason' in current) { setMessage(current.reason); return; }
+              act(current.card, intent);
+            }} options={options(card)}
+            status={card.members.map(id => ({name: card.name, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
+            artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
+        }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
       <div className="lighting-grid">{cards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
         act={intent => { act(card, intent); }} options={options(card)} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}

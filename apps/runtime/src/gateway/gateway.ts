@@ -420,7 +420,7 @@ export class Gateway {
     const content = /^\/modules\/([^/]+)\/content\/([^/]+)$/.exec(path);
     if (content !== null) {
       if (content[1] === 'wispr') return this.#wisprRead(request, principal, content[2] ?? '', url.searchParams);
-      return this.#content(content[1] ?? '', content[2] ?? '', url.searchParams);
+      return this.#content(request, content[1] ?? '', content[2] ?? '', url.searchParams);
     }
     const page = /^\/modules\/([^/]+)\/([^/]+)$/.exec(path);
     if (page !== null) {
@@ -735,7 +735,20 @@ export class Gateway {
   }
 
   /** A module's content by reference, such as a preview frame its page shows. */
-  async #content(name: string, ref: string, params: URLSearchParams): Promise<Answer> {
+  async #content(request: IncomingMessage, name: string, ref: string, params: URLSearchParams): Promise<Answer> {
+    const incoming = request.headers.traceparent;
+    const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
+    const span = startSpan(this.#options.trace ?? noSpans, 'bunny.feed.read', {
+      parent: candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined, kind: 'server',
+      attributes: {'http.route': '/modules/{module}/content/{ref}', 'http.request.method': 'GET'},
+    });
+    this.#dashboardTraces.set(request, span.context);
+    try {return await this.#readContent(name, ref, params);}
+    catch (error) {span.end(error instanceof Refused ? 'unset' : 'error'); throw error;}
+    finally {span.end();}
+  }
+
+  async #readContent(name: string, ref: string, params: URLSearchParams): Promise<Answer> {
     const module = this.#module(name);
     const {content} = module.manifest;
     if (!ID.test(ref)) throw refuse('invalid-request', 'a content reference is 1 to 128 letters, digits, underscores, dots or hyphens');

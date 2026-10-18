@@ -4,7 +4,7 @@
 // failing span sink changes nothing.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {readdir, stat, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, readdir, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {connectRemote, traceFields, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
 import {RECENT_SPANS, RuntimeError, startRuntime, type LogRecord} from '../src/index.js';
@@ -12,6 +12,8 @@ import {LogWriter} from '../src/log.js';
 import {RUNTIME_SCOPE} from '../src/record.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {startTracing} from '../src/tracing.js';
+import {createCoreModule} from '../src/core/core.js';
+import {roomModelFixture} from './fixtures/room-model.js';
 import {contextOf, deferred, edgeConfig, fixture, it, run, setMode, stateDir, waitFor} from './support.js';
 
 const KEY = 'bunny.cmd.mode.wall';
@@ -51,6 +53,35 @@ const attribute = (span: Recorded, key: string): unknown => {
 const children = (spans: readonly Recorded[], parent: Recorded, name: string): Recorded[] =>
   spans.filter(span => span.name === name && span.traceId === parent.traceId && span.parentSpanId === parent.spanId);
 const lasted = (span: Recorded | undefined): boolean => span !== undefined && BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano);
+
+it('authenticated room content reads and refusals continue separate caller traces without private data', async context => {
+  const reader = {id: 'room-reader', source: 'bunny/parts/room-reader', token: 'synthetic-room-reader-token', scopes: ['read' as const]};
+  const {config} = await edgeConfig(context, [reader]);
+  const directory = await stateDir(context), lines: string[] = [];
+  const {runtime, logs} = await run(context, {modules: [createCoreModule()], stateDir: directory, configFile: config,
+    edge: {schemas: {}}, spans: line => { lines.push(line); }});
+  const folder = join(directory, 'modules/core/room-models');
+  await mkdir(folder, {recursive: true, mode: 0o700});
+  await writeFile(join(folder, 'studio.json'), JSON.stringify(roomModelFixture()), {mode: 0o600});
+  const url = runtime.url + '/modules/core/content/room-model-studio';
+  assert.equal((await fetch(url, {headers: PARENT})).status, 401);
+  const response = await fetch(url, {headers: {...PARENT, authorization: 'Bearer ' + reader.token}});
+  assert.equal(response.status, 200); await response.body?.cancel();
+  const refused = await fetch(url + '?path=private-room', {headers: {...OTHER, authorization: 'Bearer ' + reader.token}});
+  assert.equal(refused.status, 400); await refused.body?.cancel();
+  await runtime.stop();
+  const spans = parse(lines).filter(span => attribute(span, 'http.route') === '/modules/{module}/content/{ref}');
+  assert.equal(spans.length, 2, 'only authenticated content requests acquire a caller context');
+  for (const parent of [PARENT, OTHER]) {
+    const span = spans.find(span => span.traceId === traceFields(parent)?.traceId);
+    assert.ok(span); assert.equal(span.parentSpanId, traceFields(parent)?.spanId);
+    assert.equal(span.name, 'bunny.feed.read'); assert.equal(span.kind, 2); assert.ok(lasted(span));
+  }
+  const refusal = logs.find(record => record.event_name === 'runtime.edge.refused' && record.attributes['bunny.code'] === 'invalid-request');
+  assert.ok(refusal); assert.equal(refusal.trace_id, traceFields(OTHER)?.traceId);
+  assert.equal(refusal.span_id, spans.find(span => span.traceId === traceFields(OTHER)?.traceId)?.spanId);
+  for (const privateValue of [folder, reader.token, 'private-room', 'Desk lamp']) assert.equal(JSON.stringify([logs, lines]).includes(privateValue), false);
+});
 
 it('the dashboard HTTP handoffs reach the runtime recorder in the caller trace', async context => {
   const {config} = await edgeConfig(context, [], {browserAccess: 'trusted-loopback'});

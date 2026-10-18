@@ -11,7 +11,7 @@ The runtime SHALL start with the fixed module list shipped in its code, and SHAL
 
 #### Scenario: Zero modules
 - **WHEN** the runtime starts with no modules on port 0
-- **THEN** health on a loopback port answers 200 with schema `runtime-health/1.0`, status `ok`, module API version `1.2`, positive memory figures and no modules
+- **THEN** health on a loopback port answers 200 with schema `runtime-health/1.0`, status `ok`, module API version `1.3`, positive memory figures and no modules
 
 #### Scenario: Another route
 - **WHEN** a client sends GET to `/`, POST to the health path, GET with a query string or GET to another version's path
@@ -31,7 +31,7 @@ The runtime SHALL start with the fixed module list shipped in its code, and SHAL
 
 #### Scenario: The shipped process
 - **WHEN** the shipped entry point runs with `--port 0` and a private state directory
-- **THEN** it writes a `runtime.ready` line with its URL, health is `degraded` and lists the core running at module API `1.2` and each shipped device module, the playback, LIFX, Tidbyt, Pixoo, Nanoleaf and Codex Desktop modules, at the module API version each declares, `refused` with `not-found`, because the process has no configuration file, the records name each refusal, and SIGTERM stops it with exit status 0
+- **THEN** it writes a `runtime.ready` line with its URL, health is `degraded` and lists the core running at module API `1.3` and each shipped device module, the playback, LIFX, Tidbyt, Pixoo, Nanoleaf and Codex Desktop modules, at the module API version each declares, `refused` with `not-found`, because the process has no configuration file, the records name each refusal, and SIGTERM stops it with exit status 0
 
 #### Scenario: A signal while the runtime loads
 - **WHEN** SIGTERM or SIGINT arrives while the entry point still loads the runtime, whether loading turns the event loop or blocks it
