@@ -155,6 +155,13 @@ is Pixoo-only, and session labels use the shared Sessions page. Settings exposes
 the safe configuration for inspection and keeps file-based setup separate from
 brightness and screen commands.
 
+Tidbyt exports the same read-only glass card on Home, its device page and
+`#/module/tidbyt/display`. Status shows the owner's cloud availability and last
+known transmission, with stale evidence marked; Content explains automatic status
+and optional now playing. Its labelled 64×32 illustration stays mounted across
+tabs. No display control or exact/physical preview is implied. The adapter closes
+active and late copies through the existing shell scope.
+
 Passive pages keep their script-free frame. A declared trusted editor uses an
 application frame under the gateway's trusted asset policy. It is reviewed
 same-origin application code, not an untrusted extension sandbox. User media

@@ -508,6 +508,7 @@ by the owning story's focused browser and disposable Acceptance checks.
 ```bash
 npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the session rows and the skin's tokens
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
+node apps/runtime/dashboard/tests/tidbyt-card.browser.ts # reusable read-only Tidbyt card; also runs in hosted smoke
 npm run test:runtime-dashboard:browser   # the full browser suite, local only
 BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts # local HTTPS, phone width; optional BUNNY_TEST_BROWSER=webkit
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override

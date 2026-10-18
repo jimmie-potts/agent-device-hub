@@ -223,3 +223,6 @@ try {
   await browser.close();
   await world.close();
 }
+
+// The same focused journey runs in hosted smoke and the full local browser suite.
+await import('./tidbyt-card.browser.ts');

@@ -46,3 +46,14 @@
 .pixoo-playback>button{flex:1;min-width:0}.pixoo-card details>summary{cursor:pointer}.pixoo-pending{padding-block:var(--space-s)}
 @media(max-width:380px){.pixoo-media-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pixoo-card button:hover:not(:disabled){background:var(--light-selected);color:var(--text)}
+
+/* The Tidbyt uses the same glass card and information-face motion as the light/Pixoo cards. */
+.tidbyt-card{width:100%;max-width:620px;margin-inline:auto}.tidbyt-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tidbyt-artwork{margin:0;min-height:240px;display:grid;place-content:center;justify-items:center;gap:var(--space-m)}
+.tidbyt-device{width:min(260px,100%);padding:12px 14px;border-radius:19px;background:var(--tidbyt-wood);box-shadow:var(--tidbyt-shadow)}
+.tidbyt-device svg{display:block;width:100%;aspect-ratio:2;border:5px solid var(--tidbyt-frame);border-radius:7px}
+.tidbyt-artwork figcaption,.tidbyt-links{font-size:var(--type-small);color:var(--muted-dense)}
+.tidbyt-face-space{perspective:900px;min-height:244px}.tidbyt-face-space>.light-face{height:auto;min-height:240px;overflow:visible;padding-block:var(--space-m)}
+.tidbyt-facts{margin:0;display:grid;gap:var(--space-xs)}.tidbyt-facts dt{font-size:var(--type-small);color:var(--muted-dense)}.tidbyt-facts dd{margin:0 0 var(--space-m);overflow-wrap:anywhere}.tidbyt-facts time{display:block;font-size:var(--type-small)}
+.tidbyt-tiles{list-style:none;padding:0;display:grid;gap:var(--space-m)}.tidbyt-face-space h4{margin:0}.tidbyt-links{display:flex;gap:var(--space-l);flex-wrap:wrap}
+.tidbyt-card button:hover:not(:disabled){background:var(--light-selected);color:var(--text)}

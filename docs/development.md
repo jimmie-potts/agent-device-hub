@@ -1186,6 +1186,13 @@ belong to the cutover (#840).
 
 ## Tidbyt module checks
 
+The reusable card's copy lifetime and evidence-label cases are discovered by
+`test:tidbyt-module:built`. After the root build, run
+`node apps/runtime/dashboard/tests/tidbyt-card.browser.ts` for its actual
+read-only Home/device/module-page journey; existing hosted runtime dashboard
+smoke and the full browser suite include it. See the owning
+[module guide](../modules/tidbyt/README.md#reusable-dashboard-card).
+
 Hub #930 copies the Tidbyt controller's renderer, cloud connection, queue and
 publishers into the runtime module `modules/tidbyt`, under the
 [strict profile](#strict-profile-for-new-code) and the module boundary. Its

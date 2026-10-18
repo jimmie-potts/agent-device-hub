@@ -29,3 +29,6 @@
 --art-canvas:#05070d;--art-edge:rgba(34,211,238,.2)}
 /* Glass lighting surface, approved in #1135. Semantic attention colors continue to use shared roles. */
 :root{--light-surface:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.045));--light-edge:rgba(255,255,255,.22);--light-inset:rgba(255,255,255,.06);--light-selected:rgba(183,217,255,.2);--light-shadow:0 16px 48px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.15);--light-art:radial-gradient(ellipse at 50% 50%,rgba(154,197,255,.14),transparent 70%);--light-bulb:rgba(232,242,255,.85);--light-base:#69768d;--light-menu:#192334;--light-hue:linear-gradient(90deg,#ff5959,#ffe35d,#65e4a3,#63b8f7,#bc8afa,#ff5959);--light-radius:26px;--light-control-radius:16px}
+
+/* Private Tidbyt illustration tokens. */
+:root{--tidbyt-wood:repeating-linear-gradient(3deg,#765241 0,#765241 2px,#805b47 3px,#805b47 5px);--tidbyt-shadow:0 15px 18px #0004,inset 0 1px 1px #c39d79;--tidbyt-frame:#12141a}

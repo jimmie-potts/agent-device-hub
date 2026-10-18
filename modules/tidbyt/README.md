@@ -24,6 +24,33 @@ again after 10 minutes. Frames render in a worker thread. The module publishes
 the Tidbyt's `device/2.0` record with every control unsupported, as the old
 controller declared every controller v1 capability unsupported.
 
+## Reusable dashboard card
+
+The module declares API 1.3 for its React contribution and exports `TidbytCard`
+and `TidbytDisplay` from `@jimmie-potts/tidbyt/frontend`. The card is pure
+presentation; the adapter follows this module's device copy through the shell's
+existing authenticated participant. Home, the device page and
+`#/module/tidbyt/display` use that same adapter. The device page keeps its
+existing detailed evidence in a collapsed Device evidence section.
+
+Status shows cloud availability and the last known cloud acceptance time.
+Disconnected or failed copies keep saved evidence marked stale until a complete
+replacement sync succeeds. Retry records repeats only the read. Content explains
+automatic agent status and optional now playing; it does not list configured
+installations. No power, brightness, content-selection or push/removal controls
+are offered. The wooden 64×32 illustration stays mounted across keyboard-accessible
+Status/Content tabs and is explicitly illustrative, never an exact preview or a
+physical observation. Existing cloud behavior and private state are unchanged.
+
+After the root build, run
+`node --test modules/tidbyt/dist/tests/frontend.test.js` for copy replacement,
+failed sync, removal, late-copy cleanup and evidence labels, and
+`node apps/runtime/dashboard/tests/tidbyt-card.browser.ts` for all three actual
+shell surfaces, held reconnect, read-only access, keyboard/reduced motion,
+phone layout and accessibility. The unit cases run in `test:tidbyt-module:built`;
+the browser journey runs in the existing hosted dashboard smoke and full local
+browser suite. All use synthetic state and a simulated cloud.
+
 ## Provenance
 
 Copied from `controllers/tidbyt` at main `627e3fe3` (2026-10-07) and converted to
