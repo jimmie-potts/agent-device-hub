@@ -67,15 +67,28 @@ try {
   await page.unroute('**/api/sdk/v1/sync'); await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
   await page.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
+  let releaseSave = (): void => {};
+  const saveReplyGate = new Promise<void>(resolve => {releaseSave = resolve;});
+  let markSavePending = (): void => {};
+  const savePending = new Promise<void>(resolve => {markSavePending = resolve;});
   await page.route('**/api/v2/commands/playback-layout-set', async route => {
     const original = route.request().postDataJSON() as {data: {expectedRevision: number}};
     const competing = await page.request.post(world.url + '/api/v2/commands/playback-layout-set', {headers: {origin: world.url, 'bunny-request': '1'},
       data: {target: 'playback', requestId: 'competing-placement', data: {expectedRevision: original.data.expectedRevision, assignments: [{playback: 'living-room', rooms: ['studio']}]}}});
-    assert.equal(competing.status(), 200); await route.continue();
+    assert.equal(competing.status(), 200); markSavePending(); await saveReplyGate; await route.continue();
   }, {times: 1});
   await page.getByRole('button', {name: 'Save room placement', exact: true}).click();
+  await savePending;
+  await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
+  releaseSave();
   await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
   assert.equal(await studio.isDisabled(), true, 'a conflicting save requires explicit refresh');
+  await page.route('**/api/sdk/v1/sync', route => route.abort());
+  await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
+  await page.getByText('Placement records are unavailable or stale. Editing is read-only.', {exact: true}).waitFor();
+  await page.unroute('**/api/sdk/v1/sync');
+  await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
+  assert.equal(await studio.isDisabled(), true, 'a failed refresh cannot be satisfied by automatic sync recovery');
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
   await expect(studio).toBeEnabled();
   const faultContext = await browser.newContext();

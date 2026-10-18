@@ -25,7 +25,15 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
   }, [layoutAction.text, layoutAction.requestId]);
   const failedSave = /Refused|Not sent|Expired|Completed: failed/.test(layoutAction.text);
   const needsRefresh = (failedSave || uncertainRequest !== undefined && uncertainRequest === layoutAction.requestId) && refreshedRequest !== layoutAction.requestId;
-  const refreshPlacement = async (): Promise<void> => {await connection.refreshDevices(); setRefreshedRequest(layoutAction.requestId);};
+  const refreshPlacement = async (): Promise<void> => {
+    const request = needsRefresh ? layoutAction.requestId : undefined;
+    const refreshed = await connection.refreshPlaybackPlacement();
+    const current = connection.getState();
+    if (request !== undefined && refreshed && current.feed === 'connected' && !current.runtime.catalogFailed
+      && current.runtime.copies.filter(copy => copy.owner === 'bunny/core' && (copy.family === 'lighting-layout' || copy.family === 'playback-layout')).every(copy => copy.synced)) {
+      setRefreshedRequest(request);
+    }
+  };
   const [draft, setDraft] = useState<PlaybackPlacement[] | undefined>();
   useEffect(() => {setDraft(undefined);}, [layout?.revision]);
   const coreLive = runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true;

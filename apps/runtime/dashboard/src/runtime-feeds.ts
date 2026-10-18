@@ -57,10 +57,16 @@ export class RuntimeFeeds {
     }
   }
   /** Explicit refresh changes only current copies; it sends no command and never replays an attempt. */
-  async refresh(): Promise<void> { await Promise.all(this.#follows.map(follow => this.#sync(follow))); }
-  async #sync(follow: Follow): Promise<void> {
+  async refresh(required?: readonly {owner: string; family: RuntimeCopy['family']}[]): Promise<boolean> {
+    if (this.#closed || this.#participant === undefined) return false;
+    const follows = required === undefined ? this.#follows : this.#follows.filter(follow => required.some(copy => copy.owner === follow.state.owner && copy.family === follow.state.family));
+    if (required?.some(copy => !follows.some(follow => copy.owner === follow.state.owner && copy.family === follow.state.family)) === true) return false;
+    const results = await Promise.all(follows.map(follow => this.#sync(follow)));
+    return !this.#closed && results.every(Boolean);
+  }
+  async #sync(follow: Follow): Promise<boolean> {
     const participant = this.#participant;
-    if (participant === undefined || this.#closed) return;
+    if (participant === undefined || this.#closed) return false;
     const epoch = ++follow.epoch;
     follow.cancel(); await follow.copy?.close(); follow.copy = undefined;
     follow.state = {...follow.state, synced: false}; this.#show();
@@ -81,10 +87,10 @@ export class RuntimeFeeds {
       const result = await participant.sync<RuntimeRecord>([follow.state.family], (change: SyncChange<RuntimeRecord>) => {
         if (change.type === 'failed') failed(change.error.error.code); else show();
       }, {owner: follow.state.owner, timeoutMs: 5000});
-      if (result.status === 'rejected') { failed(result.error.error.code); return; }
-      if (!current()) { await result.copy.close(); return; }
-      follow.copy = result.copy; follow.retryMs = 1000; show();
-    } catch { failed('unavailable'); }
+      if (result.status === 'rejected') { failed(result.error.error.code); return false; }
+      if (!current()) { await result.copy.close(); return false; }
+      follow.copy = result.copy; follow.retryMs = 1000; show(); return true;
+    } catch { failed('unavailable'); return false; }
   }
   #show(): void { this.#state = {...this.#state, copies: this.#follows.map(follow => follow.state)}; this.#changed(this.#state); }
 }
