@@ -53,15 +53,18 @@ export function sonosObservation(transport: string, position: string, actions: s
   }
   if (!(element(position, 'TrackURI') ?? '').startsWith(AIRPLAY_SCHEME)) return {status: 'inactive', controls: []};
   const status = Object.hasOwn(STATES, state) ? STATES[state] ?? 'unknown' : 'unknown';
-  // TrackMetaData is DIDL-Lite XML, or NOT_IMPLEMENTED. Only its title, artist and album are read; artwork URIs, position and duration are not copied.
+  // TrackMetaData is DIDL-Lite XML, or NOT_IMPLEMENTED. Artwork remains a private candidate; position and duration are not copied.
   const metadata = element(position, 'TrackMetaData') ?? '';
   const didl = metadata.startsWith('<') ? metadata : '';
   const field = (name: string): string | undefined => didl === '' ? undefined : text(element(didl, name));
   const title = field('title'), artist = field('creator'), album = field('album');
+  const artwork = element(didl, 'albumArtURI');
+  const thumbnailUrl = artwork !== undefined && artwork.length > 0 && artwork.length <= 2048 ? artwork : undefined;
   const advertised = new Set((element(actions, 'Actions') ?? '').split(',').map(item => item.trim()));
   const controls = (BY_STATUS[status] ?? []).filter(action => advertised.has(SONOS_ACTIONS[action]));
   return {
     status, ...(title === undefined ? {} : {title}), ...(artist === undefined ? {} : {artist}), ...(album === undefined ? {} : {album}), controls,
+    ...(thumbnailUrl === undefined ? {} : {thumbnailUrl}),
   };
 }
 

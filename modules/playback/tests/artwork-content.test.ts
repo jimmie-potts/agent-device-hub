@@ -102,7 +102,7 @@ test('artwork content retires old revisions, identical-text source handoffs, sta
   assert.equal(await h.readContent(firstRef), undefined);
   assert.ok(await h.readContent(pausedRef));
   speakers.play('sonos', {title: playing.title, artist: playing.artist}); await h.advance(2000);
-  assert.equal(h.record().artwork?.status, 'unsupported');
+  assert.equal(h.record().artwork?.status, 'missing');
   assert.notEqual(h.record().artwork?.generation, first.artwork?.generation);
   assert.equal(await h.readContent(pausedRef), undefined);
   speakers.stop('sonos'); speakers.play('sony', {title: playing.title, artist: playing.artist}); await h.advance(2000);
@@ -218,4 +218,29 @@ test('back-to-back held artwork commits expose only the final current associatio
   } finally {
     bus.release();
   }
+});
+
+test('Sonos ready artwork is passively served and its references retire on track and source changes', async context => {
+  const speakers = new SimulatedSpeakers({sonos: {...playing, syntheticArtwork: true}});
+  let fetches = 0;
+  const h = await host(context, speakers, {artwork: {
+    fetch: (_candidate, _endpoint, _signal, source) => { assert.equal(source, 'sonos'); fetches++; return Promise.resolve({ok: true, value: PNG}); },
+    decode: () => Promise.resolve({ok: true, value: thumbnail}),
+  }});
+  const first = structuredClone(h.record()), ref = reference(first);
+  assert.equal(fetches, 1);
+  const result = await h.readContent(ref);
+  assert.ok(result !== undefined && 'bytes' in result);
+  assert.deepEqual(result.bytes, new Uint8Array(PNG));
+  assert.equal(fetches, 1, 'passive content reads never acquire artwork');
+  speakers.play('sonos', {title: 'Second synthetic song'});
+  await h.advance(2000);
+  assert.notEqual(h.record().artwork?.generation, first.artwork?.generation);
+  assert.equal(await h.readContent(ref), undefined);
+  const secondRef = reference(h.record());
+  assert.ok(await h.readContent(secondRef));
+  speakers.otherInput('sonos'); speakers.play('sony', {title: 'Second synthetic song'});
+  await h.advance(2000);
+  assert.equal(await h.readContent(secondRef), undefined);
+  assert.equal(h.record().artwork?.status, 'missing');
 });

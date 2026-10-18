@@ -1,20 +1,20 @@
 /** Explicitly selected synthetic artwork only: never fetches a network address. */
-import {artworkFailure, artworkUrl, type ArtworkFetch} from './artwork-fetch.js';
+import {artworkFailure, artworkUrl, type ArtworkFetch, type ArtworkSource} from './artwork-fetch.js';
 import type {SonyReply} from './transport.js';
 export const SIMULATED_ARTWORK_MARKER = 'synthetic-playback-artwork';
 export const SIMULATED_ARTWORK_PATH = '/synthetic/playback-artwork.png';
 export const SIMULATED_ARTWORK_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMQsUn5DwAC0AG0vqck9wAAAABJRU5ErkJggg==';
 
 /** Candidate validation stays local: only an explicit synthetic marker may cross the simulation link. */
-export function simulatedArtworkCandidate(candidate: string, endpoint: string): boolean {
-  const url = artworkUrl(candidate, endpoint);
+export function simulatedArtworkCandidate(candidate: string, endpoint: string, source?: ArtworkSource): boolean {
+  const url = artworkUrl(candidate, endpoint, source);
   return url !== undefined && new URL(url).pathname === SIMULATED_ARTWORK_PATH && new URL(url).search === '';
 }
 
 export function createSimulatedArtworkFetch(acquired: () => void = () => {}): ArtworkFetch {
-  return (candidate, endpoint, signal) => {
+  return (candidate, endpoint, signal, source) => {
     if (signal.aborted) return Promise.resolve(artworkFailure('unavailable'));
-    if (!simulatedArtworkCandidate(candidate, endpoint)) return Promise.resolve(artworkFailure('unsupported'));
+    if (!simulatedArtworkCandidate(candidate, endpoint, source)) return Promise.resolve(artworkFailure('unsupported'));
     acquired();
     return Promise.resolve({ok: true, value: new Uint8Array(Buffer.from(SIMULATED_ARTWORK_BASE64, 'base64'))});
   };

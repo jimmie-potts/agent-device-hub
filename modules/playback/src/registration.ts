@@ -19,7 +19,7 @@ function act(speakers: SimulatedSpeakers, simulation: DeviceAction): void {
   const {title} = simulation;
   switch (simulation.action) {
     case 'artwork':
-      speakers.artwork();
+      speakers.artwork(speaker);
       return;
     case 'play':
       speakers.play(speaker, typeof title === 'string' ? {title} : undefined);
@@ -58,7 +58,7 @@ type SonosCall = {action: string; args: string};
 export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSpeakers> = {
   actions: ['artwork', 'play', 'pause', 'stop', 'other-input', 'silent', 'slow', 'answer', 'refuse-next', 'hang-next'],
   admits: (action, {speaker, title, ...rest}) => typeof speaker === 'string' && KINDS.includes(speaker) && Object.keys(rest).length === 0 &&
-    (title === undefined || (typeof title === 'string' && title.length <= 200)) && (action !== 'artwork' || (speaker === 'sony' && title === undefined)),
+    (title === undefined || (typeof title === 'string' && title.length <= 200)) && (action !== 'artwork' || title === undefined),
   memory: {
     // A slow speaker waits on the harness's virtual time.
     create: ({scheduler}) => new SimulatedSpeakers({}, {scheduler}),
@@ -73,7 +73,7 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
     act: (speakers, simulation) => { act(speakers, simulation); },
     serve: (speakers, {method, args, signal}) => {
       if (method === 'artwork-fixture') {
-        if (signal.aborted || args !== SIMULATED_ARTWORK_MARKER || !speakers.state().sony.syntheticArtwork) return null;
+        if (signal.aborted || args !== SIMULATED_ARTWORK_MARKER || !(speakers.state().sony.syntheticArtwork || speakers.state().sonos.syntheticArtwork)) return null;
         speakers.artworkAcquired();
         return SIMULATED_ARTWORK_BASE64;
       }
@@ -94,9 +94,9 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
       return createPlaybackModule({transport: {
         sony: async (endpoint, method, version, signal) => simulatedArtworkReply(await call('sony', {method, version}, signal) as SonyReply, endpoint),
         sonos: async (_endpoint, action, args, signal) => await call('sonos', {action, args}, signal) as SonosReply,
-      }, artwork: {fetch: async (candidate, endpoint, signal) => {
+      }, artwork: {fetch: async (candidate, endpoint, signal, source) => {
         if (signal.aborted) return artworkFailure('unavailable');
-        if (!simulatedArtworkCandidate(candidate, endpoint)) return artworkFailure('unsupported');
+        if (!simulatedArtworkCandidate(candidate, endpoint, source)) return artworkFailure('unsupported');
         const answer = await link.call('artwork-fixture', SIMULATED_ARTWORK_MARKER, signal);
         return answer.status === 'answered' && answer.value === SIMULATED_ARTWORK_BASE64
           ? {ok: true, value: new Uint8Array(Buffer.from(answer.value, 'base64'))}

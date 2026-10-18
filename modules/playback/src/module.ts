@@ -216,7 +216,7 @@ BunnyModule<PlaybackConfig> {
         onChange: () => { evaluate(); },
         onDiagnostic: diagnostic => {
           const fields: LogFields = {'bunny.operation': 'media', 'bunny.code': diagnostic.code,
-            'bunny.attempt_count': diagnostic.attempts, ...deviceField(`${id}.sony`)};
+            'bunny.attempt_count': diagnostic.attempts, ...deviceField(`${id}.${diagnostic.source}`)};
           if (diagnostic.kind === 'recovery') {
             log.info('operation.completed', {...fields, 'bunny.outcome': 'succeeded'});
           } else if (diagnostic.kind !== 'failure') {
@@ -234,7 +234,7 @@ BunnyModule<PlaybackConfig> {
         const playback = committedRecord?.playback;
         return readArtworkContent(ref, {
           record: committedRecord, current: artwork.snapshot(), stopped: signal.aborted,
-          presentedSonyIsEligible: view.availability === 'available' && config.sources[view.index]?.kind === 'sony'
+          presentedSourceIsEligible: view.availability === 'available' && config.sources[view.index] !== undefined
             && observation !== undefined && (observation.status === 'playing' || observation.status === 'paused'),
           presentedMetadataMatchesRecord: playback?.status === 'known' && observation !== undefined
             && playback.player === observation.status && playback.title === observation.title

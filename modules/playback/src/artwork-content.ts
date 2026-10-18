@@ -9,7 +9,7 @@ export type CurrentArtworkRead = {
   record: PlaybackState | undefined;
   current: PlaybackArtwork | undefined;
   stopped: boolean;
-  presentedSonyIsEligible: boolean;
+  presentedSourceIsEligible: boolean;
   presentedMetadataMatchesRecord: boolean;
 };
 
@@ -39,7 +39,7 @@ function staticPng(bytes: Buffer, width: number, height: number): boolean {
 
 /** Safe missing content for every retired, mismatched or malformed reference. */
 export function readArtworkContent(ref: string, state: CurrentArtworkRead): ModuleContent | undefined {
-  if (typeof ref !== 'string' || ref.length > 128 || state.stopped || !state.presentedSonyIsEligible || !state.presentedMetadataMatchesRecord) return undefined;
+  if (typeof ref !== 'string' || ref.length > 128 || state.stopped || !state.presentedSourceIsEligible || !state.presentedMetadataMatchesRecord) return undefined;
   const match = REF.exec(ref), record = state.record, image = state.current;
   if (match === null || record === undefined || image?.status !== 'ready' || record.artwork?.status !== 'ready'
     || record.availability !== 'available' || record.playback.status !== 'known'

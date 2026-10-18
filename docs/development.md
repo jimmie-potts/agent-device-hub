@@ -1348,6 +1348,8 @@ last bit.
 `modules/nanoleaf/tests/fixtures/record.py` re-records them from a codex-nanoleaf
 checkout, as PORTING.md describes; CI does not run it.
 
+Sonos artwork (#1162) uses the existing playback, runtime and scenario test discovery in core CI. After the root build, run `npm run test:playback:built`, `npm run test:tidbyt-module:built`, `npm run test:pixoo:built`, `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`. The `speaker-artwork` disposable scenario covers both source acquisitions, the no-art handoff and both real display renderers. Unit tests cover Sonos XML extraction, source-specific URL admission, late results and passive content; synthetic evidence does not establish installed or physical acceptance. No workflow change is needed: all of these existing suites are already selected for playback/runtime changes.
+
 ## Playback module checks
 
 Hub #929 moves the old Hub's shared playback, with its Sony HT-A9 and Sonos Move

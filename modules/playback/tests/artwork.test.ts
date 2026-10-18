@@ -58,9 +58,9 @@ void test('late Sony completion cannot cross identical-metadata Sonos handoff', 
   const run = setup(async () => new Promise(resolve => { release = resolve; }));
   run.controller.update(run.view()); await flush(); const generation = run.controller.snapshot()?.generation;
   run.controller.update(run.view({index: 1, kind: 'sonos'}));
-  assert.equal(run.controller.snapshot()?.status, 'unsupported'); assert.notEqual(run.controller.snapshot()?.generation, generation);
+  assert.equal(run.controller.snapshot()?.status, 'missing'); assert.notEqual(run.controller.snapshot()?.generation, generation);
   assert.ok(release); release({ok: true, value: thumbnail}); await flush();
-  assert.equal(run.controller.snapshot()?.status, 'unsupported'); assert.equal(run.changes(), 0);
+  assert.equal(run.controller.snapshot()?.status, 'missing'); assert.equal(run.changes(), 0);
 });
 
 void test('candidate replacement rejects old result within same generation and admits only newest work', async () => {
@@ -106,7 +106,7 @@ for (const code of ['capacity', 'internal', 'uncertain-result'] as const) {
     run.controller.update(run.view()); await flush(); await run.advance(30_000);
     assert.equal(run.fetches(), 1);
     assert.equal(run.controller.snapshot()?.status, 'missing');
-    assert.deepEqual(run.diagnostics, [{kind: 'failure', code, attempts: 1}, {kind: 'exhausted', code, attempts: 1}]);
+    assert.deepEqual(run.diagnostics, [{kind: 'failure', code, attempts: 1, source: 'sony'}, {kind: 'exhausted', code, attempts: 1, source: 'sony'}]);
   });
 }
 
@@ -128,8 +128,38 @@ for (const operation of ['fetch', 'stream'] as const) {
     if (operation === 'stream') assert.equal(cancelled, true);
     assert.equal(run.controller.snapshot()?.status, 'missing');
     assert.equal(run.fetches(), 1, 'retry waits another 2 seconds');
-    assert.deepEqual(run.diagnostics, [{kind: 'failure', code: 'unavailable', attempts: 1}, {kind: 'retry', code: 'unavailable', attempts: 1}]);
+    assert.deepEqual(run.diagnostics, [{kind: 'failure', code: 'unavailable', attempts: 1, source: 'sony'}, {kind: 'retry', code: 'unavailable', attempts: 1, source: 'sony'}]);
     run.signal.abort(); await flush(); await run.advance(30_000);
     assert.equal(run.fetches(), 1);
   });
 }
+
+void test('Sonos uses its own same-origin artwork through the existing bounded chain', async () => {
+  const run = setup();
+  run.controller.update(run.view({kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control',
+    observation: {status: 'playing', title: 'Move', thumbnailUrl: 'http://127.0.0.1:1400/getaa?s=1&u=x'}}));
+  await flush();
+  assert.equal(run.controller.snapshot()?.status, 'ready');
+  assert.equal(run.fetches(), 1);
+  assert.equal(run.changes(), 1);
+});
+
+void test('Sonos duplicate, pause and freshness changes reuse its image and source handoff rejects late work', async () => {
+  const run = setup();
+  const sonos = {kind: 'sonos' as const, endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control',
+    observation: {status: 'playing', title: 'Same', thumbnailUrl: '/getaa'}};
+  run.controller.update(run.view(sonos)); await flush();
+  const ready = run.controller.snapshot();
+  assert.equal(ready?.status, 'ready');
+  run.controller.update(run.view({...sonos, availability: 'stale', observation: {...sonos.observation, status: 'paused'}}));
+  await flush(); assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.fetches(), 1);
+  const held: ((value: ArtworkResult<ArtworkThumbnail>) => void)[] = [];
+  const delayed = setup(async () => new Promise(resolve => { held.push(resolve); }));
+  delayed.controller.update(delayed.view(sonos)); await flush();
+  const generation = delayed.controller.snapshot()?.generation;
+  delayed.controller.update(delayed.view({index: 1, observation: {status: 'playing', title: 'Same'}}));
+  assert.notEqual(delayed.controller.snapshot()?.generation, generation);
+  assert.equal(delayed.controller.snapshot()?.status, 'missing');
+  held[0]?.({ok: true, value: thumbnail}); await flush();
+  assert.equal(delayed.controller.snapshot()?.status, 'missing'); assert.equal(delayed.changes(), 0);
+});

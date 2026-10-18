@@ -1,4 +1,4 @@
-/** Sony artwork IO: private URLs enter here and only bounded bytes or fixed failures leave. */
+/** Speaker artwork IO: private URLs enter here and only bounded bytes or fixed failures leave. */
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 export const ARTWORK_INPUT_BYTES = 1_048_576;
 export const ARTWORK_FETCH_MS = 2000;
@@ -6,22 +6,26 @@ export const ARTWORK_DECODE_MS = 2000;
 export type ArtworkFailure = {ok: false; code: ErrorCode | 'unsupported' | 'invalid-response'; transient: boolean};
 export type ArtworkResult<T> = {ok: true; value: T} | ArtworkFailure;
 export const artworkFailure = (code: ArtworkFailure['code'], transient = false): ArtworkFailure => ({ok: false, code, transient});
-export type ArtworkFetch = (candidate: string, endpoint: string, signal: AbortSignal) => Promise<ArtworkResult<Uint8Array>>;
+export type ArtworkSource = 'sony' | 'sonos';
+export type ArtworkFetch = (candidate: string, endpoint: string, signal: AbortSignal, source?: ArtworkSource) => Promise<ArtworkResult<Uint8Array>>;
 
-/** Absolute HTTP only, on the configured receiver origin or its qualified port 58080 thumbnail service. */
-export function artworkUrl(candidate: unknown, endpoint: string): string | undefined {
-  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.length > 2048 || !URL.canParse(candidate) || !URL.canParse(endpoint)) return undefined;
-  const url = new URL(candidate), configured = new URL(endpoint);
-  const receiverOrigin = url.origin === configured.origin || (url.hostname === configured.hostname && url.port === '58080');
+/** Sonos stays on its configured origin; only Sony has the qualified port 58080 exception. */
+export function artworkUrl(candidate: unknown, endpoint: string, source: ArtworkSource = 'sony'): string | undefined {
+  if (typeof candidate !== 'string' || candidate.length === 0 || candidate.length > 2048 || !URL.canParse(endpoint)
+    || candidate.trim() !== candidate || [...candidate].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) return undefined;
+  const configured = new URL(endpoint);
+  if (!URL.canParse(candidate, source === 'sonos' ? configured.origin : undefined)) return undefined;
+  const url = new URL(candidate, source === 'sonos' ? configured.origin : undefined);
+  const receiverOrigin = url.origin === configured.origin || (source === 'sony' && url.hostname === configured.hostname && url.port === '58080');
   if (url.protocol !== 'http:' || configured.protocol !== 'http:' || !receiverOrigin ||
-    url.username !== '' || url.password !== '' || url.hash !== '' || candidate.trim() !== candidate || [...candidate].some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) return undefined;
+    url.username !== '' || url.password !== '' || url.hash !== '') return undefined;
   return url.href;
 }
 
 /** The caller bounds the whole operation with its scheduler and supplies the deadline's signal. */
 export function createArtworkFetch(fetcher: typeof fetch = fetch): ArtworkFetch {
-  return async (candidate, endpoint, signal) => {
-    const url = artworkUrl(candidate, endpoint);
+  return async (candidate, endpoint, signal, source = 'sony') => {
+    const url = artworkUrl(candidate, endpoint, source);
     if (url === undefined) return artworkFailure('unsupported');
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const cancelRead = (): void => { void reader?.cancel().catch(() => {}); };

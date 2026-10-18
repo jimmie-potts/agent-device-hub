@@ -149,13 +149,13 @@ last, and the record shows what the others report
 
 The owner publishes `playback/2.1` ([#229](https://github.com/jimmie-potts/agent-device-hub/issues/229)); validators retain unchanged `playback/2.0` for existing records. Eligible playing/paused records carry optional `artwork`: `missing`, `unsupported` or `ready`, with an opaque UUID `generation`. Ready state contains `mediaType: "image/png"`, dimensions and canonical `base64`, at most 128×128 and 65,536 decoded bytes. Text-only consumers continue to work. Display and browser rendering have separate acceptance.
 
-Sony candidates stay private. Acquisition permits only absolute HTTP URLs on the configured receiver's origin or the same configured receiver IPv4 address at port 58080, without credentials or fragments; every other host and port and all redirects are refused. The owner's HT-A9 serves valid thumbnails on that separate port; this is a bounded receiver-service qualification, not discovery or arbitrary same-host access. A response is streamed up to 1 MiB regardless of its declared media type. An isolated worker accepts single JPEG/PNG images up to 4,000,000 decoded pixels, strips metadata and normalizes the result. Fetch and decode each have a 2 s deadline. These limits bound admitted work and pixels, not native decoder heap usage or physical thread termination overlap.
+Sony and Sonos artwork candidates stay private. Sonos reads the optional DIDL-Lite `albumArtURI`; absolute and relative HTTP references resolve only to its configured origin, without credentials, fragments or redirects. Its origin rule never admits Sony’s alternate artwork port. Sony acquisition permits only absolute HTTP URLs on the configured receiver's origin or the same configured receiver IPv4 address at port 58080, without credentials or fragments; every other host and port and all redirects are refused. The owner's HT-A9 serves valid thumbnails on that separate port; this is a bounded receiver-service qualification, not discovery or arbitrary same-host access. A response is streamed up to 1 MiB regardless of its declared media type. An isolated worker accepts single JPEG/PNG images up to 4,000,000 decoded pixels, strips metadata and normalizes the result. Fetch and decode each have a 2 s deadline. These limits bound admitted work and pixels, not native decoder heap usage or physical thread termination overlap.
 
 Only one acquisition chain runs at a time, with the newest replacement retained. Duplicate acquired candidates do not refetch. Transient `unavailable` observations retry after 2 s and 4 s, at most three attempts per candidate/generation. Fetch/decode deadline expiration is an unavailable observation; it never retries a playback command. Typed SDK worker errors keep their registered code. Origin, format, capacity, internal and uncertain-result refusals do not retry, even when a registry flag says the condition may clear. Absent content can acquire later when the receiver reports a candidate. Failure leaves metadata and controls usable.
 
-Artwork diagnostics use `bunny.operation` `media`: one failure transition per changed code, DEBUG records for the two scheduled retries and an exhausted-attempt summary, and INFO recovery when acquisition succeeds. Format/origin refusals are INFO, unavailable/capacity/uncertain-result are WARN, and internal faults are ERROR. Records contain only registered codes, actual attempt counts and the fixed Sony device ID. They exclude raw errors, URLs, image bytes and listening metadata. Duplicate polls and obsolete completions emit no artwork diagnostics.
+Artwork diagnostics use `bunny.operation` `media`: one failure transition per changed code, DEBUG records for the two scheduled retries and an exhausted-attempt summary, and INFO recovery when acquisition succeeds. Format/origin refusals are INFO, unavailable/capacity/uncertain-result are WARN, and internal faults are ERROR. Records contain only registered codes, actual attempt counts and the fixed device ID of the acquisition source. They exclude raw errors, URLs, image bytes and listening metadata. Duplicate polls and obsolete completions emit no artwork diagnostics.
 
-Generation changes follow source, reported title/artist/album, eligible session loss, unavailable playback and restart. Pause/resume, duplicate polls and stale/available transitions retain it. Candidate replacement invalidates older work within that generation. Late completions cannot restore an earlier track or cross a Sony/Sonos handoff. Sonos is `unsupported` in this release. Image completion publishes without refreshing metadata freshness; receivers' paused-next metadata lag remains an observation limitation.
+Generation changes follow source, reported title/artist/album, eligible session loss, unavailable playback and restart. Pause/resume, duplicate polls and stale/available transitions retain it. Candidate replacement invalidates older work within that generation. Late completions cannot restore an earlier track or cross a Sony/Sonos handoff. Either speaker acquires only its own artwork and reports `missing` when no usable candidate exists; neither borrows an image from the other. Image completion publishes without refreshing metadata freshness; receivers' paused-next metadata lag remains an observation limitation.
 
 The module's API 1.2 content contribution serves the already normalized current
 PNG at `/modules/playback/content/artwork.<generation>.<revision>`. The gateway
@@ -407,7 +407,7 @@ runtime has no staged host.
 
 ### Synthetic artwork scenario
 
-The `speaker-artwork` runtime scenario selects a tiny synthetic Sony PNG through
+The `speaker-artwork` runtime scenario selects a tiny synthetic PNG for either speaker through
 the explicit `artwork` simulation action. Without that selection, `play` actions
 remain text-only. All simulation factories inject a fixture-only byte fetcher;
 the production worker still decodes the bytes. The simulator counts actual byte
@@ -415,6 +415,6 @@ acquisitions only while the fixture is selected. A disposable remote run serves
 only its fixed inert fixture marker and synthetic bytes, never a candidate URL.
 The scenario follows shared SDK state from missing to ready, verifies that one
 acquisition feeds both real display workers and fake queues, preserves pause and
-freshness behavior, and clears Sony artwork on an identical-title Sonos handoff.
+freshness behavior, clears Sony artwork on an identical-title Sonos handoff, then acquires Sonos artwork for both displays.
 It provides synthetic runtime evidence, independently of installed or
 physical-device acceptance.

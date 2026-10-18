@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {PlaybackArtwork} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type Scheduler} from '@jimmie-potts/sdk';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {ARTWORK_DECODE_MS, ARTWORK_FETCH_MS, artworkFailure, artworkUrl, createArtworkFetch, type ArtworkFetch, type ArtworkResult} from './artwork-fetch.js';
+import {ARTWORK_DECODE_MS, ARTWORK_FETCH_MS, artworkFailure, artworkUrl, createArtworkFetch, type ArtworkFetch, type ArtworkResult, type ArtworkSource} from './artwork-fetch.js';
 import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
 
 export type ArtworkObservation = {status: string; title?: string; artist?: string; album?: string; thumbnailUrl?: string};
@@ -16,8 +16,8 @@ export type ArtworkControllerOptions = {
   fetch?: ArtworkFetch; generation?: () => string; onChange: () => void;
   onDiagnostic?: (record: ArtworkDiagnostic) => void;
 };
-export type ArtworkDiagnostic = {kind: 'failure' | 'retry' | 'exhausted' | 'recovery'; code: ErrorCode; attempts: number};
-type Candidate = {url: string; endpoint: string; generation: string; sequence: number; attempts: number; exhausted?: boolean};
+export type ArtworkDiagnostic = {kind: 'failure' | 'retry' | 'exhausted' | 'recovery'; code: ErrorCode; attempts: number; source: ArtworkSource};
+type Candidate = {source: ArtworkSource; url: string; endpoint: string; generation: string; sequence: number; attempts: number; exhausted?: boolean};
 
 export class ArtworkController {
   readonly #options: ArtworkControllerOptions;
@@ -61,17 +61,18 @@ export class ArtworkController {
     if (association !== this.#association) {
       this.#clear();
       this.#association = association;
-      this.#artwork = {status: view.kind === 'sony' ? 'missing' : 'unsupported', generation: (this.#options.generation ?? randomUUID)()};
+      this.#failure = undefined;
+      this.#artwork = {status: 'missing', generation: (this.#options.generation ?? randomUUID)()};
     }
-    if (view.kind !== 'sony' || this.#artwork === undefined) return;
+    if (this.#artwork === undefined) return;
     const raw = observation.thumbnailUrl;
     if (raw !== this.#rawCandidate) {
       this.#clear();
       this.#rawCandidate = raw;
       this.#artwork = {status: 'missing', generation: this.#artwork.generation};
-      const url = artworkUrl(raw, view.endpoint);
-      if (url !== undefined) this.#candidate = {url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
-      else if (raw !== undefined) this.#failed('unsupported-capability', 0);
+      const url = artworkUrl(raw, view.endpoint, view.kind);
+      if (url !== undefined) this.#candidate = {source: view.kind, url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
+      else if (raw !== undefined) this.#failed('unsupported-capability', 0, view.kind);
     }
     this.#start();
   }
@@ -88,9 +89,9 @@ export class ArtworkController {
     return !this.#options.signal.aborted && this.#candidate === candidate && candidate.sequence === this.#sequence && this.#artwork?.generation === candidate.generation;
   }
 
-  #failed(code: ErrorCode, attempts: number): void {
+  #failed(code: ErrorCode, attempts: number, source: ArtworkSource): void {
     if (this.#failure === code) return;
-    this.#options.onDiagnostic?.({kind: 'failure', code, attempts});
+    this.#options.onDiagnostic?.({kind: 'failure', code, attempts, source});
     this.#failure = code;
   }
 
@@ -129,23 +130,23 @@ export class ArtworkController {
       if (!this.#current(candidate)) return;
       if (result.ok) {
         if (this.#failure !== undefined) {
-          this.#options.onDiagnostic?.({kind: 'recovery', code: this.#failure, attempts: candidate.attempts});
+          this.#options.onDiagnostic?.({kind: 'recovery', code: this.#failure, attempts: candidate.attempts, source: candidate.source});
           this.#failure = undefined;
         }
         this.#artwork = {status: 'ready', generation: candidate.generation, ...result.value};
         this.#options.onChange();
       } else {
         const code: ErrorCode = result.code === 'unsupported' ? 'unsupported-capability' : result.code === 'invalid-response' ? 'invalid-state' : result.code;
-        this.#failed(code, candidate.attempts);
+        this.#failed(code, candidate.attempts, candidate.source);
         if (code === 'unavailable' && result.transient && candidate.attempts < 3) {
-          this.#options.onDiagnostic?.({kind: 'retry', code, attempts: candidate.attempts});
+          this.#options.onDiagnostic?.({kind: 'retry', code, attempts: candidate.attempts, source: candidate.source});
           this.#retry = this.#options.scheduler.after(candidate.attempts === 1 ? 2000 : 4000, () => {
             this.#retry = undefined;
             this.#start();
           });
         } else {
           candidate.exhausted = true;
-          this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts});
+          this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts, source: candidate.source});
         }
       }
     }).finally(() => {
@@ -155,7 +156,7 @@ export class ArtworkController {
   }
 
   async #acquire(candidate: Candidate): Promise<ArtworkResult<ArtworkThumbnail>> {
-    const fetched = await this.#bounded(ARTWORK_FETCH_MS, signal => this.#fetch(candidate.url, candidate.endpoint, signal));
+    const fetched = await this.#bounded(ARTWORK_FETCH_MS, signal => this.#fetch(candidate.url, candidate.endpoint, signal, candidate.source));
     if (!fetched.ok) return fetched;
     if (!this.#current(candidate)) return artworkFailure('unavailable');
     return this.#bounded(ARTWORK_DECODE_MS, signal => this.#options.decode(fetched.value, signal));

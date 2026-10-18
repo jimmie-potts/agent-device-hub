@@ -117,12 +117,33 @@ test('Sony commands call the qualified method once and report sent, refused, uns
 
 const sonosCommands = (calls: readonly SonosCall[]): SonosCall[] => calls.filter(call => call.action?.startsWith('Get') !== true);
 
+test('Sonos retains bounded artwork references decoded once per XML layer without losing metadata', async () => {
+  const sonos = await fakeSonos();
+  const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
+  try {
+    for (const candidate of ['http://127.0.0.1:1400/getaa?s=1&amp;u=x', '/getaa?s=1&amp;u=x']) {
+      sonos.state.metadata = DIDL().replace(/<upnp:albumArtURI>.*?<\/upnp:albumArtURI>/, `<upnp:albumArtURI>${candidate}</upnp:albumArtURI>`);
+      const observation = await source.read();
+      assert.equal(observation.thumbnailUrl, candidate.replace('&amp;', '&'));
+      assert.equal(observation.title, 'Move Song');
+      assert.deepEqual(observation.controls, ['pause', 'next', 'previous']);
+    }
+    for (const field of ['', '<upnp:albumArtURI></upnp:albumArtURI>', '<upnp:albumArtURI><bad/></upnp:albumArtURI>', `<upnp:albumArtURI>${'x'.repeat(2049)}</upnp:albumArtURI>`]) {
+      sonos.state.metadata = DIDL().replace(/<upnp:albumArtURI>.*?<\/upnp:albumArtURI>/, field);
+      const observation = await source.read();
+      assert.equal(observation.thumbnailUrl, undefined);
+      assert.equal(observation.title, 'Move Song');
+      assert.deepEqual(observation.controls, ['pause', 'next', 'previous']);
+    }
+  } finally { await sonos.close(); }
+});
+
 test('Sonos AirPlay observations normalize metadata, status, session and controls', async () => {
   const sonos = await fakeSonos();
   const source = sonosSource({kind: 'sonos', endpoint: sonos.endpoint}, http, deadlineOf(CALL_TIMEOUT_MS));
   const view = () => source.read();
   try {
-    assert.deepEqual(await view(), {status: 'playing', title: 'Move Song', artist: 'Move Artist', album: 'Move Album', controls: ['pause', 'next', 'previous']});
+    assert.deepEqual(await view(), {status: 'playing', title: 'Move Song', artist: 'Move Artist', album: 'Move Album', controls: ['pause', 'next', 'previous'], thumbnailUrl: 'http://127.0.0.1:1400/getaa?s=1&u=x'});
     assert.deepEqual(sonos.calls.map(call => call.action), ['GetTransportInfo', 'GetPositionInfo', 'GetCurrentTransportActions'], 'one read is three sequential calls');
     for (const call of sonos.calls) {
       assert.equal(call.path, '/MediaRenderer/AVTransport/Control');
@@ -133,7 +154,7 @@ test('Sonos AirPlay observations normalize metadata, status, session and control
     }
     sonos.state.transport = 'PAUSED_PLAYBACK';
     sonos.state.metadata = DIDL({title: '  Song &amp; Co  ', album: null});
-    assert.deepEqual(await view(), {status: 'paused', title: 'Song & Co', artist: 'Move Artist', controls: ['play', 'next', 'previous']},
+    assert.deepEqual(await view(), {status: 'paused', title: 'Song & Co', artist: 'Move Artist', controls: ['play', 'next', 'previous'], thumbnailUrl: 'http://127.0.0.1:1400/getaa?s=1&u=x'},
       'entities are decoded once per layer and a missing album stays absent');
     sonos.state.actions = 'Set, Stop, Pause, Next, Previous';
     assert.deepEqual((await view()).controls, ['next', 'previous'], 'a control is declared only while the Move advertises its action');
@@ -143,13 +164,13 @@ test('Sonos AirPlay observations normalize metadata, status, session and control
     assert.deepEqual((await view()).controls, ['pause'], 'next and previous follow the advertised actions while playing too');
     sonos.state.actions = 'Set, Stop, Pause, Play, Next, Previous';
     sonos.state.transport = 'STOPPED';
-    assert.deepEqual(await view(), {status: 'stopped', title: 'Song & Co', artist: 'Move Artist', controls: []});
+    assert.deepEqual(await view(), {status: 'stopped', title: 'Song & Co', artist: 'Move Artist', controls: [], thumbnailUrl: 'http://127.0.0.1:1400/getaa?s=1&u=x'});
     sonos.state.transport = 'TRANSITIONING';
     const transitioning = await view();
     assert.deepEqual([transitioning.status, transitioning.controls], ['unknown', []]);
     sonos.state.transport = 'PLAYING';
     sonos.state.metadata = DIDL({title: 'x'.repeat(300), artist: '', album: 'Album'});
-    assert.deepEqual(await view(), {status: 'playing', title: 'x'.repeat(256), album: 'Album', controls: ['pause', 'next', 'previous']},
+    assert.deepEqual(await view(), {status: 'playing', title: 'x'.repeat(256), album: 'Album', controls: ['pause', 'next', 'previous'], thumbnailUrl: 'http://127.0.0.1:1400/getaa?s=1&u=x'},
       'text is limited to 256 characters and empty text is absent');
     sonos.state.metadata = 'NOT_IMPLEMENTED';
     assert.deepEqual(await view(), {status: 'playing', controls: ['pause', 'next', 'previous']});
