@@ -114,21 +114,22 @@ try {
       assert.equal(await image.getAttribute('alt'), '');
       assert.equal(await card.getByRole('img').count(), 0, 'decorative artwork adds no redundant accessible image');
       assert.equal(await image.evaluate(element => element instanceof HTMLElement && element.tabIndex < 0), true);
-      assert.deepEqual(await card.locator('fieldset button').allTextContents(), ['Pause', 'Next', 'Previous']);
-      for (const name of ['Pause', 'Next', 'Previous']) assert.equal(await card.getByRole('button', {name, exact: true}).isEnabled(), true);
+      assert.deepEqual(await card.locator('fieldset button').allTextContents(), ['Previous', 'Pause', 'Next']);
+      for (const name of ['Previous', 'Pause', 'Next']) assert.equal(await card.getByRole('button', {name, exact: true}).isEnabled(), true);
       await card.getByText(TITLE, {exact: true}).waitFor(); await card.getByText(ARTIST, {exact: true}).waitFor();
       assert.ok(await controlReach(page) <= 1); assert.deepEqual(await textOverlaps(page), []);
     };
     await checkImage();
     await card.getByRole('button', {name: 'Pause', exact: true}).focus();
     assert.equal(await image.evaluate(element => document.activeElement === element), false, 'artwork adds no keyboard stop');
-    await page.getByRole('link', {name: 'Music', exact: true}).click();
-    assert.equal(new URL(page.url()).hash, '#/music/living-room');
+    await page.getByRole('link', {name: 'Audio', exact: true}).click();
+    assert.equal(new URL(page.url()).hash, '#/audio');
     await image.waitFor({state: 'attached'}); await checkImage();
-    assert.equal(acquisitions, 1, 'Home and Music reuse one receiver acquisition');
+    assert.equal(acquisitions, 1, 'Home and Audio reuse one receiver acquisition');
+    await page.goto(world.url + '/#/music/living-room'); await feed(page, 'connected'); await checkImage();
     assert.deepEqual(speakers.state().sony.commands, []); assert.deepEqual(speakers.state().sonos.commands, []);
     assert.deepEqual(sent, []); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'playback-artwork', routes: ['home', 'music'], acquisitions,
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'playback-artwork', routes: ['home', 'audio', 'music-deep-link'], acquisitions,
       pixel: [20, 60, 100, 255], realProducerWorker: true, commands: 0})}\n`);
 
     const output = process.env.DASHBOARD_RECEIPTS;
@@ -176,7 +177,7 @@ try {
     const pathOf = (record: PlaybackState): string => {assert.ok(record.artwork?.status === 'ready', `ready fixture required: ${JSON.stringify(record)}`); return `/modules/playback/content/artwork.${record.artwork.generation}.${record.revision}`;};
     const square = async (): Promise<void> => {
       assert.equal(await card.locator('.playback-artwork').count(), 1, 'missing/unsupported/error artwork keeps its reserved square');
-      const box = await card.locator('.playback-artwork').boundingBox(); assert.ok(box); assert.equal(box.width, 80); assert.equal(box.height, 80);
+      const box = await card.locator('.playback-artwork').boundingBox(); assert.ok(box); assert.ok(box.width > 0 && box.width <= 230); assert.equal(box.height, box.width);
     };
     const noImage = async (): Promise<void> => {
       await page.waitForFunction(() => document.querySelector('article[aria-label="Music living-room"] .playback-artwork img') === null);
@@ -199,9 +200,10 @@ try {
     const textAndControls = async (title: string, status?: string): Promise<void> => {
       await card.getByText(title, {exact: true}).waitFor();
       const state = await current({title, availability: 'available'}); assert.ok(state.playback.status === 'known');
-      await page.waitForFunction(() => {const buttons = [...document.querySelectorAll<HTMLButtonElement>('article[aria-label="Music living-room"] fieldset button')]; return buttons.length > 0 && buttons.every(button => !button.disabled);});
-      assert.deepEqual(await card.locator('fieldset button').allTextContents(), state.playback.controls.map(value => value.charAt(0).toUpperCase() + value.slice(1)));
-      for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isEnabled(), true);
+      await page.waitForFunction(() => {const buttons = [...document.querySelectorAll<HTMLButtonElement>('article[aria-label="Music living-room"] fieldset button')]; return buttons.length === 3 && buttons.some(button => !button.disabled);});
+      const primary = state.playback.player === 'playing' ? 'pause' : 'play';
+      assert.deepEqual(await card.locator('fieldset button').allTextContents(), ['previous', primary, 'next'].map(value => value.charAt(0).toUpperCase() + value.slice(1)));
+      for (const value of ['previous', primary, 'next']) assert.equal(await card.getByRole('button', {name: value.charAt(0).toUpperCase() + value.slice(1), exact: true}).isEnabled(), state.playback.controls.includes(value as 'previous' | 'play' | 'pause' | 'next'));
       assert.equal(await card.getByRole('img').count(), 0);
       if (status !== undefined) {
         await page.waitForFunction(status => document.querySelector('article[aria-label="Music living-room"] p[role="status"]')?.textContent === status, status);
@@ -291,7 +293,7 @@ try {
       void endedSync.wait.catch(() => {}); await page.route('**/api/sdk/v1/sync', syncHandler);
       try {
         world.dropDashboardStreams(); await bounded(enteredSync.wait, 'replacement playback sync'); await feed(page, 'connected');
-        await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor(); await square();
+        await noImage(); await card.getByText('Stale', {exact: true}).waitFor(); await square();
         assert.equal(await old.evaluate(node => node.isConnected), false);
         assert.equal(await card.locator('fieldset button').count(), 3);
         for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isDisabled(), true);
@@ -338,7 +340,7 @@ try {
       } finally {await page.unroute(imagePattern, handler);}
     };
     await fault('404', true); await fault('invalid');
-    await page.getByRole('link', {name: 'Music', exact: true}).click();
+    await page.getByRole('link', {name: 'Audio', exact: true}).click();
     await fault('404'); await fault('invalid');
     assert.equal(sent.length, 1); assert.deepEqual(speakers.state().sony.commands, ['pause']);
     checks.push('Home/Music 404/invalid PNG and keyboard pause outcome');
@@ -353,7 +355,7 @@ try {
     const completed = await card.getByRole('status').innerText(); assert.ok(completed.includes('Completed: succeeded.'));
     for (const destination of ['Music', 'Home']) {
       const beforeNavigation: number = acquisitions;
-      await page.getByRole('link', {name: destination === 'Home' ? /^Home/ : 'Music', exact: destination !== 'Home'}).click();
+      await page.getByRole('link', {name: destination === 'Home' ? /^Home/ : 'Audio', exact: destination !== 'Home'}).click();
       await frame(await current({title: longTitle, artwork: 'ready'}), [20, 60, 100, 255]);
       assert.equal(acquisitions, beforeNavigation);
       for (const width of [1440, 390]) {
@@ -398,14 +400,14 @@ try {
         const response = await refusal; const answer = await response.json() as {answer: {status: string; error: {error: {code: string}}}};
         assert.equal(response.status(), 200); assert.equal(answer.answer.status, 'rejected'); assert.equal(answer.answer.error.error.code, 'unavailable');
         await bounded(rejectedSync.wait, 'real playback sync rejection'); await bounded(enteredRetry.wait, 'scheduled playback retry after rejection');
-        await feed(page, 'connected'); await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor(); await square();
+        await feed(page, 'connected'); await noImage(); await card.getByText('Stale', {exact: true}).waitFor(); await square();
         assert.equal(await old.evaluate(node => node.isConnected), false);
         for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isDisabled(), true);
         assert.equal(await card.locator('fieldset button').count(), 3);
         assert.equal(await card.getByRole('status').innerText(), completed);
       });
       // The truthful delayed A response has completed while the failed copy still cannot claim current membership.
-      await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor();
+      await noImage(); await card.getByText('Stale', {exact: true}).waitFor();
       assert.equal(await card.getByRole('status').innerText(), completed);
       assert.equal(acquisitions, beforeRefusalAcquisitions, 'sync refusal and late image completion never reacquire artwork');
       const expectedBAcquisitions = acquisitions + 1;
@@ -419,7 +421,7 @@ try {
     } finally {releaseRetry.resolve(); await page.unroute('**/api/sdk/v1/sync', failedSyncHandler);}
     // Production freshness cadence remains unchanged; await evidence boundaries, never arbitrary sleeps.
     speakers.silent('sony'); speakers.silent('sonos');
-    await current({availability: 'stale'}); await noImage(); await card.getByText('Playback unavailable', {exact: true}).waitFor(); await square();
+    await current({availability: 'stale'}); await noImage(); await card.getByText('Stale', {exact: true}).waitFor(); await square();
     for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isDisabled(), true);
     await current({availability: 'unavailable'}, 40_000); await noImage(); await square();
     assert.equal(await card.getByRole('status').innerText(), completed); checks.push('stale/unavailable');

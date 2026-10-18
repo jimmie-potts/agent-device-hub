@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback-layout/2.0",
+  "description": "Private placement of shared playback cards in existing rooms; no audio routing (Hub #1164).",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "revision", "assignments"],
+  "properties": {
+    "id": {"const": "playback"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "assignments": {"$ref": "#/$defs/assignments"}
+  },
+  "$defs": {
+    "assignment": {"type": "object", "additionalProperties": false, "required": ["playback", "rooms"], "properties": {
+      "playback": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+      "rooms": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"}}
+    }},
+    "assignments": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/assignment"}}
+  }
+}

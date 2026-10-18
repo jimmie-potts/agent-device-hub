@@ -297,6 +297,18 @@ a consumer with exactly the owner's entities. `tests/families.test.mjs` runs the
 `tests/mapping.test.mjs` converts the 1.x corpora and a real agent-state owner's
 expiry and retirement through MAPPING.md's rules.
 
+### Playback card placement (`playback-layout/2.0`)
+
+Core owns one private presentation record with `id: playback`, a revision and at
+most 64 `{playback, rooms}` assignments. Each logical playback ID is unique;
+its at most 32 room IDs are unique routing IDs. Closed schemas exclude names,
+media and addresses. `playback-layout-set/2.0` replaces assignments with a request
+identity and expected revision through dedicated operator admission. State is
+accepted only from `bunny/core` with subject `playback`. The save and observed
+metadata outcome commit atomically; this evidence establishes no audible effect.
+Existing lighting-layout definitions own room identity. Consumers omit removed
+rooms; a retained dangling ID never creates a room or chooses an audio output.
+
 ### Playback artwork (`playback/2.1`)
 
 `registerCoreFamilies` registers both unchanged `playback/2.0` and `playback/2.1`. The new version adds optional top-level `artwork` for available/stale, known playing/paused records. Its closed branches are `{status: "missing" | "unsupported", generation}` and ready state with `generation`, `mediaType: "image/png"`, `width`, `height` and canonical padded `base64`. The opaque generation is a UUID v4; image dimensions are 1–128 and decoded bytes at most 65,536. The validator checks encoding, PNG signature and IHDR dimensions without decoding image contents on the bus thread. The producer performs full decoding and normalization. These checks do not prove arbitrary compressed contents are decodable.

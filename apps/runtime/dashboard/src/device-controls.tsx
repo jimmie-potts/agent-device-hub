@@ -1,3 +1,4 @@
+import {MusicCard} from './music-card.tsx';
 // The existing dashboard's general cards on runtime records and tracked one-shot actions (Hub #922).
 import React, {useRef, useState} from 'react';
 import type {DeviceRecord, MediaAction, Tagged} from '@jimmie-potts/event-contracts/v2/devices';
@@ -106,30 +107,18 @@ export function DeviceCard({record, owner, live, control, operations, operations
   </article>;
 }
 
-/** A keyed subtree keeps late load/error callbacks attached to their original observation. */
-function PlaybackArtwork({src}: {src: string}): React.JSX.Element {
-  const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
-  return <div className="playback-artwork" aria-hidden="true" data-loaded={state === 'loaded'}>
-    <img src={src} alt="" onLoad={() => { setState(current => current === 'failed' ? current : 'loaded'); }}
-      onError={() => { setState('failed'); }}/>
-  </div>;
-}
-
-export function PlaybackCard({record, live, control, operations, operationsLive, artworkUrl}: {
-  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artworkUrl?: string | undefined;
+/** The common adapter retains command identity and operation recovery across every placement. */
+export function PlaybackCard({record, live, control, operations, operationsLive, artworkUrl, refresh}: {
+  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artworkUrl?: string | undefined; refresh?: (() => void) | undefined;
 }): React.JSX.Element {
-  const action = useAttempt(record.id, operations, operationsLive);
-  const playback = record.playback;
-  return <article className="widget" aria-label={`Music ${record.id}`}><header className="widget-head"><h2>Music</h2></header>
-    <div className="playback-track">
-      {artworkUrl !== undefined ? <PlaybackArtwork key={`${record.id}:${artworkUrl}`} src={artworkUrl}/> : <div className="playback-artwork" aria-hidden="true"/>}
-      <div><p>{!live || record.availability !== 'available' ? 'Playback unavailable' : playback.status === 'known' ? playback.title ?? 'No track title' : 'Playback unknown'}</p>
-        {playback.status === 'known' && <p className="hint">{[playback.artist, playback.album].filter(Boolean).join(' · ')}</p>}
-      </div>
-    </div>
-    <Facts items={[['Observed status', !live || record.availability !== 'available' ? 'Unavailable' : playback.status === 'known' ? title(playback.player) : 'Unknown']]}/>
-    {control && playback.status === 'known' && <fieldset disabled={!live || record.availability !== 'available' || action.locked || !operationsLive}>
-      {playback.controls.map(value => <button type="button" key={value} onClick={() => { void action.run({family: 'playback-control', target: record.id, requestId: crypto.randomUUID(), data: {action: value, expectedRevision: record.revision}}); }}>{title(value)}</button>)}
-    </fieldset>}<p role="status">{action.text}</p>
-  </article>;
+  const action = useAttempt(record.id, operations.filter(operation => operation.family === 'playback-control'), operationsLive);
+  const availability = record.availability === 'unavailable' ? 'unavailable' : !live ? 'stale' : record.availability;
+  const playback = availability !== 'unavailable' && record.playback.status === 'known' ? record.playback : undefined;
+  return <MusicCard id={record.id} availability={availability} title={playback?.title ?? (availability === 'unavailable' ? 'Playback unavailable' : record.playback.status === 'unknown' ? 'Playback unknown' : 'No track title')}
+    artist={playback?.artist} album={playback?.album} player={playback?.player ?? 'unknown'}
+    artworkUrl={live && availability === 'available' ? artworkUrl : undefined} controls={playback?.controls ?? []}
+    disabled={!control || !live || availability !== 'available' || action.locked || !operationsLive}
+    onAction={value => {if (!control || !live || availability !== 'available' || action.locked || !operationsLive || playback?.controls.includes(value) !== true) return;
+      void action.run({family: 'playback-control', target: record.id, requestId: crypto.randomUUID(), data: {action: value, expectedRevision: record.revision}});
+    }} status={action.text} locked={action.locked} refresh={refresh}/>;
 }

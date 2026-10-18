@@ -48,8 +48,9 @@ function attemptStore(target: string) {
   if (store === undefined) { store = createAttemptStore(target); attempts.set(target, store); }
   return store;
 }
-export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary): FrontendCommand {
-  const store = useMemo(() => attemptStore(target), [target]);
+/** Core metadata may use a distinct attempt key so a configured device ID cannot alias its save lock. */
+export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary, attemptKey: string = target): FrontendCommand {
+  const store = useMemo(() => attemptStore(attemptKey), [attemptKey]);
   const {attempt, sending} = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const latest = operations.filter(operation => operation.target === target).sort((a, b) => (b.sentAtMs - a.sentAtMs) === 0 ? b.revision - a.revision : b.sentAtMs - a.sentAtMs)[0];
   const operation = attempt === undefined ? latest : operations.find(item => item.requestId === attempt.requestId);
@@ -66,19 +67,19 @@ export function useAttempt(target: string, operations: readonly OperationRecord[
     try {
       const value: unknown = JSON.parse(sessionStorage.getItem(ATTEMPTS_KEY) ?? '[]');
       if (Array.isArray(value)) sessionStorage.setItem(ATTEMPTS_KEY, JSON.stringify(value.filter((item: unknown) =>
-        typeof item !== 'object' || item === null || !('target' in item) || item.target !== target || !('requestId' in item) || item.requestId !== settledRequest)));
+        typeof item !== 'object' || item === null || !('target' in item) || item.target !== attemptKey || !('requestId' in item) || item.requestId !== settledRequest)));
     } catch { /* No draft or credential is stored. */ }
-  }, [target, settled, settledRequest]);
+  }, [attemptKey, settled, settledRequest]);
   return {
     text: view?.text ?? 'No command sent from this page.', locked: sending || (view?.locked ?? false), requestId: operation?.requestId ?? attempt?.requestId,
     run: async action => {
       if (store.getSnapshot().sending) return;
       if (typeof action === 'string' || !operationsLive) {
-        store.update(previous => previous.attempt?.locked === true ? previous : {...previous, attempt: {requestId: '', target, family: '',
+        store.update(previous => previous.attempt?.locked === true ? previous : {...previous, attempt: {requestId: '', target: attemptKey, family: '',
           text: `Not sent: ${typeof action === 'string' ? action : 'operation records are stale'}. Nothing was sent.`, locked: false}});
         return;
       }
-      const next = {requestId: action.requestId, target, family: action.family, text: 'Requested. Waiting for acceptance.', locked: true};
+      const next = {requestId: action.requestId, target: attemptKey, family: action.family, text: 'Requested. Waiting for acceptance.', locked: true};
       if (!remember(next)) {
         store.update(previous => previous.attempt?.locked === true ? previous : {...previous, attempt: {...next,
           text: 'Not sent: this browser could not retain the request identity for reload recovery. Nothing was sent.', locked: false}});

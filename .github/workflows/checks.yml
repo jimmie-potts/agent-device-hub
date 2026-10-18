@@ -232,6 +232,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/room-models.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/music-card.browser.ts
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:onn:browser

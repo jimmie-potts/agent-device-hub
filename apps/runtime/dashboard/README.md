@@ -44,7 +44,7 @@ Actual phone/certificate verification is separate from desktop browser tests.
 ## Pages, routes and widgets
 
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
-home, `#/lights/<brand>` and `#/rooms` for lighting, `#/connections`, `#/component/<device>`, `#/music/<source>` and
+home, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
 `#/module/<module>/<page>`. `src/routes.ts` parses a hash into a discriminated
 route, so built-in pages and component aliases are distinct kinds and an alias
 of `activity` or `connections` opens only that component
@@ -68,6 +68,27 @@ saved choice separately from each device's result for the most recent completed
 selection request. Current mode evidence and control authority enable the
 buttons, including explicit same-mode reapplication. A lost reply stays
 uncertain; reload, reconnect and restart never resend a selection.
+
+## Reusable Music card
+
+`MusicCard` supplies the glass presentation. `PlaybackCard` adapts the existing
+playback observation, capabilities, authenticated artwork and retained command
+attempt. `PlaybackWorkspace` composes it on Home, Audio and selected Rooms;
+`#/music/<source>` deep links remain valid. Album stays below artist, with audio
+output below transport. Output is **Not reported** because the playback contract
+does not identify the presented speaker. Stale observations retain last-known
+text with an exclamation header; unavailable observations clear metadata.
+Unsupported controls stay disabled, including Sony resume from pause.
+
+On Audio, **Show in rooms** saves explicit card placement in existing rooms.
+It can place the same shared playback card in several rooms; this does not select
+a speaker, change AirPlay output or create independent room playback. The core's
+private `playback-layout` metadata survives browser and runtime restart. Current
+lighting-layout room IDs remain authoritative, so deleted rooms render no card.
+Read-only or stale copies and unresolved saves disable editing. After a failed
+or uncertain save, refresh before editing again. Refresh reads
+current records without replaying any save or playback command. General Home
+layout editing and audio routing remain separate work.
 
 ## Reusable Pixoo controls
 
@@ -356,7 +377,7 @@ The focused artwork journey runs with
 `node apps/runtime/dashboard/tests/playback-artwork.browser.ts` after a build.
 It uses the real playback owner and decoder with synthetic speakers and PNG
 bytes. Its pixel oracle and acquisition/command counters check the shared Home
-and Music card; synthetic browser evidence is separate from the installed
+and Audio card; synthetic browser evidence is separate from the installed
 runtime identity and served browser build.
 
 ## Devices, music and operations
@@ -367,7 +388,8 @@ existing participant. Desired state, device observation, queued kinds, last
 transmission and held state stay separate. A failed owner remains visible as
 unavailable; a lost stream keeps records stale until their own snapshot returns.
 
-Home and Music show optional playback artwork beside the title and artist.
+Home, Audio and assigned Rooms share optional playback artwork above the track,
+artist and album. Music deep links use the same card.
 The current synced SDK owner must map to one running catalog module that serves
 playback. A native same-origin image uses the existing browser session and an
 opaque generation/revision reference; it reads no receiver URL or inline image
