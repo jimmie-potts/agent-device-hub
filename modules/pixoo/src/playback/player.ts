@@ -1,4 +1,4 @@
-import {serializedAdmission} from '@jimmie-potts/sdk';
+import {serializedAdmission, Outcome} from '@jimmie-potts/sdk';
 import {systemClock,type Animation,type Clock,type DeviceAdapter,type OperationResult,type UploadResult} from '../device/index.js';
 import {checkpointSchema,type PlaybackCheckpoint,type CaptureHooks,type PlaybackPolicy} from '../library/index.js';
 import {PlaybackError,type PlaybackStore,type PlayerState} from './contracts.js';
@@ -47,7 +47,7 @@ export class Player {
   getDisplayEvidence(){return structuredClone({requestedBrightness:this.requestedBrightness,requestedScreenOn:this.requestedScreenOn,...this.evidence});}
   private observeResult<T>(result:OperationResult<T>,generation:number,source:DisplayEvidenceSource):void {
     if(generation!==this.adapterGeneration||this.closing)return;
-    this.evidence.transport={source,atMs:result.timing.completedAtMs,ok:result.ok,priorEffects:result.ok?'none':result.priorEffects};
+    this.evidence.transport={source,atMs:result.timing.completedAtMs,ok:result.ok,priorEffects:result.ok?Outcome.none:result.priorEffects};
   }
   private observeProbe(result:Awaited<ReturnType<DeviceAdapter['probe']>>,generation:number):void{
     this.observeResult(result,generation,'probe');
@@ -160,7 +160,7 @@ export class Player {
     // eligibility (#1074 285-F1). A card no longer admitted ends as a cancellation with no effect, as the adapter reports it.
     const generation=this.adapterGeneration,submittedAtMs=this.clock.now();
     const notAdmitted=():OperationResult<UploadResult>=>{const completedAtMs=this.clock.now();
-      return {ok:false,code:'cancelled',priorEffects:'none',generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}};};
+      return {ok:false,code:'cancelled',priorEffects:Outcome.none,generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}};};
     let waiting=true;
     const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
       {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});});
@@ -171,7 +171,7 @@ export class Player {
       end=()=>{if(waiting)resolve(notAdmitted());};if(signal.aborted)end();else signal.addEventListener('abort',end,{once:true});})])
       .finally(()=>{if(end!==undefined)signal.removeEventListener('abort',end);});
     // Superseded private card work with no effects is no evidence about the device or user intent.
-    if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')return result;
+    if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects===Outcome.none)return result;
     // Evidence from a retired write cannot alter the current player or revive it.
     if(expectedGeneration===this.epoch&&!this.closing){
       this.observeResult(result,generation,'dashboard');await this.observedControl(result,generation);
@@ -285,7 +285,7 @@ export class Player {
     const operationId=++this.mediaSequence,submittedAtMs=this.clock.now();
     let completed=false,dispatched=false;
     const finish=(result:OperationResult<UploadResult>)=>{if(completed)return;completed=true;this.notifyMedia({operationId,generation:token,phase:'complete',result});};
-    const beforeSendFailure=(code:'cancelled'|'upload-failed')=>{const completedAtMs=this.clock.now();finish({ok:false,code,priorEffects:dispatched?'possible':'none',generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}});};
+    const beforeSendFailure=(code:'cancelled'|'upload-failed')=>{const completedAtMs=this.clock.now();finish({ok:false,code,priorEffects:dispatched?'possible':Outcome.none,generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}});};
     this.notifyMedia({operationId,generation:token,phase:'pending'});
     if(!item)throw new PlaybackError('no-context');
     void this.prepare(item.renditionId,token).then(async animation=>{

@@ -238,6 +238,16 @@ export default defineConfig(
     rules: {'bunny/no-raw-error-text': 'off'},
   },
   {
+    // Outcome and evidence words come from sdk/evidence (Hub #1141). Existing hits are held in eslint-suppressions.json
+    // as a ratchet: a file may lose hits, never gain them. Tests spell out the outcomes they expect, and page code's
+    // 'none' is a CSS value, so neither is checked.
+    name: 'bunny/outcome-vocabulary',
+    files: ['**/*.{js,mjs,cjs,ts,tsx}'],
+    ignores: [...tests, ...browser, ...pageDrivers, 'packages/sdk/src/evidence.ts'],
+    plugins: {bunny},
+    rules: {'bunny/no-raw-outcome-literal': 'error'},
+  },
+  {
     name: 'bunny/react-hooks',
     files: ['apps/dashboard/**/*.{ts,tsx}', 'apps/runtime/dashboard/**/*.{ts,tsx}', 'modules/*/src/frontend/**/*.{ts,tsx}'],
     plugins: {'react-hooks': reactHooks},

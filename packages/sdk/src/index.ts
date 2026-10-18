@@ -40,5 +40,5 @@ export {
 export {IDLE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
 export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';
 export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
-export {HeldEvidence, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged} from './evidence.js';
+export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged, type OutcomeLiteral} from './evidence.js';
 export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';

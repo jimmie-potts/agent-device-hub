@@ -216,9 +216,13 @@ test('every TypeScript project that compiles covered code has the strict compile
   }
 });
 
-test('covered paths have no lint baseline, and every workspace package is scoped', () => {
-  const baseline = Object.keys(JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8')));
-  const inCovered = baseline.filter(file => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')));
+test('covered paths have no lint baseline beyond the outcome-word ratchet, and every workspace package is scoped', () => {
+  // The outcome-word rule (Hub #1141) is the one ratchet allowed under the profile: its existing hits are held so a
+  // file can only lose them. Every other rule stays without a baseline here.
+  const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
+  const inCovered = Object.entries(suppressions)
+    .filter(([file]) => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
+    .flatMap(([file, rules]) => Object.keys(rules).filter(rule => rule !== 'bunny/no-raw-outcome-literal').map(rule => `${file}: ${rule}`));
   assert.deepEqual(inCovered, []);
   // The module boundary treats other scopes as third-party, so every workspace package must use a listed scope.
   const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
@@ -504,4 +508,54 @@ test('the strict compiler base rejects an unchecked index and an explicit undefi
   } finally {
     rmSync(dir, {recursive: true, force: true});
   }
+});
+
+// Hub #1141: outcome and evidence words come from sdk/evidence. The invalid cases include the two pre-fix lines the
+// rule exists for, verbatim.
+typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], {
+  valid: [
+    "import {Outcome} from '@jimmie-potts/sdk'; const result = ok ? Outcome.succeeded : Outcome.failed;",
+    "type Result = 'succeeded' | 'failed' | 'uncertain';",
+    "const counts = {failed: 0, 'rejected': 0}; counts.failed++;",
+    "const error = {code: 'uncertain-result'}; refuse('unavailable');",
+    "export {rejected} from './x.js'; import './none.js';",
+  ],
+  invalid: [
+    // #736 F1 before the fix (74e92c37 apps/hub/src/server.ts): a lost controller response, an uncertain result, was
+    // summarised as rejected.
+    {code: "options.hostDiagnostics?.event(res.statusCode>=400?'operation.failed':'operation.completed','bunny.http',{'bunny.operation':operation,'bunny.outcome':res.statusCode>=400?'rejected':'succeeded'},res.statusCode>=400?'WARN':'INFO');",
+      errors: [{messageId: 'raw', data: {value: 'rejected'}}, {messageId: 'raw', data: {value: 'succeeded'}}]},
+    // #1126 F1 before the fix (465ab14d^ apps/bb8-windows/src/owner.ts): the receipt rebuilt its evidence from a
+    // hand-picked word, so a refused Stop's acknowledged transmission became 'none'.
+    {code: "const receipt = {result, evidence: code === undefined ? observation.power !== undefined || observation.version !== undefined ? 'observed' : 'transmitted' : definitiveRefusal || knownGestureTransmission ? 'transmitted' : 'none'};",
+      errors: ['observed', 'transmitted', 'transmitted', 'none'].map(value => ({messageId: 'raw', data: {value}}))},
+    {code: 'const outcome = `uncertain`;', errors: [{messageId: 'raw'}]},
+    {code: "if (result === 'absent') clear();", errors: [{message: "'absent' is an outcome word; take it from the SDK `Outcome` vocabulary and change a claim only through sdk/evidence.merge."}]},
+  ],
+});
+
+test('the outcome-word rule reads its words from sdk/evidence and covers production code, not tests or pages', async () => {
+  const {Outcome} = await import('../packages/sdk/src/evidence.ts');
+  assert.deepEqual(Object.values(Outcome).sort(), ['absent', 'failed', 'none', 'observed', 'rejected', 'succeeded', 'transmitted', 'uncertain']);
+  const eslint = new ESLint({cwd: root});
+  for (const file of ['apps/hub/src/a.ts', 'apps/runtime/src/a.ts', 'modules/example/src/a.ts', 'packages/sdk/src/a.ts', 'scripts/a.mjs'])
+    assert.ok(on(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
+  for (const file of ['packages/sdk/src/evidence.ts', 'apps/runtime/tests/a.test.ts', 'modules/example/src/frontend/a.tsx'])
+    assert.ok(!severity(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
+});
+
+// Hub #1141 ratchet: the outcome-word baseline only shrinks. scripts/eslint/outcome-literal-pin.json holds each file's
+// count (the counts when the rule landed on top of #1156); `eslint --suppress-rule` can raise a count or add a
+// file, and this test then fails. Lower a file's pin (or delete its key) when its hits are converted.
+test('no file gains outcome-word suppressions beyond its pin', () => {
+  const rule = 'bunny/no-raw-outcome-literal';
+  const pin = JSON.parse(readFileSync(join(root, 'scripts/eslint/outcome-literal-pin.json'), 'utf8'));
+  const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
+  const over = Object.entries(suppressions).filter(([, rules]) => rules[rule] !== undefined)
+    .filter(([file, rules]) => rules[rule].count > (pin[file] ?? 0)).map(([file, rules]) => `${file}: ${rules[rule].count} > ${pin[file] ?? 0}`);
+  assert.deepEqual(over, []);
+  // The cap is the pin's own total, so the suppressed total can only fall with it.
+  const cap = Object.values(pin).reduce((sum, count) => sum + count, 0);
+  const total = Object.values(suppressions).reduce((sum, rules) => sum + (rules[rule]?.count ?? 0), 0);
+  assert.ok(total <= cap, `${total} outcome-word suppressions, above the pinned ${cap}`);
 });

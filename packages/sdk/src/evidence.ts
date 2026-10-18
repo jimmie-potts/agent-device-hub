@@ -63,3 +63,14 @@ export class HeldEvidence<T extends EvidenceLevel> {
 
 /** Hold a claim whose later evidence stays within the levels `T`. */
 export const hold = <T extends EvidenceLevel>(initial: Evidence<T>): HeldEvidence<T> => new HeldEvidence<T>(initial);
+
+/**
+ * The one outcome vocabulary (Hub #1141): the evidence levels, the wire's `none` (no evidence anything reached the
+ * device), and the results an operation reports. `bunny/no-raw-outcome-literal` refuses these words as raw string
+ * values outside this file, so a claim is built here and changed only with `merge`.
+ */
+export const Outcome = Object.freeze({
+  absent: 'absent', transmitted: 'transmitted', uncertain: 'uncertain', observed: 'observed', none: 'none',
+  succeeded: 'succeeded', failed: 'failed', rejected: 'rejected',
+} as const);
+export type OutcomeLiteral = typeof Outcome[keyof typeof Outcome];
