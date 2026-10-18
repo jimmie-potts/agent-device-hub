@@ -927,3 +927,12 @@ The focused lighting-layout tests verify rollback on a failed transaction,
 conflicting saves and reopening the production store on restart. This is forward
 persistence evidence, not qualification of an older reader on latest state;
 recovery eligibility remains separately stated by the upgrade plan.
+
+## Music card placement state
+
+`playback_layout` adds one private core row of bounded logical playback/room IDs.
+It starts empty and changes only through an operator's exact-revision save.
+Production-store tests cover atomic rollback, conflicting saves and reopening
+latest state after restart. Preserve the table with the ordinary consistent core
+backup. This is additive forward persistence evidence; it does not qualify an
+older release as a recovery reader or change playback settings or AirPlay output.

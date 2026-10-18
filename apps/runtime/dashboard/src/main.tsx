@@ -12,8 +12,8 @@ import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
-import {DeviceCard, PlaybackCard} from './device-controls.tsx';
-import {playbackArtworkUrl} from './playback-artwork.ts';
+import {DeviceCard} from './device-controls.tsx';
+import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
@@ -253,7 +253,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (placement.widget === 'wispr') {
       const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics'));
@@ -285,7 +285,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <NavLink route={{kind: 'rooms'}} current={route}>Rooms</NavLink>
         {runtime.modules?.filter(module => devices.some(device => device.copy.owner === `bunny/modules/${module.name}` && isLighting(device.record))).map(module => <NavLink key={`brand-${module.name}`} route={{kind: 'lighting-brand', brand: module.name}} current={route}>{brandName(module.name)}</NavLink>)}
         {devices.filter(({record}) => !isLighting(record)).map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
-        {playback.map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'playback', sourceId: record.id}} current={route}>Music</NavLink>)}
+        {playback.length > 0 && <NavLink route={{kind: 'audio'}} current={route}>Audio</NavLink>}
         {runtime.modules?.flatMap(module => module.pages.map(page => <NavLink key={`${module.name}:${page.id}`} route={{kind: 'module', module: module.name, page: page.id}} current={route}>{page.title}</NavLink>))}
       </nav>
       <PlacesNav links={links}/>
@@ -331,9 +331,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>}
         </div>)}</div>
       </section>}
-      {(route.kind === 'home' || route.kind === 'playback') && <section aria-label="Music"><div className="cards">{playback.map(({record, copy}) =>
-        <PlaybackCard key={`${copy.owner}:${record.id}`} record={record} live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive}
-          artworkUrl={playbackArtworkUrl(record, copy.owner, state.feed === 'connected' && copy.synced && !runtime.catalogFailed, runtime.modules)}/>)}</div></section>}
+      <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>

@@ -138,6 +138,10 @@ export class DashboardConnection {
   }
 
   readonly refreshDevices = async (): Promise<void> => { await this.#runtime.refresh(); };
+  /** Placement recovery requires successful copies from this explicit attempt, not a later automatic retry. */
+  readonly refreshPlaybackPlacement = async (): Promise<boolean> => this.#runtime.refresh([
+    {owner: 'bunny/core', family: 'lighting-layout'}, {owner: 'bunny/core', family: 'playback-layout'},
+  ]);
 
   /** One mounted page owns its reads/copies; all pages use this connection's authenticated participant. */
   openModule(name: string): ModuleScope {

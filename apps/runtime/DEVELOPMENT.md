@@ -489,6 +489,16 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
+After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
+for bounded metadata, operator admission, atomic revision guards and restart.
+Run `node apps/runtime/dashboard/tests/music-card.browser.ts` for Home/Audio/Rooms,
+explicit persistent placement, read-only/stale/uncertain behavior, keyboard,
+artwork fallback, narrow layouts and card-scoped accessibility. The journey runs
+in App verification and the full local dashboard browser suite, using synthetic
+tracks and room IDs without household-device contact. Keep the existing artwork
+race journey and full owning checks; simulated proof establishes no audible result.
+
 Reusable lighting (#1135) uses the existing event and core test discovery in CI.
 After the root build, run
 `node --test packages/event-contracts/tests/lighting-layout.test.mjs apps/runtime/dist/tests/lighting-layout.test.js`

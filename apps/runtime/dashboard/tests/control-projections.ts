@@ -15,6 +15,7 @@ const device: DeviceRecord = {
   observed: unknown, pending: 0, pendingKinds: [], lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown,
 };
 type ProbeProps = {kind: 'device'; record: DeviceRecord; operations: OperationRecord[]} |
+  {kind: 'placement'; operations: OperationRecord[]} |
   {kind: 'playback'; record: PlaybackState; control: boolean; live: boolean};
 const render = async (page: Page, props: ProbeProps): Promise<void> => {
   await page.evaluate(input => {
@@ -29,13 +30,21 @@ export async function checkControlProjections(context: BrowserContext): Promise<
     import {createRoot} from 'react-dom/client';
     import {flushSync} from 'react-dom';
     import {DeviceCard, PlaybackCard} from '../src/device-controls.tsx';
+    import {useAttempt} from '../src/command-control.tsx';
+    function PlacementProbe({operations}) {
+      const command = useAttempt('playback', operations.filter(op => op.family === 'playback-layout-set'), true, undefined, 'core/playback-layout');
+      return React.createElement(React.Fragment, null,
+        React.createElement('button', {disabled: command.locked, onClick: () => command.run({family: 'playback-layout-set', target: 'playback', requestId: crypto.randomUUID(), data: {expectedRevision: 0, assignments: []}})}, 'Save placement'),
+        React.createElement('p', {'data-placement-status': true}, command.text),
+        React.createElement(PlaybackCard, {record: {id: 'playback', revision: 1, availability: 'available', playback: {status: 'known', player: 'playing', title: 'Collision fixture', controls: ['pause', 'next', 'previous']}}, live: true, control: true, operations, operationsLive: true}));
+    }
     const root = createRoot(document.getElementById('root'));
     window.renderControlProbe = props => flushSync(() => root.render(React.createElement(
-      props.kind === 'device' ? DeviceCard : PlaybackCard,
+      props.kind === 'placement' ? PlacementProbe : props.kind === 'device' ? DeviceCard : PlaybackCard,
       {owner: 'bunny/modules/nanoleaf', live: true, control: true, operations: [], operationsLive: true,
        refresh: async () => {}, ...props})));
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'control-projections-entry.js'},
-  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent'});
+  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, loader: {'.css': 'empty'}, logLevel: 'silent'});
   assert.ok(bundle.outputFiles[0]);
   const javascript = bundle.outputFiles[0].text;
   const open = async (): Promise<Page> => {
@@ -104,8 +113,9 @@ export async function checkControlProjections(context: BrowserContext): Promise<
           playback: {status: 'known', player, title: 'Same title', artist: 'Same artist', album: 'Same album', controls: ['play', 'pause']}}});
         const card = page.getByRole('article', {name: 'Music music'});
         assert.equal(await card.getByText('Same title', {exact: true}).count(), 1);
-        assert.equal(await card.locator('dt').filter({hasText: 'Observed status'}).locator('..').locator('dd').innerText(), player.charAt(0).toUpperCase() + player.slice(1));
-        assert.equal(await card.getByRole('button').count(), control ? 2 : 0);
+        assert.equal(await card.locator('.music-heading').getByText(player.charAt(0).toUpperCase() + player.slice(1), {exact: true}).count(), 1);
+        assert.equal(await card.locator('fieldset button').count(), 3);
+        assert.equal(await card.getByRole('button', {name: player === 'playing' ? 'Pause' : 'Play', exact: true}).isEnabled(), control);
       }
     }
     await render(page, {kind: 'playback', control: false, live: true, record: {id: 'music', revision: ++revision, availability: 'available', playback: unknown}});
@@ -113,5 +123,29 @@ export async function checkControlProjections(context: BrowserContext): Promise<
     await render(page, {kind: 'playback', control: false, live: false, record: {id: 'music', revision: ++revision, availability: 'unavailable', playback: unknown}});
     await page.getByText('Playback unavailable', {exact: true}).waitFor();
   } finally { await page.close(); }
+  const collision = await open();
+  try {
+    const requests: {requestId: string; family: string}[] = [];
+    await collision.route('**/api/v2/commands/*', async route => {
+      const body = route.request().postDataJSON() as {requestId: string};
+      requests.push({requestId: body.requestId, family: new URL(route.request().url()).pathname.split('/').at(-1) ?? ''});
+      await route.fulfill({status: 200, contentType: 'application/json', body: '{}'});
+    });
+    await render(collision, {kind: 'placement', operations: []});
+    const save = collision.getByRole('button', {name: 'Save placement', exact: true});
+    const pause = collision.getByRole('button', {name: 'Pause', exact: true});
+    await save.click(); await collision.locator('[data-placement-status]').filter({hasText: /Uncertain/}).waitFor();
+    assert.equal(await pause.isEnabled(), true, 'a layout save cannot alias a configured playback ID');
+    await pause.click(); await collision.getByRole('status').filter({hasText: /Uncertain/}).waitFor();
+    assert.equal(requests.length, 2);
+    await collision.reload(); await collision.waitForFunction(() => 'renderControlProbe' in window);
+    await render(collision, {kind: 'placement', operations: []});
+    assert.equal(await save.isDisabled(), true); assert.equal(await pause.isDisabled(), true);
+    assert.equal(requests.length, 2, 'neither retained identity is replayed on reload');
+    const layoutRequest = requests.find(request => request.family === 'playback-layout-set'); assert.ok(layoutRequest);
+    await render(collision, {kind: 'placement', operations: [{id: '2'.repeat(64), revision: 2, requestId: layoutRequest.requestId, kind: 'device', family: 'playback-layout-set',
+      command: 'org.bunny.playback-layout.set.requested', target: 'playback', requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 50}]});
+    assert.equal(await save.isEnabled(), true); assert.equal(await pause.isDisabled(), true, 'layout completion never unlocks unresolved playback');
+  } finally {await collision.close();}
   console.log(JSON.stringify({journey: 'control-projections', lateReplies: ['accepted', 'uncertain'], completionSurvivesRetirement: true, unresolvedLocked: true, replayed: 0, sameTitlePlaybackStates: 5, readOnly: true}));
 }

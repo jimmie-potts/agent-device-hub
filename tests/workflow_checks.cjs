@@ -286,7 +286,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
-    'node apps/runtime/dashboard/tests/room-models.browser.ts', 'npm run test:roborock:browser', 'npm run test:onn:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:observability:browser'],
+    'node apps/runtime/dashboard/tests/room-models.browser.ts', 'node apps/runtime/dashboard/tests/music-card.browser.ts', 'npm run test:roborock:browser', 'npm run test:onn:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:observability:browser'],
   };
   const names = {
     select: 'Select affected checks',

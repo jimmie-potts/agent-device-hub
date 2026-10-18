@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback-layout-set/2.0",
+  "description": "Guarded operator replacement of private shared Music card placements (Hub #1164).",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "expectedRevision", "assignments"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "assignments": {"$ref": "https://bunny.invalid/events/playback-layout/2.0#/$defs/assignments"}
+  }
+}

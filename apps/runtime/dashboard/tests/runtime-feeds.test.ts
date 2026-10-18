@@ -7,10 +7,10 @@ import {RuntimeFeeds, type RuntimeData, type RuntimeRecord} from '../src/runtime
 void test('lighting composition, LIFX color and Nanoleaf geometry follow only their declared owner on the existing participant', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
     schema: 'module-list/2.0', modules: [
-      {name: 'core', state: 'running', serves: ['lighting-layout'], pages: []},
+      {name: 'core', state: 'running', serves: ['lighting-layout', 'playback-layout'], pages: []},
       {name: 'lifx', state: 'running', serves: ['device', 'lifx-light'], pages: []},
       {name: 'nanoleaf', state: 'running', serves: ['device', 'nanoleaf-wall'], pages: []},
-      {name: 'other', state: 'running', serves: ['lighting-layout', 'lifx-light', 'nanoleaf-wall'], pages: []},
+      {name: 'other', state: 'running', serves: ['lighting-layout', 'playback-layout', 'lifx-light', 'nanoleaf-wall'], pages: []},
     ],
   } : {schema: 'authority/2.0', scope: 'control'})));
   const calls: string[] = [];
@@ -20,8 +20,8 @@ void test('lighting composition, LIFX color and Nanoleaf geometry follow only th
   }} as unknown as RemoteParticipant;
   const feeds = new RuntimeFeeds({after: () => () => {}}, () => {}, () => {});
   await feeds.start(participant);
-  assert.deepEqual(calls, ['bunny/core:lighting-layout', 'bunny/modules/lifx:device', 'bunny/modules/lifx:lifx-light', 'bunny/modules/nanoleaf:device', 'bunny/modules/nanoleaf:nanoleaf-wall']);
-  await feeds.refresh();assert.equal(calls.length, 10);feeds.close();
+  assert.deepEqual(calls, ['bunny/core:lighting-layout', 'bunny/core:playback-layout', 'bunny/modules/lifx:device', 'bunny/modules/lifx:lifx-light', 'bunny/modules/nanoleaf:device', 'bunny/modules/nanoleaf:nanoleaf-wall']);
+  await feeds.refresh();assert.equal(calls.length, 12);feeds.close();
 });
 void test('named owners coexist; a gap keeps copies stale until their own replacement arrives, without commands', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
@@ -50,4 +50,29 @@ void test('named owners coexist; a gap keeps copies stale until their own replac
   assert.deepEqual(state?.copies.map(copy => [copy.owner, copy.synced]), [['bunny/core', false], ['bunny/core', false], ['bunny/modules/wall', true], ['bunny/modules/sign', false]]);
   assert.equal(syncs.length, 4, 'the page never requests a command or replays one');
   feeds.close();
+});
+
+void test('explicit placement refresh reports its own required sync results, never a later retry or a missing copy', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [{name: 'core', state: 'running', serves: ['lighting-layout', 'playback-layout'], pages: []}],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  let refuse = false;
+  const retry: (() => void)[] = [];
+  const participant = {sync: (families: readonly string[]) => Promise.resolve(refuse && families[0] === 'playback-layout'
+    ? {status: 'rejected', error: {error: {code: 'unavailable'}}}
+    : {status: 'synced', copy: {states: () => [], close: () => Promise.resolve()}})} as unknown as RemoteParticipant;
+  const feeds = new RuntimeFeeds({after: (_delay, action) => {retry.push(action); return () => {}; }}, () => {}, () => {});
+  const required = [{owner: 'bunny/core', family: 'lighting-layout'}, {owner: 'bunny/core', family: 'playback-layout'}] as const;
+  await feeds.start(participant);
+  assert.equal(await feeds.refresh(required), true);
+  refuse = true;
+  const failed = await feeds.refresh(required);
+  assert.equal(failed, false);
+  refuse = false;
+  retry[0]?.();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(failed, false, 'automatic recovery cannot change the explicit attempt result');
+  assert.equal(await feeds.refresh([{owner: 'bunny/core', family: 'device'}]), false, 'an absent required copy cannot count as success');
+  feeds.close();
+  assert.equal(await feeds.refresh(required), false);
 });

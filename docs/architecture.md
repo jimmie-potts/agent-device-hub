@@ -33,6 +33,12 @@ assignments, scoped groups and Home selections. The browser reuses one card on
 Home, brand and room views; module-owned artwork comes through public frontend
 entries. Saving composition changes no device. Explicit group controls use the
 existing guarded per-device commands and retain independent tracked outcomes.
+The shared Music card similarly reuses the existing playback observation and
+command adapter on Home, Audio and selected Rooms. Core-owned `playback-layout`
+metadata places logical cards in existing room IDs; it does not assign speakers
+or route audio. Lighting composition remains the room identity owner, and the
+playback module remains the only playback writer. The shell uses its existing
+participant for both copies, with separate metadata and playback command locks.
 Source delivery does not establish installed or physical acceptance.
 
 Private prepared room geometry and fixture aliases live under the core's
