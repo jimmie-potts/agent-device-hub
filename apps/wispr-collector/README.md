@@ -4,6 +4,8 @@ This Windows Node 24 CLI reads one explicitly configured local source and retain
 
 The existing source profile uses the `History` table with `id`, a textual `timestamp` declaration, `status` and `numWords`. The qualified native profile uses a non-null textual primary key `transcriptEntityId`, a textual or `DATETIME` timestamp declaration, and `app` as its destination field. These fixed aliases map to the same internal ID and app fields. Existing `id` takes precedence and an incompatible declaration is rejected, not bypassed. Timestamp values still need an explicit UTC offset; numeric epochs and missing offsets are not inferred. Optional numeric fields are `duration`, `speechDuration`, `numWordsCorrected` and `numDictionaryReplacements`; the existing profile also uses `appName`. Required names/types must qualify. Unknown optional fields are ignored. Installed schema and duration/counter semantics need separate confirmation; unsupported fields never become known zeros. Numeric mode does not select transcript, context, audio or arbitrary source columns.
 
+For the separate Mac investigation, see [Mac-local source qualification](../../docs/wispr-macos-source-qualification.md). It documents candidate sources and synthetic mappings; no Mac installation or production reader is qualified.
+
 ## Development checks
 
 From the repository root with Node 24:
