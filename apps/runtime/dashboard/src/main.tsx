@@ -15,6 +15,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
+import {WemoDeviceCard} from './wemo-device-card.tsx';
 import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
@@ -300,7 +301,10 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
             {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}
               live={state.feed === 'connected' && copy.synced} control={false} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
+          </> : record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?<WemoDeviceCard record={record} owner={copy.owner}
+            live={state.feed==='connected'&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}
+            limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
+          : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
             control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>}
         </div>)}</div>
       </section>}

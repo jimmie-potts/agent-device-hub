@@ -28,6 +28,9 @@ part. Both use tracked generic power dispatch; the Wemo module owns bounded
 local I/O, identity checks, its per-plug queues, request fences and held-write
 recovery. Limit status uses core SDK state, with no dashboard state polling.
 These fit the diagram's existing core/module boundaries; its topology is unchanged.
+The reusable Wemo card composes those same device/limit copies and command
+adapters on Home and device pages. Its Power/Auto-off tabs change presentation
+only; collapsed evidence retains observation and enforcement distinctions.
 The core also owns private lighting composition (`lighting-layout`): rooms,
 assignments, scoped groups and Home selections. The browser reuses one card on
 Home, brand and room views; module-owned artwork comes through public frontend

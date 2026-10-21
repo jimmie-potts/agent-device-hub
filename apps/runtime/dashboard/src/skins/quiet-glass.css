@@ -65,4 +65,15 @@
   --light-art:light-dark(#e9eff9,#1c263b);
   --light-bulb:light-dark(#53617a,#e8f2ff);
   --light-menu:var(--panel);
+  --wemo-metal:light-dark(#a4b2c6,#879ab9);
+  --wemo-highlight:light-dark(#eef2f8,#d7e0ef);
+  --wemo-metal-edge:light-dark(#8597b2,#657b9d);
+  --wemo-shell:light-dark(#f6f7f9,#cfd7e4);
+  --wemo-shell-edge:light-dark(#d8dce5,#a6b2c7);
+  --wemo-hole:light-dark(#5d6370,#495267);
+  --wemo-glow:light-dark(#b1d0e044,#6d9bb92d);
+  --wemo-shadow:light-dark(#35476a20,#00000038);
+  --wemo-beam:light-dark(#f4cf855e,#f9d58a3d);
+  --wemo-bulb:light-dark(#ffe8b7,#f6dfb0);
+  --wemo-led-on:#21734f;
 }

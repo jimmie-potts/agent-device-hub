@@ -33,9 +33,10 @@ its native saved rules or upgrade firmware. Avoid competing app/rule writers.
 The module verifies identity and same-origin service paths before every power
 write. Each plug has its own bounded queue and private writer lease. Five-second
 reads publish `device/2.1` observed power; unavailable or stale evidence never
-means off. The generic card shows desired power, observed power and observation
-age separately. A successful SOAP reply establishes transmission, not visible
-lamp output.
+means off. The shared Wemo card selects On/Off from plug-reported power and keeps
+desired power, observation age and transmission evidence separately in its
+collapsed Device evidence disclosure. Its lamp/plug illustration identifies the
+load. A successful SOAP reply establishes transmission, not visible lamp output.
 
 Commands use generic `power-set/2.0` through the core's tracked dispatcher. Durable
 request fences prevent duplicate effects and restart replay. A write whose reply
@@ -51,7 +52,7 @@ Weekly schedules belong to the shared core Automation editor. This module has no
 scheduler. A manual off or maximum-on shutoff does not cause an on-window to
 continually turn the lamp back on.
 
-The generic device card offers an independent optional maximum-on limit for each
+The shared Wemo card offers an independent optional maximum-on limit for each
 plug. Saving duration does not enable it. The Hub stores the original continuous
 run start and one shutoff-attempt identity; repeated on commands, duration edits
 and restarts do not grant a fresh duration. A fresh off observation ends a run.
