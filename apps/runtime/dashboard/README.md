@@ -85,6 +85,25 @@ selection request. Current mode evidence and control authority enable the
 buttons, including explicit same-mode reapplication. A lost reply stays
 uncertain; reload, reconnect and restart never resend a selection.
 
+## Reusable Wemo card
+
+Home and existing Wemo device routes use the same `WemoCard` presentation and
+`WemoDeviceCard` adapter. A large generic desk lamp and smaller Wemo plug remain
+visible while Power and Auto-off tabs switch only the controls. Both panels stay
+mounted and share their layout space, preserving drafts and card dimensions.
+The selected On/Off button follows plug-reported power; desired state and command
+acceptance do not select it. Unknown, stale, unavailable and held evidence remain
+explicit. Read-only sessions can inspect both tabs without editing.
+
+The adapter retains the existing tracked power/hold-release commands and uses
+`PowerLimitPanel` with concise presentation. Saving is explicit; changing tabs
+sends nothing. Weekly schedules stay in Automation. Routine power/reporting,
+Smart plug, Armed and standing warning text are omitted from the control face.
+Collapsed **Device evidence** retains observation age, desired versus observed
+power, outcomes, run/deadline/attempt evidence and Hub/reachability limitations.
+The illustration identifies a load; it does not establish visible lamp output.
+General placement and plug-to-room assignments remain separate work.
+
 ## Reusable Music card
 
 `MusicCard` supplies the glass presentation. `PlaybackCard` adapts the existing

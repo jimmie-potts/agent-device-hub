@@ -489,6 +489,14 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+The reusable Wemo card (#1175) extends the existing `test:wemo:browser` journey
+with fixed Power/Auto-off geometry, retained drafts, keyboard switching, Home
+reuse and uncertain-limit-save recovery. Existing dashboard unit discovery runs
+`wemo-card.test.ts` for observed-versus-desired power and admission gates. These
+use the existing App verification and core CI entries; no new workflow is needed.
+Keep the page-closed enforcement and independent-plug assertions, and use
+`DASHBOARD_RECEIPTS` for private synthetic browser screenshots.
+
 The cleaner shell (#1173) uses the existing dashboard unit discovery for routes,
 navigation grouping and directory projection. After the root build, run
 `node apps/runtime/dashboard/tests/shell.browser.ts` for four-destination

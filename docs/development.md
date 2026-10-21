@@ -813,6 +813,13 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+The Wemo card (#1175) adds observed-state/guard projection checks to existing
+dashboard unit discovery and extends the existing `test:wemo:browser` journey
+for stable tabs, retained drafts and the approved concise presentation. Both
+already run in the selected dashboard/App verification checks. After the root
+build, run `node --test apps/runtime/dashboard/tests/wemo-card.test.ts` and
+`npm run test:wemo:browser`; keep the owning shared and full browser checks below.
+
 The current shell's route, directory and browser checks, including #1173's
 four-destination navigation journey, follow the owning
 [runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks).
