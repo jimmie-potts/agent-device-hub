@@ -11,4 +11,4 @@
 ## 3. Integration and specification closeout
 
 - [x] 3.1 Update owning guides and the existing CI browser entry for the shell journey, and verify build then lint, type, contract, workflow and selected runtime/dashboard checks pass with a meaningful negative control.
-- [ ] 3.2 Exercise the changed shell in an owned disposable scenario and verify source acceptance, synchronize both capability deltas and archive the completed change on the delivery branch; verify strict specification validation succeeds before final review.
+- [x] 3.2 Exercise the changed shell in an owned disposable scenario and verify source acceptance, synchronize both capability deltas and archive the completed change on the delivery branch; verify strict specification validation succeeds before final review.
