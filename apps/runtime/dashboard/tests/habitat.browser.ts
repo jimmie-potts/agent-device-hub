@@ -42,7 +42,18 @@ try{
  await page.getByLabel('Import habitat settings',{exact:true}).setInputFiles({name:'settings.json',mimeType:'application/json',buffer:Buffer.from(settings)});
  await page.getByText('Settings imported. Previous settings are backed up in this browser.',{exact:true}).waitFor();await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('#apron-color').inputValue(),'#345678');assert.equal(await page.locator('#agent-6 .agent-name').textContent(),'Synthetic agent 11','legacy file replaces receiving v2 assignments at the imported slot');
  const axe=async():Promise<void>=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[]);};
- for(const colorScheme of ['dark','light'] as const){await page.emulateMedia({colorScheme});await axe();await page.setViewportSize({width:390,height:844});await axe();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(output!==undefined)await page.screenshot({path:`${output}/habitat-${colorScheme}-phone.png`,fullPage:true});await page.setViewportSize({width:1440,height:1100});}
+ for(const colorScheme of ['dark','light'] as const){
+  await page.emulateMedia({colorScheme});
+  for(const viewport of [{width:1440,height:1100},{width:390,height:844}]){
+   await page.setViewportSize(viewport);await page.locator('#workshop-view[aria-pressed=false]').click();
+   await axe(); // Keep the pointer over the selected control: the shell hover rule must remain legible.
+   await page.mouse.move(0,0);await axe();
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   if(output!==undefined)await page.screenshot({path:`${output}/habitat-${colorScheme}-${viewport.width}.png`,fullPage:true});
+   await page.locator('#workshop-view[aria-pressed=true]').click();
+  }
+ }
+ await page.setViewportSize({width:1440,height:1100});
  if(output!==undefined)await page.screenshot({path:`${output}/habitat-desktop.png`,fullPage:true});
  await page.emulateMedia({reducedMotion:'no-preference'});await page.locator('#motion').filter({hasText:'Pause motion'}).waitFor();
  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));});

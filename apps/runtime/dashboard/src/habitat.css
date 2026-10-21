@@ -135,7 +135,7 @@
 
 /* Controls follow the shell skin; earthy colors remain inside the artwork. */
 .habitat-root button,.habitat-root select,.habitat-root input[type=color]{background:var(--inset);color:var(--text);border-color:var(--edge-dense)}
-.habitat-root button:hover,.habitat-root select:hover,.habitat-root .agent:hover{background:var(--raised)}
+.habitat-root button:hover:not(:disabled),.habitat-root select:hover,.habitat-root .agent:hover{background:var(--raised)}
 .habitat-root button:focus-visible,.habitat-root select:focus-visible,.habitat-root input:focus-visible,.habitat-root summary:focus-visible{outline-color:var(--focus)}
 .habitat-root button[aria-pressed=true],.habitat-root button.primary,.habitat-root button.primary:hover,.habitat-root .agent[aria-pressed=true]{background:var(--raised);color:var(--text);border-color:var(--edge-strong)}
 .habitat-root .agent-id{color:var(--text)}
