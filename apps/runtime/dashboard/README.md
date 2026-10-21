@@ -43,7 +43,7 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
-The primary rail has **Home, Rooms, Devices and Automation**. Settings is a
+The primary rail has **Home, Habitat, Rooms, Devices and Automation**. Settings is a
 separate corner link; it contains Connections (including build/operator tools),
 Places and Disconnect. An ended browser session still offers **Sign in again**
 globally. Home links Timeline. Devices groups catalog-derived Lighting,
@@ -513,3 +513,15 @@ The focused synthetic journey is
 `node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
 it checks explicit resend, dashboard dismissal visible through MCP, timeline
 filters, keyboard, read-only presentation and desktop/phone axe.
+
+## Shared habitat
+
+`#/habitat` presents ten resident bunnies in one four-room home. It uses the shell's existing session copy; it opens no second participant and sends no agent or device command. Live mode retains stable assignments, fills free places from the newest eligible sessions and leaves overflow waiting. Known children stay with the root's existing activity projection. Disconnect or resync retains assignments and marks evidence uncertain. Demo mode and music are explicitly simulated.
+
+The canvas geometry, sprite poses, furniture masks and routes retain the reviewed private prototype. The JavaScript renderer is scoped to its mount and returns a typed cleanup API; allocation, preferences and the shell adapter are TypeScript. Each mount owns its model, event listeners and animation frame. Navigation destroys them. Pause motion and reduced motion keep text and final poses available. If artwork or canvas is unavailable, a session list remains visible.
+
+Select a bunny once to inspect it and again to open a qualified Codex Desktop conversation on Windows. The resident buttons provide the same deliberate keyboard activation. Unsupported providers or platforms explain their limit. Opening does not acknowledge unread notices or claim read evidence.
+
+Settings are local to the browser origin. Use **Export habitat settings** in the private preview, then **Move your habitat settings → Import habitat settings** here. The bounded JSON transfer includes only room positions, apron colors, recovery preference and assignments; it never uploads a file. Import validates before writing and retains a browser-local backup. Storage failure keeps the current visit usable; assignments cannot be promised across reload without storage.
+
+The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback, keyboard and axe in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.

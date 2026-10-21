@@ -25,7 +25,7 @@ state meanings and accessibility rules below still apply. The Neon measurements
 and legacy source snapshots below describe the retained reference presentation;
 they do not require current runtime pages to restore cyan chrome or the grid.
 The [runtime dashboard guide](../apps/runtime/dashboard/README.md) owns its
-four-destination navigation, Settings and reusable cards.
+five-destination navigation, Settings and reusable cards.
 
 Verified source revisions for this revision of the guide:
 
@@ -203,7 +203,7 @@ semantics, keyboard order, text cues, or which control is primary.
    only, sits on borders, artwork or a background layer behind all content,
    is never drawn over text or meaning-carrying edges,
    plays once and ends within 5 seconds of load (there is no pause control,
-   per WCAG 2.2.2), respects `prefers-reduced-motion`, and prints as
+   per WCAG 2.2.2; the shared habitat exception is in section 9), respects `prefers-reduced-motion`, and prints as
    nothing.
 3. Run the owning checks: the token check rejects color literals outside the
    token files, and the browser checks verify motion off and readability.
@@ -412,6 +412,7 @@ keeping Work, Quiet and Free distinguishable. Focus is a white outline in both.
 - Decorative motion plays once and ends within 5 seconds of load, so no pause
   control is needed (WCAG 2.2.2). Under reduced motion it does not run, and no
   meaning is lost; skins may not encode a state in motion alone.
+- The owner-selected shared habitat (#1145) may animate continuously inside its artwork. It provides Pause motion, settles travel without animation under reduced motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text. This exception does not enable continuous skin decoration elsewhere.
 - Check wide desktop, the widths near each layout change and a 390 px phone:
   no horizontal overflow, no clipped controls, long labels wrap.
 - Small, short transitions only where they clarify state; the dashboard stays
@@ -503,7 +504,7 @@ Acceptance checklist for each new or restyled page:
 - [ ] Every page has a hash address and the back button walks the history.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
-- [ ] Ends decorative motion within 5 seconds and preserves meaning under reduced motion.
+- [ ] Ends decorative motion within 5 seconds, or follows the shared habitat exception with Pause motion; preserves meaning under reduced motion.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
 - [ ] Includes current-candidate screenshots or browser evidence and completes

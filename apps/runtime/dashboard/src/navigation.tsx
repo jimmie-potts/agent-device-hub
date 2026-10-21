@@ -23,7 +23,7 @@ export function NavLink({route, current, selected, children}: {
 export function ShellNavigation({route}: {route: Route}): React.JSX.Element {
   const destination = navigationDestination(route);
   return <nav className="primary-navigation" aria-label="Main navigation">
-    {([['home', 'Home'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) =>
+    {([['home', 'Home'], ['habitat', 'Habitat'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) =>
       <NavLink key={kind} route={{kind}} selected={destination === kind}>{label}</NavLink>)}
   </nav>;
 }

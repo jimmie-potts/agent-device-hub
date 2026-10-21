@@ -3,7 +3,7 @@
 // link on another local app's page (Hub #561). Every other context, method and query is refused with the shared error
 // body and recorded with the route's template. The dashboard's own browser suites drive the real bundle.
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile, mkdir} from 'node:fs/promises';
 import {request as httpRequest, type IncomingMessage} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -22,6 +22,8 @@ async function built(context: TestContext, files = true): Promise<URL> {
     await writeFile(join(dir, 'index.html'), PAGE);
     await writeFile(join(dir, 'dashboard.js'), 'export {};\n');
     await writeFile(join(dir, 'dashboard.css'), 'body{margin:0}\n');
+    await mkdir(join(dir,'habitat'));
+    for(const file of ['habitat-desk-entry.webp','bunnies-sleep-variants.png','work-platform.png','work-platform-front.png'])await writeFile(join(dir,'habitat',file),'synthetic-image');
   }
   return pathToFileURL(`${dir}/`);
 }
@@ -81,8 +83,13 @@ it('the page and its assets load without a session from a bookmark, the launcher
   // A bookmark on the other loopback name loads the same page (Hub #276).
   const localhost = url.replace('127.0.0.1', 'localhost');
   assert.equal((await get(localhost, '/', {'sec-fetch-site': 'same-origin', origin: localhost})).status, 200);
-  // Only the three paths are the dashboard's: nothing else in its built folder, or beside it, is served.
-  for (const path of ['/index.html', '/dashboard.js.map', '/../package.json', '/dashboard.css/', '/dashboard']) {
+  for(const file of ['habitat-desk-entry.webp','bunnies-sleep-variants.png','work-platform.png','work-platform-front.png']){
+    const art=await get(url,'/habitat/'+file,{'sec-fetch-site':'same-origin','sec-fetch-dest':'image'});
+    assert.equal(art.status,200);assert.equal(art.text,'synthetic-image');assert.equal(art.headers.get('content-type'),file.endsWith('.webp')?'image/webp':'image/png');
+    assert.equal((await get(url,'/habitat/'+file,{origin:'http://pages.invalid'})).status,403);
+  }
+  // Only the named paths are the dashboard's: nothing else in its built folder, or beside it, is served.
+  for (const path of ['/index.html', '/dashboard.js.map', '/../package.json', '/dashboard.css/', '/dashboard', '/habitat/README.md', '/habitat/other.png', '/habitat/work-platform.png/extra']) {
     assert.notEqual((await get(url, path)).status, 200, path);
   }
 });

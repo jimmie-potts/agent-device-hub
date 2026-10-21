@@ -15,6 +15,11 @@ export const DASHBOARD_FILES: Readonly<Record<string, {file: string; type: strin
   '/': {file: 'index.html', type: 'text/html; charset=utf-8'},
   '/dashboard.js': {file: 'dashboard.js', type: 'text/javascript; charset=utf-8'},
   '/dashboard.css': {file: 'dashboard.css', type: 'text/css; charset=utf-8'},
+  '/habitat/habitat-desk-entry.webp': {file: 'habitat/habitat-desk-entry.webp', type: 'image/webp'},
+  '/habitat/bunnies-sleep-variants.png': {file: 'habitat/bunnies-sleep-variants.png', type: 'image/png'},
+  '/habitat/work-platform.png': {file: 'habitat/work-platform.png', type: 'image/png'},
+  '/habitat/work-platform-front.png': {file: 'habitat/work-platform-front.png', type: 'image/png'},
+
 };
 
 /**

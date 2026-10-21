@@ -23,7 +23,7 @@ const category = async (name: string): Promise<void> => {await page.getByRole('g
 const checks: string[] = [];
 try {
   await page.goto(world.url); await feed(page, 'connected');
-  assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Rooms', 'Devices', 'Automation']);
+  assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
   assert.equal(await primary.getByRole('link', {name: 'Settings'}).count(), 0);
   await page.locator('.light-bulb-glow').first().waitFor();
   // Axe does not check decorative illustration or selected-state boundary contrast.
@@ -88,7 +88,7 @@ try {
   await category('Audio'); await page.getByRole('link', {name: 'Audio', exact: true}).click();
   await page.getByRole('heading', {name: 'Audio', level: 1, exact: true}).waitFor();
   await page.getByRole('article', {name: /^Music /}).first().waitFor();
-  checks.push('four destinations, keyboard activation, brands, module pages, Audio and back history');
+  checks.push('five destinations, keyboard activation, brands, module pages, Audio and back history');
 
   await settings();
   await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();

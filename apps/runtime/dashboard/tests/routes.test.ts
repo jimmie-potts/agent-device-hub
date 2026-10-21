@@ -52,3 +52,5 @@ void test('nested routes select their containing destination, without treating a
   assert.equal(navigationDestination(parseRoute('#/settings')), 'settings');
   assert.equal(navigationDestination(parseRoute('#/unknown')), undefined);
 });
+
+void test('the shared Habitat has its own shell destination',()=>{assert.deepEqual(parseRoute('#/habitat'),{kind:'habitat'});assert.equal(navigationDestination(parseRoute('#/habitat')),'habitat');});
