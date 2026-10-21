@@ -13,7 +13,8 @@
 .light-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:var(--space-xs);border-radius:var(--light-control-radius);background:var(--light-inset);gap:var(--space-xs)}
 .light-tabs button{background:transparent;border:0;color:var(--muted-dense);padding:var(--space-s) var(--space-xs);font-size:var(--type-small);min-width:0}.light-tabs button[aria-selected=true]{background:var(--light-selected);color:var(--text);box-shadow:var(--nav-glow)}
 .light-face-space{min-height:310px;perspective:900px}.light-face{padding-top:var(--space-l);animation:light-flip .24s ease-out;transform-origin:50% 0;min-height:280px}.light-face:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-@keyframes light-flip{from{opacity:.25;transform:rotateX(-14deg) translateY(5px)}to{opacity:1;transform:rotateX(0) translateY(0)}}
+/* Keep text at full contrast throughout the flip, including on light surfaces. */
+@keyframes light-flip{from{transform:rotateX(-14deg) translateY(5px)}to{transform:rotateX(0) translateY(0)}}
 @media(prefers-reduced-motion:reduce){.light-face{animation:none}}
 .light-power{display:flex;gap:var(--space-s);margin-block:var(--space-s)}.light-power button{flex:1;background:var(--light-inset);color:var(--text);border:1px solid var(--light-edge)}.light-power button[aria-pressed=true]{background:var(--light-selected);border-color:var(--accent)}
 .light-slider{display:block;margin-block:var(--space-m)}.light-slider>span{display:flex;justify-content:space-between;gap:var(--space-s);font-size:var(--type-small)}.light-slider input{display:block;width:100%;min-height:44px;accent-color:var(--accent);cursor:pointer}.light-slider output{color:var(--muted-dense)}.light-slider .light-hue{accent-color:var(--accent);background:var(--light-hue);border-radius:var(--light-control-radius)}

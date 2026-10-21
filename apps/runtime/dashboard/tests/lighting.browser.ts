@@ -1,3 +1,4 @@
+import {directoryLink} from './navigation-helpers.ts';
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
@@ -69,7 +70,7 @@ try {
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('.light-attention')).some(node => /Waiting/.test(node.textContent ?? '')));
   assert.ok(['192.0.2.42', '192.0.2.43', '192.0.2.44'].every(address => world.lifxState().bulbs[address]?.power === false), 'all three actual simulated bulbs applied the group command');
   assert.equal(world.lifxState().packets.some(packet => packet.address === '192.0.2.41'), false, 'the unqualified Beam receives no packet');
-  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'LIFX', exact: true}).click();
+  await (await directoryLink(page, 'Lighting', 'LIFX')).click();
   const brand = page.getByRole('region', {name: 'LIFX lights', exact: true});
   assert.equal(await brand.locator('.light-card').count(), 4, 'brand layout remains independent');
   const beam = brand.locator('[data-light-card="beam"]');
@@ -136,7 +137,7 @@ try {
   world.loseDeviceReply(); await a.getByRole('button', {name: 'On', exact: true}).click();
   await a.getByRole('status').filter({hasText: /Uncertain/}).waitFor(); const uncertainCount = sent.length;
   await page.reload(); await feed(page, 'connected'); await a.getByRole('status').filter({hasText: /Uncertain/}).waitFor();
-  await page.getByRole('link', {name: 'LIFX', exact: true}).click();
+  await (await directoryLink(page, 'Lighting', 'LIFX')).click();
   await brand.locator('[data-light-card="lamp-a"]').getByRole('status').filter({hasText: /Uncertain/}).waitFor();
   assert.equal(await brand.locator('[data-light-card="lamp-a"]').getByRole('button', {name: 'Off', exact: true}).isDisabled(), true);
   assert.equal(sent.length, uncertainCount, 'reload and navigation preserve uncertainty without replay');

@@ -1,5 +1,7 @@
 import {LightingWorkspace} from './lighting-workspace.tsx';
-import {isLighting, brandName} from './lighting.ts';
+import {isLighting} from './lighting.ts';
+import {DeviceDirectory} from './device-directory.tsx';
+import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
 import {InboxPanel} from './inbox.tsx';
 import {Timeline} from './timeline.tsx';
 import {AutomationPage} from './automation.tsx';
@@ -22,7 +24,7 @@ import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
-import {parseRoute, routeHash, type Route} from './routes.ts';
+import {navigationDestination} from './routes.ts';
 import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
 import {OperatorTools} from './operator-tools.tsx';
 import {LabelEditor} from './label-editor.tsx';
@@ -30,34 +32,7 @@ import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, truste
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {homeLayout, widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
 import './style.css';
-
-/** The current page comes from the location hash, so every page has a URL and the back button walks the history. */
-const routeListeners = new Set<() => void>();
-const emitRoute = (): void => { for (const listener of routeListeners) listener(); };
-addEventListener('hashchange', emitRoute);
-const subscribeRoute = (listener: () => void): (() => void) => {
-  routeListeners.add(listener);
-  return () => { routeListeners.delete(listener); };
-};
-const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribeRoute, () => location.hash));
-/**
- * Setting the hash updates `location.hash` at once; only the hashchange event is deferred, so the listeners are told now.
- * A link click applies its route in the same event, so two pages are never shown at once.
- */
-function navigate(hash: string): void {
-  if (location.hash !== hash) location.hash = hash;
-  emitRoute();
-}
-
-/** A navigation link: a plain anchor with the route's hash, so it opens in a new tab with a modifier key. */
-function NavLink({route, current, children}: {route: Route; current?: Route; children: React.ReactNode}): React.JSX.Element {
-  const href = routeHash(route);
-  return <a href={href} aria-current={current !== undefined && routeHash(current) === href ? 'page' : undefined} onClick={event => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    navigate(href);
-  }}>{children}</a>;
-}
+import './shell.css';
 
 type Place = {id: string; label: string; group: 'Public' | 'Local'; publicUrl?: string; localUrl?: string};
 const places = placesManifest.places as Place[];
@@ -253,7 +228,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
+    : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
   const place = (placement: Placement): React.ReactNode => {
     if (placement.widget === 'wispr') {
       const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics'));
@@ -277,30 +254,20 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
-      <nav aria-label="Main navigation">
-        <NavLink route={{kind: 'home'}} current={route}>Home <span>{rows.length}</span></NavLink>
-        <NavLink route={{kind: 'timeline'}} current={route}>Timeline</NavLink>
-        <NavLink route={{kind: 'automation'}} current={route}>Automation</NavLink>
-        <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
-        <NavLink route={{kind: 'rooms'}} current={route}>Rooms</NavLink>
-        {runtime.modules?.filter(module => devices.some(device => device.copy.owner === `bunny/modules/${module.name}` && isLighting(device.record))).map(module => <NavLink key={`brand-${module.name}`} route={{kind: 'lighting-brand', brand: module.name}} current={route}>{brandName(module.name)}</NavLink>)}
-        {devices.filter(({record}) => !isLighting(record)).map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
-        {playback.length > 0 && <NavLink route={{kind: 'audio'}} current={route}>Audio</NavLink>}
-        {runtime.modules?.flatMap(module => module.pages.map(page => <NavLink key={`${module.name}:${page.id}`} route={{kind: 'module', module: module.name, page: page.id}} current={route}>{page.title}</NavLink>))}
-      </nav>
-      <PlacesNav links={links}/>
+      <ShellNavigation route={route}/>
       <div className="sidebar-foot">
         <Badge warning={!live}>{FEED_TEXT[state.feed]}</Badge>
-        <p>Inspection sends no device commands.</p>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
-        <button type="button" className="secondary" onClick={disconnect}>Disconnect</button>
       </div>
     </aside>
     <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
-      <header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span></header>
+      <header className="top"><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span><nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}>Settings</NavLink></nav></header>
+      {navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
+      {contextModule !== undefined && contextModule.pages.length > 0 && <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page => <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}</nav>}
+      {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
       <section hidden={route.kind !== 'home'} aria-label="Home">
         <header className="page"><h1>Home</h1><div className="home-status">
-          <span>{working} working · {rows.length} sessions</span><FeedIndicator state={state} now={now}/>
+          <span>{working} working · {rows.length} sessions</span><FeedIndicator state={state} now={now}/><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>
         </div></header>
         {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
         <div className="home-columns">
@@ -308,6 +275,12 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
           <div className="home-narrow">{layout.narrow.map(place)}</div>
         </div>
       </section>
+      <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
+      {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
+        <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
+          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
+          <article className="card"><PlacesNav links={links}/></article></div>
+      </section>}
       <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>
       {(route.kind === 'home' || route.kind === 'component') && <section aria-label="Devices">
         {route.kind === 'home' && <h2>Devices</h2>}

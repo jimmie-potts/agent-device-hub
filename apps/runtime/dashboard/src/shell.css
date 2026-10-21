@@ -1,0 +1,56 @@
+/* Shared shell geometry; values and colors live in the runtime skin. */
+.shell{grid-template-columns:184px minmax(0,1fr);background:var(--shell-background)}
+.shell>aside{background:var(--shell-rail);padding:var(--space-xl) var(--space-m);gap:var(--space-xl)}
+.brand{font-weight:500;color:var(--text);gap:var(--space-s);font-size:var(--type-brand);letter-spacing:.09em}
+.brand small{letter-spacing:0;font-weight:400}
+.rabbit{display:none}
+.primary-navigation{gap:var(--space-s)}
+.primary-navigation a{min-height:48px;padding:var(--space-m);border-radius:var(--radius)}
+.primary-navigation a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-dense)}
+.shell>main{padding:0 var(--space-xl);background:none}
+.top{border:0;align-items:center;min-height:76px;letter-spacing:0;font-family:var(--font);font-size:var(--type-small)}
+.top nav a{min-height:44px;color:var(--text)}
+.page{margin-bottom:var(--space-l)}
+.shell h1,.shell h2,.shell h3{font-family:var(--shell-heading-font);font-weight:500}
+.shell h4,.shell .nav-label,.shell .eyebrow{font-weight:500}
+.shell .card,.shell .widget,.directory-card{border-radius:var(--light-radius);background:var(--panel);box-shadow:var(--shell-shadow);padding:var(--space-l);min-width:0}
+.shell .edit.inline{box-shadow:none}
+.shell .chip:not([data-chip=idle]){background:var(--chip-surface)}
+.shell button{font-weight:500;min-height:44px}
+.shell input,.shell select{min-height:44px}
+.shell .home-columns{gap:var(--space-l)}
+.shell .home-wide,.shell .home-narrow{gap:var(--space-l)}
+.shell-breadcrumb{display:flex;flex-wrap:wrap;gap:var(--space-s);font-size:var(--type-small);margin-bottom:var(--space-s)}
+.shell-breadcrumb a{padding:var(--space-s) 0;min-height:44px}
+.feature-navigation{display:flex;flex-wrap:wrap;gap:var(--space-xs);padding:var(--space-xs);margin:var(--space-s) 0 var(--space-m);background:var(--inset);border-radius:var(--radius);width:fit-content;max-width:100%}
+.feature-navigation a{min-height:44px}
+.feature-navigation a[aria-current]{box-shadow:none}
+.directory-categories{display:flex;flex-wrap:wrap;gap:var(--space-xs);padding:var(--space-xs);background:var(--inset);border-radius:var(--radius);width:fit-content;max-width:100%;margin-bottom:var(--space-l)}
+.directory-categories button{border-color:transparent;color:var(--muted-dense);background:transparent}
+.directory-categories button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.directory-categories button:hover:not([aria-pressed=true]){background:var(--raised);color:var(--text)}
+.directory-grid,.settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:var(--space-l);align-items:start}
+.directory-card header h2{margin-bottom:var(--space-m)}
+.directory-card nav a{min-height:44px;background:var(--inset);color:var(--text)}
+.settings-grid .places-group{border:0;padding:0}
+.settings-grid .nav-label{margin:0 0 var(--space-m);color:var(--text);font-size:var(--type-heading);letter-spacing:0;font-family:var(--font)}
+.settings-grid .actions{margin-top:var(--space-m)}
+.shell>main>footer{border:0;padding:var(--space-l) 0}
+@media(max-width:900px){.shell{grid-template-columns:164px minmax(0,1fr)}.shell>main{padding:0 var(--space-l)}.shell>aside{padding:var(--space-l) var(--space-s)}}
+@media(max-width:680px){
+  .shell{display:block}
+  .shell>aside{padding:var(--space-m);border:0;gap:var(--space-m)}
+  .brand{font-size:var(--type-subheading)}
+  .brand small{display:none}
+  .primary-navigation{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-xs);padding:var(--space-xs);background:var(--panel);border:1px solid var(--edge-dense);border-radius:var(--light-control-radius)}
+  .primary-navigation a{justify-content:center;text-align:center;padding:var(--space-s) var(--space-xxs);min-height:48px;font-size:var(--type-label)}
+  .primary-navigation a[aria-current]{background:var(--accent);color:var(--accent-ink);border-color:transparent;box-shadow:none}
+  .sidebar-foot{margin:0;gap:var(--space-s)}
+  .sidebar-foot .badge{font-size:var(--type-label)}
+  .shell>main{padding:0 var(--space-m)}
+  .top{min-height:60px;padding:var(--space-s) 0}
+  .shell .card,.shell .widget,.directory-card{padding:var(--space-m)}
+  .directory-grid,.settings-grid{grid-template-columns:minmax(0,1fr)}
+  .directory-categories{width:100%}
+  .directory-categories button{flex:1;padding:var(--space-s);font-size:var(--type-small)}
+}

@@ -52,7 +52,7 @@ try {
       }
       assert.equal(world.browserSessions(), 1);
       const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-      assert.deepEqual(violations.map(value => value.id), []);
+      assert.deepEqual(violations.map(value => ({id: value.id, nodes: value.nodes.map(node => ({target: node.target, summary: node.failureSummary}))})), []);
     }
     await page.emulateMedia({reducedMotion: 'reduce'});
     await page.setViewportSize({width: 390, height: 844});

@@ -65,3 +65,4 @@ try {
 
 // Keep the focused real-owner Tidbyt journey in the hosted smoke entry.
 await import('./tidbyt-card.browser.ts');
+await import('./shell.browser.ts');

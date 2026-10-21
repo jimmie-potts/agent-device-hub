@@ -7,7 +7,8 @@ The observed values below are source facts, the shared rules bind every
 B.U.N.N.Y. application page, and device exceptions stay with their owning
 repository.
 
-Scope: the shared B.U.N.N.Y. application (the dashboard in `apps/dashboard`)
+Scope: the shared B.U.N.N.Y. application (the current dashboard in
+`apps/runtime/dashboard`, with `apps/dashboard` retained for manual return)
 and the reusable UI foundation that future application pages adopt. The
 Nanoleaf wall map keeps its own accepted visual decision while it exists as
 Nanoleaf's advanced editor ([ADR 0007](decisions/0007-bunny-shell.md)). The cross-project
@@ -15,6 +16,16 @@ work guide and the system-design atlas are documentation, not application
 screens; [Hub #85](https://github.com/jimmie-potts/agent-device-hub/issues/85)
 gives them the same token vocabulary through `docs/skins/`, so the names mean
 the same thing everywhere.
+
+The current runtime's owner-selected Quiet glass shell (#1173) replaces its
+Neon presentation with rounded surfaces and browser-selected light/dark values.
+Its owning token layer is `apps/runtime/dashboard/src/skins/quiet-glass.css`,
+which imports the existing fixed task/art tokens. The shared semantic roles,
+state meanings and accessibility rules below still apply. The Neon measurements
+and legacy source snapshots below describe the retained reference presentation;
+they do not require current runtime pages to restore cyan chrome or the grid.
+The [runtime dashboard guide](../apps/runtime/dashboard/README.md) owns its
+four-destination navigation, Settings and reusable cards.
 
 Verified source revisions for this revision of the guide:
 
@@ -64,8 +75,8 @@ Legend used throughout:
 
 | Concern | Owning source | Rule for an implementing agent |
 | --- | --- | --- |
-| Shared application shell and component pages | `apps/dashboard/src/main.tsx`, `style.css`, `README.md` | Extend the existing navigation and component views. Keep one shell across pages. |
-| Application token layer | `apps/dashboard/src/skins/neon-geometry-wars.css` `:root` custom properties | The shared application seam (section 4), delivered by Hub #182: every section 4.1 role, the dense variants and private skin tokens. `style.css` reads these through `var(...)` and defines none of its own. |
+| Shared application shell and component pages | `apps/runtime/dashboard/src/main.tsx`, `navigation.tsx`, `shell.css` and its README; retained legacy under `apps/dashboard` | Extend the existing navigation and component views. Keep one shell across pages. |
+| Application token layer | Runtime `apps/runtime/dashboard/src/skins/quiet-glass.css` over its retained Neon token layer; legacy `apps/dashboard/src/skins/neon-geometry-wars.css` | Keep the section 4.1 semantic roles, fixed state meanings and private tokens. Layout CSS reads these through `var(...)`; raw colors stay in skin files. |
 | Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. The shared device art of [ADR 0007](decisions/0007-bunny-shell.md) (`apps/dashboard/src/art/`, Hub #355) carries the same material into the shell and holds the wall status tokens in the application token layer. |
 | Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css` (Hub #85, PR #251) | The guide and atlas token files. Same role names, separate consumers. |
 | Cross-project UI ownership | `docs/architecture.md`, "Unified UI and additional devices" | The shared frontend uses the approved Nanoleaf visual language; declared capability and permission decide which controls exist. |
@@ -94,8 +105,10 @@ quieter grid and no decorative motion (`style.css`: grid lines at
 
 **Shared rule.** The Nanoleaf wall map is the visual reference, and the
 dashboard is the reference for adapting it to dense information and forms.
-This direction is the **Neon Geometry Wars** skin, the initial and default skin
-of the template in section 4. A page should read as a calm control surface:
+This direction is the **Neon Geometry Wars** skin, the initial skin
+of the template in section 4 and the retained legacy default. The current
+runtime uses the owner-selected Quiet glass skin described above. A Neon page
+should read as a calm control surface:
 grid as texture, cyan for the available primary action or the current
 selection, magenta for a pending edit or attention that needs resolution, and
 vivid physical-light colors reserved for actual device or task status. No glow
@@ -194,15 +207,16 @@ semantics, keyboard order, text cues, or which control is primary.
    nothing.
 3. Run the owning checks: the token check rejects color literals outside the
    token files, and the browser checks verify motion off and readability.
-4. Selecting a skin at runtime, saving that preference and a second shipped
-   skin are deferred to a later issue. V1 ships Neon Geometry Wars only.
+4. Selecting a skin with a picker and saving that preference remain deferred.
+   The current runtime ships Quiet glass and follows browser light/dark
+   appearance; retained legacy v1 ships Neon Geometry Wars only.
 
 ### 4.5 Ownership of the layers
 
-- The application token layer is `apps/dashboard/src/skins/neon-geometry-wars.css`,
-  the shared application seam. New application pages read tokens from it and add
-  none of their own raw colors; `apps/dashboard/src/style.css` is a consumer, not
-  a token definition site.
+- The current runtime token layer is `apps/runtime/dashboard/src/skins/quiet-glass.css`
+  over its retained Neon roles. The legacy application keeps
+  `apps/dashboard/src/skins/neon-geometry-wars.css`. Pages read their owning
+  layer's tokens and add no raw colors to layout files.
 - The wall status tokens moved into the application token layer with the
   shared device art of [ADR 0007](decisions/0007-bunny-shell.md) (Hub #355),
   together with the art's canvas and edge tokens. The wall map's remaining
@@ -515,12 +529,12 @@ Draft claims that current source contradicts:
 
 Change triggers:
 
-- The Nanoleaf values are the default for new pages. Restyling the existing
-  dashboard to match them exactly requires a reviewed UI candidate (#182).
+- New runtime pages follow Quiet glass; retained legacy and documentation keep
+  their owning skin. Changes to device artwork or fixed state meanings require
+  their own accepted scope.
 - The `BUNNY` text and `◈` glyph are the interim mark; a dedicated logo needs a
   separate asset and decision.
 - If the Nanoleaf source moves into the Hub, review the resulting page in its
   new shell; the move does not approve changes to the wall visualization or
   its status meaning.
-- A second skin, a skin picker and saved skin preferences are deferred to a
-  later issue.
+- A skin picker and saved skin preferences are deferred to a later issue.

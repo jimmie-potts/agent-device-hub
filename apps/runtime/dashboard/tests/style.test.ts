@@ -67,9 +67,10 @@ void test('dashboard CSS outside the skin file uses only role and private tokens
   assert.deepEqual(problems, [], problems.join('\n'));
 });
 
-void test('every token style.css consumes is defined in the skin file', async () => {
-  const [style, skin] = await Promise.all([readFile(join(SRC, 'style.css'), 'utf8'), readFile(join(SKINS, 'neon-geometry-wars.css'), 'utf8')]);
-  assert.deepEqual(undefinedTokens(style, skin), []);
+void test('the shell and existing layout consume only tokens defined by the shipped skin layers', async () => {
+  const styles = await Promise.all(['style.css', 'shell.css'].map(file => readFile(join(SRC, file), 'utf8')));
+  const skins = await Promise.all(['neon-geometry-wars.css', 'quiet-glass.css'].map(file => readFile(join(SKINS, file), 'utf8')));
+  for (const style of styles) assert.deepEqual(undefinedTokens(style, skins.join('\n')), []);
 });
 
 void test('approval and input use blocked colors, while a continuing question keeps the question color', async () => {

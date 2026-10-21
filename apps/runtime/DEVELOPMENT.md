@@ -489,6 +489,13 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+The cleaner shell (#1173) uses the existing dashboard unit discovery for routes,
+navigation grouping and directory projection. After the root build, run
+`node apps/runtime/dashboard/tests/shell.browser.ts` for four-destination
+navigation, retained page addresses, passive browsing and light/dark desktop/phone
+accessibility. The existing hosted smoke and full browser entries include this
+journey; synthetic browser proof does not establish actual-phone or device results.
+
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
 for bounded metadata, operator admission, atomic revision guards and restart.

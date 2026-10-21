@@ -1,3 +1,4 @@
+import {directoryLink} from './navigation-helpers.ts';
 // Retained wall controls through the real gateway/core/module and a fresh simulated controller (Hub #934).
 import assert from 'node:assert/strict';
 import {mkdir, readFile} from 'node:fs/promises';
@@ -162,7 +163,7 @@ try {
     assert.equal(sent.length, 2, 'reload never repeats a wall edit');
     await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
     assert.equal(await wall.count(), 0, 'leaving disposes the wall mount');
-    await page.getByRole('link', {name: 'Wall', exact: true}).click(); await drawing.waitFor();
+    await (await directoryLink(page, 'Lighting', 'Wall')).click(); await drawing.waitFor();
     assert.equal(sent.length, 2, 're-entry sends no command');
     await line.focus(); await line.press('Enter'); await swap.click();
     await waitWall(value => value.elements.find(element => element.id === first.id)?.signature === first.signature,
@@ -196,7 +197,7 @@ try {
       assert.equal(world.nanoleafState().devices[LINES_ADDRESS]?.on, on, 'the Home card matches the actual simulated observation');
     }
     assert.equal(sent.length, 3, 'observing physical-switch simulation sends no dashboard command');
-    await page.getByRole('link', {name: 'Wall', exact: true}).click(); await drawing.waitFor();
+    await (await directoryLink(page, 'Lighting', 'Wall')).click(); await drawing.waitFor();
 
     await world.observe(sessionStarted, {identity: IDENTITY, title: {value: maliciousTitle, source: 'provider'}});
     await world.observe(turnStarted, {identity: IDENTITY});

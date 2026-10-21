@@ -40,7 +40,7 @@ try {
     assert.equal((await world.pixooMedia()).items.length, index + 1);
   }
   const setupRequests = sent.length;
-  await page.getByRole('link', {name: /^Home /}).click();
+  await page.getByRole('link', {name: /^Home/}).click();
   const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
   await card.getByRole('tab', {name: 'Display', exact: true}).waitFor();
   const artwork = await card.locator('[data-pixoo-artwork]').elementHandle(); assert.notEqual(artwork, null);

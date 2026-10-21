@@ -41,6 +41,13 @@ playback module remains the only playback writer. The shell uses its existing
 participant for both copies, with separate metadata and playback command locks.
 Source delivery does not establish installed or physical acceptance.
 
+The runtime shell groups navigation into Home, Rooms, Devices and Automation,
+with Settings as a separate utility. Its Devices directory projects existing
+catalog declarations and copies; module links remain local to their workspace.
+Connections and Places are reachable through Settings. The glass skin changes
+presentation through the existing token seam, with no state, transport or writer
+ownership change.
+
 Private prepared room geometry and fixture aliases live under the core's
 existing private files owner and are read through authenticated module content.
 The Rooms view uses current core membership and module device records to select
