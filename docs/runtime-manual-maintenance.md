@@ -37,7 +37,11 @@ transition before releasing that lock. The record remains between commands;
 there is no requirement to keep one flock description alive across replacement.
 A competing operation cannot adopt or overwrite it. Runtime startup acquires the
 writer lease, then checks the record before any mutable startup work; pending,
-malformed or ambiguous maintenance refuses startup.
+malformed or ambiguous maintenance refuses startup. Under that same lease, it
+compares its actual release/config/state identity with the durable prepared
+selection. Missing or mismatched selection refuses startup, including an old
+container started after replacement. First installation must prepare this binding
+explicitly; absence is never a compatibility bypass.
 
 The maintenance record is installation metadata, outside the state snapshot being
 restored. Restore cannot erase it or replace the installation lock inode. State
@@ -80,7 +84,8 @@ in their owning implementation rather than inventing a second lock service.
    startup can acquire the data lease; none can write while the helper owns it.
    Gate removal only permits a start. It never records that startup succeeded.
 6. **Start and check.** Operator starts the exact selected release. It acquires
-   the data lease and checks maintenance before mutable work. Use existing
+   the data lease, checks maintenance and validates its actual release/config/state
+   against the prepared selection before mutable work. Use existing
    authenticated build identity and `/api/runtime/v1/health`, including required
    module status, to verify this instance. Optional sources report unavailable
    or stale independently. Record observed success, failure or uncertainty; no
@@ -135,6 +140,8 @@ No previous device commands are replayed and no local collector is auto-activate
 
 Use synthetic stores and simulated transports first. Cover:
 
+- A stale previous-release start after maintenance clears: refuse before opening
+  newer stores, even if it is the only lease contender.
 - Two simultaneous starts and two maintenance attempts: at most one state writer;
   pending maintenance refuses startup before mutations or device effects.
 - Stop timeout, a slow module and a lost/delayed engine response: no copy, release
