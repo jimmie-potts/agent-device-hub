@@ -1,3 +1,4 @@
+import {openConnections} from './navigation-helpers.ts';
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
@@ -20,7 +21,7 @@ try {
     await world.observe(turnStarted); await world.observe(turnEnded);
     await page.locator('article.session .chip', {hasText: 'Finished'}).waitFor();
     assert.equal(await page.getByRole('button', {name: /acknowledge/i}).count(), 0, 'session rows stay passive');
-    await page.getByRole('link', {name: 'Connections', exact: true}).click();
+    await openConnections(page);
     await page.getByLabel('Session', {exact: true}).selectOption({label: 'Port the wall'});
     const clear = page.getByRole('button', {name: 'Clear this notice on every device', exact: true});
     await clear.click();
@@ -48,7 +49,7 @@ try {
     // A lost reply stays uncertain; the copies independently show completion and current acknowledgments.
     await world.observe(turnStarted, {turn: 'turn-second'}); await world.observe(turnEnded, {turn: 'turn-second'});
     await page.locator('article.session .chip', {hasText: 'Finished'}).waitFor();
-    await page.getByRole('link', {name: 'Connections', exact: true}).click();
+    await openConnections(page);
     await page.getByLabel('Session', {exact: true}).selectOption({label: 'Port the wall'});
     await page.route('**/api/v2/commands/notice-clear', async route => {await route.fetch(); await route.abort('failed');}, {times: 1});
     await clear.click(); await confirm.click();
@@ -61,7 +62,7 @@ try {
     // UI authority refusal is a read-only presentation check; the real gateway refusal is covered independently.
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: JSON.stringify({error: {code: 'forbidden', retryable: false}})}));
     await page.reload(); await feed(page, 'connected');
-    await page.getByRole('link', {name: 'Connections', exact: true}).click();
+    await openConnections(page);
     await page.getByText('Read-only connection. Operator controls require control authority.', {exact: true}).waitFor();
     assert.equal(await clear.isDisabled(), true); assert.equal(clears(), 2);
     assert.deepEqual(errors, []);

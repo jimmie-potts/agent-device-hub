@@ -813,6 +813,10 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+The current shell's route, directory and browser checks, including #1173's
+four-destination navigation journey, follow the owning
+[runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks).
+
 See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.
 
 Playback artwork (#1069) adds passive owner/gateway checks to the existing

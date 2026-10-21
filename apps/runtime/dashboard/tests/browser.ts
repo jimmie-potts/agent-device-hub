@@ -1,3 +1,4 @@
+import {openConnections, openSettings} from './navigation-helpers.ts';
 // The runtime dashboard's full browser suite (Hub #922), converted from `apps/dashboard/tests/browser.mjs`: the shell,
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
@@ -45,11 +46,13 @@ try {
   checks.push('the home follows the mockup: Hub mode and sessions wide, the inbox and attention narrow');
 
   // Places: a run is a preview (Hub #495), so Wall leads to the paired run named in the runtime's links.
+  await openSettings(page);
   const places = page.getByRole('navigation', {name: 'Places'});
   await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
   assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local', 'WallLocal']);
   assert.equal(await places.getByRole('link', {name: 'Wall Local'}).getAttribute('href'), PAIRED);
   checks.push('Places link Wall to the paired run and keep retained public documents');
+  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
 
   // Sessions appear as the hook observes them.
   await world.observe(sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});
@@ -153,10 +156,10 @@ try {
   checks.push('details and the search');
 
   // Hash routes: every page has an address and the back button walks the history (Hub #247).
-  await page.getByRole('link', {name: 'Connections', exact: true}).click();
+  await openConnections(page);
   await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
   assert.equal(new URL(page.url()).hash, '#/connections');
-  assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Connections']);
+  assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Settings']);
   assert.deepEqual(await page.locator('.cards.two>.card>h2').allTextContents(), ['Connection', 'Running build', 'Operator tools', 'Observed sources']);
   const cards = await page.locator('.cards.two>.card').evaluateAll(all => all.map(card => card.getBoundingClientRect().toJSON() as DOMRect));
   assert.equal(cards.length, 4);
@@ -169,6 +172,8 @@ try {
   }
   await page.getByText('claude / host-sim / claude-code', {exact: true}).waitFor();
   await shot(page, 'runtime-connections');
+  await page.goBack();
+  await page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
   await page.goBack();
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.evaluate(() => { location.hash = '#/component/nothing'; });
@@ -202,6 +207,7 @@ try {
   checks.push('an ended session offers one sign-in, which restores the page');
 
   // Disconnect ends the session; Sign in opens a new one.
+  await openSettings(page);
   await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
   await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
   assert.equal(world.browserSessions(), 0);
@@ -209,6 +215,7 @@ try {
   await feed(page, 'connected');
   assert.equal(world.browserSessions(), 1);
   checks.push('Disconnect and Sign in');
+  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
 
   assert.deepEqual(sent, [], 'the page sent no command before explicit label controls');
 
@@ -226,3 +233,4 @@ try {
 
 // The same focused journey runs in hosted smoke and the full local browser suite.
 await import('./tidbyt-card.browser.ts');
+await import('./shell.browser.ts');

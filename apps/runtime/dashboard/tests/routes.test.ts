@@ -2,11 +2,21 @@
 // #927, so its address is missing here.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {homeRoute, parseRoute, routeHash, sameRoute, type Route} from '../src/routes.ts';
+import {homeRoute, navigationDestination, parseRoute, routeHash, sameRoute, type Route} from '../src/routes.ts';
 
 void test('the home answers to an empty hash and its aliases', () => {
   for (const hash of ['', '#', '#/', '#/home', '#/activity']) assert.deepEqual(parseRoute(hash), homeRoute, hash);
   assert.equal(routeHash(homeRoute), '#/');
+});
+
+void test('Devices and Settings have distinct landing addresses without consuming component aliases', () => {
+  assert.deepEqual(parseRoute('#/devices'), {kind: 'devices'});
+  assert.deepEqual(parseRoute('#/settings'), {kind: 'settings'});
+  for (const id of ['devices', 'settings']) {
+    assert.deepEqual(parseRoute(`#/component/${id}`), {kind: 'component', id});
+    assert.equal(routeHash(parseRoute(`#/${id}`)), `#/${id}`);
+    assert.equal(sameRoute(parseRoute(`#/component/${id}`), parseRoute(`#/${id}`)), false);
+  }
 });
 
 void test('built-in pages and components are distinct kinds, so an alias named like a page opens only that component', () => {
@@ -29,4 +39,16 @@ void test('a hash that is not a route is reported as missing rather than guessed
     assert.deepEqual(parseRoute(hash), {kind: 'missing', hash}, hash);
   }
   assert.equal(routeHash({kind: 'missing', hash: '#/other'}), '#/other');
+});
+
+void test('nested routes select their containing destination, without treating alias text as a built-in route', () => {
+  for (const hash of ['#/devices', '#/lights/lifx', '#/component/home', '#/component/settings', '#/audio', '#/music/player', '#/module/example/settings']) {
+    assert.equal(navigationDestination(parseRoute(hash)), 'devices', hash);
+  }
+  assert.equal(navigationDestination(parseRoute('#/timeline')), 'home');
+  assert.equal(navigationDestination(parseRoute('#/rooms')), 'rooms');
+  assert.equal(navigationDestination(parseRoute('#/automation')), 'automation');
+  assert.equal(navigationDestination(parseRoute('#/connections')), 'settings');
+  assert.equal(navigationDestination(parseRoute('#/settings')), 'settings');
+  assert.equal(navigationDestination(parseRoute('#/unknown')), undefined);
 });

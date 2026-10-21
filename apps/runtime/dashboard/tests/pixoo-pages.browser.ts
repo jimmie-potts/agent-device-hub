@@ -1,5 +1,6 @@
 // A real Pixoo editor command through the authenticated shell, against fresh synthetic state only (Hub #932).
 import assert from 'node:assert/strict';
+import {directoryLink} from './navigation-helpers.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
@@ -37,17 +38,17 @@ try {
     assert.equal(world.pixooState().sent, 0, 'page, drafts and playlist metadata save do not write to the display');
     const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
     assert.deepEqual(violations.map(item => item.id), []);
-    await page.getByRole('link', {name: 'Trusted editor fixture', exact: true}).click();
+    await (await directoryLink(page, 'Other', 'Trusted editor fixture')).click();
     const frame = page.frameLocator('iframe.module-page');
     await frame.getByText('Editor ready', {exact: true}).waitFor();
     assert.equal(await page.locator('iframe.module-page').getAttribute('sandbox'), null, 'trusted code has no untrusted sandbox claim');
     await frame.getByRole('button', {name: 'Edit draft', exact: true}).click();
     await frame.getByText('Draft changed', {exact: true}).waitFor();
     assert.equal(sent.length, 1, 'trusted editor open/draft issues no command');
-    await page.getByRole('link', {name: 'Passive fixture', exact: true}).click();
+    await (await directoryLink(page, 'Other', 'Passive fixture')).click();
     await frame.getByRole('heading', {name: 'Passive preview', exact: true}).waitFor();
     assert.equal(await page.locator('iframe.module-page').getAttribute('sandbox'), 'allow-same-origin');
-    await page.getByRole('link', {name: 'Playlists', exact: true}).click();
+    await (await directoryLink(page, 'Displays', 'Playlists')).click();
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
     await page.getByRole('combobox', {name: 'Playlist', exact: true}).selectOption(before.id);

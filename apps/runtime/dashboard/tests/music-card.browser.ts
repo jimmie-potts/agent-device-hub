@@ -1,3 +1,4 @@
+import {openAudio} from './navigation-helpers.ts';
 // Shared Music card journey through a real disposable runtime; all media and receivers are synthetic.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
@@ -22,7 +23,7 @@ try {
   assert.equal(await card.getByRole('tab').count(), 0); assert.equal(await card.locator('details').count(), 0);
   assert.deepEqual(await card.locator('fieldset button').allTextContents(), ['Previous', 'Pause', 'Next']);
   assert.equal(await card.locator('.playback-artwork').count(), 1);
-  await page.getByRole('link', {name: 'Audio', exact: true}).click(); assert.equal(new URL(page.url()).hash, '#/audio');
+  await openAudio(page); assert.equal(new URL(page.url()).hash, '#/audio');
   await card.getByText('Synthetic album', {exact: true}).waitFor();
   await page.getByText('Show in rooms', {exact: true}).click();
   await page.getByText('Create rooms on the Rooms page first.', {exact: true}).waitFor();
@@ -58,7 +59,7 @@ try {
   assert.equal(await card.getByRole('button', {name: 'Play', exact: true}).isDisabled(), true);
   await card.getByText('Resume from your iPhone.', {exact: true}).waitFor();
   assert.equal(sent.filter(url => url.endsWith('/playback-control')).length, 1);
-  await page.getByRole('link', {name: 'Audio', exact: true}).click(); await page.getByText('Show in rooms', {exact: true}).click();
+  await openAudio(page); await page.getByText('Show in rooms', {exact: true}).click();
   await studio.waitFor(); assert.equal(await studio.isChecked(), true);
   await page.route('**/api/sdk/v1/sync', route => route.abort());
   await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();

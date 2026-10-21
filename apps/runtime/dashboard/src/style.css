@@ -1,6 +1,6 @@
-@import "./skins/neon-geometry-wars.css";
+@import "./skins/quiet-glass.css";
 /* Layout reads its colors, spacing steps and type sizes only through the skin's tokens (style guide section 4). Structural sizes such as column tracks and control heights are layout, not skin. */
-:root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none;color-scheme:dark}
+:root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none}
 *{box-sizing:border-box}
 body{margin:0}
 button,input,select{font:inherit}

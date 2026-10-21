@@ -12,7 +12,7 @@ the core's current state.
 
 The runtime copy includes:
 
-- the shell, its hash routes, the Places navigation and the Neon skin;
+- the Quiet glass shell, its retained hash routes and Places links inside Settings;
 - browser sign-in on the runtime's gateway: a bookmark with trusted loopback
   sign-in, or the launcher's one-time code;
 - the agent sessions, synced from the core, with a finished turn shown unread
@@ -43,8 +43,24 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
+The primary rail has **Home, Rooms, Devices and Automation**. Settings is a
+separate corner link; it contains Connections (including build/operator tools),
+Places and Disconnect. An ended browser session still offers **Sign in again**
+globally. Home links Timeline. Devices groups catalog-derived Lighting,
+Displays, Audio and Other destinations; module pages keep their sibling links
+locally. The category choice survives navigation within the open page without
+being saved as a new preference. Unknown modules use Other, and unavailable
+catalog or observation evidence stays explicit. Browsing sends no device command.
+
+`navigation.tsx` shares native anchor navigation and containing-destination
+selection. `directory.ts` projects the existing copies without acquiring state.
+`skins/quiet-glass.css` supplies light/dark semantic values over the retained
+fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
+legacy dashboard and documentation keep their own skins. A theme picker is
+separate future scope.
+
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
-home, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
+home, `#/devices`, `#/settings`, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
 `#/module/<module>/<page>`. `src/routes.ts` parses a hash into a discriminated
 route, so built-in pages and component aliases are distinct kinds and an alias
 of `activity` or `connections` opens only that component
@@ -343,7 +359,7 @@ restart through the existing core owner storage.
 
 ## Places
 
-The Places navigation reads `docs/skins/places.json`. Public places link to the
+The Places navigation inside Settings reads `docs/skins/places.json`. Public places link to the
 published guide. On the installed runtime, which serves B.U.N.N.Y.'s own place
 port, a Local place links to the runtime's place link for it
 (`GET /api/v2/links`) or else to the manifest's address. Anywhere else, such as
@@ -354,10 +370,14 @@ installed service.
 ## Visual foundation
 
 The [application UI style guide](../../../docs/application-ui-style-guide.md)
-records the shared visual direction (Neon Geometry Wars).
-[`src/skins/neon-geometry-wars.css`](src/skins/neon-geometry-wars.css) is the
-token layer, copied unchanged; `src/style.css` reads only its role and private
-token names. The session dot and chip use the fixed-meaning chip colors.
+records the shared semantic roles and fixed state meanings. The runtime's
+[`Quiet glass skin`](src/skins/quiet-glass.css) supplies the accepted light/dark
+shell values over its retained Neon base. Layout CSS reads role and private
+token names. The session dot and chip keep fixed-meaning attention colors;
+colored chips have a contrasting surface while neutral Idle uses the ordinary
+inset surface. Device artwork keeps its own material and status meanings.
+Control faces retain their card-flip motion without fading text below contrast;
+reduced-motion appearance removes the animation.
 
 ## Build and checks
 
@@ -435,7 +455,7 @@ application scripts under their separate content policy; they are trusted
 same-origin code. The shell itself cannot be framed. Unknown pages show not
 found. No private file or installed-service fallback is used.
 
-Connections reads `/api/v2/build`: the serving process's frozen package version,
+Connections, reached through Settings or its retained bookmark, reads `/api/v2/build`: the serving process's frozen package version,
 source revision, build time and dirty flag, with unavailable identity shown as
 unknown. The build step creates that identity, not a Git command per request.
 
