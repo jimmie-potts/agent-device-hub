@@ -518,7 +518,7 @@ export function mountHabitat(root, callbacks={}) {
         if(abort.signal.aborted)break;const el=$(id),r=el.getBoundingClientRect(),cursor=$('demo-cursor');
         $('demo-step').textContent=`Scripted demo: ${text}`;el.classList.add('demo-target');cursor.style.display='block';cursor.style.left=`${r.left+r.width*.55}px`;cursor.style.top=`${r.top+r.height*.5}px`;
         await delay(700,abort.signal);
-        const pulse=document.createElement('div');pulse.className='click-pulse';pulse.style.left=cursor.style.left;pulse.style.top=cursor.style.top;document.body.append(pulse);setTimeout(()=>pulse.remove(),650);
+        const pulse=document.createElement('div');pulse.className='click-pulse';pulse.style.left=cursor.style.left;pulse.style.top=cursor.style.top;root.append(pulse);const pulseTimer=setTimeout(()=>pulse.remove(),650);abort.signal.addEventListener('abort',()=>{clearTimeout(pulseTimer);pulse.remove();},{once:true});
         el.click();await delay(700,abort.signal);el.classList.remove('demo-target');await delay(hold,abort.signal);
       }
     }catch(_error){if(!abort.signal.aborted)$('demo-step').textContent='Demo stopped.';}finally{if(demoAbort===abort)cancelDemo();}

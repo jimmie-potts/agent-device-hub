@@ -39,3 +39,15 @@ void test('a partial storage failure restores receiving values and retains a rec
  assert.equal(importPreferences(envelope({[PREFERENCE_KEYS[0]]:JSON.stringify(Array<string>(10).fill('#ffffff')),[PREFERENCE_KEYS[7]]:JSON.stringify({version:2,automatic:true,bindings:[]})}),limited),false);
  assert.equal(target.getItem(PREFERENCE_KEYS[0]),original);assert.notEqual(target.getItem('bunny.burrow.dashboard-import-backup.v1'),null);assert.equal(target.getItem(PREFERENCE_KEYS[7]),null);
 });
+void test('legacy-only imports replace receiving v2 assignments, supplied v2 wins and failure restores both',()=>{
+ const target=storage(),legacy=PREFERENCE_KEYS[6],current=PREFERENCE_KEYS[7];
+ const previous=JSON.stringify({version:2,automatic:false,bindings:[{sessionId:'receiving-session',bunnyId:0}]}),imported=JSON.stringify({sessionId:'preview-session',bunnyId:6});
+ target.setItem(current,previous);
+ assert.equal(importPreferences(envelope({[legacy]:imported}),target),true);
+ assert.deepEqual(settingsFrom(target.getItem(current),target.getItem(legacy)),{version:2,automatic:true,bindings:[{sessionId:'preview-session',bunnyId:6}]});
+ const supplied=JSON.stringify({version:2,automatic:false,bindings:[{sessionId:'supplied-v2',bunnyId:4}]});
+ assert.equal(importPreferences(envelope({[legacy]:imported,[current]:supplied}),target),true);assert.equal(target.getItem(current),supplied);
+ target.setItem(current,previous);target.removeItem(legacy);let failed=false;
+ const limited={...target,setItem:(key:string,value:string)=>{if(key===current&&!failed){failed=true;throw new Error('storage-unavailable');}target.setItem(key,value);}};
+ assert.equal(importPreferences(envelope({[legacy]:imported}),limited),false);assert.equal(target.getItem(current),previous);assert.equal(target.getItem(legacy),null);
+});

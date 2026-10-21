@@ -30,12 +30,17 @@ try{
  await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();await page.getByText('Session evidence uncertain',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>localStorage.getItem('bunny.burrow.live-bindings.v2')),saved);assert.equal(await page.locator('.agent[data-uncertain=true]').count(),10);
  await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();
- await page.locator('#live-mode').selectOption('demo');assert.equal(await page.locator('#all-work').isEnabled(),true);await page.locator('#all-work').click();
+ await page.locator('#live-mode').selectOption('demo');
+ await page.locator('#demo').click();await page.locator('.habitat-root .click-pulse').waitFor();
+ const pulse=await page.locator('.habitat-root .click-pulse').evaluate(element=>{const style=getComputedStyle(element);return {position:style.position,width:style.width,border:style.borderTopWidth};});assert.deepEqual(pulse,{position:'fixed',width:'40px',border:'3px'});
+ await page.locator('#all-idle').click();assert.equal(await page.locator('#demo-cursor').isVisible(),false);assert.equal(await page.locator('.habitat-root .click-pulse').count(),0,'taking over cancels the pulse and its timer');
+ assert.equal(await page.locator('#all-work').isEnabled(),true);await page.locator('#all-work').click();
  await page.locator('#live-mode').selectOption('live');assert.equal(await page.locator('#all-work').isDisabled(),true);assert.equal(await page.evaluate(()=>localStorage.getItem('bunny.burrow.live-bindings.v2')),saved);
  await page.getByText('Move your habitat settings',{exact:true}).click();
- const colors=Array<string>(10).fill('#345678'),settings=JSON.stringify({schema:'bunny-habitat-settings/1.0',preferences:{'bunny.burrow.aprons.v1':JSON.stringify(colors)}});
+ const importedSession=await page.locator('#live-session option').filter({hasText:'Synthetic agent 11 · Claude Code'}).getAttribute('value');assert.ok(importedSession!==null);
+ const colors=Array<string>(10).fill('#345678'),settings=JSON.stringify({schema:'bunny-habitat-settings/1.0',preferences:{'bunny.burrow.aprons.v1':JSON.stringify(colors),'bunny.burrow.live-binding.v1':JSON.stringify({sessionId:importedSession,bunnyId:6})}});
  await page.getByLabel('Import habitat settings',{exact:true}).setInputFiles({name:'settings.json',mimeType:'application/json',buffer:Buffer.from(settings)});
- await page.getByText('Settings imported. Previous settings are backed up in this browser.',{exact:true}).waitFor();await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('#apron-color').inputValue(),'#345678');
+ await page.getByText('Settings imported. Previous settings are backed up in this browser.',{exact:true}).waitFor();await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('#apron-color').inputValue(),'#345678');assert.equal(await page.locator('#agent-6 .agent-name').textContent(),'Synthetic agent 11','legacy file replaces receiving v2 assignments at the imported slot');
  const axe=async():Promise<void>=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[]);};
  for(const colorScheme of ['dark','light'] as const){await page.emulateMedia({colorScheme});await axe();await page.setViewportSize({width:390,height:844});await axe();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);if(output!==undefined)await page.screenshot({path:`${output}/habitat-${colorScheme}-phone.png`,fullPage:true});await page.setViewportSize({width:1440,height:1100});}
  if(output!==undefined)await page.screenshot({path:`${output}/habitat-desktop.png`,fullPage:true});

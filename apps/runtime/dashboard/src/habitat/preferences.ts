@@ -29,6 +29,8 @@ export function parsePreferences(raw:string):Record<string,string>|null{
 /** Validate before any write; preserve both a backup and previous visible values on partial failure. */
 export function importPreferences(raw:string,storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>):boolean{
  const preferences=parsePreferences(raw);if(preferences===null)return false;
+ const legacy=preferences[PREFERENCE_KEYS[6]];
+ if(legacy!==undefined&&preferences[PREFERENCE_KEYS[7]]===undefined)preferences[PREFERENCE_KEYS[7]]=JSON.stringify(settingsFrom(null,legacy));
  const backup:Record<string,string|null>={};
  try{
   for(const key of PREFERENCE_KEYS)backup[key]=storage.getItem(key);
