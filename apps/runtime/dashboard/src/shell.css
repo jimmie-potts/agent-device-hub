@@ -6,7 +6,7 @@
 .rabbit{display:none}
 .primary-navigation{gap:var(--space-s)}
 .primary-navigation a{min-height:48px;padding:var(--space-m);border-radius:var(--radius)}
-.primary-navigation a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-dense)}
+.primary-navigation a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-strong)}
 .shell>main{padding:0 var(--space-xl);background:none}
 .top{border:0;align-items:center;min-height:76px;letter-spacing:0;font-family:var(--font);font-size:var(--type-small)}
 .top nav a{min-height:44px;color:var(--text)}

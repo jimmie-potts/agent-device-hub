@@ -25,6 +25,30 @@ try {
   await page.goto(world.url); await feed(page, 'connected');
   assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Rooms', 'Devices', 'Automation']);
   assert.equal(await primary.getByRole('link', {name: 'Settings'}).count(), 0);
+  await page.locator('.light-bulb-glow').first().waitFor();
+  // Axe does not check decorative illustration or selected-state boundary contrast.
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({colorScheme});
+    const contrast = await page.evaluate(() => {
+      const channels = (value: string): number[] => (value.match(/[\d.]+/g) ?? []).map(Number);
+      const luminance = (rgb: number[]): number => rgb.slice(0, 3).map(value => {
+        const scaled = value / 255; return scaled <= .04045 ? scaled / 12.92 : ((scaled + .055) / 1.055) ** 2.4;
+      }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index]!, 0);
+      const ratio = (foreground: string, background: string): number => {
+        const fg = channels(foreground), bg = channels(background), alpha = fg[3] ?? 1;
+        const first = luminance(fg.slice(0, 3).map((value, index) => value * alpha + bg[index]! * (1 - alpha)));
+        const second = luminance(bg); return (Math.max(first, second) + .05) / (Math.min(first, second) + .05);
+      };
+      const selected = document.querySelector('.primary-navigation a[aria-current]')!;
+      const style = getComputedStyle(selected), rail = getComputedStyle(document.querySelector('.shell>aside')!);
+      const shapes = [...document.querySelectorAll('.light-bulb-glow')];
+      return {selection: Math.min(ratio(style.borderLeftColor, rail.backgroundColor), ratio(style.borderLeftColor, style.backgroundColor)),
+        illustrations: shapes.map(shape => ratio(getComputedStyle(shape).fill, getComputedStyle(shape.closest('.light-artwork')!).backgroundColor))};
+    });
+    assert(contrast.selection >= 3, `${colorScheme} desktop selection boundary has 3:1 contrast: ${contrast.selection}`);
+    assert(contrast.illustrations.length > 0 && contrast.illustrations.every(value => value >= 3), `${colorScheme} light silhouettes remain visible: ${contrast.illustrations.join(', ')}`);
+  }
+
   const devices = primary.getByRole('link', {name: 'Devices', exact: true});
   assert.equal(await devices.getAttribute('href'), '#/devices', 'navigation retains a native hash anchor');
   const modifiedClicks = await devices.evaluate(element => ['ctrlKey', 'metaKey', 'shiftKey', 'altKey'].map(key => {

@@ -63,5 +63,6 @@
   --light-selected:var(--raised);
   --light-shadow:var(--shell-shadow);
   --light-art:light-dark(#e9eff9,#1c263b);
+  --light-bulb:light-dark(#53617a,#e8f2ff);
   --light-menu:var(--panel);
 }
