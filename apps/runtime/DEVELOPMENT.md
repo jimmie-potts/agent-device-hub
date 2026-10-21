@@ -499,7 +499,7 @@ Keep the page-closed enforcement and independent-plug assertions, and use
 
 The cleaner shell (#1173) uses the existing dashboard unit discovery for routes,
 navigation grouping and directory projection. After the root build, run
-`node apps/runtime/dashboard/tests/shell.browser.ts` for four-destination
+`node apps/runtime/dashboard/tests/shell.browser.ts` for five-destination
 navigation, retained page addresses, passive browsing and light/dark desktop/phone
 accessibility. The existing hosted smoke and full browser entries include this
 journey; synthetic browser proof does not establish actual-phone or device results.
@@ -626,3 +626,7 @@ bounded reads and previews, one tracked playlist edit and a forged read-only
 refusal. Run it in both catalog transports and through the disposable adapter;
 independent Acceptance also uses the pages interactively. These are source and
 simulator checks, not physical-display acceptance.
+
+### Shared habitat checks
+
+The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px accessibility, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.

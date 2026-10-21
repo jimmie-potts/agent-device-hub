@@ -63,3 +63,9 @@ files are unchanged. `src/devices.ts` replaces controller-v1 admission with the
 2.0 capabilities and guards. The generic `sendAction` helper from #1006 remains
 the write transport. Module navigation uses the existing hash router and
 gateway manifest paths; build identity uses the existing build step.
+
+## Shared habitat (#1145)
+
+The habitat renderer, geometry, navigation and apron pixel tinting derive from the owner-reviewed private full-live candidate `b691d8a6700a5401d320b652dd40405e89e09b84`. These existing JavaScript modules retain their pixel coordinates and routes; production adaptation replaces global state with fresh model factories, scoped DOM access, a typed mount API and explicit lifecycle cleanup. They remain under the normal JavaScript lint rules. The four selected bitmap assets retain their exact reviewed bytes, covered by the artwork digest test. The older six-burrow reference is unchanged and hibernated.
+
+New allocation, conversation qualification, settings validation, React page and shell controller are strict TypeScript. The controller consumes the existing shell copy, replacing the preview's independent connection. Only static authored markup is mounted as HTML; observed names and messages enter the DOM as text. Preview runtime records, local preferences, credentials and receipts are excluded from tracked source.

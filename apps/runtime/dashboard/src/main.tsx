@@ -1,3 +1,4 @@
+import {HabitatPage} from './habitat.tsx';
 import {LightingWorkspace} from './lighting-workspace.tsx';
 import {isLighting} from './lighting.ts';
 import {DeviceDirectory} from './device-directory.tsx';
@@ -229,7 +230,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
   const place = (placement: Placement): React.ReactNode => {
@@ -313,6 +314,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
+      {route.kind === 'habitat' && <HabitatPage records={state.sessions.records} live={live}/>}
       {route.kind === 'timeline' && <Timeline/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}

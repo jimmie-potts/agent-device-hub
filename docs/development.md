@@ -821,7 +821,7 @@ build, run `node --test apps/runtime/dashboard/tests/wemo-card.test.ts` and
 `npm run test:wemo:browser`; keep the owning shared and full browser checks below.
 
 The current shell's route, directory and browser checks, including #1173's
-four-destination navigation journey, follow the owning
+five-destination navigation journey, follow the owning
 [runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks).
 
 See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.

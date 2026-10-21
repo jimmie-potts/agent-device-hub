@@ -44,7 +44,7 @@ playback module remains the only playback writer. The shell uses its existing
 participant for both copies, with separate metadata and playback command locks.
 Source delivery does not establish installed or physical acceptance.
 
-The runtime shell groups navigation into Home, Rooms, Devices and Automation,
+The runtime shell groups navigation into Home, Habitat, Rooms, Devices and Automation,
 with Settings as a separate utility. Its Devices directory projects existing
 catalog declarations and copies; module links remain local to their workspace.
 Connections and Places are reachable through Settings. The glass skin changes
