@@ -61,24 +61,17 @@ authorized scope.
 
 ## Delivery and validation
 
-Follow docs/sdlc.md for authorized implementation/delivery. Use centrally
-installed code-review for review, with the axis questions in docs/sdlc.md
-"Review and merge" step 3 for a change that crosses a component boundary, and
-writing-for-agents for instructions.
-The catalog's deliver-work method is explicit-invocation only; use it when the
-user names it, while retaining this repository's delivery gates.
-Compose grill-with-docs for unsettled implementation-changing decisions and tdd
-for meaningful executable behavior. Reuse the shared agent-skills catalog;
-report missing prerequisites without copying, installing or replacing skills.
+Follow [the lightweight delivery process](docs/sdlc.md#review-and-merge).
+Use available code-review and writing-for-agents skills for their work. Use tdd
+for meaningful executable behavior and design skills for unsettled decisions
+when available. Missing workflow skills do not block delivery: state the gap and
+perform the equivalent design, regression-test or editorial checks directly.
+Do not copy or install skills without a separate setup request. The shared
+deliver-work method remains explicit-invocation only.
 
-When this repository participates in the installed nightly queue, acquire its
-shared manual claim before delivery writes and retain it for the whole delivery,
-even while scheduled admissions are paused or disabled. Read
-[the manual claim procedure](docs/sdlc.md#shared-manual-delivery-claim).
-An explicitly assigned worker inside a held supervisor claim does not nest claims.
-For participating nightly delivery, an unwrapped or nonwrappable client stays
-read-only until a qualified claim or handoff; prose alone does not exclude another
-writer. Repositories outside that queue need no nightly claim or client wrapping.
+This repository does not participate in the nightly queue (#734). No shared
+nightly claim or client wrapping is required. Preserve one writer per checkout,
+installation and physical device.
 
 Use one coordinating writer and an isolated branch/worktree per deliverable.
 Independent deliverables proceed in parallel under
@@ -86,16 +79,16 @@ Independent deliverables proceed in parallel under
 decisions, integration order and shared mutable resources; overlapping filenames
 in separate worktrees do not require a handoff. Block only the affected operation.
 Preserve other worktrees, branches, installations and their owners. Deliver
-changes through PRs. Independent read-only Standards and Specification reviewers
-must inspect the same committed base/head, except that one of them may confirm
-the later deltas docs/sdlc.md step 3 lists, with the other axis's verdict carried
-over and recorded in the PR. A change with observable behavior
-also needs an independent Acceptance reviewer. That reviewer runs the same head
-in a disposable verification run, uses it as a person would and has only the
-limited authority in [Acceptance review](docs/sdlc.md#acceptance-review), which
-also defines observable behavior. Missing review,
-blocking findings or any missing/unsuccessful applicable CI job prevents
-automatic merge.
+changes through PRs. One independent reviewer covers both Standards
+(correctness, security and tests) and Specification (requested behavior) on the
+same committed comparison. Add a focused second review for substantive changes
+to credentials, storage migration, writer exclusion or device-command safety.
+Observable behavior needs a disposable acceptance exercise; the same independent
+reviewer may perform it. Documentation needs instruction/readback checks, not a
+running-app exercise. Follow the limited authority in
+[Acceptance review](docs/sdlc.md#acceptance-review). Missing required review,
+blocking findings or unsuccessful applicable CI prevents merge.
+
 Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
 Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
@@ -140,8 +133,10 @@ Before other product implementation, add the issue-appropriate build/type/test c
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.
 
-Use npm run openspec -- <arguments> with the exact issue-linked change and
-local planning root. Initialize with init --tools none --profile core --no-animation.
+Use OpenSpec for substantial behavior or contract changes; small fixes and
+instruction/tooling changes use a concise issue/PR and focused checks. Keep any
+affected existing capability spec accurate. When OpenSpec applies, use
+npm run openspec -- <arguments> with the exact issue-linked change and local planning root. Initialize with init --tools none --profile core --no-animation.
 Before sync/archive, obtain successful current lookups, complete applicable
 artifacts/tasks and acceptance evidence, then synchronize every affected spec
 and archive on the delivery branch before final review. A conditional design

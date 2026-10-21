@@ -98,6 +98,14 @@ the build omits its runtime and browser registration. Its private stores and
 format readers remain available as retained compatibility inputs. Hibernation
 selects no robot writer, verification or automatic resumption.
 
+## Planned packaged maintenance
+
+The owner selected [manual maintenance](runtime-manual-maintenance.md) for the
+packaged-runtime design: accept downtime, keep one state writer and inspect
+interrupted work. This replaces the proposed cross-container startup handoff;
+it changes no installed runtime behavior. GitHub owns implementation and host
+qualification acceptance.
+
 ## Product direction and vocabulary
 
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted

@@ -17,7 +17,7 @@ Define a finishable outcome for one operator, the selected Hub installation and 
 Complete outcome, release scope, required/optional work and epic acceptance.
 State exclusions, unresolved decisions and reassessment triggers. Do not choose
 Phase or Commitment merely by filing an epic. See docs/issue-conventions.md.
-Replace the opening headline and five bullets; keep unknowns explicit.
+Use a short opening; its headline and five example bullets are optional. Keep unknowns explicit.
 -->
 
 ## Outcome and real setup

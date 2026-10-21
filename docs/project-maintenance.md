@@ -47,9 +47,10 @@ Commitment are the only custom planning fields; do not invent Priority or Size.
 
 ## Checkpoints and decisions
 
-At planning, add only authorized selected issues and project approved planning
-values. At implementation and review, project verified native workflow. At
-closeout, run [native tracker reconciliation](tracker-reconciliation.md) first
+At explicit portfolio planning, add only authorized selected issues and project
+approved planning values. During delivery, update selected-item projection when
+its native status actually changes; do not run a portfolio sweep at every stage.
+At closeout, apply [native tracker reconciliation](tracker-reconciliation.md) first
 and project its verified results. Preserve its acceptance, owner-handoff and
 unknown-evidence rules instead of reimplementing them here.
 
