@@ -214,6 +214,16 @@ copy is explicit; no preference text enters shared state or automatic model
 context. The [preference guide](../modules/companions/README.md#explicit-preferences)
 owns the private document contract and bounds.
 
+Explicit knowledge uses that same lifecycle with separate records. Curated persona
+profiles and attributed conversation records belong to companions independently
+of a model. Conversation records extend the existing message table; small removal
+records protect additive imports, and operational checkpoints remain separate.
+Authenticated bounded context reads combine current active knowledge/preferences
+with explicitly selected permitted messages. The dashboard manages and copies
+those records without automatic learning, a context cache or new output routes.
+The [knowledge guide](../modules/companions/README.md#companion-knowledge-and-context)
+owns document versions, migration, recovery limits and source verification.
+
 ## Module frontend ownership
 
 The owner selected React and TypeScript for new module interfaces on 2026-10-08.

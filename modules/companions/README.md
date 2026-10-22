@@ -1,7 +1,7 @@
 # Companions
 
 One optional, statically shipped module owns fixed-text Reachy cards, synthetic
-assistant tasks and an explicit private preference library. Reachy consumes
+assistant tasks, explicit private preferences and companion knowledge. Reachy consumes
 qualified first-live coding opportunities from the authoritative core and defaults
 to disabled. Enable it on its Reachy page in the existing React dashboard; category mute and a one-hour
 social snooze use the existing tracked command path. Settings completion means
@@ -221,3 +221,116 @@ covers management, clipboard, private files, keyboard, narrow viewport and axe,
 with existing assistant/Reachy journeys retained. Use a private temporary
 directory outside every Git checkout for runtime checks. These are synthetic
 source checks, not installed or physical acceptance.
+
+## Companion knowledge and context
+
+**Companion knowledge** manages explicit titled notes about people, relationships,
+events or stated routines. It reuses the preference lifecycle: new owner entries
+are active; Stop using keeps history; editing an inactive entry does not reactivate
+it. Knowledge and preferences have separate records and document schemas. There
+is no extraction from conversations or sensors, automatic learning, person graph
+or recognition. Keep credentials out of notes and private files.
+
+The page shows three curated profiles: B.U.N.N.Y. is a helpful generalist; Reachy
+is articulate, expressive and diplomatic; MicroDuck is cheeky, expressive and
+capable. Stable IDs are `bunny`, `reachy` and `microduck`. Optional explicit voice
+references are stored independently of models; an absent selection stays absent.
+A reference does not qualify an audio endpoint. This source adds no audio route.
+
+Choose a persona, optionally choose a conversation and up to 16 messages, then
+**Preview current context** or **Copy current context**. Each click reads current
+active knowledge/preferences and the selected permitted messages. Other personas'
+private conversations, inactive entries and historical knowledge snapshots are
+excluded. Corrections and removals affect the next read. A large context is
+refused rather than silently truncated. Nothing enters the synthetic assistant
+graph automatically; copied data grants no permission or current location evidence.
+
+### Conversation records
+
+Authoritative conversation records extend `assistant_messages` on the existing
+SDK SQLite connection. New `companion-message/1.0` records carry message and
+conversation IDs, optional known turn/task identity, speaker, explicit or unknown
+recipients, creation time, revision, creation ordering, meaning, provenance and
+delivery references. Meaning is literal text/language, emotion with optional
+intensity, or unknown. Legacy rows retain their IDs, sequence, time and text;
+missing meaning, audience and delivery evidence remain unqualified. Operational
+tool records, calls and checkpoints are not authoritative conversation/context.
+
+**Create synthetic Reachy–Duck exchange** saves four labelled fictional messages
+in one conversation shared by both personas. It generates no household facts,
+audio or device commands. Duck English text is labelled intended meaning or
+translation. Unknown meaning has no invented translation. Source portability
+fixtures enforce quacks-only fake Duck audio; no live audio is qualified.
+
+**Correct message** changes meaning and increments its revision without changing
+creation order or original delivery references. **Remove message** removes its
+authoritative text and retains ID/order/removal metadata. Latest Duck reads fall
+back to the newest remaining Duck message, then empty. Correction/removal of an
+unfinished task's message is refused until the task finishes or is cancelled.
+This also applies to imported removals. Operational evidence and old files are
+not securely erased; readers never fall back to those records for removed text.
+Reads, import and startup never render messages or invoke the graph.
+
+### Private contracts and recovery
+
+All routes below use the existing authenticated read grant under
+`/modules/companions/content/`. Read permission grants no control. Missing,
+forbidden and unavailable reads use the shared error body; they are not empty
+history. No new sharing destination is selected.
+
+| Reference and query | Document |
+| --- | --- |
+| `knowledge?view=active` (default) | `knowledge/1.0`: current active entries and revision |
+| `knowledge?view=manage` | `knowledge-view/1.0`: current entries and full history |
+| `knowledge?view=export` | `knowledge-library/1.0`: entries and history |
+| `companion-profiles` | `companion-profiles/1.0`: curated profiles and optional voice refs |
+| `companion-history?profile=reachy` | `companion-history/1.0`: permitted conversations; `after` pages the list |
+| `companion-history?profile=reachy&conversationId=<id>` | ordered messages; `after` advances creation sequence; optional `latest=microduck` returns latest or empty |
+| `companion-context?profile=reachy` | `companion-context/1.0`: selected profile, current entries and explicit context; optional `conversationId` and comma-separated `messages` select records |
+| `companion-archive` | `companion-archive/1.0`: knowledge, unchanged preference library, voices, conversations, messages and removals |
+
+Context's optional `destination` accepts `local`, `claude` or `codex` under the
+existing sharing choices; other values are refused. This is a read/copy boundary,
+not a model sender or a new policy service. Context includes both assistant and
+preference revisions and is assembled on demand without a persistent cache.
+
+Changes stage `knowledge.json` at target `knowledge` through the existing opaque
+`assistant-input/2.0` command. Each private input has `expectedRevision`, from the
+knowledge view. Actions are `create`, `edit`, `set-active` and standalone `import`
+(as preferences, with the knowledge library schema), `fixture`, `correct-message`
+(messageId/meaning), `delete-message` (messageId), `set-voice` (persona/voiceRef,
+nullable), and `import-archive` (archive). The existing core owns authentication,
+Origin, grants and tracked outcomes. Assistant-state metadata invalidates content
+reads; preference changes also invalidate explicit context. No polling or prose
+in shared state/commands/outcomes/diagnostics is added.
+
+Archive import validates the whole document, then commits one outbox transaction.
+Existing knowledge/preferences and their histories remain unchanged; missing
+entries arrive inactive, including in an empty store. Existing explicit voice
+selections win. Local message corrections win and imported messages stay
+historical, with file provenance marked imported. Conflicting identity or
+creation order refuses the file. Known removals defeat imported content.
+
+Exported removal metadata contains no deleted text. Use a **current export** for
+fresh recovery that must preserve removals: an old standalone file cannot know
+about later deletions. Reimporting that old file into a store which already knows
+the removals cannot resurrect them. Import does not replace a snapshot, replay
+work, rewrite checkpoints or retract content from other clients.
+
+Titles/text retain the preference limits (200/4096 UTF-8 bytes); each retained
+entry library including history is at most 8 MiB. Meaning text is at most 8 KiB.
+History pages contain at most 16 conversations or messages and 64 KiB; context is
+at most 16 explicitly selected messages and 64 KiB. The combined archive is at
+most 8 MiB and staging at most 10 MiB, eight requests and five seconds. Capacity
+refusal preserves current records and history. If separately growing preferences
+or existing assistant history exceed the archive/context bound, those reads
+report capacity rather than claiming a complete export or truncating records.
+
+The companions SQLite suite covers legacy migration, additive imports, removals,
+source/revision/expiry checks, full disk and rollback. The `companion-knowledge`
+catalog scenario exercises public reads through two fake model adapters and a
+replacement test client over both transports and a disposable runtime. The
+companions browser journey covers keyboard, clipboard, private files, profile
+inspection, correction/removal, narrow layout, axe, reader access and disconnect.
+All are synthetic source evidence; live providers, installed access paths and
+physical acceptance remain separate.
