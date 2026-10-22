@@ -26,7 +26,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const drag = useRef<string | undefined>(undefined), host = useRef<HTMLDivElement>(null), editButton = useRef<HTMLButtonElement>(null);
   const [focusId, setFocusId] = useState<string>();
   const editing = draft !== undefined, breakpoint = editing ? selected : natural;
-  const previousEditing = useRef(false), previousPicker = useRef(false);
+  const previousEditing = useRef(false), previousPicker = useRef(false), returnFocus = useRef(false);
   const layouts = draft?.layouts ?? current, entries = layouts[breakpoint];
   const conflict = draft !== undefined && record !== undefined && draft.base !== record.revision;
   const protectedCard = (id: string): boolean => id === 'inbox' && inbox || id === 'sessions' && attention;
@@ -35,13 +35,15 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     media.addEventListener('change', changed);return () => {media.removeEventListener('change', changed);};
   }, []);
   useEffect(() => {
-    if (previousEditing.current && !editing) editButton.current?.focus();
+    if (previousEditing.current && !editing) returnFocus.current = true;
+    if (!editing && editable && returnFocus.current) {editButton.current?.focus();returnFocus.current = false;}
     if (editing && (!previousEditing.current || previousPicker.current && !picker)) host.current?.querySelector<HTMLButtonElement>('[data-home-add]')?.focus();
     previousEditing.current = editing;previousPicker.current = picker;
-  }, [editing, picker]);
+  }, [editing, picker, editable]);
   useEffect(() => {
     if (focusId === undefined) return;
-    [...(host.current?.querySelectorAll<HTMLButtonElement>('[data-home-move]') ?? [])].find(button => button.dataset.homeMove === focusId)?.focus();setFocusId(undefined);
+    const target = [...(host.current?.querySelectorAll<HTMLButtonElement>('[data-home-move]') ?? [])].find(button => button.dataset.homeMove === focusId) ?? host.current?.querySelector<HTMLButtonElement>('[data-home-add]');
+    target?.focus();setFocusId(undefined);
   }, [focusId, entries]);
   useEffect(() => {
     if (pending === undefined) return;
@@ -63,6 +65,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     if (from < 0 || to < 0 || from === to) return;
     const [entry] = list.splice(from, 1);if (entry !== undefined) list.splice(to, 0, entry);change(next);setFocusId(id);setMessage('Card moved.');
   };
+  const focusAfterRemoval = (index: number): void => {setFocusId(shown[index + 1]?.widget ?? shown[index - 1]?.widget ?? '');};
   const step = (id: string, delta: number): void => {const index = shown.findIndex(entry => entry.widget === id), target = shown[index + delta];if (target !== undefined) move(id, target.widget);};
   const reload = (): void => {if (!editable || record === undefined) return;setPending(undefined);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('Current saved layout loaded. Review before saving.');};
   const save = (): void => {
@@ -108,8 +111,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           <select aria-label={`Size of ${definition.name}`} value={size} disabled={locked || !placed} onChange={event => {
             const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.size = event.target.value as HomePlacement['size'];change(next);
           }}>{definition.sizes.map(value => <option key={value} value={value}>{sizes[value]}</option>)}</select>
-          <button type="button" className="secondary" aria-label={`Hide ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.hidden = true;change(next);}}>Hide</button>
-          <button type="button" className="secondary" aria-label={`Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);}}>×</button>
+          <button type="button" className="secondary" aria-label={`Hide ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.hidden = true;change(next);focusAfterRemoval(index);}}>Hide</button>
+          <button type="button" className="secondary" aria-label={`Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>×</button>
           {required && <small>{reason}</small>}
         </div>}
         <div className="home-card-content" inert={editing}>{definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>

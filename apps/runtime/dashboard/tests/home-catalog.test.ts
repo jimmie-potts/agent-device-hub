@@ -7,6 +7,7 @@ void test('the picker describes unavailable modules and keeps unavailable saved 
   const catalog = homeCatalog(runtime, true);
   assert.equal(catalog.find(card => card.id === 'module:pixoo')?.reason, 'No configured source is available.');
   assert.equal(catalog.find(card => card.id === 'wispr')?.defaultSelected, false);
+  assert.equal(savedHomeCard('wispr', catalog)?.source.kind, 'unavailable');
   assert.equal(savedHomeCard('device:bunny/modules/wemo:desk-plug', catalog)?.source.kind, 'unavailable');
   assert.equal(savedHomeCard('light:room:office', catalog)?.source.kind, 'unavailable');
   assert.equal(savedHomeCard('retired-widget', catalog), undefined);

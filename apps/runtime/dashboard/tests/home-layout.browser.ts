@@ -14,7 +14,7 @@ try {
   const sent = changes(page), grid = page.locator('.home-layout-grid');
   const order = async (): Promise<string[]> => grid.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
   const edit = async (): Promise<void> => {await page.getByRole('button', {name: 'Edit Home', exact: true}).click();};
-  const done = async (): Promise<void> => {await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();};
+  const done = async (): Promise<void> => {await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeFocused();};
   await page.goto(`${world.url}/#/rooms`);await feed(page, 'connected');
   await page.getByText('Manage rooms', {exact: true}).click();await page.getByLabel('New room name', {exact: true}).fill('Studio');
   await page.getByRole('button', {name: 'Create room', exact: true}).click();await page.getByRole('heading', {name: 'Studio', exact: true}).waitFor();
@@ -46,10 +46,12 @@ try {
     assert.equal(await second.locator('[data-home-card]').last().getAttribute('data-home-card'), roomId);
   } finally {await secondContext.close();}
   await world.restart();await page.reload();await feed(page, 'connected');await room.waitFor();assert.deepEqual(await order(), before);
-  await edit();await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).click();assert(!(await order()).includes('hub-mode'));
+  await edit();await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');assert(!(await order()).includes('hub-mode'));
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
   assert.equal(sent.length, 1, 'Cancel sends nothing');
-  await edit();await page.getByRole('button', {name: 'Hide Agent status', exact: true}).click();await done();
+  await edit();await page.getByRole('button', {name: 'Hide Agent status', exact: true}).press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);await done();
   assert.equal(await page.locator('[data-home-card="sessions"]').count(), 0);
   await world.observe({kind: 'session-started'});await world.observe(approvalPrompt('layout-attention'));
   await page.locator('[data-home-card="sessions"]').waitFor();
@@ -75,12 +77,13 @@ try {
     const response = await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core');
     const snapshot = await response.json() as {records: {'home-layout': {revision: number; layouts: {desktop: {widget: string; size: string; hidden: boolean}[]; phone: {widget: string; size: string; hidden: boolean}[]}}[]}};
     const record = snapshot.records['home-layout'][0];if (record === undefined) throw new Error('snapshot-missing');
-    record.layouts.desktop.push({widget: 'retired-widget', size: 'small', hidden: false}, {widget: 'device:bunny/modules/wemo:missing-plug', size: 'medium', hidden: false});
+    record.layouts.desktop.push({widget: 'wispr', size: 'medium', hidden: false}, {widget: 'retired-widget', size: 'small', hidden: false}, {widget: 'device:bunny/modules/wemo:missing-plug', size: 'medium', hidden: false});
     const saved = await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: 'unknown-definition-fixture', data: {expectedRevision: record.revision, layouts: record.layouts}})});
     return saved.status;
   });
   assert.equal(injected, 200);await page.getByText('Some saved cards are no longer registered and were omitted. Review the layout before saving.', {exact: true}).waitFor();
   assert.equal(await page.locator('[data-home-card="retired-widget"]').count(), 0);
+  await expect(page.locator('[data-home-card="wispr"]')).toContainText('Wispr browser exposure is not available.');
   await page.locator('[data-home-card="device:bunny/modules/wemo:missing-plug"]').getByText('This saved source is unavailable.', {exact: true}).waitFor();
   const injectedCount = sent.length;await page.reload();await feed(page, 'connected');
   await page.getByText('Some saved cards are no longer registered and were omitted. Review the layout before saving.', {exact: true}).waitFor();assert.equal(sent.length, injectedCount, 'reading an unknown definition never repairs the store automatically');

@@ -68,6 +68,28 @@ it('lighting grouping and ungrouping preserve saved Home placement in the same m
   assert.deepEqual(data.layouts.desktop.map(entry => entry.widget), entries.map(entry => entry.widget));await restored.copy.close();
 });
 
+it('grouping visible lights preserves unrelated hidden and phone placements', async context => {
+  const core = createCoreModule(), watcher = fixture('home-hidden-watcher'), files = await edgeConfig(context, []);
+  await run(context, {modules: [core, watcher], configFile: files.config});
+  const initial = {rooms: [], assignments: [], groups: [], home: ['a', 'b', 'c'].map(id => ({kind: 'device', id}))};
+  const lighting = (requestId: string, expectedRevision: number, layout: object): Action => ({key: 'bunny.cmd.lighting-layout-set.lighting', requestedBy: 'bunny/parts/operator', requestId,
+    draft: {type: 'org.bunny.lighting-layout.set.requested', subject: 'lighting', dataschema: 'https://bunny.invalid/events/lighting-layout-set/2.0', data: {expectedRevision, layout}}});
+  await core.operatorActions.dispatch(lighting('hidden-initial', 0, initial));
+  const entries = ['a', 'b', 'c'].map(id => ({widget: `light:device:${id}`, size: 'medium', hidden: false}));
+  const layouts = {desktop: entries.map(entry => ({...entry, hidden: entry.widget.endsWith(':b')})), phone: entries};
+  await core.operatorActions.dispatch(action('hidden-home', 0, layouts));
+  const read = await contextOf(watcher).sdk.sync<{revision: number}>(['lighting-layout'], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
+  assert.equal(read.status, 'synced');if (read.status !== 'synced') throw new Error('lighting-hidden-sync');
+  const revision = read.copy.states()[0]?.data.revision;assert.ok(revision !== undefined);await read.copy.close();
+  const grouped = {...initial, groups: [{id: 'ac', name: 'AC', scope: 'home', devices: ['a', 'c']}], home: [{kind: 'group', id: 'ac'}]};
+  assert.deepEqual(await core.operatorActions.dispatch(lighting('hidden-group', revision, grouped)), {status: 'accepted', requestId: 'hidden-group'});
+  const saved = await contextOf(watcher).sdk.sync<HomeLayoutRecord>(['home-layout'], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
+  assert.equal(saved.status, 'synced');if (saved.status !== 'synced') throw new Error('saved-hidden-sync');
+  const value = saved.copy.states()[0]?.data.layouts;assert.ok(value != null);
+  assert.deepEqual(value.desktop.find(entry => entry.widget === 'light:device:b'), layouts.desktop[1]);
+  assert.deepEqual(value.phone.find(entry => entry.widget === 'light:device:b'), layouts.phone[1]);await saved.copy.close();
+});
+
 it('authenticated Home saves require a browser session and preserve trace context', async context => {
   const core = createCoreModule(), files = await edgeConfig(context, [], {browserAccess: 'trusted-loopback'});
   const {runtime, logs} = await run(context, {modules: [core], configFile: files.config, edge: {schemas: {}}});

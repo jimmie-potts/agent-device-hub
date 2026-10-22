@@ -46,6 +46,8 @@ export class HomeLayoutPart implements CorePart {
   reconcileLighting(tx: CoreTransaction, command: Command<LightingLayoutSetRequest>, before: LightingLayout, after: LightingLayout): void {
     const current = this.#record();if (current?.layouts === null || current === undefined || this.#save === undefined) return;
     const layouts = structuredClone(current.layouts);
+    const homeGroups = (layout: LightingLayout): string => JSON.stringify(layout.groups.filter(group => group.scope === 'home').map(group => ({id: group.id, devices: group.devices})));
+    const regrouping = homeGroups(before) !== homeGroups(after);
     const key = (value: {kind: string; id: string}): string => `light:${value.kind}:${value.id}`;
     for (const breakpoint of ['desktop', 'phone'] as const) {
       let entries = layouts[breakpoint].flatMap(entry => {
@@ -62,7 +64,8 @@ export class HomeLayoutPart implements CorePart {
       }
       if (after.home !== null) {
         const old = new Set(before.home?.map(key) ?? []), next = new Set(after.home.map(key));
-        entries = entries.filter(entry => !old.has(entry.widget) || next.has(entry.widget));
+        // A group action's visible selection is not a removal instruction for unrelated placements.
+        if (!regrouping) entries = entries.filter(entry => !old.has(entry.widget) || next.has(entry.widget));
         for (const selection of after.home) if ((before.home !== null || selection.kind !== 'device') && !old.has(key(selection)) && !entries.some(entry => entry.widget === key(selection))) entries.push({widget: key(selection), size: 'medium', hidden: false});
       }
       const seen = new Set<string>();entries = entries.filter(entry => {if (seen.has(entry.widget)) return false;seen.add(entry.widget);return true;});

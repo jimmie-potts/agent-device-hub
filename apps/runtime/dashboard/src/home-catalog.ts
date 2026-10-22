@@ -14,7 +14,8 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
   if (wispr !== undefined) {
     wispr.category = 'Data';
     const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics')) === true;
-    wispr.defaultSelected = exposed;if (!exposed) wispr.reason = 'Wispr browser exposure is not available.';
+    wispr.defaultSelected = exposed;
+    if (!exposed || !connected) {wispr.source = {kind: 'unavailable'};wispr.reason = !exposed ? 'Wispr browser exposure is not available.' : 'Wispr records are unavailable or stale.';}
   }
   const devices = lightingDevices(runtime.copies, connected);
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
