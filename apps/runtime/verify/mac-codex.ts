@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {CaptureContext} from '@jimmie-potts/app-verify';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {Page} from 'playwright';
+import type {Page, Locator} from 'playwright';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
 import {tokenDigest, REQUEST_HEADER, type EdgeCredential} from '../src/index.js';
@@ -52,6 +52,43 @@ async function until(test: () => Promise<boolean>, ms = 5000): Promise<boolean> 
 }
 export async function captureMacCodex(t: CaptureContext): Promise<void> {
   const page = t.page as Page;
+  const label = async (text: string) => page.evaluate(text => {
+    let box = document.getElementById('portable-review-label');
+    if (!box) {
+      box = document.createElement('div'); box.id = 'portable-review-label';
+      box.style.cssText = 'position:fixed;top:12px;left:12px;z-index:2147483647;padding:10px 16px;background:#10263f;color:white;border:2px solid #83c7ff;border-radius:8px;font:16px system-ui;pointer-events:none';
+      document.body.append(box);
+    }
+    box.textContent = text;
+  }, text);
+  const show = async (target: Locator, text: string) => {
+    await target.scrollIntoViewIfNeeded(); await label(text);
+    await target.evaluate(element => {element.scrollIntoView({block: 'center'}); (element as HTMLElement).style.outline = '3px solid #58a6ff';});
+    await page.waitForTimeout(700);
+    await t.expect(`${text}: target fits the recorded viewport`, async () => {
+      const box = await target.boundingBox(), viewport = page.viewportSize();
+      return box !== null && viewport !== null && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height;
+    });
+  };
+  const click = async (control: Locator, text: string) => {
+    await show(control, text);
+    const target = await control.boundingBox();
+    if (!target) throw new Error('review control is outside the viewport');
+    await page.evaluate(() => {
+      const pointer = document.createElement('div'); pointer.id = 'portable-review-pointer';
+      pointer.style.cssText = 'position:fixed;left:20px;top:20px;width:18px;height:18px;border:3px solid #58a6ff;background:#10263f;border-radius:50%;transform:translate(-50%,-50%);z-index:2147483647;pointer-events:none';
+      document.body.append(pointer);
+      document.addEventListener('pointermove', event => {pointer.style.left = `${event.clientX}px`; pointer.style.top = `${event.clientY}px`;});
+    });
+    const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+    await page.mouse.move(20, 20);
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {steps: reduced ? 1 : 8});
+    await page.waitForTimeout(400);
+    await page.locator('#portable-review-pointer').evaluate(element => {(element as HTMLElement).style.border = '6px solid #ffcf66';});
+    await control.click();
+    await page.waitForTimeout(250);
+    await page.evaluate(() => document.getElementById('portable-review-pointer')?.remove());
+  };
   const origin = new URL(t.url).origin, token = await readFile(tokenFile(t.dataDir), 'utf8');
   const tokens = JSON.parse(await readFile(partTokensOf(t.dataDir), 'utf8')) as Record<string, string>;
   const producer = join(configDirOf(t.dataDir), 'mac-producer.json');
@@ -68,18 +105,26 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   const errors: string[] = []; page.on('pageerror', () => errors.push('page-error'));
   await page.goto(new URL('/', origin).href);
   await page.locator('main#main[data-feed="connected"]').waitFor();
+  await label('Synthetic Codex lifecycle walkthrough - metadata only');
   for (const hook_event_name of ['SessionStart', 'UserPromptSubmit']) {
     const result = await invoke(producer, {...raw, hook_event_name});
     await t.expect(`${hook_event_name} hook exits silently within its budget`, () => result.quiet && result.elapsed < 4000);
   }
   await t.expect('real core records the shared local known active turn', () => until(async () => (await records()).some(r => r.identity.client === 'local' && r.identity.sessionId === raw.session_id && r.activity === 'active' && r.turn.status === 'known' && r.turn.id === raw.turn_id)));
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
-  await page.getByText('Working', {exact: true}).first().waitFor();
-  await t.expect('dashboard renders the active shared local turn as Working', async () => page.getByText('Working', {exact: true}).first().isVisible());
+  const card = page.locator('article.agent-status-card').filter({hasText: 'Mac Codex'}).first();
+  const working = card.locator('.chip[data-chip="working"]');
+  await working.waitFor();
+  await show(working, 'Synthetic turn started: observe Working');
+  await t.expect('dashboard card renders the active shared local turn as Working', async () => await working.innerText() === 'Working' && await working.isVisible());
+  await label('Send synthetic Stop; observe the retained Finished notice');
   const ended = await invoke(producer, {...raw, hook_event_name: 'Stop'});
   await t.expect('Stop publishes silently', () => ended.quiet);
   await t.expect('real core retains the completed unread notice', () => until(async () => (await records()).some(r => r.activity === 'idle' && r.notices.some(n => n.kind === 'turn-ended'))));
-  await page.getByText('Finished · unread', {exact: true}).first().waitFor();
+  const finished = card.locator('.chip[data-chip="finished"]');
+  await finished.waitFor();
+  await t.expect('dashboard card renders Finished unread', async () => await finished.innerText() === 'Finished · unread');
+  await show(finished, 'Finished notice remains unread');
   const beforeExcluded = JSON.stringify(await records());
   for (const [index, payload] of [{...raw, hook_event_name: 'Stop', agent_id: 'child'}, {...raw, hook_event_name: 'SessionStart', source: 'compact'}, {...raw, hook_event_name: 'PermissionRequest'}].entries()) {
     payload.session_id = `excluded-root-${index}`; payload.turn_id = `excluded-turn-${index}`;
@@ -110,6 +155,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   } finally {stalled.closeAllConnections(); await new Promise<void>(resolve => stalled.close(() => resolve())); await write();}
   const harness = t.endpoints.harness;
   if (harness === undefined) throw new Error('synthetic harness unavailable');
+  await label('Simulate receiver loss; the hook must return quietly');
   const restarting = fetch(new URL(`${HARNESS_PATH}/restart`, harness), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({holdMs: 4000})});
   await t.expect('selected synthetic receiver is actually unavailable', () => until(async () => {
     try {await fetch(new URL('/api/v2/health', origin), {signal: AbortSignal.timeout(200)}); return false;} catch {return true;}
@@ -118,9 +164,16 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await t.expect('unavailable receiver leaves hook silent and bounded', () => offline.quiet && offline.elapsed < 4000);
   await t.expect('same synthetic core restarts', async () => (await restarting).ok);
   await page.getByRole('button', {name: 'Sign in again', exact: true}).waitFor();
-  await page.getByRole('button', {name: 'Sign in again', exact: true}).click();
+  const signIn = page.getByRole('button', {name: 'Sign in again', exact: true});
+  await click(signIn, 'Click Sign in again after the simulated restart');
   await page.locator('main#main[data-feed="connected"]').waitFor();
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
+  await show(finished, 'Feed recovered; the retained record is honestly marked Stale');
+  await t.expect('recovered card preserves Finished while showing uncertain freshness', async () => await finished.innerText() === 'Stale');
+  await click(card.locator('summary'), 'Open the recovered card to inspect its retained notice');
+  const notice = card.getByText('Turn portable-turn ended', {exact: true});
+  await notice.waitFor();
+  await show(notice, 'Original turn-ended notice retained; freshness remains uncertain');
   await t.expect('retained record survives and lost observation is not invented', async () => {
     const found = await records(); return found.length === 1 && found[0]?.identity.sessionId === raw.session_id && found[0].notices.some(n => n.kind === 'turn-ended');
   });
@@ -129,6 +182,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   });
   await t.attach('checks.json', JSON.stringify({synthetic: true, physical: false, metadataOnly: true,
     components: {actual: ['runtime-core', 'gateway', 'dashboard', 'chromium', 'mac-codex-hook-wrapper'], simulated: ['Codex-input', 'source-identities', 'grants', 'device-transports'], installedClients: false},
+    recording: 'synthetic-input walkthrough with review-only labels and pointer cues',
     scopesRefused: ['read', 'control', 'admin'],
     excludedInputs: ['child', 'compact', 'permission'], sourceBinding: true, rawHostRefused: true, originRefused: true,
     stalledAttempts: attempts, offlineFailOpen: true, browserRecovery: true, retainedNotice: true}));

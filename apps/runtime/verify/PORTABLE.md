@@ -69,6 +69,12 @@ completion, content exclusion, source-bound ingest/read/control/admin refusals,
 Host/Origin admission, stalled/unavailable receivers and browser recovery. It
 uses no installed credential, Codex hook settings, history or personal store.
 It does not establish that an installed client emitted every supported hook.
+The recording labels its synthetic actions, scrolls the actual status badge
+into view and pauses on Working and Finished. Browser recovery uses visible
+target/pointer/click cues that respect reduced motion. The final screenshot
+keeps the recorded viewport rather than resizing it; other capture steps retain
+their existing full-page default. Recovery must show honest Stale evidence and
+its retained notice, rather than imply a fresh producer observation.
 
 The container has no networking, host ports, mounts, devices, engine socket or
 host namespaces. It runs as UID 1000 with dropped capabilities, no new privileges,

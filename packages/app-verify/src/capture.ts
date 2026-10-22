@@ -243,7 +243,7 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
     // The screenshot of the end state, including a failure's.
     if (!crashed) {
       try {
-        await race(page.screenshot({path: join(dir, 'after.png'), fullPage: true, timeout: 10000}));
+        await race(page.screenshot({path: join(dir, 'after.png'), fullPage: step.screenshotFullPage !== false, timeout: 10000}));
         finished.screenshot = await isPng(join(dir, 'after.png'));
       } catch (error) {
         if (error instanceof Interrupted) throw error;

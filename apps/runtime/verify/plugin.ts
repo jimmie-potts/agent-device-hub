@@ -295,7 +295,8 @@ export default definePlugin({
   ],
   captureSteps: {
     'mac-codex-local': {description: 'Shared Mac hook to real dashboard, privacy, admission and offline recovery',
-      scenario: 'mac-codex-local', fresh: true, timeoutMs: 90_000, run: async t => {await captureMacCodex(t); await boundariesHold(t);}},
+      scenario: 'mac-codex-local', fresh: true, viewport: {width: 1280, height: 1000}, screenshotFullPage: false,
+      timeoutMs: 90_000, run: async t => {await captureMacCodex(t); await boundariesHold(t);}},
     'edge-grants': {
       description: 'A remote part with the run\'s grant connects and syncs the core\'s sessions; one without a grant is unauthenticated',
       scenario: 'fixtures',

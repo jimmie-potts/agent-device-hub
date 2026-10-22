@@ -191,6 +191,22 @@ async function retainedProof(receipt: PortableReceipt, at: string): Promise<void
   await validateProofFiles(manifest, receipt.identity, name => join(at, ...name.split('/')));
   receipt.capture = manifest;
 }
+/** A successful absence query remains factual even if proof validation is unsuccessful. */
+export async function recoverPortableAbsence(receipt: PortableReceipt, at: string, run: DockerCommand): Promise<boolean> {
+  const id = receipt.containerId;
+  if (!id || !ID.test(id)) return false;
+  try {if ((await run(['ps', '--all', '--no-trunc', '--filter', `id=${id}`, '--format', '{{.ID}}'])) !== '') return false;}
+  catch {return false;}
+  receipt.cleanup.stopped = true; receipt.cleanup.container = 'removed';
+  try {
+    await retainedProof(receipt, at);
+    if (receipt.state !== 'passed' || receipt.capture?.outcome !== 'passed') {
+      if (receipt.state !== 'expired') receipt.state = 'failed';
+      receipt.failure = 'recovered-after-removal';
+    }
+  } catch {receipt.state = 'unknown'; receipt.failure = 'proof-unavailable';}
+  return true;
+}
 async function exportProof(receipt: PortableReceipt, at: string, run: DockerCommand): Promise<void> {
   const i = receipt.identity, id = receipt.containerId!;
   const from = `${id}:/var/lib/app-verify/${i.runId}/proof`;
@@ -224,15 +240,7 @@ export async function finishPortable(receipt: PortableReceipt, at: string, run: 
   const id = receipt.containerId, i = receipt.identity;
   if (!id || !(await stopPortableContainer(id, i, run))) {
     receipt.state = 'unknown'; receipt.cleanup.container = 'unknown'; receipt.failure = 'stop-unconfirmed';
-    if (id && removeFailed) {
-      try {
-        if ((await run(['ps', '--all', '--no-trunc', '--filter', `id=${id}`, '--format', '{{.ID}}'])) === '') {
-          receipt.cleanup.stopped = true; receipt.cleanup.container = 'removed';
-          await retainedProof(receipt, at);
-          receipt.state = 'failed'; receipt.failure = 'recovered-after-removal';
-        }
-      } catch {receipt.failure = 'recovery-unconfirmed';}
-    }
+    if (id && removeFailed) await recoverPortableAbsence(receipt, at, run);
     return;
   }
   receipt.cleanup.stopped = true; receipt.cleanup.container = 'left';
@@ -275,14 +283,9 @@ export async function runPortableCli(plugin: AppPlugin, argv: string[], run: Doc
         || receipt.containerId !== null && !ID.test(receipt.containerId)) throw new Error('invalid portable receipt');
       checkIdentity(receipt.identity, true);
       if (receipt.cleanup.container === 'removed') {
-        if (!receipt.containerId || (await run(['ps', '--all', '--no-trunc', '--filter', `id=${receipt.containerId}`, '--format', '{{.ID}}'])) !== '') throw new Error('absence unconfirmed');
-        await retainedProof(receipt, at);
-        receipt.cleanup.stopped = true;
-        if (receipt.state === 'unknown' || receipt.state === 'starting' || receipt.state === 'running') {
-          receipt.state = 'failed'; receipt.failure = 'recovered-after-removal';
-        }
+        if (!await recoverPortableAbsence(receipt, at, run)) throw new Error('absence unconfirmed');
         receipt.finishedAt = new Date().toISOString(); await save(join(at, 'portable.json'), receipt);
-        print(receipt); return 0;
+        print(receipt); return receipt.state === 'unknown' ? 1 : 0;
       }
       if (!receipt.containerId) {
         const ids = (await run(['ps', '--all', '--no-trunc', '--filter', `label=org.bunny.verify.run=${receipt.identity.runId}`, '--format', '{{.ID}}'])).split('\n').filter(Boolean);

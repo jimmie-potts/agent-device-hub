@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {portableCreateArgs, portableContainerMatches, portableManifest, portableArtifact, stopPortableContainer, finishPortable} from '../dist/portable.js';
+import {portableCreateArgs, portableContainerMatches, portableManifest, portableArtifact, stopPortableContainer, finishPortable, recoverPortableAbsence} from '../dist/portable.js';
 import {mkdtemp, rm, writeFile, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -154,7 +154,10 @@ test('authoritative absence with missing retained proof is truthful but unsucces
   assert.equal(w.receipt.state, 'unknown');
   assert.deepEqual(w.receipt.cleanup, {stopped: true, container: 'removed'});
   assert.equal(w.receipt.capture, null);
-  assert.equal(w.receipt.failure, 'recovery-unconfirmed');
+  assert.equal(w.receipt.failure, 'proof-unavailable');
+  assert.equal(await recoverPortableAbsence(w.receipt, w.at, absent), true);
+  assert.equal(w.receipt.state, 'unknown');
+  assert.deepEqual(w.receipt.cleanup, {stopped: true, container: 'removed'});
 });
 
 test('failed Docker reads never establish absence or destroy retained evidence', async t => {
