@@ -279,7 +279,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
@@ -391,7 +391,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
 // Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.
 const packagedMarkdown = [
   'apps/bb8-windows/README.md', 'apps/bb8-windows/THIRD-PARTY-NOTICES.md', 'modules/bb8/README.md',
-  'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/maintenance/README.md', 'apps/wispr-collector/README.md',
+  'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/wispr-collector/README.md',
   'docs/agent-lifecycle-contract.md', 'docs/app-verification.md', 'docs/controller-contract.md',
   'docs/decisions/0009-app-verification-runs.md', 'docs/install-contract.md', 'docs/observability-contract.md',
   'docs/provider-qualification.md', 'packages/agent-state/README.md', 'packages/app-verify/README.md',
@@ -417,8 +417,6 @@ test('Markdown that package checks copy exists, and the hash-checked vendor fold
 });
 
 const builtPayloads = {
-  'test:maintenance': 'node --test apps/maintenance/tests/*.test.mjs',
-  'test:maintenance:package': 'node scripts/package-maintenance.mjs --test',
   'test:observability': 'node --test packages/observability/tests/*.test.mjs',
   'test:observability:package': 'node scripts/package-observability.mjs --test',
   'test:contracts': 'node --test packages/contracts/tests/*.test.mjs',

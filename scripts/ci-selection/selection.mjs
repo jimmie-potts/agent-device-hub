@@ -5,7 +5,7 @@
 // This module has no dependencies, because the select and gate jobs run it without `npm ci`.
 
 /** Check groups, in the order reports list them. Each conditional step in checks.yml names exactly one. */
-export const GROUPS = Object.freeze(['runtime', 'maintenance', 'modules', 'chompi', 'shared']);
+export const GROUPS = Object.freeze(['runtime', 'modules', 'chompi', 'shared']);
 
 /** Jobs that run only when one of their groups is selected; core always runs build, typecheck and lint. */
 export const JOBS = Object.freeze({
@@ -22,10 +22,9 @@ const RULES = Object.freeze([
   ['modules/bb8/**', [], 'hibernated BB-8 source'],
   ['apps/bb8-windows/**', [], 'hibernated BB-8 helper source'],
   ['scripts/package-bb8.mjs.hibernated', [], 'hibernated BB-8 packaging source'],
-  // The runtime composes active modules, and maintenance imports the runtime.
-  ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
-  ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
-  ['apps/maintenance/**', ['maintenance'], 'maintenance, which nothing imports'],
+  // The runtime composes active modules.
+  ['apps/runtime/**', ['runtime'], 'the runtime'],
+  ['modules/**', ['modules', 'runtime'], 'a module and the runtime that composes it'],
   // The bridge, its protocol fixtures and the controller firmware use only one another.
   ['apps/chompi-bridge/**', ['chompi'], 'the CHOMPI bridge'],
   ['packages/chompi-protocol/**', ['chompi'], 'the CHOMPI protocol, used only by the bridge and firmware'],

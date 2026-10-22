@@ -69,10 +69,6 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint:js
-      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
-        run: npm run test:maintenance:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
-        run: npm run test:maintenance:package:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')

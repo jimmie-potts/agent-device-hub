@@ -299,8 +299,8 @@ After verified merge and required merged-revision CI, follow the shared
 [canonical checkout refresh procedure](https://github.com/jimmie-potts/agent-skills/blob/main/skills/deliver-work/references/project-discovery.md#canonical-checkout-refresh).
 Reading the procedure does not invoke the explicit-only skill. Refresh the remote
 target, record its immutable SHA/time and prove it contains the delivered merge.
-Establish exclusive writer ownership through the existing participating claim or
-verified owner handoff; clean status or an idle-looking session is insufficient.
+Establish exclusive writer ownership through verified owner handoff; clean
+status or an idle-looking session is insufficient.
 An existing scoped release is sufficient; do not request another acknowledgment.
 Recheck branch, expected HEAD, index/worktree/untracked state and ownership
 immediately before fast-forwarding only to that observed SHA.
@@ -340,30 +340,6 @@ At authorized planning, implementation, review and closeout checkpoints, follow
 [Project maintenance](project-maintenance.md) for selected Project items. Run the
 native checkpoint before projecting its resulting state. Project synchronization
 failure remains a reported tracker gap; it does not erase verified source delivery.
-
-## Shared manual delivery claim
-
-This procedure applies only to repositories participating in the installed
-nightly queue. Ordinary work outside that queue needs no nightly configuration,
-claim or client wrapping; retain the scoped ownership rules above.
-
-When Hub participates in the installed cross-repository nightly queue, start a
-manual delivery client under the same claim before its first write:
-
-```text
-python3 ~/.dotfiles/scripts/nightly_queue.py claim-run --config ~/.config/nightly-queue/config.json --repository jimmie-potts/agent-device-hub --issue <n> -- <manual-client argv>
-```
-
-Read `~/.dotfiles/docs/nightly-queue.md#shared-manual-claims` for the installed
-procedure. Retain the claim through validation, reviews, publication, merge,
-installation and tracker reconciliation, including when the scheduler is paused
-or disabled. Explicitly assigned workers under the supervisor's existing claim
-do not acquire nested claims. Before activation, existing unwrapped clients must
-finish or hand off. Desktop or other clients that cannot be wrapped stay read-only
-until a qualified claim/handoff covers their complete delivery. The helper
-excludes adopted cooperating clients; it cannot fence arbitrary same-user
-processes. A missing or uncertain claim blocks delivery writes without granting
-permission to replace an owner.
 
 ## Review and merge
 

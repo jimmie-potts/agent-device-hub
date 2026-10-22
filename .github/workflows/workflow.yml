@@ -69,7 +69,7 @@ jobs:
           python3 docs/check_docs_drift.py --report "$RUNNER_TEMP/docs-drift.md" || result=$?
           cat "$RUNNER_TEMP/docs-drift.md" >> "$GITHUB_STEP_SUMMARY"
           exit "$result"
-      - name: Validate retained diagrams, atlas and maintenance parser
+      - name: Validate retained diagrams, atlas and recommendation parser
         run: |
           python3 docs/diagrams/check.py
           python3 docs/diagrams/test_independence.py

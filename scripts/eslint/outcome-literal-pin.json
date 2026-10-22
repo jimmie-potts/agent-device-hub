@@ -34,15 +34,6 @@
   "apps/hub/src/vendor/nanoleaf-integration.ts": 1,
   "apps/hub/src/wispr-query.ts": 1,
   "apps/local-controllers/src/host.ts": 1,
-  "apps/maintenance/bin/hub-supervisor-install.mjs": 2,
-  "apps/maintenance/bin/tracker-closeout.mjs": 2,
-  "apps/maintenance/closeout/assessment.mjs": 8,
-  "apps/maintenance/closeout/closeout.mjs": 4,
-  "apps/maintenance/closeout/installed-files.mjs": 1,
-  "apps/maintenance/install/hub.mjs": 7,
-  "apps/maintenance/src/intake.ts": 2,
-  "apps/maintenance/src/journal.ts": 2,
-  "apps/maintenance/src/planner.ts": 2,
   "apps/runtime/bin/runtime-upgrade-check.mjs": 1,
   "apps/runtime/scripts/measure-commits.mjs": 2,
   "apps/runtime/src/core/automation-part.ts": 6,
@@ -189,6 +180,5 @@
   "scripts/observability/resource-watchdog.mjs": 1,
   "scripts/observability/span-pipeline.mjs": 1,
   "scripts/observability/worker-diagnostics.mjs": 3,
-  "scripts/package-maintenance.mjs": 1,
   "scripts/verify-host.mjs": 2
 }

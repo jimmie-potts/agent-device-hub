@@ -23,31 +23,28 @@ const pr = paths => selectChecks({ event: 'pull_request', paths, complete: true 
 test('a narrow module change selects its suites and known consumers, and omits unrelated work', () => {
   const result = pr(['modules/pixoo/src/module.ts']);
   assert.equal(result.mode, 'selected');
-  // The runtime composes every module, and maintenance imports the runtime.
-  assert.deepEqual(result.groups, ['runtime', 'maintenance', 'modules']);
+  // The runtime composes every module.
+  assert.deepEqual(result.groups, ['runtime', 'modules']);
   assert.deepEqual(result.omitted, ['chompi', 'shared']);
   assert.deepEqual(result.jobs, { firmware: false, 'app-verify': true });
-  assert.deepEqual(result.reasons.find(item => item.path === 'modules/pixoo/src/module.ts').groups, ['modules', 'runtime', 'maintenance']);
+  assert.deepEqual(result.reasons.find(item => item.path === 'modules/pixoo/src/module.ts').groups, ['modules', 'runtime']);
   assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
 
-test('a runtime dashboard change selects the runtime and its maintenance consumer only', () => {
+test('a runtime dashboard change selects the runtime only', () => {
   const result = pr(['apps/runtime/dashboard/src/main.tsx', 'apps/runtime/dashboard/tests/smoke.ts']);
-  assert.deepEqual(result.groups, ['runtime', 'maintenance']);
+  assert.deepEqual(result.groups, ['runtime']);
   assert.deepEqual(result.jobs, { firmware: false, 'app-verify': true });
   // The old dashboard is shared with the old Hub and the runtime's dashboard copy, so it keeps the full gate.
   assert.equal(pr(['apps/dashboard/src/main.tsx']).mode, 'full');
 });
 
-test('CHOMPI changes run the bridge suites and the firmware job, and maintenance alone skips App verification', () => {
+test('CHOMPI changes run the bridge suites and the firmware job', () => {
   for (const file of ['apps/chompi-bridge/src/bridge.ts', 'packages/chompi-protocol/fixtures/frames.json', 'firmware/chompi-controller/src/main.cpp']) {
     const result = pr([file]);
     assert.deepEqual(result.groups, ['chompi'], file);
     assert.deepEqual(result.jobs, { firmware: true, 'app-verify': true }, file);
   }
-  const maintenance = pr(['apps/maintenance/src/planner.ts']);
-  assert.deepEqual(maintenance.groups, ['maintenance']);
-  assert.deepEqual(maintenance.jobs, { firmware: false, 'app-verify': false });
 });
 
 test('shared, toolchain, CI, selector and unknown paths select full coverage with their reason', () => {
@@ -85,25 +82,25 @@ test('Markdown, documentation tooling and OpenSpec change no Checks suite, and t
   }
   assert.deepEqual(pr(['tests/roborock_consumer.test.mjs']).groups, ['runtime']);
   // A Markdown file never widens a mixed change.
-  assert.deepEqual(pr(['apps/maintenance/README.md', 'apps/maintenance/src/planner.ts']).groups, ['maintenance']);
+  assert.deepEqual(pr(['apps/chompi-bridge/README.md', 'apps/chompi-bridge/src/bridge.ts']).groups, ['chompi']);
 });
 
 test('renames and deletions count both paths: a move out of a narrow group widens the selection', () => {
   // A rename's old and new paths both arrive as changed paths (callers add previous_filename).
-  assert.deepEqual(pr(['apps/maintenance/src/old.ts', 'apps/chompi-bridge/src/new.ts']).groups, ['maintenance', 'chompi']);
+  assert.deepEqual(pr(['modules/pixoo/src/old.ts', 'apps/chompi-bridge/src/new.ts']).groups, ['runtime', 'modules', 'chompi']);
   const moved = pr(['modules/pixoo/src/helpers.ts', 'packages/sdk/src/helpers.ts']);
   assert.equal(moved.mode, 'full');
   // A deletion is just its old path.
-  assert.deepEqual(pr(['apps/maintenance/src/removed.ts']).groups, ['maintenance']);
+  assert.deepEqual(pr(['apps/chompi-bridge/src/removed.ts']).groups, ['chompi']);
 });
 
 test('pushes, manual runs, other events, incomplete or empty comparisons select full coverage', () => {
   for (const event of ['push', 'workflow_dispatch', 'merge_group', 'schedule']) {
-    const result = selectChecks({ event, paths: ['apps/maintenance/src/planner.ts'], complete: true });
+    const result = selectChecks({ event, paths: ['apps/chompi-bridge/src/bridge.ts'], complete: true });
     assert.equal(result.mode, 'full', event);
     assert.match(result.full[0].reason, new RegExp(event));
   }
-  const incomplete = selectChecks({ event: 'pull_request', paths: ['apps/maintenance/src/planner.ts'], complete: false, detail: 'HTTP 502' });
+  const incomplete = selectChecks({ event: 'pull_request', paths: ['apps/chompi-bridge/src/bridge.ts'], complete: false, detail: 'HTTP 502' });
   assert.equal(incomplete.mode, 'full');
   assert.match(incomplete.full[0].reason, /incomplete.*HTTP 502/);
   assert.equal(selectChecks({ event: 'pull_request', paths: [], complete: true }).mode, 'full');
@@ -132,10 +129,10 @@ const needs = (selection, results = {}) => ({
 });
 
 test('the gate passes when every selected job succeeded and only unselected jobs were skipped', () => {
-  const narrow = pr(['apps/maintenance/src/planner.ts']);
+  const narrow = pr(['apps/runtime/src/main.ts']);
   const verdict = gateVerdict(needs(narrow));
   assert.equal(verdict.ok, true, verdict.problems.join('; '));
-  assert.deepEqual(verdict.lines.filter(line => /not selected/.test(line)).length, 2);
+  assert.deepEqual(verdict.lines.filter(line => /not selected/.test(line)).length, 1);
   assert.equal(gateVerdict(needs(pr(['packages/sdk/src/x.ts']))).ok, true);
   // An unselected job that ran anyway was executed, so it is reported as executed, not as skipped.
   const extra = gateVerdict(needs(narrow, { firmware: { result: 'success', outputs: {} } }));
@@ -200,23 +197,23 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
   const fetch = async (url, init) => {
     requests.push({ url, init });
     return { ok: true, status: 200, json: async () => ({ files: [
-      { filename: 'apps/chompi-bridge/src/new.ts', previous_filename: 'apps/maintenance/src/old.ts', status: 'renamed' },
+      { filename: 'apps/chompi-bridge/src/new.ts', previous_filename: 'modules/pixoo/src/old.ts', status: 'renamed' },
       { filename: 'docs/sdlc.md', status: 'modified' },
-      { filename: 'apps/maintenance/src/removed.ts', status: 'removed' },
+      { filename: 'modules/pixoo/src/removed.ts', status: 'removed' },
     ] }) };
   };
   const result = await runSelect({ env, fetch });
-  assert.deepEqual(result.groups, ['maintenance', 'chompi']);
+  assert.deepEqual(result.groups, ['runtime', 'modules', 'chompi']);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].url, `https://api.github.com/repos/jimmie-potts/agent-device-hub/compare/${'a'.repeat(40)}...${'b'.repeat(40)}`);
   assert.equal(requests[0].init.method, 'GET');
   assert.equal(requests[0].init.headers.authorization, 'Bearer token-value');
-  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', firmware: 'true', 'app-verify': 'true' });
+  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["runtime","modules","chompi"]', firmware: 'true', 'app-verify': 'true' });
   const summary = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
-  assert.match(summary, /Selected: maintenance, chompi/);
-  assert.match(summary, /Omitted \(no changed path selects them\): runtime, modules, shared/);
-  assert.match(summary, /apps\/maintenance\/src\/removed\.ts/);
-  assert.match(summary, /apps\/maintenance\/src\/old\.ts/);
+  assert.match(summary, /Selected: runtime, modules, chompi/);
+  assert.match(summary, /Omitted \(no changed path selects them\): shared/);
+  assert.match(summary, /modules\/pixoo\/src\/removed\.ts/);
+  assert.match(summary, /modules\/pixoo\/src\/old\.ts/);
   assert.doesNotMatch(summary, /token-value/);
 });
 
@@ -225,7 +222,7 @@ test('select falls back to full coverage when the comparison is unreadable, trun
     ['HTTP error', async () => ({ ok: false, status: 502, json: async () => ({}) }), /HTTP 502/],
     ['network error', async () => { throw new Error('getaddrinfo ENOTFOUND api.github.com'); }, /could not be read/],
     ['no file list', async () => ({ ok: true, status: 200, json: async () => ({}) }), /no file list/],
-    ['300 files', async () => ({ ok: true, status: 200, json: async () => ({ files: Array.from({ length: 300 }, (_, n) => ({ filename: `apps/maintenance/src/f${n}.ts` })) }) }), /300/],
+    ['300 files', async () => ({ ok: true, status: 200, json: async () => ({ files: Array.from({ length: 300 }, (_, n) => ({ filename: `modules/pixoo/src/f${n}.ts` })) }) }), /300/],
   ]) {
     const { env } = actions(t, 'pull_request', PULL);
     const result = await runSelect({ env, fetch });
@@ -243,7 +240,7 @@ test('select falls back to full coverage when the comparison is unreadable, trun
 
 test('the gate entry point reads the needs context, writes a summary and returns the verdict', async t => {
   const { env } = actions(t, 'pull_request', PULL);
-  const good = await runGate({ env: { ...env, NEEDS: JSON.stringify(needs(pr(['apps/maintenance/src/x.ts']))) } });
+  const good = await runGate({ env: { ...env, NEEDS: JSON.stringify(needs(pr(['apps/runtime/src/x.ts']))) } });
   assert.equal(good.ok, true);
   assert.match(fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8'), /firmware: skipped \(not selected\)/);
   assert.equal((await runGate({ env: { ...env, NEEDS: 'not json' } })).ok, false);
@@ -257,8 +254,8 @@ test('the select command publishes its selection in a notice that the preflight 
   const line = run.stdout.split('\n').find(text => text.startsWith('::notice '));
   assert.equal(line, `::notice title=${NOTICE_TITLE}::${noticeMessage({ mode: 'full', groups: GROUPS })}`);
   assert.deepEqual(readNotice(line.slice(line.indexOf('::', 2) + 2)), { mode: 'full', groups: [...GROUPS] });
-  const narrow = pr(['apps/maintenance/src/planner.ts']);
-  assert.deepEqual(readNotice(noticeMessage(narrow)), { mode: 'selected', groups: ['maintenance'] });
+  const narrow = pr(['apps/chompi-bridge/src/bridge.ts']);
+  assert.deepEqual(readNotice(noticeMessage(narrow)), { mode: 'selected', groups: ['chompi'] });
   for (const message of ['', 'not json', '{"mode":"partial","groups":[]}', '{"mode":"selected","groups":["bogus"]}', '{"mode":"selected"}']) {
     assert.equal(readNotice(message), null, message);
   }
@@ -267,13 +264,13 @@ test('the select command publishes its selection in a notice that the preflight 
 // ---- Local selection ----
 
 test('local selection lists the same commands CI runs for the selection', () => {
-  const narrow = selectedCommands(checks, pr(['apps/maintenance/src/planner.ts']));
+  const narrow = selectedCommands(checks, pr(['apps/runtime/src/main.ts']));
   const core = narrow.find(job => job.id === 'core');
   assert.ok(core.commands.includes('npm run build'));
   assert.ok(core.commands.includes('npm run lint:js'));
-  assert.ok(core.commands.includes('npm run test:maintenance:built'));
-  assert.equal(core.commands.includes('npm run test:runtime:built'), false);
-  assert.deepEqual(narrow.filter(job => !job.selected).map(job => job.id).sort(), ['app-verify', 'firmware']);
+  assert.ok(core.commands.includes('npm run test:runtime:built'));
+  assert.equal(core.commands.includes('npm run test:chompi-bridge:built'), false);
+  assert.deepEqual(narrow.filter(job => !job.selected).map(job => job.id).sort(), ['firmware']);
   const full = selectedCommands(checks, pr(['package.json']));
   assert.ok(full.every(job => job.selected));
   const all = full.flatMap(job => job.commands);
@@ -286,14 +283,14 @@ test('local paths include both sides of renames, uncommitted and untracked files
   const calls = [];
   const git = args => {
     calls.push(args.join(' '));
-    if (args[0] === 'diff' && args.includes('--cached')) return 'apps/maintenance/src/staged.ts\n';
-    if (args[0] === 'diff' && args.includes('HEAD')) return 'apps/maintenance/src/edited.ts\n';
-    if (args[0] === 'diff') return 'apps/maintenance/src/old.ts\napps/chompi-bridge/src/new.ts\n';
+    if (args[0] === 'diff' && args.includes('--cached')) return 'apps/runtime/src/staged.ts\n';
+    if (args[0] === 'diff' && args.includes('HEAD')) return 'apps/runtime/src/edited.ts\n';
+    if (args[0] === 'diff') return 'apps/runtime/src/old.ts\napps/chompi-bridge/src/new.ts\n';
     if (args[0] === 'ls-files') return 'modules/pixoo/src/untracked.ts\n';
     return '';
   };
   assert.deepEqual(localPaths({ base: 'origin/main', git }).sort(), [
-    'apps/chompi-bridge/src/new.ts', 'apps/maintenance/src/edited.ts', 'apps/maintenance/src/old.ts', 'apps/maintenance/src/staged.ts', 'modules/pixoo/src/untracked.ts',
+    'apps/chompi-bridge/src/new.ts', 'apps/runtime/src/edited.ts', 'apps/runtime/src/old.ts', 'apps/runtime/src/staged.ts', 'modules/pixoo/src/untracked.ts',
   ]);
   assert.ok(calls.every(call => !call.startsWith('diff') || call.includes('--no-renames')), calls.join('\n'));
   assert.ok(calls.some(call => call.startsWith('diff') && call.includes('origin/main...HEAD')), calls.join('\n'));
@@ -307,7 +304,6 @@ const STEP_GROUPS = {
   core: {
     'actions/setup-python': 'shared',
     'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt': 'shared',
-    'npm run test:maintenance:built': 'maintenance', 'npm run test:maintenance:package:built': 'maintenance',
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
     'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
@@ -348,17 +344,15 @@ test('a narrow change runs the suites its paths can break', () => {
   const expectations = [
     [['apps/runtime/src/main.ts'], ['npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:runtime-dashboard:built',
       'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:onn:browser',
-      'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:maintenance:built'],
+      'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built'],
     ['npm run test:pixoo:built', 'npm run test:chompi-bridge:built', 'npm run test:sdk:built', 'npm run test:firmware']],
     [['modules/pixoo/src/module.ts'], ['npm run test:pixoo:built', 'npm run test:nanoleaf:built', 'npm run test:onn:native', 'npm run test:runtime:built',
-      'npm run test:runtime:verify:built', 'npm run test:maintenance:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
+      'npm run test:runtime:verify:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
     [['modules/roborock/transport/src/transport/codec.ts'], ['npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built',
       'npm run test:roborock:browser'], ['npm run test:firmware']],
     [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:firmware', 'npm run test:firmware:arm'],
     ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:app-verify:built']],
-    [['apps/maintenance/src/planner.ts'], ['npm run test:maintenance:built', 'npm run test:maintenance:package:built'],
-      ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:pixoo:built', 'npm run test:onn:native']],
   ];
   for (const [files, included, excluded] of expectations) {
     const commands = runs(files);

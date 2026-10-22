@@ -1,6 +1,7 @@
 # Execution recommendation mechanics
 
-This directory owns parsing, fingerprinting and upsert for maintenance closeout.
+This directory owns parsing, fingerprinting and upsert of issue execution
+recommendations.
 The installed planning skill owns assessment policy; this parser never chooses a
 model or invents an assessment. Existing missing, insufficient, unavailable,
 stale and recommended states keep their meanings.
