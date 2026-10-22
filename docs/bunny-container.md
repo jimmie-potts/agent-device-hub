@@ -26,8 +26,9 @@ never print, copy or publish it. No API token is generated or imported. Another
 program trusted on the host may access that local sign-in. The container socket
 binds its private network interface, while allowed Host/Origin values remain
 only `127.0.0.1:18788` and `localhost:18788` with the existing browser checks.
-Only host `127.0.0.1:18788` is published. The dedicated `local` bridge is internal,
-IPv6 disabled and not attachable; no other container belongs on it. A reachable
+Only host `127.0.0.1:18788` is published. The dedicated `local` bridge is an ordinary
+bridge, with outbound connectivity permitted, IPv6 disabled and not attachable;
+no other container belongs on it. This is not an outbound-isolated profile. A reachable
 container could forge Host/Origin headers, so this network is part of the trust
 boundary. Do not attach Tronbyt, enable host networking, add ports, or widen the
 host address. This profile supplies no LAN or remote-PC ingress.
@@ -71,10 +72,11 @@ browser-only profile. Normal core startup initializes its own private state.
 
 Open the local URL and use its existing sign-in. Require actual rendered core
 navigation and healthy core-only status, not just a listening port. Verify actual
-Docker metadata has one loopback TCP binding, one internal project-only network
+Docker metadata has one effective loopback TCP binding, one ordinary project-only network
 and no other attached container. Wrong Host and cross-origin requests must refuse.
 If isolation differs, stop only this new owned instance and preserve its volumes
-for inspection. The operator checks admission before start and after it; it also
+for inspection. The operator checks configured admission before start and effective
+publication after it; it also
 retains a stop path when an owned profile has a bad binding. Do not widen access
 to repair a failed browser test.
 
@@ -86,6 +88,38 @@ For a requested separate restore, use an unused project, the same local Compose
 and image, and the same fresh public-shape provisioning before restore; do not
 start its target before restoration. No restore or migration is part of initial
 everyday activation. PC stays stopped until a separately selected manual handoff.
+
+### Replace the initial stopped profile without replacing its data
+
+If the initial internal-network attempt was already created, its network cannot
+be changed in place. Replace only that new profile's stopped container and
+dedicated network after the owner approves the ordinary-bridge arrangement.
+Do not use `down -v`, `rm -v`, prune, or remove any data volume.
+
+First select the reviewed replacement image and matching source, and prepare the
+separate Compose file as above. Use operator `stop` and `status`; independently
+inspect the exact old container ID, project/service labels, PID zero, stopped
+state and `restart=no`. Record its three named mounts and confirm they are
+distinct ordinary local volumes with the expected read/write directions. Inspect
+the exact old project network ID and require zero attached containers. An
+unexpected owner, member, running process or Docker read error stops replacement.
+
+Only after those checks, remove that exact stopped container with `docker rm
+OLD_CONTAINER_ID` (without `-v`) and that exact empty network with `docker network
+rm OLD_NETWORK_ID`. Retain the recorded image and all three volumes. Recreate the
+same project with the new Compose file:
+
+```text
+docker compose -f LOCAL_COMPOSE -p bunny-mac-personal create --no-build --pull never core
+node scripts/bunny.mjs status --project bunny-mac-personal --compose LOCAL_COMPOSE
+```
+
+Verify the recreated container uses exactly the recorded state/config/secrets
+volumes and the selected immutable image. Do not run the fresh-provisioning helper
+again, import credentials or replace configuration. This profile change does not
+change the runtime storage format. Start only after source review, then verify
+actual `NetworkSettings.Ports`, browser access, core health and strict local
+admission. Preserve the data and stop the new profile if verification fails.
 
 ## Prepare private persistent volumes
 

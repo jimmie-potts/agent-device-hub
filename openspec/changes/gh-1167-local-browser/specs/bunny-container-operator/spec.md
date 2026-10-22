@@ -6,7 +6,9 @@ The container SHALL offer an explicit host-local profile with device control
 forced disabled, fresh private state/configuration and empty client credentials.
 It SHALL retain canonical loopback Host/Origin checks while separating the socket
 bind. Docker SHALL expose only host127.0.0.1 TCP18788 to container18788 on a
-dedicated internal network with no other container attached. Native and isolated
+dedicated ordinary bridge with no other container attached and outbound access
+permitted. Effective running port publication SHALL match the configured loopback
+binding. Native and isolated
 defaults SHALL remain unchanged. No LAN/remote ingress or automatic restart is added.
 
 #### Scenario: Local browser operation

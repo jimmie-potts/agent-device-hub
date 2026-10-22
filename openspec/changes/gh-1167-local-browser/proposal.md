@@ -9,7 +9,7 @@ its socket is container loopback, networking is none and the operator refuses po
 - Add one explicit core-only host-local container profile at127.0.0.1:18788.
 - Separate its socket bind from unchanged canonical Host/Origin checks.
 - Reuse trusted-local browser sessions with an empty client-credential document.
-- Admit only its dedicated internal network and exact loopback TCP binding in the operator.
+- Admit only its dedicated ordinary bridge and exact configured/effective loopback TCP binding in the operator; outbound connectivity is explicitly permitted.
 - Qualify the actual Mac browser path before leaving that new private instance running.
 
 ## Capabilities

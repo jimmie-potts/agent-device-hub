@@ -51,6 +51,12 @@ function container(info, project) {
       || m.RW !== (m.Destination === '/var/lib/bunny'))) refuse();
   return mounts;
 }
+function localBinding(ports) {
+  const bindings = ports?.['18788/tcp'];
+  return ports !== undefined && ports !== null && Object.keys(ports).length === 1
+    && Array.isArray(bindings) && bindings.length === 1
+    && bindings[0].HostIp === '127.0.0.1' && bindings[0].HostPort === '18788';
+}
 async function access(info, project, run) {
   const ports = info.HostConfig?.PortBindings ?? {};
   const value = name => {
@@ -68,19 +74,18 @@ async function access(info, project, run) {
     return;
   }
   const name = project + '_local';
-  const bindings = ports['18788/tcp'];
   const networks = info.NetworkSettings?.Networks;
   if (profile !== 'host-local' || info.Config?.Labels?.['io.bunny.access'] !== 'host-local'
     || value('BUNNY_CONTROL') !== 'disabled' || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
-    || Object.keys(ports).length !== 1 || !Array.isArray(bindings) || bindings.length !== 1
-    || bindings[0].HostIp !== '127.0.0.1' || bindings[0].HostPort !== '18788'
+    || !localBinding(ports)
+    || (info.State?.Running && !localBinding(info.NetworkSettings?.Ports))
     || info.HostConfig?.NetworkMode !== name || !networks || Object.keys(networks).length !== 1 || !networks[name]) refuse();
   const selected = JSON.parse(await run(['network', 'inspect', name]));
   const network = selected[0];
   if (selected.length !== 1 || network.Name !== name || !/^[0-9a-f]{64}$/.test(network.Id ?? '')
-    || network.Driver !== 'bridge' || network.Scope !== 'local' || network.Internal !== true
+    || network.Driver !== 'bridge' || network.Scope !== 'local' || network.Internal !== false
     || network.Attachable !== false || network.EnableIPv6 !== false
     || Object.entries(network.Options ?? {}).some(([key, value]) => key !== 'com.docker.network.enable_ipv4' || value !== 'true')
     || network.Labels?.['com.docker.compose.project'] !== project || network.Labels?.['com.docker.compose.network'] !== 'local'

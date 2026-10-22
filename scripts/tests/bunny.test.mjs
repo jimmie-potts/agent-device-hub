@@ -33,11 +33,13 @@ function localFixture() {
   f.info.HostConfig.NetworkMode='synthetic_local';
   f.info.HostConfig.PortBindings={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
   f.info.NetworkSettings.Networks={synthetic_local:{NetworkID:networkId}};
-  const network={Id:networkId,Name:'synthetic_local',Driver:'bridge',Scope:'local',Internal:true,Attachable:false,EnableIPv6:false,
+  const network={Id:networkId,Name:'synthetic_local',Driver:'bridge',Scope:'local',Internal:false,Attachable:false,EnableIPv6:false,
     Labels:{'com.docker.compose.project':'synthetic','com.docker.compose.network':'local'},Options:{},Containers:{}};
   const run=async args=>{
     if(args[0]==='network'){f.calls.push(args);return JSON.stringify([network]);}
-    return f.run(args);
+    const result=await f.run(args);
+    if(args[0]==='start')f.info.NetworkSettings.Ports={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
+    return result;
   };
   return {...f,network,run};
 }
@@ -48,7 +50,7 @@ test('explicit host-local profile retains stopped backup with network-none maint
   assert.ok(f.calls.find(a=>a[0]==='run').includes('--network=none'));
 });
 
-test('host-local start and backup refuse widened bindings, devices and shared or external networks before effects',async()=>{
+test('host-local start and backup refuse widened bindings, devices and unexpected or shared networks before effects',async()=>{
   for(const mutate of [
     f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='0.0.0.0',
     f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='::1',
@@ -59,7 +61,7 @@ test('host-local start and backup refuse widened bindings, devices and shared or
     f=>f.info.Config.Env.push('BUNNY_CONTROL=enabled'),
     f=>f.info.HostConfig.NetworkMode='host',
     f=>f.info.NetworkSettings.Networks.unrelated={},
-    f=>f.network.Internal=false,
+    f=>f.network.Internal=true,
     f=>f.network.Attachable=true,
     f=>f.network.EnableIPv6=true,
     f=>f.network.Containers['b'.repeat(64)]={},
@@ -76,6 +78,26 @@ test('host-local start checks its actual network before and after starting',asyn
   const f=localFixture();assert.equal((await operate(plan('start'),f.run)).status,'running');
   assert.equal(f.calls.filter(a=>a[0]==='network').length,2);
   assert.ok(f.calls.findIndex(a=>a[0]==='network') < f.calls.findIndex(a=>a[0]==='start'));
+});
+
+test('host-local start stops the owned profile when effective publication is absent or widened',async()=>{
+  for(const ports of [{},{'18788/tcp':[]},{'18788/tcp':[{HostIp:'0.0.0.0',HostPort:'18788'}]},
+    {'18788/tcp':[{HostIp:'::1',HostPort:'18788'}]},{'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18789'}]},
+    {'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'},{HostIp:'0.0.0.0',HostPort:'18788'}]},
+    {'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}],'18788/udp':[]},
+  ]) for(const alreadyRunning of [false,true]) {
+    const f=localFixture();
+    if(alreadyRunning)Object.assign(f.info.State,{Status:'running',Running:true,Pid:101});
+    f.info.NetworkSettings.Ports=ports;
+    const run=async args=>{
+      const result=await f.run(args);
+      if(args[0]==='start')f.info.NetworkSettings.Ports=ports;
+      return result;
+    };
+    await assert.rejects(operate(plan('start'),run));
+    assert.ok(f.calls.some(a=>a[0]==='stop'));
+    assert.equal(f.info.State.Pid,0);
+  }
 });
 
 test('host-local accepts only Docker generated explicit IPv4 enablement',async()=>{
@@ -110,7 +132,7 @@ test('new-container admission inspects created configuration before start and st
     if(args[0]==='ps'&&!created){f.calls.push(args);return '';}
     if(args[0]==='compose'){f.calls.push(args);assert.ok(args.includes('create'));created=true;return '';}
     const result=await f.run(args);
-    if(args[0]==='start') f.network.Internal=false;
+    if(args[0]==='start') f.network.Internal=true;
     return result;
   };
   await assert.rejects(operate(plan('start'),run));

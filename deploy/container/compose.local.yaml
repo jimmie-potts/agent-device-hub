@@ -30,7 +30,7 @@ services:
 networks:
   local:
     driver: bridge
-    internal: true
+    internal: false
     attachable: false
     enable_ipv6: false
 volumes:
