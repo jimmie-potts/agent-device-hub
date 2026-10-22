@@ -504,3 +504,8 @@ and the two tracked commands. Opportunities retain origin, revision/generation,
 known identity and a thirty-second validity bound. Scenario identity/location
 remain unknown; rule and text-selection implementation stays module-local.
 Schemas and consumer checks join `test:events:built`.
+
+The same entry adds `preference-state/2.0`, a closed metadata-only document
+`{id: "preferences", revision}` on subject `preferences`. It belongs to the
+companions sync owner; title, text, entries and history are excluded. Private
+preference reads and mutations remain in the [owning module](../../modules/companions/README.md#explicit-preferences).

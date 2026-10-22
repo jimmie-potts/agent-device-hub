@@ -1,3 +1,4 @@
+import {PreferencesPage} from './preferences.js';
 import {AssistantPage} from './assistant.js';
 import React, {useEffect, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
@@ -97,4 +98,4 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
     </>}
   </section>;
 }
-export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}]};
+export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}, {id: 'preferences', Component: PreferencesPage}]};

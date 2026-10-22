@@ -138,6 +138,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wispr-module:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        # Includes #501 preference lifecycle/import/rollback and private-state checks.
         run: npm run test:companions:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:roborock-transport:built
@@ -240,6 +241,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        # Includes #501 preferences, active-only copy, import/export and accessibility.
         run: npm run test:companions:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:wemo:browser
