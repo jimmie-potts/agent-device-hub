@@ -28,6 +28,8 @@ export type HookOptions = {
   now?: () => number;
   /** The hook process's environment, which lifecycle 1.2 reads for Claude Desktop's session ID. Defaults to `process.env`. */
   environment?: unknown;
+  /** Refuse configured title/transcript enrichment before consuming any hook input. */
+  requireMetadataOnly?: boolean;
 };
 
 /**
@@ -69,9 +71,9 @@ export async function runHook(options: HookOptions): Promise<HookResult> {
   }
 }
 
-async function publishHook({producer: path, input, deadline = HOOK_BUDGET_MS, now = Date.now, environment}: HookOptions): Promise<HookResult> {
+async function publishHook({producer: path, input, deadline = HOOK_BUDGET_MS, now = Date.now, environment, requireMetadataOnly = false}: HookOptions): Promise<HookResult> {
   const producer = await readProducer(path);
-  if (producer === undefined) return {status: 'skipped', reason: 'producer'};
+  if (producer === undefined || (requireMetadataOnly && producer.lifecycleVersion !== undefined)) return {status: 'skipped', reason: 'producer'};
   const raw = await readInput(input);
   if (!isFields(raw) || typeof raw.hook_event_name !== 'string') return {status: 'skipped', reason: 'input'};
   // The normalizers check the source configuration themselves, and refuse a hook they do not map.

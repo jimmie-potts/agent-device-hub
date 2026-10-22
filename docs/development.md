@@ -1752,3 +1752,17 @@ and bounded health. Procedure fixtures exercise stopped-writer backup, selection
 receipts and interrupted resolution using synthetic state. Recovery remains
 independent of forward eligibility; no checks execute hibernated BB-8 code or
 qualify an installed/physical device.
+
+## Local Mac Codex hook checks
+
+For #1183, use Node 24 and build before lint/type checks. Run the existing
+lifecycle JS/Python corpus, agent-state JS/Python/package and event-family checks,
+plus runtime hook tests and dashboard session tests. The native wrapper suite is
+`node --test apps/runtime/tests/mac-codex-hook.test.mjs`; existing core runtime CI
+runs it explicitly because `.mjs` source tests are not TypeScript outputs.
+Run container entrypoint/operator tests for exact single-source admission and
+refusal of wider grants. Shared contract, MCP, workflow and affected consumer
+checks remain required. Synthetic tests do not qualify an installed Codex client:
+Mac acceptance must observe local Desktop and CLI hooks separately, verify notify
+preservation, metadata-only delivery, loopback-only access and stopped backup/restart.
+Cloud-orchestrated tasks and physical devices remain outside this qualification.

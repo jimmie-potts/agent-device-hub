@@ -12,6 +12,18 @@ const validator = () => {
   registerCoreFamilies(v);
   return v;
 };
+
+test('shared local Codex lifecycle is admitted without Desktop metadata privileges',()=>{
+  const message=structuredClone(Object.values(fixtures.valid).find(m=>m.type==='org.bunny.lifecycle.observed'));
+  message.data.identity.client='local';message.data.identity.provider='codex';
+  message.data.event={kind:'turn-started'};delete message.data.title;delete message.data.project;delete message.data.hostSessionId;
+  message.subject=sessionEntityId(message.data.identity);
+  const v=validator();assert.equal(v.validate(message).ok,true);
+  message.data.event={kind:'metadata-observed',archived:true};assert.equal(v.validate(message).ok,false);
+  message.data.event={kind:'read-observed',state:'read'};assert.equal(v.validate(message).ok,false);
+  message.data.event={kind:'turn-started'};message.data.identity.provider='claude';
+  message.subject=sessionEntityId(message.data.identity);assert.equal(v.validate(message).ok,false);
+});
 // Sets each JSON pointer on a copy of a valid message; null removes the member.
 function patched(base, set) {
   const value = structuredClone(fixtures.valid[base]);

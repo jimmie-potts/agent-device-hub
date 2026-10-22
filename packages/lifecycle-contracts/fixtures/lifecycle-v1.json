@@ -2493,6 +2493,97 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "codex-local-1.0",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "c2ebd416d47fd17785267b4c0f5f49330d7fb174c809cbc51ec7549fa9e6f04b"
+      }
+    },
+    {
+      "id": "claude-local-refused-1.0",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "claude",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "local-desktop-read-refused-1.0",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "read"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false,
+      "deduplication": null
     }
   ]
 }

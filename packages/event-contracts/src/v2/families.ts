@@ -22,7 +22,7 @@ export const MOMENT_MAX_LEAD_MS = 60_000;
 /** Freshness is `uncertain` once this long has passed without session evidence. */
 export const STALE_AFTER_MS = 300_000;
 
-export type Identity = {provider: 'codex' | 'claude'; client: 'cli' | 'desktop' | 'code'; hostId: string; sourceId: string; sessionId: string};
+export type Identity = {provider: 'codex' | 'claude'; client: 'cli' | 'desktop' | 'code' | 'local'; hostId: string; sourceId: string; sessionId: string};
 export type KnownId = {status: 'unknown'} | {status: 'known'; id: string};
 export type Parent = {status: 'unknown'} | {status: 'top-level'} | {status: 'known'; identity: Identity};
 export type Ordering = {status: 'unknown'} | {status: 'known'; authority: string; epoch: string; sequence: number};

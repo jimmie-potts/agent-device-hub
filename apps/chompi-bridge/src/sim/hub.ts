@@ -15,7 +15,7 @@ import type { Activity, AttentionKind, Provider } from '../routing/feed.js';
 
 export interface SessionRecordOptions {
   provider?: Provider;
-  client?: 'cli' | 'desktop' | 'code';
+  client?: 'cli' | 'desktop' | 'code' | 'local';
   hostId?: string;
   sourceId?: string;
   sessionId: string;

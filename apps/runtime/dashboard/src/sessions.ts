@@ -43,7 +43,7 @@ export type SessionRow = {
   facts: {source: string; sessionId: string; activity: string; read: string; parent: string; children: string};
 };
 
-const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop'};
+const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop', 'codex/local': 'Codex (local)'};
 /** The client a session runs in, as a person names it. */
 export const clientName = ({provider, client}: Identity): string => CLIENTS[`${provider}/${client}`] ?? `${provider} ${client}`;
 
