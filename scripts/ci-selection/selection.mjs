@@ -11,6 +11,7 @@ export const GROUPS = Object.freeze(['runtime', 'maintenance', 'modules', 'chomp
 export const JOBS = Object.freeze({
   firmware: Object.freeze(['chompi']),
   'app-verify': Object.freeze(['runtime', 'chompi', 'shared']),
+  'runtime-verify': Object.freeze(['runtime']),
 });
 
 const FULL = null;
