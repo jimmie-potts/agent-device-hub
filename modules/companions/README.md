@@ -1,8 +1,9 @@
 # Companions
 
-One optional, statically shipped module consumes qualified first-live coding
-opportunities from the authoritative core. It defaults to disabled. Enable it
-on its Reachy page in the existing React dashboard; category mute and a one-hour
+One optional, statically shipped module owns fixed-text Reachy cards, synthetic
+assistant tasks and an explicit private preference library. Reachy consumes
+qualified first-live coding opportunities from the authoritative core and defaults
+to disabled. Enable it on its Reachy page in the existing React dashboard; category mute and a one-hour
 social snooze use the existing tracked command path. Settings completion means
 the controls were saved; fixture completion means its synthetic input was
 admitted. Card decision/publication and visibility are separate. Session attention remains
@@ -84,7 +85,7 @@ and is not a model adapter here.
 
 The SDK owns the only SQLite connection. Domain records, private messages,
 questions/answers, runs and call receipts are inspectable in `assistant_*`
-tables beside the existing Reachy records. One revision sequence covers both
+tables beside the existing Reachy records. One revision sequence covers all companion
 state families; one SDK sync owner serves their combined or separate snapshots.
 Domain changes and their outcomes commit in the shared outbox transaction.
 The module-local saver pins LangGraph 1.5.0 and checkpoint 1.2.0, serializes
@@ -139,3 +140,84 @@ browser check exercises the real authenticated page with reload/restart,
 keyboard, axe, disconnection and reader refusals while preserving Reachy.
 These are synthetic source checks. They establish neither live-model usefulness
 nor installed or physical acceptance.
+
+## Explicit preferences
+
+The **Preferences** page manages a small private library independently of the
+Reachy and synthetic-task switches. Add a short title and text, inspect its
+history, edit it, choose **Stop using**, or explicitly **Reactivate** it. New
+owner-created entries are active; editing an inactive entry keeps it inactive.
+IDs and full change snapshots survive restart in the same SDK-owned database.
+No background learning, provider, transcript source or automatic context insertion
+is added. Preference text is data and never grants permissions or device authority.
+
+Select active entries and choose **Copy selected active preferences** for plain
+text (`title`, newline, current text; blank lines between entries). The click
+rereads current active values, excluding inactive and historical text even when
+a selection was made earlier. Unsubmitted drafts stay only in page memory.
+Stop using keeps private history and cannot retract earlier copies or exports.
+Do not put passwords, tokens or other credentials in preferences. This is not an
+arbitrary-prose secret detector.
+
+### Private read and export contract
+
+The authenticated route `/modules/companions/content/preferences` uses the
+existing read grant; it grants no control. Its modes are:
+
+| Query | Document | Contents |
+| --- | --- | --- |
+| omitted or `view=active` | `preferences/1.0` | `revision`, `entries`: current active records without history |
+| `view=manage` | `preference-view/1.0` | `revision`, `entries`: every current record with history |
+| `view=export` | `preference-library/1.0` | `entries`: every current record with history |
+
+Each document has its version in `schema`. Records have `id`, `title`, `text`,
+`active`, `createdAtMs` and `updatedAtMs`. Management/export records also have
+`history`: ordered snapshots with `action`, `source`, `atMs`, `title`, `text`
+and `active`. Actions are `created`, `edited`, `deactivated`, `reactivated` or
+`imported`; source is `owner` or `import`. Imported files supply their earlier
+history; that provenance is not independently verified evidence. The module's
+package exports these TypeScript document types without exposing its store.
+
+**Export library** downloads compact private JSON, including inactive entries
+and history. Import validates the whole closed versioned document, including
+unique IDs and consistent latest snapshots. It preserves every existing entry
+exactly and inserts only missing IDs, always inactive. Each insertion retains
+its original history and adds an inactive import snapshot. Repeated or older
+exports cannot overwrite edits, replace history or reactivate an entry. A fresh
+library also needs explicit activation after import. No snapshot replacement,
+semantic deduplication or permanent erasure is provided.
+
+### Controls, bounds and failures
+
+Preference changes use the existing private upload at target `preferences`,
+name `preferences.json`, with the `assistant-input/2.0` opaque envelope. The
+private JSON input has `expectedRevision` and one action: `create` with title/text,
+`edit` with ID/title/text, `set-active` with ID/active, or `import` with the export
+in `library`. Existing `assistant` uploads keep their separate validation and
+25,600-byte bound. Control authority, current revision, request binding and
+five-second admission remain required. Eight private staged requests can wait;
+restart discards them without applying them. Successful request receipts prevent
+repeat effects. The core sees request IDs and opaque references only.
+
+`preference-state/2.0` carries only `{id: "preferences", revision}` through the
+existing owner and shared revision sequence. The dashboard refreshes its private
+read after a state change or reconnect; it does not poll. Preference records,
+revision, request receipt and outcome commit together through the SDK outbox.
+A refused publication after commit stays committed and awaits publication.
+
+Titles are limited to 200 UTF-8 bytes, text to 4096, and the serialized retained
+library including history to 8 MiB. Uploads use the existing 10 MiB ceiling.
+A full library or SQLite failure refuses the change without truncating history
+or partially applying an import. Imported history plus the new import snapshot
+and existing records must fit the retained limit. Existing records remain
+readable/exportable. A revision conflict requires reviewing fresh state; an
+uncertain result requires checking the tracked receipt, without automatic resend.
+
+After the root build, `test:companions:built` covers the real SQLite lifecycle,
+old/repeated import, rollback, full disk and staged-command boundaries. The
+`preferences` scenario checks gateway grants, restart and content-free metadata
+over both SDK transports and a disposable runtime. `test:companions:browser`
+covers management, clipboard, private files, keyboard, narrow viewport and axe,
+with existing assistant/Reachy journeys retained. Use a private temporary
+directory outside every Git checkout for runtime checks. These are synthetic
+source checks, not installed or physical acceptance.

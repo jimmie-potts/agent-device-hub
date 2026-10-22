@@ -1774,3 +1774,15 @@ checks remain required. Synthetic tests do not qualify an installed Codex client
 Mac acceptance must observe local Desktop and CLI hooks separately, verify notify
 preservation, metadata-only delivery, loopback-only access and stopped backup/restart.
 Cloud-orchestrated tasks and physical devices remain outside this qualification.
+
+## Explicit preference checks
+
+For #501, after the root build run `node --test modules/companions/dist/tests/preferences.test.js`
+for the private SQLite lifecycle, active-only retrieval, additive import, repeated/old
+exports, invalid input, transaction rollback and SQLite full-disk refusal. Existing `test:companions:built` CI
+discovery includes it. The runtime `preferences` scenario covers authenticated reads,
+reader refusals, metadata privacy and restart over both scenario transports.
+`npm run test:companions:browser` includes the real preference page, clipboard,
+private import/export, keyboard and axe checks. Preserve build/type/lint, affected
+event/runtime/SDK consumers and workflow validation. All data is synthetic; these
+checks neither install the feature nor qualify a live model or physical device.

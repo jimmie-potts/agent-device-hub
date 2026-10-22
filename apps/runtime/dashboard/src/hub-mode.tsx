@@ -1,27 +1,28 @@
 import React, {useEffect, useRef, useState} from 'react';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {Mode, ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, Mode, ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {sendAction, type ActionReply} from './actions.ts';
-import {modeAction, modeApplication, modeDeviceResults, modeName, type ModeDeviceResult} from './hub-mode.ts';
+import {modeAction, modeInboxIssues, modeName, type ModeInboxIssue} from './hub-mode.ts';
+import {HubModeCard} from './hub-mode-card.tsx';
 
-export function HubMode({record, live, control, operations, operationsSynced, devices}: {
+/** Adapts existing shell-owned copies and the existing command path; it acquires no state. */
+export function HubMode({record, live, control, operations, operationsSynced, items, inboxSynced, onCheckInbox, headingId}: {
   record: ModeState | undefined; live: boolean; control: boolean; operations: readonly OperationRecord[];
-  operationsSynced: boolean; devices: readonly DeviceRecord[];
+  operationsSynced: boolean; items: readonly InboxItem[]; inboxSynced: boolean;
+  onCheckInbox: (id: string) => void; headingId?: string;
 }): React.JSX.Element {
   const [attempt, setAttempt] = useState<{mode: Mode; requestId: string}>();
   const [answer, setAnswer] = useState<ActionReply>();
-  const [results, setResults] = useState<{requestId: string; rows: ModeDeviceResult[]}>();
+  const [issues, setIssues] = useState<readonly ModeInboxIssue[]>([]);
   const inFlight = useRef(false), alive = useRef(true);
   useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
-  const application = modeApplication(operations);
   useEffect(() => {
-    if (application === undefined) return;
+    if (!live || !operationsSynced || !inboxSynced) return;
     let current = true;
-    void modeDeviceResults(application, operations, devices, operationsSynced).then(rows => {
-      if (current) setResults({requestId: application.requestId, rows});
-    }).catch(() => {if (current) setResults({requestId: application.requestId, rows: []});});
+    void modeInboxIssues(operations, items).then(ids => {
+      if (current) {setIssues(ids);}
+    }).catch(() => { /* Missing correlation evidence cannot establish resolution. */ });
     return () => {current = false;};
-  }, [application, operations, devices, operationsSynced]);
+  }, [live, operations, operationsSynced, items, inboxSynced]);
   const available = control && live && record !== undefined;
   const pending = attempt !== undefined && answer === undefined;
   const select = async (mode: Mode): Promise<void> => {
@@ -33,27 +34,19 @@ export function HubMode({record, live, control, operations, operationsSynced, de
     if (alive.current) setAnswer(reply);
   };
   const matching = attempt === undefined ? undefined : operations.find(item => item.requestId === attempt.requestId && item.family === 'mode-set' && item.target === 'hub');
-  const rows = application !== undefined && results?.requestId === application.requestId ? results.rows : [];
-  return <div className="hub-mode">
-    <p>Saved selection: <strong>{record === undefined ? 'Not observed' : modeName(record.mode)}</strong>{!live && record !== undefined ? ' · stale' : ''}.</p>
-    <p className="hint">Saving a mode and applying it to each device are separate results.</p>
-    <div className="actions" role="group" aria-label="Choose Hub mode">{(['work', 'free', 'quiet'] as const).map(mode =>
-      <button key={mode} type="button" aria-pressed={record?.mode === mode} disabled={!available || pending} onClick={() => {void select(mode);}}>{modeName(mode)}</button>)}</div>
-    {!control && <p className="warning">Read-only connection. Mode controls require control authority.</p>}
-    {control && !live && <p className="warning">Wait for a current synced mode before changing it.</p>}
-    <div role="status">
-      {attempt !== undefined && answer === undefined && <p>{modeName(attempt.mode)} requested. Waiting for a reply.</p>}
-      {answer !== undefined && !('error' in answer) && <p>Accepted. The saved selection and device results are shown separately.</p>}
-      {answer !== undefined && 'error' in answer && <p>{answer.error.code === 'uncertain-result'
-        ? 'The reply is uncertain. The request was not sent again.' : `Selection refused. Code: ${answer.error.code}.`}</p>}
-      {attempt !== undefined && <p>Selection completion: {operationsSynced ? matching?.status ?? 'not observed' : 'not synced'}.</p>}
-    </div>
-    <h3>Recent device results</h3>
-    <p className="hint">These results belong to a completed selection request. They do not prove what a device currently shows.</p>
-    {application === undefined && <p>{operationsSynced ? 'No selection application observed.' : 'Application evidence is not synced.'}</p>}
-    {application !== undefined && rows.length === 0 && <p>No device result observed for this selection request.</p>}
-    {rows.length > 0 && <ul className="plain">{rows.map(row => <li key={row.target} data-mode-device={row.target}>
-      {row.target}: {row.status}{row.result === undefined ? '' : ` · ${row.result}`}{row.evidence === undefined ? '' : ` · evidence: ${row.evidence}`}{row.code === undefined ? '' : ` · code: ${row.code}`}
-    </li>)}</ul>}
-  </div>;
+  const currentIssues = live && inboxSynced ? issues.filter(issue => items.some(item => item.id === issue.id)) : issues;
+  const error = answer !== undefined && 'error' in answer ? answer.error : undefined;
+  const resolvedReply = operationsSynced && matching?.status === 'completed' && matching.result === 'succeeded';
+  const localIssue = error === undefined || resolvedReply ? undefined : {
+    label: error.code === 'uncertain-result' ? 'Result unknown' : 'Not applied',
+    detail: error.code === 'uncertain-result' ? 'The reply is uncertain. The request was not sent again.' : `Selection refused. Code: ${error.code}.`,
+  };
+  const issue = currentIssues.length > 0 ? {label: 'Check Inbox', detail: currentIssues.some(item => item.association === 'unavailable')
+    ? 'Check Inbox to review a device-mode issue. Its link to a Hub selection is unavailable in recent evidence.' : 'Check Inbox for a mode request that needs review.'} : localIssue;
+  const status = !live ? 'Stale' : record === undefined ? 'Not observed' : !control ? 'Read only' : '';
+  const feedback = currentIssues.length > 0 ? issue?.detail ?? '' : localIssue?.detail ?? (attempt === undefined ? ''
+    : pending ? `${modeName(attempt.mode)} requested. Waiting for a reply.`
+      : `Selection ${operationsSynced ? matching?.status ?? 'not observed' : 'not synced'}. Device results are separate.`);
+  return <HubModeCard mode={record?.mode} disabled={!available || pending} status={status} feedback={feedback} issue={issue} headingId={headingId}
+    onSelect={mode => {void select(mode);}} onCheckInbox={currentIssues[0] === undefined ? undefined : () => {const id = currentIssues[0]; if (id !== undefined) onCheckInbox(id.id);}}/>;
 }
