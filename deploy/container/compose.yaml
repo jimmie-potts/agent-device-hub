@@ -1,0 +1,29 @@
+# Use a distinct Compose project for an isolated alternative or restore rehearsal.
+# No published ports, automatic restart or host network access in this safe default.
+services:
+  core:
+    image: bunny-core:local
+    # Build separately from context.mjs's committed-source archive. Never send a working checkout to Docker.
+    init: true
+    user: "1000:1000"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 4g
+    cpus: 2
+    restart: "no"
+    stop_grace_period: 30s
+    environment:
+      BUNNY_CONTROL: ${BUNNY_CONTROL:-disabled}
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+    volumes:
+      - state:/var/lib/bunny
+      - config:/etc/bunny:ro
+      - secrets:/run/secrets/bunny:ro
+volumes:
+  state:
+  config:
+  secrets:

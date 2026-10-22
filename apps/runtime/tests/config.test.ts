@@ -453,3 +453,26 @@ it('a core the configuration refuses ends the runtime as a failed core does, and
   assert.equal(entry(fine.health(), 'core').state, 'running', 'a core with no section starts');
   assert.equal(none, 0);
 });
+
+it('a supplied parsed configuration is snapshotted before admission awaits', async context => {
+  const alpha = configured('alpha');
+  const config = {modules: {alpha: {greeting: 'verified'}}};
+  const dir = await stateDir(context);
+  const starting = startRuntime(Object.assign({modules: [alpha], port: 0, stateDir: dir, log: () => {}}, {config}));
+  config.modules.alpha.greeting = 'changed-after-call';
+  const runtime = await starting;
+  context.after(() => runtime.stop());
+  assert.deepEqual(contextOf(alpha).config, {greeting: 'verified'});
+});
+
+it('a parsed configuration and file supplied together refuse before startup effects', async context => {
+  const alpha = configured('alpha');
+  const file = await configFile(context, {alpha: {greeting: 'file'}});
+  const dir = await stateDir(context);
+  const starting = startRuntime(Object.assign({modules: [alpha], port: 0, stateDir: dir, configFile: file, log: () => {}},
+    {config: {modules: {alpha: {greeting: 'value'}}}}));
+  // A defective implementation must still clean up its accidentally started runtime.
+  void starting.then(runtime => context.after(() => runtime.stop()), () => {});
+  await assert.rejects(starting, runtimeCode('config-invalid'));
+  assert.deepEqual(await import('node:fs/promises').then(fs => fs.readdir(dir)), []);
+});

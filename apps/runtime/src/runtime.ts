@@ -7,7 +7,7 @@ import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
-import {isCoreModule} from './core/core.js';
+import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {automationDevices} from './core/automation-devices.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
@@ -59,6 +59,8 @@ export type RuntimeOptions = {
    * see `readRuntimeConfig`. Without one, a module that declares `configure` is refused.
    */
   configFile?: string;
+  /** Exact parsed configuration supplied by an admitting entrypoint; mutually exclusive with configFile. */
+  config?: RuntimeConfig;
   /** The loopback port for health. 0 picks a free port. */
   port: number;
   /** The clock for the bus, the modules and log records. Defaults to `Date.now()`. */
@@ -210,6 +212,10 @@ function close(server: Server): Promise<void> {
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
+  if (options.config !== undefined && options.configFile !== undefined) throw new RuntimeError('config-invalid', 'configuration inputs conflict');
+  // Capture verified values before admission yields; never reopen their source file.
+  const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
+  await admitBoundCoreOwnership(modules, options.stateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   const logs = new LogWriter(
@@ -217,7 +223,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   );
   const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
-  const config: RuntimeConfig | undefined = options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile);
+  const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
   const edgeConfig = config?.edge;
   if (options.edge !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
