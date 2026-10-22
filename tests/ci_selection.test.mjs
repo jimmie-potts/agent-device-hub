@@ -311,7 +311,7 @@ const STEP_GROUPS = {
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
     'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
-    'npm run test:runtime:built': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
+    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
     'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',

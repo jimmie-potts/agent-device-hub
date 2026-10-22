@@ -407,7 +407,13 @@ refusal/recovery records use `bunny.operation` `playback` and fixed registry
 codes, without image bytes or association tokens.
 
 - **Media.** Decoding and rendering run in a forked child process with a
-  256 MiB heap, killed with SIGKILL when the job is aborted. A corrupt,
+  256 MiB heap, killed with SIGKILL when the job is aborted. The child only
+  reads the original and decodes it; the parent writes every staged RGB/PNG
+  frame and the manifest. One bounded frame crosses IPC at a time, with its
+  acknowledgment sent after both file writes finish. Parent exit can leave a
+  decoder briefly alive, but leaves no descendant rendition writer. Cancellation
+  waits for actual child close and outstanding parent I/O before staging cleanup.
+  A corrupt,
   oversized or hostile image fails only its own job. An image that declares
   more pixels than the limit fails as `too-large` from its header. The heap
   flag caps only V8's old space: decoded pixels live in buffers outside it,

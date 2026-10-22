@@ -18,9 +18,7 @@
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
 //   keeps every message the core publishes, a state as a compact change event, and what a part records.
 // - Each save of the state block is measured, and a costly one is recorded (Hub #976; see `SAVE_COST`).
-import {constants} from 'node:fs';
-import {open} from 'node:fs/promises';
-import {DatabaseSync, type StatementSync} from 'node:sqlite';
+import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {validateExport, type Commit, type DurableState, type Session, type Storage, type StorageLease} from '@jimmie-potts/agent-state';
 import {MessageValidator, compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
@@ -30,10 +28,14 @@ import {
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
+import {takeLock, type Lock} from './lock.js';
+import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
   REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
+
+export {takeLock, type Lock} from './lock.js';
 
 /**
  * What the core is doing when a change commits: a hook's observation, whose occurrences, `(source, id)` and trace the
@@ -77,6 +79,8 @@ export interface CoreTransaction {
 export type Deriver = (change: CoreChange, tx: CoreTransaction) => void;
 
 export type StoreOptions = {
+  /** Internal early-runtime ownership; only the bound core can consume it, once. */
+  ownership?: CoreOwnership;
   /** The core module's own database. */
   database: DatabaseSync;
   /** The core's participant: the outbox publishes with `publishMessage`, so a message keeps its stored `id` and `time`. */
@@ -135,11 +139,8 @@ export const SAVE_COST: SaveCost = Object.freeze({stateBytes: MAX_STATE_BYTES / 
 /** A record's durations are bounded to one day, as the diagnostic contract bounds them. */
 const MAX_DURATION_MS = 86_400_000;
 const JOURNAL_ROWS = 10_000;
-// SQLite's result codes, from a node:sqlite error's `errcode`.
-const SQLITE_BUSY = 5;
 const LEASE_POLL_MS = 20;
-const errcode = (error: unknown): number | undefined =>
-  typeof error === 'object' && error !== null && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode : undefined;
+const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 const sameTurn = (a: KnownId, b: KnownId): boolean => a.status === 'known' && b.status === 'known' && a.id === b.id;
 const occurrenceKey = (family: string, entity: string): string => `bunny.event.${family}.${entity}`;
 const sessionKey = (entity: string): string => `bunny.state.session.${entity}`;
@@ -322,7 +323,8 @@ export class CoreStore implements Storage {
     this.#leased = true;
     this.#failure = undefined;
     try {
-      this.#lock ??= await takeLock(this.#db.location(), signal);
+      this.#lock ??= this.#options.ownership === undefined
+        ? await takeLock(this.#db.location(), signal) : borrowRuntimeOwnership(this.#options.ownership, this.#db.location());
       this.#checkOwner(ownerId);
       this.#openTables();
       this.#loadCaches();
@@ -362,7 +364,7 @@ export class CoreStore implements Storage {
     if (this.#lease !== undefined) this.#endLease(this.#lease);
   }
 
-  /** Lets go of the store's lock once the core stops. */
+  /** Ends storage use; an early runtime owner's borrowed lock remains held until process exit. */
   close(): void {
     this.abandonLease();
     this.#lock?.release();
@@ -721,63 +723,6 @@ export class CoreStore implements Storage {
       !(next?.sessions ?? []).some(session => entityOf(session) === intake.entity) &&
       (next?.retirements ?? []).some(item => entityOf(item) === intake.entity && item.atMs === change.atMs);
     return ended ? intake : undefined;
-  }
-}
-
-/** A held lease: the lock database's open exclusive transaction, released once. */
-export type Lock = {release: () => void};
-/** The lock files this process holds a lease on. */
-const held = new Set<string>();
-const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
-
-/**
- * Takes the store's lease, as the Hub's adapter does: an exclusive transaction held open on a lock database beside the
- * store, `<store>-owner`, private to its owner. Another holder, in another process or in this one, is waited for until
- * `signal` aborts at agent-state's deadline. The store's own file keeps the locking its opener gave it. An in-memory store,
- * which no other connection can open, has no lock file. Offline tools take it through `holdRuntimeLease` (Hub #931).
- */
-export async function takeLock(location: string | null, signal: AbortSignal): Promise<Lock> {
-  if (location === null || location === '') return {release: () => {}};
-  const path = `${location}-owner`;
-  for (;;) {
-    // A lease this process holds is waited for without opening the file: closing any descriptor of it would drop the
-    // holder's POSIX lock.
-    if (held.has(path)) {
-      signal.throwIfAborted();
-      await wait(LEASE_POLL_MS);
-      continue;
-    }
-    held.add(path);
-    try {
-      const file = await open(path, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
-      try {
-        const info = await file.stat();
-        if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) throw new Error('invalid-store');
-      } finally {
-        await file.close();
-      }
-      const lock = new DatabaseSync(path);
-      try {
-        // No rollback journal: the lock database holds no data, so taking the lock writes nothing, even on a full disk.
-        lock.exec('PRAGMA busy_timeout = 0; PRAGMA journal_mode = MEMORY; BEGIN EXCLUSIVE');
-      } catch (error) {
-        lock.close();
-        throw error;
-      }
-      let released = false;
-      return {release: () => {
-        if (released) return;
-        released = true;
-        if (lock.isTransaction) lock.exec('ROLLBACK');
-        lock.close();
-        held.delete(path);
-      }};
-    } catch (error) {
-      held.delete(path);
-      if (errcode(error) !== SQLITE_BUSY) throw error;
-      signal.throwIfAborted();
-      await wait(LEASE_POLL_MS);
-    }
   }
 }
 
