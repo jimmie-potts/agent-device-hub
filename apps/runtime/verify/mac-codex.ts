@@ -74,12 +74,17 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   }
   await t.expect('real core records the shared local known active turn', () => until(async () => (await records()).some(r => r.identity.client === 'local' && r.identity.sessionId === raw.session_id && r.activity === 'active' && r.turn.status === 'known' && r.turn.id === raw.turn_id)));
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
+  await page.getByText('Working', {exact: true}).first().waitFor();
+  await t.expect('dashboard renders the active shared local turn as Working', async () => page.getByText('Working', {exact: true}).first().isVisible());
   const ended = await invoke(producer, {...raw, hook_event_name: 'Stop'});
   await t.expect('Stop publishes silently', () => ended.quiet);
   await t.expect('real core retains the completed unread notice', () => until(async () => (await records()).some(r => r.activity === 'idle' && r.notices.some(n => n.kind === 'turn-ended'))));
   await page.getByText('Finished · unread', {exact: true}).first().waitFor();
-  for (const payload of [{...raw, hook_event_name: 'Stop', agent_id: 'child'}, {...raw, hook_event_name: 'SessionStart', source: 'compact'}, {...raw, hook_event_name: 'PermissionRequest'}]) {
+  const beforeExcluded = JSON.stringify(await records());
+  for (const [index, payload] of [{...raw, hook_event_name: 'Stop', agent_id: 'child'}, {...raw, hook_event_name: 'SessionStart', source: 'compact'}, {...raw, hook_event_name: 'PermissionRequest'}].entries()) {
+    payload.session_id = `excluded-root-${index}`; payload.turn_id = `excluded-turn-${index}`;
     const result = await invoke(producer, payload); await t.expect('excluded input is silent', () => result.quiet);
+    await t.expect('distinct excluded identity creates no record and leaves the original unchanged', async () => JSON.stringify(await records()) === beforeExcluded);
   }
   await t.expect('excluded events and private content do not enter retained core records', async () => {
     const found = await records(), text = JSON.stringify(found);
@@ -122,7 +127,9 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await t.expect('rendered page has no private input, token or JavaScript failure', async () => {
     const text = await page.locator('body').innerText(); return !/PRIVATE_CANARY|DO_NOT_OPEN/.test(text) && !text.includes(token) && errors.length === 0;
   });
-  await t.attach('checks.json', JSON.stringify({synthetic: true, physical: false, metadataOnly: true, scopesRefused: ['read', 'control', 'admin'],
+  await t.attach('checks.json', JSON.stringify({synthetic: true, physical: false, metadataOnly: true,
+    components: {actual: ['runtime-core', 'gateway', 'dashboard', 'chromium', 'mac-codex-hook-wrapper'], simulated: ['Codex-input', 'source-identities', 'grants', 'device-transports'], installedClients: false},
+    scopesRefused: ['read', 'control', 'admin'],
     excludedInputs: ['child', 'compact', 'permission'], sourceBinding: true, rawHostRefused: true, originRefused: true,
     stalledAttempts: attempts, offlineFailOpen: true, browserRecovery: true, retainedNotice: true}));
 }

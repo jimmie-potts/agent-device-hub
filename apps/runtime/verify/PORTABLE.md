@@ -33,7 +33,7 @@ commit label. Use fresh unused local tags; never replace an installed image tag.
 
 ```sh
 docker build --build-arg SOURCE_REVISION=<SHA> -f deploy/container/Dockerfile -t <unused-core-tag> <exported-context>
-docker build --build-arg CORE_IMAGE=<unused-core-tag> -f deploy/container/Dockerfile.verify -t <unused-test-tag> <exported-context>
+docker build --build-arg CORE_IMAGE=<unused-core-tag> --build-arg SOURCE_REVISION=<SHA> -f deploy/container/Dockerfile.verify -t <unused-test-tag> <exported-context>
 ```
 
 Before the derivative build, verify that the core tag resolves to the recorded
@@ -41,6 +41,9 @@ immutable core image and exact revision. Afterwards verify the derivative's
 immutable image ID, architecture, revision label, `org.bunny.verify.portable=1`
 and user `1000:1000`. It contains the lockfile-selected Playwright Chromium and
 video tooling. This is a test image, never a replacement for the installed core.
+The derivative writes a closed `portable-artifact/1` build manifest from its own
+built bytes. Native and closed-image builds may generate different timestamped
+identity files: the served artifact is the image's artifact, not the native one.
 
 ## Run and inspect
 
@@ -56,6 +59,9 @@ architecture and run ID. Source drift, a mismatched image or effective isolation
 mismatch refuses the run. The in-image driver rechecks the artifact before and
 after capture. The closed export replaces the managed route's Git/mtime check;
 the existing simulated-transport, outbound and private-state checks still run.
+The pending receipt honestly records a null artifact until the host copies and
+validates only the fixed image build manifest from the owned created container.
+That readback is saved before startup. No native/image mismatch is ignored.
 
 The selected `mac-codex-local` capture invokes the real metadata-only hook against
 the synthetic core, observes Working and Finished in the browser, checks retained
@@ -114,6 +120,12 @@ capture into a passed one. An unknown engine result or unconfirmed removal stays
 unsuccessful. Retain the receipt and evidence; do not use broad container prune
 or remove another run's resources. Remove the review worktree only after its
 processes are confirmed stopped and proof is retained.
+If removal completed before the final receipt was saved, cleanup establishes
+exact-ID absence through a successful complete Docker query and validates the
+already-retained manifest and artifacts. It records recovery without promoting
+the capture verdict. Missing proof remains unsuccessful even when absence is
+known. Early driver failures retain only a fixed stage code, never exception
+text or raw diagnostics, in the allowlisted check attachment.
 
 ## Source validation
 

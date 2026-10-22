@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {portableCreateArgs, portableContainerMatches, portableManifest, stopPortableContainer, finishPortable} from '../dist/portable.js';
+import {portableCreateArgs, portableContainerMatches, portableManifest, portableArtifact, stopPortableContainer, finishPortable} from '../dist/portable.js';
 import {mkdtemp, rm, writeFile, readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -9,6 +9,13 @@ import {createHash} from 'node:crypto';
 const identity = {runId: 'runtime-20261022T214100Z-abcdef', revision: '1'.repeat(40), image: 'sha256:' + '2'.repeat(64),
   artifactDigest: 'sha256:' + '3'.repeat(64), step: 'mac-codex-local', seconds: 180};
 const id = '4'.repeat(64);
+test('image build manifest is closed, source-bound and requires a real digest', () => {
+  const valid = {schema: 'portable-artifact/1', revision: identity.revision, artifactDigest: identity.artifactDigest};
+  assert.equal(portableArtifact(valid, identity.revision), identity.artifactDigest);
+  for (const value of [{...valid, revision: 'f'.repeat(40)}, {...valid, artifactDigest: null}, {...valid, artifactDigest: 'unknown'},
+    {...valid, schema: 'other'}, {...valid, token: 'PRIVATE_CANARY'}]) assert.throws(() => portableArtifact(value, identity.revision));
+  assert.doesNotThrow(() => portableCreateArgs({...identity, artifactDigest: null})); // honest pre-start pending identity
+});
 function container() {
   const args = portableCreateArgs(identity);
   return {Id: id, Image: identity.image, Config: {User: '1000:1000', Labels: {'org.bunny.verify.run': identity.runId,
@@ -124,4 +131,35 @@ test('failed capture stays private until explicit cleanup, which never turns it 
   assert.equal(w.calls.some(a => a[0] === 'rm'), false);
   await finishPortable(w.receipt, w.at, w.run, false, true);
   assert.equal(w.receipt.state, 'failed'); assert.equal(w.receipt.cleanup.container, 'removed');
+});
+
+test('recovery reconciles rm-before-receipt-save using exact absence and surviving proof without promotion', async t => {
+  const w = await proofWorld(t);
+  await finishPortable(w.receipt, w.at, w.run, true);
+  Object.assign(w.receipt, {state: 'unknown', capture: null, failure: 'operation-unconfirmed', cleanup: {stopped: false, container: 'unknown'}});
+  const calls = [];
+  const absent = async args => {calls.push(args); if (args[0] === 'ps') return ''; throw new Error('container absent');};
+  await finishPortable(w.receipt, w.at, absent, false, true);
+  assert.equal(w.receipt.state, 'failed');
+  assert.deepEqual(w.receipt.cleanup, {stopped: true, container: 'removed'});
+  assert.equal(w.receipt.capture.outcome, 'passed');
+  assert.equal(w.receipt.failure, 'recovered-after-removal');
+  assert.deepEqual(calls.map(a => a[0]), ['inspect', 'ps']);
+});
+
+test('authoritative absence with missing retained proof is truthful but unsuccessful', async t => {
+  const w = await proofWorld(t);
+  const absent = async args => {if (args[0] === 'ps') return ''; throw new Error('container absent');};
+  await finishPortable(w.receipt, w.at, absent, false, true);
+  assert.equal(w.receipt.state, 'unknown');
+  assert.deepEqual(w.receipt.cleanup, {stopped: true, container: 'removed'});
+  assert.equal(w.receipt.capture, null);
+  assert.equal(w.receipt.failure, 'recovery-unconfirmed');
+});
+
+test('failed Docker reads never establish absence or destroy retained evidence', async t => {
+  const w = await proofWorld(t);
+  await finishPortable(w.receipt, w.at, async () => {throw new Error('engine unavailable');}, false, true);
+  assert.equal(w.receipt.state, 'unknown');
+  assert.deepEqual(w.receipt.cleanup, {stopped: false, container: 'unknown'});
 });
