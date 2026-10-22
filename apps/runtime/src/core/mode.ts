@@ -4,7 +4,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {nativeMode} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type ModeSetRequest, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
-import {fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome} from './tracker.js';
@@ -92,7 +92,7 @@ export class ModePart implements CorePart {
           this.#save.run(JSON.stringify(record), MODE_ID);
           tx.add(`bunny.state.mode.${MODE_ID}`, {kind: 'state', ...stateDraft(record)}, {parent: command});
           tx.take(command);
-          committed = this.#admission.complete(tx, command, {result: 'succeeded', evidence: 'observed'});
+          committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
           return {status: 'accepted'} as const;
         });
         if ('error' in answer) return answer;

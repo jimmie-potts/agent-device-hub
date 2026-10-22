@@ -238,9 +238,9 @@ export default defineConfig(
     rules: {'bunny/no-raw-error-text': 'off'},
   },
   {
-    // Outcome and evidence words come from sdk/evidence (Hub #1141). Existing hits are held in eslint-suppressions.json
-    // as a ratchet: a file may lose hits, never gain them. Tests spell out the outcomes they expect, and page code's
-    // 'none' is a CSS value, so neither is checked.
+    // Outcome and evidence words in claim positions come from sdk/evidence (Hub #1141, narrowed in #1187). The hits
+    // in retained legacy and frozen CHOMPI code are held in eslint-suppressions.json as the ratchet: a file may lose
+    // hits, never gain them. Tests spell out the outcomes they expect, so they are not checked.
     name: 'bunny/outcome-vocabulary',
     files: ['**/*.{js,mjs,cjs,ts,tsx}'],
     ignores: [...tests, ...browser, ...pageDrivers, 'packages/sdk/src/evidence.ts'],
