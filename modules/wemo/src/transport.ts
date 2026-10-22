@@ -1,6 +1,7 @@
 import {request} from 'node:http';
 import {XMLParser, XMLValidator} from 'fast-xml-parser';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {Outcome} from '@jimmie-potts/sdk';
 export type Plug={id:string;label:string;address:string;port:number;mac:string;configurationRevision:number;firmware?:string};
 export type Observation={power:boolean;firmware:string};
 export type Attempt={result:'succeeded'|'failed'|'uncertain';evidence:'none'|'transmitted';code?:ErrorCode;connection:'available'|'unavailable'|'unknown'};
@@ -76,9 +77,9 @@ export class WemoTransport implements PlugTransport {
       });
       const value=text(soap(response,'SetBinaryState').BinaryState).split('|')[0];
       if(value!==(on?'1':'0'))throw new Refused();
-      return {result:'succeeded',evidence:'transmitted',connection:'available'};
+      return {result:Outcome.succeeded,evidence:Outcome.transmitted,connection:'available'};
     }catch(error){
-      return {result:possible?'uncertain':'failed',evidence:'none',code:possible?'uncertain-result':error instanceof Refused?error.code:'unavailable',connection:reached?'available':'unavailable'};
+      return {result:possible?Outcome.uncertain:Outcome.failed,evidence:Outcome.none,code:possible?'uncertain-result':error instanceof Refused?error.code:'unavailable',connection:reached?'available':'unavailable'};
     }
   }
 }

@@ -9,6 +9,7 @@ import {
 } from '../device/index.js';
 import {encodeHostedGif, type MediaProfile} from '../media/index.js';
 import {HOSTED_PROFILE} from './configuration.js';
+import {Outcome} from '@jimmie-potts/sdk';
 
 /** What the module opens a transport with, from its configuration. */
 export type OpenOptions = {address: string; profile: Readonly<MediaProfile>; clock: Clock; hostedGif?: HostedFileConfig};
@@ -30,7 +31,7 @@ export function httpPixooTransport(): PixooTransport {
       const usesHosted = profile.name === HOSTED_PROFILE;
       const hosted = usesHosted && hostedGif !== undefined ? await startHostedFiles(hostedGif) : undefined;
       const adapter = new HttpDeviceAdapter({
-        ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: usesHosted ? 1000 : 0},
+        ip: address, clock, profile: {...profile, evidence: Outcome.observed, readyDelayMs: usesHosted ? 1000 : 0},
         ...(hosted === undefined ? {} : {hosted: {files: hosted, encode: (animation: Animation) => encodeHostedGif(animation.frames)}}),
       });
       return {adapter, close: async () => {
@@ -210,7 +211,7 @@ class SimulatedAdapter implements DeviceAdapter {
     });
     const completedAtMs = this.#clock.now();
     return {
-      ok: false, code, priorEffects: mutating ? 'possible' : 'none', generation: options.generation,
+      ok: false, code, priorEffects: mutating ? 'possible' : Outcome.none, generation: options.generation,
       timing: {submittedAtMs, startedAtMs: submittedAtMs, completedAtMs, queueMs: 0, serviceMs: completedAtMs - submittedAtMs},
     };
   }

@@ -216,13 +216,14 @@ test('every TypeScript project that compiles covered code has the strict compile
   }
 });
 
-test('covered paths have no lint baseline beyond the outcome-word ratchet, and every workspace package is scoped', () => {
-  // The outcome-word rule (Hub #1141) is the one ratchet allowed under the profile: its existing hits are held so a
-  // file can only lose them. Every other rule stays without a baseline here.
+test('covered paths have no lint baseline, and every workspace package is scoped', () => {
+  // No rule has a baseline under the profile. The outcome-word rule's hits here were converted to `Outcome.*` when the
+  // rule was narrowed to claim positions (Hub #1187), so its remaining baseline is outside the covered paths.
   const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
+  // The profile's globs name TypeScript files; a script beside them (apps/runtime/scripts/*.mjs) is outside it.
   const inCovered = Object.entries(suppressions)
-    .filter(([file]) => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
-    .flatMap(([file, rules]) => Object.keys(rules).filter(rule => rule !== 'bunny/no-raw-outcome-literal').map(rule => `${file}: ${rule}`));
+    .filter(([file]) => /\.tsx?$/.test(file) && covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
+    .flatMap(([file, rules]) => Object.keys(rules).map(rule => `${file}: ${rule}`));
   assert.deepEqual(inCovered, []);
   // The module boundary treats other scopes as third-party, so every workspace package must use a listed scope.
   const workspaces = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).workspaces;
@@ -510,8 +511,8 @@ test('the strict compiler base rejects an unchecked index and an explicit undefi
   }
 });
 
-// Hub #1141: outcome and evidence words come from sdk/evidence. The invalid cases include the two pre-fix lines the
-// rule exists for, verbatim.
+// Hub #1141, narrowed in #1187: outcome and evidence words come from sdk/evidence in claim positions. The invalid cases
+// include the two pre-fix lines the rule exists for, verbatim; the valid cases include the same words outside a claim.
 typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], {
   valid: [
     "import {Outcome} from '@jimmie-potts/sdk'; const result = ok ? Outcome.succeeded : Outcome.failed;",
@@ -519,6 +520,11 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
     "const counts = {failed: 0, 'rejected': 0}; counts.failed++;",
     "const error = {code: 'uncertain-result'}; refuse('unavailable');",
     "export {rejected} from './x.js'; import './none.js';",
+    // The same words outside a claim position: a CSS value, a status label, a map key, an unrelated comparison.
+    "el.style.display = 'none'; const display = 'none'; const row = {status: 'failed', kind: 'none'};",
+    "if (mode === 'none') clear(); switch (state) { case 'failed': break; default: break; }",
+    "log.info('operation.failed', {'bunny.operation': 'storage', 'bunny.reason': 'none'});",
+    "const result = {evidence: Outcome.none, note: 'failed'}; const outcome = cancelled ? Outcome.rejected : summary;",
   ],
   invalid: [
     // #736 F1 before the fix (74e92c37 apps/hub/src/server.ts): a lost controller response, an uncertain result, was
@@ -531,6 +537,10 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
       errors: ['observed', 'transmitted', 'transmitted', 'none'].map(value => ({messageId: 'raw', data: {value}}))},
     {code: 'const outcome = `uncertain`;', errors: [{messageId: 'raw'}]},
     {code: "if (result === 'absent') clear();", errors: [{message: "'absent' is an outcome word; take it from the SDK `Outcome` vocabulary and change a claim only through sdk/evidence.merge."}]},
+    // Claim positions beyond a property value: an assignment, a comparison with a member, a case on a claim, a cast.
+    {code: "receipt.evidence = 'none'; fields['bunny.outcome'] = known || 'uncertain';", errors: [{messageId: 'raw', data: {value: 'none'}}, {messageId: 'raw', data: {value: 'uncertain'}}]},
+    {code: "if (claim!.level !== 'observed') {} switch (summary?.result) { case 'failed': break; }", errors: [{messageId: 'raw', data: {value: 'observed'}}, {messageId: 'raw', data: {value: 'failed'}}]},
+    {code: "const done = {result: 'succeeded' as const, priorEffects: ['none']};", errors: [{messageId: 'raw', data: {value: 'succeeded'}}, {messageId: 'raw', data: {value: 'none'}}]},
   ],
 });
 
@@ -542,20 +552,4 @@ test('the outcome-word rule reads its words from sdk/evidence and covers product
     assert.ok(on(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
   for (const file of ['packages/sdk/src/evidence.ts', 'apps/runtime/tests/a.test.ts', 'modules/example/src/frontend/a.tsx'])
     assert.ok(!severity(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
-});
-
-// Hub #1141 ratchet: the outcome-word baseline only shrinks. scripts/eslint/outcome-literal-pin.json holds each file's
-// count (the counts when the rule landed on top of #1156); `eslint --suppress-rule` can raise a count or add a
-// file, and this test then fails. Lower a file's pin (or delete its key) when its hits are converted.
-test('no file gains outcome-word suppressions beyond its pin', () => {
-  const rule = 'bunny/no-raw-outcome-literal';
-  const pin = JSON.parse(readFileSync(join(root, 'scripts/eslint/outcome-literal-pin.json'), 'utf8'));
-  const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
-  const over = Object.entries(suppressions).filter(([, rules]) => rules[rule] !== undefined)
-    .filter(([file, rules]) => rules[rule].count > (pin[file] ?? 0)).map(([file, rules]) => `${file}: ${rules[rule].count} > ${pin[file] ?? 0}`);
-  assert.deepEqual(over, []);
-  // The cap is the pin's own total, so the suppressed total can only fall with it.
-  const cap = Object.values(pin).reduce((sum, count) => sum + count, 0);
-  const total = Object.values(suppressions).reduce((sum, rules) => sum + (rules[rule]?.count ?? 0), 0);
-  assert.ok(total <= cap, `${total} outcome-word suppressions, above the pinned ${cap}`);
 });

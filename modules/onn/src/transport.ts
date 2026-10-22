@@ -6,7 +6,7 @@ import {Readable} from 'node:stream';
 import {AdbServerClient, AdbShellProtocolProcessImpl, AdbShellProtocolSpawner} from '@yume-chan/adb';
 import {MaybeConsumable, type ReadableStream as AdbReadable} from '@yume-chan/stream-extra';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {absent, hold, transmitted as transmission, type HeldEvidence} from '@jimmie-potts/sdk';
+import {absent, hold, transmitted as transmission, type HeldEvidence, Outcome} from '@jimmie-potts/sdk';
 import {CURRENT_APP_COMMAND, currentApp, keyCommand, launchCommand, launcherCommand, textCommand, type App, type CurrentApp, type Key} from './actions.js';
 import type {OnnConfig} from './configuration.js';
 import {parseMetadataReply, type MetadataSample} from './metadata.js';
@@ -116,7 +116,7 @@ export class AdbTransport implements OnnTransport {
     let possible = false, answered = false;
     // Transmission evidence only grows (Hub #1140): a later failure cannot erase an acknowledged write.
     const delivery = deliveryEvidence();
-    const sent = (): Attempt['evidence'] => delivery.claim.level === 'transmitted' ? 'transmitted' : 'none';
+    const sent = (): Attempt['evidence'] => delivery.claim.level === Outcome.transmitted ? 'transmitted' : 'none';
     const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {delivery.merge(transmission());};
     try {
       let command: string | undefined;
@@ -124,21 +124,21 @@ export class AdbTransport implements OnnTransport {
       else if (action.kind === 'text') command = textCommand(action.text);
       else {
         const resolve = launcherCommand(action.app);
-        if (resolve === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability', connection: 'unknown'};
+        if (resolve === undefined) return {result: Outcome.failed, evidence: Outcome.none, code: 'unsupported-capability', connection: 'unknown'};
         const launcher = await this.#shell(resolve, signal, false, wrote, transmitted);
         answered = true;
-        if (launcher.exitCode !== 0 || launcher.stderr !== '') return {result: 'failed', evidence: 'none', code: 'not-found', connection: 'available'};
+        if (launcher.exitCode !== 0 || launcher.stderr !== '') return {result: Outcome.failed, evidence: Outcome.none, code: 'not-found', connection: 'available'};
         command = launchCommand(action.app, launcher.stdout);
       }
-      if (command === undefined) return {result: 'failed', evidence: 'none', code: 'unsupported-capability', connection: answered ? 'available' : 'unknown'};
+      if (command === undefined) return {result: Outcome.failed, evidence: Outcome.none, code: 'unsupported-capability', connection: answered ? 'available' : 'unknown'};
       const response = await this.#shell(command, signal, true, wrote, transmitted);
       const launchOkay = action.kind !== 'app' || /^Status: ok\r?$/m.test(response.stdout);
       const outputOkay = action.kind === 'app' || response.stdout === '';
-      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: 'uncertain', evidence: sent(), code: 'uncertain-result', connection: 'available'};
-      return {result: 'succeeded', evidence: 'transmitted', connection: 'available'};
+      if (response.exitCode !== 0 || response.stderr !== '' || !launchOkay || !outputOkay) return {result: Outcome.uncertain, evidence: sent(), code: 'uncertain-result', connection: 'available'};
+      return {result: Outcome.succeeded, evidence: Outcome.transmitted, connection: 'available'};
     } catch (error) {
-      if (error instanceof EffectRefused) return {result: 'failed', evidence: 'none', code: error.code, connection: answered ? 'available' : 'unknown'};
-      return {result: possible ? 'uncertain' : 'failed', evidence: sent(), code: possible ? 'uncertain-result' : 'unavailable', connection: 'unavailable'};
+      if (error instanceof EffectRefused) return {result: Outcome.failed, evidence: Outcome.none, code: error.code, connection: answered ? 'available' : 'unknown'};
+      return {result: possible ? Outcome.uncertain : Outcome.failed, evidence: sent(), code: possible ? 'uncertain-result' : 'unavailable', connection: 'unavailable'};
     }
   }
   async read(signal: AbortSignal): Promise<AppObservation | undefined> {

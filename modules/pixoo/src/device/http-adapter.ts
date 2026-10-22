@@ -5,6 +5,7 @@ import {
 import { snapshotAnimation } from './frames.js';
 import type {HostedFiles} from './hosted-files.js';
 import { createDeviceTransport, DeviceRequestError, validateDeviceIp, type DeviceTransport } from './http-transport.js';
+import {Outcome} from '@jimmie-potts/sdk';
 
 export interface DeviceProfile {
   name: string;
@@ -126,7 +127,7 @@ export class HttpDeviceAdapter implements DeviceAdapter {
     const controller = new AbortController();
     let reason: FailureCode | undefined;
     let startedAtMs: number | null = null;
-    let priorEffects: 'none' | 'possible' = 'none';
+    let priorEffects: 'none' | 'possible' = Outcome.none;
     let done = false;
     let cancelTimer = () => {};
     return new Promise(resolve => {

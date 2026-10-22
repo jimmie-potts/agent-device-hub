@@ -16,7 +16,7 @@
 // - The gate and the refresh run on the runtime's wall clock, so they hold across a restart. A time in the future, after
 //   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, type Cancel, type ModuleScheduler} from '@jimmie-potts/sdk';
+import {SdkError, type Cancel, type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
 import type {ListResult, TidbytCloudConnection, WriteResult} from './cloud.js';
 import type {TileRequest} from './tiles.js';
 
@@ -86,7 +86,7 @@ export class CloudQueue {
   }
 
   #holdAfter(result: WriteResult): void {
-    if (result.outcome !== 'failed') return;
+    if (result.outcome !== Outcome.failed) return;
     if (result.failure === 'unauthenticated' || result.failure === 'forbidden') this.#authentication = result.failure;
     if (result.failure === 'capacity') this.#rateLimitedUntilMs = this.#now() + result.retryAfterMs;
   }
@@ -334,13 +334,13 @@ export class TileWriter {
           this.#presence = 'absent';
         }
         break;
-      case 'uncertain':
+      case Outcome.uncertain:
         // The write may have taken effect, so neither the frame nor the installation's presence is known.
         this.#failures += 1;
         this.#sent = undefined;
         this.#presence = 'unknown';
         break;
-      case 'failed':
+      case Outcome.failed:
       case 'held':
         this.#failures += 1;
         // The installation may already be gone; the next removal reads the list before deleting again.

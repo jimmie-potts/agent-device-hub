@@ -12,6 +12,7 @@ import {
   SHARED_FAMILIES, checkFamilies, entryOf, schemaFamily, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncCompleted, type SyncProvider, type SyncRequest,
 } from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
+import {Outcome} from './evidence.js';
 
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
 /** What the bus lends its sync owners: its clock and scheduler, queue limit, error report, diagnostics and envelope builder. */
@@ -210,7 +211,7 @@ function decisionOf(request: Message<SyncRequest>, answer: SyncAnswer): Diagnost
     source: request.source, pattern: `sync ${request.data.families.join(',')}`, requestId: request.data.requestId, messageId: request.id,
     trace: {traceparent: request.traceparent},
   };
-  if (answer.status === 'served') return {event: 'sync.served', level: levelOf('sync.served'), outcome: 'succeeded', ...facts};
+  if (answer.status === 'served') return {event: 'sync.served', level: levelOf('sync.served'), outcome: Outcome.succeeded, ...facts};
   const {code} = answer.error.error;
-  return {event: 'sync.refused', level: levelOf(code), outcome: code === 'cancelled' ? 'cancelled' : 'rejected', code, ...facts};
+  return {event: 'sync.refused', level: levelOf(code), outcome: code === 'cancelled' ? 'cancelled' : Outcome.rejected, code, ...facts};
 }

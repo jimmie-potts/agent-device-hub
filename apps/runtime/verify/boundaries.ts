@@ -4,11 +4,12 @@
 // the check.
 import type {CheckOutcome} from '@jimmie-potts/app-verify';
 import type {BoundaryReport} from './protocol.js';
+import {Outcome} from '@jimmie-potts/sdk';
 
 /** The installed Hub's, local controllers' and their services' ports, which a run must never reach. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41230, 41231];
 const passed: CheckOutcome = {outcome: 'passed'};
-const failed = (reason: string): CheckOutcome => ({outcome: 'failed', reason});
+const failed = (reason: string): CheckOutcome => ({outcome: Outcome.failed, reason});
 
 /** The runtime built every module with its simulated transport (`--simulate`), as its `runtime.started` record says. */
 export function checkSimulatedTransports(report: BoundaryReport): CheckOutcome {

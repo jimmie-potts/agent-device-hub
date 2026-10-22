@@ -2,7 +2,7 @@
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type LightingLayoutRecord, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
-import {fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome} from './tracker.js';
@@ -59,7 +59,7 @@ export class LightingLayoutPart implements CorePart {
         const record: LightingLayoutRecord = {id: ID, revision: tx.revision(), layout: command.data.layout};
         this.#save.run(JSON.stringify(record), ID);
         tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
-        committed = this.#admission.complete(tx, command, {result: 'succeeded', evidence: 'observed'});
+        committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;
       });
       if ('error' in result) return result;

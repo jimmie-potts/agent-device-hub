@@ -13,7 +13,7 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Messag
 import {
   registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import type {HistoryFilter, HistoryRow} from './history.js';
@@ -124,7 +124,7 @@ const REASONS: Partial<Record<ErrorCode, string>> = {
   'unknown-schema': 'invalid-input', 'not-found': 'invalid-input', 'forbidden': 'unauthorized', 'duplicate-conflict': 'duplicate',
   'capacity': 'busy', 'unavailable': 'unavailable',
 };
-const refused = (code: ErrorCode): LogFields => ({'bunny.outcome': 'rejected', 'bunny.code': code, ...(REASONS[code] === undefined ? {} : {'bunny.reason': REASONS[code]})});
+const refused = (code: ErrorCode): LogFields => ({'bunny.outcome': OutcomeWord.rejected, 'bunny.code': code, ...(REASONS[code] === undefined ? {} : {'bunny.reason': REASONS[code]})});
 const requestField = (requestId: unknown): LogFields => typeof requestId === 'string' && REQUEST_ID.test(requestId) ? {'bunny.request.id': requestId} : {};
 const MESSAGE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SOURCE = /^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/;
@@ -731,7 +731,7 @@ class Core {
         const record = current();
         if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
         let committed: (() => void) | undefined;
-        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}); };
         if ((label === null && record.label === undefined) || (record.label?.origin === 'user' && record.label.value === label)) {
           try {
             await this.#store.transaction(complete);
@@ -787,7 +787,7 @@ class Core {
         if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
         const notice = record.notices.at(-1);
         let committed: (() => void) | undefined;
-        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}); };
         if (noticeId === null || this.#consumers.every(consumer => notice?.acknowledgedBy.includes(consumer.id) === true)) {
           try { await this.#store.transaction(complete); }
           catch { return errorBody(this.#store.takeFailure() === 'full' ? 'capacity' : 'internal', {detail: 'the core could not complete the notice action'}); }

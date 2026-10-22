@@ -26,9 +26,6 @@
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
     },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    },
     "preserve-caught-error": {
       "count": 1
     }
@@ -41,16 +38,8 @@
       "count": 1
     }
   },
-  "apps/chompi-bridge/src/routing/knobs.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 9
-    }
-  },
   "apps/chompi-bridge/src/routing/lights.ts": {
     "@typescript-eslint/no-unnecessary-type-assertion": {
-      "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
       "count": 1
     }
   },
@@ -60,15 +49,9 @@
     },
     "@typescript-eslint/no-unsafe-argument": {
       "count": 2
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/chompi-bridge/src/routing/router.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    },
     "no-useless-assignment": {
       "count": 2
     }
@@ -78,20 +61,12 @@
       "count": 1
     }
   },
-  "apps/chompi-bridge/src/sim/band-tree.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
   "apps/chompi-bridge/src/sim/desktop.ts": {
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 7
     },
     "@typescript-eslint/require-await": {
       "count": 16
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
     }
   },
   "apps/chompi-bridge/src/sim/hub.ts": {
@@ -133,11 +108,6 @@
       "count": 1
     }
   },
-  "apps/chompi-bridge/src/sim/suggestions.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "apps/chompi-bridge/src/simulator.ts": {
     "@typescript-eslint/require-await": {
       "count": 4
@@ -149,17 +119,11 @@
     },
     "@typescript-eslint/require-await": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/chompi-bridge/src/windows/client-files.ts": {
     "@typescript-eslint/no-unnecessary-type-assertion": {
       "count": 3
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
     }
   },
   "apps/chompi-bridge/src/windows/package-path.ts": {
@@ -214,7 +178,7 @@
   },
   "apps/chompi-bridge/verify/server.mjs": {
     "bunny/no-raw-outcome-literal": {
-      "count": 4
+      "count": 1
     }
   },
   "apps/dashboard/src/art/nanoleaf.ts": {
@@ -256,22 +220,14 @@
       "count": 1
     }
   },
-  "apps/hub/bin/install-compatibility-probe.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
   "apps/hub/src/automation.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 2
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 7
     }
   },
   "apps/hub/src/diagnostics.ts": {
     "bunny/no-raw-outcome-literal": {
-      "count": 7
+      "count": 4
     }
   },
   "apps/hub/src/install/build-target.ts": {
@@ -286,7 +242,7 @@
   },
   "apps/hub/src/install/operation.ts": {
     "bunny/no-raw-outcome-literal": {
-      "count": 5
+      "count": 2
     },
     "preserve-caught-error": {
       "count": 4
@@ -297,12 +253,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "apps/hub/src/install/service.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
+      "count": 4
     }
   },
   "apps/hub/src/install/stage.ts": {
@@ -320,7 +271,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 3
+      "count": 1
     }
   },
   "apps/hub/src/mcp.ts": {
@@ -331,7 +282,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 10
+      "count": 3
     }
   },
   "apps/hub/src/migration-routes.ts": {
@@ -356,27 +307,9 @@
       "count": 1
     }
   },
-  "apps/hub/src/moment-route.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/hub/src/moment-sender.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "apps/hub/src/pixoo-integration.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/hub/src/playback.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/hub/src/server.ts": {
@@ -387,7 +320,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 5
+      "count": 2
     }
   },
   "apps/hub/src/setup-authority.ts": {
@@ -424,19 +357,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 5
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/hub/src/sonos.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/hub/src/sony.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/hub/src/storage.ts": {
@@ -458,9 +378,6 @@
   "apps/hub/src/wispr-query.ts": {
     "@typescript-eslint/no-base-to-string": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
     }
   },
   "apps/hub/src/wispr-worker.ts": {
@@ -474,29 +391,9 @@
       "count": 7
     }
   },
-  "apps/local-controllers/src/host.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/maintenance/bin/hub-supervisor-install.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/maintenance/bin/tracker-closeout.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/maintenance/closeout/assessment.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 8
-    }
-  },
   "apps/maintenance/closeout/closeout.mjs": {
     "bunny/no-raw-outcome-literal": {
-      "count": 4
+      "count": 1
     }
   },
   "apps/maintenance/closeout/installed-files.mjs": {
@@ -506,7 +403,7 @@
   },
   "apps/maintenance/install/hub.mjs": {
     "bunny/no-raw-outcome-literal": {
-      "count": 7
+      "count": 1
     }
   },
   "apps/maintenance/src/adapters.ts": {
@@ -532,32 +429,12 @@
       "count": 1
     }
   },
-  "apps/maintenance/src/config.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 11
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 3
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 41
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
-    }
-  },
   "apps/maintenance/src/intake.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 4
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 4
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/maintenance/src/journal.ts": {
@@ -569,29 +446,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 13
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/maintenance/src/planner.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 8
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 44
-    },
-    "@typescript-eslint/no-unsafe-return": {
-      "count": 2
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "apps/maintenance/src/storage.ts": {
@@ -602,172 +456,7 @@
       "count": 2
     }
   },
-  "apps/runtime/bin/runtime-upgrade-check.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "apps/runtime/scripts/measure-commits.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/core/automation-part.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 6
-    }
-  },
-  "apps/runtime/src/core/automation.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 8
-    }
-  },
-  "apps/runtime/src/core/companion-part.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/core/core.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "apps/runtime/src/core/inbox.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "apps/runtime/src/core/lighting-layout.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/core/mapping.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/core/mode.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/core/operations.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 17
-    }
-  },
-  "apps/runtime/src/core/power-limits.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "apps/runtime/src/core/power-schedules.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/core/store.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/core/tracker.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 20
-    }
-  },
-  "apps/runtime/src/gateway/access.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "apps/runtime/src/gateway/gateway.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "apps/runtime/src/hook/hook.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/host.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "apps/runtime/src/nanoleaf-migration.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/pixoo-migration.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "apps/runtime/src/runtime.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "apps/runtime/src/span-file.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/upgrade-http.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/upgrade-inputs.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/src/upgrade-paths.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/boundaries.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/child.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/follow-proof.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/follow.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/link.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "apps/runtime/verify/onn-history-browser.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "apps/runtime/verify/plugin.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "apps/runtime/verify/supervisor.ts": {
     "bunny/no-raw-outcome-literal": {
       "count": 2
     }
@@ -778,9 +467,6 @@
     }
   },
   "apps/wispr-collector/src/language.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 8
-    },
     "preserve-caught-error": {
       "count": 1
     }
@@ -790,11 +476,6 @@
       "count": 1
     },
     "preserve-caught-error": {
-      "count": 4
-    }
-  },
-  "apps/wispr-collector/src/reader-engine.ts": {
-    "bunny/no-raw-outcome-literal": {
       "count": 4
     }
   },
@@ -840,9 +521,6 @@
   "controllers/lifx/src/status-publisher.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "controllers/tidbyt/src/cli.ts": {
@@ -864,12 +542,12 @@
       "count": 4
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 15
+      "count": 10
     }
   },
   "controllers/tidbyt/src/controller.ts": {
     "bunny/no-raw-outcome-literal": {
-      "count": 15
+      "count": 6
     }
   },
   "controllers/tidbyt/src/publisher.ts": {
@@ -879,256 +557,11 @@
   },
   "controllers/tidbyt/src/publishing.ts": {
     "bunny/no-raw-outcome-literal": {
-      "count": 4
+      "count": 1
     }
   },
   "controllers/tidbyt/src/runner.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    }
-  },
-  "controllers/tidbyt/src/status.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/codex-desktop/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "modules/companions/src/assistant/engine.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 21
-    }
-  },
-  "modules/companions/src/assistant/store.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/companions/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 7
-    }
-  },
-  "modules/lifx/src/families.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/lifx/src/lease.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/lifx/src/queue.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "modules/lifx/src/status.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "modules/nanoleaf/src/controls.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/nanoleaf/src/journal.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 19
-    }
-  },
-  "modules/nanoleaf/src/module/runtime.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 24
-    }
-  },
-  "modules/nanoleaf/src/module/schemas.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/nanoleaf/src/module/views.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/nanoleaf/src/project-map.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/onn/src/families.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/onn/src/history-contract.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/onn/src/history.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/onn/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 10
-    }
-  },
-  "modules/onn/src/registration.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "modules/onn/src/simulated.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 7
-    }
-  },
-  "modules/onn/src/transport.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 16
-    }
-  },
-  "modules/pixoo/src/device/dashboard-qualification.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/device/fake.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/device/gif-qualification.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/pixoo/src/device/http-adapter.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/pixoo/src/device/spike.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/library/checkpoint.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/module/control.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 12
-    }
-  },
-  "modules/pixoo/src/module/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 19
-    }
-  },
-  "modules/pixoo/src/module/schemas.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/module/transport.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/pixoo/src/presentation/agent-dashboard.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "modules/pixoo/src/presentation/dashboard-examples.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/pixoo/src/presentation/dashboard-pixels.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "modules/pixoo/src/presentation/monitor-presentation.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 6
-    }
-  },
-  "modules/roborock/src/normalize.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "modules/tidbyt/src/cloud.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 9
-    }
-  },
-  "modules/tidbyt/src/lease.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/tidbyt/src/simulated.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/tidbyt/src/status.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "modules/tidbyt/src/writer.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 6
-    }
-  },
-  "modules/wemo/src/lease.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "modules/wemo/src/module.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 17
-    }
-  },
-  "modules/wemo/src/registration.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 10
-    }
-  },
-  "modules/wemo/src/transport.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "modules/wispr/src/wispr-query.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/children.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/index.ts": {
-    "bunny/no-raw-outcome-literal": {
       "count": 1
     }
   },
@@ -1146,21 +579,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 7
-    }
-  },
-  "packages/agent-state/src/providers.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/agent-state/src/validation.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "packages/agent-status/src/stream.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "packages/app-verify/examples/python-app.mjs": {
@@ -1196,11 +614,6 @@
       "count": 1
     }
   },
-  "packages/app-verify/src/handoff.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
   "packages/app-verify/src/lifecycle.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
@@ -1215,7 +628,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 17
+      "count": 9
     }
   },
   "packages/app-verify/src/proof.ts": {
@@ -1224,24 +637,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/app-verify/src/receipt.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "packages/app-verify/src/single-run.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/app-verify/src/systemd.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "packages/app-verify/src/types.ts": {
@@ -1260,7 +655,7 @@
       "count": 2
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 13
+      "count": 4
     }
   },
   "packages/contracts/src/install-receipt.ts": {
@@ -1268,20 +663,12 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 2
+      "count": 1
     }
   },
   "packages/event-contracts/src/index.ts": {
     "@typescript-eslint/no-unsafe-assignment": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/event-contracts/src/v2/families.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   },
   "packages/lifecycle-contracts/src/index.ts": {
@@ -1304,9 +691,6 @@
     },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
     }
   },
   "packages/mcp/src/tools.ts": {
@@ -1317,7 +701,7 @@
       "count": 3
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 8
+      "count": 1
     }
   },
   "packages/mcp/src/verify.ts": {
@@ -1331,172 +715,12 @@
       "count": 15
     }
   },
-  "packages/observability/runtime/bounded-sink.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/observability/runtime/delivery-evidence.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/observability/runtime/host.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 8
-    }
-  },
-  "packages/observability/runtime/log-pipeline.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "packages/observability/runtime/span-pipeline.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "packages/observability/src/index.ts": {
     "@typescript-eslint/require-await": {
       "count": 1
     }
   },
-  "packages/sdk/src/in-process-sync.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "packages/sdk/src/in-process.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 17
-    }
-  },
-  "packages/sdk/src/outbox.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 5
-    }
-  },
-  "packages/sdk/src/remote-client.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 10
-    }
-  },
-  "packages/sdk/src/remote-edge.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "packages/sdk/src/remote-publish.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "packages/sdk/src/sync.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 8
-    }
-  },
-  "packages/sdk/src/testing/harness.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "packages/sdk/src/testing/kit.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 6
-    }
-  },
-  "packages/wispr-contracts/src/index.ts": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/ci-selection/cli.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/ci-selection/local.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/ci-selection/selection.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/delivery-preflight/preflight.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "scripts/delivery-preflight/receipts.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/delivery-preflight/reviews.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "scripts/observability/backend-create.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/backend-plan.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/observability/backend-session.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/backend-smoke.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/observability/bounded-sink.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/collection-faults.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 3
-    }
-  },
-  "scripts/observability/command-evidence.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/observability/command-faults.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/delivery-evidence.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/delivery-records.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 4
-    }
-  },
-  "scripts/observability/log-pipeline.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/observability/monitor-journal.mjs": {
     "bunny/no-raw-outcome-literal": {
       "count": 1
     }
@@ -1506,34 +730,9 @@
       "count": 1
     }
   },
-  "scripts/observability/resource-callbacks.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
-  "scripts/observability/resource-watchdog.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/observability/span-pipeline.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
   "scripts/observability/worker-diagnostics.mjs": {
     "bunny/no-raw-outcome-literal": {
       "count": 3
-    }
-  },
-  "scripts/package-maintenance.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
-    }
-  },
-  "scripts/verify-host.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
     }
   }
 }

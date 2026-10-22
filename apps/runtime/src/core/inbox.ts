@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {operationEntityId, registerCoreFamilies, type InboxItem} from '@jimmie-potts/event-contracts/v2/families';
-import {fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle} from './core.js';
 import {REMOVAL_SCHEMA} from './mapping.js';
 import type {CoreTransaction, Deriver} from './store.js';
@@ -43,7 +43,7 @@ export class InboxRecords {
     if (result === undefined) return;
     const id = operationEntityId(requestId), row = this.#statements?.get.get(id) as Row | undefined;
     if (row !== undefined && row.handled_by !== null && (result !== 'conflict' || priorOperation?.result === 'conflict')) return;
-    if (row === undefined && result === 'succeeded') return;
+    if (row === undefined && result === Outcome.succeeded) return;
     const previous = row === undefined ? undefined : JSON.parse(row.record) as InboxItem;
     // Keep two opposite definitive pieces of evidence, bounded regardless of how many later outcomes were retained.
     const definitive = ['succeeded', 'failed'].map(value => operation.outcomes.find(item => item.result === value)).filter(item => item !== undefined);
