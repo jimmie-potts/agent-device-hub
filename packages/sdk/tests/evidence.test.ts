@@ -54,6 +54,11 @@ it('a held claim changes only through merge and never drops', () => {
     held.claim = absent();
     // @ts-expect-error new evidence must stay within the held levels.
     held.merge(observed());
+    // @ts-expect-error the holder's transition is read-only; it cannot be swapped for one that drops the claim.
+    held.merge = () => absent();
   };
   assert.equal(typeof forbidden, 'function');
+  // At run time the holder is frozen, so the swap throws instead of taking effect.
+  assert.throws(() => { Object.assign(held, {merge: () => absent()}); }, TypeError);
+  assert.equal(held.merge(absent()).level, 'transmitted');
 });

@@ -2,6 +2,7 @@
 // one degradation and one recovery, not a warning per poll: its first failure is a warning, later ones are counted and
 // summarized at DEBUG at most once a minute, and its recovery counts them all.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {levelOf} from './diagnostics.js';
 import type {LogFields, Logger} from './module.js';
 import type {Clock, TraceContext} from './sdk.js';
 
@@ -47,13 +48,13 @@ export class DeviceAvailability {
     const outage = this.#outages.get(device);
     if (outage === undefined) {
       this.#outages.set(device, {sinceMs: now, failed: 1, unsummarized: 0, summarizedAtMs: now});
-      this.#write('warn', 'device.unavailable', {...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': 1}, trace);
+      this.#record('device.unavailable', {...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': 1}, trace);
       return;
     }
     outage.failed += 1;
     outage.unsummarized += 1;
     if (now - outage.summarizedAtMs < SUMMARY_MS) return;
-    this.#write('debug', 'device.unavailable', {...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': outage.unsummarized}, trace);
+    this.#summarize({...deviceOf(device), 'bunny.code': code, 'bunny.attempt_count': outage.unsummarized}, trace);
     outage.unsummarized = 0;
     outage.summarizedAtMs = now;
   }
@@ -67,7 +68,7 @@ export class DeviceAvailability {
     if (outage === undefined) return;
     this.#outages.delete(device);
     const duration = Math.min(MAX_DURATION_MS, Math.max(0, this.#clock.now() - outage.sinceMs));
-    this.#write('info', 'device.available', {...deviceOf(device), 'bunny.attempt_count': outage.failed, 'bunny.duration_ms': duration}, trace);
+    this.#record('device.available', {...deviceOf(device), 'bunny.attempt_count': outage.failed, 'bunny.duration_ms': duration}, trace);
   }
 
   /** Whether `device` is unreachable now. */
@@ -75,9 +76,22 @@ export class DeviceAvailability {
     return this.#outages.has(device);
   }
 
-  #write(level: 'debug' | 'info' | 'warn', event: string, fields: LogFields, trace: TraceContext | undefined): void {
+  /**
+   * A transition record at the table's level for its event (Hub #1143): a device becoming unreachable is WARN whatever
+   * its code, and its recovery INFO, so the event's level is used directly rather than through a code's.
+   */
+  #record(event: 'device.unavailable' | 'device.available', fields: LogFields, trace: TraceContext | undefined): void {
     try {
-      this.#log[level](event, fields, trace);
+      this.#log[levelOf(event)](event, fields, trace);
+    } catch {
+      // Telemetry is never acknowledged: a failing logger loses the record, and the module goes on.
+    }
+  }
+
+  /** The bounded summary of repeated failures, a duplicate observation below every table level (ADR 0012 "Levels"). */
+  #summarize(fields: LogFields, trace: TraceContext | undefined): void {
+    try {
+      this.#log.debug('device.unavailable', fields, trace);
     } catch {
       // Telemetry is never acknowledged: a failing logger loses the record, and the module goes on.
     }

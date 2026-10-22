@@ -50,3 +50,16 @@ it('a failed or uncertain outcome is at least WARN, with or without a code (ADR 
   assert.equal(recordLevel('runtime.edge.refused', {'bunny.code': 'internal'}), 'error');
   assert.equal(recordLevel('runtime.edge.refused', {'bunny.code': 'forbidden'}), 'warn');
 });
+
+it('an INFO-rated code is raised to WARN by a failed or uncertain outcome, and stays INFO otherwise (#1152 P3h)', () => {
+  // A validation refusal is INFO on its own (ADR 0012 "validation and domain refusals"), but an operation that
+  // recorded it as its failed outcome is a failed outcome, which the ADR logs at WARN.
+  assert.equal(recordLevel('operation.failed', {'bunny.code': 'invalid-request'}), 'info');
+  assert.equal(recordLevel('operation.failed', {'bunny.code': 'invalid-request', 'bunny.outcome': 'failed'}), 'warn');
+  assert.equal(recordLevel('command.completed', {'bunny.code': 'not-found', 'bunny.outcome': 'uncertain'}), 'warn');
+  assert.equal(recordLevel('command.completed', {'bunny.code': 'invalid-request', 'bunny.outcome': 'rejected'}), 'info');
+  // A WARN code is never lowered by a rejected outcome.
+  assert.equal(recordLevel('command.completed', {'bunny.code': 'forbidden', 'bunny.outcome': 'rejected'}), 'warn');
+  // A conflicting result has no fault code, so it stays at its event's level (tracker #completed, #1152 P3q).
+  assert.equal(recordLevel('command.completed', {'bunny.outcome': 'conflict'}), 'info');
+});

@@ -25,11 +25,9 @@ import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  PrivateRequestDigest, SdkError,
+import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
-  type Sdk, type TraceContext, type Tracing,
-} from '@jimmie-potts/sdk';
+  type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
@@ -317,7 +315,7 @@ export class Tracker {
     const requestId = action.requestId ?? randomUUID();
     const refuse = (code: ErrorCode, detail: string): ErrorBody => {
       const body = errorBody(code, {...ID.test(requestId) ? {requestId} : {}, detail});
-      this.#record('command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': 'rejected', ...refusedFields(code)});
+      this.#record('command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)});
       return body;
     };
     const parsed = KEY.exec(action.key);
@@ -401,8 +399,8 @@ export class Tracker {
     const answer: ActionAnswer = result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
     if (replied === undefined) return answer;
     if (result.status === 'accepted') this.#record('command.admitted', {...fields, 'bunny.outcome': 'accepted'}, span);
-    else if (result.status === 'rejected') this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(result.error.error.code)}, span);
-    else this.#record('command.completed', {...fields, 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, span);
+    else if (result.status === 'rejected') this.#record('command.rejected', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields(result.error.error.code)}, span);
+    else this.#record('command.completed', {...fields, 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result'}, span);
     return answer;
   }
 
@@ -418,7 +416,7 @@ export class Tracker {
         : earlier.payload?.status === 'omitted' && earlier.payload.hmac === payload.hmac);
     const fields = {'bunny.participant': action.requestedBy, ...requestField(requestId)};
     if (!same) {
-      this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, earlier);
+      this.#record('command.rejected', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields('duplicate-conflict')}, earlier);
       return errorBody('duplicate-conflict', {requestId, detail: 'another action already used this request ID'});
     }
     this.#record('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, earlier);
@@ -593,7 +591,7 @@ export class Tracker {
    */
   #duplicate(message: Message<unknown>, fields: LogFields): void {
     if (message.kind === 'outcome') this.#record('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
-    else this.#debug('message.received', {...fields, 'bunny.outcome': 'duplicate'}, message);
+    else this.#duplicateObservation(fields, message);
   }
 
   /** Acknowledges an outcome history already holds again, directly, with no durable work. */
@@ -604,7 +602,7 @@ export class Tracker {
 
   /** A refused message's intake record, at its code's level. */
   #refused(message: Message<unknown>, fields: LogFields, code: ErrorCode): void {
-    this.#record('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(code)}, message);
+    this.#record('message.received', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields(code)}, message);
   }
 
   /**
@@ -614,12 +612,16 @@ export class Tracker {
    */
   #overflowed(dropped: number | undefined): void {
     this.#record('operation.failed', {
-      'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
+      'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
       ...(dropped === undefined ? {} : {'bunny.delivery.dropped_count': dropped}),
     });
   }
 
-  /** The record of an outcome that advanced an action: INFO for success, WARN for a failed, uncertain or conflicting result. */
+  /**
+   * The record of an outcome that advanced an action, at the SDK table's level (Hub #1143): INFO for success; a failed
+   * or uncertain result at least WARN, or ERROR with an `internal` code; a conflicting result at its event's INFO, since
+   * the conflict itself is the action's recorded state and no code names a fault.
+   */
   #completed(operation: Operation, data: CompletedOutcome): void {
     this.#record('command.completed', {
       'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': data.result,
@@ -727,7 +729,7 @@ export class Tracker {
     this.#retry = SWEEP_RETRY_MS;
     for (const operation of ended) {
       this.#record('command.completed', {
-        'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result',
+        'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result',
         'bunny.reason': 'timeout',
       }, operation);
     }
@@ -743,10 +745,13 @@ export class Tracker {
     }
   }
 
-  /** A DEBUG record: a repeated non-outcome delivery, below every table level. */
-  #debug(event: LogEvent, fields: LogFields, trace?: TraceContext): void {
+  /**
+   * The one DEBUG record: a repeated non-outcome delivery is a duplicate observation (ADR 0012 "Levels"), below every
+   * table level. The event and outcome are fixed here, so no other record can be demoted through this path (#1152).
+   */
+  #duplicateObservation(fields: LogFields, trace: TraceContext): void {
     try {
-      this.#options.log.debug(event, fields, trace === undefined ? undefined : {traceparent: trace.traceparent});
+      this.#options.log.debug('message.received', {...fields, 'bunny.outcome': 'duplicate'}, {traceparent: trace.traceparent});
     } catch {
       // Telemetry is never acknowledged.
     }

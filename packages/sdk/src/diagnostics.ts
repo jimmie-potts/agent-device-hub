@@ -121,6 +121,8 @@ const EVENT_LEVELS = {
   'command.executing': 'info',
   'command.queued': 'info',
   'command.rejected': 'info',
+  'device.available': 'info',
+  'device.unavailable': 'warn',
   'feed.changed': 'info',
   'message.received': 'info',
   'operation.completed': 'info',

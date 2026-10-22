@@ -791,6 +791,17 @@ test('a suppression key for a missing file fails and names that path', (t) => {
   assert.doesNotMatch(result.stderr, /src\/kept\.ts/);
 });
 
+test('a suppression file whose keys all exist passes with no output', (t) => {
+  const directory = fixture(t);
+  fs.mkdirSync(path.join(directory, 'src'));
+  fs.writeFileSync(path.join(directory, 'src', 'kept.ts'), '');
+  fs.writeFileSync(path.join(directory, 'eslint-suppressions.json'), JSON.stringify({'src/kept.ts': {'no-console': {count: 1}}}));
+  const result = run(check, directory);
+  assert.equal(result.status, 0, result.stderr);
+  // The stale-key check is silent on a clean file; the workflow report itself still goes to stdout.
+  assert.equal(result.stderr, '');
+});
+
 test('a stale suppression check stopped by a signal fails and says so', (t) => {
   const directory = fixture(t);
   const scripts = path.join(directory, 'scripts');

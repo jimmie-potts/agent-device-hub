@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
 import { main } from '../scripts/delivery-preflight/cli.mjs';
-import { lintTargets, localLint } from '../scripts/delivery-preflight/lint.mjs';
+import { changedLines, lintTargets, localLint, rankProblems } from '../scripts/delivery-preflight/lint.mjs';
 import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
@@ -1301,4 +1301,60 @@ test('changed-file lint passes a clean head and does not run against another rev
 
   const edited = await preflight(cleanWorld(), {}, ({ head, paths }) => localLint({ head, paths, cwd: '/checkout', spawn: fakeSpawn({ head, dirty: ' M scripts/delivery-preflight.mjs\n', eslint: [], status: 0 }).spawn }));
   assertUnresolved(edited, 'lint', /local modifications/);
+});
+
+// ---- Changed-file lint follow-ups (#1152) ----
+
+test('changed lines come from the PR patch, and findings rank errors, changed lines and non-baseline rules first', () => {
+  const patch = '@@ -10,3 +10,4 @@ context\n unchanged\n-removed\n+added one\n+added two\n unchanged\n@@ -40,2 +41,2 @@\n-old\n+new\n';
+  assert.deepEqual([...changedLines(patch)], [11, 12, 41]);
+  assert.deepEqual([...changedLines(undefined)], []);
+  const problems = [
+    { file: 'b.ts', line: 3, ruleId: '@typescript-eslint/no-unsafe-member-access', severity: 2 },
+    { file: 'a.ts', line: 9, ruleId: 'no-console', severity: 1 },
+    { file: 'a.ts', line: 11, ruleId: '@typescript-eslint/no-unsafe-call', severity: 2 },
+    { file: 'a.ts', line: 2, ruleId: 'no-unused-vars', severity: 2 },
+    { file: 'b.ts', line: 1, ruleId: 'eqeqeq', severity: 2 },
+  ];
+  const ranked = rankProblems(problems, new Map([['a.ts', new Set([11])]]));
+  assert.deepEqual(ranked.map(p => `${p.file}:${p.line}`), ['a.ts:11', 'a.ts:2', 'b.ts:1', 'b.ts:3', 'a.ts:9'],
+    'the error on a changed line first, then other errors with the no-unsafe-* baseline last, then warnings');
+});
+
+test('changed-file lint says when git is missing or slow instead of calling the checkout invalid', () => {
+  const missing = localLint({ head: OLD_HEAD, paths: ['a.mjs'], cwd: '/checkout', spawn: () => ({ error: { code: 'ENOENT' }, status: null, stdout: '' }) });
+  assert.deepEqual(missing, { ran: false, reason: 'git is not installed or not on PATH' });
+  const slow = localLint({ head: OLD_HEAD, paths: ['a.mjs'], cwd: '/checkout', spawn: () => ({ error: { code: 'ETIMEDOUT' }, status: null, signal: 'SIGTERM', stdout: '' }) });
+  assert.deepEqual(slow, { ran: false, reason: 'git did not answer within 30 seconds' });
+  const calls = [];
+  const spawn = (command, args, options) => {
+    calls.push({ command, options });
+    if (command === 'git' && args[0] === 'rev-parse') return { status: 0, stdout: `${OLD_HEAD}\n` };
+    if (command === 'git') return { status: 0, stdout: '' };
+    return { error: { code: 'ETIMEDOUT' }, status: null, signal: 'SIGTERM', stdout: '' };
+  };
+  assert.deepEqual(localLint({ head: OLD_HEAD, paths: ['a.mjs'], cwd: '/checkout', spawn }), { ran: false, reason: 'eslint did not finish within 10 minutes' });
+  assert.ok(calls.every(call => call.options.timeout > 0), 'every child process has a timeout');
+  assert.ok(calls.find(call => call.command === process.execPath).options.timeout > calls.find(call => call.command === 'git').options.timeout);
+});
+
+test('changed-file lint runs real git and eslint in a scratch repository', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-lint-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const git = args => spawnSync('git', args, { cwd: directory, encoding: 'utf8' });
+  assert.equal(git(['init', '-q']).status, 0);
+  git(['config', 'user.email', 'preflight@example.invalid']);
+  git(['config', 'user.name', 'preflight test']);
+  fs.writeFileSync(path.join(directory, 'eslint.config.mjs'), "export default [{files: ['**/*.mjs'], rules: {'no-unused-vars': 'error'}}];\n");
+  fs.writeFileSync(path.join(directory, 'bad.mjs'), 'const unused = 1;\n');
+  fs.writeFileSync(path.join(directory, 'good.mjs'), 'export const used = 1;\n');
+  fs.symlinkSync(path.join(root, 'node_modules'), path.join(directory, 'node_modules'), 'dir');
+  assert.equal(git(['add', 'bad.mjs', 'good.mjs', 'eslint.config.mjs']).status, 0);
+  assert.equal(git(['commit', '-q', '-m', 'fixture']).status, 0);
+  const head = git(['rev-parse', 'HEAD']).stdout.trim();
+  const failed = localLint({ head, paths: ['bad.mjs', 'good.mjs'], cwd: directory });
+  assert.deepEqual(failed, { ran: true, ok: false, problems: ['bad.mjs:1 no-unused-vars error'] });
+  assert.deepEqual(localLint({ head, paths: ['good.mjs'], cwd: directory }), { ran: true, ok: true, problems: [] });
+  fs.appendFileSync(path.join(directory, 'good.mjs'), '// edited\n');
+  assert.match(localLint({ head, paths: ['good.mjs'], cwd: directory }).reason, /local modifications/);
 });

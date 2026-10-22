@@ -48,17 +48,19 @@ export class HeldEvidence<T extends EvidenceLevel> {
 
   constructor(initial: Evidence<T>) {
     this.#claim = initial;
+    // The holder is frozen, so `merge` cannot be swapped for a function that drops the claim (#1152, from #1149).
+    Object.freeze(this);
   }
 
   get claim(): Evidence<T> {
     return this.#claim;
   }
 
-  /** Combine new evidence with the held claim, keeping the stronger. */
-  merge(next: Evidence<T>): Evidence<T> {
+  /** Combine new evidence with the held claim, keeping the stronger. Read-only: the holder's one transition cannot be replaced. */
+  readonly merge = (next: Evidence<T>): Evidence<T> => {
     this.#claim = merge(this.#claim, next);
     return this.#claim;
-  }
+  };
 }
 
 /** Hold a claim whose later evidence stays within the levels `T`. */

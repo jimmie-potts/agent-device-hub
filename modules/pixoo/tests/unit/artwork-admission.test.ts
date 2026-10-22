@@ -210,10 +210,11 @@ it('invalidates the queued presentation card on a same-text handoff without susp
     const brightness = player.setBrightness(60); await flush(clock);
     monitor.submitPlayback(playing, await artworkContext('A')); await run(clock, monitor, 100);
     expect(monitor.status().inFlight).toBe(1);
-    const cut = device.effects.length;
+    const cut = device.effects.length, operationsBefore = device.operations.length;
     monitor.submitPlayback(playing, await artworkContext('B')); await flush(clock);
-    // The superseded card ends in the player's device turn (#1142) with no effect, never as a device-side cancellation after effects.
-    expect(device.operations.filter(e => e.kind === 'uploadAnimation' && e.outcome === 'cancelled' && e.priorEffects !== 'none')).toEqual([]);
+    // The superseded card ends in the player's device turn (#1142) with no effect: while brightness holds the turn, no
+    // upload reaches the device at all, so there is no device-side cancellation after effects either (#1152 P3b).
+    expect(device.operations.slice(operationsBefore).filter(e => e.kind === 'uploadAnimation')).toEqual([]);
     expect(player.getState()).toEqual(before);
     expect(monitor.status()).toMatchObject({participating: true, lastOutcome: previousOutcome});
     await run(clock, monitor, 3500); expect(await brightness).toMatchObject({ok: true});
@@ -296,10 +297,11 @@ it('attention cancels a queued artwork card and clearing attention does not repl
     const brightness = player.setBrightness(60); await flush(clock);
     monitor.submitPlayback(playing, await artworkContext('A')); await run(clock, monitor, 100);
     expect(monitor.status().inFlight).toBe(1);
-    const cut = device.effects.length;
+    const cut = device.effects.length, operationsBefore = device.operations.length;
     monitor.submit(present(syntheticDashboardViews()[0]).view); await flush(clock);
-    // The superseded card ends in the player's device turn (#1142) with no effect, never as a device-side cancellation after effects.
-    expect(device.operations.filter(e => e.kind === 'uploadAnimation' && e.outcome === 'cancelled' && e.priorEffects !== 'none')).toEqual([]);
+    // The superseded card ends in the player's device turn (#1142) with no effect: while brightness holds the turn, no
+    // upload reaches the device at all, so there is no device-side cancellation after effects either (#1152 P3b).
+    expect(device.operations.slice(operationsBefore).filter(e => e.kind === 'uploadAnimation')).toEqual([]);
     await run(clock, monitor, 3500); expect(await brightness).toMatchObject({ok: true});
     monitor.submit(present(syntheticDashboardViews()[3]).view);
     monitor.submitPlayback(playing, await artworkContext('B')); await run(clock, monitor, 12_000);

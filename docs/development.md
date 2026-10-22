@@ -496,8 +496,12 @@ TypeScript files there (#1139). A checkout at another revision, or with local
 edits to those files, leaves the gate unresolved rather than linting the wrong
 content. Run `npm ci && npm run build` in that checkout first. Type-aware rules
 resolve workspace packages through their built output, so an unbuilt checkout
-reports unrelated `no-unsafe-*` errors that can push the real finding past the
-first 20 listed. Lint findings are listed as `path:line rule`. The output names
+reports unrelated `no-unsafe-*` errors. Findings are listed as `path:line rule`
+with errors first, then findings on the PR's changed lines, then every other
+rule before the `no-unsafe-*` baseline, so the first 20 listed are the ones to
+act on; a count of any beyond them follows. The `git` queries stop after 30
+seconds and `eslint` after 10 minutes, each leaving the gate unresolved with
+that reason, as does a missing `git`. The output names
 revisions, check IDs, comment URLs, digests and run IDs, plus short structured
 fields from the evidence it reads, such as receipt capture reasons. It never
 prints tokens, local paths or reviewer return text.

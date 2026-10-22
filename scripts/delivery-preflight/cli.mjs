@@ -1,6 +1,7 @@
 // The delivery preflight command line. `main` returns the exit status; the
 // entry script only wires it to the process. Exit 0: every applicable gate
 // satisfied; 1: unresolved; 2: a read failed; 3: usage or internal error.
+import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
 import { redactPaths } from './context.mjs';
@@ -122,3 +123,8 @@ export async function main({ argv, env = process.env, stdout = process.stdout, s
   stdout.write(parsed.json ? `${JSON.stringify(report, null, 2)}\n` : renderText(report));
   return report.exitCode;
 }
+
+// Run directly, this file behaves like the entry script, so `node scripts/delivery-preflight/cli.mjs --help` answers
+// instead of printing nothing (#1152). Imported, as by the tests, it only exports `main`.
+const invokedDirectly = () => { try { return process.argv[1] !== undefined && realpathSync(process.argv[1]) === import.meta.filename; } catch { return false; } };
+if (invokedDirectly()) process.exitCode = await main({ argv: process.argv.slice(2) });
