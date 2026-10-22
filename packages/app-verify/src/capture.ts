@@ -91,7 +91,7 @@ function vint(bytes: Buffer, at: number, id: boolean): {value: number; length: n
  * and ends exactly at the end of the file, with Cues. An encoder that crashed
  * or was never closed leaves an unknown size, a truncated Segment or no Cues.
  */
-async function isFinalizedWebm(path: string): Promise<boolean> {
+export async function isFinalizedWebm(path: string): Promise<boolean> {
   if (!existsSync(path)) return false;
   const bytes = await readFile(path);
   const header = vint(bytes, 0, true);
@@ -107,7 +107,7 @@ async function isFinalizedWebm(path: string): Promise<boolean> {
   return start + size.value === bytes.length && bytes.indexOf(Buffer.from([0x1c, 0x53, 0xbb, 0x6b]), start) > 0;
 }
 
-async function isPng(path: string): Promise<boolean> {
+export async function isPng(path: string): Promise<boolean> {
   if (!existsSync(path)) return false;
   const handle = await open(path, 'r');
   try {

@@ -1,5 +1,10 @@
 # Runtime verification runs
 
+For a finite offline review on an existing Docker engine without a user manager,
+use the explicit [portable Acceptance route](PORTABLE.md). It preserves synthetic
+isolation, browser assertions and verified cleanup, and does not provide a
+handed-off preview. The managed commands below remain unchanged.
+
 The runtime adapter ([#920](https://github.com/jimmie-potts/agent-device-hub/issues/920)) for the
 [app verification contract](../../../docs/app-verification.md). The lifecycle comes from
 [`@jimmie-potts/app-verify`](../../../packages/app-verify/README.md), unchanged. This directory supplies the plug-in

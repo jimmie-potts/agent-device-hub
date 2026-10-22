@@ -30,7 +30,15 @@ Set `TMPDIR` outside every Git checkout, for example
 `~/.cache/agent-device-hub/<task>-tmp`: the tests' runtime roots live under
 it, and the core refuses runtime state inside a checkout.
 
-The suite has two parts:
+The runtime also has an explicit [finite offline Acceptance route](../../apps/runtime/verify/PORTABLE.md)
+with a separate receipt. `tests/portable.test.mjs` checks effective isolation,
+foreign ownership refusal, candidate/manifest mismatches, finalized proof,
+content exclusion, interrupted captures and exact cleanup. These mocked command
+tests do not establish Docker expiry, caller-loss or real browser qualification;
+those require the exact candidate's disposable container operation. Existing
+test discovery and the package-isolation test include the new module.
+
+The managed suite has two parts:
 
 - **Everywhere, including CI:** receipt validation, `help`, `start` refusing
   without a user manager (exit 3, nothing created; forced locally by hiding

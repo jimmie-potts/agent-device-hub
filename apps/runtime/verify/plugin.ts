@@ -20,6 +20,7 @@ import {ask, followProof} from './follow-proof.js';
 import {judgeHealth} from './health.js';
 import {HARNESS_PATH, type BoundaryReport} from './protocol.js';
 import {RUN_SCENARIOS, START_ONLY, seedRun} from './seed.js';
+import {captureMacCodex} from './mac-codex.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
@@ -65,7 +66,8 @@ export function artifactFiles(at = root): string[] {
     ...moduleFolders(at).flatMap(folder => built(`modules/${folder}/dist/src`)),
     ...nestedModuleBuilds(at).flatMap(({folder}) => built(`${folder}/dist/src`)),
     // The 2.0 agent hook script (Hub #926), which a capture step runs as a client's hook command does; it is not built.
-    ...['apps/runtime/bin/monitor-hook.mjs'].filter(file => existsSync(join(at, file))),
+    ...['apps/runtime/bin/monitor-hook.mjs', 'apps/runtime/bin/mac-codex-hook.mjs'].filter(file => existsSync(join(at, file))),
+    ...built('packages/app-verify/dist'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -292,6 +294,8 @@ export default definePlugin({
     ...CHECKS.map(([id, check]) => ({id, doctor: true, run: async (t: ProbeContext) => check(await boundaries(t))})),
   ],
   captureSteps: {
+    'mac-codex-local': {description: 'Shared Mac hook to real dashboard, privacy, admission and offline recovery',
+      scenario: 'mac-codex-local', fresh: true, timeoutMs: 90_000, run: async t => {await captureMacCodex(t); await boundariesHold(t);}},
     'edge-grants': {
       description: 'A remote part with the run\'s grant connects and syncs the core\'s sessions; one without a grant is unauthenticated',
       scenario: 'fixtures',

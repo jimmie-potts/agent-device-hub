@@ -1,0 +1,15 @@
+# Test-only derivative. Build CORE_IMAGE from the closed committed-source context first.
+ARG CORE_IMAGE
+FROM ${CORE_IMAGE}
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN node node_modules/playwright/cli.js install --with-deps chromium
+RUN test -x /usr/bin/timeout && test -x /usr/local/bin/node
+RUN install -d -m 0700 -o 1000 -g 1000 /var/lib/app-verify \
+    && chown -R root:root /opt/bunny \
+    && chmod -R a-w /opt/bunny
+LABEL org.bunny.verify.portable="1"
+USER 1000:1000
+HEALTHCHECK NONE
+ENTRYPOINT ["/usr/bin/timeout"]
+CMD ["--help"]
