@@ -68,7 +68,7 @@ void test('dashboard CSS outside the skin file uses only role and private tokens
 });
 
 void test('the shell and existing layout consume only tokens defined by the shipped skin layers', async () => {
-  const styles = await Promise.all(['style.css', 'shell.css'].map(file => readFile(join(SRC, file), 'utf8')));
+  const styles = await Promise.all(['style.css', 'shell.css', 'agent-status.css'].map(file => readFile(join(SRC, file), 'utf8')));
   const skins = await Promise.all(['neon-geometry-wars.css', 'quiet-glass.css'].map(file => readFile(join(SKINS, file), 'utf8')));
   for (const style of styles) assert.deepEqual(undefinedTokens(style, skins.join('\n')), []);
 });

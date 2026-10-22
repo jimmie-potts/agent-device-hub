@@ -167,7 +167,7 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* The home follows the owner-approved mockup (Hub #922, "Recommended (d)"): the Hub mode and the sessions in the wide
-   column, the inbox and the attention summary in the narrow one. The columns grow independently. */
+   column, the inbox in the narrow one; attention is highlighted on the session cards. The columns grow independently. */
 .home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1fr);gap:var(--space-m);align-items:start}
 .home-wide,.home-narrow{display:grid;gap:var(--space-m);min-width:0}
 .hint.slot{margin:0}

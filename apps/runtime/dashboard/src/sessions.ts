@@ -32,6 +32,8 @@ export type SessionRow = {
   where: string;
   chip: SessionChip;
   chipText: string;
+  /** Retained unread evidence, independent of the face's higher-priority attention/activity chip. */
+  unread: boolean;
   /** The record's freshness is uncertain: five minutes without evidence, or since the core restarted. */
   uncertain: boolean;
   /** One line per attention item, in the record's order. */
@@ -95,7 +97,7 @@ export function sessionRow(record: SessionRecord): SessionRow {
   return {
     id: record.id, generation: record.generation, revision: record.revision, label: record.label, name: sessionName(record),
     where: [record.project, clientName(identity)].filter((part): part is string => part !== undefined).join(' · '),
-    chip, chipText: CHIP_TEXT[chip], uncertain: record.freshness !== 'current' || record.restartUncertain,
+    chip, chipText: CHIP_TEXT[chip], unread: finishedUnread(record), uncertain: record.freshness !== 'current' || record.restartUncertain,
     attention: record.attention.map(attentionLine),
     notices: record.notices.map(notice => ({id: notice.id, turn: notice.turn.status === 'known' ? notice.turn.id : 'unknown turn', acknowledgedBy: notice.acknowledgedBy})),
     lastEvidenceAtMs: record.lastEvidenceAtMs,
@@ -109,6 +111,18 @@ export function sessionRow(record: SessionRecord): SessionRow {
 /** Every session in the copy's order, and how many are working. */
 export function sessionRows(records: readonly SessionRecord[]): SessionRow[] {
   return records.map(sessionRow);
+}
+
+/** Attention is independent of activity, unread notices and observation freshness. */
+export const needsAttention = (row: SessionRow): boolean => row.attention.length > 0;
+
+/** Full-collection counts; retained evidence never establishes current work while disconnected. */
+export function agentSummary(rows: readonly SessionRow[], live: boolean): {working: number; attention: number; unread: number} {
+  return {
+    working: rows.filter(row => live && !row.uncertain && row.chip === 'working').length,
+    attention: rows.filter(needsAttention).length,
+    unread: rows.filter(row => row.unread).length,
+  };
 }
 
 /** Whether a session matches the sessions widget's search and provider filter. */

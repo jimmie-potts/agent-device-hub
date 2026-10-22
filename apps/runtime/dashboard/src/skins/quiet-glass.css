@@ -32,6 +32,8 @@
   --badge-edge:var(--edge-dense);
   --warning-badge-bg:light-dark(#fff2d6,#3c3324);
   --warning-badge-edge:light-dark(#9d741d,#c5a762);
+  --agent-attention-surface:light-dark(#fff3d6,#44361f);
+  --agent-attention-edge:light-dark(#ad781b,#c99e51);
   --notice-edge:var(--edge-strong);
   --empty-edge:var(--edge-dense);
   --disabled-bg:light-dark(#e6ebf3,#202a3e);

@@ -23,7 +23,7 @@ try {
   assert.match(await card.innerText(), /approval|decision|review/);
   assert.match(await card.innerText(), /lifecycle-metadata/);
   await page.goto(`${world.url}/#/`);
-  await page.locator('[data-widget=attention]').getByText('Waiting for approval', {exact: false}).waitFor();
+  await page.locator('.agent-status-card[data-attention=true] .chip', {hasText: 'Waiting for approval'}).waitFor();
   await world.observe(approvalResolved('reachy-browser')); await world.observe(turnEnded);
   await page.goto(`${world.url}/#/module/companions/reachy`);
   await card.getByText(/coding turn|turn has ended/).waitFor();

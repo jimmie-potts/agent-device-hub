@@ -489,6 +489,13 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Reusable agent cards (#1179) use the existing dashboard unit discovery for
+attention/freshness summary rules and Home placement. The existing `browser.ts`
+journey covers card disclosure, filtering, label drafts, unread preservation and
+reconnect, and checks light/dark desktop/phone keyboard and axe behavior. Run the
+full dashboard suite below after building. Existing core CI and App verification
+cover these checks; no additional workflow or service is needed.
+
 The reusable Wemo card (#1175) extends the existing `test:wemo:browser` journey
 with fixed Power/Auto-off geometry, retained drafts, keyboard switching, Home
 reuse and uncertain-limit-save recovery. Existing dashboard unit discovery runs

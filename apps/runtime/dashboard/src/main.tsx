@@ -27,11 +27,11 @@ import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {navigationDestination} from './routes.ts';
-import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
+import {age, agentSummary, sessionRows} from './sessions.ts';
+import {AgentSessions} from './agent-sessions.tsx';
 import {OperatorTools} from './operator-tools.tsx';
-import {LabelEditor} from './label-editor.tsx';
 import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, trustedSignIn} from './signin.ts';
-import {Badge, Facts, InfoTip, Select} from './ui.tsx';
+import {Badge, Facts, InfoTip} from './ui.tsx';
 import {homeLayout, widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
 import './style.css';
 import './shell.css';
@@ -85,70 +85,6 @@ function Widget({id, size, children}: {id: string; size: WidgetSize; children: R
 function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
   const text = 'Failed and uncertain device commands will be listed here. This page does not show them yet.';
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
-}
-
-/**
- * One retained notice of a finished turn and who acknowledged it. The row offers no acknowledgment of its own (owner
- * decision, 2026-10-08): the record clears a finished turn, and clearing one on every device is #1009's.
- */
-function Notice({notice}: {notice: NoticeRow}): React.JSX.Element {
-  const by = notice.acknowledgedBy.length === 0 ? 'none' : notice.acknowledgedBy.join(', ');
-  return <div className="notice">
-    <p>Turn {notice.turn} ended</p>
-    <p className="hint">Acknowledged by: {by}. This does not establish success or readership.</p>
-  </div>;
-}
-
-/** The name, state and attention stay visible; the evidence and the rare facts sit behind Details. */
-function SessionRowView({row, live, now, control}: {row: SessionRow; live: boolean; now: number; control: boolean}): React.JSX.Element {
-  const stale = row.uncertain || !live;
-  const elapsed = Math.max(0, now - row.lastEvidenceAtMs);
-  return <article className="session" data-session={row.id} data-chip={row.chip}>
-    <div className="session-head">
-      <span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
-      <div className="session-id"><h3>{row.name}</h3><p className="muted">{row.where}</p></div>
-      <span className="chip" data-chip={row.chip}>{row.chipText}</span>
-      <InfoTip warning={stale} label={<><span aria-hidden="true">{stale ? '◷' : '●'}</span> {stale ? 'Stale evidence' : 'Current'}</>}>
-        Activity: {row.facts.activity}. Last evidence: {age(elapsed)} ago. {stale ? 'Freshness is uncertain.' : 'Current observation; not a completion estimate.'}
-      </InfoTip>
-    </div>
-    {control && <LabelEditor row={row} live={live}/>}
-    {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
-    {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
-    <details className="details session-details"><summary>Details</summary><Facts className="strip" items={[
-      ['Source', row.facts.source], ['Session ID', row.facts.sessionId], ['Activity', row.facts.activity], ['Last evidence', `${age(elapsed)} ago`],
-      ['Read evidence', row.facts.read], ['Parent', row.facts.parent], ['Attributable children', row.facts.children],
-    ]}/></details>
-  </article>;
-}
-
-function SessionsWidget({state, rows, live, now, size}: {
-  state: DashboardState; rows: readonly SessionRow[]; live: boolean; now: number; size: WidgetSize;
-}): React.JSX.Element {
-  const [query, setQuery] = useState('');
-  const [provider, setProvider] = useState('');
-  const records = state.sessions.records;
-  const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
-  const filtering = query !== '' || provider !== '';
-  return <Widget id="sessions" size={size}>
-    <p className="hint">Current state, synced from the core. A finished turn stays unread until the next turn starts, the session record shows it read, or a device acknowledges it.</p>
-    <div className="filters">
-      <label>Find a session<input type="search" maxLength={120} value={query} onChange={event => { setQuery(event.target.value); }} placeholder="Label, title, project or session ID"/></label>
-      <Select label="Provider" value={provider} onChange={setProvider} options={[{value: '', label: 'All providers'}, {value: 'codex', label: 'codex'}, {value: 'claude', label: 'claude'}]}/>
-    </div>
-    {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : state.sessions.synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
-      <p>{filtering ? 'Change the filters to see other sessions.' : 'The page shows sessions as soon as the core reports them.'}</p></div>}
-    <div className="sessions">{rows.map(row => <div key={`${row.id}:${row.generation}`} hidden={!shown.has(row.id)}>
-      <SessionRowView row={row} live={live} now={now} control={state.runtime.control}/>
-    </div>)}</div>
-  </Widget>;
-}
-
-function AttentionWidget({rows, size}: {rows: readonly SessionRow[]; size: WidgetSize}): React.JSX.Element {
-  const waiting = rows.filter(row => row.attention.length > 0);
-  if (waiting.length === 0) return <p className="attention-summary" data-widget="attention">No attention needed.</p>;
-  return <Widget id="attention" size={size}><ul className="plain">{waiting.map(row =>
-    <li key={row.id}><span className="attention">{row.chipText}</span> · {row.name}</li>)}</ul></Widget>;
 }
 
 const FEED_TEXT: Readonly<Record<DashboardState['feed'], string>> = {connecting: 'Connecting', connected: 'Feed connected', reconnecting: 'Reconnecting', ended: 'Signed out'};
@@ -213,7 +149,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   }, []);
   const rows = useMemo(() => sessionRows(state.sessions.records), [state.sessions.records]);
   const live = state.feed === 'connected' && state.sessions.synced;
-  const working = rows.filter(row => row.chip === 'working').length;
+  const working = agentSummary(rows, live).working;
   const notice = liveNotice(state);
   const layout = homeLayout();
   const runtime = state.runtime;
@@ -248,8 +184,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       return <Widget key="inbox" id="inbox" size={placement.size}><InboxPanel items={(copy?.records ?? []) as readonly InboxItem[]} live={state.feed === 'connected' && copy?.synced === true} control={runtime.control}/></Widget>;
     }
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
-    if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} size={placement.size}/>;
-    if (placement.widget === 'attention') return <AttentionWidget key="attention" rows={rows} size={placement.size}/>;
+    if (placement.widget === 'sessions') return <Widget key="sessions" id="sessions" size={placement.size}><AgentSessions records={state.sessions.records}
+      synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
   return <div className="shell">
