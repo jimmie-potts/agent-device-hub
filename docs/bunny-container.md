@@ -11,6 +11,82 @@ Linux engine and its Compose plugin available. Use an already built, reviewed
 local image; the operator commands never pull or build one. Keep the operator
 scripts and image at the same source revision.
 
+## Mac-local browser profile
+
+The explicit `deploy/container/compose.local.yaml` profile serves the existing
+dashboard at `http://127.0.0.1:18788/`. It requires an image built from source
+that includes this profile; the earlier isolated image cannot supply it by
+changing Compose alone. Device control is literal `disabled`, client credentials
+are empty, MCP and the launcher are off, and restart remains manual. This creates
+a persistent fresh core, not device or collector setup and not old-state adoption.
+
+This is **trusted-local browser sign-in**, not password/identity verification.
+The normal same-origin session flow issues its HttpOnly/SameSite=Strict cookie;
+never print, copy or publish it. No API token is generated or imported. Another
+program trusted on the host may access that local sign-in. The container socket
+binds its private network interface, while allowed Host/Origin values remain
+only `127.0.0.1:18788` and `localhost:18788` with the existing browser checks.
+Only host `127.0.0.1:18788` is published. The dedicated `local` bridge is internal,
+IPv6 disabled and not attachable; no other container belongs on it. A reachable
+container could forge Host/Origin headers, so this network is part of the trust
+boundary. Do not attach Tronbyt, enable host networking, add ports, or widen the
+host address. This profile supplies no LAN or remote-PC ingress.
+
+Before creation, verify that project `bunny-mac-personal`, its `_state`, `_config`,
+`_secrets` volumes and `_local` network do not exist, and port 18788 has no listener.
+An access/connection error is not absence. Use another unused project name only
+after reviewing its ownership; do not reuse retained acceptance resources.
+Select the reviewed image ID and copy `compose.local.yaml` to an owned separate
+file, changing only `image:` to that immutable ID. In the following commands,
+replace `LOCAL_COMPOSE` and `IMAGE_ID` with that file and image. Use that same
+file for every operator invocation, from the matching reviewed source checkout.
+
+```text
+docker compose -f LOCAL_COMPOSE -p bunny-mac-personal create --no-build --pull never core
+node scripts/bunny.mjs status --project bunny-mac-personal --compose LOCAL_COMPOSE
+```
+
+Keep it stopped. Verify the image revision/user and actual resolved mounts,
+network, exact loopback port, disabled control and no restart policy. These new
+image-initialized volumes use UID1000, mode700 directories and mode600 files.
+Provision only this new instance's public-shape browser config with the reviewed
+one-shot helper. It refuses any non-seeded config, pre-existing credential file,
+extra entry, unsafe mode or link; a partial failure is preserved for inspection
+and cannot be blindly retried. Never use this command on existing personal volumes.
+
+```text
+docker run --rm --pull never --network none --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --mount type=volume,source=bunny-mac-personal_config,target=/etc/bunny --mount type=volume,source=bunny-mac-personal_secrets,target=/run/secrets/bunny --entrypoint node IMAGE_ID /opt/bunny/deploy/container/provision-local.mjs
+node scripts/bunny.mjs start --project bunny-mac-personal --compose LOCAL_COMPOSE
+node scripts/bunny.mjs status --project bunny-mac-personal --compose LOCAL_COMPOSE
+docker compose -f LOCAL_COMPOSE -p bunny-mac-personal ps -q core
+docker exec CONTAINER_ID node /opt/bunny/deploy/container/entrypoint.mjs status
+```
+
+The helper writes `runtime-config/1.0` with `modules: {}` and an edge referring
+to `/run/secrets/bunny/edge.json`, `browserAccess: trusted-loopback`, `launcher:
+false`, `mcp: false`. The referenced `edge-credentials/1.0` document has an empty
+`credentials` list. No private source is discovered or imported. Runtime startup
+refuses device sections, another credential path or any client grant in this
+browser-only profile. Normal core startup initializes its own private state.
+
+Open the local URL and use its existing sign-in. Require actual rendered core
+navigation and healthy core-only status, not just a listening port. Verify actual
+Docker metadata has one loopback TCP binding, one internal project-only network
+and no other attached container. Wrong Host and cross-origin requests must refuse.
+If isolation differs, stop only this new owned instance and preserve its volumes
+for inspection. The operator checks admission before start and after it; it also
+retains a stop path when an owned profile has a bad binding. Do not widen access
+to repair a failed browser test.
+
+Use the ordinary manual stop/status and named-volume backup below, supplying
+`--compose LOCAL_COMPOSE` every time. The operator permits only this exact opted-in
+binding/network; all private volume, stopped/PID-zero, image, lease, integrity and
+empty-restore checks remain. Maintenance workers still run with network `none`.
+For a requested separate restore, use an unused project, the same local Compose
+and image, and the same fresh public-shape provisioning before restore; do not
+start its target before restoration. No restore or migration is part of initial
+everyday activation. PC stays stopped until a separately selected manual handoff.
+
 ## Prepare private persistent volumes
 
 The examples use `bunny-core:local` and two new project names: `bunny` and
@@ -235,7 +311,7 @@ Build with Node 24, then run:
 npm run build
 npm run lint:js
 npm run typecheck
-node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs
+node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs
 ```
 
 Linux tests exercise real lease contention, committed WAL records, retained

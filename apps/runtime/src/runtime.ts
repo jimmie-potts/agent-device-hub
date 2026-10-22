@@ -45,6 +45,8 @@ export type RuntimeHealth = {
 };
 
 export type RuntimeOptions = {
+  /** Explicit container-only socket bind; canonical browser hosts/origin remain loopback. Native/default callers omit it. */
+  listener?: 'container-host-local';
   /** The modules to host, in order. The service process passes the shipped list, whose first module is the core. */
   modules: readonly BunnyModule[];
   /**
@@ -155,7 +157,7 @@ const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
  * so that a page on a rebinding name reaches nothing. Health also takes no browser origin or cross-site fetch
  * metadata, as the Hub and local controllers require; the gateway checks each caller's own (#835).
  */
-function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute, wifiProxy: NonNullable<RuntimeConfig['edge']>['wifiProxy'], refusals: GatewayRefusals): Promise<Server> {
+function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute, wifiProxy: NonNullable<RuntimeConfig['edge']>['wifiProxy'], refusals: GatewayRefusals, bindHost: string): Promise<Server> {
   let hosts: readonly string[] = [];
   const answer = (response: ServerResponse, status: number, body: object): void => {
     response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}).end(JSON.stringify(body));
@@ -188,7 +190,7 @@ function serve(port: number, health: () => RuntimeHealth, gateway: () => Gateway
   server.once('close', () => { refusals.close(); });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen({host: HOST, port}, () => {
+    server.listen({host: bindHost, port}, () => {
       server.off('error', reject);
       const bound = (server.address() as AddressInfo).port;
       hosts = [`${HOST}:${bound}`, `localhost:${bound}`];
@@ -212,6 +214,7 @@ function close(server: Server): Promise<void> {
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
+  if (options.listener !== undefined && options.listener !== 'container-host-local') throw new RuntimeError('config-invalid', 'listener profile is invalid');
   if (options.config !== undefined && options.configFile !== undefined) throw new RuntimeError('config-invalid', 'configuration inputs conflict');
   // Capture verified values before admission yields; never reopen their source file.
   const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
@@ -271,7 +274,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   let edge: GatewayRoute = {state: credentials === undefined ? 'off' : 'starting'};
   let server: Server;
   try {
-    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig?.wifiProxy, new GatewayRefusals(log, scheduler));
+    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig?.wifiProxy, new GatewayRefusals(log, scheduler), options.listener === 'container-host-local' ? '0.0.0.0' : HOST);
   } catch (error) {
     await endTracing();
     throw error;

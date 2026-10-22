@@ -91,7 +91,7 @@ export type ProcessInputs = {modules: readonly ModuleFactory[]} & EdgeInputs;
 export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (edge: RemoteEdge) => void};
 
 /** Already built inputs from an admitting entrypoint; these values do not themselves grant ownership. */
-export type ProcessStartup = {modules: readonly BunnyModule[]; config: RuntimeConfig};
+export type ProcessStartup = {modules: readonly BunnyModule[]; config: RuntimeConfig; listener?: 'container-host-local'};
 
 /**
  * Runs the runtime until SIGTERM or SIGINT, which stop it and exit 0, also when one arrives while the modules start. An
@@ -142,6 +142,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
   });
   try {
     runtime = await startRuntime({
+      ...(startup?.listener === undefined ? {} : {listener: startup.listener}),
       modules: startup?.modules ?? buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       ...(startup === undefined ? (options.config === undefined ? {} : {configFile: options.config}) : {config: startup.config}),
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,
