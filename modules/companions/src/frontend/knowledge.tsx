@@ -42,7 +42,9 @@ function Management({context, command, view, profiles, live, preferenceRevision}
   const contextRead = async (copy: boolean): Promise<void> => {
     if (!live || busy) return; setBusy(true); setStatus('');
     try {
-      const query = new URLSearchParams({profile, messages: selected.join(','), ...(conversation === '' ? {} : {conversationId: conversation})});
+      const query = new URLSearchParams({profile, ...(conversation === '' ? {} : {conversationId: conversation})});
+      // Three maximum-length IDs fit the gateway's 512-character value limit.
+      for (let index = 0; index < selected.length; index += 3) query.set(index === 0 ? 'messages' : `messages${index / 3 + 1}`, selected.slice(index, index + 3).join(','));
       const current = await context.api.read(`${root}companion-context?${query}`) as ContextDocument;
       const value = JSON.stringify(current, null, 2); setPreview(value);
       if (copy) {await navigator.clipboard.writeText(value); setStatus('Copied current companion context.');}

@@ -49,10 +49,10 @@ export class Messages {
   }
   capture(task: {id: string; conversationId: string; profile: AssistantProfile}, id: string, role: 'owner' | 'assistant' | 'tool', text: string, atMs: number): void {
     if (role === 'tool' || this.get(id) !== undefined || this.removal(id) !== undefined) return;
-    this.ensure(task.conversationId, [task.profile], task.profile);
+    const conversation = this.ensure(task.conversationId, [task.profile], task.profile);
     const value: CompanionMessage = {schema: 'companion-message/1.0', messageId: id, conversationId: task.conversationId, turnId: task.id,
       speakerId: role === 'owner' ? 'owner' : task.profile, recipientIds: [role === 'owner' ? task.profile : 'owner'], createdAtMs: atMs,
-      revision: 1, ordering: {authority: 'companions', epoch: task.conversationId, sequence: this.next(task.conversationId)},
+      revision: 1, ordering: {authority: 'companions', epoch: conversation.epoch, sequence: this.next(task.conversationId)},
       meaning: {kind: 'literal', text, language: 'en'}, provenance: {kind: role === 'owner' ? 'owner' : 'synthetic', imported: false}, deliveryRefs: [], taskId: task.id};
     this.db.prepare('UPDATE assistant_messages SET record=? WHERE id=?').run(JSON.stringify(value), id);
   }

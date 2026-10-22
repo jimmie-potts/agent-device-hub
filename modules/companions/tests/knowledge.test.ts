@@ -275,3 +275,33 @@ void test('imports cannot replace operational tool rows with conversation conten
   assert.equal((await mutate(w, {action: 'import-archive', archive: removed})).status, 'rejected');
   assert.equal(db.prepare('SELECT text FROM assistant_messages WHERE id=?').get(message.messageId)?.text, 'Synthetic operational evidence');
 });
+
+void test('archive order conflicts are independent of JSON property order', async t => {
+  const source = await world(t), target = await world(t); await mutate(source, {action: 'fixture'});
+  const exported = await archive(source), template = exported.messages[0]; assert.ok(template);
+  const messages = Array.from({length: 16}, (_, index) => ({...template, messageId: randomUUID(), ordering: {...template.ordering, sequence: index + 1}}));
+  const duplicate = {...template, messageId: randomUUID(), ordering: {sequence: 16, epoch: template.ordering.epoch, authority: template.ordering.authority}};
+  const before = await archive(target);
+  for (const conflict of [
+    {...exported, messages: [...messages, duplicate]},
+    {...exported, messages, removals: [{messageId: duplicate.messageId, conversationId: duplicate.conversationId, ordering: duplicate.ordering, removedAtMs: 1}]},
+  ]) {
+    const staged = await target.module().manifest.upload?.stage({target: 'knowledge', name: 'knowledge.json', requestId: randomUUID(), signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'import-archive', archive: conflict, expectedRevision: 0}))});
+    assert.ok(staged !== undefined && 'error' in staged, 'duplicate creation position must be refused before any write');
+    assert.equal(staged.error.code, 'invalid-request'); assert.deepEqual(await archive(target), before);
+  }
+});
+
+void test('continuing an imported conversation preserves its epoch and round-trip recovery', async t => {
+  const w = await world(t), fresh = await world(t), initial = await archive(w);
+  initial.conversations = [{id: 'imported-conversation', epoch: 'distinct-imported-epoch', profile: 'bunny', participants: ['bunny']}];
+  assert.equal((await mutate(w, {action: 'import-archive', archive: initial})).status, 'accepted');
+  const db = w.host().moduleDatabase(); assert.ok(db); const store = new AssistantStore(db);
+  const task = store.newTask('bunny', 'Synthetic continuation'); task.status = 'succeeded'; store.save(task);
+  store.message(task, randomUUID(), 'owner', 'Synthetic continued message', 1);
+  const continued = await archive(w);
+  assert.equal(continued.messages[0]?.ordering.epoch, 'distinct-imported-epoch');
+  assert.equal((await mutate(fresh, {action: 'import-archive', archive: continued})).status, 'accepted');
+  await fresh.restart(); assert.deepEqual((await archive(fresh)).messages.map(value => value.ordering), continued.messages.map(value => value.ordering));
+});

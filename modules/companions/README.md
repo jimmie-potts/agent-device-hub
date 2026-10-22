@@ -286,13 +286,16 @@ history. No new sharing destination is selected.
 | `companion-profiles` | `companion-profiles/1.0`: curated profiles and optional voice refs |
 | `companion-history?profile=reachy` | `companion-history/1.0`: permitted conversations; `after` pages the list |
 | `companion-history?profile=reachy&conversationId=<id>` | ordered messages; `after` advances creation sequence; optional `latest=microduck` returns latest or empty |
-| `companion-context?profile=reachy` | `companion-context/1.0`: selected profile, current entries and explicit context; optional `conversationId` and comma-separated `messages` select records |
+| `companion-context?profile=reachy` | `companion-context/1.0`: selected profile, current entries and explicit context; optional `conversationId` and comma-separated `messages`, `messages2` through `messages6` select records |
 | `companion-archive` | `companion-archive/1.0`: knowledge, unchanged preference library, voices, conversations, messages and removals |
 
 Context's optional `destination` accepts `local`, `claude` or `codex` under the
 existing sharing choices; other values are refused. This is a read/copy boundary,
 not a model sender or a new policy service. Context includes both assistant and
 preference revisions and is assembled on demand without a persistent cache.
+Split selections into groups of at most three IDs per query field, in the order
+listed above. This supports all 16 selected IDs at their maximum 128-character
+length without exceeding the gateway's 512-character value or 16-field limits.
 
 Changes stage `knowledge.json` at target `knowledge` through the existing opaque
 `assistant-input/2.0` command. Each private input has `expectedRevision`, from the

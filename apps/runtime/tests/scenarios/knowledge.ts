@@ -10,7 +10,10 @@ class ReplacementClient {
     if (response.status !== 200) throw new StepFailure('private companion read refused'); return bodyOf(response) as T;
   }
   context(profile: string, conversationId?: string, messages?: string): Promise<ContextDocument> {
-    return this.read('companion-context', {profile, ...(conversationId === undefined ? {} : {conversationId}), ...(messages === undefined ? {} : {messages})});
+    const query: Record<string, string> = {profile, ...(conversationId === undefined ? {} : {conversationId})};
+    const selected = messages === undefined ? [] : messages.split(',');
+    for (let index = 0; index < selected.length; index += 3) query[index === 0 ? 'messages' : `messages${index / 3 + 1}`] = selected.slice(index, index + 3).join(',');
+    return this.read('companion-context', query);
   }
 }
 type Answer = {persona: string; records: string[]; text: string; audioRule: string};
@@ -83,6 +86,20 @@ export const knowledgeScenarios: readonly Scenario[] = [{id: 'companion-knowledg
       const archive = await new ReplacementClient(h).read<CompanionArchive>('companion-archive');
       return archive.knowledge[0]?.active === false && archive.messages.find(value => value.messageId === state.messageId)?.meaning.kind === 'unknown' &&
         !archive.messages.some(value => value.messageId === state.removedId) && archive.removals.some(value => value.messageId === state.removedId) || 'restart/import changed retained state';
+    }),
+    act('owner imports sixteen historical messages for explicit context selection', async h => {
+      const archive = await new ReplacementClient(h).read<CompanionArchive>('companion-archive'), template = archive.messages[0];
+      if (template === undefined) throw new StepFailure('missing message template');
+      archive.messages.push(...Array.from({length: 16}, (_, index) => ({...template,
+        messageId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, ordering: {...template.ordering, sequence: index + 5}})));
+      await change(h, 'knowledge-sixteen', {action: 'import-archive', archive});
+    }),
+    expect('sixteen-message import completes', h => recorded(h, 'knowledge-sixteen', 'succeeded', 'observed')),
+    expect('public replacement client can select all sixteen UUID messages', async h => {
+      const state = saved.get(h); if (state === undefined) return 'missing conversation';
+      const ids = Array.from({length: 16}, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`);
+      const context = await new ReplacementClient(h).context('microduck', state.conversationId, ids.join(','));
+      return context.messages.length === 16 && context.messages.every((message, index) => message.messageId === ids[index]) || 'bounded selection unavailable';
     }),
     expect('public metadata and diagnostics exclude private prose', h => !JSON.stringify([h.published(), h.logs()]).includes('SYNTHETIC_KNOWLEDGE_') || 'private prose escaped'),
   ],

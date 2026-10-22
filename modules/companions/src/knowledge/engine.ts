@@ -95,9 +95,10 @@ export class Knowledge {
         const conversationId = query.conversationId;
         if (conversationId !== undefined && !id(conversationId)) fail('invalid-request');
         if (ref === 'companion-context') {
-          if (Object.keys(query).some(key => !['profile', 'conversationId', 'messages', 'destination'].includes(key))) fail('invalid-request');
+          const selections = ['messages', 'messages2', 'messages3', 'messages4', 'messages5', 'messages6'];
+          if (Object.keys(query).some(key => !['profile', 'conversationId', 'destination', ...selections].includes(key))) fail('invalid-request');
           if (!['local', 'claude', 'codex'].includes(query.destination ?? 'local')) fail('forbidden');
-          const selected = query.messages === undefined || query.messages === '' ? [] : query.messages.split(',');
+          const selected = selections.flatMap(key => query[key] === undefined || query[key] === '' ? [] : query[key].split(','));
           if (!selected.every(id)) fail('invalid-request');
           document = this.library.context(profile, conversationId, selected);
         } else {

@@ -59,6 +59,27 @@ export async function knowledgeJourney(world: World, page: Page, context: Browse
   await region.getByText('Copied current companion context.', {exact: true}).waitFor();
   copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as ContextDocument;
   assert.deepEqual(copied.messages[0]?.meaning, {kind: 'unknown'}); assert.equal(copied.messages.length, 1);
+  const template = exported.messages[0]; assert.ok(template);
+  const selectedIds = Array.from({length: 16}, (_, index) => `bounded-${index}-`.padEnd(128, 'x'));
+  const expanded = {...exported, messages: [...exported.messages, ...selectedIds.map((messageId, index) => ({...template, messageId,
+    ordering: {...template.ordering, sequence: index + 5}}))]};
+  await region.getByLabel('Companion archive file', {exact: true}).setInputFiles({name: 'bounded-archive.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(expanded))});
+  await region.getByRole('button', {name: 'Import missing companion records', exact: true}).click();
+  await region.getByRole('article', {name: 'reachy message 5', exact: true}).waitFor();
+  await region.getByRole('button', {name: 'Load more history', exact: true}).click();
+  await region.getByRole('article', {name: 'reachy message 20', exact: true}).waitFor();
+  await older.getByRole('checkbox').uncheck();
+  for (let index = 0; index < 16; index += 1) await region.getByRole('article', {name: `reachy message ${index + 5}`, exact: true}).getByRole('checkbox').check();
+  for (const action of ['Preview current context', 'Copy current context']) {
+    await region.getByRole('button', {name: action, exact: true}).click();
+    await region.getByRole('textbox', {name: 'Current context', exact: true}).waitFor();
+    copied = JSON.parse(await region.getByRole('textbox', {name: 'Current context', exact: true}).inputValue()) as ContextDocument;
+    assert.deepEqual(copied.messages.map(value => value.messageId), selectedIds);
+    if (action === 'Copy current context') {
+      await region.getByText('Copied current companion context.', {exact: true}).waitFor();
+      assert.deepEqual((JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as ContextDocument).messages.map(value => value.messageId), selectedIds);
+    }
+  }
   assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 390, height: 844}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   const evidence = process.env.BUNNY_KNOWLEDGE_SCREENSHOTS;

@@ -37,7 +37,7 @@ export function archiveOf(value: unknown): Archive {
   for (const row of [...value.messages as unknown[], ...value.removals as unknown[]]) {
     if (!object(row) || !id(row.messageId) || known.has(row.messageId) || !id(row.conversationId) || !order(row.ordering)) fail('invalid-request');
     const conversation = conversations.get(row.conversationId), ordering = row.ordering as CompanionMessage['ordering'];
-    const position = JSON.stringify([row.conversationId, ordering]);
+    const position = JSON.stringify([row.conversationId, ordering.authority, ordering.epoch, ordering.sequence]);
     if (conversation === undefined || conversation.epoch !== ordering.epoch || positions.has(position)) fail('invalid-request');
     known.add(row.messageId); positions.add(position);
     if ('removedAtMs' in row) {
