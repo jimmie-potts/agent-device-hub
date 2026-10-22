@@ -1,9 +1,13 @@
 # Upgrade and recover the installed runtime
 
-This procedure belongs to `bunny-runtime.service`, the current TypeScript
-runtime. It preserves that installation's state, configuration, credentials,
-Node executable and hooks. It does not operate the retained Hub installation.
-The [fresh setup procedure](SETUP.md) remains separate.
+This procedure belongs to `bunny-runtime.service`, the current TypeScript runtime
+on the established WSL installation. It preserves that installation's state,
+configuration, credentials, Node executable and hooks. It does not operate the
+retained Hub installation or the Mac container. The
+[Mac primary-host decision](../../docs/decisions/0008-runtime-hosting.md) uses the
+separate [container operator](../../docs/bunny-container.md); neither procedure
+qualifies cross-host state transfer. The [fresh setup procedure](SETUP.md) remains
+separate.
 
 The initial established-runtime qualification is accepted under
 [#1037](https://github.com/jimmie-potts/agent-device-hub/issues/1037#issuecomment-6102421021).

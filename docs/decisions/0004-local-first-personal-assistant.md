@@ -1,9 +1,10 @@
 # ADR 0004: Local-first personal assistant direction
 
 Status: Accepted direction; implementation and qualification remain separate.
-[ADR 0008](0008-runtime-hosting.md) supersedes the sentence below that names
-Docker on the always-running PC as the initial container-hosting target; the
-eventual Linux server target stands.
+The October 22 amendment to [ADR 0008](0008-runtime-hosting.md) selects the Mac
+Mini's Linux ARM64 container on Docker Desktop as the primary host, with the PC
+optional. It supersedes the original PC-first and eventual generic Linux-server
+hosting targets below; those statements remain as historical rationale.
 
 ## Decision
 
