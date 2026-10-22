@@ -17,8 +17,17 @@ The explicit `deploy/container/compose.local.yaml` profile serves the existing
 dashboard at `http://127.0.0.1:18788/`. It requires an image built from source
 that includes this profile; the earlier isolated image cannot supply it by
 changing Compose alone. Device control is literal `disabled`, client credentials
-are empty, MCP and the launcher are off, and restart remains manual. This creates
+are empty by default, MCP and the launcher are off, and restart remains manual. This creates
 a persistent fresh core, not device or collector setup and not old-state adoption.
+
+For the separately approved local Mac Codex connection, follow the
+[hook enrollment guide](mac-codex-hook-qualification.md#installed-qualification).
+It adds only one helper-derived `BUNNY_INGEST_SOURCE` to the selected Compose
+copy and its matching private ingest-only credential. Preserve the existing
+volumes, take a stopped backup and recreate only the selected stopped service;
+do not run fresh provisioning again. Omitting the source keeps the empty-client
+default and intentionally refuses any nonempty credential list. The bearer
+never belongs in Compose. Device control and browser checks remain unchanged.
 
 This is **trusted-local browser sign-in**, not password/identity verification.
 The normal same-origin session flow issues its HttpOnly/SameSite=Strict cookie;

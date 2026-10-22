@@ -79,18 +79,36 @@ After the integrated source passes its checks and review:
    installation. Preserve its state/config/secrets volumes, localhost binding,
    empty modules, disabled MCP and device control, and browser admission.
    Review the source update and stopped-backup plan before changing the core.
-2. Create the source-bound credential privately. Use the existing private
-   producer format, owner-only regular files, loopback endpoint and no
-   lifecycleVersion. Keep the bearer out of evidence and GitHub.
-3. Preserve existing Codex config.toml and its computer-use notify command.
+2. Derive the source with `producerSource` from the reviewed release's runtime
+   hook package, using the source configuration above. In a separate copy of
+   the selected Compose file, pin the reviewed image and add
+   `BUNNY_INGEST_SOURCE: <derived-source>` under `services.core.environment`.
+   The derived value is `bunny/parts/<producerCredentialId(configuration)>`.
+   Use that exact value for both the environment setting and the credential's
+   `source`; its `id` is the helper-derived credential ID and its only scope
+   is `ingest`. No bearer belongs in Compose. Omitting the environment setting
+   deliberately retains the zero-credential browser-only profile.
+3. Stop the selected existing container and verify PID zero, then complete a
+   fresh stopped backup. Update only its private credential file after checking
+   the expected prior state. Recreate that selected stopped service from the
+   new image/Compose while retaining exactly its existing state, config and
+   secrets volumes and dedicated network. Never run the fresh-provisioning
+   helper on these volumes. Verify the effective source setting, matching sole
+   ingest credential, preserved mounts and localhost binding before startup.
+   Use the existing private producer format, owner-only regular files,
+   loopback endpoint and no lifecycleVersion. Keep the bearer out of evidence
+   and GitHub.
+4. Preserve existing Codex config.toml and its computer-use notify command.
    Merge only the five selected hook definitions into user hooks.json after
-   checking for concurrent edits. Use supported hook settings and normal trust
-   review. Do not modify trust databases or suppress trust checks.
-4. Run ordinary local Desktop work and ordinary CLI work. Observe both in the
+   checking for concurrent edits. Set each command handler's timeout to three
+   seconds and use absolute Node, release and producer paths. Use supported hook
+   settings and normal trust review. Do not modify trust databases or suppress
+   trust checks.
+5. Run ordinary local Desktop work and ordinary CLI work. Observe both in the
    local dashboard under the shared identity. Record client versions, event
    kinds, elapsed failure behavior and source revision; keep personal session
    identifiers and runtime state private.
-5. Check the existing computer-use notification integration and browser flow.
+6. Check the existing computer-use notification integration and browser flow.
    Verify that an unavailable local receiver does not interrupt agent work.
    Keep installed-client results separate from synthetic subprocess tests.
 
