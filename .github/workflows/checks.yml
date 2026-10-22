@@ -186,10 +186,10 @@ jobs:
     needs: select
     if: needs.select.outputs.app-verify == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners. By 2026-10-07 the job took
-    # 11 to 15 minutes as the runtime verify suite grew with each module (to about 217 s), and timed out at 15 in that suite.
-    # The limit leaves room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
+    timeout-minutes: 40
+    # The Home layout verification adds a real saved-layout browser journey. On #366's reviewed head,
+    # runtime verification took about 19 minutes; the full job twice reached 30 during passing browser checks.
+    # Keep every suite and finite headroom for the complete verification plus the existing apt retries.
     # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
     # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
     env:
