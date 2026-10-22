@@ -18,7 +18,7 @@ The dashboard SHALL expose reusable card, summary and collection components over
 - **THEN** its old disclosure and label draft are retired
 
 ### Requirement: Attention and freshness remain distinct
-Cards with approval, input or question attention SHALL have amber highlighting and written attention labels. Home SHALL omit a separate attention panel. The summary SHALL exclude stale or disconnected activity from current working counts.
+Cards with approval, input or question attention SHALL have amber highlighting and written attention labels. Home SHALL omit a separate attention panel. The summary SHALL exclude stale or disconnected activity from current working counts and SHALL count retained unread evidence independently of higher-priority attention or activity.
 
 #### Scenario: Current attention
 - **WHEN** a session needs input, approval or a question answered

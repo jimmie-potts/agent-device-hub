@@ -79,6 +79,11 @@ try {
   // A finished turn shows unread from the record, and nothing on the page or a timer clears it.
   await world.observe(turnEnded);
   await chip('Port the wall', 'Finished · unread');
+  await world.observe({kind: 'question-continuing', attention: {status: 'known', id: 'unread-question'}});
+  await chip('Port the wall', 'Question');
+  assert.deepEqual(await page.getByRole('group', {name: 'Agent summary'}).locator('strong').allTextContents(), ['0', '1', '1'], 'attention and unread coexist');
+  await world.observe(approvalResolved('unread-question'));
+  await chip('Port the wall', 'Finished · unread');
   await row('Port the wall').getByRole('heading', {name: 'Retained notices', exact: true}).waitFor();
   await row('Port the wall').getByText('Acknowledged by: none.', {exact: false}).waitFor();
   await page.waitForTimeout(2500);

@@ -100,3 +100,12 @@ void test('agent summaries count current work separately from retained attention
   assert.equal(needsAttention(unread), false);
   assert.equal(needsAttention(stale), false);
 });
+
+void test('unread summary evidence survives higher-priority attention and work', () => {
+  const notices = finished();
+  const working = sessionRow(record({activity: 'active', notices}));
+  const attention = sessionRow(record({notices, attention: [{id: {status: 'known', id: 'approval'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]}));
+  assert.deepEqual(agentSummary([working, attention], true), {working: 1, attention: 1, unread: 2});
+  assert.equal(working.chip, 'working');
+  assert.equal(attention.chip, 'approval');
+});
