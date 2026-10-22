@@ -251,7 +251,7 @@ test('Workflow checks every path while Checks skips only Markdown-only changes',
   }
 });
 
-test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () => {
+test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
@@ -267,7 +267,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
   // Hub #1080: a pull request runs only its affected work. The select job maps the changed paths to check groups,
   // firmware and App verification run only when selected, and the gate fails unless every selected job succeeded.
   // tests/ci_selection.test.mjs checks the selection conditions themselves.
-  assert.equal(coreJobs + 1, 7, 'normal CI must run exactly seven jobs');
+  assert.equal(coreJobs + 1, 8, 'normal CI must run exactly eight jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -279,14 +279,15 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
+    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
     'node apps/runtime/dashboard/tests/room-models.browser.ts', 'node apps/runtime/dashboard/tests/music-card.browser.ts', 'npm run test:roborock:browser', 'npm run test:onn:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:observability:browser'],
+    'runtime-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:runtime:verify:built'],
   };
   const names = {
     select: 'Select affected checks',
@@ -296,9 +297,10 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     // A job skipped before its matrix expands reports the unexpanded name, so the jobs the selection skips name their runner.
     firmware: 'Firmware host tests and ARM build on ubuntu-latest',
     'app-verify': 'App verification on ubuntu-latest',
+    'runtime-verify': 'Runtime verification on ubuntu-latest',
   };
   const matrixJobs = ['workflow', 'core'];
-  const conditions = { firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", gate: 'always()' };
+  const conditions = { firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always()' };
   assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   // Each suite runs in exactly one job.
@@ -336,15 +338,15 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     // App verification took 7-9.6 minutes and once timed out at 10, because
     // its Playwright install with system dependencies varies from 22 s to 227 s on hosted runners; by 2026-10-07 it
     // took 11-15 minutes, as the runtime verify suite grew with each module, and timed out at 15 in that suite. Its 30
-    // leave room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
+    // now exclude the full runtime catalog: that unchanged serial suite has its own required 30-minute job (#1183).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
     // The select and gate jobs read one comparison or the needs context and take seconds.
-    assert.equal(job['timeout-minutes'], ['core', 'app-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
+    assert.equal(job['timeout-minutes'], ['core', 'app-verify', 'runtime-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }
     const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
-    assert.deepEqual(installs, id === 'app-verify' ? [{ name: 'Install Chromium with its system dependencies',
+    assert.deepEqual(installs, ['app-verify', 'runtime-verify'].includes(id) ? [{ name: 'Install Chromium with its system dependencies',
       'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
     if (matrixJobs.includes(id)) {
       assert.equal(job.strategy['fail-fast'], false);
@@ -363,7 +365,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     }] : []);
     // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
-    assert.deepEqual(job.env, id === 'app-verify' ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
+    assert.deepEqual(job.env, ['app-verify', 'runtime-verify'].includes(id) ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
@@ -372,7 +374,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
     assert(originalSteps.every(step => step.if === undefined || (['core', 'app-verify'].includes(id)
       && /^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if))), id);
   }
-  assert.equal(builds, 3);
+  assert.equal(builds, 4);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
   // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
   // keeps its full browser suite local too.

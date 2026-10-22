@@ -103,6 +103,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Build, lint and core tests on ubuntu-latest',
     'Firmware host tests and ARM build on ubuntu-latest',
     'Retained documentation checks',
+    'Runtime verification on ubuntu-latest',
     'Select affected checks',
     'Selected checks gate',
     'Workflow checks on ubuntu-latest',
@@ -112,6 +113,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Checks / App verification on ubuntu-latest',
     'Checks / Build, lint and core tests on ubuntu-latest',
     'Checks / Firmware host tests and ARM build on ubuntu-latest',
+    'Checks / Runtime verification on ubuntu-latest',
     'Checks / Select affected checks',
     'Checks / Selected checks gate',
     'Workflow / Retained documentation checks',
@@ -124,16 +126,16 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   // Hub #861: a Markdown-only change skips Checks but still runs the workflow and retained documentation jobs.
   assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Retained documentation checks', 'Workflow checks on ubuntu-latest']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(mixed.jobs.length, 7, 'one non-Markdown path keeps every job expected');
+  assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 7, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 8, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(narrow.jobs.length, 7);
+  assert.equal(narrow.jobs.length, 8);
   assert.deepEqual(narrow.jobs.filter(item => !item.selected).map(item => item.name).sort(), [
-    'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest',
+    'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest', 'Runtime verification on ubuntu-latest',
   ]);
   const mainPush = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
   assert.ok(mainPush.jobs.every(item => item.selected), 'main runs every check');
@@ -330,7 +332,7 @@ test('CI: a Markdown-only change needs only the workflow and retained documentat
 
 // Hub #1080: pull requests run affected checks. The preflight recomputes the selection from the same mapping and
 // accepts a skip only for a job that selection deliberately left out.
-const unselectedJob = /^(Firmware host tests|App verification) /;
+const unselectedJob = /^(Firmware host tests|App verification|Runtime verification) /;
 function narrowWorld(files = ['apps/maintenance/src/planner.ts']) {
   const world = cleanWorld();
   world.files = files.map(filename => ({ filename, status: 'modified' }));
@@ -348,6 +350,7 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   assert.deepEqual(ci.evidence.selection.omitted, ['runtime', 'modules', 'chompi', 'shared']);
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
     ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
+    ['Runtime verification on ubuntu-latest', 'skipped'],
   ]);
   assert.ok(ci.evidence.jobs.filter(item => item.selected !== false).every(item => item.result === 'success'));
   assert.match(ci.reasons.join('\n'), /App verification on ubuntu-latest: not selected for this change \(omitted: runtime, modules, chompi, shared\); skipped, not run/);
@@ -362,6 +365,17 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   const executed = gate(await preflight(ran), 'ci-pr');
   assert.equal(executed.status, 'satisfied', executed.reasons.join('; '));
   assert.equal(executed.evidence.jobs.find(item => /^Firmware/.test(item.name)).result, 'success');
+});
+
+test('CI: the separate runtime verification remains mandatory in the original preflight', async () => {
+  for (const conclusion of ['failure', 'cancelled', 'skipped']) {
+    const world = cleanWorld();
+    runNamed(world, /^Runtime verification/).conclusion = conclusion;
+    assertUnresolved(await preflight(world), 'ci-pr', /Runtime verification on ubuntu-latest:/);
+  }
+  const missing = cleanWorld();
+  missing.checkRuns[HEAD] = missing.checkRuns[HEAD].filter(run => !/^Runtime verification/.test(run.name));
+  assertUnresolved(await preflight(missing), 'ci-pr', /Runtime verification on ubuntu-latest: missing/);
 });
 
 const selectionCases = [
@@ -986,7 +1000,7 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
   const workflows = ['checks.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
-  assert.equal(dotfile.jobs.length, 7, 'a dot-file is not Markdown, so both workflows apply');
+  assert.equal(dotfile.jobs.length, 8, 'a dot-file is not Markdown, so both workflows apply');
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],

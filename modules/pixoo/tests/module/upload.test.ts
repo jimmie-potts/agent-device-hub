@@ -5,8 +5,9 @@ import {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {it} from 'node:test';
+import {setTimeout as sleep} from 'node:timers/promises';
 import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {InProcessBus, type ModuleStagedUpload, type ModuleUploadReply, type ModuleUploadRequest} from '@jimmie-potts/sdk';
+import {InProcessBus, type ModuleStagedUpload, type ModuleUpload, type ModuleUploadReply, type ModuleUploadRequest} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
 import {createPixooModule} from '../../src/module/module.js';
@@ -21,6 +22,16 @@ const request = (bytes: Uint8Array, requestId: string, patch: Partial<ModuleUplo
 function prepared(result: ModuleStagedUpload | ErrorBody): ModuleStagedUpload {
   assert.ok(!('error' in result), 'upload was prepared');
   return result;
+}
+async function prepareAfterCleanup(upload: ModuleUpload, input: ModuleUploadRequest): Promise<ModuleStagedUpload> {
+  const deadline = performance.now() + 5000;
+  for (;;) {
+    const result = await upload.stage(input);
+    if (!('error' in result)) return result;
+    assert.equal(result.error.code, 'capacity', 'only the completed preparation may still be releasing its slot');
+    assert.ok(performance.now() < deadline, 'the completed preparation releases its slot');
+    await sleep(5);
+  }
 }
 function refused(result: ModuleStagedUpload | ErrorBody, code: string): void {
   assert.ok('error' in result);
@@ -93,7 +104,8 @@ void it('imports bytes above the JSON command cap, cleans the outcome and releas
     assert.deepEqual((await world.outcome('large-upload')).data, {requestId: 'large-upload', result: 'succeeded', evidence: 'observed'});
     await world.empty();
     // A late finish for a completed upload must not release the next preparation.
-    const next = prepared(await upload.stage(request(Buffer.from('another input'), 'next-upload')));
+    // Unlink is visible before its promise settles and the owner releases the slot. Observe that release too.
+    const next = await prepareAfterCleanup(upload, request(Buffer.from('another input'), 'next-upload'));
     await staged.finish(reply);
     assert.deepEqual(await readdir(world.incoming), [sha(Buffer.from('another input'))]);
     await next.finish(errorBody('forbidden'));
@@ -163,7 +175,7 @@ void it('reports unfinished work uncertain then clears only abandoned hash input
     assert.equal((await world.outcome('retained-media')).data.result, 'succeeded');
     await world.empty();
     const bytes = Buffer.from('abandoned synthetic bytes');
-    const staged = prepared(await upload.stage(request(bytes, 'abandoned-upload')));
+    const staged = await prepareAfterCleanup(upload, request(bytes, 'abandoned-upload'));
     await staged.finish(errorBody('uncertain-result'));
     refused(await upload.stage(request(Buffer.from('blocked'), 'blocked-upload')), 'capacity');
     await mkdir(world.incoming, {recursive: true});

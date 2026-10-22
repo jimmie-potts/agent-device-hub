@@ -29,6 +29,9 @@ void test('a session is named by its label, then its title, then its native ID, 
   assert.equal(sessionRow(record()).where, 'Claude Code');
   assert.deepEqual([clientName({...record().identity, provider: 'codex', client: 'cli'}), clientName({...record().identity, provider: 'codex', client: 'desktop'})],
     ['Codex CLI', 'Codex Desktop']);
+  assert.equal(clientName({...record().identity,provider:'codex',client:'local'}),'Codex (local)');
+  assert.equal(clientName({...record().identity, provider: 'codex', client: 'local', hostId: 'mac-mini', sourceId: 'codex-local-hooks'}), 'Mac Codex');
+  assert.equal(clientName({...record().identity, provider: 'codex', client: 'local', hostId: 'another-host', sourceId: 'codex-local-hooks'}), 'Codex (local)');
 });
 
 void test('the chip ranks attention over work over a finished turn, and names the attention', () => {

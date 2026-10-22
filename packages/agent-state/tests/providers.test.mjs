@@ -9,6 +9,14 @@ const raw={session_id:'session',turn_id:'turn',prompt_id:'prompt'};
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('shared local Codex identity is explicit and never becomes Desktop or CLI evidence',()=>{
+  const selected={...source('UserPromptSubmit'),client:'local'};
+  const value=normalizeHook(raw,selected,1000);
+  assert.equal(value?.identity.client,'local');
+  assert.equal(validateEvent(value).ok,true);
+  assert.equal(normalizeHook(raw,{...selected,provider:'claude'},1000),null);
+});
+
 for(const provider of ['codex','claude'])for(const [hook,kind] of Object.entries({SessionStart:'session.started',UserPromptSubmit:'turn.started',PermissionRequest:'attention.approval',Stop:'turn.ended',SessionEnd:'runtime.ended',SubagentStart:'session.started',SubagentStop:'turn.ended',...(provider==='codex'?{Interrupt:'turn.interrupted'}:{})})){
   test(`${provider} ${hook} maps only qualified lifecycle metadata`,()=>{
     const value=normalizeHook(hook.startsWith('Subagent')?{...raw,agent_id:'child'}:raw,source(hook,provider),1000);

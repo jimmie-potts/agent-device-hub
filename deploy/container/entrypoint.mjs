@@ -4,17 +4,34 @@ import {lstat, mkdir, open, readdir} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+const producerSource = /^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/;
+
 export function containerOptions(env) {
   const access = env.BUNNY_ACCESS ?? 'isolated';
   const control = env.BUNNY_CONTROL ?? 'disabled';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
   const portText = env.BUNNY_PORT ?? (access === 'host-local' ? '18788' : '8788');
+  const ingestSource = env.BUNNY_INGEST_SOURCE;
   if (!['isolated', 'host-local'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+    || (ingestSource !== undefined && (access !== 'host-local' || !producerSource.test(ingestSource)))
     || (access === 'host-local' && (control !== 'disabled' || portText !== '18788'
       || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
-  return {control, stateDir, config, port: Number(portText), access};
+  return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource})};
+}
+
+// Input has already passed the shared credential parser. This profile narrows its grants further.
+export function checkLocalBrowserCredentials(credentials, ingestSource) {
+  if (ingestSource === undefined) {
+    if (credentials.length !== 0) throw new Error('container-browser-config-refused');
+    return;
+  }
+  const credential = credentials[0];
+  if (!producerSource.test(ingestSource) || credentials.length !== 1
+    || credential.id !== ingestSource.slice('bunny/parts/'.length) || credential.source !== ingestSource
+    || credential.scopes.length !== 1 || credential.scopes[0] !== 'ingest'
+    || credential.role !== undefined || credential.robotId !== undefined) throw new Error('container-browser-config-refused');
 }
 
 export function checkLocalBrowserConfig(config) {
@@ -39,7 +56,7 @@ async function start(options) {
   if (options.access === 'host-local') {
     const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
     checkLocalBrowserConfig(config);
-    if ((await readEdgeCredentials(config.edge.credentials)).length !== 0) throw new Error('container-browser-config-refused');
+    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource);
   }
   await checkStateDirectory(options.stateDir);
   await refusePendingRestore(options.stateDir);
