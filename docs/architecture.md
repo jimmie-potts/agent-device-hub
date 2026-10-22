@@ -42,6 +42,11 @@ metadata places logical cards in existing room IDs; it does not assign speakers
 or route audio. Lighting composition remains the room identity owner, and the
 playback module remains the only playback writer. The shell uses its existing
 participant for both copies, with separate metadata and playback command locks.
+Core-owned `home-layout` metadata orders those existing cards separately for
+desktop and phone. The editor uses the same participant and guarded metadata
+commands. Lighting grouping and room Home actions reconcile placement in their
+original transaction; no device writer or transport changes. Hidden module
+cards unmount their scoped acquisitions while shared alert evidence stays synced.
 Source delivery does not establish installed or physical acceptance.
 
 The runtime shell groups navigation into Home, Habitat, Rooms, Devices and Automation,

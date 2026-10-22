@@ -39,8 +39,8 @@ try {
   await feed(page, 'connected');
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
-  assert.deepEqual(await page.locator('.home-wide>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions']);
-  assert.deepEqual(await page.locator('.home-narrow>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['inbox']);
+  assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions', 'inbox']);
+  assert.equal(await page.locator('.home-layout-grid').evaluate(node => getComputedStyle(node).display), 'grid');
   assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
   assert.equal(await page.locator('[data-widget=attention]').count(), 0);
   checks.push('Home composes reusable agent cards without a duplicate attention panel');
@@ -59,7 +59,8 @@ try {
   await world.observe(turnStarted);
   await chip('Port the wall', 'Working');
   assert.equal(await row('Port the wall').locator('.agent-client').textContent(), 'Claude Code');
-  await page.getByText('1 working · 1 sessions', {exact: true}).waitFor();
+  assert.equal(await page.locator('.agent-summary > div').first().locator('strong').textContent(), '1');
+  assert.equal(await page.locator('article.session').count(), 1);
   checks.push('a session appears, working');
 
   // An approval prompt is raised and cleared.
@@ -122,9 +123,10 @@ try {
     await replacement;
     await feed(page, 'connected');
     assert.match(await row('Plan wave three').innerText(), /Freshness is uncertain/, 'retained rows remain stale while the replacement snapshot is held');
-    assert.match(await page.locator('main#main').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
+    assert.match(await page.locator('.sidebar-foot').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
     await chip('Plan wave three', 'Stale');
-    await page.getByText('0 working · 2 sessions', {exact: true}).waitFor();
+    assert.equal(await page.locator('.agent-summary > div').first().locator('strong').textContent(), '0');
+    assert.equal(await page.locator('article.session').count(), 2);
     assert.equal(await row('Review the inbox').count(), 0, 'new membership waits for the replacement snapshot');
     assert.deepEqual(sent, [], 'holding a replacement sync sends no command');
     assert.equal(await row('Plan wave three').getByRole('button', {name: 'Edit label for Plan wave three', exact: true}).isDisabled(), true, 'a stale retained row cannot edit');
@@ -290,3 +292,5 @@ try {
 // The same focused journey runs in hosted smoke and the full local browser suite.
 await import('./tidbyt-card.browser.ts');
 await import('./shell.browser.ts');
+
+await import('./home-layout.browser.ts');

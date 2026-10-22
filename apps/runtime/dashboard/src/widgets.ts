@@ -1,8 +1,9 @@
 /**
  * The widget catalog (Hub #277). A widget is one placeable block over one source: the core's families, a module's
  * families, or a read-only external source (Hub #287). A widget renders identically wherever it is placed, so moving one
- * between pages is a placement change. Placement is a developer decision here; Hub #366 makes it the owner's from this
- * catalog. On the runtime (Hub #922) widgets read named families through sync. Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
+ * between pages is a placement change. Home's editor (#366) extends this core catalog with existing device, lighting,
+ * room and Music instances in home-catalog.ts. On the runtime (Hub #922) widgets read named families through sync.
+ * Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
 export type SourceKind = 'core' | 'module' | 'external';
 /** small takes one grid column, medium two and large the whole row; narrow screens collapse every size to one column. */
@@ -49,9 +50,9 @@ export type Placement = {widget: string; size: WidgetSize; /** The source instan
 export const widgetDefinition = (id: string): WidgetDefinition | undefined => widgetCatalog.find(widget => widget.id === id);
 
 /**
- * The home, as the owner-approved mockup lays it out ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode and
+ * The built-in core placements ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode and
  * the agent sessions in the wide column, the inbox in the narrow one. Attention is highlighted on each session card. The Wispr port adds its numeric widget there when exposed. Every placement names a
- * catalog widget at one of its declared sizes.
+ * catalog widget at one of its declared sizes. The Home editor uses these default sizes until explicitly saved.
  */
 export function homeLayout(): {wide: Placement[]; narrow: Placement[]} {
   return {

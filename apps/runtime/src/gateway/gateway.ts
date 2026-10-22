@@ -875,7 +875,7 @@ export class Gateway {
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
-    const incoming = family === 'mode-set' || family === 'lighting-layout-set' || family === 'playback-layout-set' ? request?.headers.traceparent : undefined;
+    const incoming = family === 'mode-set' || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
     const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
       ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);

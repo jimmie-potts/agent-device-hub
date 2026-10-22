@@ -823,6 +823,14 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+Customizable Home (#366) adds core metadata/restart and gateway admission tests in
+`apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
+unit discovery, and an editor journey in the existing dashboard browser entry.
+After the root build, run `node --test apps/runtime/dist/tests/home-layout.test.js`,
+the owning runtime/dashboard unit, browser and scenario checks, shared type,
+contract, workflow and JavaScript lint checks. Existing runtime and dashboard CI
+discovery selects these paths; layout tests assert that editing sends no device commands.
+
 The Wemo card (#1175) adds observed-state/guard projection checks to existing
 dashboard unit discovery and extends the existing `test:wemo:browser` journey
 for stable tabs, retained drafts and the approved concise presentation. Both
