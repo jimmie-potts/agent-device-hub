@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {chmod, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {sanitizeMacCodexHook, sanitizedInput} from '../bin/mac-codex-hook.mjs';
 
@@ -116,4 +121,175 @@ test('missing arguments exit silently without reading stdin', async () => {
     });
   });
   assert.deepEqual(result, {code: 0, signal: null, stdout: '', stderr: ''});
+});
+
+const SOURCE = {provider: 'codex', client: 'local', hostId: 'mac-synthetic', sourceId: 'codex-local-hooks'};
+const TOKEN = 's'.repeat(43); // Synthetic fixture only.
+const HOOK = fileURLToPath(new URL('../bin/mac-codex-hook.mjs', import.meta.url));
+
+async function receiver(context, {hang = false, lifecycleVersion} = {}) {
+  const {REMOTE_SCHEMA} = await import('@jimmie-potts/sdk');
+  const directory = await mkdtemp(join(tmpdir(), 'bunny-mac-hook-'));
+  await chmod(directory, 0o700);
+  const calls = [];
+  const server = createServer((request, response) => {
+    let body = '';
+    request.setEncoding('utf8').on('data', chunk => { body += chunk; });
+    request.once('end', () => {
+      calls.push({url: request.url, headers: request.headers, body: JSON.parse(body)});
+      if (!hang) response.writeHead(200, {'content-type': 'application/json'})
+        .end(JSON.stringify({schema: REMOTE_SCHEMA, status: 'published'}));
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  context.after(async () => {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    await rm(directory, {recursive: true, force: true});
+  });
+  const path = join(directory, 'producer.json');
+  const endpoint = `http://127.0.0.1:${server.address().port}/api/monitor/v1/events`;
+  await writeFile(path, JSON.stringify({enabled: true, qualified: true, source: SOURCE, endpoint, token: TOKEN,
+    ...(lifecycleVersion === undefined ? {} : {lifecycleVersion})}), {mode: 0o600});
+  return {path, calls, server};
+}
+
+function invoke(producer, input, options = []) {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const child = spawn(process.execPath, [...options, HOOK, producer], {stdio: ['pipe', 'pipe', 'pipe']});
+    const chunks = [];
+    child.stdout.on('data', chunk => chunks.push(chunk));
+    child.stderr.on('data', chunk => chunks.push(chunk));
+    child.stdin.on('error', () => {});
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('hook exceeded test deadline')); }, 6000);
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      resolve({code, signal, output: Buffer.concat(chunks).toString(), elapsed: performance.now() - started});
+    });
+    if (input !== undefined) child.stdin.end(typeof input === 'string' || Buffer.isBuffer(input) ? input : JSON.stringify(input));
+  });
+}
+
+function quiet(result) {
+  assert.equal(result.code, 0);
+  assert.equal(result.signal, null);
+  assert.equal(result.output, '');
+  assert.ok(result.elapsed < 4000, `hook took ${result.elapsed} ms`);
+}
+
+test('native wrapper publishes all selected events with source-bound metadata only', async context => {
+  const {producerSource} = await import('@jimmie-potts/runtime/hook');
+  const {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER} = await import('@jimmie-potts/sdk');
+  const world = await receiver(context);
+  const poison = `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+    for (const [object, keys] of [[fs, ['open', 'openSync', 'readFile', 'readFileSync']], [fs.promises, ['open', 'readFile']]]) {
+      for (const key of keys) { const original = object[key]; object[key] = function(path, ...args) {
+        if (String(path).includes('DO_NOT_OPEN')) { process.stderr.write('FORBIDDEN_READ'); throw new Error('forbidden'); }
+        return original.call(this, path, ...args);
+      }; }
+    } syncBuiltinESMExports();`;
+  const options = ['--import', 'data:text/javascript,' + encodeURIComponent(poison)];
+  const kinds = ['session-started', 'turn-started', 'turn-ended', 'turn-interrupted', 'runtime-ended'];
+  for (const [index, hook_event_name] of events.entries()) {
+    quiet(await invoke(world.path, {...base, hook_event_name, source: 'startup',
+      prompt: 'PRIVATE_CANARY', last_assistant_message: 'PRIVATE_CANARY', cwd: '/DO_NOT_OPEN',
+      transcript_path: '/DO_NOT_OPEN/transcript.jsonl'}, options));
+    assert.equal(world.calls.length, index + 1);
+    const call = world.calls[index];
+    assert.equal(call.url, REMOTE_PATH + '/publish');
+    assert.equal(call.headers.authorization, 'Bearer ' + TOKEN);
+    assert.equal(call.headers[SOURCE_HEADER], producerSource(SOURCE));
+    assert.equal(call.body.schema, REMOTE_SCHEMA);
+    const message = call.body.message;
+    assert.equal(message.source, producerSource(SOURCE));
+    assert.equal(message.data.event.kind, kinds[index]);
+    assert.deepEqual(message.data.identity, {...SOURCE, sessionId: base.session_id});
+    assert.deepEqual(message.data.turn, {status: 'known', id: base.turn_id});
+    assert.ok(Number.isFinite(message.data.observedAtMs));
+    assert.deepEqual(Object.keys(message.data).sort(), ['event', 'identity', 'observedAtMs', 'ordering', 'parent', 'turn']);
+    assert.equal(JSON.stringify(call.body).includes('PRIVATE_CANARY'), false);
+    assert.equal(JSON.stringify(call.body).includes('DO_NOT_OPEN'), false);
+  }
+});
+
+test('native wrapper drops child, compact and malformed input without publication', async context => {
+  const world = await receiver(context);
+  for (const input of [
+    {...base, hook_event_name: 'Stop', agent_id: 'child'},
+    {...base, hook_event_name: 'Stop', agent_id: null},
+    {...base, hook_event_name: 'SessionStart', source: 'compact'},
+    {...base, hook_event_name: 'PermissionRequest'}, '{', Buffer.from([0xc3, 0x28]),
+    Buffer.alloc(8 * 1024 * 1024 + 1, 32),
+  ]) quiet(await invoke(world.path, input));
+  assert.equal(world.calls.length, 0);
+});
+
+test('native metadata guard refuses enrichment before waiting for stdin', async context => {
+  for (const lifecycleVersion of ['1.1', '1.2']) {
+    const world = await receiver(context, {lifecycleVersion});
+    const result = await invoke(world.path, undefined);
+    quiet(result);
+    assert.ok(result.elapsed < 1500, 'enrichment configuration must refuse before reading input');
+    assert.equal(world.calls.length, 0);
+  }
+});
+
+test('native hook ends open stdin and a stalled receiver within its hard budget', async context => {
+  const world = await receiver(context, {hang: true});
+  const openInput = await invoke(world.path, undefined);
+  quiet(openInput);
+  assert.ok(openInput.elapsed >= 2500, 'positive control: valid producer waited for input');
+  assert.equal(world.calls.length, 0);
+  const stalled = await invoke(world.path, {...base, hook_event_name: 'Stop'});
+  quiet(stalled);
+  assert.ok(stalled.elapsed >= 2500, 'positive control: request reached the stalled receiver');
+  assert.equal(world.calls.length, 1, 'one attempt, no retries');
+});
+
+test('native hook fails open when its receiver is unavailable', async context => {
+  const world = await receiver(context);
+  await new Promise(resolve => world.server.close(resolve));
+  quiet(await invoke(world.path, {...base, hook_event_name: 'Stop'}));
+  assert.equal(world.calls.length, 0);
+});
+
+// The core uses Linux /proc file-identity checks; macOS runs that core in its container.
+test('hook reaches the real Linux core and its ingest token cannot read state',
+  {skip: process.platform !== 'linux' ? 'core private-file checks require Linux; native hook tests run above' : false}, async context => {
+  const {createCoreModule} = await import('../dist/src/index.js');
+  const {producerCredentialId, producerSource} = await import('@jimmie-potts/runtime/hook');
+  const {edgeConfig, run} = await import('../dist/tests/support.js');
+  const source = producerSource(SOURCE);
+  const reader = 'r'.repeat(43);
+  const files = await edgeConfig(context, [
+    {id: producerCredentialId(SOURCE), source, token: TOKEN, scopes: ['ingest']},
+    {id: 'synthetic-reader', source: 'bunny/parts/synthetic-reader', token: reader, scopes: ['read']},
+  ]);
+  const {runtime, logs} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}});
+  const path = join(files.dir, 'producer.json');
+  await writeFile(path, JSON.stringify({enabled: true, qualified: true, source: SOURCE,
+    endpoint: runtime.url + '/api/monitor/v1/events', token: TOKEN}), {mode: 0o600});
+  for (const hook_event_name of ['SessionStart', 'UserPromptSubmit', 'Stop']) {
+    quiet(await invoke(path, {...base, hook_event_name, source: 'startup', prompt: 'PRIVATE_CANARY'}));
+  }
+  const route = new URL('/api/v2/families/session', runtime.url);
+  let records;
+  const deadline = performance.now() + 3000;
+  do {
+    const response = await fetch(route, {headers: {authorization: 'Bearer ' + reader}});
+    assert.equal(response.status, 200);
+    records = (await response.json()).records;
+    if (records.length === 1 && records[0].notices.length === 1) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  } while (performance.now() < deadline);
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].identity, {...SOURCE, sessionId: base.session_id});
+  assert.equal(records[0].activity, 'idle');
+  assert.equal(records[0].notices[0]?.kind, 'turn-ended');
+  assert.equal(JSON.stringify(records).includes('PRIVATE_CANARY'), false);
+  assert.equal(JSON.stringify(logs).includes('PRIVATE_CANARY'), false);
+  assert.equal((await fetch(route, {headers: {authorization: 'Bearer ' + TOKEN}})).status, 403);
 });
