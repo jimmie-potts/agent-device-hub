@@ -84,8 +84,17 @@ try {
   releaseSave();
   await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
   assert.equal(await studio.isDisabled(), true, 'a conflicting save requires explicit refresh');
-  await page.route('**/api/sdk/v1/sync', route => route.abort());
+  const failedRefreshFamilies = new Set<string>();
+  await page.route('**/api/sdk/v1/sync', async route => {
+    const call = route.request().postDataJSON() as {owner?: string; request?: {data?: {families?: string[]}}};
+    await route.abort();
+    const families = call.request?.data?.families ?? [];
+    if (call.owner === 'bunny/core' && families.length === 1
+      && (families[0] === 'lighting-layout' || families[0] === 'playback-layout')) failedRefreshFamilies.add(families[0]);
+  });
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
+  // Refresh marks copies stale before sending requests. Keep the fault until both required reads actually fail.
+  await expect.poll(() => [...failedRefreshFamilies].sort()).toEqual(['lighting-layout', 'playback-layout']);
   await page.getByText('Placement records are unavailable or stale. Editing is read-only.', {exact: true}).waitFor();
   await page.unroute('**/api/sdk/v1/sync');
   await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
@@ -131,6 +140,7 @@ try {
   if (process.env.DASHBOARD_RECEIPTS !== undefined) await page.screenshot({path: process.env.DASHBOARD_RECEIPTS + '/music-card-phone.png', fullPage: true});
   assert.equal(sent.filter(url => url.endsWith('/playback-control')).length, 1, 'only the explicit synthetic pause sent playback');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'reusable-music', home: true, audio: true, rooms: true, restart: true, readOnly: true, stale: true, physical: false}));
+  console.log(JSON.stringify({journey: 'reusable-music', home: true, audio: true, rooms: true, restart: true, readOnly: true, stale: true,
+    failedRefreshAborts: [...failedRefreshFamilies].sort(), physical: false}));
   await context.close();
 } finally {await browser.close(); await world.close();}
