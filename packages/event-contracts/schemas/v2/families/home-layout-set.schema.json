@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/home-layout-set/2.0",
+  "description": "Explicit revision-guarded owner replacement of Home arrangements (Hub #366).",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "expectedRevision", "layouts"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "layouts": {"$ref": "https://bunny.invalid/events/home-layout/2.0#/$defs/layouts"}
+  }
+}

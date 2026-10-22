@@ -226,7 +226,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five and the core and App verification jobs' thirty. Branch pushes do not duplicate PR checks.
+select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core job's thirty and App verification's forty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
@@ -822,6 +822,14 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
+
+Customizable Home (#366) adds core metadata/restart and gateway admission tests in
+`apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
+unit discovery, and an editor journey in the existing dashboard browser entry.
+After the root build, run `node --test apps/runtime/dist/tests/home-layout.test.js`,
+the owning runtime/dashboard unit, browser and scenario checks, shared type,
+contract, workflow and JavaScript lint checks. Existing runtime and dashboard CI
+discovery selects these paths; layout tests assert that editing sends no device commands.
 
 The Wemo card (#1175) adds observed-state/guard projection checks to existing
 dashboard unit discovery and extends the existing `test:wemo:browser` journey

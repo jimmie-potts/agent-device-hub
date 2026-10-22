@@ -104,6 +104,17 @@ seeds and plug-in collect the registrations and the scenario files, so they name
 only the core and the fixture modules. `npm run test:workflow` fails when one of
 those shared files names a device module (`scripts/check-module-names.cjs`).
 
+## Home arrangement metadata
+
+The core also owns `home-layout`: a versioned record with separate desktop and
+phone widget IDs, sizes and hidden flags. Its `home_layout` table is additive in
+`modules/core.sqlite`. Explicit operator saves use `home-layout-set`, expected
+revision and expiry checks, and the existing transactional tracker/outbox. They
+send no device commands. Existing lighting composition changes reconcile their
+saved Home placements in the same transaction. Read the [dashboard guide](dashboard/README.md#customizable-home)
+for editing, defaults, alert visibility and uncertain-save recovery. Older-reader
+recovery remains a separate installed-upgrade assessment.
+
 ## Agent-session core
 
 `src/core` is the one owner of agent sessions
