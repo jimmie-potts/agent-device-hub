@@ -1,7 +1,6 @@
 import {directoryLink} from './navigation-helpers.ts';
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
-import {setTimeout as pause} from 'node:timers/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -13,7 +12,7 @@ try {
   const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().message); });
   const sent = changes(page);
   await page.goto(world.url); await feed(page, 'connected');
-  const lights = page.getByRole('region', {name: 'Lights', exact: true});
+  const lights = page.getByRole('region', {name: 'Home', exact: true});
   const a = lights.locator('[data-light-card="lamp-a"]');
   await a.getByRole('button', {name: 'Off', exact: true}).waitFor();
   await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-light-card="lamp-a"] .light-power button')?.disabled === false);
@@ -34,23 +33,16 @@ try {
   await group.waitFor();
   assert.equal(await a.count(), 0, 'group replaces individual controls');
   assert.equal(sent.filter(value => !value.includes('lighting-layout-set')).length, 0, 'group save sends only metadata');
-  await lights.getByText('Arrange', {exact: true}).click();
-  // Synthetic transport delay makes waiting for committed checkbox values observable.
-  await page.route('**/api/v2/commands/lighting-layout-set', async route => { await pause(150); await route.continue(); });
-  const selectHome = async (name: string, checked: boolean): Promise<void> => {
-    await lights.getByRole('checkbox', {name, exact: true}).click();
-    // The visible value is the committed layout. Wait for that value and the completed save before the next edit.
-    await page.waitForFunction(({name, checked}) => {
-      const label = Array.from(document.querySelectorAll('.lighting-workspace .lighting-organize label')).find(node => node.textContent?.trim() === name);
-      const input = label?.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      return input !== null && input !== undefined && input.checked === checked && !input.disabled;
-    }, {name, checked});
-  };
-  await selectHome('Light group · group', false);
-  await selectHome('lamp-a', true);
-  await selectHome('lamp-b', true);
-  await page.unroute('**/api/v2/commands/lighting-layout-set');
-  await lights.getByText('Arrange', {exact: true}).click();
+  // Edit Home replaces the old Home-only Arrange checklist; group metadata remains retained.
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
+  await page.getByRole('button', {name: 'Remove Light group', exact: true}).click();
+  await page.getByRole('button', {name: 'Add card', exact: true}).click();
+  await page.getByRole('button', {name: 'Lights', exact: true}).click();
+  await page.getByRole('button', {name: 'Add lamp-a', exact: true}).click();
+  await page.getByRole('button', {name: 'Add lamp-b', exact: true}).click();
+  await page.getByRole('button', {name: 'Close', exact: true}).click();
+  await page.getByRole('button', {name: 'Done', exact: true}).click();
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
   await a.getByLabel('Options for lamp-a', {exact: true}).click();
   await a.getByLabel('Group lamp-a with', {exact: true}).selectOption('device:lamp-b');
   await group.waitFor();

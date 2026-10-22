@@ -936,3 +936,15 @@ Production-store tests cover atomic rollback, conflicting saves and reopening
 latest state after restart. Preserve the table with the ordinary consistent core
 backup. This is additive forward persistence evidence; it does not qualify an
 older release as a recovery reader or change playback settings or AirPlay output.
+
+## Home arrangement state
+
+`home_layout` adds one versioned core row containing desktop and phone widget
+identities, supported sizes and hidden flags. A null arrangement preserves the
+built-in defaults until the first explicit save. Production-store tests cover
+exact-revision admission, expiry, rollback, repeat request identity and reopening
+latest state. Existing lighting group and room actions reconcile saved Home
+placements within their own metadata transaction; combined-family subscribers
+receive those changes in revision order. The consistent core backup preserves
+this table. No device settings, media or private source contents are added to
+it. Forward persistence evidence does not qualify older-reader recovery.

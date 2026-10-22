@@ -8,8 +8,8 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
 
 /** Composition and saved placement share the shell participant; no playback owner or room routing is added. */
-export function PlaybackWorkspace({runtime, connected, operations, operationsLive, connection, route}: {
-  runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; connection: DashboardConnection; route: Route;
+export function PlaybackWorkspace({runtime, connected, operations, operationsLive, connection, route, homeSource}: {
+  runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; connection: DashboardConnection; route: Route; homeSource?: {owner: string; instance: string};
 }): React.JSX.Element | null {
   const players = runtime.copies.filter(copy => copy.family === 'playback').flatMap(copy => (copy.records as readonly PlaybackState[]).map(record => ({record, copy})));
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'playback-layout');
@@ -62,9 +62,9 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
     {layoutLive && roomsLive && !rooms.some(room => players.some(player => layout?.assignments.some(item => item.playback === player.record.id && item.rooms.includes(room.id)) === true)) && <p className="hint">Choose room placement on the <a href="#/audio">Audio page</a>.</p>}
   </section>;
   if (route.kind !== 'home' && route.kind !== 'audio' && route.kind !== 'playback') return null;
-  const selected = route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
+  const selected = homeSource !== undefined ? players.filter(player => player.copy.owner === homeSource.owner && player.record.id === homeSource.instance) : route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
   return <section className="music-workspace" aria-label="Music">
-    {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' ? <h2>Music</h2> : null}
+    {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
     {selected.length === 0 && <p className="hint">No playback records are available.</p>}
     <div className="music-grid">{selected.map(card)}</div>
     {route.kind === 'audio' && <details className="music-placement"><summary>Show in rooms</summary>

@@ -65,6 +65,8 @@ try {
   await firstTile.click();
   await picker.getByRole('button', {name: 'Next media', exact: true}).click();
   await picker.getByText('7–8 of 8', {exact: true}).waitFor();
+  // The offset can render before the asynchronous page payload replaces the old tiles.
+  await picker.getByText(/^Synthetic 8(?:\.gif)?$/).waitFor();
   await picker.locator('button.pixoo-media-tile').nth(1).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
   await picker.getByRole('searchbox').fill('Synthetic 1');

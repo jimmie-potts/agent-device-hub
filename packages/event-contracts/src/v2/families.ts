@@ -1,6 +1,8 @@
 import {assistantFamilies} from './assistant.js';
 import {lightingLayoutFamilies} from './lighting-layout.js';
 import {playbackLayoutFamilies} from './playback-layout.js';
+import {homeLayoutFamilies} from './home-layout.js';
+export type {HomePlacement, HomeArrangements, HomeLayoutRecord, HomeLayoutSetRequest} from './home-layout.js';
 export type {PlaybackPlacement, PlaybackLayoutRecord, PlaybackLayoutSetRequest} from './playback-layout.js';
 export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, LightingRoom, LightingGroup, LightingSelection} from './lighting-layout.js';
 // The core payload families of profile 2.0 (Hub #842, #918): the facts every module can rely on, and the commands
@@ -297,6 +299,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   ...assistantFamilies,
   ...lightingLayoutFamilies,
   ...playbackLayoutFamilies,
+  ...homeLayoutFamilies,
 ];
 
 /**

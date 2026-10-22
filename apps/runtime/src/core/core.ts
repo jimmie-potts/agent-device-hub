@@ -23,6 +23,7 @@ import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
 import {LightingLayoutPart} from './lighting-layout.js';
 import {PlaybackLayoutPart} from './playback-layout.js';
+import {HomeLayoutPart} from './home-layout.js';
 import {AutomationError} from './automation.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
@@ -326,13 +327,19 @@ class Core {
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
+      changed: (tx, command, before, after) => {homeLayout.reconcileLighting(tx, command, before, after);},
     });
     const playbackLayout = new PlaybackLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, this.#automation, this.#companions, ...added];
+    const homeLayout = new HomeLayoutPart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    });
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
