@@ -94,7 +94,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs
+        run: node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:scenarios:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')

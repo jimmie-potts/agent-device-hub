@@ -6,7 +6,7 @@ const id='1'.repeat(64), image='sha256:'+'2'.repeat(64), revision='3'.repeat(40)
 function fixture() {
   const info={Id:id,Image:image,State:{Status:'exited',Running:false,Restarting:false,Pid:0},
     Config:{User:'1000:1000',Labels:{'com.docker.compose.project':'synthetic','com.docker.compose.service':'core'}},
-    HostConfig:{RestartPolicy:{Name:'no'},PortBindings:{}},
+    HostConfig:{RestartPolicy:{Name:'no'},PortBindings:{},NetworkMode:'none'},NetworkSettings:{Networks:{}},
     Mounts:[['state','/var/lib/bunny',true],['config','/etc/bunny',false],['secrets','/run/secrets/bunny',false]].map(([Name,Destination,RW])=>({Type:'volume',Name,Destination,RW}))};
   const calls=[];
   return {info,calls,run:async args=>{
@@ -24,6 +24,126 @@ function fixture() {
 const plan=command=>parse([command,...(['backup','restore'].includes(command)?['/private/backups/snapshot']:[]),'--project','synthetic']);
 test('arguments require an exact project, fixed operation and no arbitrary worker flags',()=>{
   for(const args of [[],['start'],['delete','--project','synthetic'],['start','--project','x;bad'],['start','extra','--project','synthetic'],['worker-backup','--revision',revision,'--destination','/backup','--project','x']])assert.throws(()=>parse(args));
+});
+
+function localFixture() {
+  const f=fixture(), networkId='a'.repeat(64);
+  Object.assign(f.info.Config.Labels,{'io.bunny.access':'host-local'});
+  f.info.Config.Env=['BUNNY_ACCESS=host-local','BUNNY_CONTROL=disabled','BUNNY_PORT=18788'];
+  f.info.HostConfig.NetworkMode='synthetic_local';
+  f.info.HostConfig.PortBindings={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
+  f.info.NetworkSettings.Networks={synthetic_local:{NetworkID:networkId}};
+  const network={Id:networkId,Name:'synthetic_local',Driver:'bridge',Scope:'local',Internal:false,Attachable:false,EnableIPv6:false,
+    Labels:{'com.docker.compose.project':'synthetic','com.docker.compose.network':'local'},Options:{},Containers:{}};
+  const run=async args=>{
+    if(args[0]==='network'){f.calls.push(args);return JSON.stringify([network]);}
+    const result=await f.run(args);
+    if(args[0]==='start')f.info.NetworkSettings.Ports={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
+    return result;
+  };
+  return {...f,network,run};
+}
+
+test('explicit host-local profile retains stopped backup with network-none maintenance',async()=>{
+  const f=localFixture();await operate(parse(['backup','snapshot-1','--archive-volume','archives','--project','synthetic']),f.run);
+  assert.deepEqual(f.calls.find(a=>a[0]==='network'),['network','inspect','synthetic_local']);
+  assert.ok(f.calls.find(a=>a[0]==='run').includes('--network=none'));
+});
+
+test('host-local start and backup refuse widened bindings, devices and unexpected or shared networks before effects',async()=>{
+  for(const mutate of [
+    f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='0.0.0.0',
+    f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='::1',
+    f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostPort='8788',
+    f=>f.info.HostConfig.PortBindings['18788/udp']=[],
+    f=>f.info.HostConfig.PortBindings['18788/tcp'].push({HostIp:'127.0.0.1',HostPort:'18789'}),
+    f=>f.info.Config.Env[1]='BUNNY_CONTROL=enabled',
+    f=>f.info.Config.Env.push('BUNNY_CONTROL=enabled'),
+    f=>f.info.HostConfig.NetworkMode='host',
+    f=>f.info.NetworkSettings.Networks.unrelated={},
+    f=>f.network.Internal=true,
+    f=>f.network.Attachable=true,
+    f=>f.network.EnableIPv6=true,
+    f=>f.network.Containers['b'.repeat(64)]={},
+    f=>f.network.Labels['com.docker.compose.project']='other',
+  ]) for(const command of ['start','backup']) {
+    const f=localFixture();mutate(f);
+    const selected=command==='backup' ? parse(['backup','snapshot-1','--archive-volume','archives','--project','synthetic']) : plan(command);
+    await assert.rejects(operate(selected,f.run));
+    assert.ok(!f.calls.some(a=>['start','run'].includes(a[0])));
+  }
+});
+
+test('host-local start checks its actual network before and after starting',async()=>{
+  const f=localFixture();assert.equal((await operate(plan('start'),f.run)).status,'running');
+  assert.equal(f.calls.filter(a=>a[0]==='network').length,2);
+  assert.ok(f.calls.findIndex(a=>a[0]==='network') < f.calls.findIndex(a=>a[0]==='start'));
+});
+
+test('host-local start stops the owned profile when effective publication is absent or widened',async()=>{
+  for(const ports of [{},{'18788/tcp':[]},{'18788/tcp':[{HostIp:'0.0.0.0',HostPort:'18788'}]},
+    {'18788/tcp':[{HostIp:'::1',HostPort:'18788'}]},{'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18789'}]},
+    {'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'},{HostIp:'0.0.0.0',HostPort:'18788'}]},
+    {'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}],'18788/udp':[]},
+  ]) for(const alreadyRunning of [false,true]) {
+    const f=localFixture();
+    if(alreadyRunning)Object.assign(f.info.State,{Status:'running',Running:true,Pid:101});
+    f.info.NetworkSettings.Ports=ports;
+    const run=async args=>{
+      const result=await f.run(args);
+      if(args[0]==='start')f.info.NetworkSettings.Ports=ports;
+      return result;
+    };
+    await assert.rejects(operate(plan('start'),run));
+    assert.ok(f.calls.some(a=>a[0]==='stop'));
+    assert.equal(f.info.State.Pid,0);
+  }
+});
+
+test('host-local accepts only Docker generated explicit IPv4 enablement',async()=>{
+  for(const Options of [{},null,{'com.docker.network.enable_ipv4':'true'}]) {
+    const f=localFixture();f.network.Options=Options;
+    assert.equal((await operate(plan('start'),f.run)).status,'running');
+    assert.equal(f.calls.filter(a=>a[0]==='network').length,2);
+    await operate(plan('stop'),f.run);
+    assert.equal((await operate(parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']),f.run)).status,'complete');
+  }
+});
+
+test('host-local refuses changed IPv4 values and every other bridge option before effects',async()=>{
+  for(const Options of [
+    {'com.docker.network.enable_ipv4':'false'},
+    {'com.docker.network.enable_ipv4':true},
+    {'com.docker.network.enable_ipv4':'1'},
+    {'com.docker.network.bridge.host_binding_ipv4':'0.0.0.0'},
+    {'com.docker.network.enable_ipv4':'true','com.docker.network.bridge.enable_icc':'true'},
+  ]) for(const command of ['start','backup']) {
+    const f=localFixture();f.network.Options=Options;
+    const selected=command==='start' ? plan('start') : parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']);
+    await assert.rejects(operate(selected,f.run));
+    assert.ok(f.calls.some(a=>a[0]==='network'));
+    assert.ok(!f.calls.some(a=>['start','run'].includes(a[0])));
+  }
+});
+
+test('new-container admission inspects created configuration before start and stops on an isolation change',async()=>{
+  const f=localFixture();let created=false;
+  const run=async args=>{
+    if(args[0]==='ps'&&!created){f.calls.push(args);return '';}
+    if(args[0]==='compose'){f.calls.push(args);assert.ok(args.includes('create'));created=true;return '';}
+    const result=await f.run(args);
+    if(args[0]==='start') f.network.Internal=true;
+    return result;
+  };
+  await assert.rejects(operate(plan('start'),run));
+  assert.ok(f.calls.some(a=>a[0]==='stop'));
+  assert.equal(f.info.State.Pid,0);
+});
+
+test('stop remains available for a misconfigured owned profile',async()=>{
+  const f=localFixture();Object.assign(f.info.State,{Status:'running',Running:true,Pid:101});
+  f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='0.0.0.0';
+  assert.equal((await operate(plan('stop'),f.run)).status,'stopped');
 });
 test('backup uses stopped ID, exact image, same volumes, private output and isolated helper',async()=>{
   const f=fixture(), paths=[]; await operate(plan('backup'),f.run,async p=>paths.push(p));

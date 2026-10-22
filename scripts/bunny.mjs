@@ -40,8 +40,7 @@ function stopped(info) {
 function container(info, project) {
   if (!/^[0-9a-f]{64}$/.test(info.Id ?? '') || !/^sha256:[0-9a-f]{64}$/.test(info.Image ?? '')
     || info.Config?.Labels?.['com.docker.compose.project'] !== project || info.Config?.Labels?.['com.docker.compose.service'] !== 'core'
-    || info.Config?.User !== '1000:1000' || info.HostConfig?.RestartPolicy?.Name !== 'no'
-    || Object.keys(info.HostConfig?.PortBindings ?? {}).length !== 0) refuse();
+    || info.Config?.User !== '1000:1000' || info.HostConfig?.RestartPolicy?.Name !== 'no') refuse();
   const destinations = ['/var/lib/bunny', '/etc/bunny', '/run/secrets/bunny'];
   const overlaps = (a, b) => a === b || a === '/' || b === '/' || a.startsWith(b + '/') || b.startsWith(a + '/');
   if (!Array.isArray(info.Mounts) || info.Mounts.some(m => typeof m.Destination !== 'string'
@@ -51,6 +50,48 @@ function container(info, project) {
     || mounts.some(m => m.Type !== 'volume' || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/.test(m.Name)
       || m.RW !== (m.Destination === '/var/lib/bunny'))) refuse();
   return mounts;
+}
+function localBinding(ports) {
+  const bindings = ports?.['18788/tcp'];
+  return ports !== undefined && ports !== null && Object.keys(ports).length === 1
+    && Array.isArray(bindings) && bindings.length === 1
+    && bindings[0].HostIp === '127.0.0.1' && bindings[0].HostPort === '18788';
+}
+async function access(info, project, run) {
+  const ports = info.HostConfig?.PortBindings ?? {};
+  const value = name => {
+    const entries = (info.Config?.Env ?? []).filter(entry => entry.startsWith(name + '='));
+    if (entries.length > 1) refuse();
+    return entries[0]?.slice(name.length + 1);
+  };
+  const profile = value('BUNNY_ACCESS') ?? 'isolated';
+  // eslint-disable-next-line bunny/no-raw-outcome-literal -- Docker network-mode identifier, not an evidence outcome.
+  const isolatedNetwork = 'none';
+  if (profile === 'isolated') {
+    if (Object.keys(ports).length !== 0 || info.Config?.Labels?.['io.bunny.access'] !== undefined
+      || info.HostConfig?.NetworkMode !== isolatedNetwork
+      || Object.keys(info.NetworkSettings?.Networks ?? {}).some(name => name !== isolatedNetwork)) refuse();
+    return;
+  }
+  const name = project + '_local';
+  const networks = info.NetworkSettings?.Networks;
+  if (profile !== 'host-local' || info.Config?.Labels?.['io.bunny.access'] !== 'host-local'
+    || value('BUNNY_CONTROL') !== 'disabled' || value('BUNNY_PORT') !== '18788'
+    || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
+    || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
+    || !localBinding(ports)
+    || (info.State?.Running && !localBinding(info.NetworkSettings?.Ports))
+    || info.HostConfig?.NetworkMode !== name || !networks || Object.keys(networks).length !== 1 || !networks[name]) refuse();
+  const selected = JSON.parse(await run(['network', 'inspect', name]));
+  const network = selected[0];
+  if (selected.length !== 1 || network.Name !== name || !/^[0-9a-f]{64}$/.test(network.Id ?? '')
+    || network.Driver !== 'bridge' || network.Scope !== 'local' || network.Internal !== false
+    || network.Attachable !== false || network.EnableIPv6 !== false
+    || Object.entries(network.Options ?? {}).some(([key, value]) => key !== 'com.docker.network.enable_ipv4' || value !== 'true')
+    || network.Labels?.['com.docker.compose.project'] !== project || network.Labels?.['com.docker.compose.network'] !== 'local'
+    || Object.keys(network.Containers ?? {}).some(id => id !== info.Id)
+    || (networks[name].NetworkID && networks[name].NetworkID !== network.Id)
+    || (info.State?.Running && networks[name].NetworkID !== network.Id)) refuse();
 }
 async function ordinaryVolume(name, run) {
   const volumes = JSON.parse(await run(['volume', 'inspect', name]));
@@ -87,13 +128,22 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   let info = await selected(plan, run);
   if (plan.command === 'status') return {operation: 'status', status: info?.State?.Status ?? 'not-created', health: 'not-checked'};
   if (plan.command === 'start') {
-    if (info === undefined) await run(['compose', '-f', plan.compose, '-p', plan.project, 'up', '-d', '--no-build', '--pull', 'never', 'core']);
-    else {
-      if (info.State.Status === 'running') return {operation: 'start', status: 'running', health: 'not-checked'};
-      stopped(info); await run(['start', info.Id]);
+    if (info === undefined) {
+      // Inspect the created configuration/network before any listener or runtime effects.
+      await run(['compose', '-f', plan.compose, '-p', plan.project, 'create', '--no-build', '--pull', 'never', 'core']);
+      info = await selected(plan, run); if (info === undefined) refuse();
     }
+    try {await access(info, plan.project, run);}
+    catch (error) {
+      if (info.State.Running && info.Config.Labels['io.bunny.access'] === 'host-local') await run(['stop', '--timeout', '30', info.Id]);
+      throw error;
+    }
+    if (info.State.Status === 'running') return {operation: 'start', status: 'running', health: 'not-checked'};
+    stopped(info); await run(['start', info.Id]);
     info = await selected(plan, run);
     if (info?.State?.Status !== 'running') refuse();
+    try {await access(info, plan.project, run);}
+    catch (error) {await run(['stop', '--timeout', '30', info.Id]); throw error;}
     return {operation: 'start', status: 'running', health: 'not-checked'};
   }
   if (info === undefined) refuse();
@@ -105,6 +155,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   }
   stopped(info);
   const mounts = container(info, plan.project);
+  await access(info, plan.project, run);
   for (const mount of mounts) await ordinaryVolume(mount.Name, run);
   const images = JSON.parse(await run(['image', 'inspect', info.Image]));
   const revision = images[0]?.Config?.Labels?.['org.opencontainers.image.revision'];

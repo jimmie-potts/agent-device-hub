@@ -5,13 +5,24 @@ import {isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export function containerOptions(env) {
+  const access = env.BUNNY_ACCESS ?? 'isolated';
   const control = env.BUNNY_CONTROL ?? 'disabled';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
-  const portText = env.BUNNY_PORT ?? '8788';
-  if (!['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+  const portText = env.BUNNY_PORT ?? (access === 'host-local' ? '18788' : '8788');
+  if (!['isolated', 'host-local'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+    || (access === 'host-local' && (control !== 'disabled' || portText !== '18788'
+      || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
-  return {control, stateDir, config, port: Number(portText)};
+  return {control, stateDir, config, port: Number(portText), access};
+}
+
+export function checkLocalBrowserConfig(config) {
+  if (Object.keys(config.modules).length !== 0 || config.edge?.credentials !== '/run/secrets/bunny/edge.json'
+    || config.edge.browserAccess !== 'trusted-loopback' || config.edge.launcher !== false || config.edge.mcp !== false
+    || config.edge.wifiProxy !== undefined) {
+    throw new Error('container-browser-config-refused');
+  }
 }
 
 async function start(options) {
@@ -25,6 +36,11 @@ async function start(options) {
   ]);
   // Read protected configuration before state effects. No default credential or remote listener is created.
   const config = await readRuntimeConfig(options.config);
+  if (options.access === 'host-local') {
+    const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
+    checkLocalBrowserConfig(config);
+    if ((await readEdgeCredentials(config.edge.credentials)).length !== 0) throw new Error('container-browser-config-refused');
+  }
   await checkStateDirectory(options.stateDir);
   await refusePendingRestore(options.stateDir);
   await prepareStateDirectory(options.stateDir);
@@ -44,7 +60,9 @@ async function start(options) {
   bindCoreRuntimeOwnership(modules[0], ownership);
   const parsed = parseArguments(['--port', String(options.port), '--state-dir', options.stateDir, '--environment', 'production']);
   // The real core consumes the held ownership capability; stopping its store cannot release process ownership.
-  await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {modules, config});
+  await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {
+    modules, config, ...(options.access === 'host-local' ? {listener: 'container-host-local'} : {}),
+  });
 }
 
 async function refusePendingRestore(stateDir) {
