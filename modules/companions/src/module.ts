@@ -1,3 +1,4 @@
+import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {createHash} from 'node:crypto';
@@ -20,13 +21,14 @@ export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefi
 /** One private state owner and one bounded asynchronous presentation path; no provider, sensor or physical output. */
 export function createCompanionsModule(options: AssistantOptions = {}): CompanionsModule {
   const engine = new Companions(options);
-  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}],
-    content: (ref, request) => engine.assistant?.content(ref, request),
-    upload: {family: 'assistant-input', maxBytes: 25_600, stage: request => engine.assistant?.stage(request) ?? errorBody('unavailable')}},
+  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}],
+    content: (ref, request) => engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
+    upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), pending: () => engine.pending()};
 }
 class Companions {
   assistant: AssistantEngine | undefined;
+  preferences: Preferences | undefined;
   #context: ModuleContext | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
@@ -57,17 +59,20 @@ class Companions {
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
     this.assistant = new AssistantEngine(context, this.#outbox, this.options);
     await this.assistant.start();
+    this.preferences = new Preferences(context, this.#outbox);
+    await this.preferences.start();
     const saved = this.#store.read();
     for (const key of saved.received) this.#seen.add(key);
     if (saved.state.presentation !== null) saved.state.presentation.history = true;
     saved.state.availability = 'available';
     this.#store.save(saved);
-    this.#subscriptions.push(await context.sdk.serveSync(['companion-state', 'assistant-state'], request => {
+    this.#subscriptions.push(await context.sdk.serveSync(['companion-state', 'assistant-state', 'preference-state'], request => {
       const state = this.inspect();
-      const assistant = this.assistant?.inspect();
-      return state === undefined || assistant === undefined || this.#closed ? errorBody('unavailable') : {revision: revision(database), states: [
+      const assistant = this.assistant?.inspect(), preferences = this.preferences?.inspect();
+      return state === undefined || assistant === undefined || preferences === undefined || this.#closed ? errorBody('unavailable') : {revision: revision(database), states: [
         ...(request.data.families.includes('companion-state') ? [stateDraft(state)] : []),
         ...(request.data.families.includes('assistant-state') ? [assistantStateDraft(assistant)] : []),
+        ...(request.data.families.includes('preference-state') ? [preferenceStateDraft(preferences)] : []),
       ]};
     }));
     this.#subscriptions.push(await context.sdk.subscribe<CompanionOpportunity>('bunny.event.companion-opportunity.reachy', message => {this.#receive(message);},
@@ -82,6 +87,7 @@ class Companions {
     this.#closed = true; this.#pending.clear(); this.#scheduled?.(); this.#retry?.(); this.#expiry?.();
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
     await this.assistant?.stop();
+    await this.preferences?.stop();
     await this.#copy?.close();
     await Promise.all([this.#work, this.#draining]);
   }

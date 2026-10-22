@@ -1,3 +1,4 @@
+import {preferenceScenarios} from '../preferences.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../fixtures/agents.js';
@@ -7,7 +8,7 @@ const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
 const command = (family: string, data: object) => ({key: `bunny.cmd.${family}.reachy`, draft: {
   type: `org.bunny.${family.slice(0, family.lastIndexOf('-'))}.${family.slice(family.lastIndexOf('-') + 1)}.requested`, subject: 'reachy',
   dataschema: `https://bunny.invalid/events/${family}/2.0`, data}});
-export const scenarios: readonly Scenario[] = [{
+export const scenarios: readonly Scenario[] = [...preferenceScenarios, {
   id: 'reachy-text', title: 'optional fixed-text Reachy preserves core attention, scenario attribution and restart without replay',
   seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation']},
     {owner: 'bunny/modules/companions', families: ['companion-state']}]},

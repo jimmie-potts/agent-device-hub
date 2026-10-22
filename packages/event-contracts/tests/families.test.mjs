@@ -157,3 +157,14 @@ test('inbox conflict is additive, preserves opposite evidence, and handling inpu
   }
   Object.assign(base.data,{enabled:true,status:'armed',startedAtMs:1000,deadlineMs:14401000});assert.equal(v.validate(base).ok,true);
  });
+
+test('preference sync exposes only its identity and revision, never private library fields', () => {
+  const v = validator(), base = fixtures.valid['preference-state'];
+  assert.equal(v.validate(base).ok, true);
+  for (const field of ['title', 'text', 'entries', 'history']) {
+    const message = structuredClone(base); message.data[field] = 'SYNTHETIC_PRIVATE_PREFERENCE';
+    assert.equal(v.validate(message).ok, false, `${field} is private content`);
+  }
+  const wrongSubject = {...base, subject: 'assistant'};
+  assert.equal(v.validate(wrongSubject).ok, false);
+});

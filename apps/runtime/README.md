@@ -368,6 +368,14 @@ See [Synthetic assistant tasks](../../modules/companions/README.md#synthetic-ass
 for restart, cancellation, privacy and limits. React contributions retain their
 last loaded content during reconnect while the host disables commands.
 
+The **Preferences** page keeps explicit titled preferences in the same private
+store, independently of both switches. It supports edit/history, Stop using,
+Reactivate, manual copy of current active text and private JSON import/export.
+Imports preserve existing records and add missing entries inactive. See the
+[preference guide](../../modules/companions/README.md#explicit-preferences) for
+the read contract and bounds. No automatic learning or model-context insertion
+is included.
+
 ## Core automation
 
 The core owns event automation ([#925](https://github.com/jimmie-potts/agent-device-hub/issues/925)) in fresh private tables. It reuses the legacy Hub's event-rule definitions, interrupt set, quiet hours and budgets without transferring old rules or settings. `CoreModule.automation` exposes rule controls, settings, the interrupt set and the log for the authenticated gateway. A rule created without owner enabling stays disabled. The core runs independently of the page.

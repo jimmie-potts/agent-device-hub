@@ -3,6 +3,8 @@ import type {Message, MessageValidator} from './index.js';
 import type {Attention, Identity, KnownId} from './families.js';
 import {defineFamily, registerFamilies} from './registry.js';
 
+export type PreferenceState = {id: 'preferences'; revision: number};
+
 export type CompanionCategory = 'coding-attention' | 'coding-notice' | 'simulated-social';
 export type CompanionOpportunity = {
   origin: {id: string; source: string; type: string}; sourceKind: 'coding' | 'simulated-apartment'; context: 'live' | 'scenario';
@@ -35,6 +37,7 @@ export function checkOpportunity(message: Message): string | undefined {
   return undefined;
 }
 export const companionFamilies = [
+  defineFamily('preference-state', 'state', 'org.bunny.preference-state.updated', message => message.subject === 'preferences' ? undefined : 'envelope /subject must be preferences'),
   defineFamily('companion-opportunity', 'occurrence', 'org.bunny.companion-opportunity.raised', checkOpportunity),
   defineFamily('companion-state', 'state', 'org.bunny.companion-state.updated', message => message.subject === 'reachy' ? undefined : 'envelope /subject must be reachy'),
   defineFamily('companion-settings-set', 'command', 'org.bunny.companion-settings.set.requested'),

@@ -198,12 +198,21 @@ SDK-owned SQLite connection beside Reachy. A module-local, pinned LangGraph
 saver supplies durable interrupts and pending writes; startup reconciles their
 application projection without invoking work. Existing authenticated upload
 staging keeps text out of tracked command payloads, while authenticated module
-content reads serve bounded private pages. Both state families share one owner
+content reads serve bounded private pages. All companion state families share one owner
 revision sequence, sync provider and outbox. One unfinished task, explicit
 continuation, persisted call reservations and cancellation fences bound execution.
 The [companions guide](../modules/companions/README.md#synthetic-assistant-tasks)
 owns the flow, limits and future workspace reference. This source slice has fake
 adapters only and adds no installed service or physical writer.
+
+The same owner retains explicit titled preferences and their private history in
+separate tables on that connection. Authenticated content reads expose current
+active entries or the private management/export view; a metadata-only revision
+signal invalidates dashboard reads. Existing staged controls manage entries and
+additive imports preserve current records, adding missing IDs inactive. Manual
+copy is explicit; no preference text enters shared state or automatic model
+context. The [preference guide](../modules/companions/README.md#explicit-preferences)
+owns the private document contract and bounds.
 
 ## Module frontend ownership
 
