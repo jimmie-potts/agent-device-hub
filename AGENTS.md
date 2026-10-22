@@ -11,7 +11,9 @@ component handles errors, logs or traces, read
 [ADR 0012](docs/decisions/0012-bunny-event-platform.md). This covers events,
 commands, replies, errors and their effects, retries, message formats, consumer
 state, logging and tracing, and all such work follows that ADR and, for logs
-and traces, the [diagnostic contract](docs/observability-contract.md).
+and traces, the [diagnostic contract](docs/observability-contract.md). Log
+levels come from the SDK code table through `recordLog`/`levelOf`; the
+`bunny/log-levels` lint refuses a hand-set level (#1143).
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) owns
 the rebuild and accepted fresh cutover. Retained legacy components extend their
 released 1.x contracts only additively until separately authorized retirement. This includes the owner's CHOMPI work. Do not add
@@ -186,6 +188,9 @@ Provider hooks report allowlisted lifecycle metadata and must fail open without
 changing agent permissions or waiting for devices. Keep activity, attention,
 notice acknowledgment, optional read evidence and observation freshness distinct.
 Do not infer success, readership, parentage or connectivity from missing evidence.
+A device result's evidence claim is an SDK `Evidence` value changed only through
+`merge`, and outcome words in claim positions come from `Outcome`, which the
+`bunny/no-raw-outcome-literal` lint enforces (#1140, #1141, #1187).
 
 Maintain one active agent-state owner and one designated writer per physical
 device. The hub calls existing controllers; it does not bypass their queues.
