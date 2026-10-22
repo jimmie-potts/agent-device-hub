@@ -42,7 +42,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   }, [editing, picker, editable]);
   useEffect(() => {
     if (focusId === undefined) return;
-    const target = [...(host.current?.querySelectorAll<HTMLButtonElement>('[data-home-move]') ?? [])].find(button => button.dataset.homeMove === focusId) ?? host.current?.querySelector<HTMLButtonElement>('[data-home-add]');
+    const target = [...(host.current?.querySelectorAll<HTMLButtonElement>('[data-home-move]:not(:disabled)') ?? [])].find(button => button.dataset.homeMove === focusId) ?? host.current?.querySelector<HTMLButtonElement>('[data-home-add]:not(:disabled)');
     target?.focus();setFocusId(undefined);
   }, [focusId, entries]);
   useEffect(() => {

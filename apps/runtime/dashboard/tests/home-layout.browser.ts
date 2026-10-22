@@ -107,6 +107,22 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   }
+  // Protected attention can reappear without a saved placement or enabled move handle.
+  assert.equal(await page.evaluate(async () => {
+    const response = await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core');
+    const data = await response.json() as {records: {'home-layout': {revision: number}[]}};
+    const record = data.records['home-layout'][0];if (record === undefined) throw new Error('home-focus-snapshot');
+    const placements = [{widget: 'hub-mode', size: 'medium', hidden: false}];
+    const answer = await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: 'protected-neighbor-fixture', data: {expectedRevision: record.revision, layouts: {desktop: placements, phone: placements}}})});
+    return answer.status;
+  }), 200);
+  await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
+  await world.observe(approvalPrompt('layout-forced-focus'));await page.locator('[data-home-card="sessions"]').waitFor();
+  await edit();await expect(page.locator('[data-home-move="sessions"]')).toBeDisabled();
+  await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');
+  await expect(page.getByRole('button', {name: 'Add card', exact: true})).toBeFocused();
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await world.observe(approvalResolved('layout-forced-focus'));
   assert.ok(sent.every(path => path.endsWith('/home-layout-set')), 'layout editing sent no device or lighting command');assert.deepEqual(errors, []);
   assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, accessibility: 'light/dark 1440/390/320', physical: false}));
   await context.close();
