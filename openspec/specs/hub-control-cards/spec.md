@@ -16,7 +16,7 @@ The dashboard SHALL show the synced saved mode and matching artwork with Work, F
 
 ### Requirement: Correlated mode issue indicator
 
-A related unhandled mode request or device-result issue SHALL show a corner exclamation and Check Inbox control without highlighting the Hub card surface. The control SHALL open and focus a related entry without handling it. Handling the related entry SHALL clear the indicator after synced removal; unrelated handling SHALL NOT. A later successful mode request SHALL clear a prior issue only with definitive success for its affected target, not on click, saved choice or acceptance. Missing, stale, pending, failed, uncertain or conflicting evidence SHALL NOT prove resolution. Historical Inbox entries SHALL remain until handled. A refusal without an Inbox item SHALL be identified honestly without claiming an item exists.
+A related unhandled mode request or device-result issue SHALL show a corner exclamation and Check Inbox control without highlighting the Hub card surface. The control SHALL open and focus a related entry without handling it. Handling the related entry SHALL clear the indicator after synced removal; unrelated handling SHALL NOT. A later successful mode request SHALL clear a prior issue only with definitive success for its affected target, not on click, saved choice or acceptance. Missing, stale, pending, failed, uncertain or conflicting evidence SHALL NOT prove resolution. Historical Inbox entries SHALL remain until handled. A refusal without an Inbox item SHALL be identified honestly without claiming an item exists. When recent parent/child projections have retired, a retained device-mode issue SHALL remain reviewable with its association explicitly unavailable, including on a fresh mount. Current evidence of an independent native request SHALL exclude it; absent evidence SHALL NOT prove independence or resolution. In this unavailable-association case, later success SHALL require a definitive matching core child for that target from a mode request sent after the item was created; the UI SHALL NOT claim that an unavailable historical link is proven.
 
 #### Scenario: Handling and independent results
 - **WHEN** one device mode request fails while another succeeds
@@ -25,6 +25,10 @@ A related unhandled mode request or device-result issue SHALL show a corner excl
 #### Scenario: Reapply succeeds after pending evidence
 - **WHEN** a later mode reapplication is accepted, then its affected device result succeeds
 - **THEN** the indicator remains during acceptance and clears after definitive success while the older Inbox entry remains available
+
+#### Scenario: Retired projections and a fresh mount
+- **WHEN** a retained device-mode issue outlives its recent parent and child operation projections and the operator reloads Home
+- **THEN** Check Inbox remains, identifies the unavailable link honestly and opens the retained item without a command; a later accepted request or earlier success does not clear it
 
 #### Scenario: Stale copies and late conflict
 - **WHEN** operations or Inbox evidence becomes stale or a later result conflicts

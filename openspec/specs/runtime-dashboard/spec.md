@@ -189,15 +189,15 @@ Connections SHALL offer an Operator tools override labeled `Clear this notice on
 
 ### Requirement: Explicit mode selection with separate outcomes
 
-The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The panel SHALL show each available matching tracked device result independently and SHALL label missing or unsynced evidence honestly. Reload, refresh and reconnect SHALL send nothing. Keyboard access and the changed control's accessibility SHALL be verified.
+The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The concise panel SHALL keep individual device results in shared Inbox and Timeline evidence, with a corner link for issues. Missing or unsynced evidence SHALL NOT establish device success or resolution. Reload, refresh and reconnect SHALL send nothing. Keyboard access and the changed control's accessibility SHALL be verified.
 
 #### Scenario: Select and reload
 - **WHEN** an operator selects Work using the keyboard and reloads after one device succeeds and another fails
-- **THEN** Work remains the saved choice, the separate device results are shown, reload sends nothing and the changed control has no applicable accessibility violations
+- **THEN** Work remains the saved choice, the failed device remains reviewable through Inbox and independent results remain available in Timeline, reload sends nothing and the changed control has no applicable accessibility violations
 
 #### Scenario: Read-only view
 - **WHEN** a read-only connection opens the panel
-- **THEN** it can read the saved selection and results, its mode controls are disabled and it sends nothing
+- **THEN** it can read the saved selection and inspect shared Inbox and Timeline results, its mode controls are disabled and it sends nothing
 
 ### Requirement: Optional artwork on the existing playback card
 

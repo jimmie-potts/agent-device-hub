@@ -26,7 +26,7 @@ export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInb
     <header className="hub-control-heading"><h2 id={headingId ?? uid}>Hub mode</h2><div className="hub-mode-meta">
       {status !== '' && <span className="hub-control-status">{status}</span>}
       {issue !== undefined && (onCheckInbox !== undefined
-        ? <button type="button" className="secondary hub-mode-issue" onClick={onCheckInbox}><span className="hub-control-mark" aria-hidden="true">!</span>Check Inbox</button>
+        ? <button type="button" className="secondary hub-mode-issue" onClick={onCheckInbox} title={issue.detail}><span className="hub-control-mark" aria-hidden="true">!</span>Check Inbox</button>
         : <InfoTip warning label={<><span className="hub-control-mark" aria-hidden="true">!</span> {issue.label}</>}>{issue.detail}</InfoTip>)}
     </div></header>
     <div className="hub-mode-hero"><div className="hub-mode-art"><ModeIcon mode={mode}/></div><p className="hub-mode-choice">{mode === undefined ? 'Not observed' : modeName(mode)}</p></div>

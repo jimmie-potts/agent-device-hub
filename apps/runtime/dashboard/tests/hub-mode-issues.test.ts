@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {InboxItem, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {modeChildRequestId} from '../../src/core/mode-participants.ts';
-import {modeInboxIssues} from '../src/hub-mode.ts';
+import {modeInboxIssues as modeIssues} from '../src/hub-mode.ts';
+const modeInboxIssues = async (...args: Parameters<typeof modeIssues>): Promise<string[]> => (await modeIssues(...args)).map(issue => issue.id);
 
 const parent = (requestId: string, sentAtMs: number): OperationRecord => ({id: requestId, revision: sentAtMs, requestId, kind: 'mode', family: 'mode-set', command: 'org.bunny.mode.set.requested', target: 'hub', requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs, updatedAtMs: sentAtMs, deadlineAtMs: sentAtMs + 1000});
 async function child(p: OperationRecord, target: string, result: OperationRecord['result']): Promise<OperationRecord> {
@@ -16,9 +17,9 @@ function item(op: OperationRecord): InboxItem {
 
 void test('only related Inbox items warn, and handling removes the mode warning', async () => {
   const p = parent('first', 1), failure = await child(p, 'wall', 'failed'), entry = item(failure);
-  const unrelated = item({...failure, id: 'native', requestId: 'native-request'});
-  assert.deepEqual(await modeInboxIssues([p, failure], [unrelated, entry]), [entry.id]);
-  assert.deepEqual(await modeInboxIssues([p, failure], [unrelated]), []);
+  const native = {...failure, id: 'native', requestId: 'native-request', requestedBy: 'bunny/parts/dashboard'}, unrelated = item(native);
+  assert.deepEqual(await modeInboxIssues([p, failure, native], [unrelated, entry]), [entry.id]);
+  assert.deepEqual(await modeInboxIssues([p, failure, native], [unrelated]), []);
 });
 
 void test('click, saved choice, acceptance, missing results and wrong sender do not resolve an issue', async () => {
@@ -35,7 +36,9 @@ void test('later definitive target success clears a warning but preserves the hi
   assert.deepEqual(await modeInboxIssues([old, failure, next, success], inbox), []);
   assert.deepEqual(inbox, [entry]);
   for (const result of ['failed', 'uncertain', 'conflict'] as const) assert.deepEqual(await modeInboxIssues([old, failure, next, await child(next, 'wall', result)], inbox), [entry.id]);
-  const accepted = {...next, status: 'accepted' as const}; delete accepted.result;
+  const accepted = {...next, status: 'accepted' as const};
+  assert.deepEqual(await modeInboxIssues([old, failure, accepted, success], inbox), [entry.id], 'a retained success value does not substitute for completed status');
+  delete accepted.result;
   assert.deepEqual(await modeInboxIssues([old, failure, accepted, success], inbox), [entry.id]);
 });
 
@@ -49,7 +52,24 @@ void test('a new independent mode failure and a direct parent failure each remai
 void test('retired child operation evidence still matches the retained Inbox by exact identity', async () => {
   const p = parent('old', 1), failure = await child(p, 'wall', 'failed'), entry = item(failure);
   assert.deepEqual(await modeInboxIssues([p], [entry]), [entry.id]);
-  assert.deepEqual(await modeInboxIssues([], [entry], [entry.id]), [entry.id]);
-  assert.deepEqual(await modeInboxIssues([], [], [entry.id]), []);
-  assert.deepEqual(await modeInboxIssues([p], [{...entry, item: {...entry.item, requestId: 'near-match'}}]), []);
+  assert.deepEqual(await modeInboxIssues([], [entry]), [entry.id]);
+  assert.deepEqual(await modeInboxIssues([], []), []);
+  assert.deepEqual(await modeInboxIssues([{...failure, requestId: 'near-match', requestedBy: 'bunny/parts/dashboard'}], [{...entry, item: {...entry.item, requestId: 'near-match'}}]), []);
+});
+
+void test('fresh mounts retain a device-mode issue after its parent and child projections retire', async () => {
+  const p = parent('retired-parent', 1), failure = await child(p, 'wall', 'failed'), entry = item(failure);
+  assert.deepEqual(await modeInboxIssues([], [entry]), [entry.id]);
+});
+
+void test('unavailable association stays explicit and only later definitive target evidence clears it', async () => {
+  const old = parent('retired', 1), entry = item(await child(old, 'wall', 'failed')), next = parent('new', 2), success = await child(next, 'wall', 'succeeded');
+  assert.deepEqual(await modeIssues([], [entry]), [{id: entry.id, association: 'unavailable'}]);
+  assert.deepEqual(await modeInboxIssues([next], [entry]), [entry.id]);
+  assert.deepEqual(await modeInboxIssues([next, await child(next, 'other', 'succeeded')], [entry]), [entry.id]);
+  assert.deepEqual(await modeInboxIssues([next, success], [entry]), []);
+  assert.deepEqual(await modeInboxIssues([next, success], [{...entry, createdAtMs: 3}]), [entry.id], 'earlier success does not resolve a later failure');
+  const independent = {...success, requestedBy: 'bunny/parts/dashboard', result: 'failed' as const};
+  assert.deepEqual(await modeInboxIssues([independent], [item(independent)]), [], 'current evidence excludes a known independent native request');
+  assert.deepEqual(await modeInboxIssues([], [item(independent)]), [item(independent).id], 'retired independent evidence has unknown association, never a claimed Hub failure');
 });

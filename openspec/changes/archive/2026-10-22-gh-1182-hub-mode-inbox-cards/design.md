@@ -26,3 +26,7 @@ Use existing skin semantic colors and shared geometry; only the small Hub indica
 ## Migration Plan
 
 No stored-data migration. Validate in synthetic disposable runs, independently review one committed head and merge after applicable CI. Build an exact merged release and use the qualified established-runtime upgrade with held lock, stopped-writer backup, identity/health and passive state/client readback. Retain latest durable state and receipts; no automatic snapshot restore or unqualified older-release recovery. No physical commands are selected.
+
+## Retired operation evidence
+
+The operation family retains only 256 recent settled copies; Inbox items remain until handled. A fresh view cannot reconstruct every historical Hub parent from those copies. The adapter therefore keeps retained native device-mode items reviewable when their association is unavailable, with an explicit explanation in the corner control and accessible feedback. A current independent requestedBy excludes its native item; absent evidence cannot do so. No request-ID prefix is treated as origin proof. Clearing the unavailable association requires handling or a later successful Hub request with its exact successful core child for that target, sent after item creation. This may conservatively surface an old independent native-mode issue after its identifying copy retires. It does not label that association as a proven Hub selection and adds no acquisition, persistence, contract or backend path.

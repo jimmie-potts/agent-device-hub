@@ -89,6 +89,14 @@ it only after definitive success for the affected scope. Acceptance or a saved
 choice alone cannot clear it, and historical Inbox entries remain until handled.
 Stale copies retain known issues. Local refusals without an Inbox item stay
 explicit. No adapter acquires another connection or changes backend ownership.
+If recent operation projections retire, a retained device-mode issue stays
+reviewable after reload. Its corner explanation and accessible feedback say
+when the link to a Hub selection is unavailable. A known independent native
+request is excluded while its evidence exists; absent evidence cannot prove
+independence. Later target success must come from a successful Hub request sent
+after that issue was created. This conservative fallback adds no history read
+or persisted browser state.
+
 
 `InboxCard` and `InboxItemCard` supply reusable presentation over `InboxPanel`'s
 existing synced records and guarded actions. Concise device/action/result faces

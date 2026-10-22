@@ -43,6 +43,13 @@ export async function checkHubCardProjections(context: BrowserContext): Promise<
     const item: InboxItem = {id: 'issue', revision: 2, createdAtMs: 1, dismissedBy: [], item: {kind: 'operation', requestId: child.requestId, target: 'wall', command: child.command, result: 'failed', evidence: 'none'}};
     const props: Props = {record: {id: 'hub', mode: 'work', revision: 3, selectedAtMs: 1}, operations: [parent, child], items: [item], live: true, operationsSynced: true, inboxSynced: true, control: true};
     const warning = page.getByRole('button', {name: 'Check Inbox', exact: true});
+    await render({...props, operations: []}); await warning.waitFor();
+    await page.getByRole('status').filter({hasText: 'Its link to a Hub selection is unavailable'}).waitFor();
+    assert.match(await warning.getAttribute('title') ?? '', /unavailable/);
+    await page.reload();
+    await page.waitForFunction(() => typeof (window as unknown as {renderHubControls?: unknown}).renderHubControls === 'function');
+    await render({...props, operations: []}); await warning.waitFor();
+    assert.equal(commands.length, 0, 'a fresh mount with retired evidence retains review without sending');
     await render(props); await warning.waitFor(); assert.equal(commands.length, 0);
     await render({...props, live: false, operationsSynced: false, inboxSynced: false});
     assert.equal(await warning.count(), 1, 'stale copies retain the warning');
