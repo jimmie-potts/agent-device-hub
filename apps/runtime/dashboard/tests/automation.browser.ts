@@ -60,11 +60,11 @@ try {
     await mode.getByText('Selection completion: completed.', {exact: true}).waitFor();
     await world.observe(sessionStarted, {title: {value: 'Automation fixture', source: 'provider'}}); await world.observe(turnStarted);
     await world.observe(approvalPrompt('approval-925-browser'));
-    await page.locator('[data-widget=attention]').getByText('Waiting for approval', {exact: false}).waitFor();
+    await page.locator('.agent-status-card[data-attention=true] .chip').waitFor();
     assert.equal(world.logs.some(record => record.event_name === 'command.executing' && record.attributes['bunny.operation'] === 'moment-play'), false,
       'the approval has priority; no live turn end has been observed');
     await world.observe(approvalResolved('approval-925-browser'));
-    await page.getByText('No attention needed.', {exact: true}).waitFor();
+    await page.locator('.agent-status-card[data-attention=false] .chip', {hasText: 'Working'}).waitFor();
     await mode.getByRole('button', {name: 'Free', exact: true}).click();
     await mode.getByText('Selection completion: completed.', {exact: true}).waitFor();
     await waitFor(() => {

@@ -111,6 +111,18 @@ export function sessionRows(records: readonly SessionRecord[]): SessionRow[] {
   return records.map(sessionRow);
 }
 
+/** Attention is independent of activity, unread notices and observation freshness. */
+export const needsAttention = (row: SessionRow): boolean => row.attention.length > 0;
+
+/** Full-collection counts; retained evidence never establishes current work while disconnected. */
+export function agentSummary(rows: readonly SessionRow[], live: boolean): {working: number; attention: number; unread: number} {
+  return {
+    working: rows.filter(row => live && !row.uncertain && row.chip === 'working').length,
+    attention: rows.filter(needsAttention).length,
+    unread: rows.filter(row => row.chip === 'finished').length,
+  };
+}
+
 /** Whether a session matches the sessions widget's search and provider filter. */
 export function matches(record: SessionRecord, query: string, provider: string): boolean {
   if (provider !== '' && record.identity.provider !== provider) return false;

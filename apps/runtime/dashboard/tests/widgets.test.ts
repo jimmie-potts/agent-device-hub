@@ -16,16 +16,16 @@ void test('every catalog widget declares its source, read surface, sizes and com
     assert.equal(typeof widget.commands, 'boolean');
   }
   assert.deepEqual(widgetDefinition('sessions')?.source, {kind: 'core', families: ['session']});
-  assert.equal(widgetDefinition('attention')?.commands, false, 'a read-only widget declares no command action');
+  assert.equal(widgetDefinition('attention'), undefined, 'attention is highlighted on each card');
   assert.deepEqual(widgetDefinition('wispr')?.source, {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']});
   assert.equal(widgetDefinition('wispr')?.commands, false);
   assert.equal(widgetDefinition('missing'), undefined);
 });
 
-void test('the home keeps mode and sessions wide, with inbox, attention and optional Wispr narrow', () => {
+void test('the home keeps mode and sessions wide, with inbox and optional Wispr narrow', () => {
   const {wide, narrow} = homeLayout();
   assert.deepEqual(wide.map(placement => placement.widget), ['hub-mode', 'sessions']);
-  assert.deepEqual(narrow.map(placement => placement.widget), ['inbox', 'attention', 'wispr']);
+  assert.deepEqual(narrow.map(placement => placement.widget), ['inbox', 'wispr']);
   assert.deepEqual(invalidPlacements([...wide, ...narrow]), []);
   assert.equal(widgetDefinition('hub-mode')?.commands, true);
   assert.deepEqual(widgetDefinition('hub-mode')?.source.families, ['mode', 'operation']);

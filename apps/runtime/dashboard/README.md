@@ -74,8 +74,7 @@ code.
 `src/widgets.ts` is the widget catalog. Each widget declares an ID, a name, a
 description, its sizes, its source kind (`core`, `module` or `external`), the
 families it syncs or private content it reads, and whether it offers commands. `homeLayout` places the Hub
-mode and the agent sessions in the wide column, and the inbox and the attention
-summary in the narrow one. Wispr adds its numeric widget there when exposed;
+mode and the agent sessions in the wide column, and the inbox in the narrow one. Attention is highlighted on each agent card. Wispr adds its numeric widget there when exposed;
 its page and widget share the shell connection and make no device commands. The Hub mode offers Work, Free and Quiet controls;
 the inbox shows failed, uncertain and conflicting commands until handled.
 
@@ -303,17 +302,24 @@ live changes:
   `unauthenticated` or `forbidden` sync answer ends the link too. It never signs in
   by itself.
 
-`src/sessions.ts` derives what each row shows from its record alone:
+`src/sessions.ts` derives names, chip priority and evidence from each record.
+`AgentStatusCard` takes a derived row, live evidence, a clock and an optional
+action slot; it acquires no connection and sends no command. `AgentStatusSummary`
+can render independently. `AgentSessions` composes both with search, provider
+filtering and the existing guarded label editor over the shell's one session copy.
+Home supplies its widget frame; other containers can reuse the components without
+starting another feed.
 
-- the name: the label, then the title, then the native session ID;
-- where it runs: the project, then the client, such as
-  `agent-device-hub · Claude Code`;
-- the chip: the dashboard's `chipOf` policy, naming the attention (**Waiting
-  for approval**, **Waiting for input** or **Question**), **Working**,
-  **Finished · unread**, or the activity;
-- the attention lines, each retained turn-ended notice with who acknowledged it,
-  and the rare facts behind Details: source, session ID, activity, the age of the
-  last evidence, read evidence, parent and children.
+Card faces show the label (then title or native ID), project/client and state.
+Approval, input and question attention add amber highlighting and text. Native
+card disclosure reveals freshness, attention lines, retained notices and their
+acknowledgments, source/session/activity/read/parent/child evidence and optional
+label editing. Collapse and filtering retain drafts; replacing a generation
+retires them. Read-only callers see the same evidence without label controls.
+Stale/disconnected cards say **Stale**, retain their last-known state in the
+expanded evidence and contribute no current Working count. Needs you and Unread
+counts describe retained evidence across the full copy, independent of filters.
+No separate attention box is placed on Home. Inspecting a card never clears a notice.
 
 A finished turn shows **Finished · unread** until its record carries positive
 read evidence, any consumer's acknowledgment, or a later known turn. Ending the

@@ -43,10 +43,6 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
     id: 'inbox', name: 'Inbox', description: 'Device commands that failed or whose result is unknown, for a person to decide on.',
     sizes: ['small', 'medium'], source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
   },
-  {
-    id: 'attention', name: 'Attention', description: 'Sessions that are waiting on a question, input or an approval.',
-    sizes: ['small', 'medium'], source: {kind: 'core', families: ['session']}, commands: false,
-  },
 ];
 
 export type Placement = {widget: string; size: WidgetSize; /** The source instance, such as a device; absent for a core-wide widget. */ instance?: string};
@@ -54,13 +50,13 @@ export const widgetDefinition = (id: string): WidgetDefinition | undefined => wi
 
 /**
  * The home, as the owner-approved mockup lays it out ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode and
- * the agent sessions in the wide column, the inbox and the attention summary in the narrow one. The Wispr port adds its numeric widget there when exposed. Every placement names a
+ * the agent sessions in the wide column, the inbox in the narrow one. Attention is highlighted on each session card. The Wispr port adds its numeric widget there when exposed. Every placement names a
  * catalog widget at one of its declared sizes.
  */
 export function homeLayout(): {wide: Placement[]; narrow: Placement[]} {
   return {
     wide: [{widget: 'hub-mode', size: 'medium'}, {widget: 'sessions', size: 'medium'}],
-    narrow: [{widget: 'inbox', size: 'small'}, {widget: 'attention', size: 'small'}, {widget: 'wispr', size: 'small'}],
+    narrow: [{widget: 'inbox', size: 'small'}, {widget: 'wispr', size: 'small'}],
   };
 }
 

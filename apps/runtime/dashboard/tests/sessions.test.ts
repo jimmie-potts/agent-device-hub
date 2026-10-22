@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {CHIP_TEXT, age, chipOf, clientName, finishedUnread, matches, sessionName, sessionRow} from '../src/sessions.ts';
+import {CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, finishedUnread, matches, sessionName, sessionRow} from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
 /** A synthetic, current, idle Claude Code session. */
@@ -87,4 +87,16 @@ void test('the search matches the label, title, project or session ID, ignoring 
   assert.equal(matches(labelled, '', 'codex'), false);
   assert.equal(matches(labelled, 'nothing', ''), false);
   assert.deepEqual([age(500), age(42_000), age(180_000)], ['less than 1s', '42s', '3m']);
+});
+
+void test('agent summaries count current work separately from retained attention and unread', () => {
+  const working = sessionRow(record({activity: 'active'}));
+  const stale = sessionRow(record({activity: 'active', freshness: 'uncertain'}));
+  const unread = sessionRow(record({notices: finished()}));
+  const attention = sessionRow(record({attention: [{id: {status: 'known', id: 'q'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}}]}));
+  assert.deepEqual(agentSummary([working, stale, unread, attention], true), {working: 1, attention: 1, unread: 1});
+  assert.deepEqual(agentSummary([working, stale, unread, attention], false), {working: 0, attention: 1, unread: 1});
+  assert.equal(needsAttention(attention), true);
+  assert.equal(needsAttention(unread), false);
+  assert.equal(needsAttention(stale), false);
 });

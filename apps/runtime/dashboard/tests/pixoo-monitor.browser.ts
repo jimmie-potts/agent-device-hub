@@ -25,6 +25,7 @@ try {
     await page.getByRole('link', {name: 'Monitor', exact: true}).click();
     await page.getByRole('heading', {name: 'Agent monitor', exact: true, level: 2}).waitFor();
     await page.getByRole('link', {name: 'Edit session labels', exact: true}).click();
+    await page.locator('.agent-status-card').filter({has: page.getByRole('heading', {name: 'Synthetic monitor task', exact: true})}).locator('summary').click();
     await page.getByRole('button', {name: 'Edit label for Synthetic monitor task', exact: true}).click();
     await page.getByRole('textbox', {name: 'Session label', exact: true}).fill('Unsaved synthetic label');
     assert.equal(requests(), 0, 'the Monitor link reaches the real LabelEditor; opening and drafting sends nothing');

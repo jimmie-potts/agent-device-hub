@@ -1,0 +1,28 @@
+/* The approved Cards design; fixed chip semantics remain in the shared skin. */
+.agent-summary{display:flex;gap:var(--space-s);padding:var(--space-m);border-radius:20px;background:var(--inset);margin-bottom:var(--space-m)}
+.agent-summary>div{flex:1;min-width:0;display:grid;gap:var(--space-xs);text-align:center}
+.agent-summary strong{font-size:1.6rem;font-weight:500;font-variant-numeric:tabular-nums}
+.agent-summary span{color:var(--muted-dense);font-size:var(--type-small)}
+.agent-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-m);align-items:start}
+.agent-grid>div{min-width:0}
+.agent-status-card.session{padding:0;border:1px solid var(--edge-dense);border-radius:24px;background:var(--panel);overflow:hidden;gap:0;box-shadow:var(--shell-shadow)}
+.agent-status-card[data-attention=true]{background:var(--agent-attention-surface);border-color:var(--agent-attention-edge)}
+.agent-disclosure{margin:0;padding:0;border:0;background:none}
+.agent-face{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-m);min-height:174px;padding:var(--space-m);list-style:none;cursor:pointer}
+.agent-face::-webkit-details-marker{display:none}
+.agent-face:focus-visible{outline:3px solid var(--focus);outline-offset:-4px;border-radius:23px}
+.agent-face:hover{box-shadow:inset 0 0 0 1px var(--edge-strong);border-radius:23px}
+.agent-client{color:var(--muted-dense);font-size:var(--type-small);overflow-wrap:anywhere}
+.agent-state{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap;margin-top:auto}
+.agent-state .session-dot{margin:0}
+.agent-last-attention{font-size:var(--type-small)}
+.agent-caret{margin-left:auto;font-size:1.5rem;line-height:1;transition:transform .15s ease}
+.agent-disclosure[open] .agent-caret{transform:rotate(90deg)}
+.agent-evidence{padding:var(--space-m);border-top:1px solid var(--edge-dense);overflow-wrap:anywhere;animation:agent-reveal .15s ease-out}
+.agent-evidence .strip{grid-template-columns:1fr;gap:var(--space-s)}
+.agent-evidence .actions{flex-wrap:wrap}
+.agent-evidence .edit fieldset{min-width:0}
+.agent-evidence .edit input{max-width:100%;min-width:0}
+@keyframes agent-reveal{from{transform:translateY(-4px)}to{transform:translateY(0)}}
+@media(max-width:600px){.agent-grid{grid-template-columns:1fr}.agent-summary{padding:var(--space-s)}.agent-face{min-height:165px}}
+@media(prefers-reduced-motion:reduce){.agent-evidence{animation:none}.agent-caret{transition:none}}
