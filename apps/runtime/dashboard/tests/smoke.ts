@@ -68,3 +68,5 @@ await import('./tidbyt-card.browser.ts');
 await import('./shell.browser.ts');
 
 await import('./habitat.browser.ts');
+await import('./hub-mode.browser.ts');
+await import('./inbox-history.browser.ts');

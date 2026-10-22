@@ -3,7 +3,7 @@ import {LightingWorkspace} from './lighting-workspace.tsx';
 import {isLighting} from './lighting.ts';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
-import {InboxPanel} from './inbox.tsx';
+import {InboxPanel, type InboxFocus} from './inbox.tsx';
 import {Timeline} from './timeline.tsx';
 import {AutomationPage} from './automation.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
@@ -73,10 +73,10 @@ function PlacesNav({links}: {links: Readonly<Record<string, string>> | undefined
 }
 
 /** The frame every widget renders in: a labelled region, so assistive technology groups its content under its name. */
-function Widget({id, size, children}: {id: string; size: WidgetSize; children: React.ReactNode}): React.JSX.Element {
+function Widget({id, size, children, showHeading = true}: {id: string; size: WidgetSize; children: React.ReactNode; showHeading?: boolean}): React.JSX.Element {
   const definition = widgetDefinition(id);
   return <article className="widget" role="region" data-widget={id} data-size={size} aria-labelledby={`widget-${id}`}>
-    <header className="widget-head"><h2 id={`widget-${id}`}>{definition?.name ?? id}</h2></header>
+    {showHeading && <header className="widget-head"><h2 id={`widget-${id}`}>{definition?.name ?? id}</h2></header>}
     {children}
   </article>;
 }
@@ -142,6 +142,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const state = useSyncExternalStore(connection.subscribe, connection.getState);
   const route = useRoute();
   const [now, setNow] = useState(Date.now());
+  const [inboxFocus, setInboxFocus] = useState<InboxFocus>();
   // The clock only ages what the page shows; it reads nothing.
   useEffect(() => {
     const clock = setInterval(() => { setNow(Date.now()); }, 1000);
@@ -160,6 +161,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
   const modeCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
   const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
+  const inboxCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'inbox-item');
+  const inboxItems = (inboxCopy?.records ?? []) as readonly InboxItem[];
+  const inboxLive = state.feed === 'connected' && inboxCopy?.synced === true;
   const limitsCopy=runtime.copies.find(copy=>copy.owner==='bunny/core'&&copy.family==='power-limit');
   const limits=(limitsCopy?.records??[]) as readonly PowerLimitRecord[];
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
@@ -176,12 +180,12 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       return <ModuleFrontend key="wispr" module="wispr" connection={connection} connected={true} control={false}
         operations={operations} operationsLive={operationsLive} Component={WisprWidget}/>;
     }
-    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
+    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
-      devices={devices.map(({record}) => record)}/></Widget>;
+      items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
     if (placement.widget === 'inbox') {
-      const copy = runtime.copies.find(item => item.family === 'inbox-item');
-      return <Widget key="inbox" id="inbox" size={placement.size}><InboxPanel items={(copy?.records ?? []) as readonly InboxItem[]} live={state.feed === 'connected' && copy?.synced === true} control={runtime.control}/></Widget>;
+      return <Widget key="inbox" id="inbox" size={placement.size} showHeading={false}><InboxPanel items={inboxItems} live={inboxLive} control={runtime.control}
+        devices={devices.map(({record}) => record)} focus={inboxFocus} headingId="widget-inbox"/></Widget>;
     }
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
     if (placement.widget === 'sessions') return <Widget key="sessions" id="sessions" size={placement.size}><AgentSessions records={state.sessions.records}

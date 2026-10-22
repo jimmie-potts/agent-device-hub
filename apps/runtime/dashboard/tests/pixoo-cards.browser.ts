@@ -51,6 +51,8 @@ try {
   await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
   const picker = card.getByRole('region', {name: 'Media picker', exact: true});
   await picker.scrollIntoViewIfNeeded();
+  // Home card geometry can leave the last thumbnail below the viewport. Decode is intentionally visibility-bound.
+  await picker.locator('button.pixoo-media-tile').nth(5).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(5).waitFor();
   assert.equal(await picker.getByRole('img').count(), 6, 'only six visible previews are decoded');
   const firstTile = picker.locator('button.pixoo-media-tile').first();
@@ -63,6 +65,7 @@ try {
   await firstTile.click();
   await picker.getByRole('button', {name: 'Next media', exact: true}).click();
   await picker.getByText('7–8 of 8', {exact: true}).waitFor();
+  await picker.locator('button.pixoo-media-tile').nth(1).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
   await picker.getByRole('searchbox').fill('Synthetic 1');
   await picker.getByText('1–1 of 1', {exact: true}).waitFor();

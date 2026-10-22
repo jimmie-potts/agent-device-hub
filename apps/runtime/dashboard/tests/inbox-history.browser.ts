@@ -18,7 +18,7 @@ try {
     await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const panel = page.locator('[data-inbox-panel]');
     await world.failCommand();
-    await panel.getByRole('heading', {name: /g1 · failed/}).waitFor();
+    const failed = panel.locator('[data-inbox]').filter({hasText: 'g1'}); await failed.locator('summary').first().click();
     await axe();
     const resend = panel.getByRole('button', {name: 'Send again'});
     await resend.focus(); await page.keyboard.press('Enter');
@@ -32,10 +32,10 @@ try {
     world.loseDeviceReply(); await off.click();
     await card.locator('p[role="status"]').filter({hasText: 'Uncertain result.'}).waitFor();
     await page.getByRole('link', {name: /Home/}).first().click();
-    await panel.getByRole('heading', {name: /pendant-1 · uncertain/}).waitFor();
+    await panel.locator('[data-inbox]').filter({hasText: 'Uncertain'}).waitFor();
     await axe(); const beforeReload = sent.length;
     await page.reload(); await feed(page, 'connected');
-    await panel.getByRole('button', {name: 'Dismiss'}).waitFor();
+    await panel.locator('[data-inbox] summary').first().click(); await panel.getByRole('button', {name: 'Dismiss'}).waitFor();
     assert.equal(sent.length, beforeReload, 'reload never resends');
     assert.equal((await world.inboxViaMcp()).length, 1);
     const dismiss = panel.getByRole('button', {name: 'Dismiss'});
