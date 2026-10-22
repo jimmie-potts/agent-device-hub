@@ -81,7 +81,8 @@ async function access(info, project, run) {
   const network = selected[0];
   if (selected.length !== 1 || network.Name !== name || !/^[0-9a-f]{64}$/.test(network.Id ?? '')
     || network.Driver !== 'bridge' || network.Scope !== 'local' || network.Internal !== true
-    || network.Attachable !== false || network.EnableIPv6 !== false || Object.keys(network.Options ?? {}).length !== 0
+    || network.Attachable !== false || network.EnableIPv6 !== false
+    || Object.entries(network.Options ?? {}).some(([key, value]) => key !== 'com.docker.network.enable_ipv4' || value !== 'true')
     || network.Labels?.['com.docker.compose.project'] !== project || network.Labels?.['com.docker.compose.network'] !== 'local'
     || Object.keys(network.Containers ?? {}).some(id => id !== info.Id)
     || (networks[name].NetworkID && networks[name].NetworkID !== network.Id)

@@ -78,6 +78,32 @@ test('host-local start checks its actual network before and after starting',asyn
   assert.ok(f.calls.findIndex(a=>a[0]==='network') < f.calls.findIndex(a=>a[0]==='start'));
 });
 
+test('host-local accepts only Docker generated explicit IPv4 enablement',async()=>{
+  for(const Options of [{},null,{'com.docker.network.enable_ipv4':'true'}]) {
+    const f=localFixture();f.network.Options=Options;
+    assert.equal((await operate(plan('start'),f.run)).status,'running');
+    assert.equal(f.calls.filter(a=>a[0]==='network').length,2);
+    await operate(plan('stop'),f.run);
+    assert.equal((await operate(parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']),f.run)).status,'complete');
+  }
+});
+
+test('host-local refuses changed IPv4 values and every other bridge option before effects',async()=>{
+  for(const Options of [
+    {'com.docker.network.enable_ipv4':'false'},
+    {'com.docker.network.enable_ipv4':true},
+    {'com.docker.network.enable_ipv4':'1'},
+    {'com.docker.network.bridge.host_binding_ipv4':'0.0.0.0'},
+    {'com.docker.network.enable_ipv4':'true','com.docker.network.bridge.enable_icc':'true'},
+  ]) for(const command of ['start','backup']) {
+    const f=localFixture();f.network.Options=Options;
+    const selected=command==='start' ? plan('start') : parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']);
+    await assert.rejects(operate(selected,f.run));
+    assert.ok(f.calls.some(a=>a[0]==='network'));
+    assert.ok(!f.calls.some(a=>['start','run'].includes(a[0])));
+  }
+});
+
 test('new-container admission inspects created configuration before start and stops on an isolation change',async()=>{
   const f=localFixture();let created=false;
   const run=async args=>{
