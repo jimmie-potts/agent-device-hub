@@ -116,6 +116,8 @@ export type World = {
   loseDeviceReply(): void;
   restoreDeviceReply(): void;
   failCommand(): Promise<void>;
+  modeResult(result: 'succeeded' | 'failed' | 'none'): void;
+  completeMode(result: 'succeeded' | 'failed'): Promise<void>;
   inboxViaMcp(): Promise<unknown[]>;
   /** Actual synthetic controller writes and selections, including across runtime restarts. */
   nanoleafState(): SimulatedState;
@@ -333,6 +335,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     },
     loseDeviceReply: () => { loseWriteReplies = true; },
     restoreDeviceReply: () => { loseWriteReplies = false; },
+    modeResult: result => {nano.result = result;},
+    completeMode: result => nano.finish(result),
     failCommand: async () => {
       gadget.script({outcome: {result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}}});
       await core.actions.dispatch({...setGadget(42), requestedBy: 'bunny/parts/operator'});

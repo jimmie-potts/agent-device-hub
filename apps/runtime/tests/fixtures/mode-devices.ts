@@ -22,16 +22,22 @@ export class ModeDevice {
         await context.sdk.respond<DeviceModeSetRequest>(`bunny.cmd.device-mode-set.${this.id}`, async command => {
           this.commands.push(command);
           context.log.info('command.executing', {'bunny.request.id': command.data.requestId});
-          if (this.result !== 'none') await context.sdk.publish(`bunny.event.device-mode-set.${this.id}`, {
-            kind: 'outcome', type: 'org.bunny.device-mode.set.completed', subject: this.id, dataschema: 'https://bunny.invalid/events/outcome/2.0',
-            data: {requestId: command.data.requestId, result: this.result, evidence: this.result === 'succeeded' ? 'observed' : 'none',
-              ...this.result === 'succeeded' ? {} : {error: errorBody('unavailable').error}},
-          }, {parent: command});
+          if (this.result !== 'none') await this.finish(this.result);
           return {status: 'accepted'};
         });
       },
       stop: () => {this.#context = undefined;},
     };
+  }
+  /** Completes the latest held synthetic request; permits deterministic pending/late-outcome checks. */
+  async finish(result: 'succeeded' | 'failed'): Promise<void> {
+    const command = this.commands.at(-1);
+    if (command === undefined || this.#context === undefined) throw new Error('no-synthetic-mode-command');
+    await this.#context.sdk.publish(`bunny.event.device-mode-set.${this.id}`, {
+      kind: 'outcome', type: 'org.bunny.device-mode.set.completed', subject: this.id, dataschema: 'https://bunny.invalid/events/outcome/2.0',
+      data: {requestId: command.data.requestId, result, evidence: result === 'succeeded' ? 'observed' : 'none',
+        ...result === 'succeeded' ? {} : {error: errorBody('unavailable').error}},
+    }, {parent: command});
   }
   /** A native change is independently observed; it never selects the Hub mode or triggers correction. */
   async observe(): Promise<void> {

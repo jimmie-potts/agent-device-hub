@@ -78,11 +78,25 @@ mode and the agent sessions in the wide column, and the inbox in the narrow one.
 its page and widget share the shell connection and make no device commands. The Hub mode offers Work, Free and Quiet controls;
 the inbox shows failed, uncertain and conflicting commands until handled.
 
-The mode panel syncs the core's `mode` and `operation` records. It shows the
-saved choice separately from each device's result for the most recent completed
-selection request. Current mode evidence and control authority enable the
-buttons, including explicit same-mode reapplication. A lost reply stays
-uncertain; reload, reconnect and restart never resend a selection.
+The reusable `HubModeCard` receives the synced choice, matching mode artwork,
+three action callbacks and concise exception evidence from `HubMode`. Clicking
+the selected mode explicitly reapplies it. Routine request text, device lists,
+Latest request and a separate Reapply control are omitted. Related unhandled
+mode issues appear as a corner **! Check Inbox** control, with the Hub surface
+unchanged. Opening it expands and focuses a related Inbox entry without handling
+it. Handling clears the indicator after shared removal; a later selection clears
+it only after definitive success for the affected scope. Acceptance or a saved
+choice alone cannot clear it, and historical Inbox entries remain until handled.
+Stale copies retain known issues. Local refusals without an Inbox item stay
+explicit. No adapter acquires another connection or changes backend ownership.
+
+`InboxCard` and `InboxItemCard` supply reusable presentation over `InboxPanel`'s
+existing synced records and guarded actions. Concise device/action/result faces
+expand for evidence, Send again and Dismiss. Native disclosure and warning
+navigation send no command. Accepted handling waits for shared removal and a lost
+reply stays uncertain without automatic retry. Read-only sessions inspect evidence
+without write controls. Device holds, display dismissals and agent unread turns
+retain their separate meanings. Reload, reconnect and restart never resend.
 
 ## Reusable Wemo card
 

@@ -489,6 +489,15 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Reusable Hub mode and Inbox cards (#1182) extend the existing dashboard unit
+discovery with `hub-mode-issues.test.ts`. After the root build, run
+`node apps/runtime/dashboard/tests/hub-mode.browser.ts` and
+`node apps/runtime/dashboard/tests/inbox-history.browser.ts` for correlated
+warning/handling, explicit reapply, no replay, authority and disclosure checks.
+Both journeys run through the existing hosted smoke entry and the full local
+browser suite. Use an owned private outside-checkout `TMPDIR`; screenshots stay
+private. These checks use synthetic devices, not the installed runtime.
+
 Reusable agent cards (#1179) use the existing dashboard unit discovery for
 attention/freshness summary rules and Home placement. The existing `browser.ts`
 journey covers card disclosure, filtering, label drafts, unread preservation and
@@ -604,10 +613,13 @@ page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
 
 The focused `hub-mode.browser.ts` journey uses synthetic participants to check
-keyboard selection, the saved choice and each device's result, same-mode
-reapply, a lost reply, read-only controls and reconnect/reload/restart without
-replay. It runs axe on the changed panel and writes a screenshot to its optional
-private evidence directory. It contacts no physical device.
+keyboard selection, matching artwork, same-mode reapply, correlated Inbox
+navigation/handling, pending versus definitive results, late conflicts, lost
+replies, read-only controls and reconnect/reload/restart without replay. Its
+controlled adapter checks verify stale evidence and accepted/uncertain handling
+locks without another command. It runs light/dark desktop/phone axe scans on
+both cards and writes screenshots to its optional private evidence directory.
+It contacts no physical device.
 
 The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
 fresh synthetic library and simulated display. It checks a revision-bound name
