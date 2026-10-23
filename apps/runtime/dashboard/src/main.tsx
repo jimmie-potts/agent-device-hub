@@ -26,6 +26,7 @@ import {ModuleFrontend, ModulePageView} from './module-page.tsx';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
+import {DuckWidget} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {navigationDestination} from './routes.ts';
@@ -202,6 +203,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       return <ModuleFrontend key="wispr" module="wispr" connection={connection} connected={true} control={false}
         operations={operations} operationsLive={operationsLive} Component={WisprWidget}/>;
     }
+    if (placement.widget === 'duck-latest') return <ModuleFrontend key="duck-latest" module="companions" connection={connection}
+      connected={state.feed === 'connected'} control={false} operations={operations} operationsLive={operationsLive} Component={DuckWidget}/>;
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;

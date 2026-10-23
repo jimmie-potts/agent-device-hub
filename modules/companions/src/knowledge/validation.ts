@@ -56,12 +56,15 @@ export function archiveOf(value: unknown): Archive {
   return value as Archive;
 }
 export type KnowledgeInput = PreferenceInput | ({expectedRevision: number} & (
+  {action: 'select-duck-conversation'; conversationId: string | null} |
   {action: 'fixture'} | {action: 'correct-message'; messageId: string; meaning: Meaning} | {action: 'delete-message'; messageId: string} |
   {action: 'set-voice'; persona: PersonaId; voiceRef: string | null} | {action: 'import-archive'; archive: Archive}
 ));
 export function inputOf(value: unknown): KnowledgeInput {
   if (!object(value) || !integer(value.expectedRevision)) fail('invalid-request');
   switch (value.action) {
+    case 'select-duck-conversation':
+      if (!exact(value, ['action', 'expectedRevision', 'conversationId']) || (value.conversationId !== null && !id(value.conversationId))) fail('invalid-request'); break;
     case 'fixture': if (!exact(value, ['action', 'expectedRevision'])) fail('invalid-request'); break;
     case 'correct-message':
       if (!exact(value, ['action', 'expectedRevision', 'messageId', 'meaning']) || !id(value.messageId)) fail('invalid-request'); meaningOf(value.meaning); break;

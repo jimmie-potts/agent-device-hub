@@ -18,6 +18,8 @@ export type CompanionMessage = {schema: 'companion-message/1.0'; messageId: stri
 export type Removal = {messageId: string; conversationId: string; ordering: Order; removedAtMs: number};
 export type HistoryPage = {schema: 'companion-history/1.0'; revision: number; availability: 'available'; conversations: Conversation[];
   messages: CompanionMessage[]; next: number | null};
+export type DuckWidget = {schema: 'duck-widget/1.0'; revision: number; conversation: Conversation | null;
+  messages: CompanionMessage[]; next: number | null};
 export type KnowledgeView = {schema: 'knowledge-view/1.0'; revision: number; entries: Preference[]};
 export type Archive = {schema: 'companion-archive/1.0'; knowledge: Preference[]; preferences: PreferenceLibrary;
   voices: {id: PersonaId; voiceRef: string | null}[]; conversations: Conversation[]; messages: CompanionMessage[]; removals: Removal[]};

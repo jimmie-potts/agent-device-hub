@@ -1724,6 +1724,12 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+The Duck Home widget (#662) uses the existing companion unit suite, runtime
+scenario discovery and companions browser journey. Check explicit selection,
+latest/history isolation, correction/removal, restart, stale/denied reads,
+keyboard, narrow layout and axe. Existing CI already selects these suites for
+companions/dashboard changes; no new job is needed. Use only synthetic data.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

@@ -337,3 +337,37 @@ companions browser journey covers keyboard, clipboard, private files, profile
 inspection, correction/removal, narrow layout, axe, reader access and disconnect.
 All are synthetic source evidence; live providers, installed access paths and
 physical acceptance remain separate.
+
+### Duck Home widget
+
+On Companion knowledge, choose a conversation containing Reachy and MicroDuck,
+then **Show selected conversation on Home**. This saves one explicit selection
+in the companions store; creating or importing conversations never chooses one.
+Use Home's **Edit Home → Add card → MicroDuck → Done** to place the card.
+The card shows that conversation's label and exactly one latest remaining Duck
+meaning with its original timestamp and provenance. Emotional expressions and
+unknown meaning remain distinct. Playback stays unknown: an intended message or
+opaque delivery reference is not evidence of audio or hearing.
+
+**View conversation** opens the same owner's bounded history on a separate page
+with speaker/time labels, Next page and First page controls. The page keeps no
+second archive or twenty-message retention limit. The history and Home reads
+produce no speech, graph invocation, recording or device command. Correction,
+removal and selection updates invalidate previous content; disconnect or denied
+access hides it until a current permitted read succeeds. Refresh is explicit
+after a failed read. Empty history, no selection and unavailable reads differ.
+
+`/modules/companions/content/duck-widget` returns `duck-widget/1.0`: revision,
+selected conversation (or null), messages and next cursor. Default `view=latest`
+returns at most one Duck message; `view=history&after=<sequence>` reuses the
+existing bounded history reader as Reachy. Only view/cursor appear in the URL.
+`select-duck-conversation` knowledge input takes `conversationId` (or null) and
+the existing expected revision. It reuses authenticated staging, tracked outcomes
+and assistant-state invalidation. One additive singleton row stores the selection
+on the same SDK SQLite connection. Archive import leaves that local choice alone;
+fresh archive recovery requires explicit reselection. **Clear Home conversation**
+clears only this choice, retaining messages and Home placement.
+
+Companion tests, the `companion-knowledge` runtime scenario and companions browser
+journey check this source behavior with synthetic records. Installed widget and
+real conversation/output acceptance remain separate.

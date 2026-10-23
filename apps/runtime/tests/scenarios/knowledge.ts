@@ -1,4 +1,4 @@
-import type {CompanionArchive, ContextDocument, KnowledgeView} from '@jimmie-potts/companions';
+import type {CompanionArchive, ContextDocument, DuckWidget, KnowledgeView} from '@jimmie-potts/companions';
 import {StepFailure, act, answers, bodyOf, expect, recorded, refusedWith, running, type Harness, type Scenario} from './framework.js';
 const endpoint = '/modules/companions/content/';
 const upload = (requestId: string): string => `/api/v2/modules/companions/upload?${new URLSearchParams({family: 'assistant-input', target: 'knowledge', requestId, name: 'knowledge.json'})}`;
@@ -35,7 +35,7 @@ export const knowledgeScenarios: readonly Scenario[] = [{id: 'companion-knowledg
   seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/companions', families: ['assistant-state', 'preference-state']}]},
   steps: [
     expect('core and companions running', h => running(h, ['core', 'companions'])),
-    ...['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive'].map(ref => expect(`anonymous ${ref} denied`, answers({as: 'anonymous', method: 'GET', path: `${endpoint}${ref}`}, response => refusedWith(response, 401, 'unauthenticated')))),
+    ...['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive', 'duck-widget'].map(ref => expect(`anonymous ${ref} denied`, answers({as: 'anonymous', method: 'GET', path: `${endpoint}${ref}`}, response => refusedWith(response, 401, 'unauthenticated')))),
     expect('reader cannot change companion content', answers({as: 'reader', method: 'POST', path: upload('knowledge-reader'), headers: {'content-type': 'application/octet-stream'}, body: {}}, response => refusedWith(response, 403, 'forbidden'))),
     act('owner explicitly saves synthetic knowledge', h => change(h, 'knowledge-create', {action: 'create', title: 'Synthetic household', text: 'SYNTHETIC_KNOWLEDGE_OLD'})),
     expect('knowledge write completes', h => recorded(h, 'knowledge-create', 'succeeded', 'observed')),
@@ -46,6 +46,16 @@ export const knowledgeScenarios: readonly Scenario[] = [{id: 'companion-knowledg
       const conversationId = archive.conversations[0]?.id, messageId = archive.messages[1]?.messageId, removedId = archive.messages[3]?.messageId, knowledgeId = archive.knowledge[0]?.id;
       if (conversationId === undefined || messageId === undefined || removedId === undefined || knowledgeId === undefined) throw new StepFailure('missing explicit fixture');
       saved.set(h, {archive, conversationId, messageId, removedId, knowledgeId});
+    }),
+    expect('a newly created conversation is not automatically selected for Home', async h => (await new ReplacementClient(h).read<DuckWidget>('duck-widget')).conversation === null || 'Home was selected implicitly'),
+    act('owner selects one explicit Reachy Duck conversation', async h => {
+      const state = saved.get(h); if (state === undefined) throw new StepFailure('missing fixture');
+      await change(h, 'duck-selection', {action: 'select-duck-conversation', conversationId: state.conversationId});
+    }),
+    expect('selection completes durably', h => recorded(h, 'duck-selection', 'succeeded', 'observed')),
+    expect('widget reads one latest Duck message while history retains both speakers', async h => {
+      const client = new ReplacementClient(h), latest = await client.read<DuckWidget>('duck-widget'), history = await client.read<DuckWidget>('duck-widget', {view: 'history'});
+      return latest.conversation?.id === saved.get(h)?.conversationId && latest.messages.length === 1 && latest.messages[0]?.messageId === saved.get(h)?.removedId && history.messages.length === 4 || 'selected latest/history differs';
     }),
     expect('two fake adapters preserve records across three curated personas', async h => {
       const client = new ReplacementClient(h), characters = new Set<string>();
@@ -86,6 +96,10 @@ export const knowledgeScenarios: readonly Scenario[] = [{id: 'companion-knowledg
       const archive = await new ReplacementClient(h).read<CompanionArchive>('companion-archive');
       return archive.knowledge[0]?.active === false && archive.messages.find(value => value.messageId === state.messageId)?.meaning.kind === 'unknown' &&
         !archive.messages.some(value => value.messageId === state.removedId) && archive.removals.some(value => value.messageId === state.removedId) || 'restart/import changed retained state';
+    }),
+    expect('widget selection survives restart with the corrected previous Duck message', async h => {
+      const latest = await new ReplacementClient(h).read<DuckWidget>('duck-widget');
+      return latest.conversation?.id === saved.get(h)?.conversationId && latest.messages.length === 1 && latest.messages[0]?.messageId === saved.get(h)?.messageId && latest.messages[0]?.meaning.kind === 'unknown' || 'widget resurrected or reselected content';
     }),
     act('owner imports sixteen historical messages for explicit context selection', async h => {
       const archive = await new ReplacementClient(h).read<CompanionArchive>('companion-archive'), template = archive.messages[0];
