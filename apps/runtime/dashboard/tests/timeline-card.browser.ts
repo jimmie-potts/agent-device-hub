@@ -24,6 +24,19 @@ try {
   assert.ok(await card.locator('[data-history-row]').count() > 0);
   for (const kind of await card.locator('[data-history-row]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.historyKind))) assert.equal(kind, 'operation');
   assert.equal(sent.length, 0, 'real history browsing sends no command');
+  await card.getByLabel('From', {exact: true}).fill('2020-01-01T00:00');
+  await card.getByLabel('To', {exact: true}).fill('2020-01-02T00:00');
+  await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByText('No activity', {exact: true})).toBeVisible();
+  await card.getByRole('combobox', {name: 'Activity period'}).selectOption('today');
+  await expect(card.getByLabel('From', {exact: true})).toHaveValue('');await expect(card.getByLabel('To', {exact: true})).toHaveValue('');
+  await card.getByLabel('Source', {exact: true}).fill('bunny/INVALID');
+  const refused = page.waitForResponse(response => response.url().includes('/api/v2/history'));
+  await card.getByRole('button', {name: 'Apply filters'}).click();
+  const refusedQuery = new URL((await refused).url()).searchParams;
+  assert.equal(refusedQuery.get('fromAtMs'), null);assert.equal(refusedQuery.get('toAtMs'), null, 'cleared custom dates do not return on Apply');
+  await expect(card.getByRole('status')).toContainText('Check filters (invalid-request)');await expect(card).toHaveAttribute('data-history-error', 'invalid-request');
+  await card.getByLabel('Source', {exact: true}).fill('bunny/parts/operator');
+  await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByRole('status')).toContainText('history entries.');
 
   // Add the identical card through the existing editor and persist size/order.
   await page.getByRole('link', {name: /^Home/}).first().click();
@@ -94,7 +107,7 @@ try {
     const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
     assert.deepEqual(axe.violations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    if (process.env.DASHBOARD_RECEIPTS !== undefined) {await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});await page.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${theme}-${width}.png`});}
+    if (process.env.DASHBOARD_RECEIPTS !== undefined) {await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});await page.evaluate(() => {window.scrollTo(0, 0);});await page.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${theme}-${width}.png`});}
     await card.locator('[data-history-row="4"]').getByRole('button', {name: 'Close evidence'}).click();
   }
   assert.equal(sent.length, saves, 'filters, evidence, refresh, reload and read-only browsing send no command');

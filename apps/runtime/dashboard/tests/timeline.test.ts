@@ -11,7 +11,7 @@ void test('operation labels preserve requested, accepted, transmitted, observed,
     [{status: 'completed', result: 'succeeded', evidence: 'observed'}, 'Power · observed'],
     [{status: 'completed', result: 'succeeded', evidence: 'none'}, 'Power · succeeded'],
     [{result: 'failed', evidence: 'none'}, 'Power · failed'], [{result: 'uncertain'}, 'Power · uncertain'],
-    [{status: 'expired'}, 'Power · expired'], [{status: 'conflict'}, 'Power · conflicting results'],
+    [{status: 'expired', result: 'failed', evidence: 'none'}, 'Power · expired'], [{status: 'conflict'}, 'Power · conflicting results'],
   ] as const) assert.equal(historyFace(row(record)).title, expected);
   assert.match(historyFace(row({status: 'sent'})).detail, /Completion is not established/);
   assert.match(historyFace(row({result: 'uncertain'})).detail, /effect is unknown/);
@@ -23,6 +23,9 @@ void test('compact changes never reconstruct unrecorded state and unknown types 
   assert.equal(face.title, 'Device updated');assert.equal(face.context, 'Desk lamp · Devices');assert.match(face.detail, /changed fields only/);
   const unknown = historyFace(row({anything: true}, {kind: 'occurrence', type: 'new.event'}));
   assert.equal(unknown.title, 'Event recorded');assert.match(unknown.context, /lamp/);
+  const remaining = historyFace(row({family: 'session', previous: 7, changed: {attention: [{kind: 'input', id: {status: 'known', id: 'remaining'}}]}}, {kind: 'change'}));
+  assert.equal(remaining.title, 'Attention updated', 'the whole replacement array does not prove another request');
+  assert.equal(historyFace(row({data: {}}, {kind: 'occurrence', type: 'org.bunny.attention.raised'})).title, 'Attention requested');
 });
 
 void test('categories and stable newest-first ordering preserve unknown Hub records in All', () => {
@@ -86,4 +89,13 @@ void test('failed and malformed reads retain last-good rows with unavailable sta
   await reader.read('');await reader.read('');
   assert.equal(states.at(-1)?.phase, 'unavailable');assert.equal(states.at(-1)?.rows.length, 1);
   await reader.read('');assert.equal(states.at(-1)?.phase, 'unavailable');assert.equal(count, 3);reader.dispose();
+});
+
+void test('history refusals retain only known safe codes, never raw gateway details', async () => {
+  let latest: HistorySnapshot | undefined, code = 'invalid-request';
+  const reader = createHistoryReader(() => Promise.resolve({ok: false, json: () => Promise.resolve({error: {code, detail: 'private raw detail'}})}), state => {latest = state;});
+  for (const safe of ['invalid-request', 'unauthenticated', 'forbidden', 'unavailable', 'internal', 'too-large']) {
+    code = safe;await reader.read('');assert.equal(latest?.errorCode, safe);assert(!JSON.stringify(latest).includes('private raw detail'));
+  }
+  code = 'private-unrecognized-error';await reader.read('');assert.equal(latest?.errorCode, undefined);reader.dispose();
 });

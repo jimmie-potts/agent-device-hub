@@ -65,8 +65,8 @@ export function historyFace(row: HistoryRow): HistoryFace {
     const result = data.result, status = data.status;
     const state = result === 'conflict' || status === 'conflict' ? 'conflicting results'
       : result === 'uncertain' || status === 'uncertain' ? 'uncertain'
-        : result === 'failed' || status === 'rejected' ? 'failed'
-          : status === 'expired' ? 'expired'
+        : status === 'expired' ? 'expired'
+          : result === 'failed' || status === 'rejected' ? 'failed'
             : result === 'succeeded' ? data.evidence === 'observed' ? 'observed' : data.evidence === 'transmitted' ? 'transmitted' : 'succeeded'
               : status === 'accepted' ? 'accepted' : status === 'sent' ? 'requested' : 'recorded';
     title = `${action} · ${state}`;
@@ -76,10 +76,11 @@ export function historyFace(row: HistoryRow): HistoryFace {
         : state === 'observed' ? 'The owner reported an observed effect at this time.'
           : state === 'uncertain' ? 'The effect is unknown. This entry does not establish the device state.'
             : state === 'conflicting results' ? 'Both success and failure were recorded. The effect needs review.'
-              : state === 'failed' || state === 'expired' ? 'The request did not complete successfully. This entry does not establish the device state.'
+            : state === 'expired' ? 'The request expired before execution; no effect was attempted.'
+              : state === 'failed' ? 'The request did not complete successfully. This entry does not establish the device state.'
                 : state === 'succeeded' ? 'The owner reported success without observed or transmitted evidence.' : detail;
   } else if (row.kind === 'change') {
-    if (family === 'session') title = Array.isArray(changed.attention) && changed.attention.length > 0 ? 'Attention requested'
+    if (family === 'session') title = Array.isArray(changed.attention) ? 'Attention updated'
       : changed.activity === 'active' ? 'Agent working' : 'Agent updated';
     else if (family === 'mode' && ['work', 'free', 'quiet'].includes(String(changed.mode))) title = `Hub mode · ${String(changed.mode)}`;
     else if (family === 'device') title = 'Device updated';

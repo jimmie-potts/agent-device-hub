@@ -24,7 +24,9 @@ export function TimelinePanel({headingId, connected = true}: {headingId?: string
     } catch {setInvalid('Check the date range.');}
   };
   const edit = (field: keyof HistoryFilters, value: string): void => {setDraft(previous => ({...previous, [field]: value}));};
-  return <TimelineCard snapshot={snapshot} period={period} onPeriod={next => {read(next, applied.current);}} connected={connected} {...(headingId === undefined ? {} : {headingId})}
+  return <TimelineCard snapshot={snapshot} period={period} onPeriod={next => {
+    setDraft(previous => ({...previous, from: '', to: ''}));read(next, {...applied.current, from: '', to: ''});
+  }} connected={connected} {...(headingId === undefined ? {} : {headingId})}
     onRefresh={() => {read(selection.current, applied.current);}} advanced={<details className="timeline-advanced"><summary>Filters</summary>
       <form onSubmit={event => {event.preventDefault();read('custom', draft);}}>
         <label>From<input type="datetime-local" value={draft.from} onChange={event => {edit('from', event.target.value);}}/></label>

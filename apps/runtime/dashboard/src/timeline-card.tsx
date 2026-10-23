@@ -43,10 +43,15 @@ export type TimelineCardProps = {
 export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, headingId, connected = true}: TimelineCardProps): React.JSX.Element {
   const uid = useId(), [category, setCategory] = useState<HistoryCategory>('All'), [visible, setVisible] = useState(20);
   const rows = selectedHistory(snapshot.rows, category);
+  const failure = snapshot.errorCode === 'invalid-request' ? 'Check filters (invalid-request)'
+    : snapshot.errorCode === 'unauthenticated' ? 'Sign in again (unauthenticated)'
+      : snapshot.errorCode === 'forbidden' ? 'Access denied (forbidden)'
+        : snapshot.errorCode === 'too-large' ? 'History too large (too-large)'
+          : snapshot.errorCode === 'internal' ? 'History unavailable (internal)' : 'History unavailable';
   const status = snapshot.phase === 'loading' ? snapshot.readAt === undefined ? 'Loading history…' : 'Refreshing · previous results'
-    : snapshot.phase === 'unavailable' ? snapshot.readAt === undefined ? 'History unavailable' : 'History unavailable · previous results'
+    : snapshot.phase === 'unavailable' ? snapshot.readAt === undefined ? failure : `${failure} · previous results`
       : !connected ? 'Offline · saved history' : '';
-  return <div className="timeline-card" data-timeline-card aria-labelledby={headingId ?? uid}>
+  return <div className="timeline-card" data-timeline-card data-history-error={snapshot.errorCode} aria-labelledby={headingId ?? uid}>
     <header className="timeline-heading"><h2 id={headingId ?? uid}>Timeline</h2><div className="timeline-tools">
       <select aria-label="Activity period" value={period} onChange={event => {setVisible(20);onPeriod(event.target.value as HistoryPeriod);}}>
         <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="recent">Recent</option>{period === 'custom' && <option value="custom">Custom</option>}
