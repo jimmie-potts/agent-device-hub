@@ -503,8 +503,9 @@ const errorBodyFromRegistry = {
  * to claim positions in #1187): a hand-picked literal is how an uncertain result was summarised as rejected (#736 F1)
  * and acknowledged transmission was rebuilt as none (#1126 F1). A claim position is where a claim key (`evidence`,
  * `outcome`, `result`, `level` or `bunny.outcome`) is given a value or compared with one: an object property's value, a
- * class field's or variable's initializer, a parameter's or destructuring default, an assigned value, the other side
- * of `===`, `!==`, `==` or `!=`, or a `case` on it, through conditionals, logical operators, arrays and casts. The
+ * class field's or variable's initializer, a parameter's or destructuring default (renamed or not), an assigned value,
+ * the other side of `===`, `!==`, `==` or `!=`, or a `case` on it, through conditionals, logical operators, arrays and
+ * casts (`as`, `satisfies`, `<T>` and `!`). The
  * vocabulary is read from sdk/evidence.ts, so the rule and the SDK cannot drift. The same word anywhere else, such as
  * a CSS `none`, a `status` label or an effects vocabulary (`priorEffects`), is not an evidence claim and is not
  * checked; ErrorCode values such as 'uncertain-result' are other words.
@@ -517,7 +518,7 @@ const claimName = (key, computed) => {
   if (key.type === 'Identifier' || key.type === 'PrivateIdentifier') return key.name;
   return literal(key);
 };
-const unwrapped = new Set(['ChainExpression', 'TSNonNullExpression', 'TSAsExpression', 'TSSatisfiesExpression']);
+const unwrapped = new Set(['ChainExpression', 'TSNonNullExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSTypeAssertion']);
 /** Whether an expression names a claim: `evidence`, `receipt.evidence`, `fields['bunny.outcome']`, `this.#evidence` or `claim!.level`. */
 const namesClaim = node => {
   if (node?.type === 'Identifier') return claimKeys.has(node.name);
@@ -525,18 +526,20 @@ const namesClaim = node => {
   if (unwrapped.has(node?.type)) return namesClaim(node.expression);
   return false;
 };
-const through = new Set(['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression']);
+const through = new Set(['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSTypeAssertion']);
+/** The name a default binds: the parameter or variable itself, or the key it is destructured from (`{result: r = ...}`). */
+const defaultNames = pattern => (pattern.parent?.type === 'Property' && pattern.parent.value === pattern ? claimKeys.has(claimName(pattern.parent.key, pattern.parent.computed)) : namesClaim(pattern.left));
 /** Whether `node` is the value a claim key is given, or is compared with one. */
 const inClaimPosition = node => {
   let child = node, parent = node.parent;
   while (parent && through.has(parent.type) && !(parent.type === 'ConditionalExpression' && parent.test === child)) { child = parent; parent = parent.parent; }
   if (!parent) return false;
   switch (parent.type) {
-    case 'Property': return parent.value === child && parent.parent?.type === 'ObjectExpression' && claimKeys.has(claimName(parent.key, parent.computed));
-    case 'PropertyDefinition': return parent.value === child && claimKeys.has(claimName(parent.key, parent.computed));
+    case 'Property': return parent.value === child && claimKeys.has(claimName(parent.key, parent.computed));
+    case 'PropertyDefinition': case 'AccessorProperty': return parent.value === child && claimKeys.has(claimName(parent.key, parent.computed));
     case 'VariableDeclarator': return parent.init === child && namesClaim(parent.id);
     case 'AssignmentExpression': return parent.right === child && namesClaim(parent.left);
-    case 'AssignmentPattern': return parent.right === child && namesClaim(parent.left);
+    case 'AssignmentPattern': return parent.right === child && defaultNames(parent);
     case 'BinaryExpression': return ['===', '!==', '==', '!='].includes(parent.operator) && namesClaim(parent.left === child ? parent.right : parent.left);
     case 'SwitchCase': return parent.test === child && namesClaim(parent.parent.discriminant);
     default: return false;

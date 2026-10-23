@@ -204,10 +204,11 @@ and the runtime's tests cover the rest.
   `observed`, `none`, `succeeded`, `failed`, `rejected`) in a claim position in
   production code outside that file. A claim position is where a claim key
   (`evidence`, `outcome`, `result`, `level` or `bunny.outcome`) is given a value
-  or compared with one: an object property's value, a class field's or
-  variable's initializer, a parameter's or destructuring default, an assigned
-  value, the other side of `===`, `!==`, `==` or `!=`, or a `case` on it,
-  through conditionals, logical operators, arrays and casts. Take the word
+  or compared with one: an object property's value, a class or accessor field's
+  or variable's initializer, a parameter's or destructuring default (renamed or
+  not), an assigned value, the other side of `===`, `!==`, `==` or `!=`, or a
+  `case` on it, through conditionals, logical operators, arrays and casts
+  (`as`, `satisfies`, `<T>` and `!`). Take the word
   from `Outcome` and change a claim only with `merge`. The same word in any
   other position is not an evidence claim and is not checked: a CSS `none`, a
   `status` or `kind` label, a map key, or the effects vocabulary
@@ -216,12 +217,12 @@ and the runtime's tests cover the rest.
   `uncertain-result` are other words. Tests are not checked, and page code
   and page drivers keep the exclusion they had when the rule landed (#1141);
   lifting it is a separate change.
-  The 87 remaining hits are held in `eslint-suppressions.json`, none under the
-  strict profile: the retained legacy hub (18) and controllers (24), which do
+  The 72 remaining hits are held in `eslint-suppressions.json`, none under the
+  strict profile: the retained legacy hub (16) and controllers (15), which do
   not depend on the SDK; `apps/chompi-bridge` (10), frozen by the owner's
-  CHOMPI work; `packages/app-verify` (19) and `packages/contracts` (5), whose
-  own result vocabularies predate the SDK; `apps/maintenance` (3),
-  `packages/mcp` (1) and repository scripts (5), which do not import the SDK.
+  CHOMPI work; `packages/app-verify` (19) and `packages/contracts` (4), whose
+  own result vocabularies predate the SDK; `apps/maintenance` (3) and
+  repository scripts (5), which do not import the SDK.
   The native suppressions are the ratchet: ESLint fails when a file gains a
   hit, and an unused entry fails `lint:js` until it is pruned, so the baseline
   only shrinks; a new entry shows as an edit to the committed JSON, which the
