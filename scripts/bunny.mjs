@@ -66,7 +66,7 @@ async function access(info, project, run) {
   };
   const profile = value('BUNNY_ACCESS') ?? 'isolated';
   const ingestSource = value('BUNNY_INGEST_SOURCE');
-  // eslint-disable-next-line bunny/no-raw-outcome-literal -- Docker network-mode identifier, not an evidence outcome.
+  // A Docker network-mode identifier, not an evidence outcome.
   const isolatedNetwork = 'none';
   if (profile === 'isolated') {
     if (ingestSource !== undefined || Object.keys(ports).length !== 0 || info.Config?.Labels?.['io.bunny.access'] !== undefined

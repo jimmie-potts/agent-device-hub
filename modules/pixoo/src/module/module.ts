@@ -17,8 +17,7 @@ import {
 import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type ModuleStagedUpload, type ModuleUploadRequest,
-  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext,
-} from '@jimmie-potts/sdk';
+  type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
 import {Player, LibraryPlaybackStore} from '../playback/index.js';
@@ -334,7 +333,7 @@ class PixooRuntime {
     this.#catalogRead.resolve();
     if (this.#catalogFailures > 0) {
       recordLog(this.#context.log, 'operation.completed', {
-        'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.outcome': 'succeeded', 'bunny.attempt_count': this.#catalogFailures,
+        'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.outcome': Outcome.succeeded, 'bunny.attempt_count': this.#catalogFailures,
       });
       this.#catalogFailures = 0;
     }
@@ -479,12 +478,12 @@ class PixooRuntime {
         if (code !== undefined && code !== this.#artworkFailing) {
           this.#artworkFailing = code; recordLog(log, 'operation.failed', {...fields, 'bunny.code': code}, parent);
         } else if (code === undefined && request.artwork?.status === 'ready' && this.#artworkFailing !== undefined) {
-          this.#artworkFailing = undefined; recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded'}, parent);
+          this.#artworkFailing = undefined; recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
         }
       }
       if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
-        recordLog(log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'}, parent);
+        recordLog(log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': Outcome.succeeded}, parent);
       }
       return frames;
     } catch (error) {
@@ -561,9 +560,9 @@ class PixooRuntime {
     }
     if (copy.warned) {
       copy.warned = false;
-      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': 'succeeded', 'bunny.attempt_count': failures});
+      recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded, 'bunny.attempt_count': failures});
     } else if (failures > 0) {
-      log.debug('operation.completed', {...fields, 'bunny.outcome': 'succeeded', 'bunny.attempt_count': failures});
+      log.debug('operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded, 'bunny.attempt_count': failures});
     }
     changed();
   }
@@ -936,7 +935,7 @@ class PixooRuntime {
     const {requestId} = command.data;
     const fields: LogFields = {'bunny.device.id': this.#device, ...requestField(requestId)};
     const refuse = (body: ErrorBody): ErrorBody => {
-      recordLog(log, 'command.rejected', {...fields, 'bunny.outcome': 'rejected', 'bunny.code': body.error.code}, command);
+      recordLog(log, 'command.rejected', {...fields, 'bunny.outcome': Outcome.rejected, 'bunny.code': body.error.code}, command);
       return body;
     };
     if (this.#store === undefined || this.#stopping) return refuse(errorBody('unavailable', {detail: 'the Pixoo is stopping'}));
@@ -1002,7 +1001,7 @@ class PixooRuntime {
     } catch (error) {
       completion = errorCompletion(error);
     }
-    call.end(completion.result === 'succeeded' ? 'unset' : 'error');
+    call.end(completion.result === Outcome.succeeded ? 'unset' : 'error');
     if (this.#stopping) return;
     if (catalog) await this.#readCatalog('command');
     try {
@@ -1068,7 +1067,7 @@ class PixooRuntime {
     if (store === undefined) return;
     for (const command of store.pending()) {
       const error: ErrorDetail = errorBody('uncertain-result', {detail: 'the Pixoo restarted before it reported this command'}).error;
-      await this.#complete({...command, data: {requestId: command.requestId}}, command.family, {result: 'uncertain', evidence: 'none', error});
+      await this.#complete({...command, data: {requestId: command.requestId}}, command.family, {result: Outcome.uncertain, evidence: Outcome.none, error});
     }
   }
 
@@ -1093,7 +1092,7 @@ class PixooRuntime {
    * `incoming` folder named by its SHA-256, which the uploader put there; its size and hash must match.
    */
   async #content(content: {inline: string} | {staged: {file: string; bytes: number}}, folder: string): Promise<Uint8Array | Completion> {
-    const refused = (code: ErrorCode, detail: string): Completion => ({result: 'failed', evidence: 'none', error: errorBody(code, {detail}).error});
+    const refused = (code: ErrorCode, detail: string): Completion => ({result: Outcome.failed, evidence: Outcome.none, error: errorBody(code, {detail}).error});
     if ('inline' in content) {
       const bytes = Buffer.from(content.inline, 'base64');
       return bytes.length > MAX_INLINE_BYTES ? refused('too-large', 'inline media is limited to 160 KiB') : bytes;
@@ -1122,8 +1121,8 @@ class PixooRuntime {
     }, {timeoutMs: ACKNOWLEDGE_MS, parent: command});
     switch (result.status) {
       case 'accepted': return OBSERVED;
-      case 'rejected': return {result: 'failed', evidence: 'none', error: errorBody(result.error.error.code, {detail: 'the core refused the acknowledgment'}).error};
-      case 'uncertain': return {result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail: 'the core did not answer the acknowledgment'}).error};
+      case 'rejected': return {result: Outcome.failed, evidence: Outcome.none, error: errorBody(result.error.error.code, {detail: 'the core refused the acknowledgment'}).error};
+      case 'uncertain': return {result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the core did not answer the acknowledgment'}).error};
     }
   }
 }

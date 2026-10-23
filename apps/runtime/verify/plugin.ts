@@ -9,7 +9,7 @@ import {stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
-import {SdkError, connectRemote} from '@jimmie-potts/sdk';
+import {SdkError, connectRemote, Outcome} from '@jimmie-potts/sdk';
 import {moduleFolders} from '../build/registry.js';
 import {HEALTH_PATH, type RuntimeHealth} from '../src/index.js';
 import {SCENARIOS, expect, runScenario, type Scenario, type ScenarioResult} from '../tests/scenarios/catalog.js';
@@ -107,20 +107,20 @@ export const buildOutputs = (at = root): string[] => [
 /** The newest tracked source must be older than the oldest build output the run serves. */
 export async function buildCurrent(at = root): Promise<CheckOutcome> {
   const sources = execFileSync('git', ['-C', at, 'ls-files', '-z', '--', ...BUILD_SOURCES], {encoding: 'utf8'}).split('\0').filter(file => file !== '');
-  if (sources.length === 0) return {outcome: 'failed', reason: 'no build sources matched; the check cannot vouch for the build'};
+  if (sources.length === 0) return {outcome: Outcome.failed, reason: 'no build sources matched; the check cannot vouch for the build'};
   let newest = 0, newestFile = '';
   for (const file of sources) {
     const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
-    if (time === undefined) return {outcome: 'failed', reason: `${file} is missing or unreadable; restore the source and run npm run build`};
+    if (time === undefined) return {outcome: Outcome.failed, reason: `${file} is missing or unreadable; restore the source and run npm run build`};
     if (time > newest) [newest, newestFile] = [time, file];
   }
   let oldest = Number.POSITIVE_INFINITY;
   for (const file of buildOutputs(at)) {
     const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
-    if (time === undefined) return {outcome: 'failed', reason: `${file} is missing; run npm run build`};
+    if (time === undefined) return {outcome: Outcome.failed, reason: `${file} is missing; run npm run build`};
     oldest = Math.min(oldest, time);
   }
-  return newest <= oldest ? {outcome: 'passed'} : {outcome: 'failed', reason: `${newestFile} is newer than the build; run npm run build`};
+  return newest <= oldest ? {outcome: 'passed'} : {outcome: Outcome.failed, reason: `${newestFile} is newer than the build; run npm run build`};
 }
 
 /**

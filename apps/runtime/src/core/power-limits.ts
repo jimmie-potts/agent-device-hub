@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
-import {childOf,type TraceContext} from '@jimmie-potts/sdk';
+import {childOf,type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PowerLimitRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle} from './core.js';
@@ -85,7 +85,7 @@ export function createPowerLimits(options:PowerLimitOptions){
     if(stopped()||admitted?.definitionId!==definition||!admitted.enabled||admitted.attempt?.requestId!==requestId)return;
     // Once handed to the tracked dispatcher it is live admitted work, never a replayable timer job.
     let result:NonNullable<Entry['attempt']>;
-    try{result=await options.send(target,false,structuredClone(live),requestId,parent);}catch{result={requestId,outcome:'uncertain',reason:'uncertain-result'};}
+    try{result=await options.send(target,false,structuredClone(live),requestId,parent);}catch{result={requestId,outcome:Outcome.uncertain,reason:'uncertain-result'};}
     if(stopped())return;
     const after=store.get(target);if(after===undefined||after.attempt?.requestId!==requestId)return;
     after.attempt=result;await persist(after,after.definitionId,parent);

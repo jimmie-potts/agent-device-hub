@@ -27,6 +27,7 @@ import {keyClassOf, parseKey} from './routing.js';
 import {SdkError, type Clock, type Draft, type Sdk, type SendOptions, type TraceContext} from './sdk.js';
 import {noSpans, startSpan, type SpanRecorder} from './spans.js';
 import {childOf} from './trace.js';
+import {Outcome} from './evidence.js';
 
 export type OutboxOptions = {
   /**
@@ -236,7 +237,7 @@ export class Outbox {
     if (heard === 'forged') {
       this.#record('warn', 'message.received', {
         ...SOURCE.test(message.source) && message.source.length <= 256 ? {'bunny.participant': message.source} : {}, 'bunny.message.id': message.id,
-        'bunny.message.kind': 'occurrence', 'bunny.outcome': 'rejected', 'bunny.code': 'forbidden', 'bunny.reason': 'unauthorized',
+        'bunny.message.kind': 'occurrence', 'bunny.outcome': Outcome.rejected, 'bunny.code': 'forbidden', 'bunny.reason': 'unauthorized',
       }, message);
       return;
     }
@@ -432,7 +433,7 @@ export class Outbox {
     const result = OUTCOMES.includes(data.result) ? {'bunny.outcome': String(data.result)} : {};
     const code = typeof data.error?.code === 'string' ? {'bunny.code': data.error.code} : {};
     const fields = {...requestOf(message), 'bunny.message.id': message.id, ...result, ...code};
-    this.#record(data.result === 'succeeded' ? 'info' : 'warn', 'outcome.published', fields, trace);
+    this.#record(data.result === Outcome.succeeded ? 'info' : 'warn', 'outcome.published', fields, trace);
   }
 
   /** Writes one record; a logger that throws loses it, and the outbox goes on. */
