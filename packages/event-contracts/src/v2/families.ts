@@ -1,6 +1,7 @@
 import {assistantFamilies} from './assistant.js';
 import {lightingLayoutFamilies} from './lighting-layout.js';
 import {playbackLayoutFamilies} from './playback-layout.js';
+import {normalizeModeState} from './mode.js';
 import {homeLayoutFamilies} from './home-layout.js';
 export type {HomePlacement, HomeArrangements, HomeLayoutRecord, HomeLayoutSetRequest} from './home-layout.js';
 export type {PlaybackPlacement, PlaybackLayoutRecord, PlaybackLayoutSetRequest} from './playback-layout.js';
@@ -74,7 +75,9 @@ export type TurnEnded = AgentOccurrence & {noticeId?: string};
 export type SessionEnded = AgentOccurrence;
 export type MomentEnded = {requestId: string; momentId: string; ending: 'completed' | 'preempted' | 'superseded' | 'interrupted'; endedAtMs: number};
 export type Mode = 'work' | 'free' | 'quiet';
-export type ModeState = {id: string; revision: number; mode: Mode; selectedAtMs: number};
+export type ModeOverride = {target: string; mode: Mode; selectedAtMs: number};
+/** overrides is absent only in the retained mode/2.0 contract. */
+export type ModeState = {id: string; revision: number; mode: Mode; selectedAtMs: number; overrides?: ModeOverride[]};
 export type ModeSetRequest = {requestId: string; mode: Mode; expectedRevision?: number};
 export type MomentPlayRequest = {
   requestId: string; momentId: string; mood: string; palette?: string[]; durationMs: number; priorityClass: 'event' | 'flourish';
@@ -262,6 +265,7 @@ const checkPlaybackArtwork: PayloadCheck = message => {
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
+  define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
   define('power-limit', 'state', 'org.bunny.power-limit.updated', message=>{
     const issue=checkEntity(message);if(issue!==undefined)return issue;
     const record=message.data as PowerLimitRecord;
@@ -289,6 +293,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('moment-ended', 'occurrence', 'org.bunny.moment.ended'),
   define('outcome-recorded', 'occurrence', 'org.bunny.outcome.recorded', checkRecorded),
   define('mode-set', 'command', 'org.bunny.mode.set.requested'),
+  define('mode-override-set', 'command', 'org.bunny.mode-override.set.requested', routedSubject('routing')),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),

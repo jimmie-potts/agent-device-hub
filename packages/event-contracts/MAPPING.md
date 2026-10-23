@@ -331,10 +331,10 @@ a confirmed transmission; and `uncertain` is `uncertain` with `none` and
 modes in controller snapshots, and their modules keep them as native modes in
 `device /desired/mode` and `/capabilities/modes`. The Hub-mode table in the
 [README](README.md#hub-mode-table) maps the Hub's mode to each participating
-device kind's native mode, one way only. `mode/2.0` is the
-Hub's own selection, which [#924](https://github.com/jimmie-potts/agent-device-hub/issues/924)
-owns, and `mode-set/2.0` requests it. [#695](https://github.com/jimmie-potts/agent-device-hub/issues/695)
-adds per-device overrides later. Profile 1.0's unused
+device kind's native mode, one way only. `mode/2.1` keeps the global fields from
+`mode/2.0` and adds saved per-device `overrides`. `mode-set/2.0` selects the global
+mode and clears all overrides; `mode-override-set/2.0` selects one device's
+Hub-facing choice. Neither infers a saved choice from native mode evidence. Profile 1.0's unused
 `org.bunny.selection.committed` (`mode` `Work`, `Free` or `Quiet`) maps to
 `mode /mode` in lowercase.
 

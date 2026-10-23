@@ -40,3 +40,8 @@ void test('accepted is not completed; uncertainty and conflict keep controls loc
     {text: 'Completed: succeeded. Transmitted; physical effect was not observed.', locked: false});
   assert.match(operationView(operation('rejected', {error: {code: 'revision-conflict', retryable: false}})).text, /Refused.*revision-conflict.*without changing state/);
 });
+
+void test('saved mode completion never claims a device effect', () => {
+  assert.deepEqual(operationView(operation('completed', {family: 'mode-override-set', result: 'succeeded', evidence: 'observed'})),
+    {text: 'Choice saved. Device results are separate.', locked: false});
+});

@@ -51,7 +51,7 @@ void test('quick date ranges use calendar boundaries and preserve exact filters'
   assert.equal(today.get('session'), 'session_1');
   const yesterday = new URLSearchParams(historyQuery('yesterday', filters, now).slice(1));
   assert.equal(yesterday.get('fromAtMs'), String(new Date(2026, 9, 22).getTime()));
-  assert.equal(historyQuery('recent', emptyHistoryFilters()), '');
+  assert.equal(historyQuery('recent', emptyHistoryFilters()), '?limit=200');
   assert.throws(() => historyQuery('custom', {...filters, from: '2026-10-24', to: '2026-10-22'}));
 });
 
@@ -98,4 +98,14 @@ void test('history refusals retain only known safe codes, never raw gateway deta
     code = safe;await reader.read('');assert.equal(latest?.errorCode, safe);assert(!JSON.stringify(latest).includes('private raw detail'));
   }
   code = 'private-unrecognized-error';await reader.read('');assert.equal(latest?.errorCode, undefined);reader.dispose();
+});
+
+void test('every Timeline period and exact filter query requests at most 200 matching records', () => {
+  for (const period of ['today', 'yesterday', 'recent', 'custom'] as const) {
+    for (const filters of [emptyHistoryFilters(), {...emptyHistoryFilters(), source: 'bunny/modules/lifx', kind: 'operation', session: 'session_1', from: '2026-10-20', to: '2026-10-22'}]) {
+      const query = new URLSearchParams(historyQuery(period, filters).slice(1));
+      assert.deepEqual(query.getAll('limit'), ['200'], period);
+      if (filters.source !== '') assert.equal(query.get('source'), filters.source);
+    }
+  }
 });

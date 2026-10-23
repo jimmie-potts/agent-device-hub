@@ -57,11 +57,12 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
         <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="recent">Recent</option>{period === 'custom' && <option value="custom">Custom</option>}
       </select><button type="button" className="secondary timeline-refresh" aria-label="Refresh history" onClick={onRefresh}>↻</button>
     </div></header>
-    <div className="timeline-filters" role="group" aria-label="Activity filters">{(['All', 'Agents', 'Devices', 'Automation'] as const).map(value => <button type="button" className="secondary" key={value} aria-pressed={category === value} onClick={() => {setCategory(value);setVisible(20);}}>{value}</button>)}</div>
+    <div className="timeline-filters" role="group" aria-label="Activity filters" aria-describedby={`${uid}-window`}>{(['All', 'Agents', 'Devices', 'Automation'] as const).map(value => <button type="button" className="secondary" key={value} aria-pressed={category === value} onClick={() => {setCategory(value);setVisible(20);}}>{value}</button>)}</div>
+    <p className="vh" id={`${uid}-window`}>Categories filter only the latest {snapshot.rows.length} loaded entries, up to 200 matching records.</p>
     <p className={status === '' ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : `${rows.length} history entries.`}</p>
-    {snapshot.readAt !== undefined && status === '' && <p className="timeline-read-at">Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
+    {snapshot.readAt !== undefined && status === '' && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
     <ol className="timeline-entries" aria-label="Activity entries">{rows.slice(0, visible).map(row => <HistoryEntry key={row.seq} row={row}/>)}</ol>
-    {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No activity</p>}
+    {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
     {rows.length > visible && <button type="button" className="secondary" onClick={() => {setVisible(count => count + 20);}}>Show more</button>}
     {advanced}
   </div>;

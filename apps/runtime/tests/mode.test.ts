@@ -16,6 +16,19 @@ void test('first start durably serves Free without applying it to a device', () 
   } finally {database.close();}
 });
 
+void test('mode snapshot exposes an empty versioned exception list and preserves a legacy choice', () => {
+  const database = new DatabaseSync(':memory:');
+  try {
+    const mode = new ModePart(); mode.open(database);
+    const first = mode.states(['mode'])[0];
+    assert.equal(first?.dataschema, 'https://bunny.invalid/events/mode/2.1');
+    assert.deepEqual((first?.data as {overrides?: unknown}).overrides, []);
+    database.prepare('UPDATE core_mode SET record = ? WHERE id = ?').run(JSON.stringify({id: 'hub', revision: 42, mode: 'quiet', selectedAtMs: 12}), 'hub');
+    const reopened = new ModePart(); reopened.open(database);
+    assert.deepEqual(reopened.states(['mode'])[0]?.data, {id: 'hub', revision: 42, mode: 'quiet', selectedAtMs: 12, overrides: []});
+  } finally {database.close();}
+});
+
 // Real SQLite transactions with only the transport/tracker boundary controlled; no runtime or host is started.
 import type {Command, Draft, Logger, Reply, Responder, Sdk} from '@jimmie-potts/sdk';
 import type {ModeSetRequest} from '@jimmie-potts/event-contracts/v2/families';
@@ -32,12 +45,12 @@ const command = (mode: ModeSetRequest['mode'], requestId: string, expectedRevisi
   data: {mode, requestId, ...(expectedRevision === undefined ? {} : {expectedRevision})},
 });
 
-async function unit() {
+async function unit(empty = false) {
   const db = new DatabaseSync(':memory:');
   db.exec('CREATE TABLE completed (request_id TEXT PRIMARY KEY) STRICT');
   const sent: Action[] = [], published: Draft<object>[] = [];
-  let responder: Responder<ModeSetRequest> | undefined;
-  const flags = {admitted: true, failCommit: false, diskFull: false, failComplete: false, ended: 0, postcommit: 0};
+  const responders = new Map<string, Responder<ModeSetRequest>>();
+  const flags = {admitted: true, failCommit: false, diskFull: false, failComplete: false, pending: false, ended: 0, postcommit: 0};
   let revision = 0;
   const part = new ModePart({
     admit: () => flags.admitted,
@@ -49,11 +62,11 @@ async function unit() {
     end: () => {flags.ended += 1;},
   });
   const sdk = {source: 'bunny/core', respond: (_pattern: string, handler: Responder<ModeSetRequest>) => {
-    responder = handler; return Promise.resolve({close: () => Promise.resolve()});
+    responders.set(_pattern, handler); return Promise.resolve({close: () => Promise.resolve()});
   }} as unknown as Sdk;
   const core: CoreHandle = {
     sdk, clock: {now: () => Date.now()}, ready: Promise.resolve(), log: {} as Logger,
-    received: () => 'new', operation: () => undefined,
+    received: () => 'new', operation: id => sent.some(action => action.requestId === id) && !flags.pending ? {status: 'completed'} as ReturnType<CoreHandle['operation']> : undefined,
     transaction: work => {
       const staged: Draft<object>[] = [];
       db.exec('BEGIN');
@@ -75,8 +88,11 @@ async function unit() {
     },
   };
   await part.start(core); part.open(db);
-  part.setParticipants([{id: 'wall', kind: 'nanoleaf'}, {id: 'pixoo-1', kind: 'pixoo'}]);
-  const select = async (delivered: Command<ModeSetRequest>): Promise<Reply> => {assert.ok(responder); return responder(delivered);};
+  part.setParticipants(empty ? [] : [{id: 'wall', kind: 'nanoleaf'}, {id: 'pixoo-1', kind: 'pixoo'}]);
+  const select = async (delivered: Command<ModeSetRequest>): Promise<Reply> => {
+    const responder = responders.get(delivered.type === 'org.bunny.mode-override.set.requested' ? 'bunny.cmd.mode-override-set.*' : 'bunny.cmd.mode-set.hub');
+    assert.ok(responder); return responder(delivered);
+  };
   const state = (): ModeState => {const draft = part.states(['mode'])[0]; assert.ok(draft); return draft.data as ModeState;};
   return {db, part, sent, published, flags, state, select};
 }
@@ -94,6 +110,65 @@ void test('selection saves and completes together before independent native comm
     const reopened = new ModePart(); reopened.open(w.db);
     assert.equal((reopened.states(['mode'])[0]?.data as ModeState | undefined)?.mode, 'work');
     reopened.states(['mode']); assert.equal(w.sent.length, 4, 'restart and reads never apply the saved choice');
+  } finally {w.db.close();}
+});
+
+const individual = (target: string, mode: ModeSetRequest['mode'], requestId: string, revision?: number): Command<ModeSetRequest> => ({
+  ...command(mode, requestId, revision), subject: target, type: 'org.bunny.mode-override.set.requested',
+  dataschema: 'https://bunny.invalid/events/mode-override-set/2.0',
+});
+
+void test('individual choices isolate targets, survive restart, clear individually and reset on global reapply', async () => {
+  const w = await unit();
+  try {
+    await w.select(command('work', 'global-work'));
+    const at = w.state().selectedAtMs;
+    assert.deepEqual(await w.select(individual('wall', 'free', 'individual-free', w.state().revision)), {status: 'accepted'});
+    assert.equal(w.state().mode, 'work'); assert.equal(w.state().selectedAtMs, at);
+    assert.deepEqual(w.state().overrides?.map(({target, mode}) => ({target, mode})), [{target: 'wall', mode: 'free'}]);
+    assert.deepEqual(w.sent.slice(2).map(action => [action.draft.subject, action.draft.data]), [['wall', {mode: 'free'}]]);
+    const reopened = new ModePart(); reopened.open(w.db);
+    assert.deepEqual(reopened.states(['mode'])[0]?.data, w.state()); assert.equal(w.sent.length, 3);
+    await w.select(individual('pixoo-1', 'quiet', 'individual-quiet', w.state().revision));
+    assert.equal(w.state().overrides?.length, 2);
+    await w.select(individual('wall', 'work', 'follow-work', w.state().revision));
+    assert.deepEqual(w.state().overrides?.map(choice => choice.target), ['pixoo-1']);
+    await w.select(command('work', 'global-reapply', w.state().revision));
+    assert.deepEqual(w.state().overrides, []); assert.equal(w.sent.length, 7);
+  } finally {w.db.close();}
+});
+
+void test('pending selections refuse overlaps and unknown or unsaved individual choices send nothing', async () => {
+  const w = await unit();
+  try {
+    w.flags.pending = true;
+    await w.select(command('work', 'global-pending'));
+    const before = w.state();
+    const busy = await w.select(individual('wall', 'free', 'overlap', before.revision));
+    assert.ok('error' in busy); assert.equal(busy.error.code, 'capacity');
+    assert.deepEqual(w.state(), before); assert.equal(w.sent.length, 2);
+    w.flags.pending = false;
+    const missing = await w.select(individual('missing', 'free', 'missing-target', before.revision));
+    assert.ok('error' in missing); assert.equal(missing.error.code, 'unavailable');
+    w.flags.failCommit = true;
+    assert.ok('error' in await w.select(individual('wall', 'free', 'failed-save', before.revision)));
+    assert.deepEqual(w.state(), before); assert.equal(w.sent.length, 2);
+    w.flags.failCommit = false;
+    assert.deepEqual(await w.select(individual('wall', 'free', 'after-settlement', before.revision)), {status: 'accepted'});
+    assert.equal(w.state().overrides?.[0]?.mode, 'free');
+  } finally {w.db.close();}
+});
+
+void test('empty participation saves global intent; invalid existing state is never reset', async () => {
+  const w = await unit(true);
+  try {
+    assert.deepEqual(await w.select(command('quiet', 'empty-global')), {status: 'accepted'});
+    assert.equal(w.state().mode, 'quiet'); assert.equal(w.sent.length, 0);
+    for (const corrupt of ['broken-json', JSON.stringify({id: 'hub', mode: 'free'}), JSON.stringify({...w.state(), overrides: [{target: 'wall', mode: 'quiet', selectedAtMs: 0}]})]) {
+      w.db.prepare('UPDATE core_mode SET record = ?').run(corrupt);
+      assert.throws(() => new ModePart().open(w.db));
+      assert.equal((w.db.prepare('SELECT record FROM core_mode').get() as {record: string}).record, corrupt);
+    }
   } finally {w.db.close();}
 });
 

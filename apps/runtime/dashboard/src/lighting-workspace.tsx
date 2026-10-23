@@ -7,6 +7,7 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
 import {useAttempt} from './command-control.tsx';
 import {LightCard} from './light-card.tsx';
+import {DeviceModeChoice} from './device-mode.tsx';
 import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
 import './lighting.css';
 import {RoomModels} from './room-models.tsx';
@@ -130,13 +131,13 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
               const current = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
               if ('reason' in current) { setMessage(current.reason); return; }
               act(current.card, intent);
-            }} options={options(card)}
+            }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
             status={card.members.map(id => ({name: card.name, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
       <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
-        act={intent => { act(card, intent); }} options={options(card)} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
+        act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);
           return <div key={id}>{device?.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div>;

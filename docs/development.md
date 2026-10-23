@@ -834,6 +834,18 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+Individual Hub-mode overrides (#695) extend the existing event-contract, runtime
+and dashboard suites. After the root build, run
+`node --test apps/runtime/dist/tests/mode*.test.js`,
+`npm run test:events:built`, `npm run test:runtime-dashboard:built` and
+`node apps/runtime/dashboard/tests/hub-mode.browser.ts`. The mode browser journey
+already runs in the hosted smoke entry; these unit files already join core CI
+discovery. Verify saved exceptions on the existing device cards, compact Hub
+inspection, HTTP/MCP admission, shared ordering and restart without effects.
+Run affected Pixoo/SDK consumers, runtime scenarios and the full dashboard
+browser suite for the shared presentation change. Evidence is synthetic/source
+only; it does not establish installed or physical results.
+
 For the reusable Timeline card (#1194), after the root build run
 `node --test apps/runtime/dashboard/tests/timeline.test.ts apps/runtime/dashboard/tests/home-catalog.test.ts`
 and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser
@@ -842,6 +854,15 @@ passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
 accessibility. The existing core CI job discovers the unit tests and the App
 verification job runs the focused browser journey. Run the full dashboard
 browser suite and `inbox-history.browser.ts` for this shared presentation change.
+The browser journey asserts limit=200 on entry, date/exact, refresh and Home reads,
+truthful result-window labels and local category/Show more behavior. After the
+build, run `node --test apps/runtime/dist/tests/history-window.test.js apps/runtime/dist/tests/inbox-gateway.test.js`
+for HTTP/MCP limit validation, read permissions, filtering before the limit,
+compatibility without a limit and a 2,400-row synthetic archive with 16 KiB records.
+An unselected malformed record verifies that bounded reads decode only their
+window. Existing runtime test discovery includes these checks. Installed Recent
+acceptance uses bounded reads and private process/health evidence; never use an
+unlimited live read as a negative control.
 
 Customizable Home (#366) adds core metadata/restart and gateway admission tests in
 `apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard

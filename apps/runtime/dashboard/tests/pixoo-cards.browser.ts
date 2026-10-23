@@ -189,6 +189,7 @@ try {
     });
     await card.getByRole('tab', {name: 'Display', exact: true}).click();
     assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
+    for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await card.locator('[data-mode-target]').getByRole('button', {name, exact: true}).isDisabled(), true);
   } finally { releaseSync(); await page.unrouteAll({behavior: 'wait'}); }
   await feed(page, 'connected');
   for (let attempt = 0; await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled() && attempt < 100; attempt++) await delay(20);
@@ -207,6 +208,7 @@ try {
   await card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
   assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
   assert.equal(sent.length, uncertainCount);
+  for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await card.locator('[data-mode-target]').getByRole('button', {name, exact: true}).isDisabled(), true, 'uncertain native writes also lock saved mode controls');
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected');
   await card.getByText('Read-only access.', {exact: true}).waitFor();

@@ -4,7 +4,7 @@ type Tab = 'Power' | 'Color' | 'Scenes' | 'Timer';
 const tabs: Tab[] = ['Power', 'Color', 'Scenes', 'Timer'];
 export type LightCardProps = {
   card: LightingCard; devices: readonly LightingDevice[]; capabilities: ReturnType<typeof lightCapabilities>;
-  artwork: React.ReactNode; options: React.ReactNode; status: readonly {name: string; text: string; locked: boolean}[];
+  artwork: React.ReactNode; modeChoice?: React.ReactNode; options: React.ReactNode; status: readonly {name: string; text: string; locked: boolean}[];
   act: (intent: LightingIntent) => void; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
 };
 function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}: {
@@ -21,7 +21,7 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
 }
 function common<T>(values: readonly (T | undefined)[]): T | undefined { return values.length > 0 && values.every(value => value !== undefined && value === values[0]) ? values[0] : undefined; }
 /** Artwork and the menu remain mounted. Only the labelled control face changes on a tab switch. */
-export function LightCard({card, devices, capabilities: cap, artwork, options, status, act, drag, drop}: LightCardProps): React.JSX.Element {
+export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, drag, drop}: LightCardProps): React.JSX.Element {
   const id = useId();
   const [tab, setTab] = useState<Tab>('Power');
   const [hue, setHue] = useState(210), [saturation, setSaturation] = useState(75);
@@ -56,6 +56,7 @@ export function LightCard({card, devices, capabilities: cap, artwork, options, s
           <button type="button" disabled={!cap.power} aria-pressed={power === false} onClick={() => { act({family: 'power-set', data: {on: false}}); }}>Off</button></div>
         <Slider label={observedBrightness === undefined ? 'Brightness · requested' : 'Brightness · observed'} value={brightness} disabled={!cap.brightness} commit={percent => { act({family: 'brightness-set', data: {percent}}); }}/>
         {!cap.power && cap.blocked === undefined && <p className="light-note">Power controls aren’t supported by this model.</p>}
+        {modeChoice}
       </>}
       {tab === 'Color' && <>
         {cap.color ? <form onSubmit={event => { event.preventDefault(); act({family: 'lifx-color-set', data: {hue, saturation}}); setPaletteDirty(false); }}>

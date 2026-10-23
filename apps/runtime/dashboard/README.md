@@ -22,6 +22,17 @@ The runtime copy includes:
   decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
   (#923).
 
+Nanoleaf's existing light card and Pixoo's Display face include Work, Free and
+Quiet choices. These save an individual exception; choosing the Hub's mode
+returns that device to the global choice. The Hub card keeps its artwork and
+three buttons, with a neutral collapsed summary when saved exceptions or fresh
+native differences exist. Expanding it shows the choices, available device
+request evidence and links to device controls. It makes no physical-mode claim.
+Failures keep using Check Inbox. Native Monitor/Media, scene, power, brightness
+and media controls keep their own meaning and never create saved exceptions.
+All placements use the same controls and existing shell copies; opening,
+navigating, reconnecting and reloading send no mode command.
+
 The module-owned Wispr page and numeric home widget read selected collector files
 on demand when browser exposure is enabled (#927). They do not subscribe to an
 analytics event family. The Automation page manages event rules and shared weekly power schedules.
@@ -571,7 +582,9 @@ remain separate. Nothing resends on reload, reconnect or elapsed time.
 through **Edit Home → Add card**; existing saved arrangements are unchanged.
 Short newest-first rows reveal evidence and an optional technical record when
 selected. Today, Yesterday and Recent select retained history; category buttons
-filter that snapshot locally. **Filters** preserves inclusive From/To, Kind,
+filter that snapshot locally. Every read requests the latest 200 matching
+entries. “Latest N” identifies the loaded window, and **Show more** reveals only
+loaded entries. An empty category describes that window, not the whole archive. **Filters** preserves inclusive From/To, Kind,
 Source and qualified Session filters. Entry, **Refresh history** and applied
 filters read the existing authenticated gateway, without polling or commands.
 Only the latest read can update results/status; superseded and unmounted reads
