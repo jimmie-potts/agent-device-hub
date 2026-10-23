@@ -2,7 +2,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {AssistantEngine} from '../assistant/engine.js';
 import {PreferenceStore} from '../preferences/store.js';
 import {fail} from '../preferences/validation.js';
-import {ARCHIVE_BYTES, PAGE_BYTES, PROFILES, type Archive, type CompanionMessage, type ContextDocument, type Order, type Persona, type PersonaId} from './model.js';
+import {ARCHIVE_BYTES, PAGE_BYTES, PROFILES, type Archive, type CompanionMessage, type ContextDocument, type DuckWidget, type Order, type Persona, type PersonaId} from './model.js';
 import type {KnowledgeInput} from './validation.js';
 const sameOrder = (a: Order, b: Order): boolean => a.authority === b.authority && a.epoch === b.epoch && a.sequence === b.sequence;
 const identity = (value: CompanionMessage): string => JSON.stringify([value.conversationId, value.turnId, value.taskId, value.speakerId, value.recipientIds,
@@ -12,6 +12,20 @@ export class KnowledgeLibrary {
   readonly entries: PreferenceStore<KnowledgeInput>;
   constructor(readonly db: DatabaseSync, readonly assistant: AssistantEngine, readonly preferences: PreferenceStore) {
     this.entries = new PreferenceStore<KnowledgeInput>(db, 'knowledge');
+    db.exec('CREATE TABLE IF NOT EXISTS companion_widget (id INTEGER PRIMARY KEY CHECK(id=1), conversation_id TEXT) STRICT');
+  }
+  duckWidget(history: boolean, after = 0): DuckWidget {
+    const revision = this.assistant.store.meta().revision;
+    const saved = this.db.prepare('SELECT conversation_id FROM companion_widget WHERE id=1').get() as {conversation_id: string | null} | undefined;
+    if (saved?.conversation_id == null) return {schema: 'duck-widget/1.0', revision, conversation: null, messages: [], next: null};
+    const conversation = this.#duckConversation(saved.conversation_id);
+    const page = this.assistant.store.messages.page('reachy', conversation.id, after, revision, history ? undefined : 'microduck');
+    return {schema: 'duck-widget/1.0', revision, conversation, messages: page.messages, next: page.next};
+  }
+  #duckConversation(id: string) {
+    const conversation = this.assistant.store.messages.permitted('reachy', id);
+    if (!conversation.participants.includes('microduck')) fail('forbidden');
+    return conversation;
   }
   profiles(): Persona[] {
     return PROFILES.map(profile => {
@@ -35,6 +49,10 @@ export class KnowledgeLibrary {
   capacity(): void {if (Buffer.byteLength(JSON.stringify(this.archive())) > ARCHIVE_BYTES) fail('capacity');}
   apply(input: KnowledgeInput, now: number): void {
     switch (input.action) {
+      case 'select-duck-conversation':
+        if (input.conversationId !== null) this.#duckConversation(input.conversationId);
+        this.db.prepare('INSERT INTO companion_widget VALUES(1,?) ON CONFLICT(id) DO UPDATE SET conversation_id=excluded.conversation_id').run(input.conversationId);
+        break;
       case 'fixture': this.assistant.store.messages.fixture(now); break;
       case 'correct-message': this.assistant.store.messages.correct(input.messageId, input.meaning); break;
       case 'delete-message': this.assistant.store.messages.remove(input.messageId, now); break;

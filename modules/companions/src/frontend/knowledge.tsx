@@ -3,10 +3,11 @@ import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {PreferenceState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {EntryLibrary} from './preferences.js';
+import {DuckSelection} from './duck.js';
+import {MessageMeaning, meaningLabel as label} from './message.js';
 import type {Archive, CompanionMessage, ContextDocument, HistoryPage, KnowledgeView, Meaning, Persona, PersonaId} from '../knowledge/model.js';
 const root = '/modules/companions/content/';
 const emptyHistory = (): HistoryPage => ({schema: 'companion-history/1.0', revision: 0, availability: 'available', conversations: [], messages: [], next: null});
-const label = (message: CompanionMessage): string => message.meaning.kind === 'literal' ? message.meaning.text : message.meaning.kind === 'emotion' ? message.meaning.emotion : 'Meaning unknown';
 function Management({context, command, view, profiles, live, preferenceRevision}: {context: FrontendContext; command: FrontendCommand; view: KnowledgeView; profiles: Persona[]; live: boolean; preferenceRevision: number}): React.JSX.Element {
   const [profile, setProfile] = useState<PersonaId>('bunny');
   const [conversation, setConversation] = useState('');
@@ -97,13 +98,12 @@ function Management({context, command, view, profiles, live, preferenceRevision}
     <label htmlFor="knowledge-conversation">Conversation</label><select id="knowledge-conversation" value={conversation} disabled={!live || !historyLive} onChange={event => {setConversation(event.target.value); setSelected([]); setEditing(undefined);}} style={{maxWidth: '100%'}}>
       <option value="">No conversation selected</option>{listed.conversations.map(value => <option key={value.id} value={value.id}>{value.participants.join(' + ')} · {value.id}</option>)}
     </select>
+    <DuckSelection context={context} command={command} conversation={listed.conversations.find(value => value.id === conversation)} locked={locked || !historyLive} revision={view.revision}/>
     {!historyLive && <p role="status">History unavailable or loading.</p>}
     {historyLive && conversation !== '' && history.messages.length === 0 && <p>No remaining messages.</p>}
     {conversation !== '' && <div style={{overflowWrap: 'anywhere'}}>{history.messages.map(message => <article key={message.messageId} aria-label={`${message.speakerId} message ${message.ordering.sequence}`}>
       <h4>{message.speakerId} · {message.provenance.kind === 'synthetic' ? 'Synthetic fiction' : message.provenance.kind}{message.provenance.imported ? ' · imported' : ''}</h4>
-      {message.speakerId === 'microduck' && <p>Intended meaning / translation. MicroDuck audio is quacks only.</p>}
-      <p style={{whiteSpace: 'pre-wrap'}}>{label(message)}</p>
-      {message.legacyText !== undefined && <p>Retained legacy text (meaning and audience unqualified): {message.legacyText}</p>}
+      <MessageMeaning message={message}/>
       <p>Recipients: {message.recipientIds?.join(', ') ?? 'Unknown'}. Created {new Date(message.createdAtMs).toLocaleString()}. Revision {message.revision}. Order {message.ordering.sequence}. Delivery references: {message.deliveryRefs.length === 0 ? 'None recorded' : message.deliveryRefs.join(', ')}.</p>
       <label><input type="checkbox" checked={selected.includes(message.messageId)} disabled={!live || !historyLive || (!selected.includes(message.messageId) && selected.length >= 16)} onChange={event => {setSelected(previous => event.target.checked ? [...previous, message.messageId] : previous.filter(id => id !== message.messageId));}}/>Include message {message.ordering.sequence} in context</label>
       <button type="button" disabled={locked || !historyLive} onClick={() => {setEditing(message); setMeaningKind(message.meaning.kind); setMeaningText(label(message));}}>Correct message</button>

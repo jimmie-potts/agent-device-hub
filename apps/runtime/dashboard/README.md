@@ -76,6 +76,14 @@ adds the current reusable device, light/group, room and Music instances, togethe
 with availability and supported sizes. The editor reuses the existing adapters,
 shared authenticated connection and module-owned frontend entries.
 
+The optional MicroDuck card uses the companions frontend through that same scope.
+Choose one Reachy–Duck conversation on Companion knowledge, save it with **Show
+selected conversation on Home**, then add MicroDuck through **Edit Home**. The
+card shows one latest meaning and its original time; **View conversation** opens
+bounded history separately. Selection and records remain with companions. Reads
+produce no output; stale or denied content is hidden, and playback stays unknown
+without qualified evidence. See the [module guide](../../../modules/companions/README.md#duck-home-widget).
+
 ### Customizable Home
 
 Choose **Edit Home**, then **Add card** to browse by category. Move cards with the

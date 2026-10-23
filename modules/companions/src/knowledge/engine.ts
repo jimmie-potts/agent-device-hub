@@ -73,13 +73,19 @@ export class Knowledge {
     } catch (error) {return errorBody(codeOf(error), {detail: 'The knowledge change was not saved.'});}
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
-    if (!['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive'].includes(ref)) return undefined;
+    if (!['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive', 'duck-widget'].includes(ref)) return undefined;
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
     const query = request?.query ?? {};
     try {
       if (request?.signal.aborted === true) fail('unavailable');
       let document: unknown;
-      if (ref === 'knowledge') {
+      if (ref === 'duck-widget') {
+        const view = query.view ?? 'latest', after = Number(query.after ?? 0);
+        if (Object.keys(query).some(key => !['view', 'after'].includes(key)) || !['latest', 'history'].includes(view) ||
+          !Number.isSafeInteger(after) || after < 0 || (view === 'latest' && after !== 0)) fail('invalid-request');
+        document = this.library.duckWidget(view === 'history', after);
+        if (Buffer.byteLength(JSON.stringify(document)) > PAGE_BYTES) fail('capacity');
+      } else if (ref === 'knowledge') {
         const view = query.view ?? 'active';
         if (Object.keys(query).some(key => key !== 'view') || !['active', 'manage', 'export'].includes(view)) fail('invalid-request');
         const value = view === 'manage' ? this.store.view() : view === 'export' ? this.store.library() : this.store.active();

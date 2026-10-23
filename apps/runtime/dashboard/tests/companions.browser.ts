@@ -1,4 +1,5 @@
 import {knowledgeJourney} from './knowledge.browser.ts';
+import {duckJourney} from './duck.browser.ts';
 import assert from 'node:assert/strict';
 import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
@@ -14,6 +15,7 @@ try {
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
   await preferencesJourney(world, page, context);
   await knowledgeJourney(world, page, context);
+  await duckJourney(world, page, context);
   const reachy = page.getByRole('region', {name: 'Reachy', exact: true});
   await page.goto(`${world.url}/#/module/companions/reachy`); await feed(page, 'connected');
   await reachy.getByText('Reachy is disabled.', {exact: false}).waitFor();

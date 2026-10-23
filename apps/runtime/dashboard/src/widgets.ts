@@ -28,6 +28,10 @@ export type WidgetDefinition = {
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
+    id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
+    sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget']}, commands: false,
+  },
+  {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
     sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },

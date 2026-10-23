@@ -9,7 +9,14 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
-  const result: HomeCardDefinition[] = widgetCatalog.map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: widget.id !== 'wispr'}));
+  const result: HomeCardDefinition[] = widgetCatalog.map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: widget.id !== 'wispr' && widget.id !== 'duck-latest'}));
+  const duck = result.find(card => card.id === 'duck-latest');
+  if (duck !== undefined) {
+    duck.category = 'Companions';
+    if (runtime.modules?.some(module => module.name === 'companions' && module.state === 'running' && module.pages.some(page => page.id === 'duck-conversation')) !== true) {
+      duck.source = {kind: 'unavailable'}; duck.reason = 'Companion conversation is unavailable.';
+    }
+  }
   const wispr = result.find(card => card.id === 'wispr');
   if (wispr !== undefined) {
     wispr.category = 'Data';
