@@ -387,6 +387,12 @@ Imports preserve existing records and add missing entries inactive. See the
 the read contract and bounds. No automatic learning or model-context insertion
 is included.
 
+The **Companion knowledge** page adds explicit household notes, curated persona
+inspection, attributed conversation, current context copy and additive private
+recovery in the same owner. Its [guide](../../modules/companions/README.md#companion-knowledge-and-context)
+describes current reads, unknown legacy evidence, removal behavior and bounds.
+No live model, automatic learning, audio or device output is enabled by it.
+
 ## Core automation
 
 The core owns event automation ([#925](https://github.com/jimmie-potts/agent-device-hub/issues/925)) in fresh private tables. It reuses the legacy Hub's event-rule definitions, interrupt set, quiet hours and budgets without transferring old rules or settings. `CoreModule.automation` exposes rule controls, settings, the interrupt set and the log for the authenticated gateway. A rule created without owner enabling stays disabled. The core runs independently of the page.
