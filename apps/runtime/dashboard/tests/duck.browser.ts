@@ -23,6 +23,7 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   await page.getByRole('button', {name: 'Add MicroDuck', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   const widget = page.getByRole('article', {name: 'MicroDuck latest meaning', exact: true});
+  const legacy = 'SYNTHETIC_LEGACY_'.repeat(64);
   const text = 'Quack: captain of the imaginary pond.';
   await widget.getByText(text, {exact: true}).waitFor();
   assert.equal(await widget.getByText('I claim the imaginary pond.', {exact: true}).count(), 0);
@@ -89,6 +90,8 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
       const speakerId = sequence % 2 === 0 ? 'reachy' : 'microduck';
       archive.messages.push({...template, messageId: `synthetic-widget-${sequence}`, speakerId, recipientIds: [speakerId === 'reachy' ? 'microduck' : 'reachy'],
         ordering: {...template.ordering, sequence}, meaning: {kind: 'literal', text: `Synthetic widget message ${sequence}`, language: 'en'},
+        ...(sequence === 27 ? {createdAtMs: Number.MAX_SAFE_INTEGER} : {}),
+        ...(sequence === 28 ? {meaning: {kind: 'unknown' as const}, provenance: {kind: 'legacy' as const, imported: false}, legacyText: legacy} : {}),
         deliveryRefs: sequence === 27 ? ['synthetic-uncertain-output'] : []});
     }
     await editRegion.getByLabel('Companion archive file', {exact: true}).setInputFiles({name: 'widget-history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(archive))});
@@ -96,6 +99,7 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
     await widget.getByText('Synthetic widget message 27', {exact: true}).waitFor();
     assert.equal(await widget.getByText('Synthetic widget message 28', {exact: true}).count(), 0, 'later Reachy reply does not replace Duck');
     await widget.getByText('Playback unknown. Delivery references are recorded; they do not establish playback or hearing.', {exact: true}).waitFor();
+    await widget.getByText(/Time unavailable/).waitFor();
   } finally {await editor.close();}
   await page.route('**/modules/companions/content/duck-widget?*', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected'); await widget.getByText('Access denied. Private conversation hidden.', {exact: true}).waitFor();
@@ -124,7 +128,7 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
     assert.equal(await next.evaluate(element => element === document.activeElement), true, 'history update keeps navigation focus');
   } finally {await updater.close();}
   await next.press('Enter');
-  await history.getByText('Synthetic widget message 28', {exact: true}).waitFor();
+  await history.getByText(`Retained legacy text (meaning and audience unqualified): ${legacy}`, {exact: true}).waitFor();
   assert.equal(await history.getByText('Synthetic widget message 5', {exact: true}).count(), 0, 'history page replaces rather than accumulates browser copies');
   if (receipts !== undefined) await page.screenshot({path: `${receipts}/duck-history-phone.png`, fullPage: true});
   assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);

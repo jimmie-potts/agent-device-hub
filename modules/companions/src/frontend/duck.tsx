@@ -5,28 +5,35 @@ import type {Conversation, DuckWidget as Document} from '../knowledge/model.js';
 import {MessageEvidence, MessageMeaning} from './message.js';
 
 const root = '/modules/companions/content/duck-widget';
+function readError(error: unknown): string {
+  const value = error as {body?: {error?: {code?: string}}; error?: {code?: string}} | null;
+  const code = value?.body?.error?.code ?? value?.error?.code;
+  return code === 'forbidden' || code === 'unauthenticated' ? 'Access denied. Private conversation hidden.' : 'Conversation unavailable. Refresh to try again.';
+}
 export const conversationLabel = (value: Conversation): string => `${value.participants.map(id => id === 'microduck' ? 'MicroDuck' : id === 'reachy' ? 'Reachy' : 'B.U.N.N.Y.').join(' + ')} · ${value.id}`;
 function useDuck(context: FrontendContext, history = false, after = 0) {
   const {api, connected} = context;
   const [revision, setRevision] = useState<number>();
   const [synced, setSynced] = useState(false);
+  const [syncError, setSyncError] = useState<string>();
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<{api: FrontendApi; key: string; document?: Document; error?: string}>();
   useEffect(() => {
-    setSynced(false);
+    setSynced(false); setSyncError(undefined);
     if (!connected) return;
     let active = true, close: (() => Promise<void>) | undefined;
     void api.sync<AssistantState>(['assistant-state'], change => {
       if (!active) return;
       if (change.type === 'updated') setRevision(change.message.data.revision);
-      else if (change.type === 'failed') setSynced(false);
+      else if (change.type === 'failed') {setSynced(false); setSyncError(readError(change.error));}
     }).then(value => {
-      if (value.status !== 'synced') return;
+      if (value.status !== 'synced') {if (active) setSyncError(readError(value.error)); return;}
       if (!active) {void value.copy.close(); return;}
       close = () => value.copy.close();
       const state = value.copy.states().find(message => message.data.id === 'assistant');
       if (state !== undefined) {setRevision(state.data.revision); setSynced(true);}
-    }, () => {if (active) setSynced(false);});
+      else setSyncError(readError(null));
+    }, (error: unknown) => {if (active) {setSynced(false); setSyncError(readError(error));}});
     return () => {active = false; void close?.();};
   }, [api, connected, refresh]);
   const key = `${revision}:${history}:${after}:${refresh}`;
@@ -44,13 +51,12 @@ function useDuck(context: FrontendContext, history = false, after = 0) {
       setResult({api, key, document});
     }, (error: unknown) => {
       if (!active) return;
-      const code = (error as {body?: {error?: {code?: string}}} | null)?.body?.error?.code;
-      setResult({api, key, error: code === 'forbidden' || code === 'unauthenticated' ? 'Access denied. Private conversation hidden.' : 'Conversation unavailable. Refresh to try again.'});
+      setResult({api, key, error: readError(error)});
     });
     return () => {active = false;};
   }, [api, connected, synced, revision, key, after, history]);
   const current = connected && synced && result?.api === api && result.key === key ? result : undefined;
-  return {document: current?.document, error: !connected ? 'Disconnected. Conversation is stale and hidden.' : current?.error,
+  return {document: current?.document, error: !connected ? 'Disconnected. Conversation is stale and hidden.' : syncError ?? current?.error,
     refresh: () => {setRefresh(value => value + 1);}};
 }
 function Selected({conversation}: {conversation: Conversation}): React.JSX.Element {

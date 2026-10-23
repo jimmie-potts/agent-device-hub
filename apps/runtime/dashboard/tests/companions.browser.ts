@@ -1,5 +1,6 @@
 import {knowledgeJourney} from './knowledge.browser.ts';
 import {duckJourney} from './duck.browser.ts';
+import {duckFailureJourney} from './duck-failures.ts';
 import assert from 'node:assert/strict';
 import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
@@ -13,6 +14,7 @@ try {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
+  await duckFailureJourney(context);
   await preferencesJourney(world, page, context);
   await knowledgeJourney(world, page, context);
   await duckJourney(world, page, context);

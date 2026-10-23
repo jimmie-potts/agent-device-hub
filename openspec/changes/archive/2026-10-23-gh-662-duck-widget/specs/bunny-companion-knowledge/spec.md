@@ -21,10 +21,18 @@ The Home widget SHALL show exactly one latest remaining Duck message by the sele
 - **THEN** the card labels the distinction without inventing translation or claiming audio played or was heard
 - **AND** history remains readable without Reachy hardware, voice or a running model
 
+#### Scenario: Retained records remain displayable
+- **WHEN** a retained message has a timestamp outside the browser's calendar range or long unbroken legacy text
+- **THEN** the surface reports time unavailable without crashing, and the legacy text wraps within the narrow layout
+
 #### Scenario: Private content is retired on invalidation or access loss
 - **WHEN** selection or records change, a read fails or is denied, the connection is lost, or an older read finishes late
 - **THEN** outdated content is hidden until a current permitted read succeeds, with unselected, empty, unavailable and stale states distinguishable
 - **AND** no private content enters URLs, diagnostics or shared metadata and reconnect never replays an effect
+
+#### Scenario: Metadata subscription fails while the dashboard stays connected
+- **WHEN** the initial companion sync is refused or fails, or its later copy stops
+- **THEN** Home and history hide private content, distinguish denied from unavailable, and offer an explicit refresh that starts a fresh sync without an output command
 
 #### Scenario: Accessible Home and history
 - **WHEN** the owner adds the card, opens history, pages through messages and returns Home using a keyboard or narrow viewport
