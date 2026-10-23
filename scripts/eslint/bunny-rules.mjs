@@ -502,23 +502,27 @@ const errorBodyFromRegistry = {
  * An outcome or evidence word is never a raw string value in a claim position outside sdk/evidence (Hub #1141, narrowed
  * to claim positions in #1187): a hand-picked literal is how an uncertain result was summarised as rejected (#736 F1)
  * and acknowledged transmission was rebuilt as none (#1126 F1). A claim position is where a claim key (`evidence`,
- * `outcome`, `result`, `priorEffects`, `level` or `bunny.outcome`) is given a value or compared with one: the property's
- * value, the variable's initializer, the assigned value, the other side of `===`/`!==`, or a `case` on it, through
- * conditionals, logical operators, arrays and casts. The vocabulary is read from sdk/evidence.ts, so the rule and the
- * SDK cannot drift. The same word anywhere else, such as a CSS `none` or a status label, is not a claim and is not
+ * `outcome`, `result`, `level` or `bunny.outcome`) is given a value or compared with one: an object property's value, a
+ * class field's or variable's initializer, a parameter's or destructuring default, an assigned value, the other side
+ * of `===`, `!==`, `==` or `!=`, or a `case` on it, through conditionals, logical operators, arrays and casts. The
+ * vocabulary is read from sdk/evidence.ts, so the rule and the SDK cannot drift. The same word anywhere else, such as
+ * a CSS `none`, a `status` label or an effects vocabulary (`priorEffects`), is not an evidence claim and is not
  * checked; ErrorCode values such as 'uncertain-result' are other words.
  */
 const outcomeWords = new Set(Object.values(Outcome));
-const claimKeys = new Set(['evidence', 'outcome', 'result', 'priorEffects', 'level', 'bunny.outcome']);
-const claimKeyName = property => (property.computed ? literal(property.key) : property.key.type === 'Identifier' ? property.key.name : literal(property.key));
-/** Whether an expression names a claim: `evidence`, `receipt.evidence`, `fields['bunny.outcome']` or `claim!.level`. */
+const claimKeys = new Set(['evidence', 'outcome', 'result', 'level', 'bunny.outcome']);
+/** The name a property key, member property or class field names: an identifier, a private name or a string literal. */
+const claimName = (key, computed) => {
+  if (computed) return literal(key);
+  if (key.type === 'Identifier' || key.type === 'PrivateIdentifier') return key.name;
+  return literal(key);
+};
+const unwrapped = new Set(['ChainExpression', 'TSNonNullExpression', 'TSAsExpression', 'TSSatisfiesExpression']);
+/** Whether an expression names a claim: `evidence`, `receipt.evidence`, `fields['bunny.outcome']`, `this.#evidence` or `claim!.level`. */
 const namesClaim = node => {
   if (node?.type === 'Identifier') return claimKeys.has(node.name);
-  if (node?.type === 'MemberExpression') {
-    const name = node.computed ? literal(node.property) : node.property.type === 'Identifier' ? node.property.name : undefined;
-    return name !== undefined && claimKeys.has(name);
-  }
-  if (['ChainExpression', 'TSNonNullExpression', 'TSAsExpression', 'TSSatisfiesExpression'].includes(node?.type)) return namesClaim(node.expression);
+  if (node?.type === 'MemberExpression') { const name = claimName(node.property, node.computed); return name !== undefined && claimKeys.has(name); }
+  if (unwrapped.has(node?.type)) return namesClaim(node.expression);
   return false;
 };
 const through = new Set(['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression']);
@@ -528,9 +532,11 @@ const inClaimPosition = node => {
   while (parent && through.has(parent.type) && !(parent.type === 'ConditionalExpression' && parent.test === child)) { child = parent; parent = parent.parent; }
   if (!parent) return false;
   switch (parent.type) {
-    case 'Property': return parent.value === child && parent.parent?.type === 'ObjectExpression' && claimKeys.has(claimKeyName(parent));
+    case 'Property': return parent.value === child && parent.parent?.type === 'ObjectExpression' && claimKeys.has(claimName(parent.key, parent.computed));
+    case 'PropertyDefinition': return parent.value === child && claimKeys.has(claimName(parent.key, parent.computed));
     case 'VariableDeclarator': return parent.init === child && namesClaim(parent.id);
     case 'AssignmentExpression': return parent.right === child && namesClaim(parent.left);
+    case 'AssignmentPattern': return parent.right === child && namesClaim(parent.left);
     case 'BinaryExpression': return ['===', '!==', '==', '!='].includes(parent.operator) && namesClaim(parent.left === child ? parent.right : parent.left);
     case 'SwitchCase': return parent.test === child && namesClaim(parent.parent.discriminant);
     default: return false;

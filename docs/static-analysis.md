@@ -203,22 +203,33 @@ and the runtime's tests cover the rest.
   vocabulary in `sdk/evidence.ts` (`absent`, `transmitted`, `uncertain`,
   `observed`, `none`, `succeeded`, `failed`, `rejected`) in a claim position in
   production code outside that file. A claim position is where a claim key
-  (`evidence`, `outcome`, `result`, `priorEffects`, `level` or `bunny.outcome`)
-  is given a value or compared with one: the property's value, the variable's
-  initializer, the assigned value, the other side of `===`/`!==`, or a `case`
-  on it, through conditionals, logical operators, arrays and casts. Take the
-  word from `Outcome` and change a claim only with `merge`. The same word in
-  any other position, such as a CSS `none`, a `status` or `kind` label or a map
-  key, is not a claim and is not checked; ErrorCode values such as
-  `uncertain-result` are other words. Tests and page code are not checked.
-  The remaining hits are held in `eslint-suppressions.json`: the retained
-  legacy hub and maintenance scripts, and `apps/chompi-bridge`, which the
-  owner's CHOMPI work freezes. The native suppressions are the ratchet: ESLint
-  fails when a file gains a hit, and an unused entry fails `lint:js` until it is
-  pruned, so the baseline only shrinks; a new entry needs a visible
-  `--suppress-rule` edit. There is no separate pin file or cap. It misses a word
-  returned from a function, passed as an argument, built at run time or held
-  in a variable without a claim name.
+  (`evidence`, `outcome`, `result`, `level` or `bunny.outcome`) is given a value
+  or compared with one: an object property's value, a class field's or
+  variable's initializer, a parameter's or destructuring default, an assigned
+  value, the other side of `===`, `!==`, `==` or `!=`, or a `case` on it,
+  through conditionals, logical operators, arrays and casts. Take the word
+  from `Outcome` and change a claim only with `merge`. The same word in any
+  other position is not an evidence claim and is not checked: a CSS `none`, a
+  `status` or `kind` label, a map key, or the effects vocabulary
+  (`priorEffects: 'none' | 'possible' | 'confirmed-transmission'`), which
+  shares a spelling but not a meaning; ErrorCode values such as
+  `uncertain-result` are other words. Tests are not checked, and page code
+  and page drivers keep the exclusion they had when the rule landed (#1141);
+  lifting it is a separate change.
+  The 87 remaining hits are held in `eslint-suppressions.json`, none under the
+  strict profile: the retained legacy hub (18) and controllers (24), which do
+  not depend on the SDK; `apps/chompi-bridge` (10), frozen by the owner's
+  CHOMPI work; `packages/app-verify` (19) and `packages/contracts` (5), whose
+  own result vocabularies predate the SDK; `apps/maintenance` (3),
+  `packages/mcp` (1) and repository scripts (5), which do not import the SDK.
+  The native suppressions are the ratchet: ESLint fails when a file gains a
+  hit, and an unused entry fails `lint:js` until it is pruned, so the baseline
+  only shrinks; a new entry shows as an edit to the committed JSON, which the
+  rule above against `--suppress-all` and `--suppress-rule` for new findings
+  forbids. There is no separate pin file or cap. It misses a word returned
+  from a function or arrow (even one whose return type names a claim), passed
+  as an argument, held in a list that a call such as `.includes` compares,
+  built at run time, or held in a variable without a claim name.
 
 Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
 profile blocks, never inline comments, and each is listed here.

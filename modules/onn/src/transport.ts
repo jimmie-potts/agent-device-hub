@@ -116,7 +116,7 @@ export class AdbTransport implements OnnTransport {
     let possible = false, answered = false;
     // Transmission evidence only grows (Hub #1140): a later failure cannot erase an acknowledged write.
     const delivery = deliveryEvidence();
-    const sent = (): Attempt['evidence'] => delivery.claim.level === Outcome.transmitted ? 'transmitted' : 'none';
+    const sent = (): Attempt['evidence'] => delivery.claim.level === Outcome.transmitted ? Outcome.transmitted : Outcome.none;
     const wrote = (): void => {const code = beforeEffect(); if (code !== undefined) throw new EffectRefused(code); possible = true;}, transmitted = (): void => {delivery.merge(transmission());};
     try {
       let command: string | undefined;

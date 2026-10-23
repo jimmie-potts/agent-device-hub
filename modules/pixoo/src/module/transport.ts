@@ -211,7 +211,7 @@ class SimulatedAdapter implements DeviceAdapter {
     });
     const completedAtMs = this.#clock.now();
     return {
-      ok: false, code, priorEffects: mutating ? 'possible' : Outcome.none, generation: options.generation,
+      ok: false, code, priorEffects: mutating ? 'possible' : 'none', generation: options.generation,
       timing: {submittedAtMs, startedAtMs: submittedAtMs, completedAtMs, queueMs: 0, serviceMs: completedAtMs - submittedAtMs},
     };
   }

@@ -220,9 +220,8 @@ test('covered paths have no lint baseline, and every workspace package is scoped
   // No rule has a baseline under the profile. The outcome-word rule's hits here were converted to `Outcome.*` when the
   // rule was narrowed to claim positions (Hub #1187), so its remaining baseline is outside the covered paths.
   const suppressions = JSON.parse(readFileSync(join(root, 'eslint-suppressions.json'), 'utf8'));
-  // The profile's globs name TypeScript files; a script beside them (apps/runtime/scripts/*.mjs) is outside it.
   const inCovered = Object.entries(suppressions)
-    .filter(([file]) => /\.tsx?$/.test(file) && covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
+    .filter(([file]) => covered.some(dir => file.startsWith(dir + '/')) && !staged.some(dir => file.startsWith(dir + '/')))
     .flatMap(([file, rules]) => Object.keys(rules).map(rule => `${file}: ${rule}`));
   assert.deepEqual(inCovered, []);
   // The module boundary treats other scopes as third-party, so every workspace package must use a listed scope.
@@ -525,6 +524,8 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
     "if (mode === 'none') clear(); switch (state) { case 'failed': break; default: break; }",
     "log.info('operation.failed', {'bunny.operation': 'storage', 'bunny.reason': 'none'});",
     "const result = {evidence: Outcome.none, note: 'failed'}; const outcome = cancelled ? Outcome.rejected : summary;",
+    // An effects vocabulary shares the spelling `none` but is not an evidence claim.
+    "const priorEffects = count !== 0 ? 'possible' : 'none'; const effects = {priorEffects: 'none'};",
   ],
   invalid: [
     // #736 F1 before the fix (74e92c37 apps/hub/src/server.ts): a lost controller response, an uncertain result, was
@@ -540,7 +541,13 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
     // Claim positions beyond a property value: an assignment, a comparison with a member, a case on a claim, a cast.
     {code: "receipt.evidence = 'none'; fields['bunny.outcome'] = known || 'uncertain';", errors: [{messageId: 'raw', data: {value: 'none'}}, {messageId: 'raw', data: {value: 'uncertain'}}]},
     {code: "if (claim!.level !== 'observed') {} switch (summary?.result) { case 'failed': break; }", errors: [{messageId: 'raw', data: {value: 'observed'}}, {messageId: 'raw', data: {value: 'failed'}}]},
-    {code: "const done = {result: 'succeeded' as const, priorEffects: ['none']};", errors: [{messageId: 'raw', data: {value: 'succeeded'}}, {messageId: 'raw', data: {value: 'none'}}]},
+    {code: "const done = {result: 'succeeded' as const, evidence: ['none']}; const seen = {['result']: 'failed'};", errors: ['succeeded', 'none', 'failed'].map(value => ({messageId: 'raw', data: {value}}))},
+    // Loose equality, `satisfies`, a cast or a non-null assertion on the claim side.
+    {code: "if (result == 'failed') {} if (summary.result != 'succeeded') {} const o = {evidence: 'none' satisfies string};", errors: ['failed', 'succeeded', 'none'].map(value => ({messageId: 'raw', data: {value}}))},
+    {code: "if ((summary as S).result === 'failed') {} if (result! === 'rejected') {}", errors: [{messageId: 'raw', data: {value: 'failed'}}, {messageId: 'raw', data: {value: 'rejected'}}]},
+    // A class field, a parameter default, a destructuring default and a private field assignment.
+    {code: "class A { result = 'failed'; #evidence: string = 'none'; set() { this.#evidence = 'observed'; } }", errors: ['failed', 'none', 'observed'].map(value => ({messageId: 'raw', data: {value}}))},
+    {code: "function f(result = 'failed') {} const {evidence = 'none'} = claim;", errors: [{messageId: 'raw', data: {value: 'failed'}}, {messageId: 'raw', data: {value: 'none'}}]},
   ],
 });
 

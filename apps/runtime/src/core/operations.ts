@@ -161,8 +161,8 @@ function outcome(operation: Operation, taken: TakenOutcome): Operation | undefin
   if (taken.error === undefined) delete settled.error;
   const current = operation.result;
   // Pending, or only uncertain so far: the outcome settles the operation, a definitive one replacing an uncertain result.
-  if (current === undefined || (current === 'uncertain' && definitive(taken.result))) return settled;
-  if (current === 'uncertain') return {...base, evidence: strongest(operation.evidence, taken.evidence)};
+  if (current === undefined || (current === Outcome.uncertain && definitive(taken.result))) return settled;
+  if (current === Outcome.uncertain) return {...base, evidence: strongest(operation.evidence, taken.evidence)};
   // Already definitive or in conflict: an uncertain outcome adds its evidence only.
   if (!definitive(taken.result)) return base;
   if (current === 'conflict' || current !== taken.result) {

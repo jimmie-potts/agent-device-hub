@@ -112,8 +112,8 @@ const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SOURCE = /^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/;
 /** The `bunny.request.id` attribute's pattern (diagnostic contract): a request ID it refuses is left out of a record. */
 const REQUEST_FIELD = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const RESULTS: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
-const EVIDENCE: readonly unknown[] = ['transmitted', 'observed', 'none'];
+const RESULTS: readonly unknown[] = [Outcome.succeeded, Outcome.failed, Outcome.uncertain];
+const EVIDENCE: readonly unknown[] = [Outcome.transmitted, Outcome.observed, Outcome.none];
 const MAX_DELAY_MS = 2_147_483_647;
 /** The intake's one subscription: every published key. */
 const INTAKE = 'bunny.*.*.*';

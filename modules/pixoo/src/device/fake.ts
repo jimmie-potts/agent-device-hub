@@ -3,7 +3,6 @@ import {
   systemClock, type Animation, type Clock, type DeviceAdapter, type FailureCode, type OperationOptions,
   type OperationResult, type ProbeResult, type RgbFrame, type Timing, type UploadResult,
 } from './contracts.js';
-import {Outcome} from '@jimmie-potts/sdk';
 
 export interface FakeDeviceOptions { clock?: Clock; latencyMs?: number; readyDelayMs?: number; recordHistory?: boolean }
 type OperationKind = 'probe' | 'uploadAnimation' | 'setBrightness' | 'setScreen';
@@ -127,7 +126,7 @@ export class FakeDeviceAdapter implements DeviceAdapter {
         const timing = { submittedAtMs, startedAtMs, completedAtMs,
           queueMs: (startedAtMs ?? completedAtMs) - submittedAtMs,
           serviceMs: startedAtMs === null ? 0 : completedAtMs - startedAtMs };
-        const priorEffects = count !== 0 ? 'possible' : Outcome.none;
+        const priorEffects = count !== 0 ? 'possible' : 'none';
         if(this.recordHistory)this.records.push({ id, kind, generation, timing: { ...timing }, outcome: code ?? 'success', priorEffects });
         if(code === undefined)this.counted[kind].succeeded++;
         resolve(code !== undefined ? { ok: false, code, priorEffects, generation, timing } : { ok: true, value: value(), generation, timing });

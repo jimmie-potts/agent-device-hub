@@ -7,7 +7,6 @@ import {renderNowPlaying,trackKey,type NowPlayingView} from './now-playing.js';
 import type {DashboardLayout} from './agent-dashboard.js';
 import type {PlaybackSourceStatus} from './sources.js';
 import {ApiError} from './errors.js';
-import {Outcome} from '@jimmie-potts/sdk';
 export const defaultPresentation:PresentationConfiguration={version:1,mode:'media',filter:{},cadenceMs:1000};
 export const defaultNowPlaying:NowPlayingSetting={version:1,media:'off'};
 /** Everything the browser shows except whether a reader is configured, which the backend adds. */
@@ -278,7 +277,7 @@ export class MonitorPresentation {
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   void this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,write===null?{}:{signal:abort.signal,current}).then(result=>{
-   if(write!==null&&(abort.signal.aborted||!current())&&(result===undefined||!result.ok&&result.code==='cancelled'&&result.priorEffects===Outcome.none)){
+   if(write!==null&&(abort.signal.aborted||!current())&&(result===undefined||!result.ok&&result.code==='cancelled'&&result.priorEffects==='none')){
     if(this.lastFrame===write.key)this.lastFrame='';return;
    }
    // A Media takeover reports through its own status; a failed or uncertain card upload ends it without resuming.

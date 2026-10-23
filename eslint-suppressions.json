@@ -269,9 +269,6 @@
   "apps/hub/src/integration.ts": {
     "@typescript-eslint/no-unsafe-argument": {
       "count": 1
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
     }
   },
   "apps/hub/src/mcp.ts": {
@@ -282,7 +279,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 3
+      "count": 2
     }
   },
   "apps/hub/src/migration-routes.ts": {
@@ -490,11 +487,6 @@
       "count": 2
     }
   },
-  "apps/runtime/scripts/measure-commits.mjs": {
-    "bunny/no-raw-outcome-literal": {
-      "count": 2
-    }
-  },
   "apps/wispr-collector/src/config.ts": {
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 1
@@ -549,7 +541,7 @@
       "count": 1
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 7
+      "count": 4
     }
   },
   "controllers/lifx/src/status-publisher.ts": {
@@ -576,12 +568,12 @@
       "count": 4
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 10
+      "count": 6
     }
   },
   "controllers/tidbyt/src/controller.ts": {
     "bunny/no-raw-outcome-literal": {
-      "count": 6
+      "count": 4
     }
   },
   "controllers/tidbyt/src/publisher.ts": {
@@ -689,7 +681,7 @@
       "count": 2
     },
     "bunny/no-raw-outcome-literal": {
-      "count": 4
+      "count": 3
     }
   },
   "packages/contracts/src/install-receipt.ts": {
@@ -733,9 +725,6 @@
     },
     "@typescript-eslint/no-unsafe-member-access": {
       "count": 3
-    },
-    "bunny/no-raw-outcome-literal": {
-      "count": 1
     }
   },
   "packages/mcp/src/verify.ts": {

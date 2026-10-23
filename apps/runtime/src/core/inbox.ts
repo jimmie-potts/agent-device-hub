@@ -46,7 +46,7 @@ export class InboxRecords {
     if (row === undefined && result === Outcome.succeeded) return;
     const previous = row === undefined ? undefined : JSON.parse(row.record) as InboxItem;
     // Keep two opposite definitive pieces of evidence, bounded regardless of how many later outcomes were retained.
-    const definitive = ['succeeded', 'failed'].map(value => operation.outcomes.find(item => item.result === value)).filter(item => item !== undefined);
+    const definitive = [Outcome.succeeded, Outcome.failed].map(value => operation.outcomes.find(item => item.result === value)).filter(item => item !== undefined);
     const record: InboxItem = {
       id, revision: tx.revision(), createdAtMs: previous?.createdAtMs ?? tx.atMs, dismissedBy: previous?.dismissedBy ?? [],
       item: {kind: 'operation', requestId, command, target, result,
