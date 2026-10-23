@@ -246,9 +246,12 @@ Active workflow files are `checks.yml` and `workflow.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
-Checks ignores `**/*.md`; both Workflow jobs still run for Markdown-only changes
-under the [Markdown-only rule](sdlc.md#markdown-only-ci-routing). Other pull
-requests run the [affected Checks work](#affected-pr-checks). Inspect the
+Checks admits every pull request so the required core build check exists.
+Markdown-only PRs select no product suites but retain selection, core
+build/type/lint, the final gate and both Workflow jobs under the
+[Markdown-only rule](sdlc.md#markdown-only-ci-routing). Only main pushes retain
+the `**/*.md` workflow filter. Other pull requests run the
+[affected Checks work](#affected-pr-checks). Inspect the
 complete changed-file list and hosted event/check records; missing runs alone
 never establish filtering.
 Tag pushes are outside the main-only push trigger. Static tests verify workflow

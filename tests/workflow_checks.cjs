@@ -222,21 +222,22 @@ const browserInstallMinutes = 20;
 const playwrightInstall = aptRetry(300, 'npx playwright install --with-deps chromium');
 const hookAptScript = 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles';
 const hookAptMinutes = 14;
-// Hub #861: the heavy Checks workflow also skips Markdown-only changes. Hub #1080: a manual run is its full-run escape hatch.
+// Markdown-only main pushes retain #861's filter; PRs must emit the required core check.
+// Hub #1080: affected selection limits product suites and a manual run selects every group.
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['**/*.md'] },
-  pull_request: { 'paths-ignore': ['**/*.md'] },
+  pull_request: {},
   workflow_dispatch: {},
 };
 
-test('Workflow checks every path while Checks skips only Markdown-only changes', () => {
+test('every PR enters Checks while only Markdown-only main pushes filter it', () => {
   for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', allTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
     assert.deepEqual(workflow.on, triggers);
     for (const event of ['push', 'pull_request']) {
       const patterns = workflow.on[event]['paths-ignore'] ?? [];
       for (const [files, skipped] of [
-        [['README.md', 'docs/development.md'], checks],
+        [['README.md', 'docs/development.md'], checks && event === 'push'],
         [['docs/diagrams/check.py'], false],
         [['docs/notes.md.txt'], false],
         [['docs/work-guide/retired.html'], false],
@@ -386,7 +387,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
   assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
 });
 
-// Hub #861: Checks skips Markdown-only changes, so the Workflow job guards the Markdown that Checks jobs depend on.
+// Hub #861: product suites remain unselected for Markdown-only PRs, so Workflow guards their copied Markdown files.
 const packagedMarkdown = [
   'apps/bb8-windows/README.md', 'apps/bb8-windows/THIRD-PARTY-NOTICES.md', 'modules/bb8/README.md',
   'apps/hub/README.md', 'apps/hub/SETUP.md', 'apps/maintenance/README.md', 'apps/wispr-collector/README.md',

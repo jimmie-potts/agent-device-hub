@@ -1,4 +1,5 @@
-# Markdown-only changes skip this workflow; the Workflow checks and retained documentation checks still run (#861).
+# Markdown-only main pushes skip this workflow (#861); every PR must emit the required core check.
+# The selector leaves product suites unselected for Markdown-only PRs; Workflow documentation checks still run.
 # GitHub-hosted runners replaced Depot CI in #870.
 # The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
 # Pull requests run affected checks (#1080): the select job maps the PR's changed paths to check groups with
@@ -11,8 +12,7 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
-  pull_request:
-    paths-ignore: ['**/*.md']
+  pull_request: {}
   workflow_dispatch: {}
 permissions:
   contents: read
