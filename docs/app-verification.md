@@ -333,8 +333,8 @@ remain workflow requirements.
 The required qualification targets are Desktop with WSL execution, interactive
 WSL Codex CLI and WSL `codex exec` development coordinators. Each independent
 chat owns its runs. Delegated workers request preview operations through their
-coordinator. Standards and Specification reviewers stay read-only. An
-Acceptance reviewer owns its own disposable runs within the authority in
+coordinator. Independent reviewers keep source and tracker access read-only. The reviewer
+performing an acceptance exercise owns its disposable runs within the authority in
 [Acceptance review](sdlc.md#acceptance-review) (owner decision, 2026-10-05). Fresh-client and two-session acceptance
 are [#613](https://github.com/jimmie-potts/agent-device-hub/issues/613), not a
 claim made by this source delivery.

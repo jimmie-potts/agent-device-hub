@@ -483,6 +483,12 @@ All UI follows [UI verification](sdlc.md#ui-approval-scope).
 `packages/app-verify` first, because proof receipts are checked with its
 `validateReceipt` rather than a second reader.
 
+The preflight parser still expects the older separate-axis report format. Until
+it supports the lightweight review policy, a missing legacy report is advisory;
+verify the actual independent review directly in the PR. This exception does not
+waive CI, lint, safety findings, source identity or live-acceptance requirements.
+Do not fabricate extra reviews merely to satisfy this optional parser.
+
 The tool only reads. Before any network use, its GitHub client refuses every
 request except `GET` and the tool's own two GraphQL query documents, matched by
 exact text, so it cannot merge, comment, label, approve, dispatch or change
@@ -490,7 +496,7 @@ issue state. It writes no file. Besides the changed-file lint below, the only
 process it starts is `gh auth token`, and only when neither `GH_TOKEN` nor
 `GITHUB_TOKEN` is set.
 
-Run it from a checkout of the PR head before review dispatch: the changed-file
+When using this optional tool, run it from a checkout of the PR head: the changed-file
 lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
 TypeScript files there (#1139). A checkout at another revision, or with local
 edits to those files, leaves the gate unresolved rather than linting the wrong
@@ -590,11 +596,14 @@ configuration-isolation behavior. This temporary bootstrap copy is recorded;
 ## Agent setup
 
 Use the reviewed [agent-skills catalog](https://github.com/jimmie-potts/agent-skills)
-outside this checkout. The workflow uses code-review, tdd,
+outside this checkout. Available workflow aids include code-review, tdd,
 grill-with-docs, grilling, domain-modeling, writing-for-agents, unslop and the
 OpenSpec propose/explore/apply/update/sync/archive skills.
 
-Use [docs/sdlc.md](sdlc.md) for delivery. Use the shared deliver-work skill only
+Missing workflow aids do not block delivery; follow the direct review, design,
+regression-test and editorial checks in [docs/sdlc.md](sdlc.md). Missing runtime
+tools or unavailable required evidence still block the operation needing them.
+Use the shared deliver-work skill only
 when the user explicitly invokes it, while retaining repository gates.
 
 Inspect installed paths first. Provision only missing skills through the catalog
