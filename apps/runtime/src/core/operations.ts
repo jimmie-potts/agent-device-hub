@@ -43,7 +43,7 @@ export const DEADLINES: Readonly<Record<ActionKind, {readonly replyMs: number; r
 /** The tracker deadline class: moment, mode, or the default device budget, also used by core-local actions. */
 export function kindOf(family: string): ActionKind {
   if (family === 'moment-play') return 'moment';
-  if (family === 'mode-set') return 'mode';
+  if (family === 'mode-set' || family === 'mode-override-set') return 'mode';
   return 'device';
 }
 

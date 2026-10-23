@@ -8,7 +8,7 @@ export const modeName = (mode: Mode): string => ({work: 'Work', free: 'Free', qu
 export type ModeInboxIssue = {id: string; association: 'matched' | 'unavailable'};
 /** Retired projections cannot prove resolution; unknown native-mode links stay reviewable. */
 export async function modeInboxIssues(operations: readonly OperationRecord[], items: readonly InboxItem[]): Promise<ModeInboxIssue[]> {
-  const parents = operations.filter(item => item.family === 'mode-set' && item.target === 'hub')
+  const parents = operations.filter(item => (item.family === 'mode-set' && item.target === 'hub' || item.family === 'mode-override-set'))
     .sort((a, b) => {const time = b.sentAtMs - a.sentAtMs; return time === 0 ? b.revision - a.revision : time;});
   const targets = [...new Set(items.map(item => item.item.target))];
   const identities = new Map<string, Map<string, string>>();
@@ -17,7 +17,8 @@ export async function modeInboxIssues(operations: readonly OperationRecord[], it
   }));
   const sorted = [...items].sort((a, b) => {const time = b.createdAtMs - a.createdAtMs; return time === 0 ? b.revision - a.revision : time;});
   return sorted.flatMap(entry => {
-    const direct = entry.item.target === 'hub' && entry.item.command === 'org.bunny.mode.set.requested';
+    const global = entry.item.target === 'hub' && entry.item.command === 'org.bunny.mode.set.requested';
+    const direct = global || entry.item.command === 'org.bunny.mode-override.set.requested';
     const native = entry.item.command === 'org.bunny.device-mode.set.requested';
     if (!direct && !native) return [];
     const parent = parents.find(item => direct ? item.requestId === entry.item.requestId
@@ -26,7 +27,7 @@ export async function modeInboxIssues(operations: readonly OperationRecord[], it
     // Current evidence can exclude an independent native request. Its absent copy cannot.
     if (!direct && parent === undefined && operation !== undefined && operation.requestedBy !== 'bunny/core') return [];
     const newer = parent === undefined ? parents.filter(item => item.sentAtMs > entry.createdAtMs) : parents.slice(0, parents.indexOf(parent));
-    const resolved = newer.some(next => next.status === 'completed' && next.result === 'succeeded' && (direct || operations.some(child =>
+    const resolved = newer.some(next => (next.family === 'mode-set' || !global && next.target === entry.item.target) && next.status === 'completed' && next.result === 'succeeded' && (direct || operations.some(child =>
       child.family === 'device-mode-set' && child.requestedBy === 'bunny/core' && child.target === entry.item.target
       && child.requestId === identities.get(next.requestId)?.get(entry.item.target)
       && child.status === 'completed' && child.result === 'succeeded')));

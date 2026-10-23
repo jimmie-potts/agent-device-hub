@@ -42,6 +42,18 @@ void test('later definitive target success clears a warning but preserves the hi
   assert.deepEqual(await modeInboxIssues([old, failure, accepted, success], inbox), [entry.id]);
 });
 
+void test('individual failures join the existing Inbox and only a later matching scope can resolve them', async () => {
+  const first = {...parent('individual', 1), family: 'mode-override-set', target: 'wall', command: 'org.bunny.mode-override.set.requested'};
+  const failure = await child(first, 'wall', 'failed'), entry = item(failure);
+  assert.deepEqual(await modeIssues([first, failure], [entry]), [{id: entry.id, association: 'matched'}]);
+  const other = {...first, requestId: 'other-target', target: 'pixoo-1', sentAtMs: 2};
+  assert.deepEqual(await modeInboxIssues([first, failure, other, await child(other, 'pixoo-1', 'succeeded')], [entry]), [entry.id]);
+  const next = {...first, requestId: 'same-target', sentAtMs: 3};
+  assert.deepEqual(await modeInboxIssues([first, failure, next, await child(next, 'wall', 'succeeded')], [entry]), []);
+  const rejected = {...first, status: 'rejected' as const, result: 'failed' as const};
+  assert.deepEqual(await modeInboxIssues([rejected], [item(rejected)]), [item(rejected).id]);
+});
+
 void test('a new independent mode failure and a direct parent failure each remain visible', async () => {
   const old = parent('old', 1), failure = await child(old, 'wall', 'failed'), next = parent('new', 2), success = await child(next, 'wall', 'succeeded'), other = await child(next, 'pixoo-1', 'uncertain');
   assert.deepEqual(await modeInboxIssues([old, failure, next, success, other], [item(failure), item(other)]), [item(other).id]);

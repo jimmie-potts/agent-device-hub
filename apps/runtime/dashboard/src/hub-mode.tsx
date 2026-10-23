@@ -3,10 +3,11 @@ import type {InboxItem, Mode, ModeState, OperationRecord} from '@jimmie-potts/ev
 import {sendAction, type ActionReply} from './actions.ts';
 import {modeAction, modeInboxIssues, modeName, type ModeInboxIssue} from './hub-mode.ts';
 import {HubModeCard} from './hub-mode-card.tsx';
+import {modeExceptions, type ModeDeviceView} from './mode-exceptions.ts';
 
 /** Adapts existing shell-owned copies and the existing command path; it acquires no state. */
-export function HubMode({record, live, control, operations, operationsSynced, items, inboxSynced, onCheckInbox, headingId}: {
-  record: ModeState | undefined; live: boolean; control: boolean; operations: readonly OperationRecord[];
+export function HubMode({record, live, control, operations, operationsSynced, items, inboxSynced, onCheckInbox, headingId, devices = []}: {
+  devices?: readonly ModeDeviceView[]; record: ModeState | undefined; live: boolean; control: boolean; operations: readonly OperationRecord[];
   operationsSynced: boolean; items: readonly InboxItem[]; inboxSynced: boolean;
   onCheckInbox: (id: string) => void; headingId?: string;
 }): React.JSX.Element {
@@ -47,6 +48,10 @@ export function HubMode({record, live, control, operations, operationsSynced, it
   const feedback = currentIssues.length > 0 ? issue?.detail ?? '' : localIssue?.detail ?? (attempt === undefined ? ''
     : pending ? `${modeName(attempt.mode)} requested. Waiting for a reply.`
       : `Selection ${operationsSynced ? matching?.status ?? 'not observed' : 'not synced'}. Device results are separate.`);
+  const exceptions = modeExceptions(record, devices, operationsSynced ? operations : [], live);
+  const overrideCount = exceptions.filter(item => item.override).length, nativeCount = exceptions.length - overrideCount;
+  const exceptionLabel = [overrideCount === 0 ? '' : `${overrideCount} ${overrideCount === 1 ? 'exception' : 'exceptions'}`, nativeCount === 0 ? '' : `${nativeCount} native ${nativeCount === 1 ? 'difference' : 'differences'}`].filter(Boolean).join(' · ');
   return <HubModeCard mode={record?.mode} disabled={!available || pending} status={status} feedback={feedback} issue={issue} headingId={headingId}
+    exceptions={exceptions.length === 0 ? undefined : {label: exceptionLabel, details: <ul>{exceptions.map(item => <li key={item.target}><>{item.linked ? <a href={`#/component/${encodeURIComponent(item.target)}`}>{item.name}</a> : item.name}</><p>{item.choice}</p><p className="light-note">{item.evidence}</p></li>)}</ul>}}
     onSelect={mode => {void select(mode);}} onCheckInbox={currentIssues[0] === undefined ? undefined : () => {const id = currentIssues[0]; if (id !== undefined) onCheckInbox(id.id);}}/>;
 }
