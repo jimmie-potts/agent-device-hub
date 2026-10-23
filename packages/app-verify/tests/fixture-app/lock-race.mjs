@@ -12,6 +12,7 @@
 //
 // Prints {applied, errors, displaced?} as one JSON line.
 import {mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import {createRequire, syncBuiltinESMExports} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename, join} from 'node:path';
@@ -47,6 +48,7 @@ const attempt = store => store.update(bump).catch(error => errors.push(`${error.
 try {
   if (mode === 'swept') {
     let swept = false;
+    const released = deferred();
     fsp.rename = async function (from, to) {
       if (!swept && basename(from).startsWith('.receipt.lock.new-')) {
         // Suspended past the sweep's minute: the wait's deadline has long passed and the prepared directory is gone.
@@ -56,13 +58,27 @@ try {
         await rm(from, {recursive: true, force: true});
         // Meanwhile a live operation took the lock; it releases it shortly after this one resumes.
         await mkdir(lock);
-        await writeFile(join(lock, 'holder'), await live('other'));
-        setTimeout(() => void rm(lock, {recursive: true, force: true}), 300);
+        const other = await live('other');
+        await writeFile(join(lock, 'holder'), other);
+        setTimeout(() => {
+          // Model the core's release: never empty a shared name while a replacement can acquire it.
+          const retired = join(dir, 'fixture-released-lock');
+          void (async () => {
+            assert.equal(await original.readFile(join(lock, 'holder'), 'utf8'), other);
+            await original.rename.call(this, lock, retired);
+            assert.equal(await original.readFile(join(retired, 'holder'), 'utf8'), other);
+            await rm(retired, {recursive: true, force: true});
+          })().then(() => released.resolve(), error => released.resolve(error));
+        }, 300);
       }
       return original.rename.call(this, from, to);
     };
     syncBuiltinESMExports();
     await attempt(new ProofStore(dir));
+    if (swept) {
+      const releaseError = await released.promise;
+      if (releaseError) throw releaseError;
+    }
     process.stdout.write(JSON.stringify({applied: await counter(), errors, swept}) + '\n');
   } else if (mode === 'stale-breaker') {
     // A dead main lock and a dead breaker, as a killed holder and a killed breaker leave them.
