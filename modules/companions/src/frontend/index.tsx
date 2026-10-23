@@ -1,3 +1,6 @@
+import {KnowledgePage} from './knowledge.js';
+import {DuckConversation} from './duck.js';
+export {DuckWidget} from './duck.js';
 import {PreferencesPage} from './preferences.js';
 import {AssistantPage} from './assistant.js';
 import React, {useEffect, useState} from 'react';
@@ -98,4 +101,4 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
     </>}
   </section>;
 }
-export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}, {id: 'preferences', Component: PreferencesPage}]};
+export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}, {id: 'preferences', Component: PreferencesPage}, {id: 'knowledge', Component: KnowledgePage}, {id: 'duck-conversation', Component: DuckConversation}]};

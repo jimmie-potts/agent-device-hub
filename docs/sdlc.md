@@ -508,7 +508,8 @@ Verification has three tiers.
 1. **Automatic.** Once an application has a shared scenario catalog, every PR
    whose [affected checks](#affected-pr-checks) select that application runs it
    in CI through the in-memory end-to-end harness, and so does every main push
-   that runs the Checks workflow. Markdown-only changes skip it.
+   that runs the Checks workflow. Markdown-only PRs select no product suites;
+   Markdown-only main pushes filter the Checks workflow.
    [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
    adds both for the new runtime that
    [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
@@ -702,13 +703,21 @@ these procedural gates.
 
 ### Markdown-only CI routing
 
-The Checks workflow ignores `**/*.md`. A revision whose every changed path is a
-Markdown file runs the Workflow checks and Retained documentation checks jobs. Those jobs must
-succeed, and the delivery preflight derives that expected set from the
-workflows. The Workflow job still runs OpenSpec validation, the issue-template
-and fixture tests and the delivery preflight fixtures. Markdown-only edits to
-this policy, `AGENTS.md` or `CLAUDE.md` take this route too, because no Checks
-job reads them. Reviews, guarded merge and merged-main CI apply as usual.
+Every pull request enters the Checks workflow so its required build check can
+exist. A Markdown-only PR selects no product-test groups, but still runs Select
+affected checks, Build, lint and core tests, and Selected checks gate, plus
+Workflow checks and Retained documentation checks. The core job retains its
+build, typecheck and lint; firmware, App verification and Runtime verification are deliberately
+unselected. Those selected jobs must succeed, and the delivery preflight derives
+that expected set from the workflows and selector. A manual workflow dispatch
+does not replace the required PR-event check.
+
+The main-push trigger still ignores `**/*.md`, so a Markdown-only main revision
+runs only Workflow checks and Retained documentation checks. The Workflow job
+still runs OpenSpec validation, the issue-template and fixture tests and the
+delivery preflight fixtures. Markdown-only edits to this policy, `AGENTS.md` or
+`CLAUDE.md` take these routes too, because no product test depends on their
+content. Reviews, guarded merge and merged-main CI apply as usual.
 
 Package scripts copy some Markdown files into published archives, such as
 contract documents and package READMEs. Text edits to those files stay
@@ -729,8 +738,9 @@ mapping, its groups and its full-coverage fallbacks are in
 [Affected PR checks](development.md#affected-pr-checks). Shared packages and
 contracts, root toolchain and lockfile files, CI configuration, scripts
 (including the selector and this preflight), unknown paths and any incomplete
-or unreadable comparison run every check. Pushes to main run every applicable
-check, as do manual runs of the Checks workflow, the full-run escape hatch.
+or unreadable comparison run every check. Pushes to main admitted by the
+Markdown filter run every applicable check, as do manual runs of the Checks
+workflow, the full-run escape hatch.
 
 A selected check must succeed on the exact head. An unselected job must report
 `skipped` (or `success` when it ran anyway) and the `Selected checks gate` job

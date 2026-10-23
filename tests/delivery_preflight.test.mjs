@@ -123,7 +123,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(source.selection.mode, 'full');
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
-  // Hub #861: a Markdown-only change skips Checks but still runs the workflow and retained documentation jobs.
+  // Hub #861's main-push filter remains; a PR must still emit its required core check.
   assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Retained documentation checks', 'Workflow checks on ubuntu-latest']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
   assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
@@ -318,16 +318,27 @@ test('CI: filters that skip every job leave the candidate unresolved', async () 
   assertUnresolved(await preflight(world), 'ci-pr', /no configured job applies to this change/);
 });
 
-test('CI: a Markdown-only change needs only the workflow and retained documentation jobs (Hub #861)', async () => {
-  const world = cleanWorld();
-  world.files = [{ filename: 'docs/development.md', status: 'modified' }, { filename: 'README.md', status: 'modified' }];
-  world.compares[`${BASE}...${HEAD}`].files = world.files;
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow checks|Retained documentation) /.test(run.name));
-  assert.equal(world.checkRuns[HEAD].length, 2);
+test('CI: a Markdown-only PR requires the core and gate while product jobs remain unselected', async () => {
+  const files = ['docs/development.md', 'README.md'];
+  const world = narrowWorld(files);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
-  world.files.push({ filename: 'apps/hub/src/server.ts', status: 'modified' });
+  assert.deepEqual(ci.evidence.selection.groups, []);
+  assert.deepEqual(ci.evidence.jobs.filter(item => item.selected !== false).map(item => item.name).sort(), [
+    'Build, lint and core tests on ubuntu-latest', 'Retained documentation checks',
+    'Select affected checks', 'Selected checks gate', 'Workflow checks on ubuntu-latest',
+  ]);
+  assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
+    ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
+    ['Runtime verification on ubuntu-latest', 'skipped'],
+  ]);
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !/^Build, lint/.test(run.name));
   assertUnresolved(await preflight(world), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
+  for (const conclusion of ['failure', 'skipped']) {
+    const refused = narrowWorld(files);
+    runNamed(refused, /^Build, lint/).conclusion = conclusion;
+    assertUnresolved(await preflight(refused), 'ci-pr', new RegExp(`Build, lint and core tests on ubuntu-latest: ${conclusion}`));
+  }
 });
 
 // Hub #1080: pull requests run affected checks. The preflight recomputes the selection from the same mapping and
@@ -901,6 +912,8 @@ test('pagination: a failed later page, an off-host next link and too many pages 
 
 test('an incomplete changed-file list keeps path-filtered jobs expected', async () => {
   const world = cleanWorld();
+  // Checks now admits every PR; retain an explicit filtered workflow to exercise this generic refusal.
+  world.workflows[HEAD][ACTIONS.directory]['filtered.yml'] = "name: Filtered\non:\n  pull_request:\n    paths-ignore: ['**/*.md']\njobs:\n  check:\n    name: Filtered check\n    runs-on: ubuntu-latest\n    steps: [{run: 'true'}]\n";
   world.files = [{filename: 'README.md', status: 'modified'}];
   world.checkRuns[HEAD] = [];
   world.pr.changed_files = world.files.length + 1;

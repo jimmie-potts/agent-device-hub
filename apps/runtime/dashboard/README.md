@@ -71,12 +71,46 @@ walks the history. An address that names nothing shows a not-found message and s
 `#launch=` fragment is not a route: the page removes it before it exchanges the
 code.
 
-`src/widgets.ts` is the widget catalog. Each widget declares an ID, a name, a
-description, its sizes, its source kind (`core`, `module` or `external`), the
-families it syncs or private content it reads, and whether it offers commands. `homeLayout` places the Hub
-mode and the agent sessions in the wide column, and the inbox in the narrow one. Attention is highlighted on each agent card. Wispr adds its numeric widget there when exposed;
-its page and widget share the shell connection and make no device commands. The Hub mode offers Work, Free and Quiet controls;
-the inbox shows failed, uncertain and conflicting commands until handled.
+`src/widgets.ts` declares the core widgets and their default sizes. `src/home-catalog.ts`
+adds the current reusable device, light/group, room and Music instances, together
+with availability and supported sizes. The editor reuses the existing adapters,
+shared authenticated connection and module-owned frontend entries.
+
+The optional MicroDuck card uses the companions frontend through that same scope.
+Choose one Reachy–Duck conversation on Companion knowledge, save it with **Show
+selected conversation on Home**, then add MicroDuck through **Edit Home**. The
+card shows one latest meaning and its original time; **View conversation** opens
+bounded history separately. Selection and records remain with companions. Reads
+produce no output; stale or denied content is hidden, and playback stays unknown
+without qualified evidence. See the [module guide](../../../modules/companions/README.md#duck-home-widget).
+
+### Customizable Home
+
+Choose **Edit Home**, then **Add card** to browse by category. Move cards with the
+handle or the earlier/later buttons; arrow keys on the handle provide the same
+ordering. Choose a supported Small, Standard or Wide size, Hide or Remove. Hidden
+cards remain in the saved arrangement and can be shown again; removal affects
+only that arrangement. Desktop and Phone have independent orders and sizes.
+Adding a card appends it to the other arrangement if absent. **Cancel** discards
+the draft, **Reset** restores that breakpoint's built-in defaults, and **Done**
+saves both through the core's revision-guarded `home-layout-set` command.
+
+The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
+sizes and flags only. Reload, another browser and restart read the same state;
+no layout is stored in localStorage. A concurrent change requires loading and
+reviewing the current layout. An accepted reply is not a saved result: the page
+waits for synced metadata and successful completion, and an uncertain save is
+never repeated automatically. Existing light grouping/ungrouping and room Home
+actions reconcile saved placement in their original core transaction.
+
+Editing makes card controls inert. Moving, resizing, hiding, removing, Cancel
+and Reset send no command; Done changes metadata only. Hidden module cards
+unmount their scoped reads and subscriptions. Core-wide evidence remains synced,
+so unresolved Inbox items and agent attention keep their ordinary cards visible
+until cleared. There is no separate notices section. A source that disappears
+stays unavailable; a retired widget definition is omitted with one report per
+saved revision and no automatic repair write. Wispr appears as available only
+when its existing browser exposure is enabled.
 
 The reusable `HubModeCard` receives the synced choice, matching mode artwork,
 three action callbacks and concise exception evidence from `HubMode`. Clicking

@@ -59,6 +59,21 @@ The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
 
+## Hosting profiles
+
+The [hosting decision](../../docs/decisions/0008-runtime-hosting.md) selects the Mac
+Mini as primary, using the Linux ARM64 container on Docker Desktop. The PC is an
+optional producer/client or host for PC-attached hardware; it must not own the
+Mac's normal startup, private stores or serving route. Host-local sources use the
+existing authenticated SDK edge rather than shared databases.
+
+Use the [container operator guide](../../docs/bunny-container.md) for its manual
+lifecycle. The limited Mac-local browser profile is core-only, publishes loopback
+only and does not qualify remote clients or selected production devices. Shipped
+module availability is not installed acceptance. [SETUP.md](SETUP.md) and
+[UPGRADE.md](UPGRADE.md) retain the established WSL installation's procedures;
+they do not install the Mac container or qualify cross-host state transfer.
+
 ## Adding a module
 
 The [ONN module](../../modules/onn/README.md) owns one configured streaming
@@ -103,6 +118,17 @@ The in-memory harness, the disposable run's supervisor and child, and the run's
 seeds and plug-in collect the registrations and the scenario files, so they name
 only the core and the fixture modules. `npm run test:workflow` fails when one of
 those shared files names a device module (`scripts/check-module-names.cjs`).
+
+## Home arrangement metadata
+
+The core also owns `home-layout`: a versioned record with separate desktop and
+phone widget IDs, sizes and hidden flags. Its `home_layout` table is additive in
+`modules/core.sqlite`. Explicit operator saves use `home-layout-set`, expected
+revision and expiry checks, and the existing transactional tracker/outbox. They
+send no device commands. Existing lighting composition changes reconcile their
+saved Home placements in the same transaction. Read the [dashboard guide](dashboard/README.md#customizable-home)
+for editing, defaults, alert visibility and uncertain-save recovery. Older-reader
+recovery remains a separate installed-upgrade assessment.
 
 ## Agent-session core
 
@@ -375,6 +401,12 @@ Imports preserve existing records and add missing entries inactive. See the
 [preference guide](../../modules/companions/README.md#explicit-preferences) for
 the read contract and bounds. No automatic learning or model-context insertion
 is included.
+
+The **Companion knowledge** page adds explicit household notes, curated persona
+inspection, attributed conversation, current context copy and additive private
+recovery in the same owner. Its [guide](../../modules/companions/README.md#companion-knowledge-and-context)
+describes current reads, unknown legacy evidence, removal behavior and bounds.
+No live model, automatic learning, audio or device output is enabled by it.
 
 ## Core automation
 

@@ -226,7 +226,7 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five and the core, App verification and Runtime verification jobs' thirty. Branch pushes do not duplicate PR checks.
+select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core and Runtime verification jobs' thirty and App verification's forty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
@@ -246,9 +246,12 @@ Active workflow files are `checks.yml` and `workflow.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
-Checks ignores `**/*.md`; both Workflow jobs still run for Markdown-only changes
-under the [Markdown-only rule](sdlc.md#markdown-only-ci-routing). Other pull
-requests run the [affected Checks work](#affected-pr-checks). Inspect the
+Checks admits every pull request so the required core build check exists.
+Markdown-only PRs select no product suites but retain selection, core
+build/type/lint, the final gate and both Workflow jobs under the
+[Markdown-only rule](sdlc.md#markdown-only-ci-routing). Only main pushes retain
+the `**/*.md` workflow filter. Other pull requests run the
+[affected Checks work](#affected-pr-checks). Inspect the
 complete changed-file list and hosted event/check records; missing runs alone
 never establish filtering.
 Tag pushes are outside the main-only push trigger. Static tests verify workflow
@@ -830,6 +833,14 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
+
+Customizable Home (#366) adds core metadata/restart and gateway admission tests in
+`apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
+unit discovery, and an editor journey in the existing dashboard browser entry.
+After the root build, run `node --test apps/runtime/dist/tests/home-layout.test.js`,
+the owning runtime/dashboard unit, browser and scenario checks, shared type,
+contract, workflow and JavaScript lint checks. Existing runtime and dashboard CI
+discovery selects these paths; layout tests assert that editing sends no device commands.
 
 The Wemo card (#1175) adds observed-state/guard projection checks to existing
 dashboard unit discovery and extends the existing `test:wemo:browser` journey
@@ -1721,12 +1732,18 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+The Duck Home widget (#662) uses the existing companion unit suite, runtime
+scenario discovery and companions browser journey. Check explicit selection,
+latest/history isolation, correction/removal, restart, stale/denied reads,
+keyboard, narrow layout and axe. Existing CI already selects these suites for
+companions/dashboard changes; no new job is needed. Use only synthetic data.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text` and `assistant-task` catalog scenarios over both transports and in a disposable
+Run the `reachy-text`, `assistant-task`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 

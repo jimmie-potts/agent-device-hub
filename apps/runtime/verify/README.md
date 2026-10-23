@@ -60,6 +60,19 @@ module that is not as expected, its state and its registry code, such as
 
 ## Run scenarios
 
+`companion-knowledge` uses the core and companions with explicit synthetic notes
+and one fictional Reachy–Duck exchange. Authenticated public reads exercise two
+fake model adapters and a replacement test client, current context, private
+conversation refusal, corrections/removals and old import after restart. No real
+model, audio or device output runs. Pair it with `preferences`, `assistant-task`,
+`reachy-text` and the companions browser journey for source compatibility.
+
+The same scenario checks explicit Duck Home selection, anonymous read refusal,
+one latest Duck message versus separate history, and retained selection with
+corrected/removal fallback after restart. The companions browser journey checks
+Home placement, selection labels, access loss, navigation, keyboard and axe.
+
+
 `weekly-power-schedules` uses the core and a simulated LIFX consumer. It saves,
 enables and edits a future definition, rejects read-only enabling, restarts on
 the same private state and confirms no catch-up command. It does not wait for a

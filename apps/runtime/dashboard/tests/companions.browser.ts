@@ -1,3 +1,6 @@
+import {knowledgeJourney} from './knowledge.browser.ts';
+import {duckJourney} from './duck.browser.ts';
+import {duckFailureJourney} from './duck-failures.ts';
 import assert from 'node:assert/strict';
 import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
@@ -11,7 +14,10 @@ try {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
+  await duckFailureJourney(context);
   await preferencesJourney(world, page, context);
+  await knowledgeJourney(world, page, context);
+  await duckJourney(world, page, context);
   const reachy = page.getByRole('region', {name: 'Reachy', exact: true});
   await page.goto(`${world.url}/#/module/companions/reachy`); await feed(page, 'connected');
   await reachy.getByText('Reachy is disabled.', {exact: false}).waitFor();
@@ -90,5 +96,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
 } finally {await browser.close(); await world.close();}
