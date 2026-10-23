@@ -11,6 +11,56 @@ Linux engine and its Compose plugin available. Use an already built, reviewed
 local image; the operator commands never pull or build one. Keep the operator
 scripts and image at the same source revision.
 
+## Manual operation after Mac sign-in
+
+[ADR 0008](decisions/0008-runtime-hosting.md) selects the Mac Mini as the primary,
+self-sufficient hub host. The PC is optional to its normal operation. This guide
+operates the delivered container profiles; their qualification limits still apply.
+The local browser profile below is core-only and loopback-only. Production
+remote-client and device operation require their own qualified profile and inputs;
+do not enable them by weakening the local profile's admission rules.
+
+Keep one selected release outside active development and preview checkouts: the
+reviewed immutable image, matching operator scripts, owned Compose file, project
+name and private state/config/secrets volumes. Record those identities privately.
+Use the same explicit project and Compose selection for every operation. The
+fresh-volume examples below are setup/rehearsal examples, not a daily startup
+procedure for an existing instance.
+
+1. After a Mac restart, unlock FileVault, sign in and start Docker Desktop's Linux
+   engine. Waiting for the operator is accepted downtime; this procedure installs
+   no unattended pre-login startup or automatic restart.
+2. Select the existing owned instance and inspect its process state with the
+   operator's `status`. Confirm the selected image and mounts before `start`.
+   Never rerun fresh provisioning or create replacement empty volumes as a way
+   to resume an existing personal instance.
+3. Use `start`, then `status` and the runtime health command in
+   [Start, stop and inspect](#start-stop-and-inspect). For the local browser profile,
+   supply its owned `--compose LOCAL_COMPOSE` file every time and verify the actual
+   rendered dashboard at its loopback URL. Docker process state alone is not health.
+4. Before maintenance, use `stop` and verify the selected container is stopped
+   with PID zero. Keep other operators and restart actors out of the window. Take
+   and verify a [consistent backup](#back-up-a-stopped-instance), retaining the exact
+   private configuration and external credentials separately.
+5. For image replacement, assess the actual storage changes, select the reviewed
+   replacement image and matching scripts manually, then follow
+   [Replace an image](#replace-an-image). Preserve the previous image and latest
+   state if the new start fails; do not assume an older reader can reopen changed
+   stores.
+6. For owner-selected recovery, preserve the failed/latest instance and state,
+   state the snapshot's data gap and [restore into a separate empty instance](#restore-into-a-separate-empty-instance)
+   at the archive's source revision. A partial restore stays stopped for inspection.
+   There is no automatic snapshot restoration, format conversion or command replay.
+
+This is not a WSL-to-Mac transfer recipe. The delivered restore requires the same
+source revision and configuration/reference pairing; same-architecture acceptance
+does not qualify cross-architecture transfer. The owning cutover must qualify the
+actual stores, assets, native dependencies and host-specific paths. Stop and disable
+old writers and their restart actors before making the Mac the selected device
+writer, retaining the source for explicit manual return. A local lease cannot
+exclude another computer. The [WSL upgrade procedure](../apps/runtime/UPGRADE.md)
+continues to apply only to that established installation.
+
 ## Mac-local browser profile
 
 The explicit `deploy/container/compose.local.yaml` profile serves the existing
@@ -120,6 +170,29 @@ again, import credentials or replace configuration. This profile change does not
 change the runtime storage format. Start only after source review, then verify
 actual `NetworkSettings.Ports`, browser access, core health and strict local
 admission. Preserve the data and stop the new profile if verification fails.
+
+## Replace an image
+
+`start` resumes the selected existing container; it does not apply a changed
+Compose image. First stop and verify PID zero, take and verify a consistent
+backup, and assess the replacement's actual storage changes as described above.
+Record the exact owned container ID, immutable image ID, project/service labels,
+state/config/secrets volume names and network. Keep the old image and backup.
+
+Prepare the owned Compose file with the reviewed replacement image ID and use
+operator scripts from that same revision. Remove only the verified stopped
+container with `docker rm OLD_CONTAINER_ID`, without `-v`. Retain its volumes and
+network. Recreate the same project using that Compose file's `create --no-build
+--pull never core`, as in the selected profile's creation example. Do not run
+fresh provisioning again. Before starting, inspect that the new container uses
+exactly the recorded private volumes, intended image, network, admission settings
+and `restart=no`; stop on an ownership mismatch or an unreadable result.
+
+Use the operator's explicit project/Compose selection to start, then verify
+process state, runtime health and the selected client path. If verification fails,
+stop the owned replacement and preserve its latest state for diagnosis. Returning
+to an old image or snapshot requires the separate compatibility and recovery
+decision above; deleting volumes is never part of ordinary replacement.
 
 ## Prepare private persistent volumes
 

@@ -59,6 +59,21 @@ The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
 
+## Hosting profiles
+
+The [hosting decision](../../docs/decisions/0008-runtime-hosting.md) selects the Mac
+Mini as primary, using the Linux ARM64 container on Docker Desktop. The PC is an
+optional producer/client or host for PC-attached hardware; it must not own the
+Mac's normal startup, private stores or serving route. Host-local sources use the
+existing authenticated SDK edge rather than shared databases.
+
+Use the [container operator guide](../../docs/bunny-container.md) for its manual
+lifecycle. The limited Mac-local browser profile is core-only, publishes loopback
+only and does not qualify remote clients or selected production devices. Shipped
+module availability is not installed acceptance. [SETUP.md](SETUP.md) and
+[UPGRADE.md](UPGRADE.md) retain the established WSL installation's procedures;
+they do not install the Mac container or qualify cross-host state transfer.
+
 ## Adding a module
 
 The [ONN module](../../modules/onn/README.md) owns one configured streaming
