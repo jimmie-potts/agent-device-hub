@@ -19,17 +19,31 @@ export function containerOptions(env) {
 
 /**
  * Admits the browser-only edge and a section only for a shipped module that declares no device simulation (Hub #1202),
- * without its own secrets. Returns those modules' registrations in `shipped` order.
+ * without its own secrets and with every module it starts after also hosted. Returns those modules' registrations in
+ * `shipped` order.
  */
 export function checkLocalBrowserConfig(config, shipped) {
   const admitted = new Set(shipped.filter(registration => registration.simulation === undefined).map(({name}) => name));
+  const hosted = shipped.filter(registration => Object.hasOwn(config.modules, registration.name));
   if (Object.entries(config.modules).some(([name, section]) => !admitted.has(name) || Object.hasOwn(Object(section), 'secrets'))
+    || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))
     || config.edge?.credentials !== '/run/secrets/bunny/edge.json'
     || config.edge.browserAccess !== 'trusted-loopback' || config.edge.launcher !== false || config.edge.mcp !== false
     || config.edge.wifiProxy !== undefined) {
     throw new Error('container-browser-config-refused');
   }
-  return shipped.filter(registration => Object.hasOwn(config.modules, registration.name));
+  return hosted;
+}
+
+/**
+ * The host-local profile's modules, with device control disabled: the core, then each admitted module that has a
+ * section. Built before state effects so that a refusal leaves no trace. `runtime` is the runtime's modules.js.
+ */
+export function hostLocalModules(config, {coreFactory, shippedModules, buildModules}, checkConfiguration) {
+  const factories = [coreFactory, ...checkLocalBrowserConfig(config, shippedModules.slice(1))];
+  const modules = buildModules(factories, false);
+  refuseNamedDevices(modules, config, checkConfiguration);
+  return {factories, modules};
 }
 
 /** Refuses an admitted module whose configuration the runtime would accept with a device; a refused one stays the runtime's to show. */
@@ -44,13 +58,14 @@ async function start(options) {
   if (process.platform !== 'linux' || process.getuid?.() === 0) throw new Error('container-host-refused');
   process.umask(0o077);
   const [{checkStateDirectory, prepareStateDirectory, readRuntimeConfig}, {acquireRuntimeOwnership},
-    {bindCoreRuntimeOwnership}, {coreFactory, shippedModules, buildModules}, {parseArguments, runProcess}] = await Promise.all([
+    {bindCoreRuntimeOwnership}, runtimeModules, {parseArguments, runProcess}] = await Promise.all([
     import('../../apps/runtime/dist/src/state.js'),
     import('../../apps/runtime/dist/src/runtime-ownership.js'), import('../../apps/runtime/dist/src/core/core.js'),
     import('../../apps/runtime/dist/src/modules.js'), import('../../apps/runtime/dist/src/process.js'),
   ]);
   // Read protected configuration before state effects. No default credential or remote listener is created.
   const config = await readRuntimeConfig(options.config);
+  const {coreFactory, shippedModules, buildModules} = runtimeModules;
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted;
   if (options.access === 'host-local') {
@@ -58,9 +73,7 @@ async function start(options) {
       import('../../apps/runtime/dist/src/credentials.js'), import('../../packages/sdk/dist/src/index.js'),
     ]);
     // Device control stays disabled; only configured modules that reach no device join the core.
-    factories = [coreFactory, ...checkLocalBrowserConfig(config, shippedModules.slice(1))];
-    hosted = buildModules(factories, false);
-    refuseNamedDevices(hosted, config, checkConfiguration);
+    ({factories, modules: hosted} = hostLocalModules(config, runtimeModules, checkConfiguration));
     if ((await readEdgeCredentials(config.edge.credentials)).length !== 0) throw new Error('container-browser-config-refused');
   }
   await checkStateDirectory(options.stateDir);

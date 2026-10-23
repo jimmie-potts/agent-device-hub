@@ -11,10 +11,10 @@ permitted. Effective running port publication SHALL match the configured loopbac
 binding. Native and isolated
 defaults SHALL remain unchanged. No LAN/remote ingress or automatic restart is added.
 The profile SHALL admit a configuration section only for a shipped module that
-declares no device simulation, and only without a `secrets` member. It SHALL start
-the core and each admitted module that has a section, in shipped order. Startup
-SHALL refuse a section for any other module, and an admitted module whose accepted
-configuration names a device. Each refusal uses the fixed refusal, which repeats
+declares no device simulation, and only without a `secrets` member and with a
+section for each module it starts after. It SHALL start the core and each admitted
+module that has a section, in shipped order. Startup SHALL refuse a section for
+any other module, and an admitted module whose accepted configuration names a device. Each refusal uses the fixed refusal, which repeats
 no configured value.
 
 #### Scenario: Local browser operation
@@ -34,7 +34,7 @@ no configured value.
 - **THEN** startup runs the core and that module with device control still disabled, and health lists the module
 
 #### Scenario: Refused module section
-- **WHEN** the configuration has a section for a module that declares a device simulation, for an unknown module, or with a `secrets` member, or an admitted module's accepted configuration names a device
+- **WHEN** the configuration has a section for a module that declares a device simulation, for an unknown module, with a `secrets` member, or for a module that starts after one without a section, or an admitted module's accepted configuration names a device
 - **THEN** startup refuses with the fixed refusal before state effects, and the configuration file and volumes are unchanged
 
 #### Scenario: Admitted module that fails to start

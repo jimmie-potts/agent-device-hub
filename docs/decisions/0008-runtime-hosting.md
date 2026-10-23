@@ -36,8 +36,9 @@ refusal, retry and outcome rules remain those of ADR 0012 and the
 
 The delivered [Mac-local browser profile](../bunny-container.md#mac-local-browser-profile)
 is a limited profile at host loopback. It runs the core and only the modules that
-reach no device, and supplies neither remote access nor device activation. The production target needs separately qualified
-private ingress, host-local producers and selected devices. Its client endpoint
+reach no device, and supplies neither remote access nor device activation. The
+production target needs separately qualified private ingress, host-local
+producers and selected devices. Its client endpoint
 must terminate on the Mac without the Windows HTTPS forwarder. Preserve existing
 authentication, credentials and Host/Origin checks; do not widen the local profile
 or treat a listening port as qualification. Choose the private ingress route and

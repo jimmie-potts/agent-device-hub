@@ -14,7 +14,8 @@ Verification evidence: on macOS arm64 with Node 24.22.0, build, typecheck,
 lint:js, check:workflow and the container test command passed. The Linux-only
 container runtime tests skip on macOS. test:workflow passed 224 of 226; the two
 failures are apt-retry mirror tests whose script this change does not touch.
-Three mutants (the secrets guard, the device-simulation filter and the
-named-device check) each failed a test. Hosted Linux CI, independent Standards
+Six mutants each failed a test: the secrets guard, the device-simulation filter,
+the `after` check, the named-device check, and, in `hostLocalModules`, skipping
+admission and skipping the device check. Hosted Linux CI, independent Standards
 and Specification reviews and installed acceptance on the Mac-local core are
 pull-request and installation gates, recorded on the PR and Hub #1202.

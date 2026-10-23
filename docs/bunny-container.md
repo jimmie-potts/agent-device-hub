@@ -146,21 +146,35 @@ everyday activation. PC stays stopped until a separately selected manual handoff
 The profile keeps device control disabled. It accepts a section in the private
 `runtime.json` only for a shipped module that declares no device simulation, and
 it starts the core and each module that has a section, in shipped order. Today
-those modules are `companions` and `wispr`. A shipped module that declares a device
-simulation, an unknown name, a `secrets` member or an accepted configuration that
-names a device makes startup refuse with the fixed refusal, before state effects.
+those modules are `companions` and `wispr`. Startup refuses with the fixed
+refusal, before state effects, for:
+
+- a section for a shipped module that declares a device simulation, or for an
+  unknown name;
+- a section with a `secrets` member;
+- a section whose module starts after a module without a section;
+- an accepted configuration that names a device.
+
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the
 one-writer cutover in [Hub #568](https://github.com/jimmie-potts/agent-device-hub/issues/568).
+
+The stopped backup below accepts an absolute path in `runtime.json` only under
+`/run/secrets/bunny`, and it records each such file. Any other absolute path
+makes every later backup refuse until the section is removed. `companions` needs
+no path. `wispr` needs two absolute source-file paths, and this profile mounts
+no Wispr source, so it is admitted by the rule but has no qualified source here.
+Do not configure it on this profile until a source mapping is qualified.
 
 Adding a section is the owner's manual private edit; the provisioning helper still
 writes `modules: {}`. Keep the complete new `runtime.json` outside every checkout
 and cloud-sync folder. Its edge section stays exactly as provisioned. Stop the
 profile and take the stopped backup below. Then replace the file through a
-one-shot container that mounts only the config volume:
+one-shot container that mounts only the config volume. The script prints a fixed
+refusal for input that is not JSON and syncs the file and its directory:
 
 ```text
-docker run --rm -i --pull never --network none --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --mount type=volume,source=bunny-mac-personal_config,target=/etc/bunny --entrypoint node IMAGE_ID -e "const fs=require('node:fs');const next=JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')));fs.writeFileSync('/etc/bunny/runtime.json.next',next,{mode:0o600,flag:'wx'});fs.renameSync('/etc/bunny/runtime.json.next','/etc/bunny/runtime.json')" < PRIVATE_RUNTIME_JSON
+docker run --rm -i --pull never --network none --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --mount type=volume,source=bunny-mac-personal_config,target=/etc/bunny --entrypoint node IMAGE_ID -e "const fs=require('node:fs');let next;try{next=JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')));}catch{console.error('refused: the input is not JSON');process.exit(2);}const file=fs.openSync('/etc/bunny/runtime.json.next','wx',0o600);fs.writeFileSync(file,next);fs.fsyncSync(file);fs.closeSync(file);fs.renameSync('/etc/bunny/runtime.json.next','/etc/bunny/runtime.json');const dir=fs.openSync('/etc/bunny','r');fs.fsyncSync(dir);fs.closeSync(dir);" < PRIVATE_RUNTIME_JSON
 ```
 
 Start the profile with the operator, then read health. It must list `core`
@@ -168,7 +182,9 @@ running and each admitted module. A module that refuses its section or fails to
 start shows `refused` or `failed`. The core and the other modules keep running,
 and health is `degraded`, so `entrypoint.mjs status` exits non-zero until the
 owner fixes or removes that section. To remove a module, write the file again
-without its section. Its private state stays in the state volume.
+without its section. Its private state stays in the state volume. An image from
+before this rule refuses any section, so remove every section before returning
+to such an image.
 
 ### Replace the initial stopped profile without replacing its data
 

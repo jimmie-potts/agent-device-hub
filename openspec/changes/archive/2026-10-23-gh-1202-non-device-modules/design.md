@@ -19,7 +19,7 @@ isolated or native profiles.
 
 1. **A device module is a shipped registration that declares `simulation`.**
    Every module with a device transport declares how the harness simulates it.
-   Of the shipped modules, that covers codex-desktop, lifx, nanoleaf, onn,
+   Of the shipped modules, that covers bb8, codex-desktop, lifx, nanoleaf, onn,
    pixoo, playback, roborock, tidbyt and wemo. Today companions and wispr are
    admissible. The alternative, a curated allowlist, would be another list to
    keep in step with the registry. A new flag on the registration would change
@@ -32,9 +32,15 @@ isolated or native profiles.
    `refused` and keeps the core and other modules running.
 3. **Only configured modules start.** The profile builds the core and the
    admitted modules that have a section, in shipped order, rather than the whole
-   non-device list. An unconfigured module would only show as refused.
+   non-device list. An unconfigured module would only show as refused. A module
+   whose `after` names a module without a section is refused, because it would
+   start without the module it follows. `hostLocalModules` holds this selection,
+   the device check and the build, so the tests exercise what `start` runs.
 4. **Module `secrets` stays refused.** A section's `secrets` member is another
    credential path. This profile keeps its single empty edge credential file.
+5. **Configured paths stay a backup matter.** The stopped backup already
+   accepts absolute paths only under the secrets root. Admission does not repeat
+   that rule; the guide states it, and that `wispr` has no qualified source here.
 
 ## Risks / Trade-offs
 
@@ -51,4 +57,5 @@ isolated or native profiles.
 No storage or configuration change. Existing core-only configurations behave as
 before. Installation is the routine stopped backup and image replacement in
 `docs/bunny-container.md`, followed by the owner's manual section edit. To roll
-back, remove the section, or replace the image with the previous one.
+back, remove the section. An earlier image refuses any section, so remove every
+section before replacing the image with the previous one.
