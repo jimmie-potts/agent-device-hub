@@ -16,7 +16,7 @@ export function inboxTool(read: () => InboxItem[] | undefined): ModuleTool {
 }
 export function historyTool(read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody | undefined): ModuleTool {
   return {
-    name: 'history', description: 'Read retained history with inclusive time, kind, source and session filters. Reading sends nothing.',
+    name: 'history', description: 'Read retained history with inclusive time, kind, source and session filters and an optional latest-row limit (1..500). Reading sends nothing.',
     input: HISTORY_FILTER_SCHEMA,
     output: {type: 'object', additionalProperties: false, required: ['rows'], properties: {rows: {type: 'array'}}},
     read: input => {

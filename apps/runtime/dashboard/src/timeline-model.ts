@@ -26,7 +26,7 @@ export function historyRows(value: unknown): HistoryRow[] | undefined {
 
 /** Local midnight boundaries account for 23/25-hour daylight-saving days. */
 export function historyQuery(period: HistoryPeriod, filters: HistoryFilters, now = new Date()): string {
-  const query = new URLSearchParams();
+  const query = new URLSearchParams({limit: '200'});
   for (const key of ['kind', 'source', 'session'] as const) if (filters[key] !== '') query.set(key, filters[key]);
   if (period === 'custom') {
     for (const [field, key] of [['from', 'fromAtMs'], ['to', 'toAtMs']] as const) if (filters[field] !== '') {

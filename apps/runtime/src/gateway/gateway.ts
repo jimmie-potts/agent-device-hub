@@ -382,7 +382,7 @@ export class Gateway {
     if (path === '/api/v2/history') {
       if (query.some(key => url.searchParams.getAll(key).length !== 1)) throw refuse('invalid-request', 'history filters appear once');
       const values = Object.fromEntries(url.searchParams);
-      const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
+      const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
       const rows = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
       if (this.#options.redactions.holds(JSON.stringify(rows))) throw refuse('internal', 'history holds a secret, which the gateway never serves');

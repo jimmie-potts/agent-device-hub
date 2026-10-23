@@ -1883,7 +1883,11 @@ device holds stay separate.
 
 `GET /api/v2/history` reads committed `core_history`, oldest first, with optional
 inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
-Filters combine; unknown, repeated or invalid fields are refused. Every caller
+Optional `limit` is an integer from 1 to 500: filters combine first, then the
+latest matching rows by committed sequence are selected in SQLite before result
+materialization/decoding and returned oldest first. Omitting it preserves the
+complete matching result and existing order. It bounds row count, not bytes or
+filtered scan time. Unknown, repeated or invalid fields are refused. Every caller
 with read scope sees the whole history and inbox. The MCP tools `core_inbox`
 and `core_history` read the same owner without triggering actions.
 
