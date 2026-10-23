@@ -11,6 +11,7 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage();page.setDefaultTimeout(12_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
+  const historyRequests: URL[] = [];page.on('request', request => {if (new URL(request.url()).pathname === '/api/v2/history') historyRequests.push(new URL(request.url()));});
   const sent = changes(page), card = page.locator('[data-timeline-card]');
   await world.failCommand();
   await page.goto(`${world.url}/#/timeline`);await feed(page, 'connected');
@@ -26,7 +27,7 @@ try {
   assert.equal(sent.length, 0, 'real history browsing sends no command');
   await card.getByLabel('From', {exact: true}).fill('2020-01-01T00:00');
   await card.getByLabel('To', {exact: true}).fill('2020-01-02T00:00');
-  await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByText('No activity', {exact: true})).toBeVisible();
+  await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByText('No matches in these entries', {exact: true})).toBeVisible();
   await card.getByRole('combobox', {name: 'Activity period'}).selectOption('today');
   await expect(card.getByLabel('From', {exact: true})).toHaveValue('');await expect(card.getByLabel('To', {exact: true})).toHaveValue('');
   await card.getByLabel('Source', {exact: true}).fill('bunny/INVALID');
@@ -74,8 +75,12 @@ try {
     await route.fulfill({status: fault ? 503 : 200, contentType: 'application/json', body: JSON.stringify(fault ? {error: {code: 'unavailable'}} : malformed ? {rows: [{}]} : {rows: selected})});
   });
   await page.goto(`${world.url}/#/timeline`);await expect(card.getByRole('status')).toContainText('35 history entries.');
+  await expect(card.locator('.timeline-read-at')).toContainText('Latest 35');
+  await expect(card.getByRole('group', {name: 'Activity filters'})).toHaveAccessibleDescription(/Categories filter only the latest 35 loaded entries/);
   assert.equal(await card.locator('[data-history-row]').count(), 20);
+  const beforeMore = reads;
   await card.getByRole('button', {name: 'Show more', exact: true}).click();assert.equal(await card.locator('[data-history-row]').count(), 35);
+  assert.equal(reads, beforeMore, 'Show more reveals only the loaded window');
   const readCount = reads;
   for (const [category, expected] of [['Agents', 1], ['Automation', 1], ['Devices', 33]] as const) {
     await card.getByRole('button', {name: category, exact: true}).click();
@@ -91,7 +96,7 @@ try {
   await page.keyboard.press('Escape');await expect(requested).toBeFocused();
   await requested.click();await card.locator('[data-history-row="4"]').getByRole('button', {name: 'Close evidence'}).click();await expect(requested).toBeFocused();
   await card.getByRole('combobox', {name: 'Activity period'}).selectOption('yesterday');
-  await expect(card.getByText('No activity', {exact: true})).toBeVisible();
+  await expect(card.getByText('No matches in these entries', {exact: true})).toBeVisible();
   await card.getByRole('combobox', {name: 'Activity period'}).selectOption('recent');
   await expect(card.getByRole('status')).toContainText('35 history entries.');
   fault = true;await card.getByRole('button', {name: 'Refresh history'}).click();
@@ -110,6 +115,8 @@ try {
     if (process.env.DASHBOARD_RECEIPTS !== undefined) {await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});await page.evaluate(() => {window.scrollTo(0, 0);});await page.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${theme}-${width}.png`});}
     await card.locator('[data-history-row="4"]').getByRole('button', {name: 'Close evidence'}).click();
   }
+  assert.ok(historyRequests.length >= 10, 'entry, exact/date, quick periods, refresh, Home and reload reads were exercised');
+  for (const query of historyRequests) assert.deepEqual(query.searchParams.getAll('limit'), ['200'], query.search);
   assert.equal(sent.length, saves, 'filters, evidence, refresh, reload and read-only browsing send no command');
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'timeline-card', realHistory: true, homePlacement: true, filters: true, evidence: true, failedReads: true, readOnly: true, passive: true, axe: 'light/dark desktop/390/320 passed'}));

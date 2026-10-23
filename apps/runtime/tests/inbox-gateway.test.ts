@@ -22,10 +22,17 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   assert.equal((await items()).length, 2);
   assert.equal((await call('/api/v2/history', ingest.token)).status, 403);
   assert.equal((await call('/api/v2/history', 'unknown')).status, 401);
-  for (const query of ['?kind=unknown', '?fromAtMs=-1', '?fromAtMs=5&toAtMs=2', '?kind=operation&kind=outcome', '?session=', '?other=value'])
+  for (const query of ['?kind=unknown', '?fromAtMs=-1', '?fromAtMs=5&toAtMs=2', '?kind=operation&kind=outcome', '?session=', '?other=value', '?limit=0', '?limit=-1', '?limit=1.5', '?limit=501', '?limit=word', '?limit=', '?limit=1&limit=2'])
     assert.equal((await call(`/api/v2/history${query}`, reader.token)).status, 400, query);
   const history = (await call('/api/v2/history?kind=operation&source=bunny%2Fparts%2Foperator', reader.token)).body.rows as {kind: string; source: string}[];
   assert.equal(history.length, 4); assert.ok(history.every(row => row.kind === 'operation' && row.source === operator.source));
+  for (const limit of [1, 200, 500]) {
+    const bounded = await call(`/api/v2/history?kind=operation&source=bunny%2Fparts%2Foperator&limit=${limit}`, reader.token);
+    assert.equal(bounded.status, 200);
+    assert.deepEqual(bounded.body.rows, history.slice(-limit));
+  }
+  assert.equal((await call('/api/v2/history?limit=1', ingest.token)).status, 403);
+  assert.equal((await call('/api/v2/history?limit=1', 'unknown')).status, 401);
   assert.equal(gadget.commands.length, 2, 'reads issue no device command');
   const item = (await items())[0]; assert.ok(item);
   const action = {target: item.id, data: {action: 'dismiss', expectedRevision: item.revision}, requestId: 'http-handle'};
@@ -41,6 +48,15 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   const tool = async (name: string, args: object) => (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name, arguments: args}}, mcpHeaders)).body.result as {isError: boolean; structuredContent: {data: {result: {items?: unknown[]; rows?: unknown[]}}}};
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 2);
   assert.equal((await tool('core_history', {kind: 'operation'})).structuredContent.data.result.rows?.length, 4);
+  const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as {tools: {name: string; inputSchema: {properties: Record<string, unknown>}}[]};
+  assert.deepEqual(listed.tools.find(item => item.name === 'core_history')?.inputSchema.properties.limit, {type: 'integer', minimum: 1, maximum: 500});
+  for (const limit of [1, 200, 500]) assert.deepEqual((await tool('core_history', {kind: 'operation', source: operator.source, limit})).structuredContent.data.result.rows, history.slice(-limit));
+  for (const limit of [0, -1, 1.5, 501, '200', null, true]) {
+    const refused = await tool('core_history', {limit});
+    assert.equal(refused.isError, true, String(limit));
+    assert.match(JSON.stringify(refused), /invalid-request/);
+  }
+  assert.equal(gadget.commands.length, 2, 'bounded HTTP and MCP reads issue no device command');
   assert.equal((await tool('core_handle_inbox', {id: item.id, expectedRevision: item.revision, action: 'dismiss'})).isError, false);
   await waitFor(async () => (await items()).length === 1);
   assert.equal((await call('/api/v2/commands/inbox-handle', operator.token, action)).status, 409);

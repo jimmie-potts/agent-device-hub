@@ -571,7 +571,9 @@ remain separate. Nothing resends on reload, reconnect or elapsed time.
 through **Edit Home → Add card**; existing saved arrangements are unchanged.
 Short newest-first rows reveal evidence and an optional technical record when
 selected. Today, Yesterday and Recent select retained history; category buttons
-filter that snapshot locally. **Filters** preserves inclusive From/To, Kind,
+filter that snapshot locally. Every read requests the latest 200 matching
+entries. “Latest N” identifies the loaded window, and **Show more** reveals only
+loaded entries. An empty category describes that window, not the whole archive. **Filters** preserves inclusive From/To, Kind,
 Source and qualified Session filters. Entry, **Refresh history** and applied
 filters read the existing authenticated gateway, without polling or commands.
 Only the latest read can update results/status; superseded and unmounted reads

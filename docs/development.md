@@ -834,6 +834,15 @@ passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
 accessibility. The existing core CI job discovers the unit tests and the App
 verification job runs the focused browser journey. Run the full dashboard
 browser suite and `inbox-history.browser.ts` for this shared presentation change.
+The browser journey asserts limit=200 on entry, date/exact, refresh and Home reads,
+truthful result-window labels and local category/Show more behavior. After the
+build, run `node --test apps/runtime/dist/tests/history-window.test.js apps/runtime/dist/tests/inbox-gateway.test.js`
+for HTTP/MCP limit validation, read permissions, filtering before the limit,
+compatibility without a limit and a 2,400-row synthetic archive with 16 KiB records.
+An unselected malformed record verifies that bounded reads decode only their
+window. Existing runtime test discovery includes these checks. Installed Recent
+acceptance uses bounded reads and private process/health evidence; never use an
+unlimited live read as a negative control.
 
 Customizable Home (#366) adds core metadata/restart and gateway admission tests in
 `apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
