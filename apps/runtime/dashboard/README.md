@@ -22,6 +22,17 @@ The runtime copy includes:
   decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
   (#923).
 
+Nanoleaf's existing light card and Pixoo's Display face include Work, Free and
+Quiet choices. These save an individual exception; choosing the Hub's mode
+returns that device to the global choice. The Hub card keeps its artwork and
+three buttons, with a neutral collapsed summary when saved exceptions or fresh
+native differences exist. Expanding it shows the choices, available device
+request evidence and links to device controls. It makes no physical-mode claim.
+Failures keep using Check Inbox. Native Monitor/Media, scene, power, brightness
+and media controls keep their own meaning and never create saved exceptions.
+All placements use the same controls and existing shell copies; opening,
+navigating, reconnecting and reloading send no mode command.
+
 The module-owned Wispr page and numeric home widget read selected collector files
 on demand when browser exposure is enabled (#927). They do not subscribe to an
 analytics event family. The Automation page manages event rules and shared weekly power schedules.

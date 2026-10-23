@@ -17,10 +17,11 @@ export type HubModeCardProps = {
   mode: Mode | undefined; disabled: boolean; status: string; feedback: string;
   issue?: {label: string; detail: string} | undefined; onCheckInbox?: (() => void) | undefined;
   onSelect: (mode: Mode) => void; headingId?: string | undefined;
+  exceptions?: {label: string; details: React.ReactNode} | undefined;
 };
 
 /** Presentation only; selection, evidence, transport and authority belong to the adapter. */
-export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInbox, onSelect, headingId}: HubModeCardProps): React.JSX.Element {
+export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInbox, onSelect, headingId, exceptions}: HubModeCardProps): React.JSX.Element {
   const uid = useId();
   return <div className="hub-mode hub-mode-card">
     <header className="hub-control-heading"><h2 id={headingId ?? uid}>Hub mode</h2><div className="hub-mode-meta">
@@ -33,5 +34,6 @@ export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInb
     <div className="hub-mode-choices" role="group" aria-label="Choose Hub mode">{(['work', 'free', 'quiet'] as const).map(choice =>
       <button key={choice} type="button" className="secondary" aria-pressed={mode === choice} disabled={disabled} onClick={() => {onSelect(choice);}}><ModeIcon mode={choice}/><span>{modeName(choice)}</span></button>)}</div>
     <p className="hub-control-sr" role="status">{feedback}</p>
+    {exceptions !== undefined && <details className="hub-mode-exceptions inbox-evidence"><summary>{exceptions.label}</summary>{exceptions.details}</details>}
   </div>;
 }

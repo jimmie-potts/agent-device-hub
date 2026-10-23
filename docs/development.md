@@ -826,6 +826,18 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+Individual Hub-mode overrides (#695) extend the existing event-contract, runtime
+and dashboard suites. After the root build, run
+`node --test apps/runtime/dist/tests/mode*.test.js`,
+`npm run test:events:built`, `npm run test:runtime-dashboard:built` and
+`node apps/runtime/dashboard/tests/hub-mode.browser.ts`. The mode browser journey
+already runs in the hosted smoke entry; these unit files already join core CI
+discovery. Verify saved exceptions on the existing device cards, compact Hub
+inspection, HTTP/MCP admission, shared ordering and restart without effects.
+Run affected Pixoo/SDK consumers, runtime scenarios and the full dashboard
+browser suite for the shared presentation change. Evidence is synthetic/source
+only; it does not establish installed or physical results.
+
 For the reusable Timeline card (#1194), after the root build run
 `node --test apps/runtime/dashboard/tests/timeline.test.ts apps/runtime/dashboard/tests/home-catalog.test.ts`
 and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser

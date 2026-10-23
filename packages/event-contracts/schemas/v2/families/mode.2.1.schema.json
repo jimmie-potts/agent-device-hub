@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/mode/2.1",
+  "description": "Saved Hub choice and explicit individual exceptions. Version 2.1 retains 2.0 global fields; an exception is intent, not device evidence. The next global selection clears all exceptions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "mode",
+    "selectedAtMs",
+    "overrides"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "mode": {
+      "$ref": "#/$defs/mode"
+    },
+    "selectedAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "overrides": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "mode",
+          "selectedAtMs"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+          },
+          "mode": {
+            "$ref": "#/$defs/mode"
+          },
+          "selectedAtMs": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "mode": {
+      "enum": [
+        "work",
+        "free",
+        "quiet"
+      ]
+    }
+  }
+}

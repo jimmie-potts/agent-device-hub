@@ -165,7 +165,7 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       const waiting = new Set<string>();
       let shown: Indicator | undefined;
       const follow = await sdk.sync<{id: string; mode?: string; attention?: SessionRecord['attention']}>(['mode', 'session'], change => {
-        if (change.type === 'updated' && change.message.dataschema === MODE_SCHEMA) mode = change.message.data.mode ?? mode;
+        if (change.type === 'updated' && change.entity.family === 'mode') mode = change.message.data.mode ?? mode;
         if (change.type === 'updated' && change.message.dataschema === SESSION_SCHEMA) {
           if ((change.message.data.attention ?? []).length > 0) waiting.add(change.entity.id);
           else waiting.delete(change.entity.id);

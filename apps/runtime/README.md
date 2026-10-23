@@ -291,7 +291,7 @@ and exits 1, and the service manager restarts it whole.
   | --- | --- | --- | --- |
   | device | every command to one device, such as `power-set` or `playback-control` | 5 s | 30 s |
   | moment | `moment-play` | 5 s | 150 s: 60 s of lead and 60 s of tolerance at most |
-  | mode | `mode-set` | 5 s | 60 s |
+  | mode | `mode-set`, `mode-override-set` | 5 s | 60 s |
 
   The state machine is `src/core/operations.ts`: `sent`, then `accepted`, then
   `completed` with the outcome's result; or `rejected` (failed, with evidence
@@ -330,15 +330,26 @@ and exits 1, and the service manager restarts it whole.
   row does. State and removal messages retain the causal outcome trace, or the
   stored action trace when no outcome caused the change. The inbox (#923) points at
   an operation by its request ID.
-- **Hub mode.** The core owns the durable `mode/2.0` record `hub` (#924), initially
-  Free. An authorized `mode-set` saves the choice, checks its revision and
-  completes the selection in one transaction, then independently dispatches
-  native modes to the qualified admitted Nanoleaf and Pixoo devices. An admitted
-  device remains a target after its module stops or fails; refused modules are
-  excluded. The saved choice and each device's result remain separate. Startup,
-  restart, duplicate submission and native changes send no application command;
-  an explicit same-mode selection with a new request ID reapplies it. The
-  dashboard and MCP's `core_set_mode` use ordinary control scope.
+- **Hub mode.** The core owns the durable `mode/2.1` record `hub`, initially
+  Free with no overrides. Existing valid `mode/2.0` records keep their choice,
+  revision and selection time; absent overrides mean an empty list. Invalid
+  saved data fails startup without resetting the owner's choice.
+  Authorized `mode-set` saves the global choice and clears all overrides,
+  including an explicit same-mode reapply. `mode-override-set` targets one
+  qualified Nanoleaf or Pixoo device; selecting the global mode removes just
+  that exception. Both commands guard the shared revision and complete the
+  saved choice in one transaction before dispatching independent native commands.
+  A global selection with no participants still saves; an unknown individual
+  target refuses. A configured offline target keeps its saved choice and reports
+  its failed or uncertain native result separately. New selections refuse while
+  this process has a selection or its native commands pending, bounded by the
+  existing operation deadlines. Nothing queues for later application.
+  Startup, restart, reads, duplicate submission and native changes never apply
+  or replay choices. Dormant overrides for absent devices remain saved and send
+  nothing. The dashboard and MCP's `core_set_mode` / `core_set_device_mode` use
+  ordinary control scope. `effectiveMode(record, target, live)` in the shared
+  contract package gives future consumers an explicit exception or global
+  fallback, and no answer for missing or stale state.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
   occurrence and outcome another participant publishes. It drops a duplicate
   by `(source, id)` durably, since history keeps each whole message once, and

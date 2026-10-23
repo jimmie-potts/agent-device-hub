@@ -35,6 +35,10 @@
     "./v2/assistant": {
       "types": "./dist/v2/assistant.d.ts",
       "import": "./dist/v2/assistant.js"
+    },
+    "./v2/mode": {
+      "types": "./dist/v2/mode.d.ts",
+      "import": "./dist/v2/mode.js"
     }
   },
   "dependencies": {

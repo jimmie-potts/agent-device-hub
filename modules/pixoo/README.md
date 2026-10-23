@@ -51,7 +51,11 @@ The explicit `./frontend` entry exports the module's `frontend` contribution,
 `PixooDisplay`, `MediaPicker` and `PlaylistEditor` (#1154). The same glass card
 appears on Home, the Pixoo device page and Player. Display/Content tabs keep the
 artwork mounted; drafts survive tab switches. Advanced Library, Playlists,
-Player, Monitor and Settings remain available.
+Player, Monitor and Settings remain available. The Display face also renders
+optional shell-owned Work/Free/Quiet controls for a saved individual Hub-mode
+exception. This uses the existing `context.ui.ModeChoice` slot without another
+connection. Quiet and Work both request native Monitor; Monitor alone cannot
+identify that saved choice. The native Monitor/Media buttons remain independent.
 
 The picker shows six referenced media previews per page. Visible GIFs animate
 from decoded frames; pause, reduced motion, hidden pages and unmount release

@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {checkModeOverrides} from './mode-overrides-journey.ts';
 import {checkHubCardProjections} from './hub-control-projections.ts';
 
 const world = await startWorld({modeDevices: true, inbox: true});
@@ -83,4 +84,5 @@ try {
     assert.equal(requests(), beforeReadOnly); assert.deepEqual(errors, []);
     process.stdout.write(JSON.stringify({passed: true, checks: ['matching artwork', 'same-mode explicit request', 'correlated issue link/focus', 'unrelated dismissal', 'handled removal', 'accepted is not resolution', 'later success with retained Inbox', 'late conflict', 'lost reply', 'no replay', 'read-only', 'desktop/phone light/dark axe'], requests: requests(), nativeCalls: nativeCalls()})+'\n');
   } finally {await context.close();}
+  await checkModeOverrides(browser, process.argv[2]);
 } finally {try {await browser?.close();} finally {await world.close();}}

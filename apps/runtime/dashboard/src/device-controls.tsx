@@ -7,6 +7,7 @@ import {useAttempt} from './command-control.tsx';
 import {contentBlocked, deviceAction, deviceBlocked, operationView, type DeviceIntent} from './devices.ts';
 import {PowerLimitPanel,type PowerLimitProps} from './power-limit.tsx';
 import {Facts, Select} from './ui.tsx';
+import {DeviceModeChoice} from './device-mode.tsx';
 
 const shown = <T,>(value: Tagged<T>): string => value.status === 'known' ? String(value.value) : 'Unknown';
 const title = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
@@ -49,6 +50,7 @@ export function DeviceCard({record, owner, live, control, operations, operations
     {held !== undefined && <p className="warning">Held since {new Date(held.heldAtMs).toISOString()} by operation <a href={`#held-${held.requestId}`} onClick={event => { event.preventDefault(); document.getElementById(`held-${held.requestId}`)?.focus(); }}>{held.requestId}</a>. {record.kind==='wemo'?'Release the hold explicitly before another power change. Releasing sends no power command.':'A fresh explicit mode command releases the hold; refresh alone does not.'}</p>}
     {held !== undefined && <p id={`held-${held.requestId}`} tabIndex={-1} className="hint">Held operation {held.requestId}: {operations.find(item => item.requestId === held.requestId) === undefined ? 'No current operation record.' : operationView(operations.find(item => item.requestId === held.requestId) as OperationRecord).text}</p>}
     {!control && <p className="hint">Your session is read-only.</p>}
+    <DeviceModeChoice target={record.id}/>
     {control && <>
       {blocked !== undefined && <p className="hint">Unavailable: {blocked}.</p>}
       <div className="cards quick-controls">

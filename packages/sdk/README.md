@@ -549,6 +549,10 @@ export const sign: BunnyModule<SignConfig> = {
   `connected`, `control`, `operations` and `operationsLive` describe current
   shell evidence. They do not turn an accepted command into a completed one.
 
+  `context.ui.ModeChoice`, when supplied, renders the shell's saved Work/Free/Quiet
+  control for a qualified device target. It uses the shell's current mode and
+  device copies, without adding module subscriptions or importing shell code.
+
   `context.ui` supplies `Badge`, `Facts`, `InfoTip`, `Select` and `Command` with
   the shell's styling. A feature wraps its form in
   `<Command context={context} target={target}>` and renders from its child
