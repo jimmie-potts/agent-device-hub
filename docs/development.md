@@ -834,6 +834,15 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+For the reusable Timeline card (#1194), after the root build run
+`node --test apps/runtime/dashboard/tests/timeline.test.ts apps/runtime/dashboard/tests/home-catalog.test.ts`
+and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser
+journey uses synthetic history and the existing Home layout owner; it checks
+passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
+accessibility. The existing core CI job discovers the unit tests and the App
+verification job runs the focused browser journey. Run the full dashboard
+browser suite and `inbox-history.browser.ts` for this shared presentation change.
+
 Customizable Home (#366) adds core metadata/restart and gateway admission tests in
 `apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
 unit discovery, and an editor journey in the existing dashboard browser entry.
@@ -1788,8 +1797,11 @@ runs it explicitly because `.mjs` source tests are not TypeScript outputs.
 Run container entrypoint/operator tests for exact single-source admission and
 refusal of wider grants. Shared contract, MCP, workflow and affected consumer
 checks remain required. Synthetic tests do not qualify an installed Codex client:
-Mac acceptance must observe local Desktop and CLI hooks separately, verify notify
-preservation, metadata-only delivery, loopback-only access and stopped backup/restart.
+Mac acceptance must observe local Desktop and CLI hooks separately, verify
+existing Computer Use configuration/notify preservation and supported browser operation,
+metadata-only delivery, loopback-only access and stopped backup/restart. Internal
+notification-helper delivery remains unproven; no undocumented invocation is
+part of acceptance.
 Cloud-orchestrated tasks and physical devices remain outside this qualification.
 
 ## Explicit preference checks

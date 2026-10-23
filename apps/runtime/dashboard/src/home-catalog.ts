@@ -9,7 +9,7 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
-  const result: HomeCardDefinition[] = widgetCatalog.map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: widget.id !== 'wispr' && widget.id !== 'duck-latest'}));
+  const result: HomeCardDefinition[] = widgetCatalog.map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: widget.id !== 'wispr' && widget.id !== 'duck-latest' && widget.id !== 'timeline'}));
   const duck = result.find(card => card.id === 'duck-latest');
   if (duck !== undefined) {
     duck.category = 'Companions';

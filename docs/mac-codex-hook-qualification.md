@@ -108,7 +108,11 @@ After the integrated source passes its checks and review:
    local dashboard under the shared identity. Record client versions, event
    kinds, elapsed failure behavior and source revision; keep personal session
    identifiers and runtime state private.
-6. Check the existing computer-use notification integration and browser flow.
+6. Verify that the existing Computer Use configuration and notify command are
+   preserved and that supported browser Computer Use operation and the dashboard flow
+   still work. The configured `turn-ended` helper has no supported internal
+   delivery acknowledgment established by this qualification. Record that limit;
+   do not claim internal delivery or invoke the helper with invented inputs.
    Verify that an unavailable local receiver does not interrupt agent work.
    Keep installed-client results separate from synthetic subprocess tests.
 

@@ -567,10 +567,20 @@ show the records without controls. A handling reply is separate from the synced
 removal and the new operation's completion. Device holds and display dismissal
 remain separate. Nothing resends on reload, reconnect or elapsed time.
 
-**Timeline** reads retained history on entry and **Apply filters**, with inclusive
-From/To, Kind, Source and qualified Session filters. Reads send no command and
-use the existing authenticated gateway. Only the latest submitted read can
-update the results or status, even when replies arrive out of order.
+**Timeline** uses the same quiet card on Home and `#/timeline` (#1194). Add it
+through **Edit Home → Add card**; existing saved arrangements are unchanged.
+Short newest-first rows reveal evidence and an optional technical record when
+selected. Today, Yesterday and Recent select retained history; category buttons
+filter that snapshot locally. **Filters** preserves inclusive From/To, Kind,
+Source and qualified Session filters. Entry, **Refresh history** and applied
+filters read the existing authenticated gateway, without polling or commands.
+Only the latest read can update results/status; superseded and unmounted reads
+are canceled. A failed refresh retains earlier rows with an unavailable label.
+Historical evidence never establishes current device state.
+After a build, `node apps/runtime/dashboard/tests/timeline-card.browser.ts`
+checks saved Home placement, passive browsing, evidence, failed reads, keyboard
+and light/dark desktop/phone accessibility. Unit checks cover malformed replies,
+unknown evidence and reverse completion even when a transport ignores abort.
 The focused synthetic journey is
 `node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
 it checks explicit resend, dashboard dismissal visible through MCP, timeline

@@ -228,6 +228,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:smoke
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/timeline-card.browser.ts
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/playback-artwork.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/room-models.browser.ts

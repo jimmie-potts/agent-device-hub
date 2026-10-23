@@ -3,6 +3,18 @@ import test from 'node:test';
 import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard} from '../src/home-catalog.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 const runtime: RuntimeData = {modules: [], copies: [], control: true, catalogFailed: false};
+void test('Timeline is placeable without silently adding it to an existing or default Home', () => {
+  const catalog = homeCatalog(runtime, true), card = catalog.find(value => value.id === 'timeline');
+  assert.ok(card !== undefined, 'Timeline is offered in Add card');
+  assert.deepEqual(card.sizes, ['medium', 'large']);
+  assert.equal(card.defaultSelected, false);
+  const defaults = defaultHomeArrangements(catalog);
+  assert(!defaults.desktop.some(value => value.widget === 'timeline'));
+  const next = addHomeCard(defaults, 'desktop', card);
+  assert.equal(next.desktop.at(-1)?.widget, 'timeline');
+  assert.equal(next.phone.at(-1)?.widget, 'timeline');
+  assert.deepEqual(savedHomeCard('timeline', catalog), card);
+});
 void test('the picker describes unavailable modules and keeps unavailable saved instances separate from retired definitions', () => {
   const catalog = homeCatalog(runtime, true);
   assert.equal(catalog.find(card => card.id === 'module:pixoo')?.reason, 'No configured source is available.');
