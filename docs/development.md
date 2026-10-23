@@ -1063,8 +1063,8 @@ See [CHOMPI bridge verification runs](../apps/chompi-bridge/DEVELOPMENT.md#chomp
 The reusable Quiet line Home card (#1200) stays in the module's browser entry.
 After the root build, run `npm run test:wispr-module:built`,
 `npm run test:runtime-dashboard:built` and
-`node apps/runtime/dashboard/tests/wispr.browser.ts`. Existing core and runtime
-browser CI discover these files. The projection tests distinguish observed zero,
+`node apps/runtime/dashboard/tests/wispr.browser.ts`. Core CI runs the module
+tests; the hosted runtime smoke entry also runs this focused browser journey. The projection tests distinguish observed zero,
 missing speech, absent dates and expired producer windows; the browser journey
 checks selectable gaps, refresh/refusal retirement, keyboard and responsive
 light/dark accessibility. These use synthetic published files only and do not
