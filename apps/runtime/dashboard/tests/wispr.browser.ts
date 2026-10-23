@@ -86,6 +86,7 @@ try {
         await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
         await page.setViewportSize({width, height: 1100});
         assert.equal(await widget.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, `${colorScheme}/${width} card overflow`);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${colorScheme}/${width} document overflow`);
         assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), [], `${colorScheme}/${width} axe`);
         if (process.env.DASHBOARD_RECEIPTS !== undefined) {
           await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});

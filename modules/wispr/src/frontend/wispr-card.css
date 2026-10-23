@@ -1,4 +1,4 @@
-.wispr-card{min-width:0;padding:22px;border:1px solid var(--edge-dense);border-radius:28px;background:var(--panel);box-shadow:var(--shell-shadow);color:var(--text);overflow-wrap:anywhere}
+.wispr-card{position:relative;min-width:0;padding:22px;border:1px solid var(--edge-dense);border-radius:28px;background:var(--panel);box-shadow:var(--shell-shadow);color:var(--text);overflow-wrap:anywhere}
 .wispr-card .wispr-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:27px}
 .wispr-card-identity,.wispr-card-actions{display:flex;align-items:center;gap:8px;min-width:0}
 .wispr-card .wispr-card-identity h2{font-family:inherit;margin:0;font-size:1rem;font-weight:500;letter-spacing:-.2px}
@@ -28,6 +28,6 @@
 .wispr-card-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--edge-faint);padding-top:10px;margin-top:5px;font-size:.6875rem;color:var(--muted-dense)}
 .wispr-card-foot a{display:flex;align-items:center;gap:7px;padding:9px 8px;border-radius:11px;color:var(--link);font-size:.75rem;text-decoration:none;white-space:nowrap}
 .wispr-card-note{padding:12px 13px;background:var(--inset);border-radius:13px;font-size:.75rem;margin:12px 0 0}
-.wispr-card-accessible{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.wispr-card-accessible{position:absolute;margin:-1px;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 @media(max-width:370px){.wispr-card{padding:18px}.wispr-card-metrics dd{font-size:1.875rem}}
 @media(pointer:coarse){.wispr-card .wispr-card-actions button{width:44px;height:44px}.wispr-card .wispr-card-days button,.wispr-card-foot a{min-height:44px}}
