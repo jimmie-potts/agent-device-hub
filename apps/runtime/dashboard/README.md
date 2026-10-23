@@ -35,7 +35,11 @@ navigating, reconnecting and reloading send no mode command.
 
 The module-owned Wispr page and numeric home widget read selected collector files
 on demand when browser exposure is enabled (#927). They do not subscribe to an
-analytics event family. The Automation page manages event rules and shared weekly power schedules.
+analytics event family. Home uses the module's reusable Quiet line card: captured
+words/speaking minutes, seven selectable reporting dates with missing-date gaps,
+compact stale/unavailable evidence and explicit Refresh/Open Wispr. The full
+analytics page remains available; adding the card does not activate collection.
+ The Automation page manages event rules and shared weekly power schedules.
 Weekly schedules select a configured power-capable device, weekdays and same-day
 on/off times on the Hub clock. New schedules are disabled; enable/disable is
 separate from editing. Next-switch evidence is labelled as of the last explicit

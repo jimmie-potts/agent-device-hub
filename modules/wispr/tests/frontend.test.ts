@@ -11,6 +11,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {APPS, CATEGORIES, appCategory, emptyTotals} from '@jimmie-potts/wispr-contracts';
 import {readWispr, numericCsv, compatibleFilters, metrics, numericSelection, errorCode, type Status} from '../src/frontend/wispr-data.js';
+import {wisprSummary} from '../src/frontend/wispr-card-data.js';
 import {createWisprModule} from '../src/module.js';
 import {addLanguage, world} from './support.js';
 
@@ -51,6 +52,25 @@ void test('a fresh page mount after leaving retains the module session filter se
   assert.match(reentered, /value="today" selected=""/);
   assert.match(reentered, /value="slack" selected=""/);
   assert.match(reentered, /value="messaging" selected=""/);
+});
+
+void test('quiet-line Home card renders unknown loading values and minimal controls', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'wispr-card-unit-')); t.after(() => rm(dir, {recursive: true, force: true}));
+  const entry = join(dir, 'view.mjs');
+  await build({stdin: {contents: `
+    import {createElement} from 'react'; import {renderToStaticMarkup} from 'react-dom/server';
+    import {WisprWidget} from './modules/wispr/src/frontend/wispr.tsx';
+    process.stdout.write(renderToStaticMarkup(createElement(WisprWidget,{context:{connected:true,api:{},ui:{}}})));
+  `, resolveDir: process.cwd(), loader: 'js'}, bundle: true, platform: 'node', format: 'esm', outfile: entry, loader: {'.css': 'empty'},
+  banner: {js: "import {createRequire} from 'node:module'; const require=createRequire(import.meta.url);"}});
+  const {stdout} = await promisify(execFile)(process.execPath, [entry]);
+  assert.match(stdout, /<h2>Wispr<\/h2>/);
+  assert.match(stdout, /aria-label="Refresh Wispr summary"/);
+  assert.match(stdout, /disabled=""/);
+  assert.match(stdout, /<dd>—<\/dd>/);
+  assert.match(stdout, /Loading…/);
+  assert.match(stdout, /href="#\/module\/wispr\/analytics"/);
+  assert.doesNotMatch(stdout, /revision|timezone|Collection status/);
 });
 
 void test('module frontend reads actual synthetic numeric data without requesting language and exports numeric CSV', async t => {
@@ -135,4 +155,28 @@ void test('access refusals stay visible and stop the frontend sequence before an
   const api = {read: (): Promise<unknown> => {calls++; return Promise.reject(refusal);}};
   await assert.rejects(readWispr(api, undefined, selection, true, new AbortController().signal), error => error === refusal);
   assert.equal(calls, 1); assert.equal(errorCode(refusal), 'forbidden'); assert.equal(errorCode(new Error('synthetic private diagnostic')), 'unavailable');
+});
+
+void test('quiet-line projection preserves observed zero, missing duration, gaps and original age', async () => {
+  const now = Date.parse(status.generatedAt);
+  const observed = {...status, data: {...status.data, presets: [...status.data.presets,
+    {...status.data.presets[0], key: '7d', from: '2026-09-26'}]}};
+  const totals = {...emptyTotals(), words: 0, dictations: 1};
+  const api = {read: (path: string): Promise<unknown> => Promise.resolve(path.endsWith('/status') ? observed :
+    {...observed, data: {totals, daily: [{...totals, key: '2026-10-02'}, {...totals, key: '2026-09-30', words: 100}], dictionary: {filtered: false}}})};
+  const read = await readWispr(api, undefined, {period: '7d', app: 'all', category: 'all'}, false, new AbortController().signal);
+  const card = wisprSummary(read, undefined, false, now);
+  assert.equal(card.state, 'available'); assert.equal(card.words, 0); assert.equal(card.minutes, null);
+  assert.deepEqual(card.days.map(day => [day.date, day.words]), [
+    ['2026-09-26', null], ['2026-09-27', null], ['2026-09-28', null], ['2026-09-29', null],
+    ['2026-09-30', 100], ['2026-10-01', null], ['2026-10-02', 0],
+  ]);
+  const stale = wisprSummary(read, 'unavailable', false, now + 600_000);
+  assert.equal(stale.state, 'stale'); assert.equal(stale.words, 0); assert.equal(stale.age, 'Observed 10 min ago');
+  assert.equal(stale.observedAt, status.lastSuccessAt);
+  const expired = wisprSummary(read, undefined, false, Date.parse('2026-10-03T05:00:00Z'));
+  assert.equal(expired.state, 'stale'); assert.equal(expired.period, '2026-10-02');
+  assert.equal(wisprSummary(undefined, undefined, true, now).state, 'loading');
+  const refused = wisprSummary(undefined, 'forbidden', false, now);
+  assert.equal(refused.state, 'unavailable'); assert.equal(refused.words, null); assert.deepEqual(refused.days, []);
 });
