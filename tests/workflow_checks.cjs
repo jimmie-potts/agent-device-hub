@@ -286,7 +286,7 @@ test('CI runs seven GitHub-hosted Linux jobs and retains every suite once', () =
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:runtime:verify:built',
-      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
+      'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
     'node apps/runtime/dashboard/tests/room-models.browser.ts', 'node apps/runtime/dashboard/tests/music-card.browser.ts', 'npm run test:roborock:browser', 'npm run test:onn:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:observability:browser'],
   };
   const names = {

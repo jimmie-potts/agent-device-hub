@@ -43,14 +43,15 @@ try {
     await panel.getByText('No commands need handling.').waitFor();
     assert.equal((await world.inboxViaMcp()).length, 0, 'dashboard dismissal clears the MCP inbox');
     await page.getByRole('link', {name: 'Timeline', exact: true}).click();
-    await page.getByRole('heading', {name: 'Timeline', exact: true}).waitFor();
+    await page.getByRole('heading', {name: 'Timeline', exact: true, level: 1}).waitFor();
     await page.getByRole('status').filter({hasText: 'history entries.'}).waitFor();
+    await page.locator('.timeline-advanced>summary').click();
     await page.getByLabel('Kind', {exact: true}).selectOption('operation');
     await page.getByLabel('Source', {exact: true}).fill('bunny/parts/dashboard');
     await page.getByRole('button', {name: 'Apply filters'}).click();
     await page.getByRole('status').filter({hasText: 'history entries.'}).waitFor();
     assert.ok(await page.locator('ol li').count() >= 2);
-    for (const text of await page.locator('ol li h2').allTextContents()) assert.match(text, /^operation/);
+    for (const kind of await page.locator('[data-history-row]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.historyKind))) assert.equal(kind, 'operation');
     assert.equal(sent.length, beforeReload + 1, 'timeline filters send no command');
     await axe(); await page.setViewportSize({width: 390, height: 844}); await axe();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -68,22 +69,25 @@ try {
       if (resolve === undefined) held.set(kind, route);
       else { waiting.delete(kind); resolve(route); }
     });
-    const reply = async (route: Route, kinds: string[], error = false): Promise<void> => {
-      const response = page.waitForResponse(answer => answer.url() === route.request().url());
+    const reply = async (route: Route, kinds: string[], error = false, obsolete = false): Promise<void> => {
+      // Superseded GETs are now aborted. Unit tests also exercise a transport that ignores abort.
+      const response = obsolete ? undefined : page.waitForResponse(answer => answer.url() === route.request().url());
       await route.fulfill({status: error ? 503 : 200, contentType: 'application/json', body: JSON.stringify(error ? {error: {code: 'unavailable'}} : {
         rows: kinds.map((kind, seq) => ({seq, atMs: 1_700_000_000_000, kind, source: 'bunny/core', subject: `ordered-${seq}`, type: 'test', requestId: null, record: {}})),
       })});
-      await (await response).finished();
+      if (response !== undefined) await (await response).finished();
       await page.evaluate(() => new Promise<void>(resolve => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); }));
     };
     await page.getByRole('link', {name: 'Timeline', exact: true}).click();
     const entry = await take('entry');
+    await page.locator('.timeline-advanced>summary').click();
     await page.getByLabel('Kind', {exact: true}).selectOption('operation');
     await page.getByRole('button', {name: 'Apply filters'}).click();
     await reply(await take('operation'), ['operation']);
     await page.getByRole('status').filter({hasText: '1 history entries.'}).waitFor();
-    await reply(entry, ['outcome', 'outcome']);
-    assert.deepEqual(await page.locator('ol li h2').allTextContents(), ['operation · ordered-0'], 'entry reply cannot replace the first applied filter');
+    await reply(entry, ['outcome', 'outcome'], false, true);
+    assert.deepEqual(await page.locator('[data-history-row]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.historyKind)), ['operation'], 'entry reply cannot replace the first applied filter');
+    assert.deepEqual(await page.locator('.timeline-context').allTextContents(), ['ordered-0 · Hub']);
     assert.match(await page.getByRole('status').innerText(), /^1 history entries/);
     await page.getByLabel('Kind', {exact: true}).selectOption('outcome');
     await page.getByRole('button', {name: 'Apply filters'}).click(); const older = await take('outcome');
@@ -91,8 +95,9 @@ try {
     await page.getByRole('button', {name: 'Apply filters'}).click();
     await reply(await take('operation'), ['operation', 'operation']);
     await page.getByRole('status').filter({hasText: '2 history entries.'}).waitFor();
-    await reply(older, ['outcome']);
-    assert.deepEqual(await page.locator('ol li h2').allTextContents(), ['operation · ordered-0', 'operation · ordered-1'], 'older filter reply cannot replace the latest applied filter');
+    await reply(older, ['outcome'], false, true);
+    assert.deepEqual(await page.locator('[data-history-row]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.historyKind)), ['operation', 'operation'], 'older filter reply cannot replace the latest applied filter');
+    assert.deepEqual(await page.locator('.timeline-context').allTextContents(), ['ordered-1 · Hub', 'ordered-0 · Hub']);
     assert.match(await page.getByRole('status').innerText(), /^2 history entries/);
     await page.getByLabel('Kind', {exact: true}).selectOption('outcome');
     await page.getByRole('button', {name: 'Apply filters'}).click(); const obsoleteError = await take('outcome');
@@ -100,7 +105,7 @@ try {
     await page.getByRole('button', {name: 'Apply filters'}).click();
     await reply(await take('operation'), []);
     await page.getByRole('status').filter({hasText: '0 history entries.'}).waitFor();
-    await reply(obsoleteError, [], true);
+    await reply(obsoleteError, [], true, true);
     assert.match(await page.getByRole('status').innerText(), /^0 history entries/, 'obsolete failure cannot replace the latest successful status');
     assert.equal(sent.length, beforeReload + 1, 'overlapping timeline reads send no command');
     await page.unroute('**/api/v2/history*');

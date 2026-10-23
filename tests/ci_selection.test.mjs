@@ -330,7 +330,7 @@ const STEP_GROUPS = {
     'npm run test:chompi-bridge:verify:built': 'chompi', 'npm run test:chompi-bridge:browser': 'chompi',
     'npm run test:runtime:verify:built': 'runtime', 'npm run test:dashboard:smoke': 'shared',
     // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
-    'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/room-models.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/music-card.browser.ts': 'runtime',
+    'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/room-models.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/music-card.browser.ts': 'runtime',
     'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:observability:browser': 'shared',
   },
 };

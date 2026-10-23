@@ -6,7 +6,7 @@ import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
-import {Timeline} from './timeline.tsx';
+import {Timeline, TimelinePanel} from './timeline.tsx';
 import {AutomationPage} from './automation.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
 // shell, its hash routes, the Places navigation, browser sign-in on the runtime's gateway and the agent sessions, which
@@ -208,6 +208,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
+    if (placement.widget === 'timeline') return <Widget key="timeline" id="timeline" size={placement.size} showHeading={false}><TimelinePanel headingId="widget-timeline" connected={state.feed === 'connected'}/></Widget>;
     if (placement.widget === 'inbox') {
       return <Widget key="inbox" id="inbox" size={placement.size} showHeading={false}><InboxPanel items={inboxItems} live={inboxLive} control={runtime.control}
         devices={devices.map(({record}) => record)} focus={inboxFocus} headingId="widget-inbox"/></Widget>;
@@ -260,7 +261,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
       {route.kind === 'habitat' && <HabitatPage records={state.sessions.records} live={live}/>}
-      {route.kind === 'timeline' && <Timeline/>}
+      {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
       {!known && <section aria-label="Not found"><div className="empty">
