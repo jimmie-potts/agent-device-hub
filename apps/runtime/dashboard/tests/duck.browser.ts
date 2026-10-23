@@ -114,7 +114,16 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await widget.getByRole('link', {name: 'View conversation', exact: true}).click();
   await history.getByRole('heading', {name: 'Reachy', exact: true}).first().waitFor();
-  await history.getByRole('button', {name: 'Next page', exact: true}).click();
+  const next = history.getByRole('button', {name: 'Next page', exact: true}); await next.focus();
+  const updater = await context.newPage();
+  try {
+    await updater.goto(`${world.url}/#/module/companions/knowledge`); await feed(updater, 'connected');
+    const refreshed = page.waitForResponse(response => response.url().includes('/content/duck-widget?') && response.status() === 200);
+    await updater.getByRole('button', {name: 'Create synthetic Reachy–Duck exchange', exact: true}).click(); await refreshed;
+    await history.getByRole('heading', {name: 'Reachy', exact: true}).first().waitFor();
+    assert.equal(await next.evaluate(element => element === document.activeElement), true, 'history update keeps navigation focus');
+  } finally {await updater.close();}
+  await next.press('Enter');
   await history.getByText('Synthetic widget message 28', {exact: true}).waitFor();
   assert.equal(await history.getByText('Synthetic widget message 5', {exact: true}).count(), 0, 'history page replaces rather than accumulates browser copies');
   if (receipts !== undefined) await page.screenshot({path: `${receipts}/duck-history-phone.png`, fullPage: true});

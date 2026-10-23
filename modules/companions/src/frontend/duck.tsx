@@ -102,8 +102,10 @@ export function DuckConversation({context}: {context: FrontendContext}): React.J
         <h3>{message.speakerId === 'microduck' ? 'MicroDuck' : message.speakerId === 'reachy' ? 'Reachy' : message.speakerId}</h3>
         <MessageMeaning message={message}/><MessageEvidence message={message}/>
       </article>)}
-      {document.next !== null && <button type="button" onClick={() => {setPage({after: document.next ?? 0, conversationId: document.conversation?.id ?? null});}}>Next page</button>}
     </>}
+    <button type="button" aria-disabled={document?.next == null || changed} onClick={() => {
+      if (document?.next != null && !changed) setPage({after: document.next, conversationId: document.conversation?.id ?? null});
+    }}>Next page</button>
     {after > 0 && <button type="button" onClick={() => {setPage({after: 0, conversationId: null});}}>First page</button>}
     {error !== undefined && context.connected && <button type="button" onClick={refresh}>Refresh conversation</button>}
   </section>;
