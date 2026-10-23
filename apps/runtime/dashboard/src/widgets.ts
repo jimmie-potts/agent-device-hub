@@ -32,6 +32,10 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
     sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget']}, commands: false,
   },
   {
+    id: 'timeline', name: 'Timeline', description: 'Retained Hub activity with read-only filters and evidence.',
+    sizes: ['medium', 'large'], source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
+  },
+  {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
     sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },

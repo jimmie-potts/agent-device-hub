@@ -826,6 +826,15 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+For the reusable Timeline card (#1194), after the root build run
+`node --test apps/runtime/dashboard/tests/timeline.test.ts apps/runtime/dashboard/tests/home-catalog.test.ts`
+and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser
+journey uses synthetic history and the existing Home layout owner; it checks
+passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
+accessibility. The existing core CI job discovers the unit tests and the App
+verification job runs the focused browser journey. Run the full dashboard
+browser suite and `inbox-history.browser.ts` for this shared presentation change.
+
 Customizable Home (#366) adds core metadata/restart and gateway admission tests in
 `apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
 unit discovery, and an editor journey in the existing dashboard browser entry.
