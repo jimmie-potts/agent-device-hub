@@ -527,8 +527,8 @@ const namesClaim = node => {
   return false;
 };
 const through = new Set(['ConditionalExpression', 'LogicalExpression', 'ArrayExpression', 'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSTypeAssertion']);
-/** The name a default binds: the parameter or variable itself, or the key it is destructured from (`{result: r = ...}`). */
-const defaultNames = pattern => (pattern.parent?.type === 'Property' && pattern.parent.value === pattern ? claimKeys.has(claimName(pattern.parent.key, pattern.parent.computed)) : namesClaim(pattern.left));
+/** A default names a claim when the parameter or variable it binds does, or the key it is destructured from does (`{result: r = ...}`). */
+const defaultNames = pattern => namesClaim(pattern.left) || (pattern.parent?.type === 'Property' && pattern.parent.value === pattern && claimKeys.has(claimName(pattern.parent.key, pattern.parent.computed)));
 /** Whether `node` is the value a claim key is given, or is compared with one. */
 const inClaimPosition = node => {
   let child = node, parent = node.parent;

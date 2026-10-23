@@ -527,7 +527,9 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
     // An effects vocabulary shares the spelling `none` but is not an evidence claim.
     "const priorEffects = count !== 0 ? 'possible' : 'none'; const effects = {priorEffects: 'none'};",
     // A computed identifier key names no claim: the key is whatever `result` holds, not the word `result`.
-    "const byResult = {[result]: 'failed'}; counts[result] = 'none'; class C { [result] = 'failed'; }",
+    "const byResult = {[result]: 'failed'}; counts[result] = 'none'; class C { [result] = 'failed'; } const {[result]: r = 'failed'} = x; class E { accessor [result] = 'failed'; }",
+    // A renamed default binds no claim name and comes from no claim key.
+    "const {display: d = 'none'} = x; function h({kind: k = 'failed'}) {}",
   ],
   invalid: [
     // #736 F1 before the fix (74e92c37 apps/hub/src/server.ts): a lost controller response, an uncertain result, was
@@ -552,6 +554,8 @@ typescript.run('no-raw-outcome-literal', bunny.rules['no-raw-outcome-literal'], 
     {code: "function f(result = 'failed') {} const {evidence = 'none'} = claim;", errors: [{messageId: 'raw', data: {value: 'failed'}}, {messageId: 'raw', data: {value: 'none'}}]},
     // A renamed destructuring default, an accessor field and an angle-bracket assertion.
     {code: "const {result: r = 'failed'} = x; function g({evidence: e = 'none'}) {} class D { accessor result = 'rejected'; } const evidence = <const>'none';", errors: ['failed', 'none', 'rejected', 'none'].map(value => ({messageId: 'raw', data: {value}}))},
+    // A renamed default that binds a claim name under another key, and an angle-bracket assertion on the claim side.
+    {code: "const {status: result = 'failed'} = x; function k({state: evidence = 'none'}) {} if ((<string>result) === 'uncertain') {}", errors: ['failed', 'none', 'uncertain'].map(value => ({messageId: 'raw', data: {value}}))},
     // A cast, `satisfies` or non-null assertion on the claim side of a comparison, and a non-null assertion around the value.
     {code: "if ((result as string) === 'failed') {} if ((summary.result satisfies string) === 'succeeded') {} evidence = (known ?? 'none')!;", errors: ['failed', 'succeeded', 'none'].map(value => ({messageId: 'raw', data: {value}}))},
   ],
