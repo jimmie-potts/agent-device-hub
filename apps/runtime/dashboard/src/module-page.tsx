@@ -5,8 +5,9 @@ import type {DashboardConnection} from './connection.ts';
 import {moduleView, type ModuleEntry, type ModulePage} from './modules.ts';
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {Command} from './command-control.tsx';
+import {DeviceModeChoice} from './device-mode.tsx';
 
-const ui: FrontendUi = {Badge, Facts, InfoTip, Select, Command};
+const ui: FrontendUi = {Badge, Facts, InfoTip, Select, Command, ModeChoice: DeviceModeChoice};
 type Props = {
   module: ModuleEntry; page: ModulePage; frontends: readonly FrontendContribution[]; connection: DashboardConnection;
   connected: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;

@@ -19,11 +19,13 @@ const observedMode = (h: Harness, owner: string, id: string, mode: string): Outc
   return desired?.status === 'known' && desired.value === mode || `${id} mode: ${show(desired)}`;
 };
 
+const seed: Scenario['seed'] = {modules: ['core', 'nanoleaf', 'pixoo'], config: {nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION}, follows: [
+  ['mode', 'operation'], {owner: 'bunny/modules/nanoleaf', families: ['device']}, {owner: 'bunny/modules/pixoo', families: ['device']},
+]};
+
 export const hubModeScenarios: readonly Scenario[] = [{
   id: 'hub-mode', title: 'the saved Hub selection maps to fixed native writers without implicit application or replay',
-  seed: {modules: ['core', 'nanoleaf', 'pixoo'], config: {nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION}, follows: [
-    ['mode', 'operation'], {owner: 'bunny/modules/nanoleaf', families: ['device']}, {owner: 'bunny/modules/pixoo', families: ['device']},
-  ]},
+  seed,
   steps: [
     expect('first start serves Free without any core device-mode command', h => selection(h)?.mode === 'free' && children(h).length === 0 || `mode ${show(selection(h))}, children ${children(h).length}`),
     act('the operator explicitly selects Work', h => dispatchOnce(h, 'operator', 'mode-work', request('work'), 'req-hub-work')),
@@ -43,5 +45,25 @@ export const hubModeScenarios: readonly Scenario[] = [{
     act('the runtime restarts on its saved state', h => h.restart()),
     expect('the reader syncs the restored Free selection and six child operations', h => selection(h)?.mode === 'free' && children(h).length === 6 || 'the restored copies are not synced yet'),
     holds('Free stays saved with six child operations and nothing sent again', h => selection(h)?.mode === 'free' && children(h).length === 6 || `mode ${show(selection(h))}, children ${children(h).length}`, 300),
+  ],
+}, {
+  id: 'hub-mode-overrides', title: 'individual device choices persist and global reapply clears them without replay', seed,
+  steps: [
+    act('select Work globally', h => dispatchOnce(h, 'operator', 'work', request('work'), 'override-global')),
+    expect('both original native requests complete', h => mapped(h, 'override-global'), 10_000),
+    act('select Free only on Nanoleaf', h => dispatchOnce(h, 'operator', 'individual', {
+      key: 'bunny.cmd.mode-override-set.wall', draft: {type: 'org.bunny.mode-override.set.requested', subject: 'wall',
+        dataschema: 'https://bunny.invalid/events/mode-override-set/2.0', data: {mode: 'free', expectedRevision: selection(h)?.revision}},
+    }, 'override-wall')),
+    expect('the individual request is accepted', h => answered(h, 'individual', 'accepted')),
+    expect('only Nanoleaf changes while Pixoo stays Monitor', h => selection(h)?.mode === 'work' && selection(h)?.overrides?.[0]?.target === 'wall'
+      && children(h).length === 3 && children(h).every(child => child.result === 'succeeded')
+      && observedMode(h, 'bunny/modules/nanoleaf', 'wall', 'free') === true && observedMode(h, 'bunny/modules/pixoo', PIXOO_SECTION.device.id, 'monitor') === true || 'individual selection not settled', 10_000),
+    act('restart the runtime on its saved state', h => h.restart()),
+    expect('the reader syncs the saved override and three child operations', h => selection(h)?.overrides?.[0]?.mode === 'free' && children(h).length === 3 || 'waiting for restored copies'),
+    holds('restart sends no native mode request', h => children(h).length === 3 || 'unexpected replay', 300),
+    act('explicitly reapply Work globally', h => dispatchOnce(h, 'operator', 'reset', request('work'), 'override-reset')),
+    expect('global reapply clears overrides and both devices complete', async h => selection(h)?.overrides?.length === 0 ? mapped(h, 'override-reset') : 'override not cleared', 10_000),
+    expect('there are exactly five native commands', h => children(h).length === 5 || `children ${children(h).length}`),
   ],
 }];

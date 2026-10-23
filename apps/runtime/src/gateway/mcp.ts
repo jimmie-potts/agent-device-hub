@@ -190,6 +190,7 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
       extensions.recover_approval = recoverTool(host);
       extensions.send_command = commandTool(host);
       extensions.set_mode = modeTool(host, resultSchema);
+      extensions.set_device_mode = modeTool(host, resultSchema, true);
       extensions.handle_inbox = commandTool(host, true);
     }
     if (Object.keys(extensions).length === 0) continue;

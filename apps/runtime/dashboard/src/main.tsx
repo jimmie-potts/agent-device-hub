@@ -17,6 +17,7 @@ import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
+import {DeviceModesProvider} from './device-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
 import {WemoDeviceCard} from './wemo-device-card.tsx';
 import {PlaybackWorkspace} from './playback-workspace.tsx';
@@ -162,6 +163,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
   const modeCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
   const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
+  const modeDevices = devices.map(({record, copy}) => ({record, owner: copy.owner, live: state.feed === 'connected' && copy.synced}));
   const inboxCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'inbox-item');
   const inboxItems = (inboxCopy?.records ?? []) as readonly InboxItem[];
   const inboxLive = state.feed === 'connected' && inboxCopy?.synced === true;
@@ -205,7 +207,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     }
     if (placement.widget === 'duck-latest') return <ModuleFrontend key="duck-latest" module="companions" connection={connection}
       connected={state.feed === 'connected'} control={false} operations={operations} operationsLive={operationsLive} Component={DuckWidget}/>;
-    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode}
+    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode} devices={modeDevices}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
     if (placement.widget === 'timeline') return <Widget key="timeline" id="timeline" size={placement.size} showHeading={false}><TimelinePanel headingId="widget-timeline" connected={state.feed === 'connected'}/></Widget>;
@@ -218,7 +220,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <div className="shell">
+  return <DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
@@ -270,7 +272,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>
-  </div>;
+  </div></DeviceModesProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */

@@ -149,7 +149,8 @@ change them ([Hub #842](https://github.com/jimmie-potts/agent-device-hub/issues/
 [#918](https://github.com/jimmie-potts/agent-device-hub/issues/918)).
 Import them from `@jimmie-potts/event-contracts/v2/families`. Each schema lives
 in `schemas/v2/families/<family>.schema.json`, is built from the shared blocks
-and is registered under `https://bunny.invalid/events/<family>/2.0`. No family
+and is registered under `https://bunny.invalid/events/<family>/2.0`, with explicitly
+registered minor versions where extended. No family
 carries a device-specific payload: modules define those.
 
 | Kind | Family | Type |
@@ -159,7 +160,7 @@ carries a device-specific payload: modules define those.
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
 | occurrence | `outcome-recorded` (the core's outcome acknowledgment) | `org.bunny.outcome.recorded` |
-| command | `mode-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.moment.play.requested` |
+| command | `mode-set`, `mode-override-set`, `moment-play` | `org.bunny.mode.set.requested`, `org.bunny.mode-override.set.requested`, `org.bunny.moment.play.requested` |
 | command | `notice-acknowledge`, `playback-control` | `org.bunny.notice.acknowledge.requested`, `org.bunny.playback.control.requested` |
 | command | `approval-recover` | `org.bunny.approval.recover.requested` |
 | command | `notice-clear` | `org.bunny.notice.clear.requested` |
@@ -430,9 +431,22 @@ settled decisions). `nativeMode(kind, mode)` and `HUB_MODE_TABLE` apply it, and
 
 LIFX, Tidbyt and playback do not take part; LIFX joins under
 [#415](https://github.com/jimmie-potts/agent-device-hub/issues/415), and
-per-device overrides belong to #695. The table maps one way only. A device's
+per-device overrides use the same mapping. The table maps one way only. A device's
 native mode is never stored as the Hub's mode: Pixoo's `monitor` serves both
 `work` and `quiet`, and the `mode` family refuses `monitor` and `media`.
+
+`mode/2.1` extends the existing global fields with `overrides`, at most 128
+unique `{target, mode, selectedAtMs}` choices differing from the global mode.
+The closed `mode/2.0` schema remains registered. `mode-override-set/2.0` uses a
+device subject and the same `mode`, `requestId`, optional `expectedRevision`
+payload as `mode-set/2.0`. Both go through the core dispatcher. A global
+selection clears all overrides; an individual selection equal to the global
+mode clears only its target. Saved choices and native outcomes are separate.
+The browser-safe `v2/mode` export supplies `normalizeModeState` for old/new saved
+records and `effectiveMode(record, target, live)` for explicit override/global
+fallback. Missing or stale state returns no effective choice; the helper sends
+nothing and retains nothing. Its synthetic consumer test covers future companion
+use without implementing companion behavior.
 
 `fixtures/v2/devices.json` has a valid message for every device family, a held
 `device/2.1` record among them, with a reply and an outcome for each command
