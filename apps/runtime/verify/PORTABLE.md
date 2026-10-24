@@ -88,6 +88,11 @@ the container independently of the host command and application event loop.
 This route provides neither preview handoff/extension/restart nor the managed
 route's realtime expiry across sleep. If Docker becomes inaccessible, cleanup
 is unknown and cannot pass. Reconcile that exact container when access returns.
+A stopped run with an ambiguous nonzero exit is recorded as failed. Exit 137
+can also follow a forced stop or OOM, so that code or elapsed wall time alone does not establish
+deadline expiry. Independent expiry qualification must observe the prearmed
+deadline ending the owned container after caller loss, separately from the
+receipt's failed capture and cleanup evidence.
 
 ## Proof and cleanup
 

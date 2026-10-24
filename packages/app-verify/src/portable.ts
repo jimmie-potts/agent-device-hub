@@ -246,8 +246,8 @@ export async function finishPortable(receipt: PortableReceipt, at: string, run: 
   receipt.cleanup.stopped = true; receipt.cleanup.container = 'left';
   const info = await inspect(id, run);
   if (!owned(info, i) || !stopped(info)) {receipt.state = 'unknown'; receipt.failure = 'stop-unconfirmed'; return;}
+  // Exit 137 also follows a forced stop or OOM; it does not establish deadline expiry.
   receipt.state = 'failed';
-  if (info.State?.ExitCode === 137) receipt.state = 'expired';
   if (i.artifactDigest === null) await imageArtifact(receipt, run);
   try {await exportProof(receipt, at, run);} catch {receipt.failure = 'proof-unavailable'; return;}
   const final = await inspect(id, run);

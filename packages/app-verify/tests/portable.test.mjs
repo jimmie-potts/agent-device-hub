@@ -133,6 +133,39 @@ test('failed capture stays private until explicit cleanup, which never turns it 
   assert.equal(w.receipt.state, 'failed'); assert.equal(w.receipt.cleanup.container, 'removed');
 });
 
+for (const mode of ['forced-interruption', 'early-kill', 'oom', 'late-ambiguous-kill']) {
+  test(`${mode}: exit 137 does not establish deadline expiry or erase failed proof`, async t => {
+    const w = await proofWorld(t, 'failed');
+    w.receipt.identity = {...identity, seconds: 600};
+    w.receipt.startedAt = new Date(Date.now() - (mode === 'late-ambiguous-kill' ? 601_000 : 0)).toISOString();
+    let running = mode === 'forced-interruption';
+    const calls = [];
+    const run = async args => {
+      calls.push(args);
+      if (args[0] === 'inspect') {
+        const c = container();
+        const launch = portableCreateArgs(w.receipt.identity);
+        c.Config.Cmd = launch.slice(launch.indexOf(w.receipt.identity.image) + 1);
+        Object.assign(c.State, {Running: running, Pid: running ? 22 : 0, Status: running ? 'running' : 'exited',
+          ExitCode: running ? 0 : 137, OOMKilled: mode === 'oom'});
+        return JSON.stringify([c]);
+      }
+      if (args[0] === 'stop') {running = false; return id;}
+      return w.run(args);
+    };
+    await finishPortable(w.receipt, w.at, run, false);
+    assert.equal(w.receipt.state, 'failed');
+    assert.deepEqual(w.receipt.cleanup, {stopped: true, container: 'left'});
+    assert.equal(w.receipt.failure, 'capture-incomplete');
+    assert.equal(calls.filter(args => args[0] === 'stop').length, mode === 'forced-interruption' ? 1 : 0);
+    assert.equal(calls.some(args => args[0] === 'rm'), false);
+    await finishPortable(w.receipt, w.at, run, false, true);
+    assert.equal(w.receipt.state, 'failed');
+    assert.equal(w.receipt.cleanup.container, 'removed');
+    assert.equal(JSON.parse(await readFile(join(w.at, 'capture-manifest.json'), 'utf8')).outcome, 'failed');
+  });
+}
+
 test('recovery reconciles rm-before-receipt-save using exact absence and surviving proof without promotion', async t => {
   const w = await proofWorld(t);
   await finishPortable(w.receipt, w.at, w.run, true);
