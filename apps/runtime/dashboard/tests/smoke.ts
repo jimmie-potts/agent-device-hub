@@ -72,3 +72,5 @@ await import('./hub-mode.browser.ts');
 await import('./inbox-history.browser.ts');
 
 await import('./home-layout.browser.ts');
+
+await import('./wispr.browser.ts');
