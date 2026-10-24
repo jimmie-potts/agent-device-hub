@@ -16,7 +16,8 @@ scripts and image at the same source revision.
 [ADR 0008](decisions/0008-runtime-hosting.md) selects the Mac Mini as the primary,
 self-sufficient hub host. The PC is optional to its normal operation. This guide
 operates the delivered container profiles; their qualification limits still apply.
-The local browser profile below is core-only and loopback-only. Production
+The local browser profile below is loopback-only and runs the core plus only the
+modules that reach no device. Production
 remote-client and device operation require their own qualified profile and inputs;
 do not enable them by weakening the local profile's admission rules.
 
@@ -118,7 +119,8 @@ to `/run/secrets/bunny/edge.json`, `browserAccess: trusted-loopback`, `launcher:
 false`, `mcp: false`. The referenced `edge-credentials/1.0` document has an empty
 `credentials` list. No private source is discovered or imported. Runtime startup
 refuses device sections, another credential path or any client grant in this
-browser-only profile. Normal core startup initializes its own private state.
+browser-only profile. [Admitted module sections](#admit-a-module-that-reaches-no-device)
+are the only addition it accepts. Normal core startup initializes its own private state.
 
 Open the local URL and use its existing sign-in. Require actual rendered core
 navigation and healthy core-only status, not just a listening port. Verify actual
@@ -138,6 +140,51 @@ For a requested separate restore, use an unused project, the same local Compose
 and image, and the same fresh public-shape provisioning before restore; do not
 start its target before restoration. No restore or migration is part of initial
 everyday activation. PC stays stopped until a separately selected manual handoff.
+
+### Admit a module that reaches no device
+
+The profile keeps device control disabled. It accepts a section in the private
+`runtime.json` only for a shipped module that declares no device simulation, and
+it starts the core and each module that has a section, in shipped order. Today
+those modules are `companions` and `wispr`. Startup refuses with the fixed
+refusal, before state effects, for:
+
+- a section for a shipped module that declares a device simulation, or for an
+  unknown name;
+- a section with a `secrets` member;
+- a section whose module starts after a module without a section;
+- an accepted configuration that names a device.
+
+A future module that sends device commands without declaring a simulation needs
+review against this rule before it ships. Device modules on the Mac wait for the
+one-writer cutover in [Hub #568](https://github.com/jimmie-potts/agent-device-hub/issues/568).
+
+The stopped backup below accepts an absolute path in `runtime.json` only under
+`/run/secrets/bunny`, and it records each such file. Any other absolute path
+makes every later backup refuse until the section is removed. `companions` needs
+no path. `wispr` needs two absolute source-file paths, and this profile mounts
+no Wispr source, so it is admitted by the rule but has no qualified source here.
+Do not configure it on this profile until a source mapping is qualified.
+
+Adding a section is the owner's manual private edit; the provisioning helper still
+writes `modules: {}`. Keep the complete new `runtime.json` outside every checkout
+and cloud-sync folder. Its edge section stays exactly as provisioned. Stop the
+profile and take the stopped backup below. Then replace the file through a
+one-shot container that mounts only the config volume. The script prints a fixed
+refusal for input that is not JSON and syncs the file and its directory:
+
+```text
+docker run --rm -i --pull never --network none --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --mount type=volume,source=bunny-mac-personal_config,target=/etc/bunny --entrypoint node IMAGE_ID -e "const fs=require('node:fs');let next;try{next=JSON.stringify(JSON.parse(fs.readFileSync(0,'utf8')));}catch{console.error('refused: the input is not JSON');process.exit(2);}const file=fs.openSync('/etc/bunny/runtime.json.next','wx',0o600);fs.writeFileSync(file,next);fs.fsyncSync(file);fs.closeSync(file);fs.renameSync('/etc/bunny/runtime.json.next','/etc/bunny/runtime.json');const dir=fs.openSync('/etc/bunny','r');fs.fsyncSync(dir);fs.closeSync(dir);" < PRIVATE_RUNTIME_JSON
+```
+
+Start the profile with the operator, then read health. It must list `core`
+running and each admitted module. A module that refuses its section or fails to
+start shows `refused` or `failed`. The core and the other modules keep running,
+and health is `degraded`, so `entrypoint.mjs status` exits non-zero until the
+owner fixes or removes that section. To remove a module, write the file again
+without its section. Its private state stays in the state volume. An image from
+before this rule refuses any section, so remove every section before returning
+to such an image.
 
 ### Replace the initial stopped profile without replacing its data
 
