@@ -1,7 +1,7 @@
 // Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SyncHandler, SyncResult} from './remote.js';
 
 /** An explicit command; acceptance is separate from the operation's completed or uncertain outcome. */
@@ -27,7 +27,7 @@ export type FrontendApi = {
   /** Stages bounded media and dispatches its declared command once, using the same tracked outcome UI. */
   upload(action: FrontendUpload): Promise<FrontendActionReply>;
   /** Syncs this module's families on the shell's existing participant; the page closes the copy when done. */
-  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>): Promise<SyncResult<T>>;
+  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>>;
 };
 
 /** Shared shell components, with the same props as the dashboard's existing UI. */
@@ -50,6 +50,8 @@ export type FrontendContext = {
   readonly control: boolean;
   readonly operations: readonly OperationRecord[];
   readonly operationsLive: boolean;
+  /** Existing shell-owned core copies for module previews. No new subscription or source authority. */
+  readonly core?: {readonly sessions: readonly SessionRecord[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean};
 };
 
 /** Export as `frontend` from a module package's explicit `./frontend` browser entry. */

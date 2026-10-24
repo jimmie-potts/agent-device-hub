@@ -1,3 +1,4 @@
+import {CodingSuggestions} from './suggestions.js';
 import {KnowledgePage} from './knowledge.js';
 import {DuckConversation} from './duck.js';
 export {DuckWidget} from './duck.js';
@@ -6,6 +7,7 @@ import {AssistantPage} from './assistant.js';
 import React, {useEffect, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
+import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
 
 const labels: Readonly<Record<CompanionCategory, string>> = {'coding-attention': 'Coding attention', 'coding-notice': 'Turn endings', 'simulated-social': 'Simulated social'};
 const reasons: Readonly<Record<string, string>> = {
@@ -22,25 +24,36 @@ const reasons: Readonly<Record<string, string>> = {
 function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
   const [state, setState] = useState<CompanionState>();
   const [unavailable, setUnavailable] = useState(false);
+  const [synced, setSynced] = useState(false);
   const {api, connected} = context;
   useEffect(() => {
+    setSynced(false);
     if (!connected) return;
     let active = true;
+    let replacing = false;
+    let copy: SyncedCopy<CompanionState> | undefined;
     let close: (() => Promise<void>) | undefined;
+    const show = (): void => {
+      const current = copy?.states().find(message => message.data.id === 'reachy');
+      if (current !== undefined) {setState(current.data); setUnavailable(false); setSynced(true);}
+      else {setUnavailable(true); setSynced(false);}
+    };
     void api.sync<CompanionState>(['companion-state'], change => {
       if (!active) return;
       if (change.type === 'updated') {setState(change.message.data); setUnavailable(false);}
-      else if (change.type === 'failed') setUnavailable(true);
-    }).then(result => {
+      else if (change.type === 'failed') {replacing = true; setUnavailable(true); setSynced(false);}
+      else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
+      else if (change.type === 'removed' && change.entity.id === 'reachy') {setUnavailable(true); setSynced(false);}
+    }, {onRestarted: () => {if (active) {replacing = true; setSynced(false);}}}).then(result => {
       if (result.status !== 'synced') {if (active) setUnavailable(true); return;}
       if (!active) {void result.copy.close(); return;}
       close = () => result.copy.close();
-      const current = result.copy.states().find(message => message.data.id === 'reachy');
-      if (current !== undefined) {setState(current.data); setUnavailable(false);}
+      copy = result.copy;
+      if (!replacing) show();
     }, () => {if (active) setUnavailable(true);});
     return () => {active = false; void close?.();};
   }, [api, connected]);
-  const live = connected && !unavailable && state !== undefined;
+  const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;
   const presentation = state?.presentation;
   return <section aria-label="Reachy" className="panel">
@@ -98,6 +111,7 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
           {command.text !== '' && <p role="status">{command.text}</p>}
         </>;
       }}</Command>
+      <CodingSuggestions context={context} state={state} live={live}/>
     </>}
   </section>;
 }

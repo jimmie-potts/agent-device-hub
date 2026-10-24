@@ -45,6 +45,45 @@ opens SQLite through the SDK, terminates a disposable process after a saved
 interrupt and resumes in a fresh process. The existing companions CI test
 discovery includes it; pending-write and namespace checks use the same saver.
 
+## Coding suggestions
+
+On Reachy, choose a current coding session in **Coding suggestions**, then enter
+one task ID, optional repository/base, full current and evidence head commits,
+the actual UTC ISO observation time, and statuses/references for tests, build,
+browser and accessibility. Passed, failed, skipped, unrun and unknown differ.
+Passed/failed/skipped claims need a reference. Revisions and results are
+owner-supplied and are never independently checked against a repository.
+
+**Inspect coding suggestion** uses fixed templates: investigate a failed check,
+or after passed tests propose an explicitly unrun build, browser or accessibility
+check, in that order. Other evidence shows a gap. Turn endings alone provide no
+result. The card shows known session/turn, source revision, statuses, references,
+observation time and a five-minute deadline. Unknown turn/base/repository stays
+unknown. Inspecting sends no input to the server and changes no clipboard.
+**Copy coding suggestion** rechecks current source, policy and deadline, then
+copies only on that click. No submission, execution, approval or model occurs.
+
+Reachy enablement and **Turn endings** mute govern this optional preview; coding
+attention takes priority. A changed session revision clears check claims and
+observation time. Editing any input retires the preview; changing task,
+repository or commits also resets checks. Newer evidence supersedes older input;
+older or contradictory equal-time claims cannot restore the prior preview.
+Duplicates and SDK reconnect/sync admit no suggestion. The preview is unavailable
+while a replacement settings snapshot is pending, including
+SDK overflow resync with transport still connected. The per-copy SDK restart
+callback clears readiness; only completed current settings sync restores it.
+Input and preview stay in browser memory and are discarded on reload, navigation
+or disconnect, with no durable
+collection/archival acceptance. Keep credentials out of the fields. No diagnostic
+record contains the input; the existing authenticated session/mode/settings sync
+is unchanged. The shell supplies its existing core copies and live flags through
+the optional SDK frontend context, without broadening module-scoped sync. No new evidence/proposal wire contract or provider seam exists.
+
+Run the fixed-corpus `suggestions.test.js` after build and the existing
+`test:companions:browser` journey for real form/clipboard, policy/context changes,
+connection failure, keyboard, narrow layout and axe. Source evidence establishes
+neither installed-client usefulness nor physical acceptance.
+
 ## Synthetic assistant tasks
 
 The **Synthetic tasks** page adds one default-off text workflow beside Reachy.

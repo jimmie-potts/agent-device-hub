@@ -220,14 +220,17 @@ export class DashboardConnection {
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
           return sendUpload(name, action);
         },
-        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>): Promise<SyncResult<T>> => {
+        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;
           if (!active() || participant === undefined) return rejected<T>();
           const module = this.#state.runtime.modules?.find(candidate => candidate.name === name);
           if (module === undefined || families.some(family => !module.serves.includes(family))) {
             return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
           }
-          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS});
+          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {
+            owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS,
+            onRestarted: () => {if (!closed) options?.onRestarted?.();},
+          });
           if (result.status === 'rejected') return result;
           if (!active()) { await result.copy.close(); return rejected<T>(); }
           const copy: SyncedCopy<T> = {
@@ -247,8 +250,15 @@ export class DashboardConnection {
     const participant = this.#participant;
     if (participant === undefined || this.#closed) return;
     let synced: SyncResult<SessionRecord>;
+    let replacing = false;
     try {
-      synced = await participant.sync<SessionRecord>(['session'], change => { this.#changed(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
+      synced = await participant.sync<SessionRecord>(['session'], change => {
+        if (change.type === 'synced') replacing = false;
+        this.#changed(change);
+      }, {timeoutMs: SYNC_TIMEOUT_MS, onRestarted: () => {
+        replacing = true;
+        this.#update({sessions: {...this.#state.sessions, synced: false}});
+      }});
     } catch (error) {
       synced = {status: 'rejected', requestId: 'not-sent', error: errorBody(codeOf(error) ?? 'unavailable', {detail: 'the sync could not be sent'})};
     }
@@ -268,7 +278,7 @@ export class DashboardConnection {
     }
     this.#copy = synced.copy;
     this.#retryMs = FIRST_RETRY_MS;
-    this.#show(synced.message);
+    this.#show(replacing ? undefined : synced.message);
   }
 
   /** One change of the copy, in order: the copy itself holds the records, so the page shows its states. */
@@ -300,7 +310,8 @@ export class DashboardConnection {
 
   /**
    * Shows the copy's current records. A `sync.completed` counts one sync, once: the first sync's may reach the handler as
-   * well as the sync's own answer. Before the first sync resolves, the copy is not the page's yet.
+   * well as the sync's own answer. Before the first sync resolves, the copy is not the page's yet. Applied entity
+   * callbacks refresh records while stale; only a current completion restores freshness.
    */
   #show(completed: Message<SyncCompleted> | undefined): void {
     const copy = this.#copy;
@@ -310,7 +321,7 @@ export class DashboardConnection {
     const records = copy.states().map(message => message.data);
     const revision = Math.max(completed?.data.revision ?? 0, this.#state.sessions.revision ?? 0, ...records.map(record => record.revision));
     this.#update({sessions: {
-      synced: true, records, revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
+      synced: completed !== undefined || this.#state.sessions.synced, records, revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
     }});
   }
 
