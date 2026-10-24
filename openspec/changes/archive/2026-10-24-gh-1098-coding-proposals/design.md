@@ -30,3 +30,5 @@ Extract ordinary browser-safe module-local enablement/mute/availability and fres
 ## Migration Plan
 
 No database or wire migration. Source-only optional page addition with existing controls. Normal revert restores the old page; installation remains separately selected under #643.
+
+Core session admission uses the shell's completed-sync freshness. Applied entity callbacks keep the session projection accurate during replacement without restoring freshness. A per-copy restart callback also fences a late initial-sync promise; only current completion can make retained context admissible again. This preserves the existing core recovery contract and adds no subscription or wire change.

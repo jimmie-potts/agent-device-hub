@@ -292,3 +292,114 @@ void test('retained records stay stale until the SDK replacement snapshot comple
     }
   }
 });
+
+void test('applied session callbacks cannot restore freshness during an interrupted replacement snapshot', async context => {
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json({schema: 'module-list/2.0', modules: []})));
+  let diagnose: (value: Diagnostic) => void = () => {};
+  let overflow = (): void => {};
+  let finish = (): void => {};
+  let requests = 0;
+  let copy: SyncedCopy<SessionRecord> | undefined;
+  const answer = (requestId: string, revision: number): SyncAnswer => ({
+    status: 'served', requestId,
+    states: ['a', 'b'].map(id => ({...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0',
+      data: {...record, id, revision}})),
+    completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
+      data: {requestId, revision, members: ['a', 'b'].map(id => ({family: 'session', id}))}},
+  });
+  const transport: SyncTransport = {
+    now: Date.now,
+    subscribe: (_pattern, _handler, options) => {
+      overflow = () => {void options.onOverflow?.({});};
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      requests++;
+      if (requests < 3) return Promise.resolve(answer(request.requestId, requests));
+      return new Promise(resolve => {finish = () => {resolve(answer(request.requestId, 2));};});
+    },
+    report: error => {throw error;},
+    restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
+  };
+  const participant = {
+    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
+      const result = await startSync<SessionRecord>(transport, families, handler, options);
+      if (result.status === 'synced') copy = result.copy;
+      return result;
+    },
+    close: async () => {await copy?.close();},
+  } as unknown as RemoteParticipant;
+  const connection = new DashboardConnection({url: 'http://synthetic.invalid', connect: options => {
+    diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(participant);
+  }});
+  context.after(() => connection.close());
+  await connection.start();
+  let interrupted = false;
+  connection.subscribe(() => {
+    if (!interrupted && connection.getState().sessions.records.some(row => row.revision === 2)) {
+      interrupted = true; overflow();
+    }
+  });
+  overflow();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(requests, 3);
+  assert.deepEqual(connection.getState().sessions.records.map(row => [row.id, row.revision]), [['a', 2], ['b', 2]], 'all applied records remain projected');
+  assert.equal(connection.getState().sessions.syncs, 1, 'obsolete completion is not counted');
+  assert.equal(connection.getState().sessions.synced, false, 'core sessions stay unavailable until the third snapshot completes');
+  finish();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.syncs], [true, 2]);
+});
+
+void test('a late initial session-sync promise cannot restore freshness after its copy restarts', async context => {
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json({schema: 'module-list/2.0', modules: []})));
+  let diagnose: (value: Diagnostic) => void = () => {};
+  let overflow = (): void => {};
+  let finish = (): void => {};
+  let release = (): void => {};
+  let requests = 0;
+  let copy: SyncedCopy<SessionRecord> | undefined;
+  const held = new Promise<void>(resolve => {release = resolve;});
+  const answer = (requestId: string): SyncAnswer => ({status: 'served', requestId,
+    states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0'}],
+    completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
+      data: {requestId, revision: 3, members: [{family: 'session', id: record.id}]}},
+  });
+  const transport: SyncTransport = {
+    now: Date.now,
+    subscribe: (_pattern, _handler, options) => {
+      overflow = () => {void options.onOverflow?.({});};
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      if (++requests === 1) return Promise.resolve(answer(request.requestId));
+      return new Promise(resolve => {finish = () => {resolve(answer(request.requestId));};});
+    },
+    report: error => {throw error;},
+    restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
+  };
+  const participant = {
+    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
+      const result = await startSync<SessionRecord>(transport, families, handler, options);
+      if (result.status === 'synced') copy = result.copy;
+      await held;
+      return result;
+    },
+    close: async () => {await copy?.close();},
+  } as unknown as RemoteParticipant;
+  const connection = new DashboardConnection({url: 'http://synthetic.invalid', connect: options => {
+    diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(participant);
+  }});
+  context.after(() => connection.close());
+  const started = connection.start();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.ok(copy, 'the actual SDK completed before the wrapper promise returns');
+  overflow();
+  await new Promise(resolve => {setImmediate(resolve);});
+  release(); await started;
+  assert.equal(requests, 2);
+  assert.equal(connection.getState().sessions.synced, false, 'a retained initial completion cannot revive the copy');
+  finish();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(connection.getState().sessions.synced, true);
+});
