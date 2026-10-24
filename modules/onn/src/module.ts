@@ -28,7 +28,7 @@ const failure = (requestId: string, code: ErrorCode, started = false): Completed
 export function createOnnModule(options: {transport?: OnnTransport} = {}): BunnyModule<OnnConfig> {
   let owner: OnnOwner | undefined;
   return {manifest: {name: 'onn', apiVersion: '1.3', configure: configureOnn,
-    pages: [{id: 'controls', title: 'ONN', presentation: 'react'}],
+    pages: [{id: 'controls', title: 'ONN', presentation: 'react'}, {id: 'history', title: 'History', presentation: 'react'}],
     content: (ref, request) => owner === undefined ? errorBody('unavailable', {detail:'ONN has not started'}) : owner.content(ref,request),
     tools: [{name: 'status', description: 'Read the configured ONN connection, neutral current app and qualified controls. App observations become stale after 15 seconds. Reading sends no control. Use core_send_command with onn-key-press, onn-app-open or onn-text; seeking requires a focused TV timeline. Results report transmission, not visible playback.',
       input: {type: 'object', additionalProperties: false, properties: {}}, output: onnStatusSchema,
