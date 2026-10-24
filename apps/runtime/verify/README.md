@@ -555,7 +555,7 @@ sign's page and its preview. Without the cookie the page answers 401.
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. Each catalog capture and negative control has a separate named test with
 a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and CI's thirty-minute
-App verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
+Runtime verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
 failed or cancelled case is reported by name. It tests the supervisor's stop, crash restart, restart serialization, orphan
 handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,
