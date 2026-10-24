@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {test} from 'node:test';
-import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions} from '../entrypoint.mjs';
+import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
+import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
 
 test('device control defaults off while the core remains selected', () => {
   assert.equal(containerOptions({}).control, 'disabled');
@@ -33,16 +37,88 @@ test('host-local browser access is explicit, fixed-port and never enables device
   ]) assert.throws(() => containerOptions(env));
 });
 
+// Synthetic registrations in shipped order: two that reach a device through a simulated transport, two that reach none.
+const shipped = [
+  {name: 'playback', simulation: {}}, {name: 'tidbyt', simulation: {}},
+  {name: 'companions'}, {name: 'wispr'}, {name: 'follower', after: ['playback']}, {name: 'listener', after: ['companions']},
+];
+
 test('browser-only configuration refuses devices, unselected references and other access methods', () => {
   const valid = {modules: {}, edge: {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false}};
-  checkLocalBrowserConfig(valid);
+  assert.deepEqual(checkLocalBrowserConfig(valid, shipped), []);
   for (const change of [
-    config => {config.modules.pixoo = {};}, config => {delete config.edge;},
+    config => {config.modules.playback = {};}, config => {config.modules.pixoo = {};},
+    config => {config.modules.core = {};}, config => {config.modules.wispr = {secrets: {}};},
+    config => {config.modules.wispr = {secrets: {token: '/run/secrets/bunny/token'}};},
+    config => {config.modules.wispr = {}; config.modules.tidbyt = {};}, config => {delete config.edge;},
+    // A module that starts after one this profile does not host would run without it.
+    config => {config.modules.follower = {};}, config => {config.modules.listener = {};},
     config => {config.edge.credentials = '/elsewhere/private';},
     config => {config.edge.browserAccess = undefined;}, config => {config.edge.launcher = true;},
     config => {config.edge.mcp = true;},
     config => {config.edge.wifiProxy = {};},
-  ]) {const config = structuredClone(valid); change(config); assert.throws(() => checkLocalBrowserConfig(config));}
+  ]) {
+    const config = structuredClone(valid); change(config);
+    assert.throws(() => checkLocalBrowserConfig(config, shipped), {message: 'container-browser-config-refused'});
+  }
+});
+
+test('browser-only configuration admits sections for modules that reach no device, in shipped order', () => {
+  const config = {modules: {listener: {}, wispr: {sourceId: 'synthetic'}, companions: {}},
+    edge: {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false}};
+  assert.deepEqual(checkLocalBrowserConfig(config, shipped).map(({name}) => name), ['companions', 'wispr', 'listener']);
+});
+
+test('an admitted module whose accepted configuration names a device refuses startup', () => {
+  const module = (name, configure) => ({manifest: {name, ...(configure === undefined ? {} : {configure})}});
+  const config = {modules: {companions: {}, wispr: {}, quiet: {}}};
+  const accepted = [module('core'), module('companions'), module('quiet', () => ({config: {}, devices: []}))];
+  refuseNamedDevices(accepted, config, checkConfiguration);
+  // A refused configuration is the runtime's to report: the module shows refused, and startup continues.
+  refuseNamedDevices([...accepted, module('wispr', () => ({error: {code: 'invalid-request', detail: 'fixed'}}))], config, checkConfiguration);
+  assert.throws(() => refuseNamedDevices([...accepted, module('wispr', () => ({config: {}, devices: ['desk-lamp']}))], config, checkConfiguration),
+    {message: 'container-browser-config-refused'});
+});
+
+test('the host-local profile refuses an admitted module whose configuration names a device', () => {
+  const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
+  const factory = (name, configure) => ({name, create: () => ({manifest: {name, ...(configure === undefined ? {} : {configure})}})});
+  const core = factory('core');
+  const runtime = devices => ({coreFactory: core, buildModules: factories => factories.map(each => each.create()),
+    shippedModules: [core, factory('quiet', () => ({config: {}, devices}))]});
+  assert.deepEqual(hostLocalModules({modules: {quiet: {}}, edge}, runtime([]), checkConfiguration).factories.map(({name}) => name), ['core', 'quiet']);
+  assert.throws(() => hostLocalModules({modules: {quiet: {}}, edge}, runtime(['desk-lamp']), checkConfiguration), {message: 'container-browser-config-refused'});
+});
+
+test('the host-local profile over the real shipped list starts admitted modules beside a healthy core', async t => {
+  const [runtimeModules, {startRuntime}] = await Promise.all([
+    import('../../../apps/runtime/dist/src/modules.js'), import('../../../apps/runtime/dist/src/runtime.js'),
+  ]);
+  const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
+  const listed = runtimeModules.shippedModules.slice(1);
+  // The container guide names this admissible set; a new module that declares no simulation must update it.
+  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['companions', 'wispr']);
+  const devices = listed.filter(registration => registration.simulation !== undefined);
+  assert.ok(devices.some(({name}) => name === 'playback'));
+  for (const {name} of devices) {
+    assert.throws(() => hostLocalModules({modules: {[name]: {}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
+  }
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-local-modules-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  async function run(modules) {
+    const {factories, modules: built} = hostLocalModules({modules, edge}, runtimeModules, checkConfiguration);
+    assert.deepEqual(built.map(({manifest}) => manifest.name), factories.map(({name}) => name));
+    const stateDir = await mkdtemp(join(root, 'state-'));
+    const runtime = await startRuntime({modules: built, stateDir, port: 0, config: {modules}, log: () => {}});
+    try {return runtime.health();} finally {await runtime.stop();}
+  }
+  const coreOnly = await run({});
+  assert.equal(coreOnly.status, 'ok');
+  assert.deepEqual(coreOnly.modules.map(({name, state}) => [name, state]), [['core', 'running']]);
+  // wispr refuses an empty section; the core and companions keep running.
+  const admitted = await run({wispr: {}, companions: {}});
+  assert.equal(admitted.status, 'degraded');
+  assert.deepEqual(admitted.modules.map(({name, state}) => [name, state]), [['core', 'running'], ['companions', 'running'], ['wispr', 'refused']]);
 });
 
 test('one lifecycle producer requires an explicit host-local source selection', () => {
