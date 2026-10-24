@@ -68,8 +68,12 @@ attention takes priority. A changed session revision clears check claims and
 observation time. Editing any input retires the preview; changing task,
 repository or commits also resets checks. Newer evidence supersedes older input;
 older or contradictory equal-time claims cannot restore the prior preview.
-Duplicates and SDK reconnect/sync admit no suggestion. Input/preview are transient
-browser memory, discarded on reload, navigation or disconnect, with no durable
+Duplicates and SDK reconnect/sync admit no suggestion. The preview is unavailable
+while a replacement settings snapshot is pending, including
+SDK overflow resync with transport still connected. The per-copy SDK restart
+callback clears readiness; only completed current settings sync restores it.
+Input and preview stay in browser memory and are discarded on reload, navigation
+or disconnect, with no durable
 collection/archival acceptance. Keep credentials out of the fields. No diagnostic
 record contains the input; the existing authenticated session/mode/settings sync
 is unchanged. The shell supplies its existing core copies and live flags through

@@ -220,14 +220,17 @@ export class DashboardConnection {
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
           return sendUpload(name, action);
         },
-        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>): Promise<SyncResult<T>> => {
+        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;
           if (!active() || participant === undefined) return rejected<T>();
           const module = this.#state.runtime.modules?.find(candidate => candidate.name === name);
           if (module === undefined || families.some(family => !module.serves.includes(family))) {
             return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
           }
-          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS});
+          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {
+            owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS,
+            onRestarted: () => {if (!closed) options?.onRestarted?.();},
+          });
           if (result.status === 'rejected') return result;
           if (!active()) { await result.copy.close(); return rejected<T>(); }
           const copy: SyncedCopy<T> = {

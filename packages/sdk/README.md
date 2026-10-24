@@ -93,7 +93,7 @@ The `Sdk` calls:
 | `subscribe(pattern, handler)` | Delivers matching messages to `handler`, one at a time and in publish order. |
 | `request(key, draft, {timeoutMs, requestId?, parent?})` | Sends one command to the responder that owns `key` and resolves with its reply, a refusal or an uncertain result. The command's outcome is a separate message that the owner publishes. |
 | `respond(pattern, responder)` | Answers commands whose keys match. `responder` returns `{status: 'accepted'}`, or refuses before it acts by returning an error body from `errorBody`. |
-| `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
+| `sync(families, handler, {timeoutMs, maxBuffered?, parent?, owner?, onRestarted?})` | Keeps a copy of one owner's families: its current state at a revision, then live messages. `owner` names the owner by its source, as a family that several owners serve needs. See [Sync](#sync). |
 | `serveSync(families, provider)` | Answers sync requests for `families` from this participant's current state. `provider` returns a snapshot or an error body. Only a shared family, `device`, may have other owners too. See [Owners](#owners). |
 
 `subscribe` also takes `{onOverflow}`; see [Delivery](#delivery).
@@ -262,8 +262,16 @@ reported to `onError`, and so is a live message from the copy's owner that names
 no entity of the synced families, which the copy ignores.
 
 If the buffer overflows, or a subscription's queue drops a message, the copy
-wants a new sync. It never combines partial state: a served answer to a request
-sent before the overflow is not applied, though a refusal still ends the sync. The copy sends the next request only once
+wakes its optional per-copy `onRestarted()` callback immediately. Use it to mark
+retained state unavailable until the handler hears `synced`; an `updated` alone
+does not establish replacement completion. A callback that throws is reported
+to `onError` and cannot stop replacement sync. The callback also runs for an
+overflow during initial sync, but not for starting the copy.
+
+After overflow, the copy requests a new sync. It discards an answer to a request
+sent before overflow, although a refusal still ends the sync. If overflow occurs
+while notifying a snapshot, it stops that batch; an unfinished first sync waits
+for its replacement before resolving. The copy sends the next request only once
 no other is outstanding and its handler has returned, so however often a busy
 or stalled copy overflows, it asks the owner's shared queue for one sync at a
 time. The buffer also holds live messages while the handler catches up, so a
@@ -538,10 +546,12 @@ export const sign: BunnyModule<SignConfig> = {
   `context.api.read(path)` reads runtime JSON with the browser session; the
   feature validates the returned document. `api.image(path)` reads this module's
   content as a PNG, JPEG, GIF or WebP Blob, using the same authentication and
-  page lifetime; executable responses are refused. `api.sync(families, changed)` syncs
+  page lifetime; executable responses are refused. `api.sync(families, changed, {onRestarted?})` syncs
   only this module's declared families on the shared participant. Close a copy
   when finished; the shell also closes active and late copies when the page or
   session ends. `api.command(action)` sends once through the existing dispatcher.
+  The optional restart callback follows that copy's SDK lifecycle and stops
+  reaching the page after its scope closes. It opens no new subscription.
   `api.upload({family, target, requestId, upload: {name, file}})` sends one
   bounded binary request to this module's upload contribution. `file` is a
   browser Blob; no file or draft is retained across reloads. Both forms use

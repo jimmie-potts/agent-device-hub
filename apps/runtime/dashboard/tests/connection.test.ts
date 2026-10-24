@@ -58,6 +58,22 @@ void test('a module page shares the shell participant and closes both active and
   assert.equal(closed, 2);
 });
 
+void test('a module copy hears only its scoped restart callback while its page is active', async context => {
+  const {connection, script} = await moduleConnection(context);
+  let restart: (() => void) | undefined;
+  context.mock.method(script.participant, 'sync', (_families: readonly string[], _handler: unknown, options: SyncOptions) => {
+    restart = options.onRestarted;
+    return Promise.resolve({status: 'synced', copy: {states: () => [], get: () => undefined, close: async () => {}}});
+  });
+  const page = connection.openModule('pixoo');
+  let restarts = 0;
+  await page.api.sync(['pixoo-library'], () => {}, {onRestarted: () => {restarts++;}});
+  assert.ok(restart);
+  restart(); assert.equal(restarts, 1);
+  await page.close();
+  restart(); assert.equal(restarts, 1, 'an unmounted page cannot hear late copy restarts');
+});
+
 void test('module reads use browser authentication, refuse outside routes and release with the session; read-only commands send nothing', async context => {
   const {connection, requests} = await moduleConnection(context, false);
   const page = connection.openModule('pixoo');

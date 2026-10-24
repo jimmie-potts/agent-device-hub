@@ -27,7 +27,7 @@ export type FrontendApi = {
   /** Stages bounded media and dispatches its declared command once, using the same tracked outcome UI. */
   upload(action: FrontendUpload): Promise<FrontendActionReply>;
   /** Syncs this module's families on the shell's existing participant; the page closes the copy when done. */
-  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>): Promise<SyncResult<T>>;
+  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>>;
 };
 
 /** Shared shell components, with the same props as the dashboard's existing UI. */

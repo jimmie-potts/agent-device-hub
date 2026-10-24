@@ -830,6 +830,30 @@ it('each overflow that restarts a copy\'s sync is reported to onSyncRestart with
   assert.deepEqual(restarts, [{source: 'bunny/wall', pattern: `sync ${FAMILY}`}]);
 });
 
+it('a per-copy restart callback invalidates retained state before replacement and cannot stop recovery by throwing', async () => {
+  const reported: unknown[] = [];
+  const {core, wall} = bus({maxQueued: 1, onError: error => {reported.push(error);}});
+  const owner = sessionOwner(core);
+  await owner.update('s1', 1);
+  await core.serveSync([FAMILY], () => owner.snapshot());
+  const changes: string[] = [];
+  const failure = new Error('synthetic observer failure');
+  const result = await wall.sync<Session>([FAMILY], change => {changes.push(show(change));}, {
+    timeoutMs: 5000, onRestarted: () => {changes.push('restarting'); throw failure;},
+  });
+  assert.equal(result.status, 'synced');
+  assert.ok(!changes.includes('restarting'), 'initial sync is not a restart');
+  void owner.update('s1', 2); void owner.update('s1', 3);
+  await flush();
+  assert.equal(changes.filter(change => change === 'restarting').length, 1);
+  assert.ok(changes.indexOf('restarting') < changes.indexOf('synced @3'));
+  assert.equal(reported.length, 2);
+  assert.ok(reported[0] instanceof SdkError);
+  assert.equal(reported[0].body.error.code, 'capacity', 'the original dropped-delivery error is preserved');
+  assert.equal(reported[1], failure, 'the observer failure is reported once without replacing the delivery error');
+  if (result.status === 'synced') assert.deepEqual(held(result.copy), ['s1@3']);
+});
+
 it('a copy closed while it subscribes makes no further subscription and closes the one it was making', async () => {
   const made: string[] = [];
   const closed: string[] = [];
