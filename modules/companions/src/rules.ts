@@ -1,3 +1,4 @@
+import {presentationRefusal, staleSession} from './presentation-policy.js';
 import {createHash} from 'node:crypto';
 import type {CompanionCard, CompanionOpportunity, CompanionSettings} from '@jimmie-potts/event-contracts/v2/companions';
 import type {Mode, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -18,14 +19,13 @@ const same = (left: unknown, right: unknown): boolean => JSON.stringify(left) ==
 /** Reused for admission and immediately before presentation; it neither saves state nor emits effects. */
 export function refusal(event: CompanionOpportunity, policy: Policy, reserved = false): string | undefined {
   const {nowMs, settings} = policy;
-  if (!settings.enabled) return 'disabled';
-  if (settings.muted.includes(event.category)) return 'category-muted';
-  if (!policy.available) return 'presentation-unavailable';
+  const presentation = presentationRefusal(settings, event.category, policy.available);
+  if (presentation !== undefined) return presentation;
   if (nowMs < event.observedAtMs || (event.occurredAtMs !== null && nowMs < event.occurredAtMs) || nowMs >= event.validUntilMs) return 'expired';
   if (!policy.synced || policy.mode === undefined) return 'core-unavailable';
   if (event.context === 'live') {
     const session = policy.sessions.find(record => record.id === event.session);
-    if (session === undefined || session.freshness !== 'current' || session.restartUncertain || nowMs - session.lastEvidenceAtMs >= 300_000) return 'stale-source';
+    if (session === undefined || staleSession(session, nowMs)) return 'stale-source';
     if (session.generation !== event.generation || session.revision < event.revision || !same(session.identity, event.identity) || !same(session.turn, event.turn)) return 'obsolete-turn';
     if ((event.turn.status === 'unknown' || event.attention?.id.status === 'unknown') && session.revision !== event.revision) return 'source-changed';
     if (event.category === 'coding-attention' && !session.attention.some(attention => same(attention, event.attention))) return 'attention-cleared';

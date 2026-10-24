@@ -1,3 +1,4 @@
+import {CodingSuggestions} from './suggestions.js';
 import {KnowledgePage} from './knowledge.js';
 import {DuckConversation} from './duck.js';
 export {DuckWidget} from './duck.js';
@@ -98,6 +99,7 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
           {command.text !== '' && <p role="status">{command.text}</p>}
         </>;
       }}</Command>
+      <CodingSuggestions context={context} state={state} live={live}/>
     </>}
   </section>;
 }

@@ -236,6 +236,13 @@ allowances. The module adds no device/audio writer, service or transport boundar
 The architecture diagram retains its dated physical-device view; these text
 cards use its existing core/bus/module-store/frontend boundaries.
 
+Its deliberate coding-suggestion form uses the shell's existing core copies,
+passed through an optional browser-only SDK context with independent live flags.
+Task/check evidence and deterministic previews stay in page memory; explicit
+Copy changes only the clipboard. This adds no evidence store, wire family,
+provider or execution path. The [module guide](../modules/companions/README.md#coding-suggestions)
+owns input bounds, attribution and invalidation. The dated topology is unchanged.
+
 The same module also owns a default-off synthetic assistant workflow. Its single
 sequential graph and inspectable conversation/task/run/call records use the
 SDK-owned SQLite connection beside Reachy. A module-local, pinned LangGraph

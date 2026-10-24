@@ -548,6 +548,11 @@ export const sign: BunnyModule<SignConfig> = {
   the same `Command.run` callback and tracked result display.
   `connected`, `control`, `operations` and `operationsLive` describe current
   shell evidence. They do not turn an accepted command into a completed one.
+  Optional `context.core` supplies the shell's existing `sessions` and `mode`
+  copies with separate `sessionsLive` and `modeLive` flags for module previews.
+  Missing or unsynced context is unavailable, never permission to invent a
+  source or open another subscription. It carries no task evidence or command
+  authority; module-scoped `api.sync` remains restricted to that module.
 
   `context.ui.ModeChoice`, when supplied, renders the shell's saved Work/Free/Quiet
   control for a qualified device target. It uses the shell's current mode and
