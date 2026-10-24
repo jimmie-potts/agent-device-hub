@@ -192,6 +192,14 @@ remain attached to each stored observation; a reader update does not rewrite
 earlier originals or provenance.
 
 Use the [development checks](../../docs/development.md#onn-module-checks).
+The module's `./frontend` export provides a presentation-only `OnnCard` and the
+SDK-backed `OnnWidget`. Home, the component address and the controls page use
+the same Soft keys card. Remote and Apps switch only the controls; the TV
+illustration stays visible. The app label uses observed state and expires after
+15 seconds. The corner `!` opens status/request evidence; `?` opens focused
+seeking guidance and an explicit status reload. Neither sends a TV command.
+The History link opens the existing history UI at `#/module/onn/history`;
+the controls page also retains history for existing bookmarks.
 The simulation supplies synthetic titles, episodes, progress, physical changes,
 gaps and an effect count. Native/protocol/source tests do not establish installed
 reader or physical acceptance. Watched-time totals/completion, advertisement
