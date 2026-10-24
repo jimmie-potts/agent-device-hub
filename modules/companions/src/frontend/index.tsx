@@ -23,25 +23,28 @@ const reasons: Readonly<Record<string, string>> = {
 function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
   const [state, setState] = useState<CompanionState>();
   const [unavailable, setUnavailable] = useState(false);
+  const [synced, setSynced] = useState(false);
   const {api, connected} = context;
   useEffect(() => {
+    setSynced(false);
     if (!connected) return;
     let active = true;
     let close: (() => Promise<void>) | undefined;
     void api.sync<CompanionState>(['companion-state'], change => {
       if (!active) return;
       if (change.type === 'updated') {setState(change.message.data); setUnavailable(false);}
-      else if (change.type === 'failed') setUnavailable(true);
+      else if (change.type === 'failed') {setUnavailable(true); setSynced(false);}
     }).then(result => {
       if (result.status !== 'synced') {if (active) setUnavailable(true); return;}
       if (!active) {void result.copy.close(); return;}
       close = () => result.copy.close();
       const current = result.copy.states().find(message => message.data.id === 'reachy');
-      if (current !== undefined) {setState(current.data); setUnavailable(false);}
+      if (current !== undefined) {setState(current.data); setUnavailable(false); setSynced(true);}
+      else setUnavailable(true);
     }, () => {if (active) setUnavailable(true);});
     return () => {active = false; void close?.();};
   }, [api, connected]);
-  const live = connected && !unavailable && state !== undefined;
+  const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;
   const presentation = state?.presentation;
   return <section aria-label="Reachy" className="panel">
