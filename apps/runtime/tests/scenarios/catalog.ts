@@ -785,6 +785,7 @@ const hooked = (name: string, payload: HookPayload, options: {runtime?: 'running
   if (problem !== undefined) throw new StepFailure(problem);
 });
 const hookedSession = (h: Harness): SessionRecord | undefined => session(h, HOOKED_ID);
+const hookRestartSyncs = new WeakMap<Harness, number>();
 
 /**
  * Agent hooks through the 2.0 hook script (Hub #926): an unchanged 1.x producer file drives the script, each observation
@@ -823,7 +824,13 @@ const agentHooks: Scenario = {
     expect('nor read the sessions', answers({as: 'producer', method: 'GET', path: '/api/v2/families/session'}, answer => refusedWith(answer, 403, 'forbidden'))),
     expect('the gateway confirms it holds ingest', answers({as: 'producer', method: 'GET', path: '/api/v2/authority?scope=ingest'}, answer =>
       (answer.status === 200 && bodyOf<{scope?: string}>(answer)?.scope === 'ingest') || `${answer.status} ${answer.text.slice(0, 200)}`)),
+    act('remember the reader sync before stopping the runtime', h => {hookRestartSyncs.set(h, h.reader.syncs('session'));}),
     hooked('a hook while the runtime is stopped exits quietly within its budget', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-2'}), {runtime: 'stopped'}),
+    // The remote reader may still be in its existing backoff (up to 5 s), then needs its sync budget (5 s).
+    expect('the reader syncs the restarted session', h => {
+      const before = hookRestartSyncs.get(h), current = h.reader.syncs('session');
+      return (before !== undefined && current > before) || `session syncs ${current}, before restart ${String(before)}`;
+    }, 10_000),
     expect('the runtime is back, and the observation sent while it was stopped was lost: hooks fail open', h => {
       const record = hookedSession(h);
       return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.restartUncertain === true) ||
