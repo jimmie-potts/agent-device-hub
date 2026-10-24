@@ -371,6 +371,18 @@ script with the run's producer file through a session: a start, a prompt, a perm
 and the turn's end. It checks that the session appears, the approval prompt is raised and cleared, the producer's
 credential may not command or read, and a hook that runs while the supervisor holds the runtime stopped exits 0 quietly
 within its budget, its observation lost, before the next hook reaches the restarted runtime.
+The scenario waits for a newer session sync before judging the restarted state,
+with a ten-second bound for the reader's existing reconnect backoff and sync.
+It still requires the old turn and restart uncertainty before sending the next
+live hook. Focused checks after the root build, using an outside-checkout `TMPDIR`:
+
+```bash
+node --test --test-concurrency=1 --test-name-pattern='agent-hooks over' apps/runtime/dist/tests/scenarios/catalog.test.js
+node --test --test-concurrency=1 --test-name-pattern='agent hooks (wait|reject)|^scenario-agent-hooks passes' apps/runtime/dist/verify/tests/steps.test.js
+```
+
+The disposable checks include a delayed reader and a reader whose sync count
+never advances; the latter must fail without sending another hook.
 
 ```bash
 npm run -s verify:runtime -- start --scenario agent-hooks

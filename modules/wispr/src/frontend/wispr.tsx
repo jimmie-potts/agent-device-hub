@@ -2,6 +2,8 @@
 import React, {useEffect,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
 import type {FrontendApi, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import './wispr.css';
+import {WisprCard} from './wispr-card.js';
+import {wisprSummary} from './wispr-card-data.js';
 
 import {appNames,categoryNames,compatibleFilters,corpusNames,periodNames,identity,metrics,number,numericCsv,readWispr,errorCode,WisprReadError,initialSelection,rememberSelection,type Corpus,type Numeric,type Selection,type Status,type WisprRead} from './wispr-data.js';
 import type {LanguageTable,LanguageEntry} from '@jimmie-potts/wispr-contracts';
@@ -17,25 +19,25 @@ function useWispr(context:FrontendContext,selection:Selection,language:boolean,r
  const {api,connected}=context;
  const scope=JSON.stringify([selection,language]);
  const key=JSON.stringify([scope,refresh,connected]);
- const [state,setState]=useState<{api:FrontendApi;key:string;scope:string;read?:WisprRead;error?:string|undefined}>({api,key,scope});
+ const [state,setState]=useState<{api:FrontendApi;key:string;scope:string;loading:boolean;read?:WisprRead;error?:string|undefined}>({api,key,scope,loading:connected});
  useEffect(()=>{
   const stop=new AbortController();
-  if(!connected){setState({api,key,scope,error:'unavailable'});return()=>stop.abort();}
-  setState(old=>({api,key,scope,...(old.api===api&&old.scope===scope&&old.read?{read:{...old.read,language:{}}}:{})}));
+  if(!connected){setState({api,key,scope,loading:false,error:'unavailable'});return()=>stop.abort();}
+  setState(old=>({api,key,scope,loading:true,...(old.api===api&&old.scope===scope&&old.read?{read:{...old.read,language:{}},error:old.error}:{})}));
   void readWispr(api,undefined,selection,language,stop.signal,status=>{
    if(stop.signal.aborted)return;
    setState(old=>{
-    if(old.key!==key||!old.read||identity(old.read.status)!==identity(status))return {api,key,scope};
+    if(old.key!==key||!old.read||identity(old.read.status)!==identity(status))return {api,key,scope,loading:true};
     return status.data.textAllowed&&status.reason===null?old:{...old,read:{...old.read,status,language:{}}};
    });
-  }).then(read=>{if(!stop.signal.aborted)setState({api,key,scope,read});}).catch((error:unknown)=>{
+  }).then(read=>{if(!stop.signal.aborted)setState({api,key,scope,loading:false,read});}).catch((error:unknown)=>{
    if(stop.signal.aborted)return;
    const code=errorCode(error);
-   setState(old=>({api,key,scope,error:code,...(code!=='forbidden'&&code!=='unauthenticated'&&old.api===api&&old.scope===scope&&old.read?{read:{...old.read,language:{}}}:{})}));
+   setState(old=>({api,key,scope,loading:false,error:code,...(code!=='forbidden'&&code!=='unauthenticated'&&old.api===api&&old.scope===scope&&old.read?{read:{...old.read,language:{}}}:{})}));
   });
   return()=>stop.abort();
  },[api,key,scope,connected,selection,language]);
- return {...(state.key===key&&state.api===api?state:{api,key,scope}),retire:(code:string)=>setState({api,key,scope,error:code})};
+ return {...(state.key===key&&state.api===api?state:{api,key,scope,loading:connected}),retire:(code:string)=>setState({api,key,scope,loading:false,error:code})};
 }
 function Facts({values}:{values:[string,ReactNode][]}){return <dl className="facts">{values.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;}
 function Table({caption,columns,rows}:{caption:string;columns:string[];rows:ReactNode[][]}){return <div className="wispr-table"><table><caption>{caption}</caption><thead><tr>{columns.map(c=><th scope="col" key={c}>{c}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{row.map((v,j)=><td key={j}>{v}</td>)}</tr>)}</tbody></table>{rows.length===0&&<p className="hint">No entries for this selection.</p>}</div>;}
@@ -96,12 +98,7 @@ export function WisprPage({context}:{context:FrontendContext}):React.JSX.Element
  </section>;
 }
 export function WisprWidget({context}:{context:FrontendContext}):React.JSX.Element{
- const [refresh,setRefresh]=useState(0);const {read,error}=useWispr(context,HOME,false,refresh),now=Date.now();
- const today=read?.status.data.presets.find(p=>p.key==='today');const row=read?.numeric?.data.daily.find(r=>r.key===today?.to);
- const current=!!today&&now>=Date.parse(today.asOf)&&now<Date.parse(today.validUntil);
- const {Facts:SharedFacts}=context.ui;
- return <article className="widget wispr-widget" data-widget="wispr-summary" data-size="small"><header className="widget-head"><h2>Wispr today</h2><a href="#/module/wispr/analytics">Open Wispr</a></header>
- <button className="secondary" onClick={()=>setRefresh(value=>value+1)}>Refresh Wispr summary</button>{read?<><SharedFacts items={[
- ['Words',current&&row?number(row.words):'Not observed'],['Speaking minutes',current&&row?number(metrics(row).speech,1):'Unavailable']
- ]}/><Collection status={read.status} now={now} error={error}/>{!current&&<p className="hint">Today's totals need a current collection.</p>}<Trend rows={read.numeric?.data.daily??[]} from={read.selection.preset.from} to={read.selection.preset.to} compact/></>:<p role="status" className="hint">{error!==undefined?reason(error)+' ('+error+').':'Loading captured usage…'}</p>}</article>;
+ const [refresh,setRefresh]=useState(0);
+ const {read,error,loading}=useWispr(context,HOME,false,refresh);
+ return <WisprCard summary={wisprSummary(read,error,loading,Date.now())} onRefresh={()=>setRefresh(value=>value+1)}/>;
 }

@@ -1068,6 +1068,17 @@ See [CHOMPI bridge verification runs](../apps/chompi-bridge/DEVELOPMENT.md#chomp
 
 ## Wispr runtime module checks
 
+The reusable Quiet line Home card (#1200) stays in the module's browser entry.
+After the root build, run `npm run test:wispr-module:built`,
+`npm run test:runtime-dashboard:built` and
+`node apps/runtime/dashboard/tests/wispr.browser.ts`. Core CI runs the module
+tests; the hosted runtime smoke entry also runs this focused browser journey. The projection tests distinguish observed zero,
+missing speech, absent dates and expired producer windows; the browser journey
+checks selectable gaps, refresh/refusal retirement, keyboard and responsive
+light/dark accessibility. These use synthetic published files only and do not
+activate collection or establish installed analytics availability.
+
+
 The selected-file scenario fixture is wired explicitly into the memory and disposable harnesses. `check-module-names.cjs` permits only `wispr` in the four named fixture/seed files; it continues to reject other module names there and all module references in production discovery. The verification plugin separately lists the exact `wispr-contracts` package paths in its source, output and artifact identity; those literals are exempt, while module references on the same line and other paths remain checked. This is the bounded #927 integration permitted while generic fixture discovery in #999 is deferred, not a new loader or service.
 
 
