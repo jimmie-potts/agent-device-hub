@@ -216,6 +216,8 @@ it('a refused state directory names its reason in the runtime.failed record, so 
   await symlink(join(root, 'nowhere'), join(root, 'dangling'));
   await writeFile(join(root, 'file'), '');
   await mkdir(join(root, 'shared'), {mode: 0o750});
+  // Keep this invalid fixture non-private even when the runner uses umask 077.
+  await chmod(join(root, 'shared'), 0o750);
   const cases: readonly (readonly [string, string])[] = [
     ['relative/state', 'state-dir-relative'],
     [`/mnt/bunny-runtime-test-${process.pid}/state`, 'state-dir-mount'],
