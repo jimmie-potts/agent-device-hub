@@ -1694,6 +1694,14 @@ for resumption. The owning [module](../modules/bb8/README.md) and
 
 ## ONN module checks
 
+The reusable Soft keys card (#1210) extends existing module-test discovery with
+frontend guard, freshness, evidence and browser-bundle checks. Its existing ONN
+browser journey covers shared Home/component/controls placement, Remote/Apps
+geometry and keyboard focus, persistent illustration, memory-only drafts,
+History navigation, light/dark 1440/736/390/320 layouts and uncertain-attempt locks
+across routes and reload. These tests use the existing modules and App verification
+CI entries. Retain the separate history capture below for filters and continuation.
+
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:onn:built`. The module suite covers the
 fixed action mappings, private ADB protocol, bounded queue, persistent fences,
