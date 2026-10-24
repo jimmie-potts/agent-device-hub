@@ -8,6 +8,7 @@
 .onn-card-mark{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:var(--inset);flex-shrink:0}
 .onn-card button{touch-action:manipulation}
 .onn-card .onn-status-button{width:40px;height:40px;min-width:40px;padding:0;display:grid;place-items:center;background:var(--warning-badge-bg);color:var(--pending-text);border:0;border-radius:12px;font-size:1.1rem}
+.onn-card .onn-status-button:hover:not(:disabled){background:var(--warning-badge-bg);color:var(--pending-text)}
 .onn-status-note,.onn-guidance{position:absolute;right:20px;max-width:calc(100% - 40px);padding:13px 15px;z-index:3;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-shadow);font-size:.75rem}
 .onn-status-note{top:69px}.onn-status-note p,.onn-guidance p{margin:0}.onn-status-note p+p,.onn-guidance p+p{margin-top:8px}
 .onn-card .onn-status-note button{margin-top:10px;min-height:36px;font-size:.75rem}
@@ -43,6 +44,7 @@
 .onn-card .onn-text-entry button{width:44px;height:44px;min-width:44px;padding:0;display:grid;place-items:center;border:0;border-radius:13px;background:var(--accent);color:var(--accent-ink)}
 .onn-card .onn-text-help,.onn-card .onn-text-error{font-size:.75rem;margin:4px 0 0;color:var(--muted-dense)}.onn-card .onn-text-error{color:var(--pending-text)}
 .onn-feedback{height:24px;text-align:center;color:var(--muted-dense);font-size:.75rem}.onn-card .onn-feedback button{font:inherit;border:0;background:transparent;color:inherit;padding:0 8px;min-height:24px}
+.onn-card .onn-feedback button:hover:not(:disabled){background:var(--raised);color:var(--text)}
 .onn-card-foot{display:flex;align-items:center;justify-content:space-between;min-height:44px;margin-top:4px;padding-top:6px;border-top:1px solid var(--edge-faint)}
 .onn-card .onn-card-foot a{display:flex;align-items:center;gap:7px;min-height:36px;padding:6px 9px;border-radius:10px;font-size:.75rem;text-decoration:none;color:var(--link)}
 .onn-card .onn-help-button{width:40px;height:36px;min-width:40px;padding:0;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:var(--muted-dense)}

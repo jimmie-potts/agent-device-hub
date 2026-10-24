@@ -80,10 +80,14 @@ void test('quiet feedback distinguishes transmission, observation and uncertaint
   const operation: OperationRecord = {id: 'op-1', revision: 1, requestId: 'request-1', kind: 'device', family: 'onn-key-press', command: 'onn-key-press', target: 'onn',
     requestedBy: 'bunny/parts/dashboard', status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 100};
   assert.equal(onnFeedback(command, [operation], 'onn').label, 'Sent to ONN');
+  for (const record of [operation, {...operation, status: 'accepted'}, {...operation, status: 'uncertain'}] as OperationRecord[]) {
+    assert.equal(onnFeedback(command, [record], 'onn').detail, command.text, 'compact feedback preserves the full safe evidence verbatim');
+  }
   assert.equal(onnFeedback(command, [{...operation, evidence: 'observed'}], 'onn').label, 'Observed');
   assert.equal(onnFeedback(command, [{...operation, status: 'accepted'}], 'onn').label, 'Accepted');
   assert.equal(onnFeedback(command, [{...operation, status: 'uncertain'}], 'onn').attention, true);
   assert.equal(onnFeedback(command, [], 'onn').label, 'Check request');
+  assert.equal(onnFeedback(command, [], 'onn').detail, command.text, 'retired operation evidence remains inspectable');
   assert.equal(onnFeedback(command, [operation], 'other').label, 'Check request');
   assert.equal(onnFeedback({...command, text: 'No command sent from this page.', requestId: undefined}, [], 'onn').label, '');
   assert.equal(onnFeedback({...command, text: 'Uncertain result. It was not sent again.', locked: true}, [], 'onn').attention, true);

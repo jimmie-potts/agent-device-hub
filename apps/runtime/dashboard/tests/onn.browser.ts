@@ -17,7 +17,13 @@ try {
     await page.goto(`${world.url}/#/module/onn/controls`); await feed(page, 'connected');
     const controls = page.locator('[data-onn-card="soft-keys"]');
     const available = async (): Promise<void> => {await expect(controls).toHaveAttribute('data-state', 'available');};
-    const completed = async (): Promise<void> => {await controls.getByRole('button', {name: 'Sent to ONN', exact: true}).waitFor();await expect(controls.getByRole('button', {name: 'Open YouTube', exact: true, includeHidden: true})).toBeEnabled();};
+    const completed = async (): Promise<void> => {
+      const feedback = controls.getByRole('button', {name: 'Sent to ONN', exact: true});await feedback.waitFor();
+      await expect(controls.getByRole('button', {name: 'Open YouTube', exact: true, includeHidden: true})).toBeEnabled();
+      await feedback.click();
+      await controls.locator('.onn-status-note').getByText('Completed: succeeded. Transmitted; physical effect was not observed.', {exact: true}).waitFor();
+      await feedback.press('Escape');await expect(feedback).toHaveAttribute('aria-expanded', 'false');
+    };
     await available();await controls.getByText('No app observed', {exact: true}).waitFor();
     assert.equal(world.onnState().effects, 0); assert.deepEqual(sent, [], 'page inspection sends no controls');
     assert.equal(await world.readonlyOnn(), 403, 'real reader credentials cannot control');
@@ -52,7 +58,11 @@ try {
     assert.equal(await controls.getByRole('button', {name: 'Right', exact: true}).isDisabled(), true);
     await controls.getByRole('tab', {name: 'Apps', exact: true}).click();
     assert.equal(await insert.isDisabled(), true); assert.equal(world.onnState().effects, 11);
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({colorScheme});await controls.getByRole('button', {name: 'ONN status', exact: true}).hover();
+      assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => ({target: node.target, failureSummary: node.failureSummary}))})), []);
+    }
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => ({target: node.target, failureSummary: node.failureSummary}))})), []);
     world.onnOnline(true); await available();
     // UI authority interception exercises the rendered read-only context; the real credential refusal was checked above.
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
@@ -93,7 +103,7 @@ try {
       assert.equal(await input.isVisible(), false);await controls.getByRole('tab', {name: 'Apps', exact: true}).click();
       assert.equal(await input.inputValue(), 'Draft', 'tabs retain memory-only drafts');await input.fill('');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+      assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => ({target: node.target, failureSummary: node.failureSummary}))})), []);
       if (screenshots !== undefined && width !== 736 && width !== 320) await controls.screenshot({path: join(screenshots, `onn-apps-${colorScheme}-${width}.png`)});
       await controls.getByRole('tab', {name: 'Remote', exact: true}).click();
       if (screenshots !== undefined && width !== 736 && width !== 320) await controls.screenshot({path: join(screenshots, `onn-remote-${colorScheme}-${width}.png`)});
@@ -118,7 +128,7 @@ try {
     await completed();
     assert.equal(world.onnState().effects, 12, 'phone keyboard navigation sends one action');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'phone layout has no horizontal overflow');
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
+    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => ({target: node.target, failureSummary: node.failureSummary}))})), []);
     if (screenshots !== undefined) await page.screenshot({path: join(screenshots, 'onn-phone.png'), fullPage: true});
     // A response lost before admission has no operation evidence. The shared attempt stays locked,
     // including across the component/Home/page boundaries and browser reload; nothing is resent.
