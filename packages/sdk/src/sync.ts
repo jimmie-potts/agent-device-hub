@@ -466,7 +466,8 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#phase = 'live';
     for (const message of buffered) add(this.#apply(message, false));
     for (const change of changes) {
-      if (generation !== this.#generation) return;
+      // Applied entity changes still belong to callback projections; only the old completion lost freshness.
+      if (change.type === 'synced' && generation !== this.#generation) continue;
       await this.#notify(change);
     }
     if (generation !== this.#generation) return;

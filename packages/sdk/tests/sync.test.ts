@@ -854,6 +854,48 @@ it('a per-copy restart callback invalidates retained state before replacement an
   if (result.status === 'synced') assert.deepEqual(held(result.copy), ['s1@3']);
 });
 
+it('overflow during snapshot notification preserves every applied entity change without stale completion', async context => {
+  let overflow = (): void => {};
+  let calls = 0;
+  let interrupted = false;
+  const errors: unknown[] = [];
+  const transport: SyncTransport = {
+    now: () => START,
+    subscribe: (_pattern, _handler, options) => {
+      overflow = () => {void options.onOverflow?.({dropped: 1});};
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      const revision = ++calls === 1 ? 1 : 2;
+      const common = {specversion: '1.0' as const, bunnyprofile: '2.0' as const, source: 'bunny/core',
+        time: new Date(START).toISOString(), datacontenttype: 'application/json' as const, traceparent: PARENT.traceparent};
+      const completed: Message<SyncCompleted> = {...common, id: crypto.randomUUID(), kind: 'sync-completed',
+        type: 'org.bunny.sync.completed', subject: FAMILY, dataschema: 'https://bunny.invalid/events/sync-completed/2.0',
+        data: {requestId: request.requestId, revision, members: ['a', 'b'].map(id => ({family: FAMILY, id}))}};
+      return Promise.resolve<SyncAnswer>({status: 'served', requestId: request.requestId, completed,
+        states: ['a', 'b'].map(id => ({...session(id, revision), ...common, id: crypto.randomUUID()}))});
+    },
+    report: error => {errors.push(error);},
+  };
+  const projection = new Map<string, number>();
+  const changes: string[] = [];
+  const result = await startSync<Session>(transport, [FAMILY], change => {
+    changes.push(show(change));
+    if (change.type !== 'updated') return;
+    projection.set(change.entity.id, change.message.data.revision);
+    if (change.entity.id === 'a' && change.message.data.revision === 2 && !interrupted) {interrupted = true; overflow();}
+  }, {timeoutMs: 5000});
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') return;
+  context.after(() => result.copy.close());
+  overflow(); await flush();
+  assert.equal(calls, 3);
+  assert.deepEqual([...projection].sort(), [['a', 2], ['b', 2]], 'callback projections include every applied entity');
+  assert.deepEqual([...projection].sort(), result.copy.states().map(message => [message.data.id, message.data.revision]).sort());
+  assert.deepEqual(changes, ['updated a@1', 'updated b@1', 'synced @1', 'updated a@2', 'updated b@2', 'synced @2']);
+  assert.deepEqual(errors, []);
+});
+
 it('a copy closed while it subscribes makes no further subscription and closes the one it was making', async () => {
   const made: string[] = [];
   const closed: string[] = [];

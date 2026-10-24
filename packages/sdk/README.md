@@ -270,8 +270,9 @@ overflow during initial sync, but not for starting the copy.
 
 After overflow, the copy requests a new sync. It discards an answer to a request
 sent before overflow, although a refusal still ends the sync. If overflow occurs
-while notifying a snapshot, it stops that batch; an unfinished first sync waits
-for its replacement before resolving. The copy sends the next request only once
+while notifying a snapshot, it still tells every applied entity change but
+suppresses that interrupted snapshot's `synced` notification. An unfinished first
+sync waits for its replacement before resolving. The copy sends the next request only once
 no other is outstanding and its handler has returned, so however often a busy
 or stalled copy overflows, it asks the owner's shared queue for one sync at a
 time. The buffer also holds live messages while the handler catches up, so a
