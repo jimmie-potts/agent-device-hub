@@ -6,6 +6,7 @@
 // - An uncertain result says whether the cloud answered: a server error is an answer, a lost answer is not. The module
 //   reports the device `unavailable` only when the cloud does not answer (ADR 0012, "Failure isolation").
 // - A failed write had no effect, so the result no longer repeats `priorEffects: 'none'`.
+import {Outcome} from '@jimmie-potts/sdk';
 
 /** A refused connection setting. Its message is fixed text and never repeats a value. */
 export class CloudConfigurationError extends Error {
@@ -58,7 +59,7 @@ export const MAX_ADDITIONAL_INSTALLATIONS = 4;
 const DEFAULT_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 15 * 60_000;
 /** A write for an installation this connection does not list; nothing is sent. */
-const REFUSED: WriteResult = Object.freeze({outcome: 'failed', failure: 'invalid-request'});
+const REFUSED: WriteResult = Object.freeze({outcome: Outcome.failed, failure: 'invalid-request'});
 // Failures raised before any request bytes can have left this host.
 const PRE_SEND: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME', 'UND_ERR_CONNECT_TIMEOUT']);
 
@@ -198,16 +199,16 @@ export class TidbytCloudConnection {
     try {
       response = await send();
     } catch (error) {
-      return sentNothing(error) ? {outcome: 'failed', failure: 'transport-failure'} : {outcome: 'uncertain', answered: false};
+      return sentNothing(error) ? {outcome: Outcome.failed, failure: 'transport-failure'} : {outcome: Outcome.uncertain, answered: false};
     }
     if (response.ok) {
       await response.body?.cancel().catch(() => undefined);
       return {outcome: 'sent'};
     }
     const failure = await rejection(response);
-    if (failure === 'uncertain') return {outcome: 'uncertain', answered: true};
-    if (failure === 'capacity') return {outcome: 'failed', failure, retryAfterMs: retryAfterMs(response.headers.get('retry-after'), this.#now())};
-    return {outcome: 'failed', failure};
+    if (failure === 'uncertain') return {outcome: Outcome.uncertain, answered: true};
+    if (failure === 'capacity') return {outcome: Outcome.failed, failure, retryAfterMs: retryAfterMs(response.headers.get('retry-after'), this.#now())};
+    return {outcome: Outcome.failed, failure};
   }
 
   /** Reads the installation list, and says whether the default or the named installation is in it. It changes nothing. */

@@ -8,7 +8,7 @@ import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, ty
   type CompanionSettingsSet, type CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outbox, fullDisk, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
-  type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
+  type StateDraft, type Subscription, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
 import {CompanionStore, type Saved} from './store.js';
@@ -134,7 +134,7 @@ class Companions {
     if (!checked.ok || message.source !== 'bunny/core' || message.data.context !== 'live') {
       const code = message.source !== 'bunny/core' || checked.ok ? 'forbidden' : checked.error.code;
       if (message.source === 'bunny/core') this.#decision('invalid-input', message, false, code);
-      else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
+      else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': code}, message);
       return;
     }
     this.#enqueue({event: structuredClone(message.data), parent: {traceparent: message.traceparent}});
@@ -231,9 +231,9 @@ class Companions {
     // No card is generated. A failed decision save cannot affect core attention or retry the opportunity.
     void outbox.transaction(add => {store.save(saved); add('bunny.state.companion-state.reachy', {kind: 'state', ...stateDraft(saved.state)},
       parent === undefined ? {} : {parent});}).catch(() => {});
-    if (unavailable) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, parent);
-    else if (rejection !== undefined) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': rejection}, parent);
-    else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : 'rejected'}, parent);
+    if (unavailable) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result'}, parent);
+    else if (rejection !== undefined) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': rejection}, parent);
+    else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : Outcome.rejected}, parent);
   }
   #admit(command: Command<object>): ErrorCode | undefined {
     const context = this.#context;
@@ -256,7 +256,7 @@ class Companions {
         add('bunny.state.companion-state.reachy', {kind: 'state', ...stateDraft(saved.state)}, {parent: command});
         add(`bunny.event.${command.type.includes('companion-settings') ? 'companion-settings-set' : 'companion-fixture-run'}.reachy`,
           {kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: 'reachy', dataschema: 'https://bunny.invalid/events/outcome/2.0',
-            data: {requestId: (command.data as {requestId: string}).requestId, result: 'succeeded', evidence: 'observed'}}, {parent: command});
+            data: {requestId: (command.data as {requestId: string}).requestId, result: Outcome.succeeded, evidence: Outcome.observed}}, {parent: command});
         return {status: 'accepted'} as const;
       });
     } catch (error) {return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'the companion state could not be saved'});}

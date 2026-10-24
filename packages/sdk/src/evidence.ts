@@ -67,7 +67,7 @@ export const hold = <T extends EvidenceLevel>(initial: Evidence<T>): HeldEvidenc
 /**
  * The one outcome vocabulary (Hub #1141): the evidence levels, the wire's `none` (no evidence anything reached the
  * device), and the results an operation reports. `bunny/no-raw-outcome-literal` refuses these words as raw string
- * values outside this file, so a claim is built here and changed only with `merge`.
+ * values in claim positions outside this file (#1187), so a claim is built here and changed only with `merge`.
  */
 export const Outcome = Object.freeze({
   absent: 'absent', transmitted: 'transmitted', uncertain: 'uncertain', observed: 'observed', none: 'none',

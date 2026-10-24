@@ -18,6 +18,7 @@ import {
 } from './sdk.js';
 import {startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
+import {Outcome} from './evidence.js';
 
 /**
  * How a remote part proves who it is: a client credential's bearer token, or a browser page's session (Hub #922).
@@ -490,7 +491,7 @@ class RemoteClient {
       }, {signal: abandon.signal, answer: abandoned});
       if (own.has(result)) {
         this.#diagnose({
-          event: 'remote.command.uncertain', level: levelOf('remote.command.uncertain'), source: this.#source, key, requestId, messageId: command.id, outcome: 'uncertain',
+          event: 'remote.command.uncertain', level: levelOf('remote.command.uncertain'), source: this.#source, key, requestId, messageId: command.id, outcome: Outcome.uncertain,
           code: 'uncertain-result', trace: {traceparent: command.traceparent},
         });
       }

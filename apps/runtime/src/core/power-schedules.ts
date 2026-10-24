@@ -2,7 +2,7 @@
 import {randomUUID} from 'node:crypto';
 import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {childOf,type TraceContext,type Cancel,type ModuleScheduler} from '@jimmie-potts/sdk';
+import {childOf,type TraceContext,type Cancel,type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
 import {AutomationError, RULE_LIMIT} from './automation.js';
 import type {AutomationStore, RuleRow} from './automation-store.js';
 
@@ -109,7 +109,7 @@ export function createPowerSchedules(options:PowerScheduleOptions) {
     }
     let result:PowerSendResult;
     try {result=await options.send(saved.target,boundary.on,structuredClone(latest),requestId,parent);}
-    catch {record(saved,boundary,{outcome:'uncertain',reason:'uncertain-result',requestId});return;}
+    catch {record(saved,boundary,{outcome:Outcome.uncertain,reason:'uncertain-result',requestId});return;}
     record(saved,boundary,result);
   }
   const rearm=():void=>{

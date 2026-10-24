@@ -198,18 +198,39 @@ and the runtime's tests cover the rest.
   `{error: {...refused.error, requestId}}`, is allowed; overriding its `code` is
   not. It misses an error block built in a separate variable and a body written
   as JSON text.
-- **`bunny/no-raw-outcome-literal`** (#1141, block `bunny/outcome-vocabulary`):
-  no raw string value from the SDK `Outcome` vocabulary in `sdk/evidence.ts`
-  (`absent`, `transmitted`, `uncertain`, `observed`, `none`, `succeeded`,
-  `failed`, `rejected`) in production code outside that file. Take the word from
-  `Outcome` and change a claim only with `merge`. Types, property keys and module
-  specifiers are skipped; ErrorCode values such as `uncertain-result` are other
-  words. Tests and page code are not checked. Existing hits are held in
-  `eslint-suppressions.json` as a ratchet, the one baseline allowed under the
-  strict profile. `scripts/eslint/outcome-literal-pin.json` pins each file's count
-  (the pinned total is the cap) and `tests/strict_profile.test.mjs` fails when a file goes
-  above its pin; lower the pin when hits are converted. It misses a word built at
-  run time or held in a variable.
+- **`bunny/no-raw-outcome-literal`** (#1141, narrowed in #1187; block
+  `bunny/outcome-vocabulary`): no raw string value from the SDK `Outcome`
+  vocabulary in `sdk/evidence.ts` (`absent`, `transmitted`, `uncertain`,
+  `observed`, `none`, `succeeded`, `failed`, `rejected`) in a claim position in
+  production code outside that file. A claim position is where a claim key
+  (`evidence`, `outcome`, `result`, `level` or `bunny.outcome`) is given a value
+  or compared with one: an object property's value, a class or accessor field's
+  or variable's initializer, a parameter's or destructuring default (renamed or
+  not), an assigned value, the other side of `===`, `!==`, `==` or `!=`, or a
+  `case` on it, through conditionals, logical operators, arrays and casts
+  (`as`, `satisfies`, `<T>` and `!`). Take the word
+  from `Outcome` and change a claim only with `merge`. The same word in any
+  other position is not an evidence claim and is not checked: a CSS `none`, a
+  `status` or `kind` label, a map key, or the effects vocabulary
+  (`priorEffects: 'none' | 'possible' | 'confirmed-transmission'`), which
+  shares a spelling but not a meaning; ErrorCode values such as
+  `uncertain-result` are other words. Tests are not checked, and page code
+  and page drivers keep the exclusion they had when the rule landed (#1141);
+  lifting it is a separate change.
+  The 72 remaining hits are held in `eslint-suppressions.json`, none under the
+  strict profile: the retained legacy hub (16) and controllers (15), which do
+  not depend on the SDK; `apps/chompi-bridge` (10), frozen by the owner's
+  CHOMPI work; `packages/app-verify` (19) and `packages/contracts` (4), whose
+  own result vocabularies predate the SDK; `apps/maintenance` (3) and
+  repository scripts (5), which do not import the SDK.
+  The native suppressions are the ratchet: ESLint fails when a file gains a
+  hit, and an unused entry fails `lint:js` until it is pruned, so the baseline
+  only shrinks; a new entry shows as an edit to the committed JSON, which the
+  rule above against `--suppress-all` and `--suppress-rule` for new findings
+  forbids. There is no separate pin file or cap. It misses a word returned
+  from a function or arrow (even one whose return type names a claim), passed
+  as an argument, held in a list that a call such as `.includes` compares,
+  built at run time, or held in a variable without a claim name.
 
 Exceptions are config blocks named `bunny/safe-errors/<reason>` after the
 profile blocks, never inline comments, and each is listed here.
