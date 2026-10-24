@@ -283,13 +283,16 @@ export async function runScenario(scenario: Scenario, h: Harness, onStep?: (resu
       case 'expect':
         outcome = await poll(h, step.check, step.withinMs);
         break;
-      case 'holds':
-        outcome = true;
-        for (let waited = 0; outcome === true && waited <= step.forMs; waited += POLL_MS) {
+      case 'holds': {
+        // A run's wait also awaits I/O; its elapsed time belongs to this duration.
+        const startedAt = h.now();
+        for (;;) {
           outcome = await attempt(() => step.check(h));
-          if (outcome === true && waited < step.forMs) await h.wait(POLL_MS);
+          if (outcome !== true || h.now() - startedAt >= step.forMs) break;
+          await h.wait(POLL_MS);
         }
         break;
+      }
     }
     const result: StepResult = {name: step.name, kind: step.kind, outcome: outcome === true ? 'passed' : 'failed', ...(outcome === true ? {} : {detail: outcome})};
     steps.push(result);
