@@ -1805,9 +1805,11 @@ companions browser entry calls `speech.browser.ts` against a disposable real
 runtime with synthetic browser identity and audio. It exercises explicit selection,
 completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
 reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
-keyboard and axe checks. `speech-readiness.ts` delivers sync restart, failure and
-removal before React renders, then resolves pending voice discovery; each must
-submit zero audio. Endpoint changes also
+keyboard and axe checks. `speech-readiness.ts` mounts the real Reachy page and delivers companion or
+speech-state restart, failure and removal, category mute, text disable and
+restrictive speech availability before React renders, then resolves pending
+voice discovery. Each must submit zero audio; an unchanged eligible control
+must still submit once. Endpoint changes also
 require event schema, SDK remote, runtime
 gateway and dashboard tests, plus root build/type/lint and shared contract and
 workflow checks. Browser checks use fake audio and synthetic inputs; they do

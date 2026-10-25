@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState, type RefObject} from 'react';
 import type {CompanionState, SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
@@ -14,16 +14,20 @@ const playbackLabels = {
   failed: 'Speech failed before playback started.', 'not-started': 'Speech did not start.',
 };
 
-export function SpeechControls({context, state, live}: {context: FrontendContext; state: CompanionState | undefined; live: boolean}): React.JSX.Element {
+export type CompanionSpeechCopy = {state: CompanionState; live: true} | {state: CompanionState | undefined; live: false};
+
+export function SpeechControls({context, companion}: {context: FrontendContext; companion: Readonly<RefObject<CompanionSpeechCopy>>}): React.JSX.Element {
+  const {state, live} = companion.current;
   const [local, setLocal] = useState(initial);
   const [remote, setRemote] = useState<SpeechState>();
   const [synced, setSynced] = useState(false);
   const speechReady = useRef(false);
+  const speechState = useRef<SpeechState | undefined>(undefined);
   const [qualification, setQualification] = useState<SpeechQualification>();
   const [replacement, setReplacement] = useState(0);
   const session = useRef<SpeechSession | undefined>(undefined);
-  const current = useRef({context, state, live, synced, qualification, remote});
-  current.current = {context, state, live, synced, qualification, remote};
+  const current = useRef({context, companion, synced, qualification});
+  current.current = {context, companion, synced, qualification};
   const {api, connected} = context;
   useEffect(() => {
     setQualification(undefined);
@@ -43,11 +47,11 @@ export function SpeechControls({context, state, live}: {context: FrontendContext
     let copy: SyncedCopy<SpeechState> | undefined;
     const show = (): void => {
       const value = copy?.states().find(message => message.data.id === 'reachy')?.data;
-      speechReady.current = value !== undefined; setRemote(value); setSynced(speechReady.current);
+      speechReady.current = value !== undefined; speechState.current = value; setRemote(value); setSynced(speechReady.current);
     };
     void api.sync<SpeechState>(['companion-speech-state'], change => {
       if (!active) return;
-      if (change.type === 'updated') setRemote(change.message.data);
+      if (change.type === 'updated') {speechState.current = change.message.data; setRemote(change.message.data); session.current?.update();}
       else if (change.type === 'failed' || change.type === 'removed') {replacing = true; invalidate();}
       else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
     }, {onRestarted: () => {if (active) {replacing = true; invalidate(); setReplacement(value => value + 1);}}}).then(result => {
@@ -66,13 +70,13 @@ export function SpeechControls({context, state, live}: {context: FrontendContext
       return port === undefined || receipt === undefined ? undefined : new SpeechDriver({port, voice: receipt.voice});
     }, usable: () => {
       const now = current.current;
-      return speechReady.current && now.live && now.synced && now.context.connected && now.context.control && now.context.core?.sessionsLive === true
+      return speechReady.current && now.companion.current.live && now.synced && now.context.connected && now.context.control && now.context.core?.sessionsLive === true
         && now.context.core.modeLive && now.qualification !== undefined;
     }, eligible: card => {
-      const now = current.current, core = now.context.core;
-      return now.state !== undefined && core !== undefined && now.remote?.availability === 'available' && speechRefusal(card, {
-        nowMs: Date.now(), settings: now.state.settings, mode: core.mode, synced: now.live && now.synced && core.sessionsLive && core.modeLive,
-        sessions: core.sessions, scenarioAttention: false, available: now.state.availability === 'available',
+      const now = current.current, core = now.context.core, copy = now.companion.current;
+      return copy.live && core !== undefined && speechState.current?.availability === 'available' && speechRefusal(card, {
+        nowMs: Date.now(), settings: copy.state.settings, mode: core.mode, synced: now.synced && core.sessionsLive && core.modeLive,
+        sessions: core.sessions, scenarioAttention: false, available: copy.state.availability === 'available',
       }) === undefined;
     }, changed: next => {if (active) setLocal(next);}});
     session.current = value;

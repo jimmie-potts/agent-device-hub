@@ -1,11 +1,11 @@
-import {SpeechControls} from './speech.js';
+import {SpeechControls, type CompanionSpeechCopy} from './speech.js';
 import {CodingSuggestions} from './suggestions.js';
 import {KnowledgePage} from './knowledge.js';
 import {DuckConversation} from './duck.js';
 export {DuckWidget} from './duck.js';
 import {PreferencesPage} from './preferences.js';
 import {AssistantPage} from './assistant.js';
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
@@ -26,9 +26,12 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
   const [state, setState] = useState<CompanionState>();
   const [unavailable, setUnavailable] = useState(false);
   const [synced, setSynced] = useState(false);
+  // Speech's final check must see callback updates before React renders them.
+  const speech = useRef<CompanionSpeechCopy>({state: undefined, live: false});
   const {api, connected} = context;
   useEffect(() => {
-    setSynced(false);
+    const invalidate = (): void => {speech.current = {state: speech.current.state, live: false}; setSynced(false);};
+    invalidate();
     if (!connected) return;
     let active = true;
     let replacing = false;
@@ -36,23 +39,23 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
     let close: (() => Promise<void>) | undefined;
     const show = (): void => {
       const current = copy?.states().find(message => message.data.id === 'reachy');
-      if (current !== undefined) {setState(current.data); setUnavailable(false); setSynced(true);}
-      else {setUnavailable(true); setSynced(false);}
+      if (current !== undefined) {speech.current = {state: current.data, live: true}; setState(current.data); setUnavailable(false); setSynced(true);}
+      else {setUnavailable(true); invalidate();}
     };
     void api.sync<CompanionState>(['companion-state'], change => {
       if (!active) return;
-      if (change.type === 'updated') {setState(change.message.data); setUnavailable(false);}
-      else if (change.type === 'failed') {replacing = true; setUnavailable(true); setSynced(false);}
+      if (change.type === 'updated') {speech.current = {...speech.current, state: change.message.data}; setState(change.message.data); setUnavailable(false);}
+      else if (change.type === 'failed') {replacing = true; setUnavailable(true); invalidate();}
       else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
-      else if (change.type === 'removed' && change.entity.id === 'reachy') {setUnavailable(true); setSynced(false);}
-    }, {onRestarted: () => {if (active) {replacing = true; setSynced(false);}}}).then(result => {
+      else if (change.type === 'removed' && change.entity.id === 'reachy') {setUnavailable(true); invalidate();}
+    }, {onRestarted: () => {if (active) {replacing = true; invalidate();}}}).then(result => {
       if (result.status !== 'synced') {if (active) setUnavailable(true); return;}
       if (!active) {void result.copy.close(); return;}
       close = () => result.copy.close();
       copy = result.copy;
       if (!replacing) show();
     }, () => {if (active) setUnavailable(true);});
-    return () => {active = false; void close?.();};
+    return () => {active = false; speech.current = {state: speech.current.state, live: false}; void close?.();};
   }, [api, connected]);
   const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;
@@ -62,7 +65,7 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
     <h2>Reachy</h2>
     <p>A fixed-text desk companion. Text cards and spoken alerts have separate enable controls.</p>
     {!live && <p role="status">Reachy state is unavailable.</p>}
-    <SpeechControls context={context} state={state} live={live}/>
+    <SpeechControls context={context} companion={speech}/>
     {state !== undefined && <>
       <p role="status">{reasons[state.decision] ?? 'No reaction.'} <small>Reason: {state.decision}</small></p>
       <Facts items={[
