@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-speech-state/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "endpointId",
+    "availability",
+    "playback",
+    "pending"
+  ],
+  "properties": {
+    "id": {
+      "const": "reachy"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "endpointId": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "availability": {
+      "enum": [
+        "off",
+        "available",
+        "unavailable"
+      ]
+    },
+    "playback": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/companion-speech-playback/2.0"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operationId",
+            "status",
+            "started"
+          ],
+          "properties": {
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "status": {
+              "const": "dispatching"
+            },
+            "started": {
+              "const": false
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pending": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "endpointId": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+          },
+          "playback": {
+            "not": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "const": "uncertain"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "pending": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "availability": {
+            "const": "available"
+          }
+        }
+      }
+    }
+  ]
+}

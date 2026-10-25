@@ -1,7 +1,7 @@
 ## 1. Browser output
 
 - [x] 1.1 Implement the qualified local voice driver with bounded discovery, final eligibility checks, one submission, truthful completion/cancellation and no replay; verify fake-synthesis tests for delayed voices, changed permission, missing start, errors, Stop, mute and timeout.
-- [ ] 1.2 Add the declared profile-2.0 endpoint, playback and dispatch families with schema validation; verify valid examples and malformed or mismatched command rejection in event tests.
+- [x] 1.2 Add the declared profile-2.0 endpoint, playback and dispatch families with schema validation; verify valid examples and malformed or mismatched command rejection in event tests.
 
 ## 2. Authenticated endpoint
 

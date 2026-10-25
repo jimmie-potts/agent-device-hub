@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-speech-playback/2.0",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "started"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "status": {
+          "enum": [
+            "started",
+            "completed"
+          ]
+        },
+        "started": {
+          "const": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "started"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "status": {
+          "enum": [
+            "stopped",
+            "uncertain"
+          ]
+        },
+        "started": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "started"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "status": {
+          "const": "failed"
+        },
+        "started": {
+          "const": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "started",
+        "reason"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "status": {
+          "const": "not-started"
+        },
+        "started": {
+          "const": false
+        },
+        "reason": {
+          "enum": [
+            "disabled",
+            "unavailable",
+            "busy",
+            "expired",
+            "policy",
+            "stopped",
+            "invalid-input"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -745,6 +745,12 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
+The same event test command discovers `speech.test.mjs`. It checks explicit
+endpoint availability, live-card expiry, scenario and history refusal, closed
+playback receipts, candidate references and endpoint-loss identity. The core
+fixture inventory includes all seven speech families. These checks use synthetic
+messages and produce no audio.
+
 `test:events:built` also runs the core and device payload family tests (Hub #842,
 #918):
 - `packages/event-contracts/tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
