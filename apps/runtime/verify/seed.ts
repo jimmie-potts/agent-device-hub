@@ -46,6 +46,18 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
     ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
   } satisfies RunScenario])),
+  'browser-speech': {
+    description: 'Core and companions with a private synthetic browser speech qualification',
+    runtime: 'fixtures', modules: ['core', 'companions'],
+    prepare: async dataDir => {
+      const directory = join(stateDirOf(dataDir), 'modules', 'companions');
+      await mkdir(directory, {recursive: true, mode: 0o700});
+      const file = join(directory, 'speech-qualification.json');
+      await writeFile(file, JSON.stringify({schema: 'browser-speech-qualification/1.0', browserVersion: '150.0.0.1', platform: 'macos',
+        qualifiedAt: '2026-10-24T12:00:00.000Z', voice: {name: 'Synthetic local English', lang: 'en-US', voiceURI: 'synthetic-local'}}), {mode: 0o600});
+      await chmod(file, 0o600);
+    },
+  },
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',
     runtime: 'shipped', modules: [], fault: 'real-transports', refused: CONFIGURED,

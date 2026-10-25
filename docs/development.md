@@ -1805,6 +1805,13 @@ gateway and dashboard tests, plus root build/type/lint and shared contract and
 workflow checks. Browser checks use fake audio and synthetic inputs; they do
 not establish installed playback or human perception.
 
+The runtime verification `browser-speech` capture uses the real synthetic runtime
+and dashboard with fake browser speech. Its existing `steps.test.ts` catalog entry
+runs under the App verification checks; the dashboard speech journey shares the
+same browser fixture. Run `npm run build` before either. This capture covers
+manual availability and controls without playing native audio; installed Chrome
+acceptance remains separate.
+
 Coding suggestions (#1098) use the existing companion unit discovery and
 `test:companions:browser` hosted journey. After the root build, run
 `node --test modules/companions/dist/tests/suggestions.test.js` for the fixed

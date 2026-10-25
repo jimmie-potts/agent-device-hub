@@ -20,6 +20,7 @@ import {ask, followProof} from './follow-proof.js';
 import {judgeHealth} from './health.js';
 import {HARNESS_PATH, type BoundaryReport} from './protocol.js';
 import {RUN_SCENARIOS, START_ONLY, seedRun} from './seed.js';
+import {speechBrowserCapture} from './speech-browser.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
@@ -324,6 +325,11 @@ export default definePlugin({
       }),
     },
     ...scenarioSteps,
+    'browser-speech': {
+      description: 'Manual local speech controls on the actual dashboard, with synthetic browser audio',
+      scenario: 'browser-speech', fresh: true, timeoutMs: 120_000, viewport: {width: 1280, height: 1000},
+      run: async t => {await speechBrowserCapture(t); await boundariesHold(t);},
+    },
     'follow-one-request': {
       description: 'Follows one request through the run\'s journal records and spans in four cases (a success, a refusal, an uncertain effect, a replayed outcome), then one whose runtime was killed, one never sent and one over its limits',
       scenario: 'fixtures',

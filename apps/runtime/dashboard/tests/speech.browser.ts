@@ -3,10 +3,8 @@ import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import type {Browser, Page} from 'playwright';
 import {feed, startWorld} from './harness.ts';
+import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
-
-type SpeechFixture = {calls: number; cancelled: number; overlap: number; voices: boolean; finish(): void; releaseVoices(): void; fail(): void};
-declare global {interface Window {speechFixture: SpeechFixture}}
 
 /** Real runtime and page, with only browser identity and the audio device replaced by explicit synthetic fixtures. */
 export async function speechJourney(browser: Browser): Promise<void> {
@@ -14,35 +12,7 @@ export async function speechJourney(browser: Browser): Promise<void> {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   try {
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, 'userAgentData', {value: {platform: 'macOS', getHighEntropyValues: () => Promise.resolve({fullVersionList: [{brand: 'Google Chrome', version: '150.0.0.1'}]})}});
-      const NativeUtterance = SpeechSynthesisUtterance;
-      Object.defineProperty(window, 'SpeechSynthesisUtterance', {value: class extends NativeUtterance {
-        constructor(text: string) {super(text); Object.defineProperty(this, 'voice', {value: null, writable: true});}
-      }});
-      const events = new EventTarget();
-      const voice = {name: 'Synthetic local English', lang: 'en-US', voiceURI: 'synthetic-local', localService: true, default: true};
-      let active: SpeechSynthesisUtterance | undefined;
-      const fixture: SpeechFixture = {calls: 0, cancelled: 0, overlap: 0, voices: true,
-        finish: () => {const utterance = active; active = undefined; if (utterance !== undefined) utterance.dispatchEvent(new SpeechSynthesisEvent('end', {utterance}));},
-        releaseVoices: () => {fixture.voices = true; events.dispatchEvent(new Event('voiceschanged'));},
-        fail: () => {const utterance = active; active = undefined; if (utterance !== undefined) utterance.dispatchEvent(new SpeechSynthesisErrorEvent('error', {utterance, error: 'synthesis-failed'}));},
-      };
-      window.speechFixture = fixture;
-      Object.defineProperty(window, 'speechSynthesis', {value: {
-        getVoices: () => fixture.voices ? [voice] : [],
-        addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events),
-        get speaking() {return active !== undefined;}, get pending() {return false;},
-        speak: (utterance: SpeechSynthesisUtterance) => {
-          if (active !== undefined) fixture.overlap++; fixture.calls++; active = utterance;
-          queueMicrotask(() => {if (active === utterance) utterance.dispatchEvent(new SpeechSynthesisEvent('start', {utterance}));});
-        },
-        cancel: () => {
-          const utterance = active; active = undefined;
-          if (utterance !== undefined) {fixture.cancelled++; utterance.dispatchEvent(new SpeechSynthesisErrorEvent('error', {utterance, error: 'interrupted'}));}
-        },
-      }});
-    });
+    await context.addInitScript(installSyntheticSpeech);
     const page = await context.newPage(), other = await context.newPage(); page.setDefaultTimeout(12_000); other.setDefaultTimeout(12_000);
     const visit = async (target: Page): Promise<void> => {await target.goto(`${world.url}/#/module/companions/reachy`); await feed(target, 'connected');};
     const controls = (target: Page) => target.getByRole('region', {name: 'Spoken alerts', exact: true});
