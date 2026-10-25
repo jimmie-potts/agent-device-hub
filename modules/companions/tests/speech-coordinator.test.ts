@@ -230,7 +230,43 @@ void test('a storage failure after output leaves responsibility unresolved until
   await w.report({operationId, status: 'completed', started: true}); await until(() => w.owner().inspect().playback?.status === 'uncertain');
   assert.equal(w.reports.length, 0); assert.equal((await w.control('enable', 'endpoint-two')).status, 'rejected');
   assert.equal(db.prepare('SELECT playback FROM companion_speech WHERE operation_id=?').get(operationId)?.playback, 'pending');
+  const failure = w.host().logs.filter(record => record.fields['bunny.operation'] === 'storage');
+  assert.equal(failure.length, 1); assert.equal(failure[0]?.level, 'warn'); assert.equal(failure[0]?.fields['bunny.code'], 'capacity');
+  assert.equal(failure[0]?.trace?.traceparent, db.prepare('SELECT traceparent FROM companion_speech WHERE operation_id=?').get(operationId)?.traceparent);
+  assert.equal(JSON.stringify(failure).includes('SQLITE'), false);
   db.exec('PRAGMA max_page_count=1073741823; DROP TRIGGER full_speech');
   await w.restart(); await until(() => w.reports.length >= 1);
   assert.equal(w.outputs.length, 1); assert.equal(w.reports[0]?.result, 'uncertain');
+});
+
+
+void test('a failed start write preserves authenticated partial-playback evidence and records a safe traced failure', async t => {
+  const w = await world(t); await w.control('enable');
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const operationId = w.outputs[0]?.data.operationId ?? assert.fail('operation'), db = w.host().moduleDatabase(); assert.ok(db);
+  db.exec("CREATE TRIGGER fail_start BEFORE UPDATE OF started ON companion_speech WHEN NEW.playback='pending' AND NEW.started=1 BEGIN SELECT RAISE(FAIL,'SYNTHETIC_PRIVATE_START_FAILURE'); END;");
+  await w.report({operationId, status: 'started', started: true}); await until(() => w.reports.length === 1);
+  assert.equal(w.owner().inspect().playback?.started, true);
+  assert.equal(w.reports[0]?.result, 'uncertain'); assert.equal(w.reports[0]?.evidence, 'observed');
+  const stored = db.prepare('SELECT started,traceparent FROM companion_speech WHERE operation_id=?').get(operationId);
+  assert.equal(stored?.started, 1);
+  const failure = w.host().logs.filter(record => record.fields['bunny.operation'] === 'storage');
+  assert.equal(failure.length, 1); assert.equal(failure[0]?.level, 'error'); assert.equal(failure[0]?.fields['bunny.code'], 'internal');
+  assert.equal(failure[0]?.trace?.traceparent, stored?.traceparent);
+  assert.equal(JSON.stringify(failure).includes('SYNTHETIC_PRIVATE_START_FAILURE'), false);
+  db.exec('DROP TRIGGER fail_start');
+});
+
+void test('a failed speech revision records its internal decision once without leaking the storage error', async t => {
+  const w = await world(t); await w.control('enable');
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const operationId = w.outputs[0]?.data.operationId ?? assert.fail('operation'), db = w.host().moduleDatabase(); assert.ok(db);
+  db.exec("CREATE TRIGGER fail_revision BEFORE UPDATE ON companions_revision BEGIN SELECT RAISE(FAIL,'SYNTHETIC_PRIVATE_REVISION_FAILURE'); END;");
+  w.owner().offer(w.card(), parent, w.owner().mark());
+  assert.equal(w.owner().inspect().availability, 'unavailable');
+  const failure = w.host().logs.filter(record => record.fields['bunny.operation'] === 'storage');
+  assert.equal(failure.length, 1); assert.equal(failure[0]?.level, 'error'); assert.equal(failure[0]?.fields['bunny.code'], 'internal');
+  assert.equal(failure[0]?.trace?.traceparent, db.prepare('SELECT traceparent FROM companion_speech WHERE operation_id=?').get(operationId)?.traceparent);
+  assert.equal(JSON.stringify(failure).includes('SYNTHETIC_PRIVATE_REVISION_FAILURE'), false);
+  db.exec('DROP TRIGGER fail_revision');
 });

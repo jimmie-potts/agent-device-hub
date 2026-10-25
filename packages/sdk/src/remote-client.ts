@@ -485,7 +485,17 @@ class RemoteClient {
         live();
         const message = buildMessage(this.#source, draft.kind, {...draft, subject: id}, childOf(options.parent), this.#now());
         const key = `bunny.${draft.kind === 'state' || draft.kind === 'removal' ? 'state' : 'event'}.${targetFamily}.${id}`;
-        try {await this.#post('publish', {connection: binding.connection, endpoint: binding.endpoint, key, message}, controller.signal);} catch (error) {
+        try {
+          const published = await this.#within(5000, false, async signal => {
+            await this.#post('publish', {connection: binding.connection, endpoint: binding.endpoint, key, message}, signal);
+            return true;
+          }, {signal: controller.signal, answer: false});
+          if (!published) {
+            void lease.close(true);
+            throw new SdkError(body('unavailable', 'the endpoint publication did not complete'));
+          }
+          live();
+        } catch (error) {
           throw new SdkError(bodyOf(error));
         }
         return message;

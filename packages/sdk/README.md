@@ -1269,7 +1269,10 @@ is refused with `invalid-state`.
 `openEndpoint({family, respond, onClosed?})` opens one handler on the current
 stream. It requires an explicit `endpoint` grant containing `respond`, `publish`
 and `request` family lists. Ordinary read and control permissions do not grant
-endpoint access. Registration ends after five seconds without acknowledgment.
+endpoint access. Registration and each publication end after five seconds without
+acknowledgment. A publication that reaches this deadline retires the handle and
+invokes `onClosed`; it never retries the publication. Missing acknowledgment does not prove that
+the edge missed the message.
 
 The returned handle has a public `id`, `publish(family, draft, options?)`,
 `request(family, draft, options)` and `close()`. The handle supplies its identity

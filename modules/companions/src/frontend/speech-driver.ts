@@ -158,7 +158,7 @@ export class SpeechDriver {
     if (this.#attempt !== attempt || attempt.stage.kind !== 'submitted') return;
     const {started, stopping} = attempt.stage;
     if (this.#port.speaking || this.#port.pending) {this.#uncertainOutput(attempt); return;}
-    if (stopping && (error === undefined || error === 'interrupted' || error === 'canceled')) {
+    if (stopping && (started || error === 'canceled') && (error === undefined || error === 'interrupted' || error === 'canceled')) {
       this.#finish(attempt, {kind: 'stopped', started});
     } else if (error === undefined && started) this.#finish(attempt, {kind: 'completed', started});
     else if (!started && error !== undefined && NO_EFFECT_ERRORS.has(error)) {

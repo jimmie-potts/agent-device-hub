@@ -1797,7 +1797,9 @@ companions browser entry calls `speech.browser.ts` against a disposable real
 runtime with synthetic browser identity and audio. It exercises explicit selection,
 completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
 reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
-keyboard and axe checks. Endpoint changes also
+keyboard and axe checks. `speech-readiness.ts` delivers sync restart, failure and
+removal before React renders, then resolves pending voice discovery; each must
+submit zero audio. Endpoint changes also
 require event schema, SDK remote, runtime
 gateway and dashboard tests, plus root build/type/lint and shared contract and
 workflow checks. Browser checks use fake audio and synthetic inputs; they do

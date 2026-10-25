@@ -1,4 +1,5 @@
 import {speechJourney} from './speech.browser.ts';
+import {speechReadinessJourney} from './speech-readiness.ts';
 import {suggestionsJourney} from './suggestions.browser.ts';
 import {suggestionsReconnectJourney} from './suggestions-reconnect.ts';
 import {knowledgeJourney} from './knowledge.browser.ts';
@@ -15,6 +16,7 @@ const world = await startWorld({companions: true});
 const browser = await chromium.launch({headless: true});
 try {
   await speechJourney(browser);
+  await speechReadinessJourney(browser);
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});

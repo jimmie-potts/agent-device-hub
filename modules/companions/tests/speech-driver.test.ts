@@ -243,3 +243,17 @@ void test('a failed start observer cancels output and settles uncertain without 
   assert.deepEqual(await done, {kind: 'uncertain', started: true});
   assert.equal(port.cancels, 1); assert.equal(driver.enabled, false);
 });
+
+
+for (const terminal of ['end', 'interrupted', 'canceled'] as const) {
+  void test(`Stop without an observed start preserves uncertainty for ${terminal}`, async t => {
+    const {driver, port, request} = setup(t); await driver.enable();
+    const done = driver.play(request); await flush(); port.cancelCallback = false;
+    const stopped = driver.stop();
+    if (terminal === 'end') port.end(); else port.error(terminal);
+    const expected = terminal === 'canceled' ? {kind: 'stopped', started: false} : {kind: 'uncertain', started: false};
+    assert.deepEqual(await stopped, expected); assert.deepEqual(await done, expected);
+    assert.equal(await driver.enable(), terminal === 'canceled');
+    assert.equal(port.submissions.length, 1);
+  });
+}

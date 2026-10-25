@@ -168,8 +168,9 @@ export class SpeechCoordinator {
     const playback = message.data;
     if (playback.status === Outcome.uncertain && this.#state.playback?.status === Outcome.uncertain && playback.started === this.#state.playback.started) return;
     if (playback.status === 'started') {
-      try {this.#store.started(active.operationId); active.started = true; this.#state.playback = playback; this.#changed();}
-      catch {this.#uncertain(active);}
+      active.started = true;
+      try {this.#store.started(active.operationId); this.#state.playback = playback; this.#changed();}
+      catch (error) {this.#storageFailure(error, active); this.#uncertain(active);}
       return;
     }
     if ((playback.status === 'completed' && !active.started) || (active.started && !playback.started)) {this.#uncertain(active); return;}
@@ -194,7 +195,8 @@ export class SpeechCoordinator {
     if (this.#active !== active || active.settling) return;
     active.settling = true; active.cancel();
     try {if (active.accepted) await this.#save(active, playback);}
-    catch {
+    catch (error) {
+      this.#storageFailure(error, active);
       this.#blocked = true; this.#clear(); this.#state.availability = 'unavailable';
       this.#state.playback = {operationId: active.operationId, status: Outcome.uncertain, started: active.started};
       this.#changed(); return;
@@ -222,11 +224,16 @@ export class SpeechCoordinator {
         }}, {parent: record});
     });
   }
+  #storageFailure(error: unknown, parent?: TraceContext): void {
+    recordLog(this.context.log, 'message.received', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.uncertain,
+      'bunny.code': fullDisk(error) ? 'capacity' : 'internal'}, parent);
+  }
   #changed(): void {
     this.#state.pending = this.#pending !== undefined;
     if (this.#closed || this.context.signal.aborted) return;
     try {this.#state.revision = advanceRevision(this.context.database());}
-    catch {
+    catch (error) {
+      this.#storageFailure(error, this.#active);
       this.#blocked = true; this.#clear(); this.#state.pending = false; this.#state.availability = 'unavailable';
       if (this.#active !== undefined) this.#interrupt(this.#active);
       return;

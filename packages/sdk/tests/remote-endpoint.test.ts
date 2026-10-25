@@ -249,3 +249,24 @@ it('an interrupted endpoint publication rejects with the shared SDK error', asyn
     await until(() => arrived, 'receipt submission'); await endpoint.close(); await rejected;
   } finally {held.resolve(); await edge.close();}
 });
+
+
+it('an unanswered endpoint publication retires within five seconds while its stream remains healthy', async () => {
+  const held = deferred<void>(), clock = manualClock(); let arrived = 0, closed = false, settled = false;
+  const edge = await startEdge({permissions: {'bunny/wall': permissions}, before: route => {
+    if (route !== 'publish') return undefined;
+    arrived += 1; return held.promise;
+  }});
+  try {
+    const page = await edge.connect('bunny/wall', {scheduler: clock.scheduler});
+    const endpoint = await page.openEndpoint({family: 'test-mode', respond: () => ({status: 'accepted'}), onClosed: () => {closed = true;}});
+    const rejected = assert.rejects(endpoint.publish('test-session', session(endpoint.id, 1)), refused('unavailable')).then(() => {settled = true;});
+    await until(() => arrived === 1, 'receipt waiting for acknowledgment');
+    clock.advance(4999); assert.equal(closed, false); assert.equal(settled, false);
+    clock.advance(1); await until(() => closed && settled, 'bounded publication retirement'); await rejected;
+    assert.equal(arrived, 1, 'a lost receipt is never republished');
+    assert.equal(edge.diagnostics.some(item => item.event === 'remote.disconnected'), false, 'the receipt deadline does not require a lost stream');
+    const fresh = await page.openEndpoint({family: 'test-mode', respond: () => ({status: 'accepted'})});
+    assert.notEqual(fresh.id, endpoint.id); await fresh.close();
+  } finally {held.resolve(); await edge.close();}
+});

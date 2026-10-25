@@ -18,6 +18,7 @@ export function SpeechControls({context, state, live}: {context: FrontendContext
   const [local, setLocal] = useState(initial);
   const [remote, setRemote] = useState<SpeechState>();
   const [synced, setSynced] = useState(false);
+  const speechReady = useRef(false);
   const [qualification, setQualification] = useState<SpeechQualification>();
   const [replacement, setReplacement] = useState(0);
   const session = useRef<SpeechSession | undefined>(undefined);
@@ -35,25 +36,26 @@ export function SpeechControls({context, state, live}: {context: FrontendContext
     return () => {active = false;};
   }, [api, connected, replacement]);
   useEffect(() => {
-    setSynced(false);
+    const invalidate = (): void => {speechReady.current = false; setSynced(false); session.current?.update();};
+    invalidate();
     if (!connected || api.speech === undefined) return;
     let active = true, replacing = false;
     let copy: SyncedCopy<SpeechState> | undefined;
     const show = (): void => {
       const value = copy?.states().find(message => message.data.id === 'reachy')?.data;
-      setRemote(value); setSynced(value !== undefined);
+      speechReady.current = value !== undefined; setRemote(value); setSynced(speechReady.current);
     };
     void api.sync<SpeechState>(['companion-speech-state'], change => {
       if (!active) return;
       if (change.type === 'updated') setRemote(change.message.data);
-      else if (change.type === 'failed' || change.type === 'removed') {replacing = true; setSynced(false);}
+      else if (change.type === 'failed' || change.type === 'removed') {replacing = true; invalidate();}
       else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
-    }, {onRestarted: () => {if (active) {replacing = true; setSynced(false); setReplacement(value => value + 1);}}}).then(result => {
+    }, {onRestarted: () => {if (active) {replacing = true; invalidate(); setReplacement(value => value + 1);}}}).then(result => {
       if (result.status !== 'synced') return;
       if (!active) {void result.copy.close(); return;}
       copy = result.copy; if (!replacing) show();
-    }).catch(() => {if (active) setSynced(false);});
-    return () => {active = false; void copy?.close();};
+    }).catch(() => {if (active) invalidate();});
+    return () => {active = false; invalidate(); void copy?.close();};
   }, [api, connected]);
   useEffect(() => {
     setLocal(initial());
@@ -64,7 +66,7 @@ export function SpeechControls({context, state, live}: {context: FrontendContext
       return port === undefined || receipt === undefined ? undefined : new SpeechDriver({port, voice: receipt.voice});
     }, usable: () => {
       const now = current.current;
-      return now.live && now.synced && now.context.connected && now.context.control && now.context.core?.sessionsLive === true
+      return speechReady.current && now.live && now.synced && now.context.connected && now.context.control && now.context.core?.sessionsLive === true
         && now.context.core.modeLive && now.qualification !== undefined;
     }, eligible: card => {
       const now = current.current, core = now.context.core;
