@@ -21,7 +21,7 @@ import {
   convertNanoleafState, dumps, InstalledState, MIGRATION_SCHEMA, MigrationError, migrateNanoleaf, sameValue, sha256, syncDirectory, verifyNanoleafStore,
   writePrivate, type ConvertedNanoleaf, type NanoleafSection,
 } from '@jimmie-potts/nanoleaf';
-import {fullDisk} from '@jimmie-potts/sdk';
+import {fullDisk, Outcome} from '@jimmie-potts/sdk';
 import {loadSecret} from './host.js';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
 import {
@@ -291,7 +291,7 @@ async function migrateInto(source: InstalledState, converted: ConvertedNanoleaf,
     }
     const removed = await discard(targets, written);
     const {code, message} = refusalOf(error);
-    emit({operation: 'migrate', result: 'failed', code, message, destination: removed ? 'removed' : 'left'});
+    emit({operation: 'migrate', result: Outcome.failed, code, message, destination: removed ? 'removed' : 'left'});
     return EXIT.failed;
   }
 }

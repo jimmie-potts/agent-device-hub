@@ -80,6 +80,24 @@ test('host-local start checks its actual network before and after starting',asyn
   assert.ok(f.calls.findIndex(a=>a[0]==='network') < f.calls.findIndex(a=>a[0]==='start'));
 });
 
+test('host-local producer selection is explicit and refuses malformed or duplicate sources before effects',async()=>{
+  const source='bunny/parts/hub-'+'1'.repeat(32);
+  const allowed=localFixture();allowed.info.Config.Env.push('BUNNY_INGEST_SOURCE='+source);
+  assert.equal((await operate(plan('start'),allowed.run)).status,'running');
+  for(const entries of [
+    ['BUNNY_INGEST_SOURCE='],['BUNNY_INGEST_SOURCE=bunny/core'],
+    ['BUNNY_INGEST_SOURCE=bunny/modules/codex-desktop'],['BUNNY_INGEST_SOURCE='+source+'\n'],
+    ['BUNNY_INGEST_SOURCE='+source,'BUNNY_INGEST_SOURCE='+source],
+  ]) {
+    const f=localFixture();f.info.Config.Env.push(...entries);
+    await assert.rejects(operate(plan('start'),f.run));
+    assert.ok(!f.calls.some(args=>args[0]==='start'));
+  }
+  const isolated=fixture();isolated.info.Config.Env=['BUNNY_INGEST_SOURCE='+source];
+  await assert.rejects(operate(plan('start'),isolated.run));
+  assert.ok(!isolated.calls.some(args=>args[0]==='start'));
+});
+
 test('host-local start stops the owned profile when effective publication is absent or widened',async()=>{
   for(const ports of [{},{'18788/tcp':[]},{'18788/tcp':[{HostIp:'0.0.0.0',HostPort:'18788'}]},
     {'18788/tcp':[{HostIp:'::1',HostPort:'18788'}]},{'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18789'}]},

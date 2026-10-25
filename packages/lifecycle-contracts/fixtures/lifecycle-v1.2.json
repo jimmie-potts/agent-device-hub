@@ -663,6 +663,97 @@
         "credentials": "SECRET_CANARY"
       },
       "valid": false
+    },
+    {
+      "id": "codex-local-1.2",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "codex",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "a74921bd361f1ac191af8d0d2412e6395bc440b6c12f36330c75add28890892a"
+      }
+    },
+    {
+      "id": "claude-local-refused-1.2",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "claude",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "local-desktop-read-refused-1.2",
+      "input": {
+        "apiVersion": "1.2",
+        "identity": {
+          "provider": "codex",
+          "client": "local",
+          "hostId": "mac-sim",
+          "sourceId": "codex-local-hooks",
+          "sessionId": "shared-session"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "read"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false,
+      "deduplication": null
     }
   ]
 }

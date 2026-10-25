@@ -1,5 +1,5 @@
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {SdkError} from '@jimmie-potts/sdk';
+import {SdkError, Outcome} from '@jimmie-potts/sdk';
 import type {CurrentApp} from './actions.js';
 import type {AppObservation, Attempt, OnnAction, OnnTransport} from './transport.js';
 import type {MetadataSession} from './metadata.js';
@@ -15,13 +15,13 @@ export class SimulatedOnn implements OnnTransport {
   #browsing=false;
   execute(action: OnnAction, signal: AbortSignal, beforeEffect: () => ErrorCode | undefined = () => undefined): Promise<Attempt> {
     signal.throwIfAborted();
-    const code = beforeEffect(); if (code !== undefined) return Promise.resolve({result: 'failed', evidence: 'none', code, connection: 'unknown'});
-    if (!this.online) return Promise.resolve({result: 'failed', evidence: 'none', code: 'unavailable', connection: 'unavailable'});
+    const code = beforeEffect(); if (code !== undefined) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, code, connection: 'unknown'});
+    if (!this.online) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, code: 'unavailable', connection: 'unavailable'});
     this.effects += 1;
     if (action.kind === 'app') {this.app = action.app;this.#browsing=true;}
     if (action.kind === 'key' && action.key === 'home') this.app = 'other';
     if (action.kind === 'key' && action.key === 'play-pause')this.#paused=!this.#paused;
-    return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});
+    return Promise.resolve({result: Outcome.succeeded, evidence: Outcome.transmitted, connection: 'available'});
   }
   read(signal: AbortSignal): Promise<AppObservation | undefined> {
     signal.throwIfAborted();this.#elapsed+=5000;

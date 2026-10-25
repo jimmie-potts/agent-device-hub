@@ -44,7 +44,7 @@ if (scenarios.some(name => !SCENARIOS.includes(name)) || !(seconds > 0) || !(rat
 const runtimeDist = new URL('../dist/src/', import.meta.url);
 const {createCoreModule, startRuntime, CONFIG_SCHEMA} = await import(new URL('index.js', runtimeDist).href);
 const {openModuleDatabase} = await import(new URL('state.js', runtimeDist).href);
-const {InProcessBus, Outbox} = await import('@jimmie-potts/sdk');
+const {InProcessBus, Outbox, Outcome} = await import('@jimmie-potts/sdk');
 const {LIFX_SIMULATED_SECTION, lifxModuleFactory} = await import('@jimmie-potts/lifx');
 const {sessionEntityId} = await import('@jimmie-potts/event-contracts/v2/families');
 
@@ -322,7 +322,7 @@ async function outbox() {
         write.run(power, 0);
         add('bunny.state.lamp.lamp-1', stateOf('lamp-1', ++revision, {power, pending: 0}));
         add('bunny.event.power-set.lamp-1', {kind: 'outcome', type: 'org.bunny.power.set.completed', subject: 'lamp-1', dataschema: OUTCOME_SCHEMA,
-          data: {requestId, result: 'succeeded', evidence: 'transmitted'}});
+          data: {requestId, result: Outcome.succeeded, evidence: Outcome.transmitted}});
         add('bunny.state.lamp-queue.lamp-1', stateOf('lamp-1', revision, {waiting: 0}));
       });
       await done;

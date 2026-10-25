@@ -4,6 +4,7 @@ import {onnSchemas, registerOnnFamilies} from './families.js';
 import {SimulatedOnn} from './simulated.js';
 import type {Attempt, OnnAction} from './transport.js';
 import {validateMetadataSample} from './metadata.js';
+import {Outcome} from '@jimmie-potts/sdk';
 export const ONN_SIMULATED_SECTION = Object.freeze({id: 'onn', configurationRevision: 1, adbSocket: '/not-configured/s', serial: '192.0.2.10:12345', hostExecutable: '/not-configured/adb', hostExecutableSha256: '0'.repeat(64), hostVersion: '37.0.1', hostKeyDirectory: '/not-configured/keys',historyEnabled:true});
 const simulation: DeviceSimulation<SimulatedOnn, SimulatedOnn> = {
   actions: ['online', 'offline', 'physical-youtube', 'physical-stremio','physical-next','physical-pause','physical-resume','physical-exit'], admits: (_action, values) => Object.keys(values).length === 0,
@@ -13,9 +14,9 @@ const simulation: DeviceSimulation<SimulatedOnn, SimulatedOnn> = {
     serve: (device, request) => request.method === 'execute' ? device.execute(request.args as OnnAction, request.signal) : device.read(request.signal),
     remote: link => createOnnModule({transport: {
       async execute(action, signal, beforeEffect) {
-        const code = beforeEffect(); if (code !== undefined) return {result: 'failed', evidence: 'none', code, connection: 'unknown'};
+        const code = beforeEffect(); if (code !== undefined) return {result: Outcome.failed, evidence: Outcome.none, code, connection: 'unknown'};
         const answer = await link.call('execute', action, signal);
-        return answer.status === 'answered' ? answer.value as Attempt : {result: 'uncertain', evidence: 'none', code: 'uncertain-result', connection: 'unavailable'};
+        return answer.status === 'answered' ? answer.value as Attempt : {result: Outcome.uncertain, evidence: Outcome.none, code: 'uncertain-result', connection: 'unavailable'};
       },
       async read(signal) {
         const answer = await link.call('read', {}, signal);

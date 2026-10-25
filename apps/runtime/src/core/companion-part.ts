@@ -1,6 +1,6 @@
 // The core alone mints coding opportunities from the first publication of a committed live reduction (Hub #1096).
 import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, SdkError} from '@jimmie-potts/sdk';
+import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
@@ -54,7 +54,7 @@ export class CompanionPart implements CorePart {
       } catch (error) {
         // Optional delivery cannot block or change the original core attention. Eligibility is already consumed.
         const code = error instanceof SdkError ? error.body.error.code : 'internal';
-        recordLog(core.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
+        recordLog(core.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': code}, message);
       }
     }, {onOverflow: () => {this.#eligibility.clear();}})));
   }

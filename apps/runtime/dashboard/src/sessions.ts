@@ -43,9 +43,12 @@ export type SessionRow = {
   facts: {source: string; sessionId: string; activity: string; read: string; parent: string; children: string};
 };
 
-const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop'};
+const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop', 'codex/local': 'Codex (local)'};
 /** The client a session runs in, as a person names it. */
-export const clientName = ({provider, client}: Identity): string => CLIENTS[`${provider}/${client}`] ?? `${provider} ${client}`;
+export const clientName = ({provider, client, hostId, sourceId}: Identity): string =>
+  // This owner-selected source is explicitly Mac-local; other local sources remain surface-unspecified.
+  provider === 'codex' && client === 'local' && hostId === 'mac-mini' && sourceId === 'codex-local-hooks'
+    ? 'Mac Codex' : CLIENTS[`${provider}/${client}`] ?? `${provider} ${client}`;
 
 /** The name a session shows: an explicit label first, then its title, then its native ID (AGENTS.md, Hub #424). */
 export const sessionName = (record: SessionRecord): string => record.label?.value ?? record.title?.value ?? record.identity.sessionId;

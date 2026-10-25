@@ -16,7 +16,7 @@
 
 ## 4. Integrated source evidence
 
-- [ ] 4.1 Update the owning guides and validation instructions; verify root build/type/lint, shared contract/workflow checks and affected event/SDK/runtime/companions/dashboard suites, recording the specification inventory.
+- [x] 4.1 Update the owning guides and validation instructions; verify root build/type/lint, shared contract/workflow checks and affected event/SDK/runtime/companions/dashboard suites, recording the specification inventory.
 - [x] 4.2 Run a disposable runtime journey through real gateway and browser controls with synthetic events; verify the selected endpoint only, positive coding alert, negative policy cases, Stop/mute and no replay after restart.
 
 After these implementation tasks, follow the repository's synchronization,

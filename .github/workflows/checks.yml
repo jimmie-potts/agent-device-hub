@@ -29,6 +29,7 @@ jobs:
       groups: ${{ steps.select.outputs.groups }}
       firmware: ${{ steps.select.outputs.firmware }}
       app-verify: ${{ steps.select.outputs.app-verify }}
+      runtime-verify: ${{ steps.select.outputs.runtime-verify }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -94,7 +95,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs
+        run: node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:scenarios:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
@@ -187,9 +188,8 @@ jobs:
     if: needs.select.outputs.app-verify == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    # The Home layout verification adds a real saved-layout browser journey. On #366's reviewed head,
-    # runtime verification took about 19 minutes; the full job twice reached 30 during passing browser checks.
-    # Keep every suite and finite headroom for the complete verification plus the existing apt retries.
+    # Preserve #366's finite 40-minute budget for browser journeys and the existing apt retries.
+    # Runtime catalog verification now has its own required job; this job retains all other checks (#1183).
     # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
     # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
     env:
@@ -221,9 +221,6 @@ jobs:
         run: npm run test:chompi-bridge:verify:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
         run: npm run test:chompi-bridge:browser
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        # Includes the ONN title-history browser, keyboard, phone and accessibility journey (#1041).
-        run: npm run test:runtime:verify:built
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:dashboard:smoke
@@ -249,9 +246,33 @@ jobs:
         run: npm run test:wemo:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
+  runtime-verify:
+    name: Runtime verification on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.runtime-verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The unchanged serial catalog takes 16-18 minutes. Its own finite job budget keeps
+    # apt retries and the remaining App browser checks from exhausting one shared limit (#1183).
+    env:
+      XDG_RUNTIME_DIR: ''
+      DBUS_SESSION_BUS_ADDRESS: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium with its system dependencies
+        timeout-minutes: 20
+        run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
+      - run: npm run build
+      # Full catalog, including ONN title-history browser, keyboard, phone and accessibility (#1041).
+      - run: npm run test:runtime:verify:built
   gate:
     name: Selected checks gate
-    needs: [select, core, firmware, app-verify]
+    needs: [select, core, firmware, app-verify, runtime-verify]
     # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
     if: always()
     runs-on: ubuntu-latest

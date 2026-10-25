@@ -1,5 +1,10 @@
 # Runtime verification runs
 
+For a finite offline review on an existing Docker engine without a user manager,
+use the explicit [portable Acceptance route](PORTABLE.md). It preserves synthetic
+isolation, browser assertions and verified cleanup, and does not provide a
+handed-off preview. The managed commands below remain unchanged.
+
 The runtime adapter ([#920](https://github.com/jimmie-potts/agent-device-hub/issues/920)) for the
 [app verification contract](../../../docs/app-verification.md). The lifecycle comes from
 [`@jimmie-potts/app-verify`](../../../packages/app-verify/README.md), unchanged. This directory supplies the plug-in
@@ -55,9 +60,9 @@ module that is not as expected, its state and its registry code, such as
 
 ## Run scenarios
 
-`browser-speech` starts core and companions with a private synthetic qualification
-receipt and captures the real dashboard. Browser identity, voice and playback
-callbacks are synthetic. The capture checks manual availability, Work/Free
+`browser-speech` uses the module-owned simulated shipped-runtime seed with a
+private synthetic qualification receipt and captures the real dashboard. Browser
+identity, voice and playback callbacks are synthetic. The capture checks manual availability, Work/Free
 questions, one selected tab, completion, Stop/Mute, category/Quiet suppression,
 delayed voices, reload/restart silence, uncertainty, keyboard controls, narrow
 layout and accessibility. It records labelled interactions and leaves speech off.
@@ -559,7 +564,7 @@ sign's page and its preview. Without the cookie the page answers 401.
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. Each catalog capture and negative control has a separate named test with
 a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and CI's thirty-minute
-App verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
+Runtime verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
 failed or cancelled case is reported by name. It tests the supervisor's stop, crash restart, restart serialization, orphan
 handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,

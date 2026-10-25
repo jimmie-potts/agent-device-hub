@@ -27,7 +27,7 @@ const filter = closed({
   q: {type: 'string', maxLength: 120},
   provider: {enum: ['codex', 'claude']},
   projectId: neutralId,
-  session: closed({provider: {enum: ['codex', 'claude']}, client: {enum: ['cli', 'desktop', 'code']}, hostId: neutralId, sourceId: neutralId, sessionId: neutralId}),
+  session: closed({provider: {enum: ['codex', 'claude']}, client: {enum: ['cli', 'desktop', 'code', 'local']}, hostId: neutralId, sourceId: neutralId, sessionId: neutralId}),
 }, ['q', 'provider', 'projectId', 'session']);
 const transform = closed({
   fit: {enum: ['fit', 'crop']}, scaling: {enum: ['nearest', 'smooth']},

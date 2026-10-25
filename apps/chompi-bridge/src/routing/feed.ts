@@ -8,7 +8,7 @@ import { readBoundedFile } from './files.js';
  */
 
 export type Provider = 'codex' | 'claude';
-export interface SessionIdentity { provider: Provider; client: 'cli' | 'desktop' | 'code'; hostId: string; sourceId: string; sessionId: string }
+export interface SessionIdentity { provider: Provider; client: 'cli' | 'desktop' | 'code' | 'local'; hostId: string; sourceId: string; sessionId: string }
 export type Activity = 'unknown' | 'active' | 'idle' | 'interrupted' | 'ended';
 export type AttentionKind = 'question' | 'input' | 'approval';
 
@@ -59,7 +59,7 @@ function identity(value: unknown): SessionIdentity | undefined {
   if (!isObject(value)) return undefined;
   const { provider, client, hostId, sourceId, sessionId } = value;
   if (provider !== 'codex' && provider !== 'claude') return undefined;
-  if (provider === 'codex' ? client !== 'cli' && client !== 'desktop' : client !== 'code') return undefined;
+  if (provider === 'codex' ? client !== 'cli' && client !== 'desktop' && client !== 'local' : client !== 'code') return undefined;
   for (const id of [hostId, sourceId, sessionId]) if (typeof id !== 'string' || !ID.test(id)) return undefined;
   return { provider, client: client as SessionIdentity['client'], hostId: hostId as string, sourceId: sourceId as string, sessionId: sessionId as string };
 }

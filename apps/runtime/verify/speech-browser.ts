@@ -153,6 +153,7 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await page.locator('main#main[data-feed="connected"]').waitFor();
     await t.expect('runtime restart does not restore availability or replay output', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
     await indicate('Inspect the same controls at a phone viewport'); await page.setViewportSize({width: 390, height: 844});
+    await region().scrollIntoViewIfNeeded(); await page.waitForTimeout(240);
     await t.expect('narrow controls fit and retain accessibility', async () => {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
       assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(v => v.id), []);

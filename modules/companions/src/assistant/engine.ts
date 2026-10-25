@@ -4,7 +4,7 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode} from '@jimm
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantControl, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
-  type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type Span, type Subscription, type TraceContext, recordLog, type LogEvent} from '@jimmie-potts/sdk';
+  type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, type Call, type StagedInput, type Task} from './store.js';
 
@@ -117,7 +117,7 @@ export class AssistantEngine {
         launch = apply(); this.store.remember(command.data.requestId, fingerprint); this.#publish(add, command);
         add(`bunny.event.${command.dataschema.includes('assistant-input') ? 'assistant-input' : 'assistant-control'}.assistant`, {
           kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: 'assistant', dataschema: 'https://bunny.invalid/events/outcome/2.0',
-          data: {requestId: command.data.requestId, result: 'succeeded', evidence: 'observed'}}, {parent: command});
+          data: {requestId: command.data.requestId, result: Outcome.succeeded, evidence: Outcome.observed}}, {parent: command});
         return {status: 'accepted'} as const;
       });
       if (launch !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(launch);
@@ -353,7 +353,7 @@ export class AssistantEngine {
     try {
       const task = this.#task(active.taskId), call = effectId === undefined ? undefined : this.store.call(effectId);
       const code = call !== undefined && call.status !== 'succeeded' ? 'uncertain-result' : task.code;
-      const outcome = event === 'assistant.run.started' ? 'accepted' : call !== undefined ? call.status === 'succeeded' ? 'succeeded' : 'uncertain'
+      const outcome = event === 'assistant.run.started' ? 'accepted' : call !== undefined ? call.status === 'succeeded' ? Outcome.succeeded : Outcome.uncertain
         : ['waiting', 'paused', 'running'].includes(task.status) ? 'partial' : task.status;
       recordLog(this.context.log, event, {'bunny.assistant.task_id': active.taskId, 'bunny.assistant.run_id': active.runId,
         'bunny.outcome': outcome, ...(effectId === undefined ? {} : {'bunny.assistant.effect_id': effectId}),

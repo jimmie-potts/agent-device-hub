@@ -15,6 +15,7 @@ import {
 import {noSpans, startSpan, type Span, type SpanAttributes, type SpanRecorder, type SpanStatus} from './spans.js';
 import {isSource, startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncProvider, type SyncRequest} from './sync.js';
 import {childOf, traceIdOf} from './trace.js';
+import {Outcome} from './evidence.js';
 
 /** Which participant and subscription a reported error belongs to. */
 export type ErrorScope = {source: string; pattern: string};
@@ -82,11 +83,11 @@ function decisionOf(result: RequestResult): Decision {
   if (result.status === 'accepted') return {event: 'command.replied', level: levelOf('command.replied'), outcome: 'accepted', status: 'unset'};
   const {code} = result.error.error;
   const level = levelOf(code);
-  if (result.status === 'uncertain') return {event: 'command.uncertain', level, outcome: 'uncertain', code, status: 'error'};
+  if (result.status === 'uncertain') return {event: 'command.uncertain', level, outcome: Outcome.uncertain, code, status: 'error'};
   // Only the owner's typed refusal comes with a reply message; it proves no effect, so its span is no failure either.
-  if (result.reply !== undefined) return {event: 'command.replied', level, outcome: 'rejected', code, status: 'unset'};
+  if (result.reply !== undefined) return {event: 'command.replied', level, outcome: Outcome.rejected, code, status: 'unset'};
   if (code === 'cancelled') return {event: 'command.cancelled', level, outcome: 'cancelled', code, status: 'unset'};
-  return {event: 'command.refused', level, outcome: 'rejected', code, status: 'error'};
+  return {event: 'command.refused', level, outcome: Outcome.rejected, code, status: 'error'};
 }
 
 // Refusals never quote what the caller sent, such as a key or a source, since a remote edge serves them to the caller.

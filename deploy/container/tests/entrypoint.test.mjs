@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
-import {checkLocalBrowserConfig, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
+import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
 
 test('device control defaults off while the core remains selected', () => {
   assert.equal(containerOptions({}).control, 'disabled');
@@ -119,4 +119,38 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const admitted = await run({wispr: {}, companions: {}});
   assert.equal(admitted.status, 'degraded');
   assert.deepEqual(admitted.modules.map(({name, state}) => [name, state]), [['core', 'running'], ['companions', 'running'], ['wispr', 'refused']]);
+});
+
+test('one lifecycle producer requires an explicit host-local source selection', () => {
+  const source = 'bunny/parts/hub-' + '1'.repeat(32);
+  assert.equal(containerOptions({BUNNY_ACCESS: 'host-local', BUNNY_INGEST_SOURCE: source}).ingestSource, source);
+  for (const env of [
+    {BUNNY_INGEST_SOURCE: source},
+    {BUNNY_ACCESS: 'host-local', BUNNY_INGEST_SOURCE: ''},
+    {BUNNY_ACCESS: 'host-local', BUNNY_INGEST_SOURCE: 'bunny/core'},
+    {BUNNY_ACCESS: 'host-local', BUNNY_INGEST_SOURCE: 'bunny/modules/codex-desktop'},
+    {BUNNY_ACCESS: 'host-local', BUNNY_INGEST_SOURCE: source + '\n'},
+  ]) assert.throws(() => containerOptions(env));
+});
+
+test('selected producer admits only its single ingest grant and keeps browser-only defaults', () => {
+  const source = 'bunny/parts/hub-' + '1'.repeat(32);
+  const producer = {id: 'hub-' + '1'.repeat(32), source, digest: '2'.repeat(64), scopes: ['ingest']};
+  checkLocalBrowserCredentials([]);
+  checkLocalBrowserCredentials([producer], source);
+  assert.throws(() => checkLocalBrowserCredentials([producer]));
+  assert.throws(() => checkLocalBrowserCredentials([], source));
+  assert.throws(() => checkLocalBrowserCredentials([producer, producer], source));
+  for (const change of [
+    credential => {credential.id = 'another';},
+    credential => {credential.source = 'bunny/parts/other';},
+    credential => {credential.scopes = ['read'];},
+    credential => {credential.scopes = ['ingest', 'control'];},
+    credential => {credential.scopes = ['ingest', 'admin'];},
+    credential => {credential.scopes = [];},
+    credential => {credential.role = 'bb8-link';},
+  ]) {
+    const credential = structuredClone(producer); change(credential);
+    assert.throws(() => checkLocalBrowserCredentials([credential], source));
+  }
 });

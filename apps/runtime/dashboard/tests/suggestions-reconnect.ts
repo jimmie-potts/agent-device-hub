@@ -22,7 +22,7 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     const transport = {
       now: () => Date.now(), report: error => {throw error;},
       subscribe: async (_pattern, _handler, options) => {
-        fixture.overflow = () => options.onOverflow({dropped: 1});
+        fixture.overflow = () => flushSync(() => options.onOverflow({dropped: 1}));
         return {close: async () => {}};
       },
       request: async request => {

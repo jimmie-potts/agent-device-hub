@@ -11,6 +11,7 @@ import {prepareWisprFixture} from '../tests/fixtures/wispr.js';
 import {MODULE_FILES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, producerToken, writeConfiguration} from '../tests/scenarios/parts.js';
 import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, type Fault, type RunFile, type RunRuntime} from './paths.js';
+import {prepareMacCodex} from './mac-codex.js';
 
 export {
   RUN_FILE, RUN_SCHEMA, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunFile, type RunRuntime,
@@ -32,6 +33,7 @@ export type RunScenario = {
 const CONFIGURED: readonly string[] = shippedModules.filter(factory => factory.simulatedSection !== undefined).map(factory => factory.name);
 
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
+  'mac-codex-local': {description: 'The core with a synthetic metadata-only shared Mac source', runtime: 'fixtures', modules: ['core'], prepare: prepareMacCodex},
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
   shipped: {
     description: 'The runtime\'s own entry point with the shipped module list: the core and each device module, configured for its simulated devices',
@@ -46,18 +48,6 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
     ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
   } satisfies RunScenario])),
-  'browser-speech': {
-    description: 'Core and companions with a private synthetic browser speech qualification',
-    runtime: 'fixtures', modules: ['core', 'companions'],
-    prepare: async dataDir => {
-      const directory = join(stateDirOf(dataDir), 'modules', 'companions');
-      await mkdir(directory, {recursive: true, mode: 0o700});
-      const file = join(directory, 'speech-qualification.json');
-      await writeFile(file, JSON.stringify({schema: 'browser-speech-qualification/1.0', browserVersion: '150.0.0.1', platform: 'macos',
-        qualifiedAt: '2026-10-24T12:00:00.000Z', voice: {name: 'Synthetic local English', lang: 'en-US', voiceURI: 'synthetic-local'}}), {mode: 0o600});
-      await chmod(file, 0o600);
-    },
-  },
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',
     runtime: 'shipped', modules: [], fault: 'real-transports', refused: CONFIGURED,

@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {requestIdentity} from './api.js';
 const neutralId=z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/);
-export const sessionIdentity=z.object({provider:z.enum(['codex','claude']),client:z.enum(['cli','desktop','code']),hostId:neutralId,sourceId:neutralId,sessionId:neutralId}).strict();
+export const sessionIdentity=z.object({provider:z.enum(['codex','claude']),client:z.enum(['cli','desktop','code','local']),hostId:neutralId,sourceId:neutralId,sessionId:neutralId}).strict();
 export const monitorFilter=z.object({q:z.string().max(120).optional(),provider:z.enum(['codex','claude']).optional(),projectId:neutralId.optional(),session:sessionIdentity.optional()}).strict();
 export const presentationConfiguration=z.object({version:z.literal(1),mode:z.enum(['monitor','media']),filter:monitorFilter,cadenceMs:z.number().int().min(1000).max(10000)}).strict();
 export const integrationAction=z.discriminatedUnion('operation',[

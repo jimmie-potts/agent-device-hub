@@ -16,7 +16,11 @@ Each envelope is at most 8192 UTF-8 JSON bytes, depth 8 and 256 visited values i
 
 ## Identity and clocks
 
-The selector is `{provider,client,hostId,sourceId,sessionId}`. Codex uses client `cli` or `desktop`; Claude uses `code`. `sourceId` identifies one configured producer installation and survives ordinary runtime restart. Operators choose its stable neutral namespace. A route handoff preserves identity only through the explicit future owner migration. Concurrent sessions in one project never combine.
+The selector is `{provider,client,hostId,sourceId,sessionId}`. Codex uses client `cli`, `desktop` or `local`; Claude uses `code`.
+`local` is Codex-only and means a shared local Desktop/CLI hook whose surface
+is unspecified. It is a separate identity, not an alias for either existing
+client, and grants no Desktop-only read or metadata evidence. The Mac wrapper
+uses metadata-only root events and never enriches from local transcript files. `sourceId` identifies one configured producer installation and survives ordinary runtime restart. Operators choose its stable neutral namespace. A route handoff preserves identity only through the explicit future owner migration. Concurrent sessions in one project never combine.
 
 `turn` is `{status:"known",id}` or `{status:"unknown"}`. `parent` is unknown, explicitly evidenced top-level, or a known parent selector. A child event uses the child's session ID and the actual parent's selector. V1 accepts an evidenced parent only in the same provider/client/host/source namespace with a different session ID. Unknown parentage never increments a guessed child count. A provider that cannot distinguish root and child namespaces must not claim qualified child aggregation.
 

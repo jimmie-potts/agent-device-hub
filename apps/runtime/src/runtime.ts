@@ -5,7 +5,7 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
@@ -344,9 +344,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
         try {
           const next = await readEdgeCredentials(edgeConfig.credentials);
           gateway.reload(next);
-          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'succeeded', 'bunny.grant_count': next.length});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.succeeded, 'bunny.grant_count': next.length});
         } catch (error) {
-          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'failed', 'bunny.code': 'internal', ...errorFields(error)});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.failed, 'bunny.code': 'internal', ...errorFields(error)});
           throw error;
         }
       });

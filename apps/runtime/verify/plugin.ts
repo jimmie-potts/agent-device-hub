@@ -9,7 +9,7 @@ import {stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
-import {SdkError, connectRemote} from '@jimmie-potts/sdk';
+import {SdkError, connectRemote, Outcome} from '@jimmie-potts/sdk';
 import {moduleFolders} from '../build/registry.js';
 import {HEALTH_PATH, type RuntimeHealth} from '../src/index.js';
 import {SCENARIOS, expect, runScenario, type Scenario, type ScenarioResult} from '../tests/scenarios/catalog.js';
@@ -21,6 +21,7 @@ import {judgeHealth} from './health.js';
 import {HARNESS_PATH, type BoundaryReport} from './protocol.js';
 import {RUN_SCENARIOS, START_ONLY, seedRun} from './seed.js';
 import {speechBrowserCapture} from './speech-browser.js';
+import {captureMacCodex} from './mac-codex.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const supervisor = fileURLToPath(new URL('./supervisor.js', import.meta.url));
@@ -66,7 +67,8 @@ export function artifactFiles(at = root): string[] {
     ...moduleFolders(at).flatMap(folder => built(`modules/${folder}/dist/src`)),
     ...nestedModuleBuilds(at).flatMap(({folder}) => built(`${folder}/dist/src`)),
     // The 2.0 agent hook script (Hub #926), which a capture step runs as a client's hook command does; it is not built.
-    ...['apps/runtime/bin/monitor-hook.mjs'].filter(file => existsSync(join(at, file))),
+    ...['apps/runtime/bin/monitor-hook.mjs', 'apps/runtime/bin/mac-codex-hook.mjs'].filter(file => existsSync(join(at, file))),
+    ...built('packages/app-verify/dist'),
     // The diagnostic contract's pure entry point, with the catalog and schema it reads, which every record goes through (Hub #903).
     ...built('packages/observability/dist', file => file !== 'node.js'),
     ...['packages/observability/dist/catalog.json', 'packages/observability/dist/record.schema.json'].filter(file => existsSync(join(at, file))),
@@ -106,20 +108,20 @@ export const buildOutputs = (at = root): string[] => [
 /** The newest tracked source must be older than the oldest build output the run serves. */
 export async function buildCurrent(at = root): Promise<CheckOutcome> {
   const sources = execFileSync('git', ['-C', at, 'ls-files', '-z', '--', ...BUILD_SOURCES], {encoding: 'utf8'}).split('\0').filter(file => file !== '');
-  if (sources.length === 0) return {outcome: 'failed', reason: 'no build sources matched; the check cannot vouch for the build'};
+  if (sources.length === 0) return {outcome: Outcome.failed, reason: 'no build sources matched; the check cannot vouch for the build'};
   let newest = 0, newestFile = '';
   for (const file of sources) {
     const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
-    if (time === undefined) return {outcome: 'failed', reason: `${file} is missing or unreadable; restore the source and run npm run build`};
+    if (time === undefined) return {outcome: Outcome.failed, reason: `${file} is missing or unreadable; restore the source and run npm run build`};
     if (time > newest) [newest, newestFile] = [time, file];
   }
   let oldest = Number.POSITIVE_INFINITY;
   for (const file of buildOutputs(at)) {
     const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
-    if (time === undefined) return {outcome: 'failed', reason: `${file} is missing; run npm run build`};
+    if (time === undefined) return {outcome: Outcome.failed, reason: `${file} is missing; run npm run build`};
     oldest = Math.min(oldest, time);
   }
-  return newest <= oldest ? {outcome: 'passed'} : {outcome: 'failed', reason: `${newestFile} is newer than the build; run npm run build`};
+  return newest <= oldest ? {outcome: 'passed'} : {outcome: Outcome.failed, reason: `${newestFile} is newer than the build; run npm run build`};
 }
 
 /**
@@ -293,6 +295,9 @@ export default definePlugin({
     ...CHECKS.map(([id, check]) => ({id, doctor: true, run: async (t: ProbeContext) => check(await boundaries(t))})),
   ],
   captureSteps: {
+    'mac-codex-local': {description: 'Shared Mac hook to real dashboard, privacy, admission and offline recovery',
+      scenario: 'mac-codex-local', fresh: true, viewport: {width: 1280, height: 1000}, screenshotFullPage: false,
+      timeoutMs: 90_000, run: async t => {await captureMacCodex(t); await boundariesHold(t);}},
     'edge-grants': {
       description: 'A remote part with the run\'s grant connects and syncs the core\'s sessions; one without a grant is unauthenticated',
       scenario: 'fixtures',
@@ -327,7 +332,7 @@ export default definePlugin({
     ...scenarioSteps,
     'browser-speech': {
       description: 'Manual local speech controls on the actual dashboard, with synthetic browser audio',
-      scenario: 'browser-speech', fresh: true, timeoutMs: 120_000, viewport: {width: 1280, height: 1000},
+      scenario: 'browser-speech', fresh: true, timeoutMs: 120_000, viewport: {width: 1280, height: 1000}, screenshotFullPage: false,
       run: async t => {await speechBrowserCapture(t); await boundariesHold(t);},
     },
     'follow-one-request': {

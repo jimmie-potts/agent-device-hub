@@ -11,7 +11,7 @@
 import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, DeviceAvailability, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability, errorType, Outcome, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
 import {configureCodexDesktop, type CodexDesktopConfig} from './configuration.js';
 import {readEvidence, readObservation, type Evidence} from './evidence.js';
 import type {MarkerRead, MarkerTransport} from './transport.js';
@@ -162,7 +162,7 @@ class DesktopRun {
     this.#resyncDelayMs = RESYNC_FIRST_MS;
     if (this.#feedDown) {
       this.#feedDown = false;
-      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': 'succeeded'});
+      recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.succeeded});
     }
   }
 
