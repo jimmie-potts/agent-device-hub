@@ -1096,7 +1096,7 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?, publishes?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
   principal opened, as when the host revokes it. Calls that use a stream must
@@ -1203,7 +1203,7 @@ HTTP status that fits its code.
   `capacity`, and the remote part receives `onOverflow` with the count.
 - **Reconnects.** When the stream is lost, the client reconnects. It queues
   `onOverflow({})`, with no count, for every subscription before any message of
-  the new stream. It registers its subscriptions, responders and sync owners
+  the new stream. It registers its subscriptions, ordinary responders and sync owners
   again, and only then delivers those notices, so a sync copy that syncs again
   never asks before its subscriptions exist. Nothing missed in the gap is
   replayed. A call that needs the stream and meets a lost one is refused with
@@ -1255,6 +1255,34 @@ cancels their deadlines and the reconnect backoff. It then closes its sync
 copies: a first sync still under way resolves `cancelled`, and its request is
 withdrawn from the owner's queue. Last it ends the stream, and every later call
 is refused with `invalid-state`.
+
+### Connection-bound endpoints
+
+`openEndpoint({family, respond, onClosed?})` opens one handler on the current
+stream. It requires an explicit `endpoint` grant containing `respond`, `publish`
+and `request` family lists. Ordinary read and control permissions do not grant
+endpoint access. Registration ends after five seconds without acknowledgment.
+
+The returned handle has a public `id`, `publish(family, draft, options?)`,
+`request(family, draft, options)` and `close()`. The handle supplies its identity
+as the routing key's last token and message subject. Publication and request
+payloads must use the granted routing family's schema. The host separately
+grants each family and receives `onEndpointClosed({source, id})` when the handler
+or stream closes.
+
+Every endpoint call verifies the authenticated principal, connection and a
+private capability delivered on that stream. The capability stays in transport
+calls; it is absent from domain messages, diagnostics and the public handle.
+Endpoint identities belong to their stream and cannot be reused after closure.
+Another tab's public endpoint ID grants no authority, even with a shared login.
+
+Close, disconnect and participant shutdown retire the local handle and invoke
+`onClosed` immediately, before waiting for a running handler. The application
+uses that callback to cancel its local output. The edge withdraws queued
+endpoint requests and settles commands already forwarded to its handler as
+uncertain. A late endpoint reply cannot change that result. Reconnect restores
+no endpoint handler or availability; the application must explicitly open a new
+endpoint. Ordinary responders retain their existing reconnect behavior.
 
 ## One publication without a stream
 

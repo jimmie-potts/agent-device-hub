@@ -68,11 +68,19 @@ export type RemoteOptions = RemoteAuth & {
   liveness?: Scheduler;
 };
 
-/**
- * A remote participant: the SDK calls, and `close`, which ends its stream and closes everything it opened, its sync
- * copies included. A first sync still under way resolves `cancelled`, and its request is withdrawn at the edge.
- */
-export type RemoteParticipant = Participant;
+/** One explicitly opened handler whose calls and lifetime belong to its current stream. */
+export type RemoteEndpoint = Subscription & {
+  /** Public routing identity, distinct from the private stream capability. */
+  readonly id: string;
+  publish<T extends object>(family: string, draft: Omit<Draft<T>, 'subject'>, options?: SendOptions): Promise<Message<T>>;
+  request<T extends object>(family: string, draft: Omit<CommandDraft<T>, 'subject'>, options: RequestOptions): Promise<RequestResult>;
+};
+export type RemoteEndpointOptions<T extends object> = {family: string; respond: Responder<T>; onClosed?: () => void};
+/** A participant whose close ends its stream, sync copies and explicitly opened endpoint. */
+export type RemoteParticipant = Participant & {
+  /** One explicitly opened output handler on this connection. It is never registered again after a disconnect. */
+  openEndpoint<T extends object>(options: RemoteEndpointOptions<T>): Promise<RemoteEndpoint>;
+};
 const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
@@ -113,6 +121,7 @@ type Item = {message: Message} | {gap: Overflow};
 /** `ready` holds a gap notice back until the subscription is registered again after a reconnect. */
 type Local = {pattern: string; queue: DeliveryQueue<Item>; dropped: number; unknownGap: boolean; ready: Promise<void>};
 type Answering<T> = {queue: DeliveryQueue<Message<T>>; register: (connection: string) => Promise<unknown>};
+type EndpointBinding = {connection: string; endpoint: string; signal: AbortSignal};
 
 class RemoteClient {
   readonly #base: string;
@@ -135,6 +144,8 @@ class RemoteClient {
   readonly #requests = new Set<AbortController>();
   /** The current connection's id; while the stream is lost, a promise of the next one. */
   #connected: Promise<string> = Promise.resolve('');
+  #current: {connection: string; endpointCapability: string | undefined; endpointSequence: number} | undefined;
+  #endpoint: {close(notifyServer: boolean): Promise<void>} | undefined;
   readonly #subscriptions = new Map<string, Local>();
   readonly #answering = new Map<string, Answering<object>>();
   /** Sync copies, which close with the participant. */
@@ -163,6 +174,7 @@ class RemoteClient {
     const source = this.#source;
     return {
       source,
+      openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => this.#openEndpoint(options),
       publish: <T extends object>(key: string, draft: Draft<T>, options: SendOptions = {}) =>
         this.#publish(key, buildMessage(source, draft.kind, draft, childOf(options.parent), this.#now())),
       publishMessage: <T extends object>(key: string, message: Message<T>) => this.#publish(key, message),
@@ -223,6 +235,7 @@ class RemoteClient {
               const frame = fields(JSON.parse(data));
               if (event === 'ready' && typeof frame.connection === 'string') {
                 ready = true;
+                this.#current = {connection: frame.connection, endpointCapability: typeof frame.endpointCapability === 'string' ? frame.endpointCapability : undefined, endpointSequence: 0};
                 resolve(frame.connection);
               } else {
                 this.#receive(event, frame);
@@ -277,6 +290,8 @@ class RemoteClient {
   /** A lost stream: reconnect, register again, then tell every subscription of the gap. Nothing is replayed. */
   #lost(controller: AbortController): void {
     if (this.#closed || controller !== this.#stream) return;
+    this.#current = undefined;
+    void this.#endpoint?.close(false);
     this.#diagnose({event: 'remote.disconnected', level: levelOf('remote.disconnected'), source: this.#source});
     this.#connected = this.#reconnect();
     this.#connected.catch(() => {});
@@ -415,13 +430,80 @@ class RemoteClient {
     return {close: () => this.#unregister(id, () => answering.queue.close(), () => this.#answering.delete(id))};
   }
 
+  async #openEndpoint<T extends object>({family, respond, onClosed}: RemoteEndpointOptions<T>): Promise<RemoteEndpoint> {
+    this.#live();
+    const current = this.#current;
+    if (current === undefined) throw new SdkError(body('unavailable', 'the connection is unavailable'));
+    if (current.endpointCapability === undefined) throw new SdkError(body('forbidden', 'this connection has no endpoint grant'));
+    if (this.#endpoint !== undefined) throw new SdkError(body('invalid-state', 'this connection already has an endpoint'));
+    const id = `${current.connection}-${++current.endpointSequence}`, controller = new AbortController();
+    const binding: EndpointBinding = {connection: current.connection, endpoint: current.endpointCapability, signal: controller.signal};
+    const scope = `endpoint ${family}`, pattern = `bunny.cmd.${family}.${id}`;
+    let closing: Promise<void> | undefined;
+    const live = (): void => {
+      if (controller.signal.aborted || this.#current !== current || this.#closed) throw new SdkError(body('unavailable', 'the endpoint is closed'));
+    };
+    const answering: Answering<object> = {
+      // It is removed synchronously on loss, before ordinary responders reconnect.
+      register: () => Promise.resolve(),
+      queue: new DeliveryQueue<Message<object>>(this.#maxQueued, async message => {
+        if (controller.signal.aborted || this.#current !== current || Date.parse(message.expiresat ?? '') <= this.#now()) return;
+        try {await this.#reply(message as Command<T>, respond, id, binding);} catch (error) {
+          if (!controller.signal.aborted) this.#report(error, scope);
+        }
+      }),
+    };
+    const lease = {close: (notifyServer: boolean): Promise<void> => {
+      if (controller.signal.aborted) return closing ?? Promise.resolve();
+      controller.abort(); this.#answering.delete(id);
+      if (this.#endpoint === lease) this.#endpoint = undefined;
+      try {onClosed?.();} catch (error) {this.#report(error, scope);}
+      const drained = answering.queue.close();
+      const notify = notifyServer && this.#current === current && !this.#closed
+        ? this.#within(5_000, false, async signal => {
+          try {await this.#post('close', {connection: binding.connection, endpoint: binding.endpoint, id}, signal); return true;} catch {return false;}
+        }).then(ok => {if (!ok && this.#current === current) this.#stream?.abort();}) : Promise.resolve();
+      closing = Promise.all([drained, notify]).then(() => {});
+      return closing;
+    }};
+    this.#endpoint = lease; this.#answering.set(id, answering);
+    try {
+      const registered = await this.#within(5000, false, async signal => {
+        await this.#post('respond', {connection: binding.connection, endpoint: binding.endpoint, id, pattern}, signal);
+        return true;
+      }, {signal: controller.signal, answer: false});
+      if (!registered) throw new SdkError(body('unavailable', 'the endpoint registration did not complete'));
+      live();
+    } catch (error) {
+      const lost = controller.signal.aborted || this.#current !== current;
+      void lease.close(!lost);
+      throw new SdkError(lost ? body('unavailable', 'the endpoint closed during registration') : bodyOf(error));
+    }
+    return {
+      id,
+      publish: async <D extends object>(targetFamily: string, draft: Omit<Draft<D>, 'subject'>, options: SendOptions = {}) => {
+        live();
+        const message = buildMessage(this.#source, draft.kind, {...draft, subject: id}, childOf(options.parent), this.#now());
+        const key = `bunny.${draft.kind === 'state' || draft.kind === 'removal' ? 'state' : 'event'}.${targetFamily}.${id}`;
+        try {await this.#post('publish', {connection: binding.connection, endpoint: binding.endpoint, key, message}, controller.signal);} catch (error) {
+          throw new SdkError(bodyOf(error));
+        }
+        return message;
+      },
+      request: <D extends object>(targetFamily: string, draft: Omit<CommandDraft<D>, 'subject'>, options: RequestOptions) => {
+        live(); return this.#request(`bunny.cmd.${targetFamily}.${id}`, {...draft, subject: id}, options, binding);
+      },
+      close: () => lease.close(true),
+    };
+  }
+
   /**
    * Runs the remote responder and sends its answer. A handler that throws, or answers with something other than a
    * valid reply, such as an error body with an unregistered code or the wrong flag, has started and may have acted. It
    * sends `{status: 'uncertain'}`, which the edge settles as `uncertain` with `uncertain-result`, as the bus does in
    * process; never a refusal.
    */
-  async #reply<T extends object>(command: Command<T>, responder: Responder<T>, id: string): Promise<void> {
+  async #reply<T extends object>(command: Command<T>, responder: Responder<T>, id: string, endpoint?: EndpointBinding): Promise<void> {
     let reply: Reply | {status: 'uncertain'};
     try {
       const given = replyOf(await responder(command));
@@ -431,7 +513,9 @@ class RemoteClient {
       this.#report(error, `respond ${command.type}`);
       reply = {status: 'uncertain'};
     }
-    await this.#post('reply', {connection: await this.#connected, responder: id, command: command.id, requestId: command.data.requestId, reply});
+    if (endpoint?.signal.aborted === true) return;
+    await this.#post('reply', {connection: endpoint?.connection ?? await this.#connected,
+      ...(endpoint === undefined ? {} : {endpoint: endpoint.endpoint}), responder: id, command: command.id, requestId: command.data.requestId, reply}, endpoint?.signal);
   }
 
   async #serve(request: Message<SyncRequest>, provider: SyncProvider, id: string): Promise<void> {
@@ -445,7 +529,7 @@ class RemoteClient {
     await this.#post('answer', {connection: await this.#connected, server: id, request: request.id, requestId: request.data.requestId, answer});
   }
 
-  async #request<T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions): Promise<RequestResult> {
+  async #request<T extends object>(key: string, draft: CommandDraft<T>, options: RequestOptions, endpoint?: EndpointBinding): Promise<RequestResult> {
     this.#live();
     if (parseKey(key)?.category !== 'cmd') throw invalid('a request needs a bunny.cmd routing key');
     if (!draft.type.endsWith('.requested')) throw invalid('a command type ends in .requested');
@@ -464,6 +548,8 @@ class RemoteClient {
     // out; whether a handler already had it, the requester cannot know.
     const abandoned: RequestResult = {status: 'uncertain', requestId, error: body('uncertain-result', 'the requester closed before the reply', ids)};
     const abandon = new AbortController();
+    const endpointClosed = (): void => {abandon.abort();};
+    endpoint?.signal.addEventListener('abort', endpointClosed, {once: true});
     this.#requests.add(abandon);
     // The results the client decides itself, rather than passing on the edge's answer or refusal, which the edge and its
     // bus record.
@@ -471,7 +557,8 @@ class RemoteClient {
     try {
       const result = await this.#within<RequestResult>(waitMs, silent, async signal => {
         try {
-          return fields(await this.#post('request', {key, command}, signal)).result as RequestResult;
+          return fields(await this.#post('request', {key, command,
+            ...(endpoint === undefined ? {} : {connection: endpoint.connection, endpoint: endpoint.endpoint})}, signal)).result as RequestResult;
         } catch (error) {
           if (!(error instanceof SdkError)) return silent;
           const {code} = error.body.error;
@@ -497,6 +584,7 @@ class RemoteClient {
       return result;
     } finally {
       this.#requests.delete(abandon);
+      endpoint?.signal.removeEventListener('abort', endpointClosed);
     }
   }
 
@@ -571,6 +659,8 @@ class RemoteClient {
 
   async #shutdown(): Promise<void> {
     this.#closed = true;
+    this.#current = undefined;
+    const endpointClosing = this.#endpoint?.close(false);
     this.#backoff?.cancel();
     this.#backoff?.wake();
     // Requests waiting for the edge settle at once; their calls are dropped and their deadlines cancelled.
@@ -583,7 +673,7 @@ class RemoteClient {
     const queues = [...[...this.#subscriptions.values()].map(local => local.queue), ...[...this.#answering.values()].map(answering => answering.queue)];
     this.#subscriptions.clear();
     this.#answering.clear();
-    await Promise.all(queues.map(queue => queue.close()));
+    await Promise.all([...queues.map(queue => queue.close()), endpointClosing]);
   }
 
   #live(): void {

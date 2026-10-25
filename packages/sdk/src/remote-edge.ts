@@ -1,7 +1,7 @@
 // The server side of the remote transport (Hub #883): a remote part's edge on the runtime's in-process bus. It
 // authenticates each call, validates every inbound message against profile 2.0 and the 256 KiB cap, and carries the
 // remote part's subscriptions, responders and sync owners over one event stream per connection.
-import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
+import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
   MAX_DETAIL, MAX_MESSAGE_BYTES, errorBody, type ErrorBody, type ErrorCode, type Message, type MessageValidator,
@@ -31,6 +31,8 @@ export type EdgePermissions = {
   readonly calls?: readonly Call[];
   readonly keys?: readonly string[];
   readonly publishes?: readonly string[];
+  /** Explicit connection-bound families, separate from ordinary calls and routing grants. */
+  readonly endpoint?: {readonly respond: readonly string[]; readonly publish: readonly string[]; readonly request: readonly string[]};
 };
 /** One remote participant's credential: a bearer token that lets it act as `source`, with its permissions. */
 export type RemoteGrant = {source: string; token: string} & EdgePermissions;
@@ -54,6 +56,8 @@ export type EdgeOptions = {
    * sessions (Hub #835).
    */
   authenticate?: (request: IncomingMessage) => EdgePrincipal | undefined;
+  /** The host can invalidate an output reservation when its handler or stream closes. No capability is exposed. */
+  onEndpointClosed?: (endpoint: {source: string; id: string}) => void;
   /** How often an open stream gets a comment line, so that its reader can tell a live stream from a lost one. Defaults to 15 s. */
   heartbeatMs?: number;
   /**
@@ -202,6 +206,14 @@ function checkPermissions(permissions: EdgePermissions): string | undefined {
   if (given.publishes !== undefined && (!Array.isArray(given.publishes) || !given.publishes.every(family => typeof family === 'string' && FAMILY.test(family)))) {
     return 'names a malformed family to publish';
   }
+  if (permissions.endpoint !== undefined) {
+    const endpoint = fields(permissions.endpoint);
+    if (endpoint === undefined || Object.keys(endpoint).some(key => !['respond', 'publish', 'request'].includes(key)) ||
+      !['respond', 'publish', 'request'].every(key => {
+        const families: unknown = endpoint[key];
+        return Array.isArray(families) && families.length <= 16 && families.every(family => typeof family === 'string' && family.length <= 128 && FAMILY.test(family));
+      })) return 'names malformed endpoint families';
+  }
   return undefined;
 }
 
@@ -216,9 +228,10 @@ const NEEDS: Readonly<Record<Call | 'stream', Call | undefined>> = {
 };
 
 /** Refuses a call the principal's grant does not list, before anything is read or done. */
-function allowCall({calls}: EdgePrincipal, call: Call | 'stream'): void {
+function allowCall({calls, endpoint}: EdgePrincipal, call: Call | 'stream', readEndpointBody = false): void {
   const needed = NEEDS[call];
   if (calls === undefined || needed === undefined || calls.includes(needed)) return;
+  if (readEndpointBody && endpoint !== undefined && (needed === 'respond' || needed === 'publish' || needed === 'request') && endpoint[needed].length > 0) return;
   throw refuse('forbidden', `this grant may not ${needed}`);
 }
 
@@ -275,13 +288,17 @@ function ownerOf(body: Fields): string | undefined {
  */
 type Forwarded = Reply | Snapshot | ErrorBody | typeof unanswered | typeof failed | typeof undelivered;
 /** A forwarded command or sync request, waiting for the remote part's answer. */
-type Waiting = {kind: 'command' | 'sync'; connection: string; finish: (answer: Forwarded) => void};
+type Waiting = {kind: 'command' | 'sync'; connection: string; endpoint: boolean; finish: (answer: Forwarded) => void};
 
 type Connection = {
   id: string;
   source: string;
   /** The credential the stream was opened with, if the host named one. */
   principal: string | undefined;
+  endpointCapability: string | undefined;
+  endpointId: string | undefined;
+  endpointSequence: number;
+  endpointAbort: AbortController;
   participant: Sdk;
   response: ServerResponse;
   open: boolean;
@@ -309,6 +326,7 @@ export class RemoteEdge {
   readonly #stallMs: number;
   readonly #liveness: Scheduler;
   readonly #connections = new Map<string, Connection>();
+  readonly #onEndpointClosed: EdgeOptions['onEndpointClosed'];
   /**
    * The commands the edge has handed to its bus, by source and then message ID (Hub #835). A command that arrives again
    * while it is remembered is refused as `duplicate-conflict`, so a raw HTTP client cannot make a responder run it twice.
@@ -336,15 +354,16 @@ export class RemoteEdge {
     this.#bus = options.bus;
     this.#validator = options.validator;
     this.#authenticateHost = options.authenticate;
+    this.#onEndpointClosed = options.onEndpointClosed;
     // A token that two grants share would make the source ambiguous. Neither refusal names the token.
     const grants = (options.authenticate === undefined ? options.grants ?? [] : []).map(({source, token, ...permissions}) => {
       if (typeof source !== 'string' || !SOURCE.test(source) || source.length > 256) throw new SdkError(errorBody('invalid-request', {detail: 'a grant names a malformed source'}));
       if (typeof token !== 'string' || token.length === 0) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} has no token`}));
       const problem = checkPermissions(permissions);
       if (problem !== undefined) throw new SdkError(errorBody('invalid-request', {detail: `the grant for ${source} ${problem}`}));
-      const {calls, keys, publishes} = permissions;
+      const {calls, keys, publishes, endpoint} = permissions;
       return {
-        principal: {source, ...(calls === undefined ? {} : {calls}), ...(keys === undefined ? {} : {keys}), ...(publishes === undefined ? {} : {publishes})},
+        principal: {source, ...(calls === undefined ? {} : {calls}), ...(keys === undefined ? {} : {keys}), ...(publishes === undefined ? {} : {publishes}), ...(endpoint === undefined ? {} : {endpoint})},
         digest: digest(token),
       };
     });
@@ -435,7 +454,7 @@ export class RemoteEdge {
         return;
       }
       if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', 'no such route');
-      allowCall(principal, route);
+      allowCall(principal, route, true);
       const body = await this.#read(request, route === 'answer' ? MAX_ANSWER_BYTES : MAX_CALL_BYTES);
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
       const dropped = new AbortController();
@@ -557,17 +576,22 @@ export class RemoteEdge {
 
   async #call(principal: EdgePrincipal, call: Call, body: Fields, signal: AbortSignal, progress: Progress): Promise<object> {
     const {source} = principal;
+    const endpoint = body.endpoint === undefined ? undefined : this.#endpointCall(principal, call, body);
+    if (endpoint === undefined) allowCall(principal, call);
     switch (call) {
       case 'publish': {
         const key = text(body, 'key');
-        allowKey(principal, key);
+        if (endpoint === undefined) allowKey(principal, key);
         const message = this.#inbound(source, body.message);
         // The routing-ID rule holds for what a remote part publishes too: the subject is the key's entity (Hub #835). A
         // malformed key is left for the bus, which refuses it as `invalid-request`.
         const route = parseKey(key);
         if (route !== undefined && message.subject !== route.id) throw refuse('invalid-message', 'a message\'s subject is the last token of its routing key');
         const family = schemaFamily(message.dataschema);
-        if (route !== undefined && principal.publishes !== undefined && (family === undefined || !principal.publishes.includes(family))) {
+        if (endpoint !== undefined && (family === undefined || family !== route?.family || principal.endpoint?.publish.includes(family) !== true)) {
+          throw refuse('forbidden', 'this endpoint may not publish messages of that family');
+        }
+        if (endpoint === undefined && route !== undefined && principal.publishes !== undefined && (family === undefined || !principal.publishes.includes(family))) {
           throw refuse('forbidden', 'this grant may not publish messages of that family');
         }
         await this.#participant(source).publishMessage(key, message);
@@ -578,14 +602,15 @@ export class RemoteEdge {
         // or `uncertain-result` if a handler had it. The remote requester waits a little longer, so it hears this.
         const command = this.#inbound(source, body.command) as Command<object>;
         const key = text(body, 'key');
-        allowKey(principal, key);
+        if (endpoint === undefined) allowKey(principal, key);
+        else if (schemaFamily(command.dataschema) !== parseKey(key)?.family) throw refuse('forbidden', 'this endpoint command must use its granted family');
         const remembered = this.#remember(principal, command);
         // The bus refuses a malformed call with SdkError before it dispatches anything; that stays a refusal, and the
         // command is forgotten, since nothing had it.
         progress.dispatched = {key, command};
         let result: RequestResult;
         try {
-          result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), signal);
+          result = await this.#bus.requestMessage(source, key, command, this.#remaining(command), endpoint === undefined ? signal : AbortSignal.any([signal, endpoint.endpointAbort.signal]));
         } catch (error) {
           remembered(undefined);
           throw error;
@@ -617,11 +642,30 @@ export class RemoteEdge {
         const connection = this.#connection(principal, body);
         const id = this.#fresh(connection, body);
         const pattern = text(body, 'pattern');
-        allowKey(principal, pattern);
+        if (endpoint === undefined) allowKey(principal, pattern);
+        else {
+          if (connection.endpointId !== undefined) throw refuse('invalid-state', 'this connection already has an endpoint');
+          const suffix = id.slice(connection.id.length + 1), sequence = Number(suffix);
+          if (!id.startsWith(`${connection.id}-`) || !Number.isSafeInteger(sequence) || String(sequence) !== suffix || sequence <= connection.endpointSequence) {
+            throw refuse('forbidden', 'an endpoint identity must be new and belong to its connection');
+          }
+          connection.endpointSequence = sequence;
+          connection.endpointId = id;
+          connection.endpointAbort = new AbortController();
+        }
         // The forward settles a command with a reply or one of the bus's markers, which the bus reads in place of a
         // reply; the participant's types know only replies.
-        connection.opened.set(id, await connection.participant.respond(pattern, command =>
-          this.#forward(connection, 'command', id, command, 'command', {responder: id, command}) as Promise<Reply>));
+        try {
+          const handler = await connection.participant.respond(pattern, command =>
+            this.#forward(connection, 'command', id, command, 'command', {responder: id, command}) as Promise<Reply>);
+          if (endpoint !== undefined && (!connection.open || connection.endpointId !== id)) {
+            await handler.close(); throw refuse('unavailable', 'the endpoint closed during registration');
+          }
+          connection.opened.set(id, handler);
+        } catch (error) {
+          if (endpoint !== undefined) this.#retireEndpoint(connection, id);
+          throw error;
+        }
         return {status: 'responding'};
       }
       case 'serve': {
@@ -636,11 +680,15 @@ export class RemoteEdge {
         return {status: 'serving'};
       }
       case 'reply': {
-        this.#connection(principal, body);
+        const connection = this.#connection(principal, body);
+        if (connection.endpointId === body.responder && endpoint === undefined) throw refuse('forbidden', 'an endpoint reply needs its connection capability');
         const requestId = identifier(body, 'requestId');
         // A remote handler that failed once it started answers `uncertain`; the bus settles that as it does in process.
         const answer = fields(body.reply)?.status === 'uncertain' ? failed : this.#reply(source, requestId, body.reply);
-        this.#waiting.get(this.#key(source, identifier(body, 'responder'), identifier(body, 'command')))?.finish(answer);
+        const waiting = this.#waiting.get(this.#key(source, identifier(body, 'responder'), identifier(body, 'command')));
+        if (waiting?.endpoint === true && endpoint === undefined) throw refuse('forbidden', 'an endpoint reply needs its connection capability');
+        if (endpoint !== undefined && waiting !== undefined && waiting.connection !== connection.id) throw refuse('forbidden', 'the endpoint cannot answer another connection');
+        waiting?.finish(answer);
         return {status: 'received'};
       }
       case 'answer': {
@@ -652,8 +700,10 @@ export class RemoteEdge {
       case 'close': {
         const connection = this.#connection(principal, body);
         const id = identifier(body, 'id');
+        if (connection.endpointId === id && endpoint === undefined) throw refuse('forbidden', 'closing an endpoint needs its connection capability');
         const opened = connection.opened.get(id);
         connection.opened.delete(id);
+        if (endpoint !== undefined) this.#retireEndpoint(connection, id);
         await opened?.close();
         return {status: 'closed'};
       }
@@ -804,6 +854,39 @@ export class RemoteEdge {
     return connection;
   }
 
+  #endpointCall(principal: EdgePrincipal, call: Call, body: Fields): Connection {
+    const connection = this.#connection(principal, body), capability = body.endpoint;
+    if (principal.endpoint === undefined || connection.endpointCapability === undefined || typeof capability !== 'string' || !/^[a-f0-9]{64}$/.test(capability) ||
+      !timingSafeEqual(Buffer.from(capability, 'hex'), Buffer.from(connection.endpointCapability, 'hex'))) {
+      throw refuse('forbidden', 'this call has no current endpoint capability');
+    }
+    if (call === 'respond' || call === 'publish' || call === 'request') {
+      const id = call === 'respond' ? identifier(body, 'id') : connection.endpointId;
+      const route = parseKey(text(body, call === 'respond' ? 'pattern' : 'key'));
+      if (id === undefined || route === undefined || route.id !== id || !principal.endpoint[call].includes(route.family) ||
+        (call === 'publish' ? route.category !== 'state' && route.category !== 'event' : route.category !== 'cmd')) {
+        throw refuse('forbidden', 'this endpoint does not cover that routing key');
+      }
+    } else if (call === 'reply' || call === 'close') {
+      if (connection.endpointId === undefined || identifier(body, call === 'reply' ? 'responder' : 'id') !== connection.endpointId) {
+        throw refuse('forbidden', 'this call belongs to another endpoint');
+      }
+    } else throw refuse('forbidden', 'this endpoint does not permit that call');
+    return connection;
+  }
+
+  #retireEndpoint(connection: Connection, id: string): void {
+    if (connection.endpointId !== id) return;
+    connection.endpointId = undefined;
+    connection.endpointAbort.abort();
+    for (const [key, waiting] of this.#waiting) {
+      if (key.startsWith(`${connection.source}\n${id}\n`)) waiting.finish(unanswered);
+    }
+    try {this.#onEndpointClosed?.({source: connection.source, id});} catch {
+      this.#diagnose({event: 'edge.failed', level: 'error', route: 'close', source: connection.source, code: 'internal'});
+    }
+  }
+
   #fresh(connection: Connection, body: Fields): string {
     const id = identifier(body, 'id');
     if (connection.opened.has(id)) throw refuse('invalid-state', 'that id is already open on this connection');
@@ -814,17 +897,21 @@ export class RemoteEdge {
     return `${source}\n${id}\n${messageId}`;
   }
 
-  #open({source, id: principal}: EdgePrincipal, response: ServerResponse): void {
+  #open({source, id: principal, endpoint}: EdgePrincipal, response: ServerResponse): void {
     let markClosed = (): void => {};
     const closed = new Promise<void>(resolve => { markClosed = resolve; });
+    const endpointAbort = new AbortController();
+    endpointAbort.abort();
+    const endpointCapability = endpoint === undefined ? undefined : randomBytes(32).toString('hex');
     const connection: Connection = {
-      id: randomUUID(), source, principal, participant: this.#bus.connect(source), response, open: true, drained: undefined, closed, markClosed,
+      id: randomUUID(), source, principal, endpointCapability, endpointId: undefined, endpointSequence: 0, endpointAbort,
+      participant: this.#bus.connect(source), response, open: true, drained: undefined, closed, markClosed,
       opened: new Map(), stall: () => {}, heartbeat: () => {},
     };
     this.#connections.set(connection.id, connection);
     response.writeHead(200, {'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', connection: 'keep-alive'});
     response.on('close', () => { this.#drop(connection); });
-    this.#send(connection, frame('ready', {connection: connection.id}));
+    this.#send(connection, frame('ready', {connection: connection.id, ...(endpointCapability === undefined ? {} : {endpointCapability})}));
     this.#beat(connection);
     this.#diagnose({event: 'edge.connected', level: levelOf('edge.connected'), route: 'stream', source});
   }
@@ -873,6 +960,7 @@ export class RemoteEdge {
     connection.heartbeat();
     connection.stall();
     connection.markClosed();
+    if (connection.endpointId !== undefined) this.#retireEndpoint(connection, connection.endpointId);
     this.#connections.delete(connection.id);
     for (const waiting of [...this.#waiting.values()]) {
       if (waiting.kind === 'sync' && waiting.connection === connection.id) waiting.finish(errorBody('unavailable', {detail: 'the remote owner disconnected'}));
@@ -917,7 +1005,7 @@ export class RemoteEdge {
     if (this.#waiting.has(key)) return Promise.resolve(lost);
     return new Promise<Forwarded>(resolve => {
       let cancel: Cancel = () => {};
-      const entry: Waiting = {kind, connection: connection.id, finish: answer => {
+      const entry: Waiting = {kind, connection: connection.id, endpoint: connection.endpointId === id, finish: answer => {
         cancel();
         // Only this forward's own entry leaves the map.
         if (this.#waiting.get(key) === entry) this.#waiting.delete(key);
