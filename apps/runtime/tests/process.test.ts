@@ -56,7 +56,7 @@ const recorded = (runtime: Spawned, event: string): boolean => runtime.records()
  * the module API version its manifest declares.
  */
 const UNCONFIGURED = shippedModules.slice(1).map(factory => factory.name === 'companions'
-  ? {name: 'companions', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['companion-state', 'assistant-state', 'preference-state']} : ({
+  ? {name: 'companions', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['companion-state', 'assistant-state', 'preference-state', 'companion-speech-state']} : ({
   name: factory.name, apiVersion: factory.simulate().manifest.apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
   reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
 }));

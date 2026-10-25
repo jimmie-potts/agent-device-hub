@@ -1,3 +1,4 @@
+import {SpeechControls} from './speech.js';
 import {CodingSuggestions} from './suggestions.js';
 import {KnowledgePage} from './knowledge.js';
 import {DuckConversation} from './duck.js';
@@ -56,10 +57,12 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
   const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;
   const presentation = state?.presentation;
+  const textContext = {...context, operations: context.operations.filter(operation => operation.family !== 'companion-speech-play')};
   return <section aria-label="Reachy" className="panel">
     <h2>Reachy</h2>
-    <p>A fixed-text desk companion. Enablement adds text cards; speech stays off.</p>
+    <p>A fixed-text desk companion. Text cards and spoken alerts have separate enable controls.</p>
     {!live && <p role="status">Reachy state is unavailable.</p>}
+    <SpeechControls context={context} state={state} live={live}/>
     {state !== undefined && <>
       <p role="status">{reasons[state.decision] ?? 'No reaction.'} <small>Reason: {state.decision}</small></p>
       <Facts items={[
@@ -81,7 +84,7 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
         ]}/>
         {presentation.opportunity.context === 'live' && presentation.opportunity.session !== null && <a href="#/">Open session attention on Home</a>}
       </article>}
-      <Command context={context} target="reachy">{command => {
+      <Command context={textContext} target="reachy">{command => {
         const locked = command.locked || !live || !context.control;
         const save = (enabled: boolean, muted: CompanionCategory[], snooze: 'keep' | 'one-hour' | 'clear' = 'keep'): void => {
           void command.run({family: 'companion-settings-set', target: 'reachy', requestId: crypto.randomUUID(),

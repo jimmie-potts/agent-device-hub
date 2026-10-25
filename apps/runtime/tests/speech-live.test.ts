@@ -1,3 +1,5 @@
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {createCompanionsModule} from '@jimmie-potts/companions';
 import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
@@ -8,6 +10,12 @@ import {contextOf, edgeConfig, fixture, flush, it, manualClock, run, waitFor} fr
 
 it('live companion admissions use one real gateway endpoint and preserve visual attention in Quiet and mute', async t => {
   const clock = manualClock(Date.now()), companions = createCompanionsModule();
+  const start = companions.start.bind(companions);
+  companions.start = context => {
+    writeFileSync(join(context.files(), 'speech-qualification.json'), JSON.stringify({schema: 'browser-speech-qualification/1.0', browserVersion: '150.0.0.1', platform: 'macos',
+      qualifiedAt: '2026-10-24T12:00:00.000Z', voice: {name: 'Synthetic local English', lang: 'en-US', voiceURI: 'synthetic-local'}}), {mode: 0o600});
+    return start(context);
+  };
   let handle: CoreHandle | undefined;
   const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
   const producer = fixture('speech-lifecycle');

@@ -1,14 +1,17 @@
+import {readSpeechQualification} from './speech/qualification.js';
+import type {SpeechQualification} from './speech-qualification.js';
+import {speechRefusal} from './presentation-policy.js';
 import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {createHash} from 'node:crypto';
-import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outbox, fullDisk, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
+import {recordLog, Outbox, fullDisk, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
@@ -24,7 +27,7 @@ export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefi
 export function createCompanionsModule(options: AssistantOptions = {}): CompanionsModule {
   const engine = new Companions(options);
   return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
-    content: (ref, request) => engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
+    content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), pending: () => engine.pending()};
 }
@@ -34,6 +37,7 @@ class Companions {
   preferences: Preferences | undefined;
   knowledge: Knowledge | undefined;
   #context: ModuleContext | undefined;
+  #qualification: SpeechQualification | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
   #copy: SyncedCopy<SessionRecord | ModeState> | undefined;
@@ -56,15 +60,21 @@ class Companions {
   constructor(readonly options: AssistantOptions) {registerCoreFamilies(this.#validator);}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
+  qualifiedSpeech(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref !== 'speech-qualification') return undefined;
+    if (this.#closed || this.#context === undefined || this.#context.signal.aborted || request?.signal.aborted === true || this.#qualification === undefined) return errorBody('unavailable');
+    if (Object.keys(request?.query ?? {}).length > 0) return errorBody('invalid-request');
+    return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.#qualification))};
+  }
   async start(context: ModuleContext): Promise<void> {
     this.#context = context;
+    this.#qualification = readSpeechQualification(context.files());
     const database = context.database();
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
     this.speech = new SpeechCoordinator(context, this.#outbox, card => {
-      const policy = this.#policy(card.opportunity);
-      return policy.mode !== 'quiet' && refusal(card.opportunity, policy, true) === undefined;
-    });
+      return speechRefusal(card, this.#policy(card.opportunity)) === undefined;
+    }, () => this.#qualification !== undefined);
     await this.speech.start();
     this.assistant = new AssistantEngine(context, this.#outbox, this.options);
     await this.assistant.start();

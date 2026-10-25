@@ -12,12 +12,12 @@
 
 - [x] 3.1 Add the core's internal tracked speech adapter and module responsibility/outcome persistence; verify refusal, full disk, lost receipt, restart and outbox recovery without replay.
 - [x] 3.2 Admit speech from newly admitted live opportunities with one active and one pending candidate; verify coding priority, deduplication, final checks after waits, separate social allowance, Quiet/mute and scenario silence with a fixed clock.
-- [ ] 3.3 Add accessible explicit enablement, manual-availability explanation, mute, Stop and truthful endpoint/playback status; verify keyboard, two tabs, stale state, disconnect and axe in the existing companions browser journey using fake audio.
+- [x] 3.3 Add accessible explicit enablement, manual-availability explanation, mute, Stop and truthful endpoint/playback status; verify keyboard, two tabs, stale state, disconnect and axe in the existing companions browser journey using fake audio.
 
 ## 4. Integrated source evidence
 
 - [ ] 4.1 Update the owning guides and validation instructions; verify root build/type/lint, shared contract/workflow checks and affected event/SDK/runtime/companions/dashboard suites, recording the specification inventory.
-- [ ] 4.2 Run a disposable runtime journey through real gateway and browser controls with synthetic events; verify the selected endpoint only, positive coding alert, negative policy cases, Stop/mute and no replay after restart.
+- [x] 4.2 Run a disposable runtime journey through real gateway and browser controls with synthetic events; verify the selected endpoint only, positive coding alert, negative policy cases, Stop/mute and no replay after restart.
 
 After these implementation tasks, follow the repository's synchronization,
 archive, independent review, CI and merge gates. Those revision-specific receipts

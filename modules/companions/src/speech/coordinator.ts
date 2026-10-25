@@ -25,7 +25,7 @@ export class SpeechCoordinator {
   #closed = false;
   #blocked = false;
   #queued: Cancel | undefined;
-  constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly eligible: (card: CompanionCard) => boolean) {
+  constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly eligible: (card: CompanionCard) => boolean, readonly qualified: () => boolean) {
     this.#store = new SpeechStore(context.database()); registerCoreFamilies(this.#validator);
   }
   inspect(): SpeechState {return structuredClone(this.#state);}
@@ -78,6 +78,7 @@ export class SpeechCoordinator {
     const checked = this.#validator.validate(command, {nowMs: this.context.clock.now()});
     if (!checked.ok) return {error: checked.error};
     if (command.data.action === 'enable') {
+      if (!this.qualified()) return errorBody('unavailable', {detail: 'this installation has no qualified local speech route'});
       if (this.#blocked) return errorBody('unavailable', {detail: 'previous speech has no definitive stop evidence'});
       if ((this.#state.endpointId !== null && this.#state.endpointId !== command.subject) || this.#active !== undefined) return errorBody('invalid-state', {detail: 'another speech endpoint or operation is active'});
       if (this.#state.availability !== 'available') {this.#clear(); this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#changed();}

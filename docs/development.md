@@ -1789,7 +1789,15 @@ active/one pending candidate, priority cancellation, missing receipts, delayed
 policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
 checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
 and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
-Both are discovered by the existing runtime CI suite. Endpoint changes also
+Both are discovered by the existing runtime CI suite. The `speech-session`,
+`speech-browser`, `speech-qualification` and `speech-qualification-file` unit
+files check immediate local cancellation, ordered receipt writes, late endpoint
+registration, failed browser hints and private receipt refusal. The existing
+companions browser entry calls `speech.browser.ts` against a disposable real
+runtime with synthetic browser identity and audio. It exercises explicit selection,
+completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
+reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
+keyboard and axe checks. Endpoint changes also
 require event schema, SDK remote, runtime
 gateway and dashboard tests, plus root build/type/lint and shared contract and
 workflow checks. Browser checks use fake audio and synthetic inputs; they do

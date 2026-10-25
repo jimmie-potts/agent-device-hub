@@ -18,7 +18,11 @@ Speech SHALL default to off. Enabling text companions SHALL NOT enable speech. A
 - **AND** reconnect requires explicit enablement, admits only new opportunities and never selects another tab
 
 ### Requirement: Qualified local voice and bounded playback
-Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
+Missing installation qualification, an unavailable browser identity or a different Chrome version or platform SHALL leave speech unavailable while preserving text companions. Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
+
+#### Scenario: Browser qualification unavailable
+- **WHEN** the installation has no valid private qualification receipt or the page cannot match its qualified Chrome version on macOS
+- **THEN** speech remains unavailable without disabling text companions or selecting a replacement route
 
 #### Scenario: Voice unavailable
 - **WHEN** the qualified voice is absent, changed or not local after the bounded enumeration

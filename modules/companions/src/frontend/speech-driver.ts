@@ -15,6 +15,7 @@ export type SpeechResult =
   | {kind: 'stopped'; started: boolean}
   | {kind: 'failed'; started: false}
   | {kind: 'uncertain'; started: boolean};
+export type SpeechRequest = {text: string; expiresAtMs: number; eligible: () => boolean; onStarted?: () => void};
 type Timing = {now(): number; after(ms: number, callback: () => void): () => void};
 type Attempt = {
   controller: AbortController;
@@ -63,7 +64,7 @@ export class SpeechDriver {
     return this.#enabled;
   }
 
-  play(request: {text: string; expiresAtMs: number; eligible: () => boolean}): Promise<SpeechResult> {
+  play(request: SpeechRequest): Promise<SpeechResult> {
     if (this.#closed || this.#uncertain) return Promise.resolve({kind: 'not-started', reason: 'unavailable'});
     if (!this.#enabled) return Promise.resolve({kind: 'not-started', reason: 'disabled'});
     if (this.active) return Promise.resolve({kind: 'not-started', reason: 'busy'});
@@ -127,7 +128,7 @@ export class SpeechDriver {
     });
   }
 
-  async #prepare(attempt: Attempt, request: {text: string; expiresAtMs: number; eligible: () => boolean}): Promise<void> {
+  async #prepare(attempt: Attempt, request: SpeechRequest): Promise<void> {
     const remaining = request.expiresAtMs - this.#time.now();
     if (remaining <= 0) {this.#finish(attempt, {kind: 'not-started', reason: 'expired'}); return;}
     if (!request.eligible()) {this.#finish(attempt, {kind: 'not-started', reason: 'policy'}); return;}
@@ -144,7 +145,9 @@ export class SpeechDriver {
     attempt.deadline = this.#time.after(Math.min(PLAYBACK_MS, request.expiresAtMs - this.#time.now()), () => {this.#uncertainOutput(attempt);});
     this.#port.speak({text: request.text, voice: currentVoice, volume: 0.65, rate: 1, pitch: 1}, {
       start: () => {
-        if (this.#attempt === attempt && attempt.stage.kind === 'submitted') attempt.stage.started = true;
+        if (this.#attempt !== attempt || attempt.stage.kind !== 'submitted' || attempt.stage.started) return;
+        attempt.stage.started = true;
+        try {request.onStarted?.();} catch {this.#uncertainOutput(attempt);}
       },
       end: () => {this.#terminal(attempt);},
       error: code => {this.#terminal(attempt, code);},

@@ -222,3 +222,24 @@ void test('a terminal callback while synthesis still reports active is uncertain
   assert.deepEqual(await done, {kind: 'uncertain', started: true});
   assert.equal(port.cancels, 1); assert.equal(await driver.enable(), false);
 });
+
+void test('start observation occurs once before completion and ignores duplicate or late callbacks', async t => {
+  const {driver, port, request} = setup(t); await driver.enable();
+  let starts = 0;
+  const input = {...request, onStarted: () => {starts += 1;}};
+  const done = driver.play(input); await flush();
+  assert.equal(starts, 0); port.start(); port.start(); assert.equal(starts, 1);
+  port.end(); assert.deepEqual(await done, {kind: 'completed', started: true});
+  port.last().callbacks.start(); assert.equal(starts, 1);
+});
+
+void test('a failed start observer cancels output and settles uncertain without escaping the speech callback', async t => {
+  const {driver, port, request} = setup(t); await driver.enable();
+  const input = {...request, onStarted: () => {throw new Error('synthetic receipt callback failure');}};
+  const done = driver.play(input); await flush();
+  assert.doesNotThrow(() => {port.start();});
+  assert.equal(driver.enabled, false);
+  t.mock.timers.tick(15_000);
+  assert.deepEqual(await done, {kind: 'uncertain', started: true});
+  assert.equal(port.cancels, 1); assert.equal(driver.enabled, false);
+});

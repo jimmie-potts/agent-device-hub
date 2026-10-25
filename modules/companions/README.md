@@ -56,6 +56,31 @@ Scenario fixtures remain silent. Quiet, category mute, missing live state and
 changed or expired source evidence suppress speech while visual attention keeps
 its existing behavior. Final checks reuse the card's admission and policy owner.
 
+On the Reachy page, **Enable spoken alerts in this tab** declares availability
+only for that mounted, connected page. **Stop speaking** cancels audio without
+cancelling a coding task. **Mute spoken alerts** cancels audio and withdraws
+availability. The page states that calls and other applications are not detected;
+the operator must mute before interruption-sensitive activity. Playback callbacks
+and the tracked operation result are shown separately. Neither proves hearing.
+
+The selected installation supplies `modules/companions/speech-qualification.json`
+under its private runtime state directory. The file must be a regular, single-link,
+owner-only file owned by the runtime user, no larger than 4 KiB. The module reads
+it once at startup. Its closed `browser-speech-qualification/1.0` document contains
+`browserVersion` as four numeric components, `platform: "macos"`, a canonical UTC
+`qualifiedAt` timestamp and `voice` with the exact `name`, English `lang` and
+`voiceURI`. The installed qualification procedure supplies these observed values;
+creating a file alone does not qualify a route. Keep the receipt and its supporting
+audio, OS and network evidence private. It stores no availability or queued text.
+
+Missing or invalid qualification leaves speech unavailable and text companions
+usable. The authenticated page reads the receipt and checks Chrome's full version
+and macOS platform locally with a five-second bound. It sends neither hint back
+to the runtime. A changed browser version or unavailable hint requires renewed
+qualification; it never silently selects another browser or voice. The browser
+then verifies the exact local English voice on explicit enablement and before each
+utterance. No settings, microphone or default voice are changed.
+
 The core's internal `companion-speech-dispatch` adapter accepts only the companions
 source and sends one tracked `companion-speech-play` operation back to that owner.
 Ordinary dashboard and MCP command routes refuse all internal speech families.
@@ -310,7 +335,7 @@ The page shows three curated profiles: B.U.N.N.Y. is a helpful generalist; Reach
 is articulate, expressive and diplomatic; MicroDuck is cheeky, expressive and
 capable. Stable IDs are `bunny`, `reachy` and `microduck`. Optional explicit voice
 references are stored independently of models; an absent selection stays absent.
-A reference does not qualify an audio endpoint. This source adds no audio route.
+A saved persona reference does not qualify or enable the separate spoken-alert endpoint.
 
 Choose a persona, optionally choose a conversation and up to 16 messages, then
 **Preview current context** or **Copy current context**. Each click reads current
@@ -358,6 +383,7 @@ history. No new sharing destination is selected.
 | `knowledge?view=active` (default) | `knowledge/1.0`: current active entries and revision |
 | `knowledge?view=manage` | `knowledge-view/1.0`: current entries and full history |
 | `knowledge?view=export` | `knowledge-library/1.0`: entries and history |
+| `speech-qualification` | `browser-speech-qualification/1.0`: private selected browser and voice receipt; unavailable when absent or invalid |
 | `companion-profiles` | `companion-profiles/1.0`: curated profiles and optional voice refs |
 | `companion-history?profile=reachy` | `companion-history/1.0`: permitted conversations; `after` pages the list |
 | `companion-history?profile=reachy&conversationId=<id>` | ordered messages; `after` advances creation sequence; optional `latest=microduck` returns latest or empty |

@@ -37,7 +37,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const context = adapt(supplied), validator = new MessageValidator(); registerCoreFamilies(validator);
     initializeRevision(context.database(), 0);
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
-    engine = new SpeechCoordinator(context, outbox, () => allowed); await engine.start(); await outbox.republish();
+    engine = new SpeechCoordinator(context, outbox, () => allowed, () => true); await engine.start(); await outbox.republish();
   }, stop: () => engine?.stop() ?? Promise.resolve()}, {bus, stateDir: dir, clock, scheduler});
   let host = make(); await host.start();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), browser.close(), gateway.close()]); await rm(dir, {recursive: true, force: true});});

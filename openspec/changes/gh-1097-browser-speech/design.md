@@ -14,6 +14,21 @@ Use one companions policy owner and one connection-bound browser output owner. P
 
 The driver takes an explicitly qualified voice identity, an injected Web Speech port and clock/scheduler. It waits at most five seconds for voices, verifies the exact local English match again before each submission, then sets the utterance voice explicitly. Qualification supplies the selected identity; runtime controls cannot silently choose another voice. No voice default is written.
 
+The selected identity is supplied by an owner-provisioned qualification receipt
+in the companions module's existing private files directory. The bounded,
+read-only receipt records the qualified browser version, platform, observation
+time and exact voice identity. It contains no session availability. Missing,
+unsafe or invalid receipt data leaves speech unqualified while text companions
+continue normally. The installed gate owns provisioning that private evidence;
+no personal voice identity enters source or a GitHub publication. The page reads
+it through the existing authenticated module content API. Browser controls do
+not write the receipt or select a replacement voice. The page compares the
+qualified full Chrome version and macOS platform against locally read
+[User-Agent Client Hints](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints)
+within five seconds. Missing hints or a changed version refuse qualification.
+The hints never leave the browser. This is a compatibility check, not an
+additional authentication or attestation boundary.
+
 The driver submits at most one utterance and has no pending queue or retry loop. It checks eligibility after voice discovery and directly before speak. A finite playback timer cancels overdue output. Ordered start/end establishes callback completion. End without start, submission exceptions, lost callbacks and lost connectivity after submission are uncertain. Cancellation is confirmed only by a terminal callback and an idle synthesizer; a timeout cannot prove silence. A stopped utterance can retain evidence of partial playback without being called completed or heard. Only the [Web Speech specification's](https://webaudio.github.io/web-speech-api/#speechsynthesiserrorevent) explicit pre-playback refusals can report failure with no start; other errors after submission remain uncertain.
 
 ### Scope endpoint calls to the current SDK stream

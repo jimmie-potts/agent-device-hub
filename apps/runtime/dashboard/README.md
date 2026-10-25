@@ -355,6 +355,13 @@ synthetic arrival/visit fixtures use the existing tracked command component.
 Cards show source/session, real coding metadata or simulated scenario, evidence,
 fixed text and the last decision reason. A published card is not proof it was
 seen; restored cards are history. Core session attention remains available on Home.
+Spoken alerts have a separate, default-off enable control for one connected tab.
+The page explains manual availability and muting before calls/media. Stop and mute
+cancel locally before waiting for the runtime. Qualification, current policy and
+live state gate output; navigation, disconnect and restart require fresh enablement.
+The page reports playback separately from its tracked operation, without claiming
+an alert was heard. The [companions guide](../../../modules/companions/README.md#browser-speech)
+owns the private qualification receipt and bounded voice checks.
 Run `npm run test:companions:browser` after the root build for persisted controls,
 priority and attribution, reconnect, keyboard, narrow-screen and axe checks.
 

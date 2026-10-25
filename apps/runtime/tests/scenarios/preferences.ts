@@ -19,7 +19,7 @@ async function change(h: Harness, requestId: string, input: object): Promise<voi
 export const preferenceScenarios: readonly Scenario[] = [{
   id: 'preferences', title: 'explicit private preferences retain inactive history and additive import without new authority',
   seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['operation']},
-    {owner: 'bunny/modules/companions', families: ['companion-state', 'assistant-state', 'preference-state']}]},
+    {owner: 'bunny/modules/companions', families: ['companion-state', 'assistant-state', 'preference-state', 'companion-speech-state']}]},
   steps: [
     expect('core and companions are running', h => running(h, ['core', 'companions'])),
     expect('anonymous private read is refused', answers({as: 'anonymous', method: 'GET', path: endpoint}, response => refusedWith(response, 401, 'unauthenticated'))),
