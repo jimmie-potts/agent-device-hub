@@ -604,7 +604,7 @@ export class RemoteEdge {
         return {answer};
       }
       case 'subscribe': {
-        const connection = this.#connection(source, body);
+        const connection = this.#connection(principal, body);
         const id = this.#fresh(connection, body);
         const pattern = text(body, 'pattern');
         allowKey(principal, pattern);
@@ -614,7 +614,7 @@ export class RemoteEdge {
         return {status: 'subscribed'};
       }
       case 'respond': {
-        const connection = this.#connection(source, body);
+        const connection = this.#connection(principal, body);
         const id = this.#fresh(connection, body);
         const pattern = text(body, 'pattern');
         allowKey(principal, pattern);
@@ -625,7 +625,7 @@ export class RemoteEdge {
         return {status: 'responding'};
       }
       case 'serve': {
-        const connection = this.#connection(source, body);
+        const connection = this.#connection(principal, body);
         const id = this.#fresh(connection, body);
         const families: unknown = body.families;
         const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every(family => typeof family === 'string');
@@ -636,7 +636,7 @@ export class RemoteEdge {
         return {status: 'serving'};
       }
       case 'reply': {
-        this.#connection(source, body);
+        this.#connection(principal, body);
         const requestId = identifier(body, 'requestId');
         // A remote handler that failed once it started answers `uncertain`; the bus settles that as it does in process.
         const answer = fields(body.reply)?.status === 'uncertain' ? failed : this.#reply(source, requestId, body.reply);
@@ -644,13 +644,13 @@ export class RemoteEdge {
         return {status: 'received'};
       }
       case 'answer': {
-        this.#connection(source, body);
+        this.#connection(principal, body);
         const answer = refusalOf(body.answer) ?? this.#snapshot(source, body.answer);
         this.#waiting.get(this.#key(source, identifier(body, 'server'), identifier(body, 'request')))?.finish(answer);
         return {status: 'received'};
       }
       case 'close': {
-        const connection = this.#connection(source, body);
+        const connection = this.#connection(principal, body);
         const id = identifier(body, 'id');
         const opened = connection.opened.get(id);
         connection.opened.delete(id);
@@ -796,10 +796,11 @@ export class RemoteEdge {
     return participant;
   }
 
-  #connection(source: string, body: Fields): Connection {
+  #connection({source, id}: EdgePrincipal, body: Fields): Connection {
     const connection = this.#connections.get(identifier(body, 'connection'));
     if (connection === undefined) throw refuse('not-found', 'no such connection');
     if (connection.source !== source) throw refuse('forbidden', 'the connection belongs to another source');
+    if (connection.principal !== id) throw refuse('forbidden', 'the connection belongs to another principal');
     return connection;
   }
 

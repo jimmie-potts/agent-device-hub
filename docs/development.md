@@ -1773,6 +1773,16 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+Browser speech (#1097) uses the existing companion unit discovery and
+`test:companions:browser` journey. After the root build, run
+`node --test modules/companions/dist/tests/speech-driver.test.js` for bounded
+local voice discovery, final permission checks, callback ordering, Stop, mute
+and uncertain output without replay. The existing core CI module group runs
+these tests. Endpoint changes also require event schema, SDK remote, runtime
+gateway and dashboard tests, plus root build/type/lint and shared contract and
+workflow checks. Browser checks use fake audio and synthetic inputs; they do
+not establish installed playback or human perception.
+
 Coding suggestions (#1098) use the existing companion unit discovery and
 `test:companions:browser` hosted journey. After the root build, run
 `node --test modules/companions/dist/tests/suggestions.test.js` for the fixed

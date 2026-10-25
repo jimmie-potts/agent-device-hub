@@ -1099,7 +1099,11 @@ HTTP status that fits its code.
   call acts as, `{source, id?, calls?, keys?, publishes?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
-  principal opened, as when the host revokes it.
+  principal opened, as when the host revokes it. Calls that use a stream must
+  match both its source and the authenticated principal that opened it. Another
+  principal with the same source cannot subscribe, respond, serve, reply, answer
+  or close through that stream. Grants without a principal ID retain their
+  source-based ownership.
 - **Permissions (Hub #835).** A grant may list the `calls` it may make and the
   routing-key patterns, `keys`, it may use; either left out allows all. A key it
   publishes or requests must match a pattern; a pattern it subscribes or

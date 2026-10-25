@@ -501,6 +501,30 @@ it('a token acts only on its own source\'s connection: close, reply and answer o
   }
 }));
 
+it('separate principals sharing a source cannot use each other\'s streams', () => withEdge({
+  authenticate: request => ({source: 'bunny/wall', id: request.headers.authorization ?? 'missing'}),
+}, async edge => {
+  const owner = await rawStream(edge, 'bunny/core');
+  try {
+    const bodies: [string, object][] = [
+      ['subscribe', {id: 'foreign-subscription', pattern: `bunny.state.${FAMILY}.*`}],
+      ['respond', {id: 'foreign-responder', pattern: 'bunny.cmd.mode.*'}],
+      ['serve', {id: 'foreign-sync', families: [FAMILY]}],
+      ['close', {id: 'any'}],
+      ['reply', {responder: 'any', command: 'msg-1', requestId: 'req-1', reply: {status: 'accepted'}}],
+      ['answer', {server: 'any', request: 'msg-1', requestId: 'req-1', answer: {revision: 0, states: []}}],
+    ];
+    for (const [route, payload] of bodies) {
+      const answer = await call(edge, route, {schema: REMOTE_SCHEMA, connection: owner.connection, ...payload}, tokenOf(edge, 'bunny/wall'));
+      assert.equal(answer.status, 403, route);
+      assert.equal((answer.body as ErrorBody).error.code, 'forbidden', route);
+    }
+    const permitted = await call(edge, 'subscribe', {schema: REMOTE_SCHEMA, connection: owner.connection,
+      id: 'owner-subscription', pattern: `bunny.state.${FAMILY}.*`}, tokenOf(edge, 'bunny/core'));
+    assert.equal(permitted.status, 200);
+  } finally {await owner.cancel();}
+}));
+
 it('after reconnects, a remote responder and a remote sync owner still serve', () => withEdge({}, async edge => {
   const local = checked(edge.bus.connect('bunny/core'));
   const remote = checked(await edge.connect('bunny/wall'));
