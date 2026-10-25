@@ -565,6 +565,14 @@ export const sign: BunnyModule<SignConfig> = {
   source or open another subscription. It carries no task evidence or command
   authority; module-scoped `api.sync` remains restricted to that module.
 
+  The companions page alone receives optional `api.speech`. Its explicit `open`
+  registers one `companion-speech-output` responder on that same connection.
+  The returned handle can send only endpoint controls and playback observations.
+  Page unmount, lost control authority or disconnection retires the handle and
+  calls `onClosed` immediately, including while registration is pending.
+  Reconnection never registers it again. The browser capability stays inside the
+  SDK; module code receives only the public endpoint identity.
+
   `context.ui.ModeChoice`, when supplied, renders the shell's saved Work/Free/Quiet
   control for a qualified device target. It uses the shell's current mode and
   device copies, without adding module subscriptions or importing shell code.

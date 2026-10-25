@@ -6,7 +6,7 @@
 ## 2. Authenticated endpoint
 
 - [x] 2.1 Implement connection-bound SDK handlers and receipts without automatic restore; verify raw-call authorization, principal/connection mismatch, closure and reconnect alongside existing remote conformance tests.
-- [ ] 2.2 Add the narrow gateway grant, connection-loss occurrence and scoped dashboard endpoint handle; verify two-tab isolation, read-only refusal, unmount and disconnect cleanup in runtime/dashboard tests.
+- [x] 2.2 Add the narrow gateway grant, connection-loss occurrence and scoped dashboard endpoint handle; verify two-tab isolation, read-only refusal, unmount and disconnect cleanup in runtime/dashboard tests.
 
 ## 3. Companion coordination
 

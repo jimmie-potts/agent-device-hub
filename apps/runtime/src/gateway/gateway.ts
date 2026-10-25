@@ -160,6 +160,16 @@ export class Gateway {
         const principal = this.#admitted.get(request);
         return principal === undefined ? undefined : edgePermissions(principal);
       },
+      onEndpointClosed: ({source, id}) => {
+        const own = this.#own;
+        if (source !== BROWSER_SOURCE || own === undefined || this.#closed) return;
+        void own.publish(`bunny.event.companion-speech-lost.${id}`, {
+          kind: 'occurrence', type: 'org.bunny.companion-speech.endpoint-lost', subject: id,
+          dataschema: `${SCHEMA_BASE}companion-speech-lost/2.0`, data: {id},
+        }).catch(() => {
+          diagnosticWriter(options.log)({event: 'edge.failed', level: 'error', route: 'close', source, code: 'internal'});
+        });
+      },
       ...(options.liveness?.heartbeatMs === undefined ? {} : {heartbeatMs: options.liveness.heartbeatMs}),
       ...(options.liveness?.stallMs === undefined ? {} : {stallMs: options.liveness.stallMs}),
       ...(options.liveness?.scheduler === undefined ? {} : {liveness: options.liveness.scheduler}),

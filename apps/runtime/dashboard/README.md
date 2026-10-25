@@ -309,6 +309,13 @@ the connection. Unmounting or ending the session aborts reads and closes active
 and late sync copies. Each copy follows that module's declared owner on the
 existing participant. Opening a page creates no second connection or command.
 
+The companions page can explicitly register one speech output endpoint through
+its scoped `api.speech` handle. Only a browser with current read and control
+access receives this grant. The handle accepts output commands from the
+companions owner and can send only endpoint controls and playback observations.
+Navigation, lost control authority or disconnection closes it, even if its
+registration finishes late. Reconnecting never restores speech availability.
+
 `src/command-control.tsx` holds the existing command-attempt behavior shared by
 device cards and module forms: explicit send, retained request identity,
 accepted versus completed/uncertain status, and no resend after reload. Feature
