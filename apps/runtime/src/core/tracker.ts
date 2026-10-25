@@ -326,6 +326,9 @@ export class Tracker {
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
+    if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
+      return refuse('forbidden', 'speech is dispatched only by its companions owner');
+    }
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {

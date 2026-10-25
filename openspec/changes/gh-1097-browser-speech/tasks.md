@@ -10,8 +10,8 @@
 
 ## 3. Companion coordination
 
-- [ ] 3.1 Add the core's internal tracked speech adapter and module responsibility/outcome persistence; verify refusal, full disk, lost receipt, restart and outbox recovery without replay.
-- [ ] 3.2 Admit speech from newly admitted live opportunities with one active and one pending candidate; verify coding priority, deduplication, final checks after waits, separate social allowance, Quiet/mute and scenario silence with a fixed clock.
+- [x] 3.1 Add the core's internal tracked speech adapter and module responsibility/outcome persistence; verify refusal, full disk, lost receipt, restart and outbox recovery without replay.
+- [x] 3.2 Admit speech from newly admitted live opportunities with one active and one pending candidate; verify coding priority, deduplication, final checks after waits, separate social allowance, Quiet/mute and scenario silence with a fixed clock.
 - [ ] 3.3 Add accessible explicit enablement, manual-availability explanation, mute, Stop and truthful endpoint/playback status; verify keyboard, two tabs, stale state, disconnect and axe in the existing companions browser journey using fake audio.
 
 ## 4. Integrated source evidence

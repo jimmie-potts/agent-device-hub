@@ -1784,7 +1784,13 @@ Browser speech (#1097) uses the existing companion unit discovery and
 `node --test modules/companions/dist/tests/speech-driver.test.js` for bounded
 local voice discovery, final permission checks, callback ordering, Stop, mute
 and uncertain output without replay. The existing core CI module group runs
-these tests. Endpoint changes also require event schema, SDK remote, runtime
+these tests. `speech-coordinator.test.js` verifies manual availability, one
+active/one pending candidate, priority cancellation, missing receipts, delayed
+policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
+checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
+and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
+Both are discovered by the existing runtime CI suite. Endpoint changes also
+require event schema, SDK remote, runtime
 gateway and dashboard tests, plus root build/type/lint and shared contract and
 workflow checks. Browser checks use fake audio and synthetic inputs; they do
 not establish installed playback or human perception.

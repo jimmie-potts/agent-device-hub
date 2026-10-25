@@ -9,8 +9,8 @@ the controls were saved; fixture completion means its synthetic input was
 admitted. Card decision/publication and visibility are separate. Session attention remains
 available independently of this module.
 
-Reachy uses fixed phrases, with seeded variation and no model account, audio,
-camera, sensors or device endpoint. Approval cards ask the human to review the
+Reachy uses fixed phrases with seeded variation and no model account, camera
+or sensors. Optional speech uses one explicitly selected browser endpoint. Approval cards ask the human to review the
 request; turn-ended cards have no response content or task-result evidence.
 Cards identify their source/session, evidence, and decision reason. Publication
 is not evidence that someone saw a card.
@@ -44,6 +44,42 @@ modules/companions/dist/tests/checkpointer.test.js` after the root build. It
 opens SQLite through the SDK, terminates a disposable process after a saved
 interrupt and resumes in a fresh process. The existing companions CI test
 discovery includes it; pending-write and namespace checks use the same saver.
+
+## Browser speech
+
+The speech coordinator consumes only newly admitted live cards. It holds one
+selected connection-bound browser endpoint, one active utterance and at most one
+pending card. Text enablement does not enable speech. An explicit endpoint enable
+action declares availability for that connection; reconnect, navigation, endpoint
+loss and runtime restart require fresh enablement. Old cards never catch up.
+Scenario fixtures remain silent. Quiet, category mute, missing live state and
+changed or expired source evidence suppress speech while visual attention keeps
+its existing behavior. Final checks reuse the card's admission and policy owner.
+
+The core's internal `companion-speech-dispatch` adapter accepts only the companions
+source and sends one tracked `companion-speech-play` operation back to that owner.
+Ordinary dashboard and MCP command routes refuse all internal speech families.
+The operation reuses the tracker's five-second admission and thirty-second outcome
+budgets. The module saves responsibility on its existing SQLite connection before
+accepting, then sends one live command to the selected endpoint. It bounds its
+receipt wait to twenty-five seconds and a Stop receipt to five seconds.
+
+Ordered start/completion receipts can complete the tracked operation. Stopped
+playback retains partial-output evidence and does not claim the sentence finished
+or was heard. Missing or contradictory receipts leave speech unavailable and
+prevent replacement. A late definitive cancellation can release the reservation,
+but requires fresh enablement. Unresolved responsibility survives restart as
+uncertain; there is no restored candidate, endpoint or automatic resend.
+Outcomes use the shared outbox, preserving their identity during republication.
+Stop and mute clear pending work. Higher-priority attention waits for confirmed
+cancellation before replacing lower-priority output.
+
+The browser driver requires an exactly qualified local English voice, discovers
+it within five seconds and sets it explicitly without changing the browser default.
+Its playback deadline is fifteen seconds and cancellation confirmation has a
+half-second bound. Unsupported or ambiguous output remains unavailable or
+uncertain. Source tests use synthetic text and fake synthesis. These contracts
+and source checks do not establish installed audio or human perception.
 
 ## Coding suggestions
 
