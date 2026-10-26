@@ -19,6 +19,8 @@ void test('every catalog widget declares its source, read surface, sizes and com
   assert.equal(widgetDefinition('attention'), undefined, 'attention is highlighted on each card');
   assert.deepEqual(widgetDefinition('wispr')?.source, {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']});
   assert.equal(widgetDefinition('wispr')?.commands, false);
+  assert.deepEqual(widgetDefinition('roborock')?.source, {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']});
+  assert.equal(widgetDefinition('roborock')?.commands, false);
   assert.equal(widgetDefinition('missing'), undefined);
 });
 

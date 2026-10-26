@@ -11,7 +11,7 @@ void test('shipped module exports load and synthetic/real settings admit no path
  assert.equal(checkConfiguration(real.manifest,undefined).status,'refused');
  assert.equal(checkConfiguration(real.manifest,{id:'vacuum'}).status,'refused');
  const checked=checkConfiguration(synthetic.manifest,{id:'vacuum'});assert.equal(checked.status,'accepted');assert.deepEqual(checked.config,{id:'vacuum'});
- assert.equal(registration.shipped,true);assert.deepEqual(real.manifest.tools.map(t=>t.name),['status']);assert.deepEqual(real.manifest.pages.map(p=>p.id),['status']);assert.equal(real.refreshForTest,undefined);
+ assert.equal(registration.shipped,true);assert.deepEqual(real.manifest.tools.map(t=>t.name),['status']);assert.deepEqual(real.manifest.pages.map(p=>p.id),['status','history']);assert.equal(real.refreshForTest,undefined);
  assert.ok(registrySource(process.cwd()).includes('from "@jimmie-potts/roborock"'));
  const frontend=frontendSource(process.cwd());assert.ok(frontend.includes('@jimmie-potts/roborock/frontend'));assert.equal(frontend.includes('roborock-transport'),false);
 });

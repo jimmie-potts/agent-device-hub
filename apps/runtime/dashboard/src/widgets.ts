@@ -28,6 +28,10 @@ export type WidgetDefinition = {
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
+    id: 'roborock', name: 'Roborock', description: 'Observed vacuum state, battery, recorded run and care usage.',
+    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
+  },
+  {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
     sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget']}, commands: false,
   },

@@ -13,12 +13,12 @@ function decimal(value: string | undefined, min: number, max: number): number | 
 }
 /** Fixed projections only. No query can select a file, raw archive, room name or map bytes. */
 export function readContent(ref: string, request: ModuleContentRequest | undefined, state: VacuumStatus, store: RoborockStore | undefined): ModuleContent | ErrorBody | undefined {
-    if (!['status', 'runs', 'run', 'samples'].includes(ref))
+    if (!['status', 'runs', 'latest-run', 'run', 'samples'].includes(ref))
         return undefined;
     if (cancelled(request?.signal))
         return fail('cancelled');
     const q = request?.query ?? {}, keys = Object.keys(q);
-    const allowed = ref === 'status' ? [] : ref === 'runs' ? ['cursor', 'limit'] : ref === 'run' ? ['recordId'] : ['recordId', 'cursor', 'limit'];
+    const allowed = ref === 'status' || ref === 'latest-run' ? [] : ref === 'runs' ? ['cursor', 'limit'] : ref === 'run' ? ['recordId'] : ['recordId', 'cursor', 'limit'];
     if (keys.some(k => !allowed.includes(k)))
         return fail('invalid-request');
     const size = q.limit === undefined ? (ref === 'runs' ? 25 : 100) : decimal(q.limit, 1, ref === 'runs' ? 25 : 100);
@@ -35,6 +35,12 @@ export function readContent(ref: string, request: ModuleContentRequest | undefin
                 value = state;
                 valid = validateStatus;
                 break;
+            case 'latest-run': {
+                const run = store?.hasIdentity() === true ? store.getLatestRun() : undefined;
+                value = {schema: 'roborock-runs/2.0', id: state.id, revision: state.revision, history: 'partial', runs: run === undefined ? [] : [run], next: UNKNOWN};
+                valid = validateRuns;
+                break;
+            }
             case 'runs': {
                 const page = store?.hasIdentity() === true ? store.listRuns(q.cursor, size) : { items: [], next: null };
                 value = { schema: 'roborock-runs/2.0', id: state.id, revision: state.revision, history: 'partial', runs: page.items, next: page.next === null ? UNKNOWN : { status: 'known', value: page.next } };

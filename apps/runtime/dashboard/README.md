@@ -512,6 +512,14 @@ runtime identity and served browser build.
 
 ## Devices, music and operations
 
+Roborock Home/device and module pages share the module's read-only quiet card
+(#390). Status, Last run and Care keep the illustration and dimensions stable.
+The existing Home editor places it at small or wider sizes without changing
+saved source IDs. Its History link and the status page's Evidence disclosure
+retain full run/sample observations. Unconfigured/refused sources stay visibly
+unavailable. State/battery and care have separate evidence ages; the display
+clock reads nothing. There are no vacuum controls or inferred replacement dates.
+
 The authenticated module catalog names every device owner. `runtime-feeds.ts`
 keeps one SDK copy per owner, alongside core operations and playback, using the
 existing participant. Desired state, device observation, queued kinds, last
