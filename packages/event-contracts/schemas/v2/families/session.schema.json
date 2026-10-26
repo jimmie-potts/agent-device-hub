@@ -39,17 +39,17 @@
   "$defs": {
     "count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
     "identity": {
-      "description": "The native session selector. Codex uses client cli or desktop; Claude uses code.",
+      "description": "The native session selector. Codex uses cli, desktop or shared local (surface unspecified); Claude uses code.",
       "type": "object", "additionalProperties": false, "required": ["provider", "client", "hostId", "sourceId", "sessionId"],
       "properties": {
         "provider": {"enum": ["codex", "claude"]},
-        "client": {"enum": ["cli", "desktop", "code"]},
+        "client": {"enum": ["cli", "desktop", "code", "local"]},
         "hostId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
         "sourceId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
         "sessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
       },
       "if": {"properties": {"provider": {"const": "codex"}}},
-      "then": {"properties": {"client": {"enum": ["cli", "desktop"]}}},
+      "then": {"properties": {"client": {"enum": ["cli", "desktop", "local"]}}},
       "else": {"properties": {"client": {"const": "code"}}}
     },
     "knownId": {"oneOf": [

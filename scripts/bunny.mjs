@@ -65,10 +65,11 @@ async function access(info, project, run) {
     return entries[0]?.slice(name.length + 1);
   };
   const profile = value('BUNNY_ACCESS') ?? 'isolated';
-  // eslint-disable-next-line bunny/no-raw-outcome-literal -- Docker network-mode identifier, not an evidence outcome.
+  const ingestSource = value('BUNNY_INGEST_SOURCE');
+  // A Docker network-mode identifier, not an evidence outcome.
   const isolatedNetwork = 'none';
   if (profile === 'isolated') {
-    if (Object.keys(ports).length !== 0 || info.Config?.Labels?.['io.bunny.access'] !== undefined
+    if (ingestSource !== undefined || Object.keys(ports).length !== 0 || info.Config?.Labels?.['io.bunny.access'] !== undefined
       || info.HostConfig?.NetworkMode !== isolatedNetwork
       || Object.keys(info.NetworkSettings?.Networks ?? {}).some(name => name !== isolatedNetwork)) refuse();
     return;
@@ -76,6 +77,7 @@ async function access(info, project, run) {
   const name = project + '_local';
   const networks = info.NetworkSettings?.Networks;
   if (profile !== 'host-local' || info.Config?.Labels?.['io.bunny.access'] !== 'host-local'
+    || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
     || value('BUNNY_CONTROL') !== 'disabled' || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))

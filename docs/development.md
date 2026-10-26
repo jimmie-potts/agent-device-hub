@@ -226,11 +226,11 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core job's thirty and App verification's forty. Branch pushes do not duplicate PR checks.
+select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core and Runtime verification jobs' thirty and App verification's forty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
-verification and retained documentation, with 300 s per attempt, and the hook-qualification
+verification, Runtime verification and retained documentation, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
 The runner image already makes apt drop a connection that receives nothing for
 15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
@@ -272,7 +272,7 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Normal CI has seven GitHub-hosted Linux jobs, and each suite runs in exactly one of them. On a pull request, the jobs and steps outside the selected groups are skipped:
+Normal CI has eight GitHub-hosted Linux jobs, and each suite runs in exactly one of them. On a pull request, the jobs and steps outside the selected groups are skipped:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -281,10 +281,11 @@ Normal CI has seven GitHub-hosted Linux jobs, and each suite runs in exactly one
 | Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser and accessibility journeys; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
 
-A full Checks run performs two full builds across its jobs. The Python
+A full Checks run performs three full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
 Checks that call the runner's system
 `/usr/bin/python3`, such as the Linux performance qualification and the
@@ -318,9 +319,9 @@ any path the table does not name. An incomplete or unreadable comparison (an
 API error, a missing revision or GitHub's 300-file limit) also runs everything.
 The mapping accepts extra work to stay simple; it is not a dependency graph.
 
-A group's unselected steps show as skipped in the job log, and the Firmware and
-App verification jobs report `skipped` when none of their groups is selected.
-Those two jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
+A group's unselected steps show as skipped in the job log. Firmware, App
+verification and Runtime verification report `skipped` when their groups are
+unselected. Those three jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
 because GitHub reports a job skipped before its matrix expands under the
 unexpanded name. The `Selected checks gate` job runs last, even after a
 failure, and fails unless the selection succeeded, every selected job
@@ -379,6 +380,13 @@ WSL/client or device compatibility. Keep that acceptance evidence separate.
 Existing provider qualification records and device ownership are unchanged.
 
 ### CI cost and suite timings
+
+Runtime catalog verification now runs unchanged in its own required 30-minute
+job. Two #1183 App attempts exhausted their combined job limit after the full
+serial runtime suite passed in 16m03s and 17m36s; Chromium setup took over five
+minutes. The App job retains every other check, and the selected-check gate
+requires both jobs. Selection, test concurrency, isolation and failure behavior
+are unchanged. The older timings below are historical measurements.
 
 Each job takes runner time, so a duplicate suite or an extra full run costs as
 much as a new one. These step times come from main's
@@ -1829,6 +1837,23 @@ and bounded health. Procedure fixtures exercise stopped-writer backup, selection
 receipts and interrupted resolution using synthetic state. Recovery remains
 independent of forward eligibility; no checks execute hibernated BB-8 code or
 qualify an installed/physical device.
+
+## Local Mac Codex hook checks
+
+For #1183, use Node 24 and build before lint/type checks. Run the existing
+lifecycle JS/Python corpus, agent-state JS/Python/package and event-family checks,
+plus runtime hook tests and dashboard session tests. The native wrapper suite is
+`node --test apps/runtime/tests/mac-codex-hook.test.mjs`; existing core runtime CI
+runs it explicitly because `.mjs` source tests are not TypeScript outputs.
+Run container entrypoint/operator tests for exact single-source admission and
+refusal of wider grants. Shared contract, MCP, workflow and affected consumer
+checks remain required. Synthetic tests do not qualify an installed Codex client:
+Mac acceptance must observe local Desktop and CLI hooks separately, verify
+existing Computer Use configuration/notify preservation and supported browser operation,
+metadata-only delivery, loopback-only access and stopped backup/restart. Internal
+notification-helper delivery remains unproven; no undocumented invocation is
+part of acceptance.
+Cloud-orchestrated tasks and physical devices remain outside this qualification.
 
 ## Explicit preference checks
 

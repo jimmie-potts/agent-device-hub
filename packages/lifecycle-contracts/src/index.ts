@@ -7,7 +7,7 @@ export const API_VERSION = '1.0';
 export const MAX_BYTES = 8192;
 export const MAX_DEPTH = 8;
 export const MAX_NODES = 256;
-export type Identity = {provider:'codex'|'claude'; client:'cli'|'desktop'|'code'; hostId:string; sourceId:string; sessionId:string};
+export type Identity = {provider:'codex'|'claude'; client:'cli'|'desktop'|'code'|'local'; hostId:string; sourceId:string; sessionId:string};
 export type KnownId = {status:'unknown'} | {status:'known'; id:string};
 export type LifecycleEvent =
   | {kind:'session.started'|'turn.started'|'activity.observed'|'turn.ended'|'turn.interrupted'|'runtime.ended'}

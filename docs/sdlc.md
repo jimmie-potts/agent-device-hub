@@ -534,6 +534,16 @@ Verification has three tiers.
       run must report a clean candidate, never `dirty`. A reviewer whose
       sandbox cannot reach the user manager uses the
       [host route](app-verification.md#explicit-host-route-for-codex-development-coordinators).
+      For the runtime, the explicit [finite offline route](../apps/runtime/verify/PORTABLE.md)
+      is also supported under the ADR 0009 amendment. Use a clean exact-head
+      checkout and its immutable test image, one independently owned synthetic
+      run, retained assertions/PNG/finalized video and verified exact-container
+      cleanup. No installed service or personal state is accessible to that run.
+      The separate portable receipt names its deadline and suspension limits;
+      it does not assert a systemd lease or handed-off preview. An unsupported
+      earlier route remains incomplete. The reviewer must inspect the user-facing
+      observations and evidence, rather than substitute a catalog's exit status
+      for its own verdict. All review and merge gates below still apply.
    3. Exercise the story's acceptance scenarios as a user would, only against
       the run's own endpoints: the browser dashboard, HTTP and MCP calls,
       synthetic agent events and simulated device output.
@@ -697,7 +707,7 @@ Every pull request enters the Checks workflow so its required build check can
 exist. A Markdown-only PR selects no product-test groups, but still runs Select
 affected checks, Build, lint and core tests, and Selected checks gate, plus
 Workflow checks and Retained documentation checks. The core job retains its
-build, typecheck and lint; firmware and App verification are deliberately
+build, typecheck and lint; firmware, App verification and Runtime verification are deliberately
 unselected. Those selected jobs must succeed, and the delivery preflight derives
 that expected set from the workflows and selector. A manual workflow dispatch
 does not replace the required PR-event check.

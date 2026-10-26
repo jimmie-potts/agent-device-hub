@@ -97,7 +97,7 @@ for (const stalled of [false, true]) {
 }
 
 void test('the capture steps include edge grants, every catalog scenario and request following', () => {
-  assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
+  assert.deepEqual(reference, ['mac-codex-local', 'edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
 });
 
 // Each capture keeps its own timeout and fresh run. Catalog growth must not consume another case's test budget;

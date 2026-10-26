@@ -459,7 +459,7 @@ All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
 
-The App verification CI job still runs the full `test:runtime:verify:built`
+The required Runtime verification CI job runs the full `test:runtime:verify:built`
 suite on every main push and every PR whose
 [affected checks](../../docs/development.md#affected-pr-checks) select the
 runtime, which any runtime, module, shared or unknown change does. Focused local verification

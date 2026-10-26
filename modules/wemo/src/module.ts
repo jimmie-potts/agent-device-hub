@@ -2,7 +2,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody,type ErrorBody,type ErrorCode,type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome,DeviceRecord,PowerSetRequest} from '@jimmie-potts/event-contracts/v2/devices';
-import {recordLog, DeviceAvailability,fullDisk,Outbox,type AddMessage,type BunnyModule,type Cancel,type Command,type ModuleContext,type Reply,type TraceContext} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability,fullDisk,Outbox,type AddMessage,type BunnyModule,type Cancel,type Command,type ModuleContext,type Reply,type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {configureWemo,type WemoConfig} from './configuration.js';
 import {wemoValidator,RELEASE,RELEASE_SCHEMA,RELEASE_TYPE} from './families.js';
 import {acquireLease,type Lease} from './lease.js';
@@ -13,7 +13,7 @@ const unknown={status:'unknown'} as const,unsupported={supported:false} as const
 type Input=PowerSetRequest&{heldRequestId?:string};
 type Pending={command:Command<Input>;family:string};
 type Target={config:Plug;transport:PlugTransport;record:DeviceRecord;lease?:Lease;pending:Map<string,Pending>;queue:Array<Pending|'poll'>;running?:Promise<void>;poll?:Cancel;stale?:Cancel;pollQueued:boolean};
-const completed=(id:string,code:ErrorCode,uncertain=false):CompletedOutcome=>({requestId:id,result:uncertain?'uncertain':'failed',evidence:'none',error:errorBody(code,{detail:uncertain?'the Wemo write is uncertain and will not be replayed':'Wemo work ended without a confirmed effect'}).error});
+const completed=(id:string,code:ErrorCode,uncertain=false):CompletedOutcome=>({requestId:id,result:uncertain?Outcome.uncertain:Outcome.failed,evidence:Outcome.none,error:errorBody(code,{detail:uncertain?'the Wemo write is uncertain and will not be replayed':'Wemo work ended without a confirmed effect'}).error});
 const typeOf=(family:string)=>family===RELEASE?RELEASE_TYPE:'org.bunny.power.set.requested';
 export function createWemoModule(options:{transport?:(plug:Plug)=>PlugTransport}={}):BunnyModule<WemoConfig>{
   let owner:Owner|undefined;
@@ -63,7 +63,7 @@ class Owner {
     if(this.#storageDown)return;
     this.#storageDown=true;
     for(const item of this.#targets.values()){item.poll?.();item.stale?.();}
-    recordLog(this.#context.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',...(target===undefined?{}:{'bunny.device.id':target.config.id}),...(requestId===undefined?{}:{'bunny.request.id':requestId})},parent);
+    recordLog(this.#context.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal',...(target===undefined?{}:{'bunny.device.id':target.config.id}),...(requestId===undefined?{}:{'bunny.request.id':requestId})},parent);
   }
   #guard(target:Target,command:Command<Input>,release:boolean):ErrorBody|undefined{
     const value=command.data,now=this.#context.clock.now(),record=target.record;
@@ -112,28 +112,28 @@ class Owner {
       if(release){
         const observation=await this.#bounded(signal=>target.transport.read(signal),remaining);
         const after=this.#guard(target,command,true);
-        if(observation===undefined||after!==undefined)attempt={result:'failed',evidence:'none',code:after?.error.code??'unavailable',connection:observation===undefined?'unavailable':'available'};
+        if(observation===undefined||after!==undefined)attempt={result:Outcome.failed,evidence:Outcome.none,code:after?.error.code??'unavailable',connection:observation===undefined?'unavailable':'available'};
         else {
           await this.#transaction(add=>{const current=this.#store.get(row.requestId);if(current?.state!=='started'||current.digest!==row.digest)throw new Error('Wemo fence changed');delete target.record.held;this.#observation(target,observation);this.#record(add,target,command);},target,command,command.data.requestId);
-          attempt={result:'succeeded',evidence:'none',connection:'available'};
+          attempt={result:Outcome.succeeded,evidence:Outcome.none,connection:'available'};
         }
       }else attempt=await this.#bounded(signal=>target.transport.setPower(command.data.on,signal,()=>{
         const last=this.#guard(target,command,false);if(last!==undefined)return last.error.code;
         try{const current=this.#store.get(row.requestId);return current?.state==='started'&&current.digest===row.digest?undefined:'internal';}catch{return 'internal';}
       }),remaining);
-    }catch{attempt={result:release?'failed':'uncertain',evidence:'none',code:release?'unavailable':'uncertain-result',connection:'unknown'};}
-    trace.end(attempt.result==='succeeded'?'unset':'error');
-    const outcome:CompletedOutcome={requestId:row.requestId,result:attempt.result,evidence:release&&attempt.result==='succeeded'?'observed':attempt.evidence,...(attempt.code===undefined?{}:{error:errorBody(attempt.code).error})};
+    }catch{attempt={result:release?Outcome.failed:Outcome.uncertain,evidence:Outcome.none,code:release?'unavailable':'uncertain-result',connection:'unknown'};}
+    trace.end(attempt.result===Outcome.succeeded?'unset':'error');
+    const outcome:CompletedOutcome={requestId:row.requestId,result:attempt.result,evidence:release&&attempt.result===Outcome.succeeded?Outcome.observed:attempt.evidence,...(attempt.code===undefined?{}:{error:errorBody(attempt.code).error})};
     await this.#finish(target,row,outcome,attempt.connection,release?undefined:command.data.on);
   }
   async #finish(target:Target,row:Row,outcome:CompletedOutcome,connection?:Attempt['connection'],desired?:boolean):Promise<void>{
     target.pending.delete(row.requestId);
     try{await this.#transaction(add=>{
       this.#store.save({...row,state:'done',outcome});target.record.lastOutcome={status:'known',outcome};
-      if(outcome.result==='uncertain'){target.record.held={requestId:row.requestId,heldAtMs:this.#context.clock.now()};target.record.observed=unknown;target.record.availability='degraded';}
+      if(outcome.result===Outcome.uncertain){target.record.held={requestId:row.requestId,heldAtMs:this.#context.clock.now()};target.record.observed=unknown;target.record.availability='degraded';}
       else if(connection==='unavailable'){target.record.observed=unknown;target.record.availability='unavailable';target.record.generation.sequence++;}
-      if(outcome.result==='succeeded'&&desired!==undefined)target.record.desired.power={status:'known',value:desired};
-      if(outcome.evidence==='transmitted')target.record.lastTransmission={status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
+      if(outcome.result===Outcome.succeeded&&desired!==undefined)target.record.desired.power={status:'known',value:desired};
+      if(outcome.evidence===Outcome.transmitted)target.record.lastTransmission={status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
       this.#record(add,target,row);
       add(`bunny.event.${row.family}.${row.target}`,{kind:'outcome',type:typeOf(row.family).replace(/\.requested$/,'.completed'),subject:row.target,dataschema:'https://bunny.invalid/events/outcome/2.0',data:outcome},{parent:row});
     },target,row,row.requestId);}catch{/* The transaction recorded the storage fence; never replay. */}

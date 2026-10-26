@@ -5,6 +5,13 @@ This is the operation and receipt contract for the shared verification package.
 
 ## Operations
 
+The runtime's explicit [finite offline operation](../../apps/runtime/verify/PORTABLE.md)
+is a separate `portable` / `portable-cleanup` interface using
+`app-verification-portable/1`. Its finite deadline, disk-backed container state,
+proof allowlist and cleanup rules are documented there. It does not implement
+the managed preview operations or fabricate their unit/timer receipt fields.
+The managed operation contract below remains unchanged.
+
 Every operation prints one JSON result line on stdout and progress on stderr.
 A refusal line that the core prints keeps its `error` and `detail` and also
 carries `errorBody`, the shared 2.0 error body of

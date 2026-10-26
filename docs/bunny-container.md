@@ -68,8 +68,17 @@ The explicit `deploy/container/compose.local.yaml` profile serves the existing
 dashboard at `http://127.0.0.1:18788/`. It requires an image built from source
 that includes this profile; the earlier isolated image cannot supply it by
 changing Compose alone. Device control is literal `disabled`, client credentials
-are empty, MCP and the launcher are off, and restart remains manual. This creates
+are empty by default, MCP and the launcher are off, and restart remains manual. This creates
 a persistent fresh core, not device or collector setup and not old-state adoption.
+
+For the separately approved local Mac Codex connection, follow the
+[hook enrollment guide](mac-codex-hook-qualification.md#installed-qualification).
+It adds only one helper-derived `BUNNY_INGEST_SOURCE` to the selected Compose
+copy and its matching private ingest-only credential. Preserve the existing
+volumes, take a stopped backup and recreate only the selected stopped service;
+do not run fresh provisioning again. Omitting the source keeps the empty-client
+default and intentionally refuses any nonempty credential list. The bearer
+never belongs in Compose. Device control and browser checks remain unchanged.
 
 This is **trusted-local browser sign-in**, not password/identity verification.
 The normal same-origin session flow issues its HttpOnly/SameSite=Strict cookie;
@@ -118,9 +127,10 @@ The helper writes `runtime-config/1.0` with `modules: {}` and an edge referring
 to `/run/secrets/bunny/edge.json`, `browserAccess: trusted-loopback`, `launcher:
 false`, `mcp: false`. The referenced `edge-credentials/1.0` document has an empty
 `credentials` list. No private source is discovered or imported. Runtime startup
-refuses device sections, another credential path or any client grant in this
-browser-only profile. [Admitted module sections](#admit-a-module-that-reaches-no-device)
-are the only addition it accepts. Normal core startup initializes its own private state.
+refuses device sections, another credential path or an unselected client grant in
+this profile. It accepts only the [admitted module sections](#admit-a-module-that-reaches-no-device)
+and the explicitly selected single ingest grant in the hook enrollment guide. Normal core
+startup initializes its own private state.
 
 Open the local URL and use its existing sign-in. Require actual rendered core
 navigation and healthy core-only status, not just a listening port. Verify actual

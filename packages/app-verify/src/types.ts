@@ -275,6 +275,8 @@ export interface CaptureStep {
   fresh?: boolean;
   /** Default 1280×800. */
   viewport?: {width: number; height: number};
+  /** Default true. False keeps the final screenshot within the recorded viewport without resizing it. */
+  screenshotFullPage?: boolean;
   /** Milliseconds for `run`. Default 30000. */
   timeoutMs?: number;
   /** Drive the real page and assert the expected observations with `expect`. */

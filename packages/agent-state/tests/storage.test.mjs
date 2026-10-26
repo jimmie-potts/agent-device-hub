@@ -1,9 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAgentState,MemoryStorage} from '../dist/index.js';
+import {createAgentState,MemoryStorage,validateSnapshot} from '../dist/index.js';
 const config=storage=>({storage,ownerId:'owner',consumers:[],clock:()=>1000,storageTimeoutMs:15});
 const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',sessionId:'session'},turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:1000,ordering:{status:'unknown'}};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('shared local Codex persists separately from CLI and Desktop through owner restart',async()=>{
+  const storage=new MemoryStorage();
+  const owner=await createAgentState(config(storage));
+  try {
+    for(const client of ['local','cli','desktop'])assert.equal((await owner.ingest({...event,identity:{...event.identity,client}})).ok,true);
+    for(const version of ['1.0','1.1','1.2','1.3'])assert.equal(validateSnapshot(owner.snapshot(version)).ok,true,version);
+    assert.equal((await owner.exportState()).sessions.length,3);
+  } finally {await owner.shutdown();}
+  const reloaded=await createAgentState(config(storage));
+  try {assert.deepEqual(reloaded.snapshot().sessions.map(s=>s.identity.client).sort(),['cli','desktop','local']);}
+  finally {await reloaded.shutdown();}
+});
 
 test('revision exhaustion rejects admission without committing an invalid revision',async()=>{
   const original=await createAgentState(config(new MemoryStorage()));
