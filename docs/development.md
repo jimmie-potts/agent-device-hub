@@ -1781,6 +1781,17 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+Coding suggestions (#1098) use the existing companion unit discovery and
+`test:companions:browser` hosted journey. After the root build, run
+`node --test modules/companions/dist/tests/suggestions.test.js` for the fixed
+attribution/relevance corpus and policy, freshness, revision and isolation
+refusals. The browser journey checks the deliberate form, explicit clipboard,
+supersession/disconnect, keyboard, narrow viewport and axe. Existing core and
+App verification CI include both commands; no new suite/job is needed. Run
+root build/type/lint, companion and runtime/dashboard tests, shared contract and
+workflow checks, and the full runtime dashboard browser suite. Use synthetic
+evidence only; this provides no installed-client or physical acceptance.
+
 The Duck Home widget (#662) uses the existing companion unit suite, runtime
 scenario discovery and companions browser journey. Check explicit selection,
 latest/history isolation, correction/removal, restart, stale/denied reads,

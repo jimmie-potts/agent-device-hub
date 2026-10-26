@@ -35,6 +35,8 @@ export type SyncOptions = {
   maxBuffered?: number;
   /** The trace the first sync request joins. */
   parent?: TraceContext;
+  /** Called immediately when this copy loses freshness and starts replacement sync. A throw is reported, not propagated. */
+  onRestarted?: () => void;
 };
 
 /**
@@ -178,7 +180,7 @@ export async function startSync<T extends object>(
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > MAX_TIMEOUT_MS) throw invalid(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   if (!Number.isSafeInteger(maxBuffered) || maxBuffered < 1) throw invalid('maxBuffered must be a positive integer');
   if (owner !== undefined && !isSource(owner)) throw invalid('owner must be a participant source, such as bunny/modules/lifx');
-  return new Copy(transport, requested, handler, timeoutMs, maxBuffered, owner).start(parent);
+  return new Copy(transport, requested, handler, timeoutMs, maxBuffered, owner, options.onRestarted).start(parent);
 }
 
 type Held<T> = {entity: EntityRef; revision: number; message: Message<T>};
@@ -193,6 +195,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
   readonly #maxBuffered: number;
   /** The owner the copy names; undefined for the families' only owner. */
   readonly #owner: string | undefined;
+  readonly #onRestarted: (() => void) | undefined;
   /**
    * The owner whose live messages alone the copy follows: the one it names or, without one, the source of the
    * `sync.completed` that first served it. Until a copy without an owner first syncs, it holds every message it buffers
@@ -235,6 +238,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
 
   constructor(
     transport: SyncTransport, families: readonly string[], handler: SyncHandler<T>, timeoutMs: number, maxBuffered: number, owner: string | undefined,
+    onRestarted: (() => void) | undefined,
   ) {
     this.#transport = transport;
     this.#families = new Set(families);
@@ -242,6 +246,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#timeoutMs = timeoutMs;
     this.#maxBuffered = maxBuffered;
     this.#owner = owner;
+    this.#onRestarted = onRestarted;
     this.#following = owner;
   }
 
@@ -325,6 +330,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#pending = [];
     this.#generation += 1;
     this.#wanted = true;
+    try {this.#onRestarted?.();} catch (error) {this.#transport.report(error);}
     this.#wake();
   }
 
@@ -459,7 +465,12 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#pending = [];
     this.#phase = 'live';
     for (const message of buffered) add(this.#apply(message, false));
-    for (const change of changes) await this.#notify(change);
+    for (const change of changes) {
+      // Applied entity changes still belong to callback projections; only the old completion lost freshness.
+      if (change.type === 'synced' && generation !== this.#generation) continue;
+      await this.#notify(change);
+    }
+    if (generation !== this.#generation) return;
     this.#settle = undefined;
     settle?.({status: 'synced', copy: this, message: answer.completed});
   }

@@ -1,3 +1,5 @@
+import {suggestionsJourney} from './suggestions.browser.ts';
+import {suggestionsReconnectJourney} from './suggestions-reconnect.ts';
 import {knowledgeJourney} from './knowledge.browser.ts';
 import {duckJourney} from './duck.browser.ts';
 import {duckFailureJourney} from './duck-failures.ts';
@@ -15,6 +17,7 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
   await duckFailureJourney(context);
+  await suggestionsReconnectJourney(context);
   await preferencesJourney(world, page, context);
   await knowledgeJourney(world, page, context);
   await duckJourney(world, page, context);
@@ -36,6 +39,7 @@ try {
   await page.goto(`${world.url}/#/module/companions/reachy`);
   await card.getByText(/coding turn|turn has ended/).waitFor();
   assert.match(await card.innerText(), /Unavailable|unavailable/);
+  await suggestionsJourney(world, page, context);
   await reachy.getByRole('button', {name: 'Simulate question and arrival', exact: true}).click();
   await card.getByText('Simulated scenario', {exact: true}).waitFor();
   await card.getByText('Coding attention', {exact: true}).waitFor();
@@ -96,5 +100,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
 } finally {await browser.close(); await world.close();}
