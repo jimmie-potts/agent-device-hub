@@ -396,7 +396,10 @@ separate admission records; they create no household fact or physical/audio outp
 The page's enablement, mute and social snooze controls are tracked commands.
 Saved cards return as history, and neither sync, recovery, restart nor returning
 to Free creates a reaction. See the module guide for timing, private storage and
-source checks. Source acceptance and separately selected installation remain distinct.
+source checks. Optional [spoken alerts](../../modules/companions/README.md#browser-speech)
+require separate per-tab enablement and a qualified local voice. Stop and mute do
+not change coding tasks; lost availability never replays missed alerts.
+Source acceptance and separately selected installation remain distinct.
 
 The same module contributes a default-off **Synthetic tasks** page: private text,
 a saved clarification and explicit continuation through a bounded fake-model

@@ -60,6 +60,15 @@ module that is not as expected, its state and its registry code, such as
 
 ## Run scenarios
 
+`browser-speech` uses the module-owned simulated shipped-runtime seed with a
+private synthetic qualification receipt and captures the real dashboard. Browser
+identity, voice and playback callbacks are synthetic. The capture checks manual availability, Work/Free
+questions, one selected tab, completion, Stop/Mute, category/Quiet suppression,
+delayed voices, reload/restart silence, uncertainty, keyboard controls, narrow
+layout and accessibility. It records labelled interactions and leaves speech off.
+It uses no native audio or installed resource and does not qualify actual speech.
+
+
 `companion-knowledge` uses the core and companions with explicit synthetic notes
 and one fictional Reachy–Duck exchange. Authenticated public reads exercise two
 fake model adapters and a replacement test client, current context, private

@@ -523,3 +523,26 @@ The same entry adds `preference-state/2.0`, a closed metadata-only document
 `{id: "preferences", revision}` on subject `preferences`. It belongs to the
 companions sync owner; title, text, entries and history are excluded. Private
 preference reads and mutations remain in the [owning module](../../modules/companions/README.md#explicit-preferences).
+
+### Browser speech payloads
+
+The same entry registers these profile-2.0 families for the selected browser
+endpoint. Browser permissions remain the runtime gateway's responsibility.
+
+| Family | Kind | Producer and purpose |
+| --- | --- | --- |
+| `companion-speech-endpoint` | Command | The current endpoint explicitly declares availability, mutes or stops. Enable requires `available: true`. |
+| `companion-speech-dispatch` | Command | Companions asks the core to track one admitted candidate. It carries candidate and endpoint references. |
+| `companion-speech-play` | Command | The core transfers responsibility for that candidate to companions. |
+| `companion-speech-output` | Command | Companions submits a current live card once to its selected endpoint, or stops that operation. History and scenario cards are refused. |
+| `companion-speech-playback` | Occurrence | The endpoint reports bounded playback status and whether a start callback occurred. |
+| `companion-speech-lost` | Occurrence | The gateway reports that the named endpoint closed. |
+| `companion-speech-state` | State | Companions reports its reservation, availability, playback and pending-work flag. |
+
+Endpoint command subjects and playback subjects are routing IDs. Loss names the
+same ID in its subject and payload. Dispatch, play and state name `reachy`.
+Output expiry cannot exceed the opportunity deadline. Playback observations
+distinguish started, completed, stopped, failed, not-started and uncertain;
+completion requires a reported start. These observations do not claim that a
+person heard speech and do not replace the existing tracked command outcome.
+Payloads carry no voice inventory, stream capability or raw browser error.

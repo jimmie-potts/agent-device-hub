@@ -232,9 +232,15 @@ opportunities through the SDK. Core keeps session/mode ownership and produces no
 opportunity from recovery, snapshots or reconnect. The fixed-text path owns private settings and bounded admission/presentation
 records; its pending candidates are not durable. Its browser-only React contribution uses the existing shell and tracked
 commands. Labelled synthetic scenarios remain separate from live state and
-allowances. The module adds no device/audio writer, service or transport boundary.
-The architecture diagram retains its dated physical-device view; these text
-cards use its existing core/bus/module-store/frontend boundaries.
+allowances. Optional speech reserves one explicit browser endpoint on the shell's
+existing authenticated SDK connection. Companions owns admission and durable
+responsibility; the core tracks each attempt; the selected browser alone owns
+local synthesis. Availability and candidates are never restored after disconnect
+or restart. The [module guide](../modules/companions/README.md#browser-speech)
+describes final policy checks, cancellation and uncertain receipts. This adds no
+service or transport. The architecture diagram retains its dated physical-device
+view; companion cards and speech use its existing core/bus/module-store/frontend
+boundaries.
 
 Its deliberate coding-suggestion form uses the shell's existing core copies,
 passed through an optional browser-only SDK context with independent live flags.

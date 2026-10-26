@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-speech-play/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "candidateId",
+    "endpointId"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "candidateId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    }
+  }
+}

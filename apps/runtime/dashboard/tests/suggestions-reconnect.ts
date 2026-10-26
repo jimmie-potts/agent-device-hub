@@ -22,7 +22,7 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     const transport = {
       now: () => Date.now(), report: error => {throw error;},
       subscribe: async (_pattern, _handler, options) => {
-        fixture.overflow = () => options.onOverflow({dropped: 1});
+        fixture.overflow = () => flushSync(() => options.onOverflow({dropped: 1}));
         return {close: async () => {}};
       },
       request: async request => {
@@ -60,7 +60,7 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     const ui = {Facts: () => null, Badge: ({children}) => React.createElement('span', null, children),
       Command: ({children}) => children({locked: false, text: '', run: () => {}})};
     const root = createRoot(document.getElementById('root'));
-    fixture.render = connected => flushSync(() => root.render(React.createElement(Component, {context: {api, ui, connected, control: true,
+    fixture.render = connected => flushSync(() => root.render(React.createElement(Component, {context: {api, ui, connected, control: true, operations: [], operationsLive: connected,
       core: {sessions: [session], sessionsLive: connected, mode: 'work', modeLive: connected}}})));
     fixture.earlyUpdate = () => fixture.update({type: 'updated', message: {data: state}});
     Object.defineProperty(navigator, 'clipboard', {value: {writeText: async text => {fixture.copied.push(text);}}});

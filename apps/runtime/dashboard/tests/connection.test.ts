@@ -6,30 +6,112 @@ import test, {type TestContext} from 'node:test';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import type {Diagnostic, RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
 import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncTransport} from '../../../../packages/sdk/dist/src/sync.js';
+import {buildMessage} from '../../../../packages/sdk/dist/src/envelope.js';
 import {DashboardConnection} from '../src/connection.ts';
 
 /** One already authenticated shell with a module that owns a feature family. No listener or second connection. */
-async function moduleConnection(context: TestContext, control = true) {
+async function moduleConnection(context: TestContext, control = true, moduleName = 'pixoo') {
   const requests: {path: string; init: RequestInit}[] = [];
   context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit = {}) => {
     requests.push({path, init});
     if (path === '/api/v2/modules') return Promise.resolve(Response.json({schema: 'module-list/2.0', modules: [
-      {name: 'pixoo', state: 'running', serves: ['pixoo-library'], pages: []},
+      {name: moduleName, state: 'running', serves: ['pixoo-library'], pages: []},
     ]}));
     if (path.includes('/authority')) return Promise.resolve(Response.json({}, {status: control ? 200 : 403}));
     return Promise.resolve(Response.json({schema: 'module-settings/2.0', settings: {}}));
   });
   const script = scripted(['synced'], () => 0);
-  let connects = 0;
-  const connection = new DashboardConnection({url: 'http://127.0.0.1:1', connect: () => { connects += 1; return Promise.resolve(script.participant); }});
+  let connects = 0, diagnose: (value: Diagnostic) => void = () => {};
+  const connection = new DashboardConnection({url: 'http://127.0.0.1:1', connect: options => {
+    connects += 1; diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(script.participant);
+  }});
   context.after(() => connection.close());
   await connection.start();
   await new Promise(resolve => { setImmediate(resolve); });
-  assert.equal(connection.getState().runtime.modules?.[0]?.name, 'pixoo');
-  return {connection, script, requests, connects: () => connects};
+  assert.equal(connection.getState().runtime.modules?.[0]?.name, moduleName);
+  return {connection, script, requests, connects: () => connects, diagnose: (value: Diagnostic) => {diagnose(value);}};
 }
+
+void test('only the companions page can open a speech endpoint, and read-only access sends nothing', async context => {
+  const {connection, script, connects} = await moduleConnection(context, false, 'companions');
+  let opened = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => {opened += 1; throw new Error('must not open');});
+  assert.equal(connection.openModule('pixoo').api.speech, undefined);
+  const page = connection.openModule('companions');
+  assert.ok(page.api.speech);
+  await assert.rejects(page.api.speech.open({respond: () => ({status: 'accepted'})}));
+  assert.equal(opened, 0); assert.equal(connects(), 1);
+});
+
+void test('a speech page uses only its declared families and retires its endpoint on unmount', async context => {
+  const {connection, script, connects} = await moduleConnection(context, true, 'companions');
+  const calls: {family: string; data: unknown}[] = [];
+  let options: RemoteEndpointOptions<SpeechOutput> | undefined, closed = 0, cancelled = 0, commands = 0;
+  const endpoint: RemoteEndpoint = {id: 'endpoint-test', close: () => {closed += 1; options?.onClosed?.(); return Promise.resolve();},
+    publish: (family, draft) => {calls.push({family, data: draft.data}); return Promise.resolve(buildMessage('bunny/parts/dashboard', draft.kind,
+      {...draft, subject: 'endpoint-test'}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0));},
+    request: (family, draft, request) => {
+      calls.push({family, data: draft.data});
+      const requestId = request.requestId ?? 'missing';
+      return Promise.resolve({status: 'accepted', requestId, reply: buildMessage<{requestId: string; status: 'accepted'}>('bunny/modules/companions', 'reply', {
+        type: draft.type.replace(/requested$/, 'replied'), subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/reply/2.0',
+        data: {requestId, status: 'accepted'},
+      }, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0)});
+    },
+  };
+  context.mock.method(script.participant, 'openEndpoint', (given: RemoteEndpointOptions<SpeechOutput>) => {options = given; return Promise.resolve(endpoint);});
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const handle = await page.api.speech.open({respond: () => {commands += 1; return {status: 'accepted'};}, onClosed: () => {cancelled += 1;}});
+  assert.equal(options?.family, 'companion-speech-output'); assert.equal(handle.id, 'endpoint-test');
+  assert.notEqual(options, undefined);
+  const output = buildMessage<SpeechOutput>('bunny/parts/other', 'command', {
+    type: 'org.bunny.companion-speech.output.requested', subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/companion-speech-output/2.0',
+    data: {requestId: 'stop-request', operationId: 'speech-test', action: 'stop'},
+  }, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0, 1000);
+  const refused = await options.respond(output);
+  assert.ok('error' in refused && refused.error.code === 'forbidden'); assert.equal(commands, 0);
+  assert.deepEqual(await options.respond({...output, source: 'bunny/modules/companions'}), {status: 'accepted'});
+  assert.equal(commands, 1);
+  await handle.control({requestId: 'enable-test', action: 'enable', available: true});
+  await handle.observe({operationId: 'speech-test', status: 'completed', started: true}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+  assert.deepEqual(calls.map(call => call.family), ['companion-speech-endpoint', 'companion-speech-playback']);
+  await page.close(); assert.equal(cancelled, 1); assert.equal(closed, 1); assert.equal(connects(), 1);
+  await assert.rejects(handle.control({requestId: 'late-test', action: 'stop'}));
+  assert.equal(calls.length, 2);
+});
+
+void test('a speech endpoint that opens after unmount is closed without reaching the page', async context => {
+  const {connection, script} = await moduleConnection(context, true, 'companions');
+  let finish: (endpoint: RemoteEndpoint) => void = () => {throw new Error('not opening');};
+  let closed = 0, cancelled = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => new Promise<RemoteEndpoint>(resolve => {finish = resolve;}));
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const rejected = assert.rejects(page.api.speech.open({respond: () => ({status: 'accepted'}), onClosed: () => {cancelled += 1;}}));
+  await page.close(); assert.equal(cancelled, 1);
+  finish({id: 'late-endpoint', close: () => {closed += 1; return Promise.resolve();},
+    publish: () => Promise.reject(new Error('must not publish')), request: () => Promise.reject(new Error('must not request'))});
+  await rejected; assert.equal(closed, 1); assert.equal(cancelled, 1);
+});
+
+for (const event of ['remote.disconnected', 'remote.refused'] as const) void test(`speech closes immediately on ${event} and does not reopen itself`, async context => {
+  const {connection, script, diagnose} = await moduleConnection(context, true, 'companions');
+  let opened = 0, closed = 0, cancelled = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => {
+    opened += 1;
+    return Promise.resolve({id: 'endpoint-test', close: () => {closed += 1; return Promise.resolve();},
+      publish: () => Promise.reject(new Error('must not publish')), request: () => Promise.reject(new Error('must not request'))} satisfies RemoteEndpoint);
+  });
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const endpoint = await page.api.speech.open({respond: () => ({status: 'accepted'}), onClosed: () => {cancelled += 1;}});
+  diagnose({event, level: 'warn', source: 'bunny/parts/dashboard', ...(event === 'remote.refused' ? {code: 'forbidden'} : {})});
+  assert.equal(cancelled, 1); assert.equal(closed, 1);
+  await assert.rejects(endpoint.control({requestId: 'late-request', action: 'stop'}));
+  if (event === 'remote.disconnected') diagnose({event: 'remote.reconnected', level: 'info', source: 'bunny/parts/dashboard'});
+  assert.equal(opened, 1); assert.equal(cancelled, 1);
+});
 
 void test('a module page shares the shell participant and closes both active and late sync copies on unmount', async context => {
   const {connection, script, connects} = await moduleConnection(context);
@@ -180,6 +262,7 @@ function scripted(answers: readonly ('synced' | ErrorCode)[], at: () => number):
   let handler: ((change: SyncChange<SessionRecord>) => void) | undefined;
   let closed = false;
   const participant = {
+    openEndpoint: () => Promise.reject(new Error('no endpoint was expected')),
     sync: (_families: readonly string[], handle: (change: SyncChange<SessionRecord>) => void): Promise<SyncResult<SessionRecord>> => {
       syncs.push(at());
       handler = handle;

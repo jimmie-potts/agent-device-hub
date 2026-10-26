@@ -753,6 +753,12 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
+The same event test command discovers `speech.test.mjs`. It checks explicit
+endpoint availability, live-card expiry, scenario and history refusal, closed
+playback receipts, candidate references and endpoint-loss identity. The core
+fixture inventory includes all seven speech families. These checks use synthetic
+messages and produce no audio.
+
 `test:events:built` also runs the core and device payload family tests (Hub #842,
 #918):
 - `packages/event-contracts/tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
@@ -1780,6 +1786,41 @@ transport. Source success does not establish installation, current
 account/device compatibility or map attribution.
 
 ## Companions source checks
+
+Browser speech (#1097) uses the existing companion unit discovery and
+`test:companions:browser` journey. After the root build, run
+`node --test modules/companions/dist/tests/speech-driver.test.js` for bounded
+local voice discovery, final permission checks, callback ordering, Stop, mute
+and uncertain output without replay. The existing core CI module group runs
+these tests. `speech-coordinator.test.js` verifies manual availability, one
+active/one pending candidate, priority cancellation, missing receipts, delayed
+policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
+checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
+and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
+Both are discovered by the existing runtime CI suite. The `speech-session`,
+`speech-browser`, `speech-qualification` and `speech-qualification-file` unit
+files check immediate local cancellation, ordered receipt writes, late endpoint
+registration, failed browser hints and private receipt refusal. The existing
+companions browser entry calls `speech.browser.ts` against a disposable real
+runtime with synthetic browser identity and audio. It exercises explicit selection,
+completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
+reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
+keyboard and axe checks. `speech-readiness.ts` mounts the real Reachy page and delivers companion or
+speech-state restart, failure and removal, category mute, text disable and
+restrictive speech availability before React renders, then resolves pending
+voice discovery. Each must submit zero audio; an unchanged eligible control
+must still submit once. Endpoint changes also
+require event schema, SDK remote, runtime
+gateway and dashboard tests, plus root build/type/lint and shared contract and
+workflow checks. Browser checks use fake audio and synthetic inputs; they do
+not establish installed playback or human perception.
+
+The runtime verification `browser-speech` capture uses the real synthetic runtime
+and dashboard with fake browser speech. Its existing `steps.test.ts` catalog entry
+runs under the App verification checks; the dashboard speech journey shares the
+same browser fixture. Run `npm run build` before either. This capture covers
+manual availability and controls without playing native audio; installed Chrome
+acceptance remains separate.
 
 Coding suggestions (#1098) use the existing companion unit discovery and
 `test:companions:browser` hosted journey. After the root build, run

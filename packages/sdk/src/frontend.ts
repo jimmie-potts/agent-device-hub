@@ -2,7 +2,9 @@
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import type {Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {SyncHandler, SyncResult} from './remote.js';
+import type {SpeechEndpointControl, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
+import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from './remote.js';
+import type {TraceContext} from './sdk.js';
 
 /** An explicit command; acceptance is separate from the operation's completed or uncertain outcome. */
 export type FrontendAction = {family: string; target: string; data: object; requestId: string};
@@ -16,8 +18,18 @@ export type FrontendCommand = {
   run(action: FrontendAction | FrontendUpload | string): Promise<void>;
 };
 
+/** The companions page can control and report only its own connection-bound speech endpoint. */
+export type FrontendSpeechEndpoint = {
+  readonly id: string;
+  control(command: SpeechEndpointControl, parent?: TraceContext): Promise<RequestResult>;
+  observe(playback: SpeechPlayback, parent: TraceContext): Promise<void>;
+  close(): Promise<void>;
+};
+
 /** Authenticated facilities owned by one mounted module page. No token, storage or device transport is exposed. */
 export type FrontendApi = {
+  /** Present only for the companions module. Opening still requires current control authority. */
+  speech?: {open(options: Omit<RemoteEndpointOptions<SpeechOutput>, 'family'>): Promise<FrontendSpeechEndpoint>};
   /** Reads a runtime JSON route. The feature checks the document's schema before using it. */
   read(path: string): Promise<unknown>;
   /** Reads an image from this module's content references with the same authentication and page lifetime. */

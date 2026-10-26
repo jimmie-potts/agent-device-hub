@@ -565,6 +565,14 @@ export const sign: BunnyModule<SignConfig> = {
   source or open another subscription. It carries no task evidence or command
   authority; module-scoped `api.sync` remains restricted to that module.
 
+  The companions page alone receives optional `api.speech`. Its explicit `open`
+  registers one `companion-speech-output` responder on that same connection.
+  The returned handle can send only endpoint controls and playback observations.
+  Page unmount, lost control authority or disconnection retires the handle and
+  calls `onClosed` immediately, including while registration is pending.
+  Reconnection never registers it again. The browser capability stays inside the
+  SDK; module code receives only the public endpoint identity.
+
   `context.ui.ModeChoice`, when supplied, renders the shell's saved Work/Free/Quiet
   control for a qualified device target. It uses the shell's current mode and
   device copies, without adding module subscriptions or importing shell code.
@@ -1096,10 +1104,14 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?, publishes?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
-  principal opened, as when the host revokes it.
+  principal opened, as when the host revokes it. Calls that use a stream must
+  match both its source and the authenticated principal that opened it. Another
+  principal with the same source cannot subscribe, respond, serve, reply, answer
+  or close through that stream. Grants without a principal ID retain their
+  source-based ownership.
 - **Permissions (Hub #835).** A grant may list the `calls` it may make and the
   routing-key patterns, `keys`, it may use; either left out allows all. A key it
   publishes or requests must match a pattern; a pattern it subscribes or
@@ -1199,7 +1211,7 @@ HTTP status that fits its code.
   `capacity`, and the remote part receives `onOverflow` with the count.
 - **Reconnects.** When the stream is lost, the client reconnects. It queues
   `onOverflow({})`, with no count, for every subscription before any message of
-  the new stream. It registers its subscriptions, responders and sync owners
+  the new stream. It registers its subscriptions, ordinary responders and sync owners
   again, and only then delivers those notices, so a sync copy that syncs again
   never asks before its subscriptions exist. Nothing missed in the gap is
   replayed. A call that needs the stream and meets a lost one is refused with
@@ -1251,6 +1263,37 @@ cancels their deadlines and the reconnect backoff. It then closes its sync
 copies: a first sync still under way resolves `cancelled`, and its request is
 withdrawn from the owner's queue. Last it ends the stream, and every later call
 is refused with `invalid-state`.
+
+### Connection-bound endpoints
+
+`openEndpoint({family, respond, onClosed?})` opens one handler on the current
+stream. It requires an explicit `endpoint` grant containing `respond`, `publish`
+and `request` family lists. Ordinary read and control permissions do not grant
+endpoint access. Registration and each publication end after five seconds without
+acknowledgment. A publication that reaches this deadline retires the handle and
+invokes `onClosed`; it never retries the publication. Missing acknowledgment does not prove that
+the edge missed the message.
+
+The returned handle has a public `id`, `publish(family, draft, options?)`,
+`request(family, draft, options)` and `close()`. The handle supplies its identity
+as the routing key's last token and message subject. Publication and request
+payloads must use the granted routing family's schema. The host separately
+grants each family and receives `onEndpointClosed({source, id})` when the handler
+or stream closes.
+
+Every endpoint call verifies the authenticated principal, connection and a
+private capability delivered on that stream. The capability stays in transport
+calls; it is absent from domain messages, diagnostics and the public handle.
+Endpoint identities belong to their stream and cannot be reused after closure.
+Another tab's public endpoint ID grants no authority, even with a shared login.
+
+Close, disconnect and participant shutdown retire the local handle and invoke
+`onClosed` immediately, before waiting for a running handler. The application
+uses that callback to cancel its local output. The edge withdraws queued
+endpoint requests and settles commands already forwarded to its handler as
+uncertain. A late endpoint reply cannot change that result. Reconnect restores
+no endpoint handler or availability; the application must explicitly open a new
+endpoint. Ordinary responders retain their existing reconnect behavior.
 
 ## One publication without a stream
 

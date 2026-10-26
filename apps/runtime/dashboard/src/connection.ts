@@ -6,8 +6,9 @@
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
 import {
-  SdkError, childOf, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
+  SdkError, childOf, connectRemote, type Diagnostic, type RemoteEndpoint, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
   type SyncCompleted, type SyncedCopy, type SyncResult,
 } from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -74,6 +75,7 @@ export class DashboardConnection {
   #participant: RemoteParticipant | undefined;
   readonly #runtime: RuntimeFeeds;
   readonly #moduleScopes = new Set<ModuleScope>();
+  readonly #speechChecks = new Set<() => void>();
   #copy: SyncedCopy<SessionRecord> | undefined;
   #closed = false;
   /** The `sync.completed` last counted. */
@@ -192,6 +194,47 @@ export class DashboardConnection {
         copies.clear();
       },
       api: {
+        ...(name === 'companions' ? {speech: {open: async options => {
+          const participant = this.#participant;
+          if (!active() || participant === undefined) throw unavailable();
+          if (!this.#state.runtime.control) throw new SdkError(errorBody('forbidden', {detail: 'the page has read-only access'}));
+          let endpoint: RemoteEndpoint | undefined, retired = false, closing: Promise<void> | undefined;
+          const live = (): boolean => !retired && active() && this.#state.runtime.control && this.#participant === participant;
+          const retire = (): void => {
+            if (retired) return;
+            retired = true; copies.delete(lease); this.#speechChecks.delete(check);
+            try {options.onClosed?.();} catch { /* A page callback cannot preserve output authority. */ }
+          };
+          const lease: Subscription = {close: () => {
+            if (closing !== undefined) return closing;
+            retire(); closing = endpoint?.close() ?? Promise.resolve(); return closing;
+          }};
+          const check = (): void => {if (!live()) void lease.close();};
+          copies.add(lease); this.#speechChecks.add(check);
+          try {
+            const opened = await participant.openEndpoint<SpeechOutput>({family: 'companion-speech-output', onClosed: retire, respond: command => {
+              if (!live()) return errorBody('unavailable', {detail: 'the speech page is no longer available'});
+              if (command.source !== 'bunny/modules/companions') return errorBody('forbidden', {detail: 'the command is not from the speech owner'});
+              return options.respond(command);
+            }});
+            endpoint = opened;
+            if (!live()) {await opened.close(); throw unavailable();}
+            return {
+              id: opened.id, close: () => lease.close(),
+              control: (command, parent) => {
+                if (!live()) return Promise.reject(unavailable());
+                return opened.request('companion-speech-endpoint', {type: 'org.bunny.companion-speech.endpoint.requested',
+                  dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.0', data: command},
+                {timeoutMs: 5000, requestId: command.requestId, ...(parent === undefined ? {} : {parent})});
+              },
+              observe: async (playback, parent) => {
+                if (!live()) throw unavailable();
+                await opened.publish('companion-speech-playback', {kind: 'occurrence', type: 'org.bunny.companion-speech.playback.observed',
+                  dataschema: 'https://bunny.invalid/events/companion-speech-playback/2.0', data: playback}, {parent});
+              },
+            };
+          } catch (error) {retire(); throw error;}
+        }}} : {}),
         read: async path => {
           const response = await readResponse(path);
           let body: unknown;
@@ -351,6 +394,7 @@ export class DashboardConnection {
 
   #update(change: Partial<DashboardState>): void {
     this.#state = {...this.#state, ...change};
+    for (const check of [...this.#speechChecks]) check();
     for (const listener of this.#listeners) listener();
   }
 }

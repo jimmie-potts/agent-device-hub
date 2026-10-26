@@ -103,6 +103,11 @@ it('an edge refuses grants whose calls or key patterns it cannot read, without n
   assert.throws(grant({keys: ['bunny.event.lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request');
   assert.throws(grant({keys: 'bunny.event.*.*'}), (error: unknown) => codeOf(error) === 'invalid-request');
   assert.throws(grant({publishes: ['Lifecycle']}), (error: unknown) => codeOf(error) === 'invalid-request', 'a malformed family');
+  for (const endpoint of [null, {}, {respond: ['test-mode'], publish: []}, {respond: ['*'], publish: [], request: []},
+    {respond: [], publish: [], request: [], arbitrary: []}]) {
+    assert.throws(grant({endpoint}), (error: unknown) => codeOf(error) === 'invalid-request', 'endpoint grants declare exact family lists');
+  }
+  assert.doesNotThrow(grant({endpoint: {respond: [], publish: [], request: []}}));
   assert.doesNotThrow(grant({calls: [], keys: []}), 'a grant may allow nothing');
 });
 

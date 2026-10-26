@@ -1,12 +1,10 @@
-import {presentationRefusal, staleSession} from './presentation-policy.js';
+import {currentRefusal, type CurrentPolicy} from './presentation-policy.js';
 import {createHash} from 'node:crypto';
 import type {CompanionCard, CompanionOpportunity, CompanionSettings} from '@jimmie-potts/event-contracts/v2/companions';
-import type {Mode, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 export type Allowance = {day: string; count: number; lastAtMs: number | null};
 export type Admission = {key: string; atMs: number};
-export type Policy = {nowMs: number; settings: CompanionSettings; mode: Mode | undefined; synced: boolean;
-  sessions: readonly SessionRecord[]; scenarioAttention: boolean; allowance: Allowance; admissions: readonly Admission[]; available: boolean};
+export type Policy = CurrentPolicy & {allowance: Allowance; admissions: readonly Admission[]};
 export const categories = ['coding-attention', 'coding-notice', 'simulated-social'] as const;
 export const defaultSettings = (): CompanionSettings => ({enabled: false, muted: [], snoozedUntilMs: 0,
   timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone});
@@ -15,34 +13,14 @@ export const localDay = (atMs: number, zone: string): string => new Intl.DateTim
 }).format(new Date(atMs));
 export const admissionKey = (event: CompanionOpportunity): string => createHash('sha256')
   .update(JSON.stringify([event.context, event.origin.source, event.context === 'scenario' ? event.origin.id : null, event.session, event.generation, event.turn, event.attention, event.noticeId, event.cue])).digest('hex');
-const same = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 /** Reused for admission and immediately before presentation; it neither saves state nor emits effects. */
 export function refusal(event: CompanionOpportunity, policy: Policy, reserved = false): string | undefined {
+  const current = currentRefusal(event, policy);
+  if (current !== undefined) return current;
   const {nowMs, settings} = policy;
-  const presentation = presentationRefusal(settings, event.category, policy.available);
-  if (presentation !== undefined) return presentation;
-  if (nowMs < event.observedAtMs || (event.occurredAtMs !== null && nowMs < event.occurredAtMs) || nowMs >= event.validUntilMs) return 'expired';
-  if (!policy.synced || policy.mode === undefined) return 'core-unavailable';
-  if (event.context === 'live') {
-    const session = policy.sessions.find(record => record.id === event.session);
-    if (session === undefined || staleSession(session, nowMs)) return 'stale-source';
-    if (session.generation !== event.generation || session.revision < event.revision || !same(session.identity, event.identity) || !same(session.turn, event.turn)) return 'obsolete-turn';
-    if ((event.turn.status === 'unknown' || event.attention?.id.status === 'unknown') && session.revision !== event.revision) return 'source-changed';
-    if (event.category === 'coding-attention' && !session.attention.some(attention => same(attention, event.attention))) return 'attention-cleared';
-    if (event.category === 'coding-notice' && (event.noticeId === null || !session.notices.some(notice => notice.id === event.noticeId))) return 'obsolete-turn';
-  }
-  const attention = policy.scenarioAttention || policy.sessions.some(session => session.freshness === 'current' && session.attention.length > 0);
-  if (event.category !== 'coding-attention' && attention) return 'attention-priority';
-  if (event.category === 'simulated-social') {
-    if (policy.mode !== 'free') return 'restrictive-mode';
-    if (event.busy === null || event.media === null) return 'unknown-context';
-    if (event.busy) return 'busy';
-    if (event.media) return 'media';
-    if (nowMs < settings.snoozedUntilMs) return 'snoozed';
-    if (!reserved) {
-      if (policy.allowance.day === localDay(nowMs, settings.timeZone) && policy.allowance.count >= 3) return 'social-budget';
-      if (policy.allowance.lastAtMs !== null && nowMs - policy.allowance.lastAtMs < 10_800_000) return 'social-spacing';
-    }
+  if (!reserved && event.category === 'simulated-social') {
+    if (policy.allowance.day === localDay(nowMs, settings.timeZone) && policy.allowance.count >= 3) return 'social-budget';
+    if (policy.allowance.lastAtMs !== null && nowMs - policy.allowance.lastAtMs < 10_800_000) return 'social-spacing';
   }
   if (!reserved && policy.admissions.some(record => record.key === admissionKey(event))) return 'repetition';
   return undefined;
