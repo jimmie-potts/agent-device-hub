@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard} from '../src/home-catalog.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
+import {emptyStatus} from '../../../../modules/roborock/src/contracts.ts';
+import {deviceRecord} from '../../../../modules/roborock/dist/src/state.js';
 const runtime: RuntimeData = {modules: [], copies: [], control: true, catalogFailed: false};
+void test('Roborock keeps existing device placements and offers an unavailable source without a duplicate', () => {
+  const catalog = homeCatalog(runtime, true), missing = catalog.find(value => value.id === 'module:roborock');
+  assert.ok(missing !== undefined); assert.equal(missing.source.kind, 'core'); assert.equal(missing.defaultSelected, false);
+  const configured = homeCatalog({...runtime, copies: [{owner: 'bunny/modules/roborock', family: 'device', synced: true, records: [deviceRecord(emptyStatus('vacuum'))]}]}, true);
+  const vacuum = configured.find(value => value.id === 'device:bunny/modules/roborock:vacuum');
+  assert.ok(vacuum !== undefined); assert.deepEqual(vacuum.sizes, ['small', 'medium', 'large']);
+  assert.equal(configured.filter(value => value.name === 'Roborock' || value.id.includes('roborock')).length, 1);
+  assert(!configured.some(value => value.id === 'module:roborock'));
+  assert.deepEqual(savedHomeCard(vacuum.id, configured), vacuum);
+  assert.deepEqual(savedHomeCard(vacuum.id, catalog)?.source, {kind: 'device', owner: 'bunny/modules/roborock', instance: 'vacuum'});
+  assert.equal(savedHomeCard('module:roborock', configured)?.source.kind, 'core');
+});
 void test('Timeline is placeable without silently adding it to an existing or default Home', () => {
   const catalog = homeCatalog(runtime, true), card = catalog.find(value => value.id === 'timeline');
   assert.ok(card !== undefined, 'Timeline is offered in Add card');

@@ -1767,6 +1767,16 @@ These checks do not establish installed or physical behavior.
 
 ## Roborock module checks
 
+The reusable card (#390) extends `test:roborock:browser`, already selected by
+App verification, and the module/dashboard unit suites. After the root build,
+run `npm run test:roborock:built`, `npm run test:roborock:consumer:built`,
+`npm run test:runtime-dashboard:built` and `npm run test:roborock:browser`.
+The focused browser journey checks Home/page reuse, passive tabs and history,
+fixed geometry, source freshness/refusals, scoped cleanup, keyboard access and
+light/dark desktop/phone accessibility. Use synthetic inputs only; this does
+not establish installed or physical acceptance. Keep the shared build/type,
+contract/workflow checks and full dashboard browser suite below.
+
 Use Node 24 and `npm ci`, then build before type-aware lint. Run
 `npm run build`, `npm run typecheck`, `npm run lint:js`,
 `npm run test:roborock:built`, `npm run test:roborock:consumer:built` and

@@ -5,6 +5,34 @@ with a React status page and the read-scoped `roborock_status` MCP tool.
 The nested `@jimmie-potts/roborock-transport` package supplies the V1 transport.
 The Roborock app remains the cleaning control surface.
 
+The browser entry exports `RoborockCard` (presentation and props) and
+`RoborockWidget` (scoped shell adapter). Home, the selected device view and the
+Roborock status page use the same quiet card. Its vacuum illustration stays
+visible while Status, Last run and Care flip within a fixed control area.
+The corner `!` opens safe warning/refusal context and an explicit reload.
+Care shows recorded usage, not remaining life or replacement estimates.
+
+Home keeps existing per-device placement IDs and offers the card through its
+current editor. An unconfigured or refused module remains selectable as an
+unavailable card; it supplies no guessed target or normal values. Saved choices
+are not rewritten. The History footer uses `#/module/roborock/history` once a
+validated source identity is known. The original status address retains full
+observations and paged run/sample evidence behind **Evidence**.
+
+The card reads the run with the greatest reported start time with `latest-run` on entry, explicit
+reload or a status revision change. It uses the existing shell participant and
+validated owning content API, with no timed content poll or direct device/store
+access. A local clock expires status after 120 seconds; care uses its own
+timestamp. Missing/future times remain unknown, and a connected gateway does
+not make older readings current. Numeric state/dock codes keep their raw meaning.
+Only fresh cleaning shows active counters. Last run uses `cleanedAreaMm2`
+without substituting `areaMm2`, and only complete code `1` means completed.
+Robot start time retains its unqualified-clock context. The fixed `latest-run`
+reference accepts no query keys and returns zero or one existing
+`roborock-runs/2.0` record. Its indexed selection uses the store
+invariant `startAtMs === recordId * 1000`. Ordinary history pagination keeps
+its archive insertion order, including older records reconciled later.
+
 The module uses SDK API 1.3. Its configuration names one routing `id` and two
 private secret files, `target` and `session`. The target and session JSON
 contracts are described below. Settings expose only the routing ID. Imports,
@@ -12,7 +40,7 @@ configuration admission and local startup open no robot connection and load no
 account session. The first scheduled collection loads the named private files;
 a target mismatch refuses collection into the existing archive.
 
-The page lives at `#/module/roborock/status`. It reads `status`, `runs`, `run`
+The page lives at `#/module/roborock/status`. It reads `status`, `latest-run`, `runs`, `run`
 and `samples` through the shell's authenticated content API and follows the
 `roborock-vacuum` family through its synced copy. Runs pages contain at most 25
 records; sample pages contain at most 100 samples and 100 gaps. Cursors freeze

@@ -1,152 +1,16 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import type { FrontendApi, FrontendContext, FrontendContribution } from '@jimmie-potts/sdk/frontend';
-import type { SyncedCopy } from '@jimmie-potts/sdk/remote';
 import type { ErrorCode } from '@jimmie-potts/event-contracts/v2/errors';
-import type { RunsPage, SamplesPage, VacuumStatus, Value } from '../contracts.js';
-import { refusal, statusDocument, runsDocument, runDocument, samplesDocument, same, messageStatus, Refused, type RunDocument } from './documents.js';
+import type { RunsPage, SamplesPage, Value } from '../contracts.js';
+import {runsDocument, runDocument, samplesDocument, type RunDocument} from './documents.js';
+import {useStatus, useRead} from './reads.js';
+import {RoborockCard} from './roborock-card.js';
+import {useRoborockCard} from './roborock-widget.js';
+export {RoborockCard} from './roborock-card.js';
+export type {RoborockCardProps} from './roborock-card.js';
+export {RoborockWidget} from './roborock-widget.js';
+export type {RoborockWidgetProps} from './roborock-widget.js';
 const ROOT = '/modules/roborock/content/';
-type StatusView = {
-    api: FrontendApi;
-    doc: VacuumStatus | undefined;
-    live: boolean;
-    error: ErrorCode | undefined;
-};
-function useStatus(context: FrontendContext, attempt: number): StatusView | undefined {
-    const [view, setView] = useState<StatusView | undefined>();
-    useEffect(() => {
-        let stopped = false;
-        let copy: SyncedCopy<VacuumStatus> | undefined;
-        let doc: VacuumStatus | undefined;
-        let expectedId: string | undefined;
-        let live = false;
-        let error: ErrorCode | undefined;
-        const publish = (): void => {
-            if (!stopped)
-                setView({ api: context.api, doc, live, error });
-        };
-        const close = (): void => {
-            if (copy !== undefined)
-                void copy.close().catch(() => { });
-        };
-        const fail = (failure: unknown): void => {
-            if (stopped)
-                return;
-            live = false;
-            error = refusal(failure);
-            publish();
-        };
-        const accept = (next: VacuumStatus): void => {
-            if (stopped)
-                return;
-            if (doc !== undefined && next.revision < doc.revision)
-                return;
-            if (doc !== undefined
-                && next.revision === doc.revision
-                && !same(doc, next)) {
-                throw new Refused('invalid-message');
-            }
-            expectedId = next.id;
-            doc = next;
-            error = undefined;
-            publish();
-        };
-        publish();
-        if (!context.connected || context.module !== 'roborock') {
-            return () => { stopped = true; close(); };
-        }
-        void context.api.sync<VacuumStatus>(['roborock-vacuum'], change => {
-            if (stopped)
-                return;
-            try {
-                switch (change.type) {
-                    case 'updated': {
-                        const next = messageStatus(change.message, expectedId);
-                        if (change.entity.family !== 'roborock-vacuum'
-                            || change.entity.id !== next.id) {
-                            throw new Refused('invalid-message');
-                        }
-                        accept(next);
-                        break;
-                    }
-                    case 'synced':
-                        live = true;
-                        publish();
-                        break;
-                    case 'failed':
-                        fail({ body: change.error });
-                        break;
-                    case 'removed':
-                        if (change.entity.family !== 'roborock-vacuum')
-                            break;
-                        stopped = true;
-                        setView({
-                            api: context.api,
-                            doc: undefined,
-                            live: false,
-                            error: 'not-found',
-                        });
-                        close();
-                        break;
-                }
-            }
-            catch (failure) {
-                fail(failure);
-            }
-        }).then(async (result) => {
-            if (result.status === 'rejected') {
-                fail({ body: result.error });
-                return;
-            }
-            if (stopped) {
-                await result.copy.close();
-                return;
-            }
-            copy = result.copy;
-            const states = copy.states();
-            const first = states[0];
-            if (states.length !== 1 || first === undefined) {
-                throw new Refused('invalid-message');
-            }
-            accept(messageStatus(first, expectedId));
-            live = true;
-            publish();
-            const response = await context.api.read(`${ROOT}status`);
-            if (!stopped)
-                accept(statusDocument(response, expectedId));
-        }).catch(fail);
-        return () => { stopped = true; close(); };
-    }, [context.api, context.connected, context.module, attempt]);
-    return view?.api === context.api ? view : undefined;
-}
-type ReadView<T> = {
-    api: FrontendApi;
-    path: string;
-    attempt: number;
-    value: T | undefined;
-    error: ErrorCode | undefined;
-};
-function useRead<T>(api: FrontendApi, path: string, attempt: number, decode: (value: unknown) => T): ReadView<T> | undefined {
-    const [view, setView] = useState<ReadView<T> | undefined>();
-    useEffect(() => {
-        let stopped = false;
-        setView({ api, path, attempt, value: undefined, error: undefined });
-        void api.read(path).then(input => {
-            if (stopped)
-                return;
-            const value = decode(input);
-            if (!stopped)
-                setView({ api, path, attempt, value, error: undefined });
-        }).catch(error => {
-            if (!stopped) {
-                setView({ api, path, attempt, value: undefined, error: refusal(error) });
-            }
-        });
-        return () => { stopped = true; };
-    }, [api, path, attempt, decode]);
-    return view?.api === api && view.path === path && view.attempt === attempt
-        ? view
-        : undefined;
-}
 function timestamp(value: number): string {
     const date = new Date(value);
     return Number.isFinite(date.getTime())
@@ -416,16 +280,16 @@ function History({ api, id }: {
 function Page({ context }: {
     context: FrontendContext;
 }): React.JSX.Element {
-    const [attempt, setAttempt] = useState(0);
-    const [now, setNow] = useState(Date.now);
-    const view = useStatus(context, attempt);
+    const state = useRoborockCard(context);
+    const {view, now, attempt, reload} = state;
+    const [evidenceOpen, setEvidenceOpen] = useState(false);
     const doc = view?.doc;
     const live = context.connected && view?.live === true;
-    useEffect(() => {
-        const timer = window.setInterval(() => { setNow(Date.now()); }, 1000);
-        return () => { window.clearInterval(timer); };
-    }, []);
-    return <div style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
+    return <div className="roborock-page" style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
+    <RoborockCard id={doc?.id ?? 'roborock'} data={state.data} onReload={reload}/>
+    <details className="roborock-evidence" open={evidenceOpen} onToggle={event => {setEvidenceOpen(event.currentTarget.open);}}>
+    <summary>Evidence</summary>
+    {evidenceOpen && <>
     <section aria-label="Roborock observations">
       <h2>Roborock observations</h2>
       <Refusal code={view?.error}/>
@@ -485,13 +349,23 @@ function Page({ context }: {
             ]}/>
         <p>History: partial. Maps: unverified. Clock: unqualified.</p>
       </>}
-      <button onClick={() => { setAttempt(value => value + 1); }}>Reload observations</button>
+      <button onClick={reload}>Reload observations</button>
     </section>
     {doc !== undefined && context.connected
             && <History key={`${doc.id}-${attempt}`} api={context.api} id={doc.id}/>}
+    </>}
+    </details>
   </div>;
+}
+function HistoryPage({context}: {context: FrontendContext}): React.JSX.Element {
+    const [attempt, setAttempt] = useState(0);
+    const view = useStatus(context, attempt);
+    return <div><a href="#/module/roborock/status">Roborock</a><Refusal code={view?.error}/>
+      {view?.doc !== undefined && context.connected ? <History key={view.doc.id} api={context.api} id={view.doc.id}/>
+        : <><p role="status">History is unavailable.</p><button onClick={() => {setAttempt(value => value + 1);}}>Reload history</button></>}
+    </div>;
 }
 export const frontend: FrontendContribution = {
     module: 'roborock',
-    pages: [{ id: 'status', Component: Page }],
+    pages: [{ id: 'status', Component: Page }, {id: 'history', Component: HistoryPage}],
 };
