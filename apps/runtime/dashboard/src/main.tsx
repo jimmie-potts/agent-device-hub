@@ -42,6 +42,7 @@ import {Facts, InfoTip} from './ui.tsx';
 import {widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
 import './style.css';
 import './shell.css';
+import './card-chrome.css';
 
 type Place = {id: string; label: string; group: 'Public' | 'Local'; publicUrl?: string; localUrl?: string};
 const places = placesManifest.places as Place[];

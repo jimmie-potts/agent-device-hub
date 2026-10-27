@@ -74,3 +74,5 @@ await import('./inbox-history.browser.ts');
 await import('./home-layout.browser.ts');
 
 await import('./wispr.browser.ts');
+
+await import('./card-consistency.browser.ts');

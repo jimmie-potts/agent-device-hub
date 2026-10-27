@@ -489,6 +489,18 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Card consistency (#1217) extends the existing hosted smoke entry with
+`node apps/runtime/dashboard/tests/card-consistency.browser.ts`. It compares real
+synthetic-runtime cards, including an empty room and optional empty MicroDuck
+placement, at desktop, the intermediate breakpoint and 320/390px in both themes.
+It also compares reused cards on their feature destinations. It checks shared spacing and
+type, tab selection/focus/boundary contrast, retained artwork and fixed faces,
+corner/footer targets, attention, unavailable controls, reduced motion and axe.
+Only fixture setup saves metadata; subsequent inspection sends no product
+command. Keep the full dashboard browser suite. Use an outside-checkout TMPDIR
+and `DASHBOARD_RECEIPTS` for private screenshots and rendered metrics; these
+establish no installed, actual-phone or physical-device result.
+
 Reusable Hub mode and Inbox cards (#1182) extend the existing dashboard unit
 discovery with `hub-mode-issues.test.ts`. After the root build, run
 `node apps/runtime/dashboard/tests/hub-mode.browser.ts` and

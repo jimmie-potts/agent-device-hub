@@ -52,6 +52,15 @@
   --space-m:16px;
   --space-l:24px;
   --space-xl:32px;
+  --card-padding:var(--space-l);
+  --card-radius:var(--light-radius);
+  --card-tile-radius:24px;
+  --card-title-size:1rem;
+  --card-control-size:var(--type-small);
+  --card-tab-track-radius:14px;
+  --card-tab-radius:10px;
+  --card-target-size:44px;
+  --card-flip-duration:240ms;
   --grid-image:none;
   --grid-size:auto;
   --shell-background:radial-gradient(ellipse at 0 0,light-dark(#cbd9f4,#293650),transparent 65%),radial-gradient(ellipse at 100% 100%,light-dark(#ebdcde,#302b3f),transparent 65%),var(--bg);

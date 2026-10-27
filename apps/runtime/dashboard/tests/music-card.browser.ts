@@ -20,6 +20,7 @@ try {
   await card.getByText('Synthetic album', {exact: true}).waitFor();
   await card.getByText('Now playing', {exact: true}).waitFor();
   await card.getByText('Audio output · Not reported', {exact: true}).waitFor();
+  assert.equal(await card.getByText('No command sent from this page.', {exact: true}).count(), 0, 'the idle Music face omits routine command boilerplate');
   assert.equal(await card.getByRole('tab').count(), 0); assert.equal(await card.locator('details').count(), 0);
   assert.deepEqual(await card.locator('fieldset button').allTextContents(), ['Previous', 'Pause', 'Next']);
   assert.equal(await card.locator('.playback-artwork').count(), 1);

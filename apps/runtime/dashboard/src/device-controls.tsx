@@ -114,6 +114,7 @@ export function PlaybackCard({record, live, control, operations, operationsLive,
   record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artworkUrl?: string | undefined; refresh?: (() => void) | undefined;
 }): React.JSX.Element {
   const action = useAttempt(record.id, operations.filter(operation => operation.family === 'playback-control'), operationsLive);
+  const status = action.requestId === undefined && action.text === 'No command sent from this page.' ? '' : action.text;
   const availability = record.availability === 'unavailable' ? 'unavailable' : !live ? 'stale' : record.availability;
   const playback = availability !== 'unavailable' && record.playback.status === 'known' ? record.playback : undefined;
   return <MusicCard id={record.id} availability={availability} title={playback?.title ?? (availability === 'unavailable' ? 'Playback unavailable' : record.playback.status === 'unknown' ? 'Playback unknown' : 'No track title')}
@@ -122,5 +123,5 @@ export function PlaybackCard({record, live, control, operations, operationsLive,
     disabled={!control || !live || availability !== 'available' || action.locked || !operationsLive}
     onAction={value => {if (!control || !live || availability !== 'available' || action.locked || !operationsLive || playback?.controls.includes(value) !== true) return;
       void action.run({family: 'playback-control', target: record.id, requestId: crypto.randomUUID(), data: {action: value, expectedRevision: record.revision}});
-    }} status={action.text} locked={action.locked} refresh={refresh}/>;
+    }} status={status} locked={action.locked} refresh={refresh}/>;
 }
