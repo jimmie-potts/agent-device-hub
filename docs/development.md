@@ -490,6 +490,11 @@ that installation or overall delivery is complete. `--ui` and `--ui-approval`
 are deprecated compatibility inputs: accepted and ignored, with no approval
 record fetched. The legacy `ui-approval` report entry remains not applicable.
 All UI follows [UI verification](sdlc.md#ui-approval-scope).
+For an open PR, the comparison uses the current target branch tip. After a
+squash merge, it uses the verified merge commit's sole parent, not the REST
+PR's potentially stale base or a later main tip. The merge-base is computed
+between that parent and the reviewed head. Missing, malformed or conflicting
+merge evidence cannot qualify the delivered comparison.
 `npm run preflight -- --help` lists the options. The script compiles
 `packages/app-verify` first, because proof receipts are checked with its
 `validateReceipt` rather than a second reader.

@@ -1100,6 +1100,71 @@ test('proof: an unreadable verified set is a read failure that names no local pa
 
 // ---- Merged candidates ----
 
+test('a merged PR uses its squash parent despite an old REST base and later main advances', async () => {
+  const world = mergeWorld(cleanWorld());
+  // The candidate did not rebase: its merge-base stays BASE, but final review
+  // assessed integration onto NEWER_MAIN before the guarded squash merge.
+  world.commits[MERGE].parents = [{ sha: NEWER_MAIN }];
+  world.compares[`${NEWER_MAIN}...${HEAD}`] = {
+    status: 'diverged', merge_base_commit: { sha: BASE }, files: world.files,
+  };
+  world.compares[`${POLICY}...${NEWER_MAIN}`] = {
+    status: 'ahead', merge_base_commit: { sha: POLICY }, files: [],
+  };
+  world.comments = [comment(reviewReport({ base: NEWER_MAIN, mergeBase: BASE }))];
+  for (const main of [MERGE, 'f'.repeat(40)]) {
+    world.refs.main = main;
+    const report = await preflight(world, { head: HEAD, base: NEWER_MAIN });
+    assert.equal(report.candidate.base, NEWER_MAIN);
+    assert.equal(report.candidate.mergeBase, BASE);
+    assert.equal(gate(report, 'review').status, 'satisfied');
+    assert.equal(report.result, 'satisfied');
+  }
+  assert.ok(!world.requests.some(request => request.url.endsWith('/git/ref/heads/main')));
+  assert.equal(world.requests.filter(request => request.url.endsWith(`/commits/${MERGE}`)).length, 2);
+});
+
+for (const [label, alter] of [
+  ['missing merge SHA', world => { world.pr.merge_commit_sha = null; }],
+  ['malformed merge SHA', world => { world.pr.merge_commit_sha = 'not-a-commit'; }],
+  ['different returned commit', world => { world.commits[MERGE].sha = HEAD; }],
+  ['missing parents', world => { delete world.commits[MERGE].parents; }],
+  ['no parent', world => { world.commits[MERGE].parents = []; }],
+  ['ambiguous merge parents', world => { world.commits[MERGE].parents.push({ sha: HEAD }); }],
+  ['malformed parent', world => { world.commits[MERGE].parents = [{ sha: 'main' }]; }],
+  ['self parent', world => { world.commits[MERGE].parents = [{ sha: MERGE }]; }],
+]) {
+  test(`merged comparison refuses ${label} rather than trusting the old REST base`, async () => {
+    const world = mergeWorld(cleanWorld());
+    alter(world);
+    const report = await preflight(world);
+    assert.equal(report.candidate.base, null);
+    assert.equal(gate(report, 'identity').status, 'unresolved');
+    assert.notEqual(gate(report, 'review').status, 'satisfied');
+    assert.equal(report.result, 'unresolved');
+  });
+}
+
+test('unreadable merged evidence remains a read failure without falling back to the PR base', async () => {
+  const world = mergeWorld(cleanWorld());
+  delete world.commits[MERGE];
+  const report = await preflight(world);
+  assert.equal(report.candidate.base, null);
+  assert.equal(gate(report, 'identity').status, 'read-failure');
+  assert.equal(report.result, 'read-failure');
+});
+
+for (const mismatch of [{ base: OLD_HEAD }, { head: OLD_HEAD }, { mergeBase: OLD_HEAD }]) {
+  test(`a merged PR still rejects a mismatched review ${Object.keys(mismatch)[0]}`, async () => {
+    const world = mergeWorld(cleanWorld());
+    world.comments = [comment(reviewReport(mismatch))];
+    const report = await preflight(world);
+    assert.equal(report.candidate.base, BASE);
+    assert.notEqual(gate(report, 'review').status, 'satisfied');
+    assert.notEqual(report.result, 'satisfied');
+  });
+}
+
 test('a merged PR also needs its main revision CI', async () => {
   const world = mergeWorld(cleanWorld());
   const report = await preflight(world);
