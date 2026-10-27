@@ -117,7 +117,8 @@ try {
       }
       await handle.dispose();
     }
-    for (const link of await page.locator('.roborock-foot a,.onn-card-foot a,.wispr-card-foot a').all()) {
+    assert.equal(await page.locator('.tidbyt-links a').count(), 2, 'the fixture renders both Tidbyt footer destinations');
+    for (const link of await page.locator('.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a,.widget[data-widget=duck-latest]>a,.widget[data-widget=duck-latest]>p>a').all()) {
       const box = await link.boundingBox(); assert.ok(box); assert.ok(box.height >= 44, 'card footer links have touch targets');
     }
     for (const button of await page.locator('.onn-status-button,.roborock-warning,.wispr-card-actions button').all()) {

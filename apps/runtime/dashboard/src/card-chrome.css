@@ -53,7 +53,7 @@
   padding:0;
   border-radius:50%;
 }
-.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.widget[data-widget=duck-latest]>a,.widget[data-widget=duck-latest]>p>a){
+.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a,.widget[data-widget=duck-latest]>a,.widget[data-widget=duck-latest]>p>a){
   display:inline-flex;
   align-items:center;
   gap:var(--space-s);
@@ -64,7 +64,7 @@
   font-size:var(--card-control-size);
   text-decoration:none;
 }
-.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a):hover{background:var(--raised);color:var(--text)}
+.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a):hover{background:var(--raised);color:var(--text)}
 .shell .roborock-history-unavailable{min-height:var(--card-target-size);font-size:var(--card-control-size)}
 .shell :is(.light-face,.onn-control-plane>section,.roborock-plane>section){animation-duration:var(--card-flip-duration)}
 @media(max-width:680px){.shell{--card-padding:var(--space-m)}}
