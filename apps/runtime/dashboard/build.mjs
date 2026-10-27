@@ -2,7 +2,7 @@
 // which the gateway serves at `/`, `/dashboard.js` and `/dashboard.css`. The page imports the SDK's remote client from
 // `@jimmie-potts/sdk/remote`, so the SDK and the event contracts are built first.
 import {build} from 'esbuild';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile, copyFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {moduleFrontends} from '../dist/build/frontend.js';
@@ -10,6 +10,8 @@ import {moduleFrontends} from '../dist/build/frontend.js';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const out = new URL('../dist/dashboard/', import.meta.url);
 await mkdir(out, {recursive: true});
+await mkdir(new URL('habitat/',out),{recursive:true});
+for(const file of ['habitat-desk-entry.webp','bunnies-sleep-variants.png','work-platform.png','work-platform-front.png'])await copyFile(new URL('assets/habitat/'+file,import.meta.url),new URL('habitat/'+file,out));
 await build({
   entryPoints: [fileURLToPath(new URL('src/main.tsx', import.meta.url))], bundle: true, minify: true, format: 'esm', target: 'es2022',
   platform: 'browser', outfile: fileURLToPath(new URL('dashboard.js', out)), legalComments: 'eof', logLevel: 'warning',

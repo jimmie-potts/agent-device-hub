@@ -12,6 +12,7 @@ import type {Indication} from './line-projection.js';
 import type {Flash, RenderConfig} from './renderer.js';
 import {execute, first, rows, sameRow, totalChanges, type Db, type Row, type SqlValue} from './sqlite.js';
 import {meta} from './store.js';
+import {Outcome} from '@jimmie-potts/sdk';
 
 export const DEFAULT_SETTINGS = ['classic', 'whole', 0, 0, 0] as const;
 /** The task statuses a Line indicates, in preview order; each has a palette role. */
@@ -134,7 +135,7 @@ export function renderingSnapshot(db: Db, config: DeviceConfig, mode: string, mo
   const failed = error !== null && error !== '';
   let outcome: RenderingOutcome;
   if (pending) outcome = 'pending';
-  else if (failed) outcome = 'failed';
+  else if (failed) outcome = Outcome.failed;
   else if (mode === 'free') outcome = 'externally-controlled';
   else if (receipt === null || receipt.outcome === 'unknown') outcome = 'unknown';
   else outcome = 'last-sent';

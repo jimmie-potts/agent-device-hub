@@ -1,0 +1,17 @@
+# Test-only derivative. Build CORE_IMAGE from the closed committed-source context first.
+ARG CORE_IMAGE
+FROM ${CORE_IMAGE}
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN node node_modules/playwright/cli.js install --with-deps chromium
+RUN test -x /usr/bin/timeout && test -x /usr/local/bin/node
+ARG SOURCE_REVISION
+RUN SOURCE_REVISION="${SOURCE_REVISION}" node --input-type=module -e "import {writeFile} from 'node:fs/promises'; import {artifactDigest} from '@jimmie-potts/app-verify'; import plugin from './apps/runtime/dist/verify/plugin.js'; const revision=process.env.SOURCE_REVISION; if(!/^[a-f0-9]{40}$/.test(revision)) throw new Error('exact source revision required'); await writeFile('/opt/bunny/portable-artifact.json', JSON.stringify({schema:'portable-artifact/1',revision,artifactDigest:await artifactDigest(plugin,'',AbortSignal.timeout(10000))}));"
+RUN install -d -m 0700 -o 1000 -g 1000 /var/lib/app-verify \
+    && chown -R root:root /opt/bunny \
+    && chmod -R a-w /opt/bunny
+LABEL org.bunny.verify.portable="1"
+USER 1000:1000
+HEALTHCHECK NONE
+ENTRYPOINT ["/usr/bin/timeout"]
+CMD ["--help"]

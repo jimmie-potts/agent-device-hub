@@ -1,18 +1,33 @@
 # Manual maintenance for the packaged runtime
 
-Owner-selected design for #1167 and #1168. This replaces the local container
-startup proposal's descriptor transfer and completion handshake. It is not
-implemented and supplies no commands to run against the installed system.
-The established runtime still follows [UPGRADE.md](../apps/runtime/UPGRADE.md).
-Implementation must update the owning spec and pass focused safety review/tests.
+Owner-selected design for #1167 and #1168. This replaces the earlier container
+startup proposal's descriptor transfer and completion handshake. The persistent
+pending gate and prepared-release binding below remain deferred design work.
+They are not the protocol used by the delivered reduced container operator, and
+this document supplies no commands to run against an installed system.
+
+Use the [container operator guide](bunny-container.md) for the accepted Mac-local
+profile and the separate [upgrade procedure](../apps/runtime/UPGRADE.md) for the
+established WSL installation. The delivered operator already provides manual
+start/stop/status, stopped-volume backup and separate empty-target restore. Its
+current restrictions and qualified evidence remain authoritative. Do not require
+the deferred machinery below merely to operate that accepted profile, or treat
+its bounded acceptance as completion of the broader lifecycle design.
+
+When that remaining work is selected, update the owning spec and pass focused
+safety review/tests. GitHub owns delivery status and the remaining acceptance.
 
 ## Scope and tradeoff
 
 One operator maintains one selected installation during an explicit downtime
-window: stop, back up, replace, start and check. Keep Linux amd64/arm64 packages
-and the separately qualified Windows/Mac hosts already selected by #44/#565;
-no additional engine matrix is required. A host is supported only after its
-actual locking, storage, shutdown and restore checks pass.
+window: stop, back up, replace, start and check. Follow
+[ADR 0008](decisions/0008-runtime-hosting.md): the Mac Mini running Linux ARM64
+on Docker Desktop is primary and must operate with the PC off. Windows Docker
+Desktop is a separately qualified Linux AMD64 alternate, not an intermediate
+production release. Preserve the selected two-architecture image family and
+both-host obligations without adding an engine matrix. Support for each operation
+requires its actual locking, storage, shutdown and restore evidence; source
+checks or a successful browser slice do not qualify every host capability.
 
 No seamless upgrade, automatic rollback, automatic maintenance resumption,
 permanent supervisor, new native descriptor-transfer shim or cross-container

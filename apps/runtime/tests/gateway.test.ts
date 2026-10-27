@@ -475,7 +475,7 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     const listed = await ask(url, '/mcp', {method: 'POST', token: part.token, headers: await session(part), body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
-  assert.deepEqual(await tools(operator), ['core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_mode', 'sign_status']);
+  assert.deepEqual(await tools(operator), ['core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_device_mode', 'core_set_mode', 'sign_status']);
   assert.deepEqual(await tools(reader), ['core_history', 'core_inbox', 'core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
   // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
@@ -992,7 +992,7 @@ it('the gateway\'s refusals never quote what the caller sent, and its JSON answe
 });
 
 /** Opens a raw stream to the runtime's edge with a bearer token or other headers, reads its ready event, and then stops reading. */
-async function rawStream(url: string, bearer: string | undefined, headers: Record<string, string> = {}): Promise<{connection: string; response: IncomingMessage}> {
+async function rawStream(url: string, bearer: string | undefined, headers: Record<string, string> = {}): Promise<{connection: string; endpointCapability: string | undefined; response: IncomingMessage}> {
   return new Promise((resolve, reject) => {
     const request = httpRequest(new URL('/api/sdk/v1/stream', url), {headers: {...headers, ...(bearer === undefined ? {} : {authorization: `Bearer ${bearer}`})}}, response => {
       let text = '';
@@ -1002,7 +1002,8 @@ async function rawStream(url: string, bearer: string | undefined, headers: Recor
         if (ready?.[1] === undefined) return;
         response.off('data', onData);
         response.pause();
-        resolve({connection: (JSON.parse(ready[1]) as {connection: string}).connection, response});
+        const frame = JSON.parse(ready[1]) as {connection: string; endpointCapability?: string};
+        resolve({connection: frame.connection, endpointCapability: frame.endpointCapability, response});
       };
       response.on('data', onData);
     });
@@ -1010,6 +1011,43 @@ async function rawStream(url: string, bearer: string | undefined, headers: Recor
     request.end();
   });
 }
+
+it('browser speech endpoint calls stay on their stream and closure publishes a scoped loss occurrence', async context => {
+  const reader = READER(), operator = OPERATOR();
+  const g = await gateway(context, [reader, operator], {browserAccess: 'trusted-loopback'});
+  const listener = await connectRemote({url: g.url, source: reader.source, token: reader.token});
+  context.after(() => listener.close());
+  const lost: {source: string; subject: string; data: object}[] = [];
+  await listener.subscribe('bunny.event.companion-speech-lost.*', message => {lost.push(message);});
+  await assert.rejects(listener.openEndpoint({family: 'companion-speech-output', respond: () => ({status: 'accepted'})}),
+    (error: unknown) => error instanceof SdkError && error.body.error.code === 'forbidden');
+  const signed = await g.ask(g.url, '/api/v2/browser/session', {method: 'POST', body: {}, headers: {origin: g.url, 'bunny-request': '1'}});
+  assert.equal(signed.status, 200);
+  const cookie = (signed.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+  const headers = {cookie, origin: g.url, 'bunny-request': '1'};
+  const first = await rawStream(g.url, undefined, headers), second = await rawStream(g.url, undefined, headers);
+  context.after(() => {first.response.destroy(); second.response.destroy();});
+  assert.equal(typeof first.endpointCapability, 'string'); assert.equal(typeof second.endpointCapability, 'string');
+  const post = (route: string, data: object) => g.ask(g.url, `/api/sdk/v1/${route}`, {method: 'POST', headers, body: {schema: 'sdk-remote/1.0', ...data}});
+  const one = {connection: first.connection, endpoint: first.endpointCapability}, two = {connection: second.connection, endpoint: second.endpointCapability};
+  const firstId = `${first.connection}-1`, secondId = `${second.connection}-1`;
+  assert.equal((await post('respond', {...one, id: firstId, pattern: `bunny.cmd.companion-speech-output.${firstId}`})).status, 200);
+  assert.equal((await post('respond', {...two, id: secondId, pattern: `bunny.cmd.companion-speech-output.${secondId}`})).status, 200);
+  assert.equal((await post('close', {...two, id: firstId})).status, 403);
+  assert.equal((await post('close', {connection: first.connection, id: firstId})).status, 403);
+  assert.equal((await post('close', {...one, id: firstId})).status, 200);
+  await waitFor(() => lost.length === 1);
+  assert.deepEqual(lost.map(({source, subject, data}) => ({source, subject, data})), [
+    {source: 'bunny/runtime/gateway', subject: firstId, data: {id: firstId}},
+  ]);
+  second.response.destroy(); await waitFor(() => lost.length === 2);
+  assert.equal(lost[1]?.subject, secondId);
+  for (const capability of [first.endpointCapability, second.endpointCapability]) {
+    assert.ok(capability !== undefined);
+    assert.equal(JSON.stringify({lost, logs: g.logs, spans: g.spans, answers: g.answers}).includes(capability), false);
+  }
+  assertNoToken(g);
+});
 
 it('the module list names the families each module serves now, as health does, for a browser that cannot read health', async context => {
   const reader = READER();

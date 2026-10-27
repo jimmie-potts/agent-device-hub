@@ -1,3 +1,4 @@
+import {directoryLink, openConnections} from './navigation-helpers.ts';
 // Focused #922 control/navigation acceptance against a synthetic process, never an installed service or real device.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -58,13 +59,13 @@ try {
     assert.equal(sent.length, 2, 'reload and explicit refresh never replay the uncertain action');
     assert.equal(await card.getByRole('button', {name: /^Turn /}).isDisabled(), true);
     await screenshot('uncertain-after-reload');
-    const moduleLink = page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Sign preview'});
+    const moduleLink = await directoryLink(page, 'Other', 'Sign preview');
     await moduleLink.focus(); await page.keyboard.press('Enter');
     await page.frameLocator('iframe.module-page').getByRole('heading', {name: 'hello'}).waitFor();
     assert.equal(await page.getByRole('heading', {name: 'Sign preview', exact: true}).count(), 1);
     assert.equal(sent.length, 2, 'opening a declared page sends no command');
     await screenshot('module-page');
-    await page.getByRole('link', {name: 'Connections', exact: true}).click();
+    await openConnections(page);
     await page.getByRole('heading', {name: 'Running build'}).waitFor();
     await page.getByText('0.1.0', {exact: true}).waitFor();
     await axe();

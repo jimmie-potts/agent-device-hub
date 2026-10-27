@@ -56,7 +56,7 @@ const recorded = (runtime: Spawned, event: string): boolean => runtime.records()
  * the module API version its manifest declares.
  */
 const UNCONFIGURED = shippedModules.slice(1).map(factory => factory.name === 'companions'
-  ? {name: 'companions', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['companion-state', 'assistant-state']} : ({
+  ? {name: 'companions', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['companion-state', 'assistant-state', 'preference-state', 'companion-speech-state']} : ({
   name: factory.name, apiVersion: factory.simulate().manifest.apiVersion, state: 'refused', healthy: false, syncRestarts: 0,
   reason: {code: 'not-found', detail: 'the configuration has no section for this module'},
 }));
@@ -66,7 +66,7 @@ it('the shipped runtime starts the core, refuses each device module that has no 
   const {status, body} = await health(runtime.url);
   assert.equal(status, 200);
   assert.equal(body.status, UNCONFIGURED.length === 0 ? 'ok' : 'degraded');
-  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation', 'inbox-item', 'mode', 'lighting-layout', 'playback-layout', 'power-limit']}, ...UNCONFIGURED]);
+  assert.deepEqual(body.modules, [{name: 'core', apiVersion: '1.3', state: 'running', healthy: true, syncRestarts: 0, serves: ['session', 'operation', 'inbox-item', 'mode', 'lighting-layout', 'playback-layout', 'home-layout', 'power-limit']}, ...UNCONFIGURED]);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.ok(runtime.records().some(record => record.event_name === 'runtime.stopped'));
@@ -216,6 +216,8 @@ it('a refused state directory names its reason in the runtime.failed record, so 
   await symlink(join(root, 'nowhere'), join(root, 'dangling'));
   await writeFile(join(root, 'file'), '');
   await mkdir(join(root, 'shared'), {mode: 0o750});
+  // Keep this invalid fixture non-private even when the runner uses umask 077.
+  await chmod(join(root, 'shared'), 0o750);
   const cases: readonly (readonly [string, string])[] = [
     ['relative/state', 'state-dir-relative'],
     [`/mnt/bunny-runtime-test-${process.pid}/state`, 'state-dir-mount'],

@@ -14,7 +14,7 @@ export function createRoborockModule(options: {
     transport?: CollectorTransport;
 } = {}): RoborockModule {
     let collector: Collector | undefined, store: RoborockStore | undefined, closing = false, removeSyntheticListener: (() => void) | undefined;
-    const module: RoborockModule = { manifest: { name: 'roborock', apiVersion: '1.3', configure: section => configureRoborock(section, options.transport !== undefined), pages: [{ id: 'status', title: 'Roborock', presentation: 'react' }],
+    const module: RoborockModule = { manifest: { name: 'roborock', apiVersion: '1.3', configure: section => configureRoborock(section, options.transport !== undefined), pages: [{ id: 'status', title: 'Roborock', presentation: 'react' }, {id: 'history', title: 'History', presentation: 'react'}],
             content: (ref, request) => { if (closing || collector === undefined)
                 return errorBody('unavailable'); const failure = collector.storageFailure(); return failure === undefined ? readContent(ref, request, collector.state(), store) : errorBody(failure); },
             tools: [{ name: 'status', description: 'Read the retained Roborock status with observation time, partial-history and unverified map/clock evidence.', input: { type: 'object', additionalProperties: false, properties: {} }, output: statusSchema, read: () => { if (closing || collector === undefined)

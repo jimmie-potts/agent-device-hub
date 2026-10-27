@@ -1,3 +1,4 @@
+import {openConnections} from './navigation-helpers.ts';
 // Disposable Caddy + real dashboard journey; this does not establish installed iPhone certificate trust.
 import assert from 'node:assert/strict';
 import {spawn, execFileSync} from 'node:child_process';
@@ -67,9 +68,9 @@ try {
       await world.observe(sessionStarted, {title: {value: 'Wi-Fi browser check', source: 'provider'}});
       await world.observe(turnStarted);
       await page.getByRole('heading', {name: 'Wi-Fi browser check', exact: true}).waitFor();
-      await page.getByRole('link', {name: 'Connections', exact: true}).click();
+      await openConnections(page);
       await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
-      await page.getByRole('link', {name: /^Home /}).click();
+      await page.getByRole('link', {name: /^Home/}).click();
       const panel = page.locator('[data-widget="hub-mode"]');
       await panel.getByRole('button', {name: 'Quiet', exact: true}).click();
       await panel.getByText('Saved selection:', {exact: false}).filter({hasText: 'Quiet'}).waitFor();

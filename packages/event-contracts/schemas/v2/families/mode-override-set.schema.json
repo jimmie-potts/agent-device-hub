@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/mode-override-set/2.0",
+  "description": "Select one qualified participant\u2019s saved Hub-facing choice. Subject is its routing ID. A choice equal to the current Hub mode removes its override. expectedRevision compares the shared Hub mode record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "mode"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "mode": {
+      "$ref": "https://bunny.invalid/events/mode/2.0#/$defs/mode"
+    },
+    "expectedRevision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    }
+  }
+}

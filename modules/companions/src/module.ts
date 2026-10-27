@@ -1,33 +1,43 @@
+import {readSpeechQualification} from './speech/qualification.js';
+import type {SpeechQualification} from './speech-qualification.js';
+import {speechRefusal} from './presentation-policy.js';
+import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
+import {Knowledge} from './knowledge/engine.js';
+import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {createHash} from 'node:crypto';
-import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
-  type CompanionSettingsSet, type CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
+  type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outbox, fullDisk, type BunnyModule, type Cancel, type Command, type ModuleContext, type Reply,
+import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
 import {CompanionStore, type Saved} from './store.js';
 
-type Candidate = {event: CompanionOpportunity; parent: TraceContext};
+type Candidate = {event: CompanionOpportunity; parent: TraceContext; speechEpoch: number | undefined};
 const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type: 'org.bunny.companion-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
-export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; pending(): number};
+export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; pending(): number};
 
-/** One private state owner and one bounded asynchronous presentation path; no provider, sensor or physical output. */
+/** One private companion owner; visual admission and optional browser speech share current policy. */
 export function createCompanionsModule(options: AssistantOptions = {}): CompanionsModule {
   const engine = new Companions(options);
-  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}],
-    content: (ref, request) => engine.assistant?.content(ref, request),
-    upload: {family: 'assistant-input', maxBytes: 25_600, stage: request => engine.assistant?.stage(request) ?? errorBody('unavailable')}},
-    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), pending: () => engine.pending()};
+  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
+    content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
+    upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
+    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), pending: () => engine.pending()};
 }
 class Companions {
+  speech: SpeechCoordinator | undefined;
   assistant: AssistantEngine | undefined;
+  preferences: Preferences | undefined;
+  knowledge: Knowledge | undefined;
   #context: ModuleContext | undefined;
+  #qualification: SpeechQualification | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
   #copy: SyncedCopy<SessionRecord | ModeState> | undefined;
@@ -50,24 +60,41 @@ class Companions {
   constructor(readonly options: AssistantOptions) {registerCoreFamilies(this.#validator);}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
+  qualifiedSpeech(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref !== 'speech-qualification') return undefined;
+    if (this.#closed || this.#context === undefined || this.#context.signal.aborted || request?.signal.aborted === true || this.#qualification === undefined) return errorBody('unavailable');
+    if (Object.keys(request?.query ?? {}).length > 0) return errorBody('invalid-request');
+    return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.#qualification))};
+  }
   async start(context: ModuleContext): Promise<void> {
     this.#context = context;
+    this.#qualification = readSpeechQualification(context.files());
     const database = context.database();
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
+    this.speech = new SpeechCoordinator(context, this.#outbox, card => {
+      return speechRefusal(card, this.#policy(card.opportunity)) === undefined;
+    }, () => this.#qualification !== undefined);
+    await this.speech.start();
     this.assistant = new AssistantEngine(context, this.#outbox, this.options);
     await this.assistant.start();
+    this.preferences = new Preferences(context, this.#outbox);
+    await this.preferences.start();
+    this.knowledge = new Knowledge(context, this.#outbox, this.assistant, this.preferences.store);
+    await this.knowledge.start();
     const saved = this.#store.read();
     for (const key of saved.received) this.#seen.add(key);
     if (saved.state.presentation !== null) saved.state.presentation.history = true;
     saved.state.availability = 'available';
     this.#store.save(saved);
-    this.#subscriptions.push(await context.sdk.serveSync(['companion-state', 'assistant-state'], request => {
-      const state = this.inspect();
-      const assistant = this.assistant?.inspect();
-      return state === undefined || assistant === undefined || this.#closed ? errorBody('unavailable') : {revision: revision(database), states: [
+    this.#subscriptions.push(await context.sdk.serveSync(['companion-state', 'assistant-state', 'preference-state', 'companion-speech-state'], request => {
+      const state = this.inspect(), speech = this.speech?.inspect();
+      const assistant = this.assistant?.inspect(), preferences = this.preferences?.inspect();
+      return state === undefined || speech === undefined || assistant === undefined || preferences === undefined || this.#closed ? errorBody('unavailable') : {revision: revision(database), states: [
+        ...(request.data.families.includes('companion-speech-state') ? [speechStateDraft(speech)] : []),
         ...(request.data.families.includes('companion-state') ? [stateDraft(state)] : []),
         ...(request.data.families.includes('assistant-state') ? [assistantStateDraft(assistant)] : []),
+        ...(request.data.families.includes('preference-state') ? [preferenceStateDraft(preferences)] : []),
       ]};
     }));
     this.#subscriptions.push(await context.sdk.subscribe<CompanionOpportunity>('bunny.event.companion-opportunity.reachy', message => {this.#receive(message);},
@@ -81,7 +108,10 @@ class Companions {
   async stop(): Promise<void> {
     this.#closed = true; this.#pending.clear(); this.#scheduled?.(); this.#retry?.(); this.#expiry?.();
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
+    await this.speech?.stop();
     await this.assistant?.stop();
+    await this.preferences?.stop();
+    await this.knowledge?.stop();
     await this.#copy?.close();
     await Promise.all([this.#work, this.#draining]);
   }
@@ -99,14 +129,18 @@ class Companions {
     if (context === undefined || this.#closed) return;
     this.#synced = false;
     const prior = this.#copy; this.#copy = undefined; await prior?.close();
+    let replacing = false;
     try {
       const result = await context.sdk.sync<SessionRecord | ModeState>(['session', 'mode'], change => {
         if (change.type === 'failed') {this.#synced = false; this.#pending.clear(); this.#invalidate(); this.#resync();}
-        else if (this.#copy !== undefined) this.#invalidate(change.message);
-      }, {owner: 'bunny/core', timeoutMs: 5000});
+        else {
+          if (change.type === 'synced') {replacing = false; if (this.#copy !== undefined) this.#synced = true;}
+          if (this.#copy !== undefined) this.#invalidate(change.message);
+        }
+      }, {owner: 'bunny/core', timeoutMs: 5000, onRestarted: () => {replacing = true; this.#synced = false; this.#pending.clear(); this.#invalidate();}});
       if (result.status !== 'synced') {this.#resync(); return;}
       if (this.#closed) {await result.copy.close(); return;}
-      this.#copy = result.copy; this.#synced = true; this.#retryMs = 1000;
+      this.#copy = result.copy; this.#synced = !replacing; this.#retryMs = 1000;
     } catch {this.#resync();}
   }
   #resync(): void {
@@ -123,10 +157,10 @@ class Companions {
     if (!checked.ok || message.source !== 'bunny/core' || message.data.context !== 'live') {
       const code = message.source !== 'bunny/core' || checked.ok ? 'forbidden' : checked.error.code;
       if (message.source === 'bunny/core') this.#decision('invalid-input', message, false, code);
-      else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
+      else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': code}, message);
       return;
     }
-    this.#enqueue({event: structuredClone(message.data), parent: {traceparent: message.traceparent}});
+    this.#enqueue({event: structuredClone(message.data), parent: {traceparent: message.traceparent}, speechEpoch: this.speech?.mark()});
   }
   #enqueue(candidate: Candidate): void {
     const key = receiptKey(candidate.event);
@@ -198,12 +232,16 @@ class Companions {
       if (abort !== undefined) context.signal.removeEventListener('abort', abort);
       if (!published) {
         this.#decision('presentation-unavailable', candidate.parent, true);
-      } else this.#decision('presented', candidate.parent);
+      } else {
+        this.#decision('presented', candidate.parent);
+        this.speech?.offer(saved.state.presentation, candidate.parent, candidate.speechEpoch);
+      }
     } catch {
       this.#decision('presentation-unavailable', candidate.parent, true);
     } finally {this.#active = undefined; this.#schedule();}
   }
   #invalidate(parent?: TraceContext): void {
+    this.speech?.invalidate();
     const store = this.#store, outbox = this.#outbox;
     if (store === undefined || outbox === undefined || this.#closed) return;
     const saved = store.read(), card = saved.state.presentation;
@@ -220,9 +258,9 @@ class Companions {
     // No card is generated. A failed decision save cannot affect core attention or retry the opportunity.
     void outbox.transaction(add => {store.save(saved); add('bunny.state.companion-state.reachy', {kind: 'state', ...stateDraft(saved.state)},
       parent === undefined ? {} : {parent});}).catch(() => {});
-    if (unavailable) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, parent);
-    else if (rejection !== undefined) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': rejection}, parent);
-    else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : 'rejected'}, parent);
+    if (unavailable) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result'}, parent);
+    else if (rejection !== undefined) recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': rejection}, parent);
+    else recordLog(context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': code === 'presented' ? 'accepted' : Outcome.rejected}, parent);
   }
   #admit(command: Command<object>): ErrorCode | undefined {
     const context = this.#context;
@@ -238,16 +276,18 @@ class Companions {
     const store = this.#store, outbox = this.#outbox;
     if (store === undefined || outbox === undefined) return errorBody('unavailable');
     try {
-      return await outbox.transaction(add => {
+      const pending = outbox.transaction(add => {
         const saved = store.read(), code = change(saved);
         if (code !== undefined) return errorBody(code, {detail: 'the companion state changed; read it again'});
         store.save(saved);
         add('bunny.state.companion-state.reachy', {kind: 'state', ...stateDraft(saved.state)}, {parent: command});
         add(`bunny.event.${command.type.includes('companion-settings') ? 'companion-settings-set' : 'companion-fixture-run'}.reachy`,
           {kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: 'reachy', dataschema: 'https://bunny.invalid/events/outcome/2.0',
-            data: {requestId: (command.data as {requestId: string}).requestId, result: 'succeeded', evidence: 'observed'}}, {parent: command});
+            data: {requestId: (command.data as {requestId: string}).requestId, result: Outcome.succeeded, evidence: Outcome.observed}}, {parent: command});
         return {status: 'accepted'} as const;
       });
+      this.speech?.invalidate();
+      return await pending;
     } catch (error) {return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'the companion state could not be saved'});}
   }
   #settings(command: Command<CompanionSettingsSet>): Promise<Reply> {
@@ -268,7 +308,7 @@ class Companions {
     const now = this.#context?.clock.now() ?? 0, data = command.data;
     this.#scenarioUntilMs = now + OPPORTUNITY_TTL_MS;
     this.#scenarioGeneration += 1; this.#scenarioAttention = data.scenario === 'question-and-arrival';
-    const make = (coding: boolean): Candidate => ({parent: {traceparent: command.traceparent}, event: {
+    const make = (coding: boolean): Candidate => ({speechEpoch: undefined, parent: {traceparent: command.traceparent}, event: {
       origin: {id: command.id, source: command.source, type: command.type},
       sourceKind: coding ? 'coding' : 'simulated-apartment', context: 'scenario', category: coding ? 'coding-attention' : 'simulated-social',
       cue: coding ? 'question' : data.scenario === 'visit' ? 'visit' : 'arrival', revision: this.#scenarioGeneration, generation: this.#scenarioGeneration,

@@ -6,7 +6,21 @@ import { test, type TestContext } from 'node:test';
 import { InProcessBus, Outbox, SdkError, fullDisk, openModuleDatabaseFile } from '@jimmie-potts/sdk';
 import { emptyStatus, type RunRecord } from '../src/contracts.js';
 import { RoborockStore, type Observation, type Episode, type MapCapture } from '../src/store.js';
+import {readContent} from '../src/content.js';
 const ID = 1700000000, AT = ID * 1000;
+void test('the bounded latest-run projection uses reported start order, not later archive insertion', async t => {
+    const w = await world(t), a = await w.start();
+    await a.outbox.transaction(() => {a.store.putRun(record(ID + 1000)); a.store.putRun(record(ID));});
+    assert.equal(a.store.listRuns(undefined, 1).items[0]?.recordId, ID, 'existing history remains insertion ordered');
+    const read = (): unknown => {
+        const reply = readContent('latest-run', {query: {}, signal: new AbortController().signal}, emptyStatus('vacuum'), a.store);
+        assert.ok(reply !== undefined && 'bytes' in reply, 'the fixed one-record projection is available');
+        return JSON.parse(Buffer.from(reply.bytes).toString());
+    };
+    const latest = read() as {runs: RunRecord[]; next: {status: string}};
+    assert.equal(latest.runs.length, 1); assert.equal(latest.runs[0]?.recordId, ID + 1000);
+    assert.deepEqual(latest.next, {status: 'unknown'});
+});
 function present<T>(value: T | undefined | null): T { assert.ok(value !== undefined && value !== null); return value; }
 const known = (value: number) => ({ status: 'known', value }) as const;
 const unknown = { status: 'unknown' } as const;

@@ -3,14 +3,14 @@
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
-import type {RemoteEdge} from '@jimmie-potts/sdk';
+import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
 import {INSTANCE_ID, LogWriter, Redactions, errorFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
-import {RuntimeError} from './state.js';
+import {RuntimeError, type RuntimeConfig} from './state.js';
 
 export type ProcessOptions = {
   port: number; stateDir: string; lagLimitMs: number; logLevel: LogLevel;
@@ -90,12 +90,16 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
 export type ProcessInputs = {modules: readonly ModuleFactory[]} & EdgeInputs;
 export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (edge: RemoteEdge) => void};
 
+/** Already built inputs from an admitting entrypoint; these values do not themselves grant ownership. */
+export type ProcessStartup = {modules: readonly BunnyModule[]; config: RuntimeConfig; listener?: 'container-host-local'};
+
 /**
  * Runs the runtime until SIGTERM or SIGINT, which stop it and exit 0, also when one arrives while the modules start. An
  * error that escapes a module stops only that module. Any other escaped error, or a failed start, exits 1. Resolves
  * once the ready line is on stdout, or once a signal during startup has begun the stop.
  */
-export async function runProcess(options: ProcessOptions & ProcessInputs): Promise<void> {
+export async function runProcess(options: ProcessOptions & ProcessInputs, startup?: ProcessStartup): Promise<void> {
+  if (startup !== undefined && options.config !== undefined) throw new RuntimeError('config-invalid', 'configuration inputs conflict');
   // One resource for the process: these records, the runtime's and the watchdog thread's share its instance ID. One
   // redaction registry too: an error that escapes every module may carry a secret a module read, such as an error code
   // a device library copied from its credential, so `runtime.failed` leaves out an attribute that holds one (Hub #919).
@@ -138,8 +142,9 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   });
   try {
     runtime = await startRuntime({
-      modules: buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
-      ...(options.config === undefined ? {} : {configFile: options.config}),
+      ...(startup?.listener === undefined ? {} : {listener: startup.listener}),
+      modules: startup?.modules ?? buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
+      ...(startup === undefined ? (options.config === undefined ? {} : {configFile: options.config}) : {config: startup.config}),
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,
       // The runtime cannot continue without the one owner of agent sessions: the service manager restarts it whole.
       onCoreFailure: () => { fail(new RuntimeError('core-failed', 'the core failed')); },
@@ -158,7 +163,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs): Promi
   if (reloadPending) void runtime.reload().catch(() => {});
   // The ready line is machine-readable stdout with its own contract, which readiness checks parse; the record is the
   // journal's.
-  recordLog(log, 'runtime.ready', {'bunny.module_count': options.modules.length});
+  recordLog(log, 'runtime.ready', {'bunny.module_count': startup?.modules.length ?? options.modules.length});
   process.stdout.write(`${JSON.stringify({event: 'runtime.ready', url: runtime.url})}\n`);
 }
 

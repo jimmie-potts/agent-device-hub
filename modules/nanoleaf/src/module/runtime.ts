@@ -21,7 +21,7 @@ import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type MomentPlayRequest, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
+import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, Outcome as OutcomeWord, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange, type ModuleContent, type ModuleContentRequest,
 } from '@jimmie-potts/sdk';
 import {admitCommand, Refused as PortRefused} from '../controls.js';
@@ -302,12 +302,12 @@ export class NanoleafRuntime {
         for (const row of journal(db, device, "AND phase='queued'")) finish(db, row, {kind: 'refused', code: 'cancelled'}, report);
       }
       for (const [id, device] of rows(db, 'SELECT id,device FROM nanoleaf_machine_edits').map(row => [text(row, 0), text(row, 1)] as const)) {
-        report({type: 'outcome', device, requestId: id, result: 'failed', evidence: 'none', error: errorBody('cancelled').error});
+        report({type: 'outcome', device, requestId: id, result: OutcomeWord.failed, evidence: OutcomeWord.none, error: errorBody('cancelled').error});
       }
       execute(db, 'DELETE FROM nanoleaf_machine_edits');
       // What is left is an acknowledgment whose request may have reached the core.
       for (const [id, device] of rows(db, 'SELECT id,device FROM nanoleaf_commands').map(row => [text(row, 0), text(row, 1)] as const)) {
-        report({type: 'outcome', device, requestId: id, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result').error});
+        report({type: 'outcome', device, requestId: id, result: OutcomeWord.uncertain, evidence: OutcomeWord.none, error: errorBody('uncertain-result').error});
       }
       execute(db, 'DELETE FROM comets');
     });
@@ -771,7 +771,7 @@ export class NanoleafRuntime {
         // device's availability shows whether it has. A mode command is also a configuration edit a queued machine edit
         // must not overwrite.
         changeMode(this.#db, String(fields.mode), this.#seconds(), report, device);
-        report({type: 'outcome', device, requestId, result: 'succeeded', evidence: 'observed'});
+        report({type: 'outcome', device, requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed});
         bumpRevision(this.#db, [device]);
         return;
       }
@@ -848,7 +848,7 @@ export class NanoleafRuntime {
       const edit = editOf(command.data.edit);
       bumpRevision(this.#db, applyEdit(this.#db, this.#feed.copy, savedLayout(this.#directory, device), device, edit, this.#ids));
       this.#record(command, device, family);
-      report({type: 'outcome', device, requestId: command.data.requestId, result: 'succeeded', evidence: 'observed'});
+      report({type: 'outcome', device, requestId: command.data.requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed});
     }, () => { this.#changed(); });
   }
 
@@ -883,8 +883,8 @@ export class NanoleafRuntime {
         id => configurationRevision(this.#db, id));
       for (const end of ended) {
         report(end.result === 'applied'
-          ? {type: 'outcome', device, requestId: end.edit.id, result: 'succeeded', evidence: 'observed'}
-          : {type: 'outcome', device, requestId: end.edit.id, result: 'failed', evidence: 'none', error: errorBody(end.code).error});
+          ? {type: 'outcome', device, requestId: end.edit.id, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}
+          : {type: 'outcome', device, requestId: end.edit.id, result: OutcomeWord.failed, evidence: OutcomeWord.none, error: errorBody(end.code).error});
       }
       return queuedEdits(this.#db, device).length > 0;
     }).then(waiting => {
@@ -907,7 +907,7 @@ export class NanoleafRuntime {
       favoriteEdit(this.#db, edit, true);
       bumpRevision(this.#db, [device]);
       this.#record(command, device, family);
-      report({type: 'outcome', device, requestId: command.data.requestId, result: 'succeeded', evidence: 'observed'});
+      report({type: 'outcome', device, requestId: command.data.requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed});
     }, () => { this.#changed(device); });
   }
 
@@ -943,13 +943,13 @@ export class NanoleafRuntime {
         type: 'org.bunny.notice.acknowledge.requested', subject: session, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0',
         data: {consumerId: CONSUMER, noticeId},
       }, {timeoutMs: ACKNOWLEDGE_MS, parent: command});
-      outcome = result.status === 'accepted' ? {type: 'outcome', device, requestId, result: 'succeeded', evidence: 'transmitted'}
-        : result.status === 'rejected' ? {type: 'outcome', device, requestId, result: 'failed', evidence: 'none', error: errorBody(result.error.error.code).error}
-          : {type: 'outcome', device, requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result').error};
+      outcome = result.status === 'accepted' ? {type: 'outcome', device, requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.transmitted}
+        : result.status === 'rejected' ? {type: 'outcome', device, requestId, result: OutcomeWord.failed, evidence: OutcomeWord.none, error: errorBody(result.error.error.code).error}
+          : {type: 'outcome', device, requestId, result: OutcomeWord.uncertain, evidence: OutcomeWord.none, error: errorBody('uncertain-result').error};
     } catch {
       // The module's participant is closing: the request may never have gone out.
       if (signal.aborted) return;
-      outcome = {type: 'outcome', device, requestId, result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result').error};
+      outcome = {type: 'outcome', device, requestId, result: OutcomeWord.uncertain, evidence: OutcomeWord.none, error: errorBody('uncertain-result').error};
     }
     if (signal.aborted) return;
     await this.#transact(report => { report(outcome); }).catch(() => {

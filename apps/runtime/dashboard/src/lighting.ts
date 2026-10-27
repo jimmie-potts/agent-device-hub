@@ -92,10 +92,10 @@ export function prepareLighting(ids: readonly string[], devices: readonly Lighti
   }
   return actions;
 }
-export function groupCards(layout: LightingLayout, scope: string, first: LightingSelection, second: LightingSelection, devices: readonly LightingDevice[], id: string): LightingLayout | string {
+export function groupCards(layout: LightingLayout, scope: string, first: LightingSelection, second: LightingSelection, devices: readonly LightingDevice[], id: string, homeSelections?: readonly LightingSelection[]): LightingLayout | string {
   if (scope !== 'home' && !scope.startsWith('brand-')) return 'Use a custom group on Home or a brand page';
   if (selectionKey(first) === selectionKey(second) || first.kind === 'room' || second.kind === 'room') return 'Choose two different light cards';
-  const visible = cardsFor(scope, layout, devices);
+  const visible = scope === 'home' && homeSelections !== undefined ? homeSelections.map(selection => resolveCard(selection, layout, devices)) : cardsFor(scope, layout, devices);
   if (![first, second].every(selection => visible.some(card => selectionKey(card.selection) === selectionKey(selection)))) return 'Choose cards on this page';
   const members = [...new Set([resolveCard(first, layout, devices), resolveCard(second, layout, devices)].flatMap(card => card.members))];
   if (members.length < 2 || members.length > 64) return 'A group needs between 2 and 64 lights';

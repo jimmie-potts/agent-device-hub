@@ -467,6 +467,7 @@ export const SCENARIOS: readonly Scenario[] = Object.freeze([
         h.hub.update(taskIds('codex', 17).sessionId, { attention: [] });
         h.hub.update(taskIds('codex', 3).sessionId, { attention: [] });
       }),
+      expect('knob 4\'s LED returns to page 2\'s color after the answers arrive', h => pageShown(h, 2)),
       holds('knob 4\'s LED shows page 2\'s color steadily once nothing waits', h => pageShown(h, 2), 1500),
     ],
   },

@@ -7,9 +7,10 @@ module list, an authoritative core and the SDK's in-process bus. The
 [accepted fresh cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records the established installation;
 it transferred no old data. Old writers are stopped and disabled, with their
 units, code, releases and stores retained for manual return. Retention does not
-mean both systems run. Read [runtime setup](../apps/runtime/SETUP.md) before
-installation work; its fresh setup/manual return procedure is distinct from the
-legacy Hub installer and does not establish routine upgrade automation.
+mean both systems run. The [WSL runtime setup](../apps/runtime/SETUP.md) and
+[upgrade/recovery procedure](../apps/runtime/UPGRADE.md) belong to that established
+installation. The [container operator guide](bunny-container.md) owns the Mac
+profile. None is a generic cross-host migration procedure or the legacy Hub installer.
 
 [Open the current architecture diagram](runtime-architecture.html), authored in
 [runtime-architecture.json](runtime-architecture.json). It maps these source owners:
@@ -28,6 +29,9 @@ part. Both use tracked generic power dispatch; the Wemo module owns bounded
 local I/O, identity checks, its per-plug queues, request fences and held-write
 recovery. Limit status uses core SDK state, with no dashboard state polling.
 These fit the diagram's existing core/module boundaries; its topology is unchanged.
+The reusable Wemo card composes those same device/limit copies and command
+adapters on Home and device pages. Its Power/Auto-off tabs change presentation
+only; collapsed evidence retains observation and enforcement distinctions.
 The core also owns private lighting composition (`lighting-layout`): rooms,
 assignments, scoped groups and Home selections. The browser reuses one card on
 Home, brand and room views; module-owned artwork comes through public frontend
@@ -39,7 +43,19 @@ metadata places logical cards in existing room IDs; it does not assign speakers
 or route audio. Lighting composition remains the room identity owner, and the
 playback module remains the only playback writer. The shell uses its existing
 participant for both copies, with separate metadata and playback command locks.
+Core-owned `home-layout` metadata orders those existing cards separately for
+desktop and phone. The editor uses the same participant and guarded metadata
+commands. Lighting grouping and room Home actions reconcile placement in their
+original transaction; no device writer or transport changes. Hidden module
+cards unmount their scoped acquisitions while shared alert evidence stays synced.
 Source delivery does not establish installed or physical acceptance.
+
+The runtime shell groups navigation into Home, Habitat, Rooms, Devices and Automation,
+with Settings as a separate utility. Its Devices directory projects existing
+catalog declarations and copies; module links remain local to their workspace.
+Connections and Places are reachable through Settings. The glass skin changes
+presentation through the existing token seam, with no state, transport or writer
+ownership change.
 
 Private prepared room geometry and fixture aliases live under the core's
 existing private files owner and are read through authenticated module content.
@@ -48,10 +64,13 @@ the existing individual light controls. Geometry adds no event family, device
 writer, state polling or database format; its neutral materials are separate
 from reported device evidence. The runtime dashboard guide owns preparation.
 
-The optional [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated
-Windows HTTPS forwarder before that same loopback gateway. The runtime admits its
-one configured origin with private proxy proof and uses ordinary browser sessions;
-no state, SDK protocol or device ownership moves into the forwarder.
+The established WSL installation's optional
+[home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated Windows
+HTTPS forwarder before that same loopback gateway. The runtime admits its one
+configured origin with private proxy proof and uses ordinary browser sessions;
+no state, SDK protocol or device ownership moves into the forwarder. This is a
+PC-dependent access profile; it cannot serve as the Mac primary host's normal
+client endpoint.
 
 **Connect/reconnect:** a remote client authenticates, syncs current membership
 from its owner, then follows live events. A sync replaces membership, so removed
@@ -98,22 +117,60 @@ the build omits its runtime and browser registration. Its private stores and
 format readers remain available as retained compatibility inputs. Hibernation
 selects no robot writer, verification or automatic resumption.
 
+## Hosting and access
+
+[ADR 0008](decisions/0008-runtime-hosting.md) selects the Mac Mini as the primary,
+self-sufficient host, using the existing Linux ARM64 container on Docker Desktop.
+One runtime owns its core, fixed modules, private stores and serving endpoint.
+Keep its reviewed release and private persistent volumes separate from development
+checkouts and previews. The PC is an optional producer/client and host for
+explicitly PC-attached hardware; normal hub startup, storage, dashboard access and
+selected portable device integrations must work with it off.
+
+Producers read their selected inputs on their own host and use the authenticated
+SDK HTTP/SSE edge. Do not mount a PC database into the Mac runtime or require a
+PC relay to serve Mac clients. PC-local sources and hardware may be unavailable
+while the Mac continues serving its other qualified capabilities. Preserve the
+existing source identity, stale/unavailable evidence, no-replay and outcome rules.
+
+The [Mac-local profile](bunny-container.md#mac-local-browser-profile) publishes
+only host loopback and keeps device control disabled. It does not establish remote
+access or production device operation. Those need qualification of the selected
+private route, credentials, Host/Origin policy, host-local producers and actual
+device targets. A production client route terminates on the Mac; it cannot depend
+on the WSL profile's Windows forwarder. Windows Docker Desktop remains an alternate
+host for the portable core, not a required intermediate production deployment.
+
+The [manual operating procedure](bunny-container.md#manual-operation-after-mac-sign-in)
+accepts downtime until FileVault unlock, Mac sign-in, Docker startup and explicit
+runtime start. It uses the existing stop, backup, image replacement and separate
+restore operations. Cross-host cutover separately qualifies actual state/assets
+and native dependencies, retains the source, and stops/disables old writers and
+restart actors before transferring device ownership. Local leases do not fence
+other computers. There is no automatic failover or snapshot rollback.
+
+Hosting review, October 22, 2026: the source diagram's core/module, SDK and gateway
+owners and edges are unchanged. Placement is specified here and in ADR 0008;
+the pinned source diagram and dated September atlas are not installation evidence.
+
 ## Planned packaged maintenance
 
-The owner selected [manual maintenance](runtime-manual-maintenance.md) for the
-packaged-runtime design: accept downtime, keep one state writer and inspect
-interrupted work. This replaces the proposed cross-container startup handoff;
-it changes no installed runtime behavior. GitHub owns implementation and host
-qualification acceptance.
+The owner selected explicit downtime and manual inspection after interrupted
+maintenance. The [container operator](bunny-container.md) implements the reduced
+operating path for the Mac profile; the established WSL installation retains its
+own upgrade procedure. The [packaged maintenance design](runtime-manual-maintenance.md)
+describes deferred persistent-gate and release-binding requirements, replacing
+the earlier descriptor-transfer proposal. It is not the current operator protocol
+or a prerequisite for using the accepted local profile. GitHub owns the remaining
+implementation and host qualification acceptance.
 
 ## Product direction and vocabulary
 
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted
 local-first assistant direction. Preserve the Codex-first milestone before
-general device controls and Apple Music integration. Container migration and
-remote voice access remain later work; [ADR 0008](decisions/0008-runtime-hosting.md)
-keeps WSL as the host choice. Its proposed keep-alive and server migration are
-separate from the accepted runtime service cutover; see that ADR's current-applicability note.
+general device controls and Apple Music integration. The Mac primary-host decision
+above supersedes the earlier WSL-first hosting direction. Migration qualification
+and remote voice access retain their own delivery scope and evidence.
 
 The shared application's user-facing name is B.U.N.N.Y. The
 [application UI style guide](application-ui-style-guide.md) owns that spelling,
@@ -186,9 +243,22 @@ opportunities through the SDK. Core keeps session/mode ownership and produces no
 opportunity from recovery, snapshots or reconnect. The fixed-text path owns private settings and bounded admission/presentation
 records; its pending candidates are not durable. Its browser-only React contribution uses the existing shell and tracked
 commands. Labelled synthetic scenarios remain separate from live state and
-allowances. The module adds no device/audio writer, service or transport boundary.
-The architecture diagram retains its dated physical-device view; these text
-cards use its existing core/bus/module-store/frontend boundaries.
+allowances. Optional speech reserves one explicit browser endpoint on the shell's
+existing authenticated SDK connection. Companions owns admission and durable
+responsibility; the core tracks each attempt; the selected browser alone owns
+local synthesis. Availability and candidates are never restored after disconnect
+or restart. The [module guide](../modules/companions/README.md#browser-speech)
+describes final policy checks, cancellation and uncertain receipts. This adds no
+service or transport. The architecture diagram retains its dated physical-device
+view; companion cards and speech use its existing core/bus/module-store/frontend
+boundaries.
+
+Its deliberate coding-suggestion form uses the shell's existing core copies,
+passed through an optional browser-only SDK context with independent live flags.
+Task/check evidence and deterministic previews stay in page memory; explicit
+Copy changes only the clipboard. This adds no evidence store, wire family,
+provider or execution path. The [module guide](../modules/companions/README.md#coding-suggestions)
+owns input bounds, attribution and invalidation. The dated topology is unchanged.
 
 The same module also owns a default-off synthetic assistant workflow. Its single
 sequential graph and inspectable conversation/task/run/call records use the
@@ -196,12 +266,31 @@ SDK-owned SQLite connection beside Reachy. A module-local, pinned LangGraph
 saver supplies durable interrupts and pending writes; startup reconciles their
 application projection without invoking work. Existing authenticated upload
 staging keeps text out of tracked command payloads, while authenticated module
-content reads serve bounded private pages. Both state families share one owner
+content reads serve bounded private pages. All companion state families share one owner
 revision sequence, sync provider and outbox. One unfinished task, explicit
 continuation, persisted call reservations and cancellation fences bound execution.
 The [companions guide](../modules/companions/README.md#synthetic-assistant-tasks)
 owns the flow, limits and future workspace reference. This source slice has fake
 adapters only and adds no installed service or physical writer.
+
+The same owner retains explicit titled preferences and their private history in
+separate tables on that connection. Authenticated content reads expose current
+active entries or the private management/export view; a metadata-only revision
+signal invalidates dashboard reads. Existing staged controls manage entries and
+additive imports preserve current records, adding missing IDs inactive. Manual
+copy is explicit; no preference text enters shared state or automatic model
+context. The [preference guide](../modules/companions/README.md#explicit-preferences)
+owns the private document contract and bounds.
+
+Explicit knowledge uses that same lifecycle with separate records. Curated persona
+profiles and attributed conversation records belong to companions independently
+of a model. Conversation records extend the existing message table; small removal
+records protect additive imports, and operational checkpoints remain separate.
+Authenticated bounded context reads combine current active knowledge/preferences
+with explicitly selected permitted messages. The dashboard manages and copies
+those records without automatic learning, a context cache or new output routes.
+The [knowledge guide](../modules/companions/README.md#companion-knowledge-and-context)
+owns document versions, migration, recovery limits and source verification.
 
 ## Module frontend ownership
 
@@ -732,12 +821,11 @@ store never opens a controller database. Source and performance receipts live
 with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
 [#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
 and physical acceptance retain their own owners.
-[ADR 0008](decisions/0008-runtime-hosting.md) records where the six user
-services run: in the Ubuntu WSL distribution, today started only by a user
-session, with linger, an idle timeout and one Windows scheduled task decided
-but not yet installed. A dedicated Linux server (#44, which absorbs #42's
-Docker packaging) follows under the ADR's proposed trigger: the Tronbyt move
-starting, a story needing LAN discovery or events, or a failed keep-alive.
+The historical section of [ADR 0008](decisions/0008-runtime-hosting.md) records
+the September six-service WSL baseline and proposed keep-alive work. Those old
+writers were stopped and disabled at the accepted runtime cutover. Its current
+decision selects the Mac primary host; the historical server trigger and legacy
+service packaging are not current deployment instructions.
 
 ## App verification previews
 

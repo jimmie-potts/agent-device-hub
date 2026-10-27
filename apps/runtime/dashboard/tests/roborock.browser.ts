@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
 import { AxeBuilder } from '@axe-core/playwright';
 import { chromium, type Page, type Route } from 'playwright';
 import { changes, feed, startWorld } from './harness.ts';
@@ -36,6 +38,59 @@ try {
         const url = `${world.url}/#/module/roborock/status`;
         await page.goto(url);
         await feed(page, 'connected');
+        await page.locator('[data-roborock-card]').waitFor();
+        await page.getByRole('tab', { name: 'Status', exact: true }).waitFor();
+        const card = page.locator('[data-roborock-card]');
+        assert.equal(await page.getByRole('region', {name: 'Roborock observations'}).count(), 0, 'technical evidence is closed initially');
+        await page.goto(`${world.url}/#/`); await feed(page, 'connected');
+        await card.waitFor();
+        assert.equal(await card.count(), 1, 'Home reuses one Roborock card without a second placement');
+        assert.equal(await page.locator('[data-home-card="device:bunny/modules/roborock:vacuum"]').count(), 1, 'existing device placement ID is preserved');
+        await page.goto(`${world.url}/#/component/vacuum`); await feed(page, 'connected');
+        await card.waitFor(); assert.equal(await card.count(), 1, 'the selected device uses the same component');
+        await page.goto(`${world.url}/#/component/not-configured`); await feed(page, 'connected'); await frame(page);
+        assert.equal(await card.count(), 0, 'a different component route must not keep a hidden Roborock reader mounted');
+        await page.goto(`${world.url}/#/component/vacuum`); await feed(page, 'connected'); await card.waitFor();
+        await card.getByRole('tab', {name: 'Care', exact: true}).click();
+        await card.getByText('Recorded usage', {exact: true}).waitFor();
+        await card.getByRole('link', {name: 'History', exact: true}).click();
+        await page.getByRole('heading', {name: 'Run history', exact: true}).waitFor();
+        await card.waitFor({state: 'detached'});
+        assert.equal(new URL(page.url()).hash, '#/module/roborock/history');
+        await page.getByRole('link', {name: 'Roborock', exact: true}).last().click();
+        await card.waitFor();
+        const shots = process.env.DASHBOARD_RECEIPTS;
+        if (shots !== undefined) await mkdir(shots, {recursive: true});
+        for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 736, 390, 320]) {
+            await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+            await page.setViewportSize({width, height: 1000}); await frame(page);
+            await card.locator('.roborock-art').evaluate(element => { (window as unknown as {roborockArt: Element}).roborockArt = element; });
+            const before = await card.boundingBox(); assert.ok(before !== null);
+            for (const tab of ['Status', 'Last run', 'Care']) {
+                await card.getByRole('tab', {name: tab, exact: true}).click();
+                assert.equal((await card.boundingBox())?.height, before.height, 'tab geometry stays fixed');
+                assert.equal(await card.locator('.roborock-art').evaluate(element => element === (window as unknown as {roborockArt: Element}).roborockArt), true);
+                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+                const outside = await card.evaluate(element => {
+                    const bounds = element.getBoundingClientRect();
+                    return [...element.querySelectorAll('button,a,[role="tabpanel"]')].filter(node => node.getClientRects().length > 0).some(node => {
+                        const item = node.getBoundingClientRect(); return item.left < bounds.left - 1 || item.right > bounds.right + 1 || item.bottom > bounds.bottom + 1;
+                    });
+                }); assert.equal(outside, false, `${width} ${tab} stays inside the card`);
+                assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => node.failureSummary)})), []);
+                if (shots !== undefined && width === 390) await card.screenshot({path: join(shots, `roborock-${colorScheme}-${tab.toLowerCase().replace(' ', '-')}.png`)});
+            }
+        }
+        await card.getByRole('tab', {name: 'Status', exact: true}).click();
+        await card.getByRole('tab', {name: 'Status', exact: true}).press('ArrowRight');
+        assert.equal(await card.getByRole('tab', {name: 'Last run', exact: true}).evaluate(element => element === document.activeElement), true);
+        assert.equal(await card.locator('[role="tabpanel"]:not([hidden])').evaluate(element => getComputedStyle(element).animationName), 'none');
+        await page.emulateMedia({reducedMotion: 'no-preference'});
+        await card.getByRole('tab', {name: 'Care', exact: true}).click();
+        assert.equal(await card.locator('[role="tabpanel"]:not([hidden])').evaluate(element => getComputedStyle(element).animationName), 'roborock-controls-flip');
+        await page.emulateMedia({reducedMotion: 'reduce'}); await page.setViewportSize({width: 1280, height: 1000});
+        assert.deepEqual(sent, [], 'Home, tabs and History send no product commands');
+        await page.locator('.roborock-evidence > summary').click();
         const observations = page.getByRole('region', { name: 'Roborock observations' });
         const history = page.getByRole('region', { name: 'Run history' });
         const detail = page.getByRole('region', { name: 'Run detail' });
@@ -219,6 +274,7 @@ try {
         await world.roborockAction('online');
         await page.reload();
         await feed(page, 'connected');
+        await page.locator('.roborock-evidence > summary').click();
         await observations.getByText('Availability: available. Activity: other.', { exact: true }).waitFor();
         world.dropDashboardStreams();
         await feed(page, 'connected');
@@ -228,6 +284,7 @@ try {
         await feed(page, 'connected');
         await page.goto(url);
         await feed(page, 'connected');
+        await page.locator('.roborock-evidence > summary').click();
         await observations.getByText('Availability: available. Activity: other.', { exact: true }).waitFor();
         assert.equal(world.browserSessions(), 1, 're-entry does not create another browser session');
         await page.setViewportSize({ width: 390, height: 844 });
@@ -257,6 +314,29 @@ try {
     finally {
         await context.close();
     }
+    const missing = await startWorld();
+    const missingContext = await browser.newContext({viewport: {width: 390, height: 844}, reducedMotion: 'reduce'});
+    try {
+        const page = await missingContext.newPage(); page.setDefaultTimeout(15000);
+        const sent = changes(page);
+        await page.goto(missing.url); await feed(page, 'connected');
+        await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
+        await page.getByRole('button', {name: 'Add card', exact: true}).click();
+        await page.getByRole('button', {name: 'Cleaning', exact: true}).click();
+        await page.getByRole('button', {name: 'Add Roborock', exact: true}).click();
+        await page.getByRole('button', {name: 'Close', exact: true}).click();
+        await page.getByRole('button', {name: 'Done', exact: true}).click();
+        await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+        const card = page.locator('[data-roborock-card]'); await card.getByText('Unavailable', {exact: true}).waitFor();
+        sent.length = 0;
+        await card.getByRole('button', {name: 'Roborock status', exact: true}).click();
+        await card.locator('.roborock-notice').getByText(/Roborock read refused:/).waitFor();
+        await card.getByRole('button', {name: 'Roborock status', exact: true}).press('Escape');
+        await card.getByRole('tab', {name: 'Care', exact: true}).click();
+        assert.equal(await card.getByRole('link', {name: 'History', exact: true}).count(), 0, 'no undeclared History destination');
+        assert.equal(await card.locator('.roborock-care').getByText('Unknown', {exact: true}).count(), 4);
+        assert.deepEqual(sent, [], 'unconfigured card browsing sends no command');
+    } finally {await missingContext.close(); await missing.close();}
 }
 finally {
     await world.close();

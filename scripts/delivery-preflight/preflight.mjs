@@ -129,7 +129,25 @@ async function loadCandidate(ctx) {
   ctx.base = null;
   ctx.mergeBase = null;
   if (ctx.merged) {
-    ctx.base = pr.base.sha;
+    // REST may retain the base from PR creation. Only the delivered squash
+    // commit identifies the target actually reviewed and merged, even after
+    // main advances again. Reuse this read for merged-main CI below.
+    const sha = pr.merge_commit_sha;
+    if (!/^[0-9a-f]{40}$/.test(sha ?? '')) {
+      gates.identity.unresolved('the merged PR has no valid merge commit to verify');
+    } else {
+      ctx.mergeCommitRead = await ctx.read(gates.identity, () => github.get(`/repos/${repo}/commits/${sha}`));
+      if (ctx.mergeCommitRead.ok) {
+        const commit = ctx.mergeCommitRead.value;
+        const parents = commit.parents;
+        if (commit.sha !== sha || !Array.isArray(parents) || parents.length !== 1
+            || !/^[0-9a-f]{40}$/.test(parents[0]?.sha ?? '') || parents[0].sha === sha) {
+          gates.identity.unresolved('merge evidence must identify the requested squash commit and exactly one valid parent');
+        } else {
+          ctx.base = parents[0].sha;
+        }
+      }
+    }
   } else {
     const ref = await ctx.read(gates.identity, () => github.get(`/repos/${repo}/git/ref/heads/${ctx.baseRef}`));
     if (ref.ok) ctx.base = ref.value.object.sha;
@@ -233,8 +251,12 @@ async function evaluateCiGates(ctx) {
     gates.ciMain.unresolved('the merged PR has no merge commit to verify');
     return;
   }
-  const commit = await ctx.read(gates.ciMain, () => github.get(`/repos/${repo}/commits/${pr.merge_commit_sha}`));
-  if (!commit.ok) return;
+  const commit = ctx.mergeCommitRead;
+  if (!commit?.ok || !ctx.base) {
+    if (gates.identity.status === 'unresolved') gates.ciMain.unresolved('the merged comparison evidence is missing or conflicting');
+    else gates.ciMain.notEvaluated('the merged comparison could not be verified');
+    return;
+  }
   const files = Array.isArray(commit.value.files) ? commit.value.files : [];
   gates.ciMain.evidence.parent = commit.value.parents && commit.value.parents[0] ? commit.value.parents[0].sha : null;
   await evaluateCi(ctx, gates.ciMain, {
@@ -256,7 +278,8 @@ async function evaluateReview(ctx, comments) {
     return;
   }
   if (!ctx.base || !ctx.mergeBase) {
-    review.notEvaluated('the current base or merge-base could not be read');
+    if (ctx.merged && ctx.gates.identity.status === 'unresolved') review.unresolved('the merged comparison evidence is missing or conflicting');
+    else review.notEvaluated('the current base or merge-base could not be read');
     return;
   }
   const latest = rounds.at(-1);

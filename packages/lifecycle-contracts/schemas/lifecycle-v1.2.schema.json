@@ -403,7 +403,8 @@
           "enum": [
             "cli",
             "desktop",
-            "code"
+            "code",
+            "local"
           ]
         },
         "hostId": {
@@ -438,7 +439,8 @@
               "client": {
                 "enum": [
                   "cli",
-                  "desktop"
+                  "desktop",
+                  "local"
                 ]
               }
             },

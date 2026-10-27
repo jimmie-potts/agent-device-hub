@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { startMemoryHarness } from '../dist/sim/memory.js';
 import { DESK_BASIC, SCENARIOS, act, expect, holds, runScenario, scenario, slotOf } from '../dist/sim/scenarios.js';
-import { CONTROL } from '../dist/sim/panel.js';
+import { CONTROL, PAGE_LED } from '../dist/sim/panel.js';
 import { onCleanup } from './routing-helpers.mjs';
 
 const runner = fileURLToPath(new URL('../verify/scenarios.mjs', import.meta.url));
@@ -63,6 +63,42 @@ test('a catalog scenario fails at the step whose behavior breaks', async t => {
   const result = await runScenario({ ...codex, seed }, h);
   assert.equal(result.outcome, 'failed');
   assert.equal(result.steps.at(-1).name, 'the first stop (Deny) gets focus', 'an unestablished card leaves the wheel inert');
+});
+
+function attentionFrameBeforeClear(clear = true) {
+  const target = scenario('attention-key');
+  let wrapped = 0;
+  const steps = target.steps.map(step => {
+    if (step.kind !== 'act' || step.name !== 'both tasks are answered in their clients') return step;
+    wrapped++;
+    return {...step, run: async h => {
+      const attention = String(h.profile().colors.attention);
+      for (let waited = 0; String(h.simulator.leds[PAGE_LED]) !== attention && waited < 3000; waited += 50) await h.wait(50);
+      assert.equal(String(h.simulator.leds[PAGE_LED]), attention, 'the real simulated LED reached its attention phase');
+      assert.equal(h.hub.sessions().filter(task => task.attention.length > 0).length, 2);
+      if (clear) await step.run(h);
+    }};
+  });
+  assert.equal(wrapped, 1, 'align only the existing clear action, without assigning LED observations');
+  return {...target, steps};
+}
+
+test('clearing attention during its painted phase settles before the full steady-page check', {timeout: 10000}, async t => {
+  const target = attentionFrameBeforeClear();
+  const h = await harness(t, target.seed);
+  const result = await runScenario(target, h);
+  assert.equal(result.outcome, 'passed', result.steps.at(-1)?.detail);
+  assert.equal(result.steps.at(-1).kind, 'holds');
+  assert.equal(result.steps.at(-1).outcome, 'passed');
+});
+
+test('waiting for a page-colour phase cannot hide attention that never clears', {timeout: 10000}, async t => {
+  const target = attentionFrameBeforeClear(false);
+  const h = await harness(t, target.seed);
+  const result = await runScenario(target, h);
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.steps.at(-1).name, 'knob 4\'s LED shows page 2\'s color steadily once nothing waits');
+  assert.equal(h.hub.sessions().filter(task => task.attention.length > 0).length, 2);
 });
 
 test('the Tier 1 command lists, selects and fails by name', () => {

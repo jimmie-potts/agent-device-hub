@@ -1,9 +1,13 @@
 # Upgrade and recover the installed runtime
 
-This procedure belongs to `bunny-runtime.service`, the current TypeScript
-runtime. It preserves that installation's state, configuration, credentials,
-Node executable and hooks. It does not operate the retained Hub installation.
-The [fresh setup procedure](SETUP.md) remains separate.
+This procedure belongs to `bunny-runtime.service`, the current TypeScript runtime
+on the established WSL installation. It preserves that installation's state,
+configuration, credentials, Node executable and hooks. It does not operate the
+retained Hub installation or the Mac container. The
+[Mac primary-host decision](../../docs/decisions/0008-runtime-hosting.md) uses the
+separate [container operator](../../docs/bunny-container.md); neither procedure
+qualifies cross-host state transfer. The [fresh setup procedure](SETUP.md) remains
+separate.
 
 The initial established-runtime qualification is accepted under
 [#1037](https://github.com/jimmie-potts/agent-device-hub/issues/1037#issuecomment-6102421021).
@@ -936,3 +940,15 @@ Production-store tests cover atomic rollback, conflicting saves and reopening
 latest state after restart. Preserve the table with the ordinary consistent core
 backup. This is additive forward persistence evidence; it does not qualify an
 older release as a recovery reader or change playback settings or AirPlay output.
+
+## Home arrangement state
+
+`home_layout` adds one versioned core row containing desktop and phone widget
+identities, supported sizes and hidden flags. A null arrangement preserves the
+built-in defaults until the first explicit save. Production-store tests cover
+exact-revision admission, expiry, rollback, repeat request identity and reopening
+latest state. Existing lighting group and room actions reconcile saved Home
+placements within their own metadata transaction; combined-family subscribers
+receive those changes in revision order. The consistent core backup preserves
+this table. No device settings, media or private source contents are added to
+it. Forward persistence evidence does not qualify older-reader recovery.

@@ -1,5 +1,10 @@
 # Runtime verification runs
 
+For a finite offline review on an existing Docker engine without a user manager,
+use the explicit [portable Acceptance route](PORTABLE.md). It preserves synthetic
+isolation, browser assertions and verified cleanup, and does not provide a
+handed-off preview. The managed commands below remain unchanged.
+
 The runtime adapter ([#920](https://github.com/jimmie-potts/agent-device-hub/issues/920)) for the
 [app verification contract](../../../docs/app-verification.md). The lifecycle comes from
 [`@jimmie-potts/app-verify`](../../../packages/app-verify/README.md), unchanged. This directory supplies the plug-in
@@ -54,6 +59,28 @@ module that is not as expected, its state and its registry code, such as
 `the runtime is degraded: chime failed (internal)` after `scenario-module-fails-others-continue` (#954).
 
 ## Run scenarios
+
+`browser-speech` uses the module-owned simulated shipped-runtime seed with a
+private synthetic qualification receipt and captures the real dashboard. Browser
+identity, voice and playback callbacks are synthetic. The capture checks manual availability, Work/Free
+questions, one selected tab, completion, Stop/Mute, category/Quiet suppression,
+delayed voices, reload/restart silence, uncertainty, keyboard controls, narrow
+layout and accessibility. It records labelled interactions and leaves speech off.
+It uses no native audio or installed resource and does not qualify actual speech.
+
+
+`companion-knowledge` uses the core and companions with explicit synthetic notes
+and one fictional Reachy–Duck exchange. Authenticated public reads exercise two
+fake model adapters and a replacement test client, current context, private
+conversation refusal, corrections/removals and old import after restart. No real
+model, audio or device output runs. Pair it with `preferences`, `assistant-task`,
+`reachy-text` and the companions browser journey for source compatibility.
+
+The same scenario checks explicit Duck Home selection, anonymous read refusal,
+one latest Duck message versus separate history, and retained selection with
+corrected/removal fallback after restart. The companions browser journey checks
+Home placement, selection labels, access loss, navigation, keyboard and axe.
+
 
 `weekly-power-schedules` uses the core and a simulated LIFX consumer. It saves,
 enables and edits a future definition, rejects read-only enabling, restarts on
@@ -353,6 +380,18 @@ script with the run's producer file through a session: a start, a prompt, a perm
 and the turn's end. It checks that the session appears, the approval prompt is raised and cleared, the producer's
 credential may not command or read, and a hook that runs while the supervisor holds the runtime stopped exits 0 quietly
 within its budget, its observation lost, before the next hook reaches the restarted runtime.
+The scenario waits for a newer session sync before judging the restarted state,
+with a ten-second bound for the reader's existing reconnect backoff and sync.
+It still requires the old turn and restart uncertainty before sending the next
+live hook. Focused checks after the root build, using an outside-checkout `TMPDIR`:
+
+```bash
+node --test --test-concurrency=1 --test-name-pattern='agent-hooks over' apps/runtime/dist/tests/scenarios/catalog.test.js
+node --test --test-concurrency=1 --test-name-pattern='agent hooks (wait|reject)|^scenario-agent-hooks passes' apps/runtime/dist/verify/tests/steps.test.js
+```
+
+The disposable checks include a delayed reader and a reader whose sync count
+never advances; the latter must fail without sending another hook.
 
 ```bash
 npm run -s verify:runtime -- start --scenario agent-hooks
@@ -525,7 +564,7 @@ sign's page and its preview. Without the cookie the page answers 401.
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. Each catalog capture and negative control has a separate named test with
 a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and CI's thirty-minute
-App verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
+Runtime verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
 failed or cancelled case is reported by name. It tests the supervisor's stop, crash restart, restart serialization, orphan
 handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,

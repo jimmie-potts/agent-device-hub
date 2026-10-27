@@ -62,7 +62,7 @@ export const familyOf = (dataschema: string): string | undefined => {
 export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean =>
   ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
 
-export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string};
+export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;
   type: string; subject: string; requestId: string | null; record: Record<string, unknown>};
 export const HISTORY_FILTER_SCHEMA = {type: 'object' as const, additionalProperties: false, properties: {
@@ -70,14 +70,16 @@ export const HISTORY_FILTER_SCHEMA = {type: 'object' as const, additionalPropert
   kind: {enum: ['change', 'removal', 'occurrence', 'outcome', 'operation']},
   source: {type: 'string', pattern: '^bunny(/[a-z0-9][a-z0-9-]*)+$', maxLength: 256},
   session: {type: 'string', pattern: '^[A-Za-z0-9_.-]{1,128}$'},
+  limit: {type: 'integer', minimum: 1, maximum: 500},
 }};
 export function historyFilter(value: Record<string, unknown>): HistoryFilter | undefined {
   if (Object.keys(value).some(key => !Object.hasOwn(HISTORY_FILTER_SCHEMA.properties, key))) return undefined;
-  const {fromAtMs, toAtMs, kind, source, session} = value;
+  const {fromAtMs, toAtMs, kind, source, session, limit} = value;
   if ([fromAtMs, toAtMs].some(at => at !== undefined && (typeof at !== 'number' || !Number.isSafeInteger(at) || at < 0)) ||
     (kind !== undefined && (typeof kind !== 'string' || !['change', 'removal', 'occurrence', 'outcome', 'operation'].includes(kind))) ||
     (source !== undefined && (typeof source !== 'string' || source.length > 256 || !/^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/.test(source))) ||
     (session !== undefined && (typeof session !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(session))) ||
+    (limit !== undefined && (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 500)) ||
     (typeof fromAtMs === 'number' && typeof toAtMs === 'number' && fromAtMs > toAtMs)) return undefined;
   return value;
 }
@@ -111,7 +113,7 @@ export class History {
     };
   }
 
-  /** Read committed history only. Inclusive filters combine, oldest first; reads publish nothing. */
+  /** Read committed history only. Inclusive filters combine, optionally selecting the latest rows by seq; returns oldest first and publishes nothing. */
   read(filter: HistoryFilter = {}): HistoryRow[] {
     const where: string[] = [], values: (string | number)[] = [];
     const add = (sql: string, value: string | number | undefined): void => { if (value !== undefined) { where.push(sql); values.push(value); } };
@@ -120,8 +122,10 @@ export class History {
       where.push("(subject = ? OR json_extract(record, '$.data.session') = ? OR json_extract(record, '$.session') = ?)");
       values.push(filter.session, filter.session, filter.session);
     }
+    if (filter.limit !== undefined) values.push(filter.limit);
     const rows = this.#database.prepare(`SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId,
-      type, subject, request_id AS requestId, record FROM core_history ${where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`} ORDER BY seq`).all(...values) as (Omit<HistoryRow, 'record'> & {record: string})[];
+      type, subject, request_id AS requestId, record FROM core_history ${where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`} ORDER BY seq${filter.limit === undefined ? '' : ' DESC LIMIT ?'}`).all(...values) as (Omit<HistoryRow, 'record'> & {record: string})[];
+    if (filter.limit !== undefined) rows.reverse();
     return rows.map(row => ({...row, record: JSON.parse(row.record) as Record<string, unknown>}));
   }
 

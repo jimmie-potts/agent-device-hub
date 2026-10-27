@@ -459,7 +459,7 @@ All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
 
-The App verification CI job still runs the full `test:runtime:verify:built`
+The required Runtime verification CI job runs the full `test:runtime:verify:built`
 suite on every main push and every PR whose
 [affected checks](../../docs/development.md#affected-pr-checks) select the
 runtime, which any runtime, module, shared or unknown change does. Focused local verification
@@ -488,6 +488,37 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 
 ## Runtime dashboard checks
+
+Reusable Hub mode and Inbox cards (#1182) extend the existing dashboard unit
+discovery with `hub-mode-issues.test.ts`. After the root build, run
+`node apps/runtime/dashboard/tests/hub-mode.browser.ts` and
+`node apps/runtime/dashboard/tests/inbox-history.browser.ts` for correlated
+warning/handling, explicit reapply, no replay, authority and disclosure checks.
+Both journeys run through the existing hosted smoke entry and the full local
+browser suite. Use an owned private outside-checkout `TMPDIR`; screenshots stay
+private. These checks use synthetic devices, not the installed runtime.
+
+Reusable agent cards (#1179) use the existing dashboard unit discovery for
+attention/freshness summary rules and Home placement. The existing `browser.ts`
+journey covers card disclosure, filtering, label drafts, unread preservation and
+reconnect, and checks light/dark desktop/phone keyboard and axe behavior. Run the
+full dashboard suite below after building. Existing core CI and App verification
+cover these checks; no additional workflow or service is needed.
+
+The reusable Wemo card (#1175) extends the existing `test:wemo:browser` journey
+with fixed Power/Auto-off geometry, retained drafts, keyboard switching, Home
+reuse and uncertain-limit-save recovery. Existing dashboard unit discovery runs
+`wemo-card.test.ts` for observed-versus-desired power and admission gates. These
+use the existing App verification and core CI entries; no new workflow is needed.
+Keep the page-closed enforcement and independent-plug assertions, and use
+`DASHBOARD_RECEIPTS` for private synthetic browser screenshots.
+
+The cleaner shell (#1173) uses the existing dashboard unit discovery for routes,
+navigation grouping and directory projection. After the root build, run
+`node apps/runtime/dashboard/tests/shell.browser.ts` for five-destination
+navigation, retained page addresses, passive browsing and light/dark desktop/phone
+accessibility. The existing hosted smoke and full browser entries include this
+journey; synthetic browser proof does not establish actual-phone or device results.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
@@ -582,10 +613,13 @@ page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
 
 The focused `hub-mode.browser.ts` journey uses synthetic participants to check
-keyboard selection, the saved choice and each device's result, same-mode
-reapply, a lost reply, read-only controls and reconnect/reload/restart without
-replay. It runs axe on the changed panel and writes a screenshot to its optional
-private evidence directory. It contacts no physical device.
+keyboard selection, matching artwork, same-mode reapply, correlated Inbox
+navigation/handling, pending versus definitive results, late conflicts, lost
+replies, read-only controls and reconnect/reload/restart without replay. Its
+controlled adapter checks verify stale evidence and accepted/uncertain handling
+locks without another command. It runs light/dark desktop/phone axe scans on
+both cards and writes screenshots to its optional private evidence directory.
+It contacts no physical device.
 
 The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
 fresh synthetic library and simulated display. It checks a revision-bound name
@@ -611,3 +645,7 @@ bounded reads and previews, one tracked playlist edit and a forged read-only
 refusal. Run it in both catalog transports and through the disposable adapter;
 independent Acceptance also uses the pages interactively. These are source and
 simulator checks, not physical-display acceptance.
+
+### Shared habitat checks
+
+The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px accessibility, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.

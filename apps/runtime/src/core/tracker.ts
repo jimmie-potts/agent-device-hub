@@ -25,11 +25,9 @@ import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {
-  PrivateRequestDigest, SdkError,
+import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
-  type Sdk, type TraceContext, type Tracing,
-} from '@jimmie-potts/sdk';
+  type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
@@ -43,7 +41,7 @@ import type {CoreStore, CoreTransaction} from './store.js';
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
-export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set']);
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set']);
 
 /** One action for the dispatcher: a command, as `request` takes it, and who asks for it. */
 export type Action = {
@@ -114,8 +112,8 @@ const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SOURCE = /^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/;
 /** The `bunny.request.id` attribute's pattern (diagnostic contract): a request ID it refuses is left out of a record. */
 const REQUEST_FIELD = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const RESULTS: readonly unknown[] = ['succeeded', 'failed', 'uncertain'];
-const EVIDENCE: readonly unknown[] = ['transmitted', 'observed', 'none'];
+const RESULTS: readonly unknown[] = [Outcome.succeeded, Outcome.failed, Outcome.uncertain];
+const EVIDENCE: readonly unknown[] = [Outcome.transmitted, Outcome.observed, Outcome.none];
 const MAX_DELAY_MS = 2_147_483_647;
 /** The intake's one subscription: every published key. */
 const INTAKE = 'bunny.*.*.*';
@@ -317,7 +315,7 @@ export class Tracker {
     const requestId = action.requestId ?? randomUUID();
     const refuse = (code: ErrorCode, detail: string): ErrorBody => {
       const body = errorBody(code, {...ID.test(requestId) ? {requestId} : {}, detail});
-      this.#record('command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': 'rejected', ...refusedFields(code)});
+      this.#record('command.rejected', {'bunny.participant': action.requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)});
       return body;
     };
     const parsed = KEY.exec(action.key);
@@ -326,6 +324,9 @@ export class Tracker {
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
+    if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
+      return refuse('forbidden', 'speech is dispatched only by its companions owner');
+    }
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {
@@ -385,7 +386,7 @@ export class Tracker {
     }
     // A device refusal or uncertainty from here belongs to the new operation; it cannot reject committed handling.
     inbox?.committed(requestId);
-    const admission: Admission | undefined = operator || family === 'mode-set' ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
+    const admission: Admission | undefined = operator || (family === 'mode-set' || family === 'mode-override-set') ? {facts: factsOf(sent), data: canonical({...data, requestId})} : undefined;
     if (admission !== undefined) this.#admitted.set(requestId, admission);
     this.#schedule();
     this.#record('command.queued', {...fields, 'bunny.outcome': 'queued'}, span);
@@ -401,8 +402,8 @@ export class Tracker {
     const answer: ActionAnswer = result.status === 'accepted' ? {status: 'accepted', requestId} : result.error;
     if (replied === undefined) return answer;
     if (result.status === 'accepted') this.#record('command.admitted', {...fields, 'bunny.outcome': 'accepted'}, span);
-    else if (result.status === 'rejected') this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(result.error.error.code)}, span);
-    else this.#record('command.completed', {...fields, 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result'}, span);
+    else if (result.status === 'rejected') this.#record('command.rejected', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields(result.error.error.code)}, span);
+    else this.#record('command.completed', {...fields, 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result'}, span);
     return answer;
   }
 
@@ -418,7 +419,7 @@ export class Tracker {
         : earlier.payload?.status === 'omitted' && earlier.payload.hmac === payload.hmac);
     const fields = {'bunny.participant': action.requestedBy, ...requestField(requestId)};
     if (!same) {
-      this.#record('command.rejected', {...fields, 'bunny.outcome': 'rejected', ...refusedFields('duplicate-conflict')}, earlier);
+      this.#record('command.rejected', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields('duplicate-conflict')}, earlier);
       return errorBody('duplicate-conflict', {requestId, detail: 'another action already used this request ID'});
     }
     this.#record('command.completed', {...fields, 'bunny.outcome': 'duplicate'}, earlier);
@@ -604,7 +605,7 @@ export class Tracker {
 
   /** A refused message's intake record, at its code's level. */
   #refused(message: Message<unknown>, fields: LogFields, code: ErrorCode): void {
-    this.#record('message.received', {...fields, 'bunny.outcome': 'rejected', ...refusedFields(code)}, message);
+    this.#record('message.received', {...fields, 'bunny.outcome': Outcome.rejected, ...refusedFields(code)}, message);
   }
 
   /**
@@ -614,7 +615,7 @@ export class Tracker {
    */
   #overflowed(dropped: number | undefined): void {
     this.#record('operation.failed', {
-      'bunny.operation': 'storage', 'bunny.outcome': 'failed', 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
+      'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.pattern': INTAKE, ...refusedFields('capacity'),
       ...(dropped === undefined ? {} : {'bunny.delivery.dropped_count': dropped}),
     });
   }
@@ -727,7 +728,7 @@ export class Tracker {
     this.#retry = SWEEP_RETRY_MS;
     for (const operation of ended) {
       this.#record('command.completed', {
-        'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': 'uncertain', 'bunny.code': 'uncertain-result',
+        'bunny.participant': operation.requestedBy, ...requestField(operation.requestId), 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'uncertain-result',
         'bunny.reason': 'timeout',
       }, operation);
     }

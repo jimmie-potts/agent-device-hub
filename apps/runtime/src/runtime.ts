@@ -5,9 +5,9 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler} from '@jimmie-potts/sdk';
+import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
-import {isCoreModule} from './core/core.js';
+import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {automationDevices} from './core/automation-devices.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
@@ -45,6 +45,8 @@ export type RuntimeHealth = {
 };
 
 export type RuntimeOptions = {
+  /** Explicit container-only socket bind; canonical browser hosts/origin remain loopback. Native/default callers omit it. */
+  listener?: 'container-host-local';
   /** The modules to host, in order. The service process passes the shipped list, whose first module is the core. */
   modules: readonly BunnyModule[];
   /**
@@ -59,6 +61,8 @@ export type RuntimeOptions = {
    * see `readRuntimeConfig`. Without one, a module that declares `configure` is refused.
    */
   configFile?: string;
+  /** Exact parsed configuration supplied by an admitting entrypoint; mutually exclusive with configFile. */
+  config?: RuntimeConfig;
   /** The loopback port for health. 0 picks a free port. */
   port: number;
   /** The clock for the bus, the modules and log records. Defaults to `Date.now()`. */
@@ -153,7 +157,7 @@ const UNAVAILABLE: Readonly<Record<'starting' | 'stopping', string>> = {
  * so that a page on a rebinding name reaches nothing. Health also takes no browser origin or cross-site fetch
  * metadata, as the Hub and local controllers require; the gateway checks each caller's own (#835).
  */
-function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute, wifiProxy: NonNullable<RuntimeConfig['edge']>['wifiProxy'], refusals: GatewayRefusals): Promise<Server> {
+function serve(port: number, health: () => RuntimeHealth, gateway: () => GatewayRoute, wifiProxy: NonNullable<RuntimeConfig['edge']>['wifiProxy'], refusals: GatewayRefusals, bindHost: string): Promise<Server> {
   let hosts: readonly string[] = [];
   const answer = (response: ServerResponse, status: number, body: object): void => {
     response.writeHead(status, {'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'}).end(JSON.stringify(body));
@@ -186,7 +190,7 @@ function serve(port: number, health: () => RuntimeHealth, gateway: () => Gateway
   server.once('close', () => { refusals.close(); });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen({host: HOST, port}, () => {
+    server.listen({host: bindHost, port}, () => {
       server.off('error', reject);
       const bound = (server.address() as AddressInfo).port;
       hosts = [`${HOST}:${bound}`, `localhost:${bound}`];
@@ -210,6 +214,11 @@ function close(server: Server): Promise<void> {
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
+  if (options.listener !== undefined && options.listener !== 'container-host-local') throw new RuntimeError('config-invalid', 'listener profile is invalid');
+  if (options.config !== undefined && options.configFile !== undefined) throw new RuntimeError('config-invalid', 'configuration inputs conflict');
+  // Capture verified values before admission yields; never reopen their source file.
+  const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
+  await admitBoundCoreOwnership(modules, options.stateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   const logs = new LogWriter(
@@ -217,7 +226,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   );
   const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
-  const config: RuntimeConfig | undefined = options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile);
+  const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
   const edgeConfig = config?.edge;
   if (options.edge !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
@@ -265,7 +274,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   let edge: GatewayRoute = {state: credentials === undefined ? 'off' : 'starting'};
   let server: Server;
   try {
-    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig?.wifiProxy, new GatewayRefusals(log, scheduler));
+    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig?.wifiProxy, new GatewayRefusals(log, scheduler), options.listener === 'container-host-local' ? '0.0.0.0' : HOST);
   } catch (error) {
     await endTracing();
     throw error;
@@ -335,9 +344,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
         try {
           const next = await readEdgeCredentials(edgeConfig.credentials);
           gateway.reload(next);
-          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'succeeded', 'bunny.grant_count': next.length});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.succeeded, 'bunny.grant_count': next.length});
         } catch (error) {
-          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': 'failed', 'bunny.code': 'internal', ...errorFields(error)});
+          recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.failed, 'bunny.code': 'internal', ...errorFields(error)});
           throw error;
         }
       });

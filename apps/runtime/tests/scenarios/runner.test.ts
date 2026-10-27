@@ -20,6 +20,49 @@ const named = (id: string): Scenario => {
   return found;
 };
 
+function clockedHarness(tier: Harness['tier'], overheadMs = 0): {h: Harness; elapsed: () => number} {
+  let elapsed = 0;
+  const h = {tier, transport: 'remote', now: () => elapsed, wait: (ms: number): Promise<void> => {
+    elapsed += ms + overheadMs;
+    return Promise.resolve();
+  }} as unknown as Harness;
+  return {h, elapsed: () => elapsed};
+}
+
+it('a hold measures elapsed harness time including wait overhead', async () => {
+  const {h, elapsed} = clockedHarness('run', 50);
+  const result = await runScenario({id: 'control-elapsed-hold', title: 'elapsed hold', seed: EMPTY, steps: [
+    holds('the condition holds for fifty milliseconds within a hundred-millisecond window',
+      () => elapsed() < 100 || 'the window ended', 50),
+  ]}, h);
+  assert.equal(result.outcome, 'passed');
+  assert.ok(elapsed() >= 50 && elapsed() < 100, 'I/O time counts toward the declared hold duration');
+});
+
+it('a hold checks the condition after a wait crosses its duration', async () => {
+  const {h, elapsed} = clockedHarness('run', 50);
+  let continued = false;
+  const result = await runScenario({id: 'control-broken-hold', title: 'negative control', seed: EMPTY, steps: [
+    holds('the condition remains true', () => elapsed() < 30 || 'the condition broke during the wait', 50),
+    act('never reached', () => {continued = true;}),
+  ]}, h);
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.steps[0]?.detail, 'the condition broke during the wait');
+  assert.equal(continued, false);
+});
+
+it('a hold preserves virtual duration in the memory harness', async () => {
+  const {h, elapsed} = clockedHarness('memory');
+  const observations: number[] = [];
+  const result = await runScenario({id: 'control-virtual-hold', title: 'virtual hold', seed: EMPTY, steps: [
+    holds('the virtual condition remains true', () => {observations.push(elapsed()); return true;}, 50),
+  ]}, h);
+  assert.equal(result.outcome, 'passed');
+  assert.equal(observations[0], 0);
+  assert.equal(observations.at(-1), 50);
+  assert.equal(elapsed(), 50);
+});
+
 it('an expectation that never holds fails with what it observed, and stops the scenario', async () => {
   const h = await startMemoryHarness(EMPTY, 'in-process');
   try {
@@ -60,7 +103,7 @@ it('an act that throws and a hold that breaks both fail', async () => {
 // message, which may quote anything; a step's own failure keeps its fixed text (ADR 0012, "Safe errors"; Hub #954).
 it('a failed step names an exception by its type or registry code, never its message, and keeps a step\'s own text', async () => {
   const secret = 'tok_SYNTHETIC954';
-  const h = {tier: 'run', transport: 'remote', wait: () => Promise.resolve()} as unknown as Harness;
+  const h = {tier: 'run', transport: 'remote', now: () => 0, wait: () => Promise.resolve()} as unknown as Harness;
   const run = (step: Scenario['steps'][number]) => runScenario({id: 'control-throws', title: 'negative control', seed: EMPTY, steps: [step]}, h);
   const cases: [Scenario['steps'][number], string][] = [
     [act('parse a body', () => { JSON.parse(secret); }), 'threw SyntaxError'],

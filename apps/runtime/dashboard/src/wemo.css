@@ -1,0 +1,62 @@
+/* Reusable Wemo presentation. State and mutations stay in the existing adapters. */
+.wemo-module{min-width:0;width:100%;max-width:430px}
+.wemo-card{width:100%;min-width:0;padding:var(--space-l);border:1px solid var(--light-edge);border-radius:var(--light-radius);background:var(--light-surface);box-shadow:var(--light-shadow);backdrop-filter:blur(20px)}
+.wemo-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);min-height:24px;font-size:var(--type-small);color:var(--muted-dense)}
+.wemo-art{position:relative;display:grid;place-items:center;height:208px;margin:var(--space-s) 0;isolation:isolate}
+.wemo-glow{position:absolute;width:85%;height:90%;background:radial-gradient(ellipse,var(--wemo-glow),transparent 66%);border-radius:50%;z-index:-1}
+.wemo-art[data-on=false] .wemo-glow{background:none}
+.wemo-scene{position:relative;width:250px;max-width:100%;height:208px}
+.wemo-lamp{position:absolute;left:4px;bottom:0;width:200px;height:208px}
+.wemo-lamp-base{position:absolute;bottom:10px;left:65px;width:110px;height:17px;border-radius:50% 50% 35% 35%;background:linear-gradient(180deg,var(--wemo-highlight),var(--wemo-metal) 65%,var(--wemo-metal-edge));box-shadow:0 12px 13px -5px var(--wemo-shadow)}
+.wemo-lamp-lower{position:absolute;bottom:23px;left:123px;width:9px;height:80px;border-radius:6px;background:linear-gradient(90deg,var(--wemo-metal-edge),var(--wemo-highlight),var(--wemo-metal));transform:rotate(-18deg);transform-origin:50% 100%}
+.wemo-lamp-upper{position:absolute;bottom:99px;left:100px;width:9px;height:68px;border-radius:6px;background:linear-gradient(90deg,var(--wemo-metal-edge),var(--wemo-highlight),var(--wemo-metal));transform:rotate(-50deg);transform-origin:50% 100%}
+.wemo-lamp-joint{position:absolute;left:96px;bottom:94px;width:17px;height:17px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--wemo-highlight),var(--wemo-metal) 65%);box-shadow:inset 0 0 0 3px var(--wemo-metal-edge)}
+.wemo-lamp-shade{position:absolute;left:16px;top:24px;width:112px;height:61px;border-radius:64px 64px 12px 12px;background:linear-gradient(125deg,var(--wemo-highlight),var(--wemo-metal) 70%,var(--wemo-metal-edge));transform:rotate(25deg);box-shadow:inset 0 2px 0 var(--wemo-highlight),0 8px 16px -9px var(--wemo-shadow)}
+.wemo-lamp-shade:after{content:"";position:absolute;bottom:-3px;left:0;width:100%;height:12px;border-radius:50%;background:var(--wemo-metal-edge)}
+.wemo-lamp-beam{position:absolute;left:44px;top:74px;width:117px;height:117px;clip-path:polygon(5% 0,75% 15%,100% 100%,0 100%);background:transparent;transform:rotate(-6deg)}
+.wemo-art[data-on=true] .wemo-lamp-beam{background:linear-gradient(180deg,var(--wemo-beam),transparent 96%)}
+.wemo-art[data-on=true] .wemo-lamp-shade:after{background:var(--wemo-bulb);box-shadow:0 5px 15px var(--wemo-beam)}
+.wemo-plug{position:absolute;right:0;bottom:10px;width:208px;height:104px;background:linear-gradient(155deg,var(--wemo-highlight),var(--wemo-shell));border:1px solid var(--wemo-shell-edge);border-radius:32px;box-shadow:0 20px 22px -14px var(--wemo-shadow),inset 0 -7px 10px var(--wemo-shell-edge);transform:rotate(-7deg) scale(.44);transform-origin:100% 100%}
+.wemo-socket{position:absolute;left:38px;top:20px;width:60px;height:65px;border-radius:50%;background:linear-gradient(140deg,var(--wemo-shell-edge),var(--wemo-shell));box-shadow:inset 0 1px 4px var(--wemo-shell-edge)}
+.wemo-socket b{position:absolute;background:var(--wemo-hole);width:6px;height:22px;border-radius:2px;top:10px;left:17px}
+.wemo-socket b:nth-child(2){left:37px;top:15px;height:17px}
+.wemo-socket em{position:absolute;background:var(--wemo-hole);width:12px;height:13px;border-radius:8px 8px 3px 3px;left:25px;top:40px}
+.wemo-brand{position:absolute;left:120px;top:35px;color:var(--wemo-hole);font-size:var(--type-brand);letter-spacing:-1px;font-weight:500}
+.wemo-led{position:absolute;left:139px;top:65px;width:5px;height:5px;border-radius:50%;background:var(--wemo-hole)}
+.wemo-art[data-on=true] .wemo-led{background:var(--wemo-led-on)}
+.wemo-card .wemo-name{text-align:center;font-size:var(--type-heading);font-weight:500;line-height:1.3;margin:0 0 var(--space-l);overflow-wrap:anywhere}
+.wemo-tabs{display:flex;padding:4px;gap:4px;background:var(--light-inset);border-radius:var(--light-control-radius);margin-bottom:var(--space-m)}
+.wemo-tabs button{flex:1;min-width:0;min-height:44px;font-size:var(--type-small);font-weight:500;background:transparent;border:1px solid transparent;color:var(--text);border-radius:var(--radius)}
+.wemo-tabs button[aria-selected=true]{background:var(--light-surface);border-color:var(--edge-strong);box-shadow:var(--light-shadow)}
+.wemo-tabs button:hover:not(:disabled){background:var(--raised)}
+.wemo-faces{display:grid;perspective:900px}
+.wemo-faces>[role=tabpanel]{grid-area:1/1;min-width:0;padding:0}
+.wemo-card .wemo-faces>[role=tabpanel][hidden]{display:block!important;visibility:hidden;pointer-events:none}
+.wemo-faces>[role=tabpanel]:not([hidden]){animation:wemo-flip .3s ease-out}
+.wemo-power-buttons{display:flex;gap:var(--space-s)}
+.wemo-power-buttons button{flex:1;min-height:52px;min-width:0;background:var(--light-inset);color:var(--text);border:1px solid var(--edge-strong);border-radius:var(--light-control-radius);font-weight:500}
+.wemo-power-buttons button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.wemo-power-buttons button:hover:not(:disabled){background:var(--raised)}
+.wemo-power-buttons button[aria-pressed=true]:hover:not(:disabled){background:var(--primary-hover)}
+.wemo-power-buttons button:disabled{background:var(--disabled-bg);color:var(--disabled-text);border-color:var(--disabled-edge)}
+.wemo-power-buttons button[aria-pressed=true]:disabled{border-color:var(--edge-strong);box-shadow:inset 0 0 0 1px var(--edge-strong)}
+.wemo-note{font-size:var(--type-small);color:var(--muted-dense);margin:var(--space-s) 0;overflow-wrap:anywhere}
+.wemo-card .secondary{min-height:44px;margin:var(--space-xs) 0;font-size:var(--type-small);border-radius:var(--light-control-radius)}
+.wemo-limit,.wemo-limit form,.wemo-limit fieldset{margin:0;padding:0;border:0;min-width:0}
+.wemo-limit .wemo-limit-toggle{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);min-height:44px;margin:0;color:var(--text)}
+.wemo-limit-toggle input[type=checkbox]{width:44px;height:26px;min-width:44px;min-height:26px;appearance:none;border:1px solid var(--edge-strong);border-radius:20px;padding:0;background:var(--light-inset);position:relative}
+.wemo-limit-toggle input[type=checkbox]:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--muted-dense)}
+.wemo-limit-toggle input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.wemo-limit-toggle input[type=checkbox]:checked:after{transform:translateX(18px);background:var(--accent-ink)}
+.wemo-limit .wemo-duration{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);margin:var(--space-s) 0 var(--space-m);color:var(--text);font-size:var(--type-small)}
+.wemo-duration>span:last-child{display:flex;align-items:center;gap:var(--space-s);color:var(--muted-dense)}
+.wemo-duration input{width:86px;min-height:44px;font-size:var(--type-body);padding:var(--space-s);color:var(--text)}
+.wemo-limit button[type=submit]{width:100%;min-height:44px;border-radius:var(--light-control-radius);font-weight:500}
+.wemo-limit p{font-size:var(--type-small);margin:var(--space-s) 0;overflow-wrap:anywhere;color:var(--muted-dense)}
+.wemo-limit p:empty{display:none}
+.wemo-evidence{margin-top:var(--space-s);font-size:var(--type-small);overflow-wrap:anywhere}
+.wemo-evidence summary{min-height:44px;padding-block:var(--space-s)}
+.wemo-evidence .facts{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))}
+@keyframes wemo-flip{from{transform:rotateX(-13deg)}to{transform:rotateX(0)}}
+@media(prefers-reduced-motion:reduce){.wemo-faces>[role=tabpanel]:not([hidden]){animation:none}}
+@media(max-width:420px){.wemo-card{padding:var(--space-m)}}

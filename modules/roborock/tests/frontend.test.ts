@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Message } from '@jimmie-potts/event-contracts/v2';
 import { emptyStatus, STATUS_SCHEMA, UNKNOWN, type RunRecord, type RunsPage, type SamplesPage, type VacuumStatus, } from '../src/contracts.js';
-import { Refused, messageStatus, runDocument, runsDocument, samplesDocument, statusDocument, } from '../src/frontend/documents.js';
+import { Refused, messageStatus, runDocument, runsDocument, latestRunDocument, samplesDocument, statusDocument, } from '../src/frontend/documents.js';
 const PRIVATE = 'SYNTHETIC_PRIVATE_BOUNDARY';
 type Key = string | number;
 type Decoder = (value: unknown) => unknown;
@@ -45,6 +45,7 @@ const cases: readonly {
     { name: 'runs', value: runs, decode: value => runsDocument(value, 'vacuum') },
     { name: 'run', value: detail, decode: value => runDocument(value, 'vacuum', 100) },
     { name: 'samples', value: samples, decode: value => samplesDocument(value, 'vacuum', 100) },
+    { name: 'latest-run', value: runs, decode: value => latestRunDocument(value, 'vacuum') },
 ];
 function container(value: unknown): Record<string | number, unknown> {
     assert.ok(typeof value === 'object' && value !== null);
@@ -82,6 +83,12 @@ function refused(decode: Decoder, value: unknown): void {
         return true;
     });
 }
+void test('latest-run is one unpaged record at the current source revision', () => {
+    assert.deepEqual(latestRunDocument(runs, 'vacuum', 1), runs);
+    refused(value => latestRunDocument(value, 'vacuum', 2), runs);
+    refused(value => latestRunDocument(value, 'vacuum'), {...runs, runs: [run(100), run(200)]});
+    refused(value => latestRunDocument(value, 'vacuum'), {...runs, next: {status: 'known', value: 'next'}});
+});
 void test('browser documents preserve unknown values and independent measurements', () => {
     for (const item of cases)
         assert.deepEqual(item.decode(item.value), item.value, item.name);

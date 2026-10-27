@@ -37,6 +37,14 @@ Actual Windows-host qualification belongs to
 
 ## Vocabulary
 
+The runtime additionally supports an explicit
+[finite offline Acceptance operation](../apps/runtime/verify/PORTABLE.md), under
+the [ADR 0009 amendment](decisions/0009-app-verification-runs.md#finite-offline-runtime-acceptance-amendment-2026-10-22).
+It uses a separate receipt and bounded container lifetime, with no preview
+handoff or realtime sleep-expiry guarantee. The managed lifecycle below and
+other application adapters are unchanged. Independent review and verified
+cleanup remain required; unsupported managed attempts are not passed evidence.
+
 - **Run**: one disposable application instance with its own identity, state,
   port, supervisor unit and lease. `run-id` is
   `<app>-<UTC start, yyyymmddThhmmssZ>-<6 hex>`, for example

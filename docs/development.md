@@ -226,11 +226,11 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five and the core and App verification jobs' thirty. Branch pushes do not duplicate PR checks.
+select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core and Runtime verification jobs' thirty and App verification's forty. Branch pushes do not duplicate PR checks.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
-verification and retained documentation, with 300 s per attempt, and the hook-qualification
+verification, Runtime verification and retained documentation, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
 The runner image already makes apt drop a connection that receives nothing for
 15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
@@ -246,9 +246,12 @@ Active workflow files are `checks.yml` and `workflow.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
-Checks ignores `**/*.md`; both Workflow jobs still run for Markdown-only changes
-under the [Markdown-only rule](sdlc.md#markdown-only-ci-routing). Other pull
-requests run the [affected Checks work](#affected-pr-checks). Inspect the
+Checks admits every pull request so the required core build check exists.
+Markdown-only PRs select no product suites but retain selection, core
+build/type/lint, the final gate and both Workflow jobs under the
+[Markdown-only rule](sdlc.md#markdown-only-ci-routing). Only main pushes retain
+the `**/*.md` workflow filter. Other pull requests run the
+[affected Checks work](#affected-pr-checks). Inspect the
 complete changed-file list and hosted event/check records; missing runs alone
 never establish filtering.
 Tag pushes are outside the main-only push trigger. Static tests verify workflow
@@ -269,7 +272,7 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Normal CI has seven GitHub-hosted Linux jobs, and each suite runs in exactly one of them. On a pull request, the jobs and steps outside the selected groups are skipped:
+Normal CI has eight GitHub-hosted Linux jobs, and each suite runs in exactly one of them. On a pull request, the jobs and steps outside the selected groups are skipped:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -278,10 +281,11 @@ Normal CI has seven GitHub-hosted Linux jobs, and each suite runs in exactly one
 | Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge and runtime adapters' steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser and accessibility journeys; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
 
-A full Checks run performs two full builds across its jobs. The Python
+A full Checks run performs three full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
 Checks that call the runner's system
 `/usr/bin/python3`, such as the Linux performance qualification and the
@@ -315,9 +319,9 @@ any path the table does not name. An incomplete or unreadable comparison (an
 API error, a missing revision or GitHub's 300-file limit) also runs everything.
 The mapping accepts extra work to stay simple; it is not a dependency graph.
 
-A group's unselected steps show as skipped in the job log, and the Firmware and
-App verification jobs report `skipped` when none of their groups is selected.
-Those two jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
+A group's unselected steps show as skipped in the job log. Firmware, App
+verification and Runtime verification report `skipped` when their groups are
+unselected. Those three jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
 because GitHub reports a job skipped before its matrix expands under the
 unexpanded name. The `Selected checks gate` job runs last, even after a
 failure, and fails unless the selection succeeded, every selected job
@@ -376,6 +380,13 @@ WSL/client or device compatibility. Keep that acceptance evidence separate.
 Existing provider qualification records and device ownership are unchanged.
 
 ### CI cost and suite timings
+
+Runtime catalog verification now runs unchanged in its own required 30-minute
+job. Two #1183 App attempts exhausted their combined job limit after the full
+serial runtime suite passed in 16m03s and 17m36s; Chromium setup took over five
+minutes. The App job retains every other check, and the selected-check gate
+requires both jobs. Selection, test concurrency, isolation and failure behavior
+are unchanged. The older timings below are historical measurements.
 
 Each job takes runner time, so a duplicate suite or an extra full run costs as
 much as a new one. These step times come from main's
@@ -479,6 +490,11 @@ that installation or overall delivery is complete. `--ui` and `--ui-approval`
 are deprecated compatibility inputs: accepted and ignored, with no approval
 record fetched. The legacy `ui-approval` report entry remains not applicable.
 All UI follows [UI verification](sdlc.md#ui-approval-scope).
+For an open PR, the comparison uses the current target branch tip. After a
+squash merge, it uses the verified merge commit's sole parent, not the REST
+PR's potentially stale base or a later main tip. The merge-base is computed
+between that parent and the reviewed head. Missing, malformed or conflicting
+merge evidence cannot qualify the delivered comparison.
 `npm run preflight -- --help` lists the options. The script compiles
 `packages/app-verify` first, because proof receipts are checked with its
 `validateReceipt` rather than a second reader.
@@ -751,6 +767,12 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
+The same event test command discovers `speech.test.mjs`. It checks explicit
+endpoint availability, live-card expiry, scenario and history refusal, closed
+playback receipts, candidate references and endpoint-loss identity. The core
+fixture inventory includes all seven speech families. These checks use synthetic
+messages and produce no audio.
+
 `test:events:built` also runs the core and device payload family tests (Hub #842,
 #918):
 - `packages/event-contracts/tests/families.test.mjs` runs `fixtures/v2/families.json`: a valid message
@@ -810,6 +832,16 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 
 ## Runtime checks
 
+For the manual container profile, build first and run
+`node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs`
+with Node 24 on Linux. These cover the real owner lease, unsafe state and pending
+restore refusal, archive integrity, WAL/assets/key pairing and separate empty
+restore. Run root build/type/lint and the runtime ownership tests as well.
+Use only disposable synthetic volumes for actual image/operator acceptance;
+see [the operator guide](bunny-container.md). Source tests, each architecture's
+container rehearsal, cross-architecture archive transfer and live installation
+are separate evidence.
+
 See [Runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) for the authoritative procedure.
 
 ### Runtime test layers
@@ -821,6 +853,55 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
+
+Individual Hub-mode overrides (#695) extend the existing event-contract, runtime
+and dashboard suites. After the root build, run
+`node --test apps/runtime/dist/tests/mode*.test.js`,
+`npm run test:events:built`, `npm run test:runtime-dashboard:built` and
+`node apps/runtime/dashboard/tests/hub-mode.browser.ts`. The mode browser journey
+already runs in the hosted smoke entry; these unit files already join core CI
+discovery. Verify saved exceptions on the existing device cards, compact Hub
+inspection, HTTP/MCP admission, shared ordering and restart without effects.
+Run affected Pixoo/SDK consumers, runtime scenarios and the full dashboard
+browser suite for the shared presentation change. Evidence is synthetic/source
+only; it does not establish installed or physical results.
+
+For the reusable Timeline card (#1194), after the root build run
+`node --test apps/runtime/dashboard/tests/timeline.test.ts apps/runtime/dashboard/tests/home-catalog.test.ts`
+and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser
+journey uses synthetic history and the existing Home layout owner; it checks
+passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
+accessibility. The existing core CI job discovers the unit tests and the App
+verification job runs the focused browser journey. Run the full dashboard
+browser suite and `inbox-history.browser.ts` for this shared presentation change.
+The browser journey asserts limit=200 on entry, date/exact, refresh and Home reads,
+truthful result-window labels and local category/Show more behavior. After the
+build, run `node --test apps/runtime/dist/tests/history-window.test.js apps/runtime/dist/tests/inbox-gateway.test.js`
+for HTTP/MCP limit validation, read permissions, filtering before the limit,
+compatibility without a limit and a 2,400-row synthetic archive with 16 KiB records.
+An unselected malformed record verifies that bounded reads decode only their
+window. Existing runtime test discovery includes these checks. Installed Recent
+acceptance uses bounded reads and private process/health evidence; never use an
+unlimited live read as a negative control.
+
+Customizable Home (#366) adds core metadata/restart and gateway admission tests in
+`apps/runtime/tests/home-layout.test.ts`, pure catalog/layout checks in dashboard
+unit discovery, and an editor journey in the existing dashboard browser entry.
+After the root build, run `node --test apps/runtime/dist/tests/home-layout.test.js`,
+the owning runtime/dashboard unit, browser and scenario checks, shared type,
+contract, workflow and JavaScript lint checks. Existing runtime and dashboard CI
+discovery selects these paths; layout tests assert that editing sends no device commands.
+
+The Wemo card (#1175) adds observed-state/guard projection checks to existing
+dashboard unit discovery and extends the existing `test:wemo:browser` journey
+for stable tabs, retained drafts and the approved concise presentation. Both
+already run in the selected dashboard/App verification checks. After the root
+build, run `node --test apps/runtime/dashboard/tests/wemo-card.test.ts` and
+`npm run test:wemo:browser`; keep the owning shared and full browser checks below.
+
+The current shell's route, directory and browser checks, including #1173's
+five-destination navigation journey, follow the owning
+[runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks).
 
 See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks) for the authoritative procedure.
 
@@ -1006,6 +1087,17 @@ See [CHOMPI task routing checks](../apps/chompi-bridge/DEVELOPMENT.md#chompi-tas
 See [CHOMPI bridge verification runs](../apps/chompi-bridge/DEVELOPMENT.md#chompi-bridge-verification-runs) for the authoritative procedure.
 
 ## Wispr runtime module checks
+
+The reusable Quiet line Home card (#1200) stays in the module's browser entry.
+After the root build, run `npm run test:wispr-module:built`,
+`npm run test:runtime-dashboard:built` and
+`node apps/runtime/dashboard/tests/wispr.browser.ts`. Core CI runs the module
+tests; the hosted runtime smoke entry also runs this focused browser journey. The projection tests distinguish observed zero,
+missing speech, absent dates and expired producer windows; the browser journey
+checks selectable gaps, refresh/refusal retirement, keyboard and responsive
+light/dark accessibility. These use synthetic published files only and do not
+activate collection or establish installed analytics availability.
+
 
 The selected-file scenario fixture is wired explicitly into the memory and disposable harnesses. `check-module-names.cjs` permits only `wispr` in the four named fixture/seed files; it continues to reject other module names there and all module references in production discovery. The verification plugin separately lists the exact `wispr-contracts` package paths in its source, output and artifact identity; those literals are exempt, while module references on the same line and other paths remain checked. This is the bounded #927 integration permitted while generic fixture discovery in #999 is deferred, not a new loader or service.
 
@@ -1630,6 +1722,14 @@ for resumption. The owning [module](../modules/bb8/README.md) and
 
 ## ONN module checks
 
+The reusable Soft keys card (#1210) extends existing module-test discovery with
+frontend guard, freshness, evidence and browser-bundle checks. Its existing ONN
+browser journey covers shared Home/component/controls placement, Remote/Apps
+geometry and keyboard focus, persistent illustration, memory-only drafts,
+History navigation, light/dark 1440/736/390/320 layouts and uncertain-attempt locks
+across routes and reload. These tests use the existing modules and App verification
+CI entries. Retain the separate history capture below for filters and continuation.
+
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:onn:built`. The module suite covers the
 fixed action mappings, private ADB protocol, bounded queue, persistent fences,
@@ -1681,6 +1781,16 @@ These checks do not establish installed or physical behavior.
 
 ## Roborock module checks
 
+The reusable card (#390) extends `test:roborock:browser`, already selected by
+App verification, and the module/dashboard unit suites. After the root build,
+run `npm run test:roborock:built`, `npm run test:roborock:consumer:built`,
+`npm run test:runtime-dashboard:built` and `npm run test:roborock:browser`.
+The focused browser journey checks Home/page reuse, passive tabs and history,
+fixed geometry, source freshness/refusals, scoped cleanup, keyboard access and
+light/dark desktop/phone accessibility. Use synthetic inputs only; this does
+not establish installed or physical acceptance. Keep the shared build/type,
+contract/workflow checks and full dashboard browser suite below.
+
 Use Node 24 and `npm ci`, then build before type-aware lint. Run
 `npm run build`, `npm run typecheck`, `npm run lint:js`,
 `npm run test:roborock:built`, `npm run test:roborock:consumer:built` and
@@ -1701,12 +1811,64 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+Browser speech (#1097) uses the existing companion unit discovery and
+`test:companions:browser` journey. After the root build, run
+`node --test modules/companions/dist/tests/speech-driver.test.js` for bounded
+local voice discovery, final permission checks, callback ordering, Stop, mute
+and uncertain output without replay. The existing core CI module group runs
+these tests. `speech-coordinator.test.js` verifies manual availability, one
+active/one pending candidate, priority cancellation, missing receipts, delayed
+policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
+checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
+and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
+Both are discovered by the existing runtime CI suite. The `speech-session`,
+`speech-browser`, `speech-qualification` and `speech-qualification-file` unit
+files check immediate local cancellation, ordered receipt writes, late endpoint
+registration, failed browser hints and private receipt refusal. The existing
+companions browser entry calls `speech.browser.ts` against a disposable real
+runtime with synthetic browser identity and audio. It exercises explicit selection,
+completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
+reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
+keyboard and axe checks. `speech-readiness.ts` mounts the real Reachy page and delivers companion or
+speech-state restart, failure and removal, category mute, text disable and
+restrictive speech availability before React renders, then resolves pending
+voice discovery. Each must submit zero audio; an unchanged eligible control
+must still submit once. Endpoint changes also
+require event schema, SDK remote, runtime
+gateway and dashboard tests, plus root build/type/lint and shared contract and
+workflow checks. Browser checks use fake audio and synthetic inputs; they do
+not establish installed playback or human perception.
+
+The runtime verification `browser-speech` capture uses the real synthetic runtime
+and dashboard with fake browser speech. Its existing `steps.test.ts` catalog entry
+runs under the App verification checks; the dashboard speech journey shares the
+same browser fixture. Run `npm run build` before either. This capture covers
+manual availability and controls without playing native audio; installed Chrome
+acceptance remains separate.
+
+Coding suggestions (#1098) use the existing companion unit discovery and
+`test:companions:browser` hosted journey. After the root build, run
+`node --test modules/companions/dist/tests/suggestions.test.js` for the fixed
+attribution/relevance corpus and policy, freshness, revision and isolation
+refusals. The browser journey checks the deliberate form, explicit clipboard,
+supersession/disconnect, keyboard, narrow viewport and axe. Existing core and
+App verification CI include both commands; no new suite/job is needed. Run
+root build/type/lint, companion and runtime/dashboard tests, shared contract and
+workflow checks, and the full runtime dashboard browser suite. Use synthetic
+evidence only; this provides no installed-client or physical acceptance.
+
+The Duck Home widget (#662) uses the existing companion unit suite, runtime
+scenario discovery and companions browser journey. Check explicit selection,
+latest/history isolation, correction/removal, restart, stale/denied reads,
+keyboard, narrow layout and axe. Existing CI already selects these suites for
+companions/dashboard changes; no new job is needed. Use only synthetic data.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text` and `assistant-task` catalog scenarios over both transports and in a disposable
+Run the `reachy-text`, `assistant-task`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 
@@ -1740,3 +1902,32 @@ and bounded health. Procedure fixtures exercise stopped-writer backup, selection
 receipts and interrupted resolution using synthetic state. Recovery remains
 independent of forward eligibility; no checks execute hibernated BB-8 code or
 qualify an installed/physical device.
+
+## Local Mac Codex hook checks
+
+For #1183, use Node 24 and build before lint/type checks. Run the existing
+lifecycle JS/Python corpus, agent-state JS/Python/package and event-family checks,
+plus runtime hook tests and dashboard session tests. The native wrapper suite is
+`node --test apps/runtime/tests/mac-codex-hook.test.mjs`; existing core runtime CI
+runs it explicitly because `.mjs` source tests are not TypeScript outputs.
+Run container entrypoint/operator tests for exact single-source admission and
+refusal of wider grants. Shared contract, MCP, workflow and affected consumer
+checks remain required. Synthetic tests do not qualify an installed Codex client:
+Mac acceptance must observe local Desktop and CLI hooks separately, verify
+existing Computer Use configuration/notify preservation and supported browser operation,
+metadata-only delivery, loopback-only access and stopped backup/restart. Internal
+notification-helper delivery remains unproven; no undocumented invocation is
+part of acceptance.
+Cloud-orchestrated tasks and physical devices remain outside this qualification.
+
+## Explicit preference checks
+
+For #501, after the root build run `node --test modules/companions/dist/tests/preferences.test.js`
+for the private SQLite lifecycle, active-only retrieval, additive import, repeated/old
+exports, invalid input, transaction rollback and SQLite full-disk refusal. Existing `test:companions:built` CI
+discovery includes it. The runtime `preferences` scenario covers authenticated reads,
+reader refusals, metadata privacy and restart over both scenario transports.
+`npm run test:companions:browser` includes the real preference page, clipboard,
+private import/export, keyboard and axe checks. Preserve build/type/lint, affected
+event/runtime/SDK consumers and workflow validation. All data is synthetic; these
+checks neither install the feature nor qualify a live model or physical device.

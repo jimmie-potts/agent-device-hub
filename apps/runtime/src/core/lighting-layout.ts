@@ -1,8 +1,8 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #1135).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, type LightingLayoutRecord, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
-import {fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {registerCoreFamilies, type LightingLayout, type LightingLayoutRecord, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome} from './tracker.js';
@@ -14,6 +14,7 @@ export type LightingLayoutAdmission = {
   admit(command: Command<LightingLayoutSetRequest>): boolean;
   complete(tx: CoreTransaction, command: Command<LightingLayoutSetRequest>, result: Omit<CompletedOutcome, 'requestId'>): () => void;
   end(command: Command<LightingLayoutSetRequest>): void;
+  changed?(tx: CoreTransaction, command: Command<LightingLayoutSetRequest>, before: LightingLayout, after: LightingLayout): void;
 };
 
 export class LightingLayoutPart implements CorePart {
@@ -58,8 +59,9 @@ export class LightingLayoutPart implements CorePart {
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the lighting layout changed; refresh before saving'});
         const record: LightingLayoutRecord = {id: ID, revision: tx.revision(), layout: command.data.layout};
         this.#save.run(JSON.stringify(record), ID);
-        tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
-        committed = this.#admission.complete(tx, command, {result: 'succeeded', evidence: 'observed'});
+        tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command});
+        this.#admission.changed?.(tx, command, current.layout, record.layout);tx.take(command);
+        committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;
       });
       if ('error' in result) return result;

@@ -1,3 +1,4 @@
+import {openSettings} from './navigation-helpers.ts';
 // Browser sign-in on the runtime's dashboard (Hub #922), converted from `apps/dashboard/tests/trusted.mjs`: the
 // launcher's one-time code, the trusted loopback bookmark (Hub #276) on either loopback name, a reload and a second tab
 // that share the browser's live session instead of opening more, a failed sign-in, Disconnect ending every tab's
@@ -71,7 +72,8 @@ try {
     await signedIn(page);
     assert.equal(world.browserSessions(), 1, 'a bookmark signs in without a form');
     // A run names no place, so its Places lead nowhere local but here: a preview never links to an installed service.
-    const places = page.getByRole('navigation', {name: 'Places'});
+    await openSettings(page);
+  const places = page.getByRole('navigation', {name: 'Places'});
     await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
     assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local']);
     await page.reload();
@@ -87,7 +89,8 @@ try {
     checks.push('a bookmark signs in on either loopback name, and a reload and a second tab share its session');
 
     // Disconnect ends the session in every tab of the browser: the other tab offers one sign-in and waits for it.
-    await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
+    await openSettings(page);
+  await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
     await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
     await feed(second, 'ended');
     await second.getByRole('button', {name: 'Sign in again', exact: true}).waitFor();
@@ -100,7 +103,8 @@ try {
     await page.getByRole('button', {name: 'Sign in', exact: true}).click();
     await signedIn(page);
     await signedIn(second);
-    await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
+    await openSettings(page);
+  await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
     await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
     await feed(second, 'ended');
     await second.getByRole('button', {name: 'Sign in again', exact: true}).waitFor();

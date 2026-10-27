@@ -1,8 +1,8 @@
 // The core alone mints coding opportunities from the first publication of a committed live reduction (Hub #1096).
-import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, SdkError} from '@jimmie-potts/sdk';
-import {OPPORTUNITY_TTL_MS, type CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
-import type {AgentOccurrence, AttentionRaised, SessionRecord, TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
+import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
+import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
+import {registerCoreFamilies, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
 import {LivePublication} from './live-publication.js';
@@ -22,6 +22,18 @@ export class CompanionPart implements CorePart {
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
   async start(core: CoreHandle): Promise<void> {
+    const validator = new MessageValidator(); registerCoreFamilies(validator);
+    await core.sdk.respond<SpeechDispatch>('bunny.cmd.companion-speech-dispatch.reachy', async command => {
+      if (this.#closed) return errorBody('unavailable');
+      if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
+      const checked = validator.validate(command, {nowMs: core.clock.now()});
+      if (!checked.ok) return {error: checked.error};
+      const answer = await core.dispatch({key: 'bunny.cmd.companion-speech-play.reachy', requestedBy: command.source,
+        requestId: command.data.requestId, parent: command,
+        draft: {type: 'org.bunny.companion-speech.play.requested', subject: 'reachy',
+          dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
+      return 'error' in answer ? answer : {status: 'accepted'};
+    });
     await Promise.all(['attention-raised', 'turn-ended'].map(family => core.sdk.subscribe<AgentOccurrence>(`bunny.event.${family}.*`, async message => {
       if (this.#closed || message.source !== core.sdk.source || !this.#eligibility.take(message.id)) return;
       const data = message.data, record = this.#sessions.get(data.session);
@@ -42,7 +54,7 @@ export class CompanionPart implements CorePart {
       } catch (error) {
         // Optional delivery cannot block or change the original core attention. Eligibility is already consumed.
         const code = error instanceof SdkError ? error.body.error.code : 'internal';
-        recordLog(core.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': 'rejected', 'bunny.code': code}, message);
+        recordLog(core.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': code}, message);
       }
     }, {onOverflow: () => {this.#eligibility.clear();}})));
   }

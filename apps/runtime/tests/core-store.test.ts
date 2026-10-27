@@ -12,6 +12,7 @@ import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type LogFields, type Logger} from '@jimmie-potts/sdk';
 import {countCommits} from '@jimmie-potts/sdk/testing';
 import {CoreStore, SAVE_COST, type Deriver} from '../src/core/store.js';
+import {producerSource} from '../src/hook/index.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../src/index.js';
 import {MODULE_SCOPE, record, runtimeResource} from '../src/record.js';
 import {
@@ -406,6 +407,35 @@ it('a duplicate observation after a restart is dropped by its (source, id), and 
   await world.crashAndRestart();
   assert.equal(world.store.received(message), 'duplicate');
   assert.equal(world.store.received({...message, data: {...message.data, observedAtMs: START + 1}}), 'conflict');
+});
+
+it('two host-local producers may reuse message, native-event and session IDs without sharing intake or sessions (#566)', async context => {
+  const world = await World.open(context, {file: ':memory:'});
+  const configuration = {provider: 'claude', client: 'code', sourceId: 'claude-code'} as const;
+  const pc = {...configuration, hostId: 'synthetic-pc'};
+  const mac = {...configuration, hostId: 'synthetic-mac'};
+  const messages = [pc, mac].map(source => ({
+    ...lifecycleMessage(lifecycleOf(sessionStarted, START, {
+      identity: {...source, sessionId: 'shared-session'}, nativeEventId: 'shared-native-event',
+    }), START, 'shared-message'), source: producerSource(source),
+  }));
+  assert.notEqual(messages[0]?.source, messages[1]?.source, 'the host is part of the credential source');
+  assert.notEqual(messages[0]?.subject, messages[1]?.subject, 'the host is part of the session identity');
+  for (const message of messages) {
+    assert.equal(world.store.received(message), 'new', 'the other host cannot occupy this source/message pair');
+    assert.equal((await world.take(message)).ok, true);
+  }
+  const records = sessions(world.since(0));
+  assert.deepEqual(records.map(record => record.identity.hostId).sort(), ['synthetic-mac', 'synthetic-pc']);
+  assert.ok(records.every(record => record.identity.sessionId === 'shared-session'));
+  assert.deepEqual(world.rows('SELECT source, id FROM core_taken ORDER BY source'),
+    messages.map(message => ({source: message.source, id: message.id})).sort((a, b) => a.source.localeCompare(b.source)));
+  const before = world.snapshot();
+  for (const message of messages) {
+    assert.equal(world.store.received(message), 'duplicate');
+    assert.equal(world.store.received({...message, data: {...message.data, observedAtMs: START + 1}}), 'conflict');
+  }
+  assert.deepEqual(world.snapshot(), before, 'duplicate/conflict classification has no state effects');
 });
 
 it('a part\'s rows commit in the change\'s transaction, and a part that throws rolls the whole change back', async context => {

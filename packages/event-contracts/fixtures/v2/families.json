@@ -1,6 +1,304 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "companion-speech-endpoint": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-endpoint",
+  "source": "bunny/parts/dashboard",
+  "type": "org.bunny.companion-speech.endpoint.requested",
+  "subject": "endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-endpoint/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "enable-request",
+   "action": "enable",
+   "available": true
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "companion-speech-output": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-output",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.companion-speech.output.requested",
+  "subject": "endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-output/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "output-request",
+   "operationId": "speech-request",
+   "action": "speak",
+   "card": {
+    "opportunity": {
+     "origin": {
+      "id": "msg-attention-raised",
+      "source": "bunny/core",
+      "type": "org.bunny.attention.raised"
+     },
+     "sourceKind": "coding",
+     "context": "live",
+     "category": "coding-attention",
+     "cue": "approval",
+     "revision": 4,
+     "generation": 1,
+     "session": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     },
+     "turn": {
+      "status": "known",
+      "id": "turn-7"
+     },
+     "attention": {
+      "id": {
+       "status": "known",
+       "id": "approval-1"
+      },
+      "kind": "approval",
+      "turn": {
+       "status": "known",
+       "id": "turn-7"
+      }
+     },
+     "noticeId": null,
+     "evidence": "lifecycle-metadata",
+     "observedAtMs": 1791287997000,
+     "occurredAtMs": 1791287996900,
+     "validUntilMs": 1791288026900,
+     "busy": null,
+     "media": null,
+     "visitor": null,
+     "location": null
+    },
+    "text": "A synthetic coding question is waiting.",
+    "phrase": 0,
+    "presentedAtMs": 1791288000000,
+    "history": false,
+    "content": "unavailable"
+   }
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "companion-speech-playback": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-playback",
+  "source": "bunny/parts/dashboard",
+  "type": "org.bunny.companion-speech.playback.observed",
+  "subject": "endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-playback/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "operationId": "speech-request",
+   "status": "completed",
+   "started": true
+  }
+ },
+ "companion-speech-lost": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-lost",
+  "source": "bunny/runtime/gateway",
+  "type": "org.bunny.companion-speech.endpoint-lost",
+  "subject": "endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-lost/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "endpoint-1"
+  }
+ },
+ "companion-speech-dispatch": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-dispatch",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.companion-speech.dispatch.requested",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-dispatch/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "speech-request",
+   "candidateId": "candidate-1",
+   "endpointId": "endpoint-1"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "companion-speech-play": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-play",
+  "source": "bunny/core",
+  "type": "org.bunny.companion-speech.play.requested",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-play/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "speech-request",
+   "candidateId": "candidate-1",
+   "endpointId": "endpoint-1"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+ "companion-speech-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-companion-speech-state",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.companion-speech-state.updated",
+  "subject": "reachy",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/companion-speech-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "reachy",
+   "revision": 1,
+   "endpointId": null,
+   "availability": "off",
+   "playback": null,
+   "pending": false
+  }
+ },
+ "mode-with-overrides": {
+ "specversion": "1.0",
+ "bunnyprofile": "2.0",
+ "id": "msg-mode-overrides",
+ "source": "bunny/core",
+ "type": "org.bunny.mode.updated",
+ "subject": "hub",
+ "time": "2026-10-06T12:00:00.000Z",
+ "kind": "state",
+ "datacontenttype": "application/json",
+ "dataschema": "https://bunny.invalid/events/mode/2.1",
+ "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+ "data": {
+  "id": "hub",
+  "revision": 4,
+  "mode": "quiet",
+  "selectedAtMs": 1791287940000,
+  "overrides": [
+   {
+    "target": "wall",
+    "mode": "free",
+    "selectedAtMs": 1791287940000
+   }
+  ]
+ }
+},
+ "mode-override-set": {
+ "specversion": "1.0",
+ "bunnyprofile": "2.0",
+ "id": "msg-mode-override-set",
+ "source": "bunny/core",
+ "type": "org.bunny.mode-override.set.requested",
+ "subject": "wall",
+ "time": "2026-10-06T12:00:00.000Z",
+ "kind": "command",
+ "datacontenttype": "application/json",
+ "dataschema": "https://bunny.invalid/events/mode-override-set/2.0",
+ "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+ "data": {
+  "requestId": "req-mode-1",
+  "mode": "work",
+  "expectedRevision": 4
+ },
+ "expiresat": "2026-10-06T12:00:05.000Z"
+},
+ "home-layout": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-home-layout",
+  "source": "bunny/core",
+  "type": "org.bunny.home-layout.updated",
+  "subject": "home",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/home-layout/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+    "id": "home",
+    "version": 1,
+    "revision": 1,
+    "layouts": null
+  }
+},
+ "home-layout-set": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-home-layout-set",
+  "source": "bunny/core",
+  "type": "org.bunny.home-layout.set.requested",
+  "subject": "home",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/home-layout-set/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+    "requestId": "home-fixture",
+    "expectedRevision": 0,
+    "layouts": {
+      "desktop": [
+        {
+          "widget": "hub-mode",
+          "size": "medium",
+          "hidden": false
+        }
+      ],
+      "phone": [
+        {
+          "widget": "inbox",
+          "size": "small",
+          "hidden": false
+        }
+      ]
+    }
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+},
+ "preference-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-preference-state",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.preference-state.updated",
+  "subject": "preferences",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/preference-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+    "id": "preferences",
+    "revision": 1
+  }
+},
  "playback-layout": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",

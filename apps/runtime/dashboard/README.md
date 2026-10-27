@@ -12,7 +12,7 @@ the core's current state.
 
 The runtime copy includes:
 
-- the shell, its hash routes, the Places navigation and the Neon skin;
+- the Quiet glass shell, its retained hash routes and Places links inside Settings;
 - browser sign-in on the runtime's gateway: a bookmark with trusted loopback
   sign-in, or the launcher's one-time code;
 - the agent sessions, synced from the core, with a finished turn shown unread
@@ -22,9 +22,24 @@ The runtime copy includes:
   decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
   (#923).
 
+Nanoleaf's existing light card and Pixoo's Display face include Work, Free and
+Quiet choices. These save an individual exception; choosing the Hub's mode
+returns that device to the global choice. The Hub card keeps its artwork and
+three buttons, with a neutral collapsed summary when saved exceptions or fresh
+native differences exist. Expanding it shows the choices, available device
+request evidence and links to device controls. It makes no physical-mode claim.
+Failures keep using Check Inbox. Native Monitor/Media, scene, power, brightness
+and media controls keep their own meaning and never create saved exceptions.
+All placements use the same controls and existing shell copies; opening,
+navigating, reconnecting and reloading send no mode command.
+
 The module-owned Wispr page and numeric home widget read selected collector files
 on demand when browser exposure is enabled (#927). They do not subscribe to an
-analytics event family. The Automation page manages event rules and shared weekly power schedules.
+analytics event family. Home uses the module's reusable Quiet line card: captured
+words/speaking minutes, seven selectable reporting dates with missing-date gaps,
+compact stale/unavailable evidence and explicit Refresh/Open Wispr. The full
+analytics page remains available; adding the card does not activate collection.
+ The Automation page manages event rules and shared weekly power schedules.
 Weekly schedules select a configured power-capable device, weekdays and same-day
 on/off times on the Hub clock. New schedules are disabled; enable/disable is
 separate from editing. Next-switch evidence is labelled as of the last explicit
@@ -43,8 +58,24 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
+The primary rail has **Home, Habitat, Rooms, Devices and Automation**. Settings is a
+separate corner link; it contains Connections (including build/operator tools),
+Places and Disconnect. An ended browser session still offers **Sign in again**
+globally. Home links Timeline. Devices groups catalog-derived Lighting,
+Displays, Audio and Other destinations; module pages keep their sibling links
+locally. The category choice survives navigation within the open page without
+being saved as a new preference. Unknown modules use Other, and unavailable
+catalog or observation evidence stays explicit. Browsing sends no device command.
+
+`navigation.tsx` shares native anchor navigation and containing-destination
+selection. `directory.ts` projects the existing copies without acquiring state.
+`skins/quiet-glass.css` supplies light/dark semantic values over the retained
+fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
+legacy dashboard and documentation keep their own skins. A theme picker is
+separate future scope.
+
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
-home, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
+home, `#/devices`, `#/settings`, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
 `#/module/<module>/<page>`. `src/routes.ts` parses a hash into a discriminated
 route, so built-in pages and component aliases are distinct kinds and an alias
 of `activity` or `connections` opens only that component
@@ -55,19 +86,93 @@ walks the history. An address that names nothing shows a not-found message and s
 `#launch=` fragment is not a route: the page removes it before it exchanges the
 code.
 
-`src/widgets.ts` is the widget catalog. Each widget declares an ID, a name, a
-description, its sizes, its source kind (`core`, `module` or `external`), the
-families it syncs or private content it reads, and whether it offers commands. `homeLayout` places the Hub
-mode and the agent sessions in the wide column, and the inbox and the attention
-summary in the narrow one. Wispr adds its numeric widget there when exposed;
-its page and widget share the shell connection and make no device commands. The Hub mode offers Work, Free and Quiet controls;
-the inbox shows failed, uncertain and conflicting commands until handled.
+`src/widgets.ts` declares the core widgets and their default sizes. `src/home-catalog.ts`
+adds the current reusable device, light/group, room and Music instances, together
+with availability and supported sizes. The editor reuses the existing adapters,
+shared authenticated connection and module-owned frontend entries.
 
-The mode panel syncs the core's `mode` and `operation` records. It shows the
-saved choice separately from each device's result for the most recent completed
-selection request. Current mode evidence and control authority enable the
-buttons, including explicit same-mode reapplication. A lost reply stays
-uncertain; reload, reconnect and restart never resend a selection.
+The optional MicroDuck card uses the companions frontend through that same scope.
+Choose one Reachy–Duck conversation on Companion knowledge, save it with **Show
+selected conversation on Home**, then add MicroDuck through **Edit Home**. The
+card shows one latest meaning and its original time; **View conversation** opens
+bounded history separately. Selection and records remain with companions. Reads
+produce no output; stale or denied content is hidden, and playback stays unknown
+without qualified evidence. See the [module guide](../../../modules/companions/README.md#duck-home-widget).
+
+### Customizable Home
+
+Choose **Edit Home**, then **Add card** to browse by category. Move cards with the
+handle or the earlier/later buttons; arrow keys on the handle provide the same
+ordering. Choose a supported Small, Standard or Wide size, Hide or Remove. Hidden
+cards remain in the saved arrangement and can be shown again; removal affects
+only that arrangement. Desktop and Phone have independent orders and sizes.
+Adding a card appends it to the other arrangement if absent. **Cancel** discards
+the draft, **Reset** restores that breakpoint's built-in defaults, and **Done**
+saves both through the core's revision-guarded `home-layout-set` command.
+
+The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
+sizes and flags only. Reload, another browser and restart read the same state;
+no layout is stored in localStorage. A concurrent change requires loading and
+reviewing the current layout. An accepted reply is not a saved result: the page
+waits for synced metadata and successful completion, and an uncertain save is
+never repeated automatically. Existing light grouping/ungrouping and room Home
+actions reconcile saved placement in their original core transaction.
+
+Editing makes card controls inert. Moving, resizing, hiding, removing, Cancel
+and Reset send no command; Done changes metadata only. Hidden module cards
+unmount their scoped reads and subscriptions. Core-wide evidence remains synced,
+so unresolved Inbox items and agent attention keep their ordinary cards visible
+until cleared. There is no separate notices section. A source that disappears
+stays unavailable; a retired widget definition is omitted with one report per
+saved revision and no automatic repair write. Wispr appears as available only
+when its existing browser exposure is enabled.
+
+The reusable `HubModeCard` receives the synced choice, matching mode artwork,
+three action callbacks and concise exception evidence from `HubMode`. Clicking
+the selected mode explicitly reapplies it. Routine request text, device lists,
+Latest request and a separate Reapply control are omitted. Related unhandled
+mode issues appear as a corner **! Check Inbox** control, with the Hub surface
+unchanged. Opening it expands and focuses a related Inbox entry without handling
+it. Handling clears the indicator after shared removal; a later selection clears
+it only after definitive success for the affected scope. Acceptance or a saved
+choice alone cannot clear it, and historical Inbox entries remain until handled.
+Stale copies retain known issues. Local refusals without an Inbox item stay
+explicit. No adapter acquires another connection or changes backend ownership.
+If recent operation projections retire, a retained device-mode issue stays
+reviewable after reload. Its corner explanation and accessible feedback say
+when the link to a Hub selection is unavailable. A known independent native
+request is excluded while its evidence exists; absent evidence cannot prove
+independence. Later target success must come from a successful Hub request sent
+after that issue was created. This conservative fallback adds no history read
+or persisted browser state.
+
+
+`InboxCard` and `InboxItemCard` supply reusable presentation over `InboxPanel`'s
+existing synced records and guarded actions. Concise device/action/result faces
+expand for evidence, Send again and Dismiss. Native disclosure and warning
+navigation send no command. Accepted handling waits for shared removal and a lost
+reply stays uncertain without automatic retry. Read-only sessions inspect evidence
+without write controls. Device holds, display dismissals and agent unread turns
+retain their separate meanings. Reload, reconnect and restart never resend.
+
+## Reusable Wemo card
+
+Home and existing Wemo device routes use the same `WemoCard` presentation and
+`WemoDeviceCard` adapter. A large generic desk lamp and smaller Wemo plug remain
+visible while Power and Auto-off tabs switch only the controls. Both panels stay
+mounted and share their layout space, preserving drafts and card dimensions.
+The selected On/Off button follows plug-reported power; desired state and command
+acceptance do not select it. Unknown, stale, unavailable and held evidence remain
+explicit. Read-only sessions can inspect both tabs without editing.
+
+The adapter retains the existing tracked power/hold-release commands and uses
+`PowerLimitPanel` with concise presentation. Saving is explicit; changing tabs
+sends nothing. Weekly schedules stay in Automation. Routine power/reporting,
+Smart plug, Armed and standing warning text are omitted from the control face.
+Collapsed **Device evidence** retains observation age, desired versus observed
+power, outcomes, run/deadline/attempt evidence and Hub/reachability limitations.
+The illustration identifies a load; it does not establish visible lamp output.
+General placement and plug-to-room assignments remain separate work.
 
 ## Reusable Music card
 
@@ -204,6 +309,13 @@ the connection. Unmounting or ending the session aborts reads and closes active
 and late sync copies. Each copy follows that module's declared owner on the
 existing participant. Opening a page creates no second connection or command.
 
+The companions page can explicitly register one speech output endpoint through
+its scoped `api.speech` handle. Only a browser with current read and control
+access receives this grant. The handle accepts output commands from the
+companions owner and can send only endpoint controls and playback observations.
+Navigation, lost control authority or disconnection closes it, even if its
+registration finishes late. Reconnecting never restores speech availability.
+
 `src/command-control.tsx` holds the existing command-attempt behavior shared by
 device cards and module forms: explicit send, retained request identity,
 accepted versus completed/uncertain status, and no resend after reload. Feature
@@ -243,6 +355,13 @@ synthetic arrival/visit fixtures use the existing tracked command component.
 Cards show source/session, real coding metadata or simulated scenario, evidence,
 fixed text and the last decision reason. A published card is not proof it was
 seen; restored cards are history. Core session attention remains available on Home.
+Spoken alerts have a separate, default-off enable control for one connected tab.
+The page explains manual availability and muting before calls/media. Stop and mute
+cancel locally before waiting for the runtime. Qualification, current policy and
+live state gate output; navigation, disconnect and restart require fresh enablement.
+The page reports playback separately from its tracked operation, without claiming
+an alert was heard. The [companions guide](../../../modules/companions/README.md#browser-speech)
+owns the private qualification receipt and bounded voice checks.
 Run `npm run test:companions:browser` after the root build for persisted controls,
 priority and attribution, reconnect, keyboard, narrow-screen and axe checks.
 
@@ -268,17 +387,24 @@ live changes:
   `unauthenticated` or `forbidden` sync answer ends the link too. It never signs in
   by itself.
 
-`src/sessions.ts` derives what each row shows from its record alone:
+`src/sessions.ts` derives names, chip priority and evidence from each record.
+`AgentStatusCard` takes a derived row, live evidence, a clock and an optional
+action slot; it acquires no connection and sends no command. `AgentStatusSummary`
+can render independently. `AgentSessions` composes both with search, provider
+filtering and the existing guarded label editor over the shell's one session copy.
+Home supplies its widget frame; other containers can reuse the components without
+starting another feed.
 
-- the name: the label, then the title, then the native session ID;
-- where it runs: the project, then the client, such as
-  `agent-device-hub · Claude Code`;
-- the chip: the dashboard's `chipOf` policy, naming the attention (**Waiting
-  for approval**, **Waiting for input** or **Question**), **Working**,
-  **Finished · unread**, or the activity;
-- the attention lines, each retained turn-ended notice with who acknowledged it,
-  and the rare facts behind Details: source, session ID, activity, the age of the
-  last evidence, read evidence, parent and children.
+Card faces show the label (then title or native ID), project/client and state.
+Approval, input and question attention add amber highlighting and text. Native
+card disclosure reveals freshness, attention lines, retained notices and their
+acknowledgments, source/session/activity/read/parent/child evidence and optional
+label editing. Collapse and filtering retain drafts; replacing a generation
+retires them. Read-only callers see the same evidence without label controls.
+Stale/disconnected cards say **Stale**, retain their last-known state in the
+expanded evidence and contribute no current Working count. Needs you and Unread
+counts describe retained evidence across the full copy, independent of filters.
+No separate attention box is placed on Home. Inspecting a card never clears a notice.
 
 A finished turn shows **Finished · unread** until its record carries positive
 read evidence, any consumer's acknowledgment, or a later known turn. Ending the
@@ -343,7 +469,7 @@ restart through the existing core owner storage.
 
 ## Places
 
-The Places navigation reads `docs/skins/places.json`. Public places link to the
+The Places navigation inside Settings reads `docs/skins/places.json`. Public places link to the
 published guide. On the installed runtime, which serves B.U.N.N.Y.'s own place
 port, a Local place links to the runtime's place link for it
 (`GET /api/v2/links`) or else to the manifest's address. Anywhere else, such as
@@ -354,10 +480,14 @@ installed service.
 ## Visual foundation
 
 The [application UI style guide](../../../docs/application-ui-style-guide.md)
-records the shared visual direction (Neon Geometry Wars).
-[`src/skins/neon-geometry-wars.css`](src/skins/neon-geometry-wars.css) is the
-token layer, copied unchanged; `src/style.css` reads only its role and private
-token names. The session dot and chip use the fixed-meaning chip colors.
+records the shared semantic roles and fixed state meanings. The runtime's
+[`Quiet glass skin`](src/skins/quiet-glass.css) supplies the accepted light/dark
+shell values over its retained Neon base. Layout CSS reads role and private
+token names. The session dot and chip keep fixed-meaning attention colors;
+colored chips have a contrasting surface while neutral Idle uses the ordinary
+inset surface. Device artwork keeps its own material and status meanings.
+Control faces retain their card-flip motion without fading text below contrast;
+reduced-motion appearance removes the animation.
 
 ## Build and checks
 
@@ -381,6 +511,14 @@ and Audio card; synthetic browser evidence is separate from the installed
 runtime identity and served browser build.
 
 ## Devices, music and operations
+
+Roborock Home/device and module pages share the module's read-only quiet card
+(#390). Status, Last run and Care keep the illustration and dimensions stable.
+The existing Home editor places it at small or wider sizes without changing
+saved source IDs. Its History link and the status page's Evidence disclosure
+retain full run/sample observations. Unconfigured/refused sources stay visibly
+unavailable. State/battery and care have separate evidence ages; the display
+clock reads nothing. There are no vacuum controls or inferred replacement dates.
 
 The authenticated module catalog names every device owner. `runtime-feeds.ts`
 keeps one SDK copy per owner, alongside core operations and playback, using the
@@ -435,7 +573,7 @@ application scripts under their separate content policy; they are trusted
 same-origin code. The shell itself cannot be framed. Unknown pages show not
 found. No private file or installed-service fallback is used.
 
-Connections reads `/api/v2/build`: the serving process's frozen package version,
+Connections, reached through Settings or its retained bookmark, reads `/api/v2/build`: the serving process's frozen package version,
 source revision, build time and dirty flag, with unavailable identity shown as
 unknown. The build step creates that identity, not a Git command per request.
 
@@ -466,11 +604,35 @@ show the records without controls. A handling reply is separate from the synced
 removal and the new operation's completion. Device holds and display dismissal
 remain separate. Nothing resends on reload, reconnect or elapsed time.
 
-**Timeline** reads retained history on entry and **Apply filters**, with inclusive
-From/To, Kind, Source and qualified Session filters. Reads send no command and
-use the existing authenticated gateway. Only the latest submitted read can
-update the results or status, even when replies arrive out of order.
+**Timeline** uses the same quiet card on Home and `#/timeline` (#1194). Add it
+through **Edit Home → Add card**; existing saved arrangements are unchanged.
+Short newest-first rows reveal evidence and an optional technical record when
+selected. Today, Yesterday and Recent select retained history; category buttons
+filter that snapshot locally. Every read requests the latest 200 matching
+entries. “Latest N” identifies the loaded window, and **Show more** reveals only
+loaded entries. An empty category describes that window, not the whole archive. **Filters** preserves inclusive From/To, Kind,
+Source and qualified Session filters. Entry, **Refresh history** and applied
+filters read the existing authenticated gateway, without polling or commands.
+Only the latest read can update results/status; superseded and unmounted reads
+are canceled. A failed refresh retains earlier rows with an unavailable label.
+Historical evidence never establishes current device state.
+After a build, `node apps/runtime/dashboard/tests/timeline-card.browser.ts`
+checks saved Home placement, passive browsing, evidence, failed reads, keyboard
+and light/dark desktop/phone accessibility. Unit checks cover malformed replies,
+unknown evidence and reverse completion even when a transport ignores abort.
 The focused synthetic journey is
 `node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
 it checks explicit resend, dashboard dismissal visible through MCP, timeline
 filters, keyboard, read-only presentation and desktop/phone axe.
+
+## Shared habitat
+
+`#/habitat` presents ten resident bunnies in one four-room home. It uses the shell's existing session copy; it opens no second participant and sends no agent or device command. Live mode retains stable assignments, fills free places from the newest eligible sessions and leaves overflow waiting. Known children stay with the root's existing activity projection. Disconnect or resync retains assignments and marks evidence uncertain. Demo mode and music are explicitly simulated.
+
+The canvas geometry, sprite poses, furniture masks and routes retain the reviewed private prototype. The JavaScript renderer is scoped to its mount and returns a typed cleanup API; allocation, preferences and the shell adapter are TypeScript. Each mount owns its model, event listeners and animation frame. Navigation destroys them. Pause motion and reduced motion keep text and final poses available. If artwork or canvas is unavailable, a session list remains visible.
+
+Select a bunny once to inspect it and again to open a qualified Codex Desktop conversation on Windows. The resident buttons provide the same deliberate keyboard activation. Unsupported providers or platforms explain their limit. Opening does not acknowledge unread notices or claim read evidence.
+
+Settings are local to the browser origin. Use **Export habitat settings** in the private preview, then **Move your habitat settings → Import habitat settings** here. The bounded JSON transfer includes only room positions, apron colors, recovery preference and assignments; it never uploads a file. Import validates before writing and retains a browser-local backup. Storage failure keeps the current visit usable; assignments cannot be promised across reload without storage.
+
+The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback, keyboard and axe in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.

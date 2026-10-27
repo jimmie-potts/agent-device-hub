@@ -1,12 +1,13 @@
-import React, {useEffect, useMemo} from 'react';
+import React, {useEffect, useMemo, useSyncExternalStore} from 'react';
 import type {FrontendContext, FrontendContribution, FrontendUi} from '@jimmie-potts/sdk/frontend';
-import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {DashboardConnection} from './connection.ts';
 import {moduleView, type ModuleEntry, type ModulePage} from './modules.ts';
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {Command} from './command-control.tsx';
+import {DeviceModeChoice} from './device-mode.tsx';
 
-const ui: FrontendUi = {Badge, Facts, InfoTip, Select, Command};
+const ui: FrontendUi = {Badge, Facts, InfoTip, Select, Command, ModeChoice: DeviceModeChoice};
 type Props = {
   module: ModuleEntry; page: ModulePage; frontends: readonly FrontendContribution[]; connection: DashboardConnection;
   connected: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
@@ -32,6 +33,10 @@ export function ModuleFrontend({module, connection, Component, connected, contro
 }): React.JSX.Element {
   const scope = useMemo(() => connection.openModule(module), [connection, module]);
   useEffect(() => () => { void scope.close(); }, [scope]);
-  const context: FrontendContext = {module, api: scope.api, ui, connected, control, operations, operationsLive};
+  const state = useSyncExternalStore(connection.subscribe, connection.getState);
+  const modeCopy = state.runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
+  const mode = modeCopy?.records.find((record): record is ModeState => 'mode' in record);
+  const context: FrontendContext = {module, api: scope.api, ui, connected, control, operations, operationsLive,
+    core: {sessions: state.sessions.records, sessionsLive: connected && state.sessions.synced, mode: mode?.mode, modeLive: connected && modeCopy?.synced === true}};
   return <Component context={context}/>;
 }

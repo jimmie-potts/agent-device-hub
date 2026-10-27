@@ -13,7 +13,7 @@ import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {parseArgs} from 'node:util';
 import {InstalledLibrary, MIGRATION_SCHEMA, MigrationError, migrateLibrary, verifyMigration} from '@jimmie-potts/pixoo';
-import {fullDisk} from '@jimmie-potts/sdk';
+import {fullDisk, Outcome} from '@jimmie-potts/sdk';
 import {holdRuntimeLease, type RuntimeLease} from './lease.js';
 import {RuntimeError, freshModule, openModuleDatabase, openModuleFolder, prepareStateDirectory} from './state.js';
 
@@ -261,7 +261,7 @@ async function migrateInto(
     }
     const removed = await discard(database, folder);
     const {code, message} = refusalOf(error);
-    emit({operation: 'migrate', result: 'failed', code, message, destination: removed ? 'removed' : 'left'});
+    emit({operation: 'migrate', result: Outcome.failed, code, message, destination: removed ? 'removed' : 'left'});
     return EXIT.failed;
   }
 }

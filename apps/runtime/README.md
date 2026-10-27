@@ -59,6 +59,22 @@ The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
 
+## Hosting profiles
+
+The [hosting decision](../../docs/decisions/0008-runtime-hosting.md) selects the Mac
+Mini as primary, using the Linux ARM64 container on Docker Desktop. The PC is an
+optional producer/client or host for PC-attached hardware; it must not own the
+Mac's normal startup, private stores or serving route. Host-local sources use the
+existing authenticated SDK edge rather than shared databases.
+
+Use the [container operator guide](../../docs/bunny-container.md) for its manual
+lifecycle. The limited Mac-local browser profile runs the core and only the modules
+that reach no device, publishes loopback only and does not qualify remote clients
+or selected production devices. Shipped module availability is not installed
+acceptance. [SETUP.md](SETUP.md) and
+[UPGRADE.md](UPGRADE.md) retain the established WSL installation's procedures;
+they do not install the Mac container or qualify cross-host state transfer.
+
 ## Adding a module
 
 The [ONN module](../../modules/onn/README.md) owns one configured streaming
@@ -103,6 +119,17 @@ The in-memory harness, the disposable run's supervisor and child, and the run's
 seeds and plug-in collect the registrations and the scenario files, so they name
 only the core and the fixture modules. `npm run test:workflow` fails when one of
 those shared files names a device module (`scripts/check-module-names.cjs`).
+
+## Home arrangement metadata
+
+The core also owns `home-layout`: a versioned record with separate desktop and
+phone widget IDs, sizes and hidden flags. Its `home_layout` table is additive in
+`modules/core.sqlite`. Explicit operator saves use `home-layout-set`, expected
+revision and expiry checks, and the existing transactional tracker/outbox. They
+send no device commands. Existing lighting composition changes reconcile their
+saved Home placements in the same transaction. Read the [dashboard guide](dashboard/README.md#customizable-home)
+for editing, defaults, alert visibility and uncertain-save recovery. Older-reader
+recovery remains a separate installed-upgrade assessment.
 
 ## Agent-session core
 
@@ -265,7 +292,7 @@ and exits 1, and the service manager restarts it whole.
   | --- | --- | --- | --- |
   | device | every command to one device, such as `power-set` or `playback-control` | 5 s | 30 s |
   | moment | `moment-play` | 5 s | 150 s: 60 s of lead and 60 s of tolerance at most |
-  | mode | `mode-set` | 5 s | 60 s |
+  | mode | `mode-set`, `mode-override-set` | 5 s | 60 s |
 
   The state machine is `src/core/operations.ts`: `sent`, then `accepted`, then
   `completed` with the outcome's result; or `rejected` (failed, with evidence
@@ -304,15 +331,26 @@ and exits 1, and the service manager restarts it whole.
   row does. State and removal messages retain the causal outcome trace, or the
   stored action trace when no outcome caused the change. The inbox (#923) points at
   an operation by its request ID.
-- **Hub mode.** The core owns the durable `mode/2.0` record `hub` (#924), initially
-  Free. An authorized `mode-set` saves the choice, checks its revision and
-  completes the selection in one transaction, then independently dispatches
-  native modes to the qualified admitted Nanoleaf and Pixoo devices. An admitted
-  device remains a target after its module stops or fails; refused modules are
-  excluded. The saved choice and each device's result remain separate. Startup,
-  restart, duplicate submission and native changes send no application command;
-  an explicit same-mode selection with a new request ID reapplies it. The
-  dashboard and MCP's `core_set_mode` use ordinary control scope.
+- **Hub mode.** The core owns the durable `mode/2.1` record `hub`, initially
+  Free with no overrides. Existing valid `mode/2.0` records keep their choice,
+  revision and selection time; absent overrides mean an empty list. Invalid
+  saved data fails startup without resetting the owner's choice.
+  Authorized `mode-set` saves the global choice and clears all overrides,
+  including an explicit same-mode reapply. `mode-override-set` targets one
+  qualified Nanoleaf or Pixoo device; selecting the global mode removes just
+  that exception. Both commands guard the shared revision and complete the
+  saved choice in one transaction before dispatching independent native commands.
+  A global selection with no participants still saves; an unknown individual
+  target refuses. A configured offline target keeps its saved choice and reports
+  its failed or uncertain native result separately. New selections refuse while
+  this process has a selection or its native commands pending, bounded by the
+  existing operation deadlines. Nothing queues for later application.
+  Startup, restart, reads, duplicate submission and native changes never apply
+  or replay choices. Dormant overrides for absent devices remain saved and send
+  nothing. The dashboard and MCP's `core_set_mode` / `core_set_device_mode` use
+  ordinary control scope. `effectiveMode(record, target, live)` in the shared
+  contract package gives future consumers an explicit exception or global
+  fallback, and no answer for missing or stale state.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
   occurrence and outcome another participant publishes. It drops a duplicate
   by `(source, id)` durably, since history keeps each whole message once, and
@@ -358,7 +396,10 @@ separate admission records; they create no household fact or physical/audio outp
 The page's enablement, mute and social snooze controls are tracked commands.
 Saved cards return as history, and neither sync, recovery, restart nor returning
 to Free creates a reaction. See the module guide for timing, private storage and
-source checks. Source acceptance and separately selected installation remain distinct.
+source checks. Optional [spoken alerts](../../modules/companions/README.md#browser-speech)
+require separate per-tab enablement and a qualified local voice. Stop and mute do
+not change coding tasks; lost availability never replays missed alerts.
+Source acceptance and separately selected installation remain distinct.
 
 The same module contributes a default-off **Synthetic tasks** page: private text,
 a saved clarification and explicit continuation through a bounded fake-model
@@ -367,6 +408,20 @@ Task mechanics are separate from Reachy cards and core session lifecycle.
 See [Synthetic assistant tasks](../../modules/companions/README.md#synthetic-assistant-tasks)
 for restart, cancellation, privacy and limits. React contributions retain their
 last loaded content during reconnect while the host disables commands.
+
+The **Preferences** page keeps explicit titled preferences in the same private
+store, independently of both switches. It supports edit/history, Stop using,
+Reactivate, manual copy of current active text and private JSON import/export.
+Imports preserve existing records and add missing entries inactive. See the
+[preference guide](../../modules/companions/README.md#explicit-preferences) for
+the read contract and bounds. No automatic learning or model-context insertion
+is included.
+
+The **Companion knowledge** page adds explicit household notes, curated persona
+inspection, attributed conversation, current context copy and additive private
+recovery in the same owner. Its [guide](../../modules/companions/README.md#companion-knowledge-and-context)
+describes current reads, unknown legacy evidence, removal behavior and bounds.
+No live model, automatic learning, audio or device output is enabled by it.
 
 ## Core automation
 
@@ -1843,7 +1898,11 @@ device holds stay separate.
 
 `GET /api/v2/history` reads committed `core_history`, oldest first, with optional
 inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
-Filters combine; unknown, repeated or invalid fields are refused. Every caller
+Optional `limit` is an integer from 1 to 500: filters combine first, then the
+latest matching rows by committed sequence are selected in SQLite before result
+materialization/decoding and returned oldest first. Omitting it preserves the
+complete matching result and existing order. It bounds row count, not bytes or
+filtered scan time. Unknown, repeated or invalid fields are refused. Every caller
 with read scope sees the whole history and inbox. The MCP tools `core_inbox`
 and `core_history` read the same owner without triggering actions.
 

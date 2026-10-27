@@ -1,4 +1,12 @@
+import {speechJourney} from './speech.browser.ts';
+import {speechReadinessJourney} from './speech-readiness.ts';
+import {suggestionsJourney} from './suggestions.browser.ts';
+import {suggestionsReconnectJourney} from './suggestions-reconnect.ts';
+import {knowledgeJourney} from './knowledge.browser.ts';
+import {duckJourney} from './duck.browser.ts';
+import {duckFailureJourney} from './duck-failures.ts';
 import assert from 'node:assert/strict';
+import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
@@ -7,9 +15,16 @@ import {feed, startWorld} from './harness.ts';
 const world = await startWorld({companions: true});
 const browser = await chromium.launch({headless: true});
 try {
+  await speechJourney(browser);
+  await speechReadinessJourney(browser);
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
+  await duckFailureJourney(context);
+  await suggestionsReconnectJourney(context);
+  await preferencesJourney(world, page, context);
+  await knowledgeJourney(world, page, context);
+  await duckJourney(world, page, context);
   const reachy = page.getByRole('region', {name: 'Reachy', exact: true});
   await page.goto(`${world.url}/#/module/companions/reachy`); await feed(page, 'connected');
   await reachy.getByText('Reachy is disabled.', {exact: false}).waitFor();
@@ -23,11 +38,12 @@ try {
   assert.match(await card.innerText(), /approval|decision|review/);
   assert.match(await card.innerText(), /lifecycle-metadata/);
   await page.goto(`${world.url}/#/`);
-  await page.locator('[data-widget=attention]').getByText('Waiting for approval', {exact: false}).waitFor();
+  await page.locator('.agent-status-card[data-attention=true] .chip', {hasText: 'Waiting for approval'}).waitFor();
   await world.observe(approvalResolved('reachy-browser')); await world.observe(turnEnded);
   await page.goto(`${world.url}/#/module/companions/reachy`);
   await card.getByText(/coding turn|turn has ended/).waitFor();
   assert.match(await card.innerText(), /Unavailable|unavailable/);
+  await suggestionsJourney(world, page, context);
   await reachy.getByRole('button', {name: 'Simulate question and arrival', exact: true}).click();
   await card.getByText('Simulated scenario', {exact: true}).waitFor();
   await card.getByText('Coding attention', {exact: true}).waitFor();
@@ -88,5 +104,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
 } finally {await browser.close(); await world.close();}

@@ -1,12 +1,114 @@
-# ADR 0008: Keep the runtime in WSL and start it at boot; a Linux server is the target
+# ADR 0008: Make the Mac Mini the primary B.U.N.N.Y. host
 
-Current applicability: WSL remains the host choice. The accepted
-[#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
-replaced the separate writer services with `bunny-runtime.service`, enabled for
-the existing WSL startup setup with user linger. No Windows task or host setting
-changed in that cutover. The six-service topology below is the September 25
-baseline, not the running topology; its proposed keep-alive/server work retains
-its own scope. [ADR 0012](0012-bunny-event-platform.md) owns the single-process target.
+## Current decision — 2026-10-22
+
+Accepted by the owner in [hub #44](https://github.com/jimmie-potts/agent-device-hub/issues/44):
+the Mac Mini is the primary, self-sufficient host. Its runtime, private state,
+startup, dashboard access and selected portable device integrations must work
+with the PC off. The PC is an optional activity producer, client and host for
+explicitly PC-attached hardware. It is not a relay or startup dependency for
+the Mac's normal operation.
+
+This replaces the September hosting direction below: the host is selected and
+available; there is no hardware-purchase trigger, x86 default, OrbStack requirement
+or prerequisite PC-hosted production release. The original decision remains
+below as dated history, not current operating instructions.
+
+### Runtime and access
+
+Use the existing Linux ARM64 container on Mac Docker Desktop, with one
+`apps/runtime` process, its authoritative core, fixed shipped modules and private
+embedded stores. [ADR 0012](0012-bunny-event-platform.md) owns those boundaries.
+Windows Docker Desktop remains an alternate for the same portable core, qualified
+separately. Revisit a native core or full VM only if a concrete required capability
+fails qualification on this baseline.
+
+Keep the reviewed immutable image, matching operator scripts and private
+configuration separate from development checkouts and disposable previews.
+The Mac owns persistent state and the serving endpoint. Never depend on a PC
+login, mounted PC database or PC process to serve the hub. Host-local producers
+read only their selected local inputs and use the existing authenticated SDK
+HTTP/SSE edge; they do not share SQLite files. A missing PC source or PC-attached
+device reports its actual unavailable/stale state without preventing the Mac's
+core or other qualified integrations from running. Source identity, reconnect,
+refusal, retry and outcome rules remain those of ADR 0012 and the
+[diagnostic contract](../observability-contract.md).
+
+The delivered [Mac-local browser profile](../bunny-container.md#mac-local-browser-profile)
+is a limited profile at host loopback. It runs the core and only the modules that
+reach no device, and supplies neither remote access nor device activation. The
+production target needs separately qualified private ingress, host-local
+producers and selected devices. Its client endpoint
+must terminate on the Mac without the Windows HTTPS forwarder. Preserve existing
+authentication, credentials and Host/Origin checks; do not widen the local profile
+or treat a listening port as qualification. Choose the private ingress route and
+explicit addresses, source grants and device targets in the owning delivery work.
+
+### Manual operation and state handoff
+
+Use the [container operating procedure](../bunny-container.md#manual-operation-after-mac-sign-in).
+After a restart, the operator unlocks FileVault, signs in and starts Docker
+Desktop's Linux engine, then starts the selected existing instance and verifies
+process state, runtime health and its qualified client path. Downtime until
+sign-in and explicit restart is accepted. Unattended pre-login startup, automatic
+failover and a new recovery framework are not required.
+
+Stop and verify the selected writer before a consistent backup or image
+replacement. Preserve private state, configuration and separately held credential
+references, including inactive module data. Assess actual storage-format changes
+before starting a reviewed replacement; do not assume an older reader is safe.
+Use the delivered operator's stopped-backup and separate-empty-target restore
+rules. A snapshot restore needs an explicit owner decision, preservation of the
+failed/latest state and a stated data gap. No automatic restore or command replay
+is authorized by this decision.
+
+Moving the established WSL installation is a separate, qualified state transfer.
+The container operator's same-revision restore and same-architecture acceptance
+are not evidence of WSL-to-container or AMD64-to-ARM64 compatibility. Qualify the
+actual databases, keys, assets, native dependencies and configuration mappings.
+Keep the old instance and all restart actors stopped and disabled before the Mac
+becomes the selected device writer. A local lease cannot exclude a writer on
+another computer. Manual return must stop the Mac writer first and explicitly
+select the preserved source and data gap; never run both device writers.
+
+Current [Nanoleaf](../../modules/nanoleaf/README.md) and
+[Pixoo](../../modules/pixoo/README.md) integrations are modules in this runtime.
+The old Nanoleaf Python services and standalone Pixoo service remain retained;
+this decision does not restart or reinstall them. Host qualification still covers
+the actual modules' native dependencies and physical behavior. Preserve Nanoleaf's
+shared-input-only behavior, task/effect epochs, reservations, unread policy,
+preferences and scenes; preserve Pixoo's originals, referenced renditions,
+playback recovery, passive simulator startup and explicit Monitor/Media semantics.
+An existing-runtime host transfer must not reuse a legacy-import procedure that
+deliberately omits transient state. Each module's guide owns its formats and
+behavior; GitHub owns the reconciliation of legacy migration obligations.
+
+Tronbyt, if adopted, is a separate workload with its own storage, network and
+device authority. It is not a prerequisite for the Mac's B.U.N.N.Y. runtime and
+must not be attached to the limited local profile's dedicated network.
+
+### Evidence and applicability
+
+The [accepted fresh WSL cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+installed `bunny-runtime.service` and stopped/disabled the older writers, retaining
+their units, releases and stores. That cutover transferred no old data. The
+[WSL setup](../../apps/runtime/SETUP.md) and
+[WSL upgrade/recovery procedure](../../apps/runtime/UPGRADE.md) remain scoped to
+that established installation; neither is a Mac installer or cross-host transfer.
+
+The container guide records its limited operator and local-profile guarantees.
+Those do not establish full production migration, remote-client acceptance or
+physical device qualification. This amendment changes documentation only; it
+installs nothing and introduces no product behavior or message-contract delta.
+GitHub issues own delivery order, prerequisites and acceptance evidence. Keep
+operational receipts and personal data private under [ADR 0011](0011-private-personal-data-retention.md).
+
+## Historical decision — 2026-09-25
+
+The following context, proposed work and vocabulary describe the September
+six-service WSL baseline. They are preserved for provenance and superseded for
+current hosting by the decision above. The later fresh cutover replaced those
+writers with one runtime; it did not install a new Windows scheduled task.
 
 Status: Accepted direction under [hub #44](https://github.com/jimmie-potts/agent-device-hub/issues/44),
 2026-09-25. The owner answered three questions on 2026-09-25: accept one

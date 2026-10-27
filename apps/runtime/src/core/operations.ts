@@ -19,6 +19,7 @@
 // - nothing is ever sent again: no transition sends a command, and a restart only lets a pending operation's deadline
 //   pass.
 import type {ErrorDetail} from '@jimmie-potts/event-contracts/v2';
+import {Outcome} from '@jimmie-potts/sdk';
 
 /** What the core tracks (ADR 0012, "High-impact messages"): device commands, moments and mode changes. */
 export type ActionKind = 'device' | 'moment' | 'mode';
@@ -42,7 +43,7 @@ export const DEADLINES: Readonly<Record<ActionKind, {readonly replyMs: number; r
 /** The tracker deadline class: moment, mode, or the default device budget, also used by core-local actions. */
 export function kindOf(family: string): ActionKind {
   if (family === 'moment-play') return 'moment';
-  if (family === 'mode-set') return 'mode';
+  if (family === 'mode-set' || family === 'mode-override-set') return 'mode';
   return 'device';
 }
 
@@ -102,7 +103,7 @@ export type OperationEvent =
 const PENDING: readonly OperationStatus[] = ['sent', 'accepted'];
 /** Whether the operation still waits for its fate: sent or accepted, with no result. */
 export const pending = (operation: Pick<Operation, 'status'>): boolean => PENDING.includes(operation.status);
-const definitive = (result: OperationResult | TakenOutcome['result'] | undefined): result is 'succeeded' | 'failed' => result === 'succeeded' || result === 'failed';
+const definitive = (result: OperationResult | TakenOutcome['result'] | undefined): result is 'succeeded' | 'failed' => result === Outcome.succeeded || result === Outcome.failed;
 
 /** The `uncertain-result` error an operation carries when its fate is unknown. */
 const uncertainError = (requestId: string, detail: string): ErrorDetail => ({code: 'uncertain-result', retryable: false, requestId, detail});
@@ -121,7 +122,7 @@ export function advance(operation: Operation, event: OperationEvent): Operation 
       // Only an operation still waiting for its fate passes its deadline; a later outcome completes it.
       if (!pending(operation) || event.atMs < operation.deadlineAtMs) return undefined;
       return {
-        ...operation, status: 'uncertain', result: 'uncertain', evidence: 'none', updatedAtMs: event.atMs,
+        ...operation, status: 'uncertain', result: Outcome.uncertain, evidence: Outcome.none, updatedAtMs: event.atMs,
         error: uncertainError(operation.requestId, 'no outcome arrived by the action\'s deadline'),
       };
   }
@@ -141,11 +142,11 @@ function reply(operation: Operation, event: Extract<OperationEvent, {type: 'repl
     case 'rejected':
       // A rejection proves no effect: the owner refused it before acting, or it never reached the owner.
       return {
-        ...replied, status: event.error.code === 'expired' ? 'expired' : 'rejected', result: 'failed', evidence: 'none', reply: event.error.code,
+        ...replied, status: event.error.code === 'expired' ? 'expired' : 'rejected', result: Outcome.failed, evidence: Outcome.none, reply: event.error.code,
         error: {...event.error, requestId: operation.requestId},
       };
     case 'uncertain':
-      return {...replied, status: 'uncertain', result: 'uncertain', evidence: 'none', error: {...event.error, requestId: operation.requestId}};
+      return {...replied, status: 'uncertain', result: Outcome.uncertain, evidence: Outcome.none, error: {...event.error, requestId: operation.requestId}};
   }
 }
 
@@ -160,8 +161,8 @@ function outcome(operation: Operation, taken: TakenOutcome): Operation | undefin
   if (taken.error === undefined) delete settled.error;
   const current = operation.result;
   // Pending, or only uncertain so far: the outcome settles the operation, a definitive one replacing an uncertain result.
-  if (current === undefined || (current === 'uncertain' && definitive(taken.result))) return settled;
-  if (current === 'uncertain') return {...base, evidence: strongest(operation.evidence, taken.evidence)};
+  if (current === undefined || (current === Outcome.uncertain && definitive(taken.result))) return settled;
+  if (current === Outcome.uncertain) return {...base, evidence: strongest(operation.evidence, taken.evidence)};
   // Already definitive or in conflict: an uncertain outcome adds its evidence only.
   if (!definitive(taken.result)) return base;
   if (current === 'conflict' || current !== taken.result) {

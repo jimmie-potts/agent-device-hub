@@ -12,6 +12,18 @@ const validator = () => {
   registerCoreFamilies(v);
   return v;
 };
+
+test('shared local Codex lifecycle is admitted without Desktop metadata privileges',()=>{
+  const message=structuredClone(Object.values(fixtures.valid).find(m=>m.type==='org.bunny.lifecycle.observed'));
+  message.data.identity.client='local';message.data.identity.provider='codex';
+  message.data.event={kind:'turn-started'};delete message.data.title;delete message.data.project;delete message.data.hostSessionId;
+  message.subject=sessionEntityId(message.data.identity);
+  const v=validator();assert.equal(v.validate(message).ok,true);
+  message.data.event={kind:'metadata-observed',archived:true};assert.equal(v.validate(message).ok,false);
+  message.data.event={kind:'read-observed',state:'read'};assert.equal(v.validate(message).ok,false);
+  message.data.event={kind:'turn-started'};message.data.identity.provider='claude';
+  message.subject=sessionEntityId(message.data.identity);assert.equal(v.validate(message).ok,false);
+});
 // Sets each JSON pointer on a copy of a valid message; null removes the member.
 function patched(base, set) {
   const value = structuredClone(fixtures.valid[base]);
@@ -60,7 +72,7 @@ test('each family has one kind and one type, and its schema is built from the sh
     usesBlocks(coreFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
   for (const {family, kind, type, dataschema, schema} of coreFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
+    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);
@@ -157,3 +169,14 @@ test('inbox conflict is additive, preserves opposite evidence, and handling inpu
   }
   Object.assign(base.data,{enabled:true,status:'armed',startedAtMs:1000,deadlineMs:14401000});assert.equal(v.validate(base).ok,true);
  });
+
+test('preference sync exposes only its identity and revision, never private library fields', () => {
+  const v = validator(), base = fixtures.valid['preference-state'];
+  assert.equal(v.validate(base).ok, true);
+  for (const field of ['title', 'text', 'entries', 'history']) {
+    const message = structuredClone(base); message.data[field] = 'SYNTHETIC_PRIVATE_PREFERENCE';
+    assert.equal(v.validate(message).ok, false, `${field} is private content`);
+  }
+  const wrongSubject = {...base, subject: 'assistant'};
+  assert.equal(v.validate(wrongSubject).ok, false);
+});

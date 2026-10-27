@@ -1,3 +1,4 @@
+import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
@@ -27,6 +28,7 @@ export const terminal = (status: AssistantStatus): boolean => ['succeeded', 'fai
 
 /** All writes are synchronous and are called inside the owning outbox's transaction when they change task state. */
 export class AssistantStore {
+  readonly messages: Messages;
   constructor(readonly database: DatabaseSync) {
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_meta (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, enabled INTEGER NOT NULL);
       INSERT OR IGNORE INTO assistant_meta VALUES (1,0,0);
@@ -40,6 +42,7 @@ export class AssistantStore {
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
     initializeRevision(database, this.meta().revision);
+    this.messages = new Messages(database);
   }
   meta(): {revision: number; enabled: boolean} {
     const row = this.database.prepare('SELECT revision,enabled FROM assistant_meta WHERE id=1').get() as {revision: number; enabled: number};
@@ -59,7 +62,9 @@ export class AssistantStore {
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null};
   }
   message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number): void {
+    if (this.messages.removal(id) !== undefined) return;
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
+    this.messages.capture(task, id, role, text, atMs);
   }
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}

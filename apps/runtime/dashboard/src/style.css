@@ -1,6 +1,7 @@
-@import "./skins/neon-geometry-wars.css";
+@import "./habitat.css";
+@import "./skins/quiet-glass.css";
 /* Layout reads its colors, spacing steps and type sizes only through the skin's tokens (style guide section 4). Structural sizes such as column tracks and control heights are layout, not skin. */
-:root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none;color-scheme:dark}
+:root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none}
 *{box-sizing:border-box}
 body{margin:0}
 button,input,select{font:inherit}
@@ -166,7 +167,7 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* The home follows the owner-approved mockup (Hub #922, "Recommended (d)"): the Hub mode and the sessions in the wide
-   column, the inbox and the attention summary in the narrow one. The columns grow independently. */
+   column, the inbox in the narrow one; attention is highlighted on the session cards. The columns grow independently. */
 .home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1fr);gap:var(--space-m);align-items:start}
 .home-wide,.home-narrow{display:grid;gap:var(--space-m);min-width:0}
 .hint.slot{margin:0}
