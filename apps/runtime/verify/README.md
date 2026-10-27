@@ -175,6 +175,10 @@ text reaches it, and a record or span the contract refuses is counted in `search
 | `parent-missing` | Spans continue a parent that is not kept: it was evicted, lost or never ended |
 | `capped` | The query's limits left out records, spans or endings, or trace IDs past the 16 it names |
 
+The automated capture-step suite runs `follow-one-request` once on fresh state and checks both the generic
+capture contract and all eight attachments on that result. It retains the credential-exclusion, schema, gap,
+capped-answer and clean-stop checks without repeating the real command deadlines in a second run.
+
 The `follow-one-request` step runs the cases against a freshly seeded run and attaches each answer as
 `follow-<case>.json` in its capture directory. Each command is an action the operator sends through the core's
 dispatcher on `POST /api/v2/commands/lamp-switch` (#782), so its records include the core's tracker steps and its spans
