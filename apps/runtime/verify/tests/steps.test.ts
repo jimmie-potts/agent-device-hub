@@ -114,6 +114,7 @@ for (const step of reference) {
       const scenario = JSON.parse(await readFile(attached, 'utf8')) as {synthetic: boolean; physical: boolean; outcome: string; tier: string; problems: unknown[]};
       assert.deepEqual([scenario.synthetic, scenario.physical, scenario.outcome, scenario.tier, scenario.problems], [true, false, 'passed', 'run', []]);
     }
+    if (step === 'follow-one-request') await assertFollowAttachments(result);
   });
 }
 
@@ -131,10 +132,9 @@ void test('the follow negative control fails in a fresh run', {timeout: 300_000}
   assert.ok((absent.reason ?? '').startsWith('assertion failed: the run found a request that was never sent'), absent.reason);
 });
 
-void test('the follow step attaches one answer for each case it judges, and each holds only registered, validated values', {timeout: 300_000}, async context => {
-  const at = await base(context);
-  const result = await judge(context, at, 'follow-one-request');
-  assert.equal(result.outcome, 'passed', result.reason ?? '');
+// Judge the attachment contract on the same fresh capture as the generic checks above. A second capture repeats
+// the eight real cases and their safety windows without adding coverage.
+async function assertFollowAttachments(result: CaptureStepResult): Promise<void> {
   const names = result.attachments.map(file => file.slice(file.lastIndexOf('/') + 1)).sort();
   assert.deepEqual(names, ['follow-capped.json', 'follow-crash.json', 'follow-missing.json', 'follow-refusal.json', 'follow-replayed.json',
     'follow-success.json', 'follow-trace.json', 'follow-uncertain.json']);
@@ -149,4 +149,4 @@ void test('the follow step attaches one answer for each case it judges, and each
   assert.equal(answers.get('follow-crash.json')?.followed.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), true);
   assert.equal(answers.get('follow-capped.json')?.followed.gaps.some(gap => gap.kind === 'capped'), true);
   assert.equal(result.assertions.length, 9, 'each of the eight cases is judged, and the run\'s boundaries');
-});
+}
