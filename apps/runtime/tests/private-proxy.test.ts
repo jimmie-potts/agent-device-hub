@@ -42,6 +42,31 @@ async function start(context: TestContext, enabled = true) {
   return {...result, clock, credentials: files.credentials};
 }
 
+it('a private browser checks its session without challenging or extending its password login', async context => {
+  const {runtime, clock} = await start(context);
+  const check = (headers: Record<string, string> = BROWSER) => call(runtime.url + '/api/v2/browser/check', {method: 'POST', headers, body: '{}'});
+  const absent = await check();
+  assert.equal(absent.status, 200, 'an absent application session must not invalidate HTTP Basic credentials');
+  assert.deepEqual(await absent.json(), {schema: 'browser-session/2.0', active: false});
+  assert.equal(absent.headers.get('set-cookie'), null);
+  const signed = await call(runtime.url + '/api/v2/browser/session', {method: 'POST', headers: BROWSER, body: '{}'});
+  const cookie = signed.headers.get('set-cookie')?.split(';')[0] ?? '';
+  const headers = {...BROWSER, cookie};
+  clock.advance(8 * 60 * 60 * 1000 - 1);
+  const live = await check(headers);
+  assert.equal(live.status, 200);
+  assert.deepEqual(await live.json(), {schema: 'browser-session/2.0', active: true});
+  assert.equal(live.headers.get('set-cookie'), null, 'checking preserves the existing session and its expiry');
+  clock.advance(1);
+  const expired = await check(headers);
+  assert.equal(expired.status, 200);
+  assert.deepEqual(await expired.json(), {schema: 'browser-session/2.0', active: false});
+  assert.equal((await call(runtime.url + '/api/v2/build', {headers})).status, 401, 'protected reads still refuse expired sessions');
+  for (const refused of [{...BROWSER, origin: 'https://other.invalid'}, {...BROWSER, 'bunny-private-proxy': 'forged'}, {...BROWSER, ...MACHINE}]) {
+    assert.equal((await check(refused)).status, 403);
+  }
+});
+
 it('private HTTPS admits owner sessions and scoped clients while preserving local access', async context => {
   const {runtime, logs} = await start(context);
   const signed = await call(runtime.url + '/api/v2/browser/session', {method: 'POST', headers: BROWSER, body: '{}'});

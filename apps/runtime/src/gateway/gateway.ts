@@ -966,7 +966,7 @@ export class Gateway {
 
   /** Browser sign-in: the launcher's code, a trusted loopback page, and the end of a session. */
   async #browser(request: IncomingMessage, action: string): Promise<Answer> {
-    const known = ['launch', 'session', 'logout'].includes(action);
+    const known = ['launch', 'session', 'check', 'logout'].includes(action);
     if (request.method !== 'POST' || !known) throw refuse('not-found', 'no such route');
     const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy) !== undefined;
     const privateEntry = privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined;
@@ -999,13 +999,21 @@ export class Gateway {
     if (action === 'session') {
       return this.#dashboardRequest(request, '/api/v2/browser/session', () => { closed(); return replace(); });
     }
-    // Logout remains harmless without a live cookie, but that caller cannot supply an authenticated parent.
     const admission = this.access.admit(request, origin);
+    const active = 'principal' in admission && admission.principal.kind === 'browser';
+    if (action === 'check') {
+      // A missing session is normal before sign-in. A 401 would discard the proxy's accepted Basic password.
+      return this.#dashboardRequest(request, '/api/v2/browser/check', () => {
+        closed();
+        return json(200, {schema: 'browser-session/2.0', active});
+      }, active);
+    }
+    // Logout remains harmless without a live cookie, but that caller cannot supply an authenticated parent.
     return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
       const ended = this.access.endSession(request);
       if (ended !== undefined) this.edge.disconnectPrincipal(ended);
       return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie + (secure ? '; Secure' : '')});
-    }, 'principal' in admission && admission.principal.kind === 'browser');
+    }, active);
   }
 
   /** Runs only after the route's authentication, ownership and input checks; no incoming context grants authority. */
@@ -1045,7 +1053,7 @@ function templateOf(path: string): string | undefined {
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}$/.test(path)) return '/api/v2/automation/rules/{id}';
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}\/(enable|disable)$/.test(path)) return '/api/v2/automation/rules/{id}/{action}';
   if (/^\/api\/v2\/commands\/[^/]+$/.test(path)) return '/api/v2/commands/{family}';
-  if (/^\/api\/v2\/browser\/(launch|session|logout)$/.test(path)) return path;
+  if (/^\/api\/v2\/browser\/(launch|session|check|logout)$/.test(path)) return path;
   if (/^\/api\/v2\/families\/[^/]+$/.test(path)) return '/api/v2/families/{family}';
   if (/^\/api\/v2\/modules\/[^/]+\/settings$/.test(path)) return '/api/v2/modules/{module}/settings';
   if (/^\/api\/v2\/modules\/[^/]+\/upload$/.test(path)) return '/api/v2/modules/{module}/upload';

@@ -8,7 +8,7 @@ void test('every sign-in and read call carries its own valid traceparent, with n
   const calls: {path: string; options: RequestInit; headers: Headers}[] = [];
   context.mock.method(globalThis, 'fetch', (input: string, options: RequestInit) => {
     calls.push({path: input, options, headers: new Headers(options.headers)});
-    return Promise.resolve(Response.json({places: {}}));
+    return Promise.resolve(Response.json(input === '/api/v2/browser/check' ? {schema: 'browser-session/2.0', active: true} : {places: {}}));
   });
   assert.equal(await trustedSignIn(), 'signed-in');
   assert.equal(await launchSignIn('s'.repeat(43)), 'signed-in');
@@ -16,7 +16,7 @@ void test('every sign-in and read call carries its own valid traceparent, with n
   assert.equal(await currentSession(), 'live');
   assert.deepEqual(await previewPlaces(), {});
   assert.deepEqual(calls.map(call => call.path), [
-    '/api/v2/browser/session', '/api/v2/browser/launch', '/api/v2/browser/logout', '/api/v2/authority?scope=read', '/api/v2/links',
+    '/api/v2/browser/session', '/api/v2/browser/launch', '/api/v2/browser/logout', '/api/v2/browser/check', '/api/v2/links',
   ]);
   const traces = calls.map(call => traceFields({traceparent: call.headers.get('traceparent') ?? ''}));
   assert.deepEqual(traces.map(trace => trace !== undefined), [true, true, true, true, true], 'all five calls carry W3C context');
@@ -28,4 +28,13 @@ void test('every sign-in and read call carries its own valid traceparent, with n
     assert.equal(headers.get('baggage'), null);
     if (options.method === 'POST') assert.equal(headers.get('bunny-request'), '1', 'the same-origin mutation guard remains');
   }
+});
+
+void test('session detection distinguishes an absent session from unreachable or invalid responses', async context => {
+  const replies = [Response.json({schema: 'browser-session/2.0', active: false}), Response.json({schema: 'browser-session/2.0', active: true}), Response.json({active: true}), new Response(null, {status: 403})];
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(replies.shift()));
+  assert.equal(await currentSession(), 'none');
+  assert.equal(await currentSession(), 'live');
+  assert.equal(await currentSession(), 'unreachable');
+  assert.equal(await currentSession(), 'unreachable');
 });

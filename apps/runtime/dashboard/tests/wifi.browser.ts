@@ -56,7 +56,7 @@ proxy.stderr.setEncoding('utf8').on('data', (chunk: string) => { caddyLog += chu
 
 try {
   const deadline = Date.now() + 10_000;
-  while (!caddyLog.includes('server running')) {
+  while (!caddyLog.includes('server running') || !caddyLog.includes('certificate obtained successfully')) {
     assert.equal(proxy.exitCode, null, 'Caddy stopped before serving');
     assert.ok(Date.now() < deadline, 'Caddy did not start');
     await new Promise(done => { setTimeout(done, 50); });
@@ -89,8 +89,20 @@ try {
     try {
       // Only the disposable browser context skips OS trust installation; TLS validation has its own setup probe.
       const context = await browser.newContext({viewport: {width: 390, height: 844}, isMobile: true, hasTouch: true,
-        ignoreHTTPSErrors: true, httpCredentials: {username: 'owner', password}, reducedMotion: 'reduce'});
+        ignoreHTTPSErrors: true, ...(name === 'webkit' ? {httpCredentials: {username: 'owner', password}} : {}), reducedMotion: 'reduce'});
       const page = await context.newPage();
+      let passwordPrompts = 0;
+      if (name === 'chromium') {
+        // Supply the password once, as a person does. Automatically answering every challenge hides login loops.
+        const authentication = await context.newCDPSession(page);
+        authentication.on('Fetch.requestPaused', event => { void authentication.send('Fetch.continueRequest', {requestId: event.requestId}); });
+        authentication.on('Fetch.authRequired', event => {
+          passwordPrompts += 1;
+          void authentication.send('Fetch.continueWithAuth', {requestId: event.requestId, authChallengeResponse:
+            passwordPrompts === 1 ? {response: 'ProvideCredentials', username: 'owner', password} : {response: 'CancelAuth'}});
+        });
+        await authentication.send('Fetch.enable', {handleAuthRequests: true});
+      }
       page.setDefaultTimeout(12_000);
       const errors: string[] = [];
       page.on('pageerror', error => { errors.push(error.name); });
@@ -98,6 +110,7 @@ try {
       const commands = (): number => sent.filter(item => item.endsWith('/commands/mode-set')).length;
       await page.goto(origin);
       await feed(page, 'connected');
+      if (name === 'chromium') assert.equal(passwordPrompts, 1, 'one accepted owner password reaches the dashboard');
       assert.equal(await page.evaluate(() => window.isSecureContext && typeof crypto.randomUUID === 'function'), true);
       const cookie = (await context.cookies()).find(item => item.name === 'bunny-session');
       assert.ok(cookie !== undefined && cookie.secure && cookie.httpOnly && cookie.sameSite === 'Strict');
