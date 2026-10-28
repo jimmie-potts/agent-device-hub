@@ -697,10 +697,11 @@ that is a live session.
 A browser signs in two ways, with the same checks: the request comes from this
 origin's own page, names it in `Origin` and carries `bunny-request: 1`.
 
-| Route | Signs in |
+| Route | Behavior |
 | --- | --- |
 | `POST /api/v2/browser/launch` `{"code"}` | With a launch code from the launcher. The runtime serves the launcher's socket, `bunny-launch.sock` in its state directory, owner-only, which hands each connection the runtime's origin and a code that is good once for 30 seconds (at most eight wait). `requestBrowserLaunch(stateDir)` asks for one; the dashboard's launcher (#922) opens the browser with it. A configuration whose edge section sets `"launcher": false` serves none, as a disposable run does, whose state directory is too deep for a socket; a socket path over 107 bytes refuses the start with `launcher-path-too-long`. |
 | `POST /api/v2/browser/session` `{}` | Without a code, when the edge section sets `"browserAccess": "trusted-loopback"` (Hub #276's opt-in), or through the explicitly configured authenticated home-Wi-Fi entry; otherwise 404. |
+| `POST /api/v2/browser/check` `{}` | Reports only whether this browser has a live session: HTTP 200 with `{"schema":"browser-session/2.0","active":true}` or `active:false`. Uses the same Origin/request-header guards, creates no session and leaves its expiry unchanged. The dashboard uses this once at startup or re-entry; an absent session must not issue a 401 that discards the forwarder's accepted Basic password. Protected reads and SDK calls still refuse missing sessions. |
 | `POST /api/v2/browser/logout` `{}` | Ends the cookie's session and its streams, and clears the cookie. |
 
 The session's token travels only in `Set-Cookie`, never in a body or record.

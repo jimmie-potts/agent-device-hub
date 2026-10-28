@@ -26,11 +26,15 @@ The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), cop
 
 The dashboard SHALL sign in only through the gateway's browser routes, with `bunny-request: 1` and its own `Origin` on every change, and SHALL hold no token. On load and on a sign-in click it SHALL use the browser's live session when one exists, so a reload or a second tab opens no new session; without one it SHALL ask for a browser session from trusted loopback or the explicitly configured authenticated home-Wi-Fi or private entry, and when the runtime does not offer one it SHALL show the launcher's page. A `#launch=<code>` fragment SHALL leave the address before the page exchanges the code once. A sign-in that fails SHALL show an alert with the launcher's text. **Disconnect** SHALL end the browser's session, in every tab of the origin, and offer **Sign in**. When the runtime refuses the browser's session, as after a logout elsewhere, an eviction, its expiry or a runtime restart, the page SHALL say the session ended, keep its last records and offer **Sign in again**, and SHALL NOT sign in by itself. A link on another local app's page with the same host name SHALL open the page signed in; a frame from another local app and another host name's link SHALL be refused.
 
-The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHALL each carry valid W3C trace context without changing their authentication protections. With no parent operation, each call SHALL start its own trace.
+The page's sign-in, launch exchange, logout, session check, authority and Places HTTP calls SHALL each carry valid W3C trace context without changing their authentication protections. With no parent operation, each call SHALL start its own trace.
 
 #### Scenario: Bookmark, reload and second tab
 - **WHEN** a fresh browser opens the bookmark on a runtime with trusted loopback sign-in, reloads it, opens a second tab at `#/connections`, and another browser opens it on `localhost`
 - **THEN** each page shows the dashboard without a sign-in form, the second tab keeps its address, the first browser holds one session and the other its own
+
+#### Scenario: One password entry behind an authenticated forwarder
+- **WHEN** a browser has accepted the forwarder's owner password but has no application session
+- **THEN** the startup session check reports an inactive session without an HTTP authentication challenge, the page signs in without requesting the password again, and checking a live session neither replaces it nor extends its expiry
 
 #### Scenario: Context on sign-in and read calls
 - **WHEN** the page signs in, exchanges a launch code, signs out, checks its authority or reads Places

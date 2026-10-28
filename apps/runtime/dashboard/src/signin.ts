@@ -21,10 +21,14 @@ async function post(path: string, body: object): Promise<number> {
  */
 export async function currentSession(): Promise<'live' | 'none' | 'unreachable'> {
   try {
-    const response = await fetch('/api/v2/authority?scope=read', {cache: 'no-store', redirect: 'error', credentials: 'same-origin', headers: childOf(undefined)});
-    await response.body?.cancel();
-    if (response.status === 200) return 'live';
-    return response.status === 401 ? 'none' : 'unreachable';
+    const response = await fetch('/api/v2/browser/check', {
+      method: 'POST', cache: 'no-store', redirect: 'error', credentials: 'same-origin',
+      headers: {'content-type': 'application/json', [REQUEST_HEADER]: '1', ...childOf(undefined)}, body: '{}',
+    });
+    if (response.status !== 200) { await response.body?.cancel(); return 'unreachable'; }
+    const status: unknown = await response.json();
+    if (typeof status !== 'object' || status === null || !('schema' in status) || status.schema !== 'browser-session/2.0' || !('active' in status)) return 'unreachable';
+    return status.active === true ? 'live' : status.active === false ? 'none' : 'unreachable';
   } catch {
     return 'unreachable';
   }

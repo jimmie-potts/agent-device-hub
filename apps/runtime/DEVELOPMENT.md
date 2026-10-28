@@ -16,6 +16,8 @@ disposable browser acceptance and installed iPhone/PC/Mac checks remain distinct
 Run `BUNNY_TEST_ENTRY=private BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts`
 for the real private forwarder, synthetic TLS termination, owner password,
 scoped machine refusal and mobile-width reconnect/logout/accessibility journey.
+Chromium answers the initial password challenge once; another challenge fails the
+journey so automatic test credentials cannot hide a browser sign-in loop.
 The test overrides only private loopback ports, uses synthetic data and qualifies
 neither Tailscale enrollment nor actual phone/system certificate trust.
 
