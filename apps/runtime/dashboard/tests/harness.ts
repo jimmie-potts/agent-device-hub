@@ -42,6 +42,7 @@ export type WorldOptions = {
   tidbyt?: boolean;
   /** Synthetic HTTPS forwarder for the home-Wi-Fi browser journey. */
   wifiProxy?: {origin: string; tokenDigest: string};
+  privateProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
   speech?: boolean;
@@ -88,6 +89,7 @@ export type World = {
   roborockStatus():Promise<VacuumStatus>;
   roborockStatusViaMcp():Promise<unknown>;
   readonly url: string;
+  readonly readerToken: string;
   readonly stateDir: string;
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
@@ -196,6 +198,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     credentials, mcp: options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
     ...(options.wifiProxy === undefined ? {} : {wifiProxy: options.wifiProxy}),
+    ...(options.privateProxy === undefined ? {} : {privateProxy: options.privateProxy}),
   }}));
   const logs: LogRecord[] = [];
   let core = createCoreModule();
@@ -237,6 +240,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
+    readerToken,
     roborockRefresh:refreshRoborock,
     roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},
     roborockCalls:()=>[...roborock.calls],

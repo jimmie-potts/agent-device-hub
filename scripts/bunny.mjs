@@ -76,7 +76,7 @@ async function access(info, project, run) {
   }
   const name = project + '_local';
   const networks = info.NetworkSettings?.Networks;
-  if (profile !== 'host-local' || info.Config?.Labels?.['io.bunny.access'] !== 'host-local'
+  if (!['host-local', 'private-proxy'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
     || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
     || value('BUNNY_CONTROL') !== 'disabled' || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
@@ -137,7 +137,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
     }
     try {await access(info, plan.project, run);}
     catch (error) {
-      if (info.State.Running && info.Config.Labels['io.bunny.access'] === 'host-local') await run(['stop', '--timeout', '30', info.Id]);
+      if (info.State.Running && ['host-local', 'private-proxy'].includes(info.Config.Labels['io.bunny.access'])) await run(['stop', '--timeout', '30', info.Id]);
       throw error;
     }
     if (info.State.Status === 'running') return {operation: 'start', status: 'running', health: 'not-checked'};

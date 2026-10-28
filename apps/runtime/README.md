@@ -655,6 +655,14 @@ local, and MCP remains unavailable to browser sessions.
 
 ### Callers
 
+The Mac's optional [private Tailscale entry](PRIVATE-ACCESS.md) uses
+`edge.privateProxy` with the same canonical HTTPS origin and proxy-token digest
+shape. It admits password-authenticated browsers and ordinary source-scoped
+read/control/ingest clients. Browser cookies are Secure; machine credentials
+cannot open browser sessions. Health, launcher, MCP, administrative and device-role
+credentials stay outside that entry. Local access and the separate Wi-Fi profile
+keep their existing behavior.
+
 Two kinds of caller reach the gateway, and each acts as one source with the old
 Hub's scope names. No caller is limited to some devices. Fresh setup grants
 only the owner's explicitly selected scopes, whose runtime meaning covers all

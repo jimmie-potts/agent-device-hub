@@ -72,6 +72,14 @@ no state, SDK protocol or device ownership moves into the forwarder. This is a
 PC-dependent access profile; it cannot serve as the Mac primary host's normal
 client endpoint.
 
+The optional [Mac private entry](../apps/runtime/PRIVATE-ACCESS.md) terminates
+Tailscale Serve HTTPS on the Mac and forwards through a password-authenticated
+loopback Caddy process. Its distinct configured proof admits the selected origin;
+machine Bearer credentials still require ordinary gateway source/scopes. Browser
+sessions and state stay in the existing runtime. The opt-in private container
+profile retains host-loopback publication and disabled device control. No PC relay,
+public ingress, additional core or automatic startup is introduced.
+
 **Connect/reconnect:** a remote client authenticates, syncs current membership
 from its owner, then follows live events. A sync replaces membership, so removed
 entities disappear. A bounded-buffer overflow restarts the sync rather than

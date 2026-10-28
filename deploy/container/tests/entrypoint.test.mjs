@@ -154,3 +154,33 @@ test('selected producer admits only its single ingest grant and keeps browser-on
     assert.throws(() => checkLocalBrowserCredentials([credential], source));
   }
 });
+
+test('private access is explicit, retains local limits and requires its configured entry', () => {
+  assert.equal(containerOptions({BUNNY_ACCESS: 'private-proxy'}).port, 18788);
+  for (const change of [{BUNNY_CONTROL: 'enabled'}, {BUNNY_PORT: '8788'}, {BUNNY_CONFIG: '/other'}, {BUNNY_STATE_DIR: '/other'}]) {
+    assert.throws(() => containerOptions({BUNNY_ACCESS: 'private-proxy', ...change}));
+  }
+  const config = {modules: {companions: {}}, edge: {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback',
+    launcher: false, mcp: false, privateProxy: {origin: 'https://synthetic.ts.net', tokenDigest: '1'.repeat(64)}}};
+  assert.deepEqual(checkLocalBrowserConfig(config, shipped, 'private-proxy').map(({name}) => name), ['companions']);
+  assert.throws(() => checkLocalBrowserConfig(config, shipped));
+  for (const change of [c => {delete c.edge.privateProxy;}, c => {c.edge.wifiProxy = c.edge.privateProxy;},
+    c => {c.modules.playback = {};}, c => {c.edge.mcp = true;}]) {
+    const changed = structuredClone(config); change(changed);
+    assert.throws(() => checkLocalBrowserConfig(changed, shipped, 'private-proxy'));
+  }
+});
+
+test('private clients keep scoped grants and the selected local producer remains ingest-only', () => {
+  const client = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
+  const source = 'bunny/parts/hub-' + '1'.repeat(32);
+  const producer = {id: source.slice('bunny/parts/'.length), source, digest: '3'.repeat(64), scopes: ['ingest']};
+  checkLocalBrowserCredentials([client], undefined, 'private-proxy');
+  checkLocalBrowserCredentials([client, producer], source, 'private-proxy');
+  assert.throws(() => checkLocalBrowserCredentials([client]));
+  assert.throws(() => checkLocalBrowserCredentials([client], source, 'private-proxy'));
+  assert.throws(() => checkLocalBrowserCredentials([client, {...producer, scopes: ['read', 'ingest']}], source, 'private-proxy'));
+  for (const change of [{scopes: ['admin']}, {scopes: ['read', 'admin']}, {role: 'bb8-link', scopes: []}]) {
+    assert.throws(() => checkLocalBrowserCredentials([{...client, ...change}], undefined, 'private-proxy'));
+  }
+});

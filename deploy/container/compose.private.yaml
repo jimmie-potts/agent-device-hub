@@ -1,0 +1,7 @@
+# Apply after compose.local.yaml for the explicitly configured private HTTPS entry.
+services:
+  core:
+    labels:
+      io.bunny.access: private-proxy
+    environment:
+      BUNNY_ACCESS: private-proxy

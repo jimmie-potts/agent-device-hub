@@ -32,7 +32,7 @@ import {DASHBOARD_DIR, DASHBOARD_FILES, DASHBOARD_HEADERS, dashboardAllowed, run
 import {startLauncher} from './launcher.js';
 import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
-import {wifiProxyOrigin} from './wifi-proxy.js';
+import {privateProxyOrigin, wifiProxyOrigin} from './wifi-proxy.js';
 import {GatewayRefusals, methodOf} from './refusals.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
@@ -202,6 +202,8 @@ export class Gateway {
   #originOf(request: IncomingMessage): string {
     const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy);
     if (wifi !== undefined) return wifi;
+    const privateOrigin = privateProxyOrigin(request, this.#options.edge.privateProxy);
+    if (privateOrigin !== undefined) return privateOrigin;
     const host = (request.headers.host ?? '').toLowerCase();
     return this.#hosts.includes(host) ? `http://${host}` : this.#origin;
   }
@@ -241,6 +243,7 @@ export class Gateway {
     let principal: Principal | undefined;
     try {
       if (path === '/mcp') {
+        if (privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined) throw refuse('forbidden', 'MCP serves only local clients');
         if (!this.#options.edge.mcp) throw refuse('not-found', 'MCP is off');
         principal = this.#admit(request, {credential: true});
         if (this.#mcp === undefined) throw refuse('unavailable', 'MCP serves once the gateway has started');
@@ -286,6 +289,10 @@ export class Gateway {
     const admission = this.access.admit(request, this.#originOf(request));
     if ('refusal' in admission) throw refuse(admission.refusal.code, admission.refusal.detail);
     const {principal} = admission;
+    if (privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined && principal.kind === 'credential'
+      && (principal.role !== undefined || principal.scopes.has('admin'))) {
+      throw refuse('forbidden', 'the private entry takes ordinary read, control or ingest credentials');
+    }
     if (credential && principal.kind !== 'credential') throw refuse('forbidden', 'this route takes a client credential, not a browser session');
     return principal;
   }
@@ -340,14 +347,16 @@ export class Gateway {
   /** The SDK edge's routes: the gateway admits the caller, and the edge checks each call against its permissions. */
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
-    const admission = this.access.admit(request, this.#originOf(request));
-    if ('refusal' in admission) {
-      const {code, detail} = admission.refusal;
+    let principal: Principal;
+    try { principal = this.#admit(request); }
+    catch (error) {
+      if (!(error instanceof Refused)) throw error;
+      const {code} = error.body.error;
       this.#refusals.record({'bunny.route': route, 'bunny.code': code});
-      this.#write(response, json(statusOf(code), errorBody(code, {detail})));
+      this.#write(response, json(statusOf(code), error.body));
       return;
     }
-    this.#admitted.set(request, admission.principal);
+    this.#admitted.set(request, principal);
     this.edge.handle(request, response);
   }
 
@@ -960,8 +969,11 @@ export class Gateway {
     const known = ['launch', 'session', 'logout'].includes(action);
     if (request.method !== 'POST' || !known) throw refuse('not-found', 'no such route');
     const wifi = wifiProxyOrigin(request, this.#options.edge.wifiProxy) !== undefined;
-    if (action === 'launch' && wifi) throw refuse('forbidden', 'the launcher serves only local browsers');
-    if (action === 'session' && !wifi && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
+    const privateEntry = privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined;
+    const secure = wifi || privateEntry;
+    if (privateEntry && request.headers.authorization !== undefined) throw refuse('forbidden', 'a client credential cannot open a browser session');
+    if (action === 'launch' && secure) throw refuse('forbidden', 'the launcher serves only local browsers');
+    if (action === 'session' && !secure && this.#options.edge.browserAccess !== 'trusted-loopback') throw refuse('not-found', 'trusted loopback sign-in is off');
     // Only this listener's own page may sign a browser in or out, on either loopback name.
     const origin = this.#originOf(request);
     if (contextOf(request, origin) === 'cross' || request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1') {
@@ -976,7 +988,7 @@ export class Gateway {
     const replace = (): Answer => {
       const previous = this.access.endSession(request);
       if (previous !== undefined) this.edge.disconnectPrincipal(previous);
-      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession()) + (wifi ? '; Secure' : '')});
+      return json(200, {schema: 'browser-session/2.0', source: BROWSER_SOURCE}, {'set-cookie': sessionCookie(this.access.openSession()) + (secure ? '; Secure' : '')});
     };
     if (action === 'launch') {
       const {code} = input as {code?: unknown};
@@ -992,7 +1004,7 @@ export class Gateway {
     return this.#dashboardRequest(request, '/api/v2/browser/logout', () => {
       const ended = this.access.endSession(request);
       if (ended !== undefined) this.edge.disconnectPrincipal(ended);
-      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie + (wifi ? '; Secure' : '')});
+      return json(200, {schema: 'browser-session/2.0', ended: ended !== undefined}, {'set-cookie': endedCookie + (secure ? '; Secure' : '')});
     }, 'principal' in admission && admission.principal.kind === 'browser');
   }
 
