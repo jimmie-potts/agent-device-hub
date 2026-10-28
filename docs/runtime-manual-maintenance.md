@@ -1,6 +1,30 @@
-# Manual maintenance for the packaged runtime
+# Optional packaged maintenance design
 
-Owner-selected design for #1167 and #1168. This replaces the earlier container
+## Scope decision — 2026-10-28
+
+The owner narrowed [#1167](https://github.com/jimmie-potts/agent-device-hub/issues/1167)
+to the accepted manual Mac setup. Use the [container operator guide](bunny-container.md)
+for normal operation: stop and confirm, back up, replace the reviewed image and
+matching scripts, then start and check. Preserve private data and the existing
+writer-exclusion checks. The operator must keep competing maintenance and restart
+actors out of the window and inspect an interrupted operation before continuing.
+
+Installation without a checkout, generalized update commands, the persistent
+maintenance gate, prepared-release binding and further Windows/AMD64 installation
+qualification are optional future work. They are not completion requirements for
+the personal Mac setup. Existing AMD64 code and evidence remain retained.
+
+The design below is historical reference, not a selected implementation plan or
+an operating procedure. Its mandatory wording describes the proposed guarantees
+only if that design is selected again. The manual profile does not promise a
+durable crash-surviving maintenance gate or refusal of every stale release start.
+Reassess a concrete maintenance problem before selecting additional machinery.
+Backup/restore and cross-host migration retain their separately selected scope;
+closing #1167 does not claim those outcomes.
+
+## Retained design — 2026-10-21
+
+Previously selected design for #1167 and #1168. This replaces the earlier container
 startup proposal's descriptor transfer and completion handshake. The persistent
 pending gate and prepared-release binding below remain deferred design work.
 They are not the protocol used by the delivered reduced container operator, and
@@ -14,7 +38,7 @@ current restrictions and qualified evidence remain authoritative. Do not require
 the deferred machinery below merely to operate that accepted profile, or treat
 its bounded acceptance as completion of the broader lifecycle design.
 
-When that remaining work is selected, update the owning spec and pass focused
+If this optional work is selected, update the owning spec and pass focused
 safety review/tests. GitHub owns delivery status and the remaining acceptance.
 
 ## Scope and tradeoff

@@ -1,5 +1,27 @@
 # ADR 0008: Make the Mac Mini the primary B.U.N.N.Y. host
 
+## Personal installation scope — 2026-10-28
+
+The owner narrowed [#1167](https://github.com/jimmie-potts/agent-device-hub/issues/1167)
+to the accepted manual Mac installation: a pinned image with matching operator
+scripts, persistent private data, manual start/stop/status and stopped backups.
+The Mac remains primary and independent of the PC. Existing AMD64 code and
+qualified evidence remain retained; further PC installation work is deferred
+until a concrete need is selected. It is not a requirement for Mac completion.
+
+Installation without a repository checkout, generalized update commands and the
+persistent gate/release binding in the [optional maintenance design](../runtime-manual-maintenance.md)
+are no longer required for that outcome. Follow the existing
+[operator procedure](../bunny-container.md), including confirmed stop, consistent
+backup, compatibility assessment and inspection after interruption. This accepts
+manual coordination, not a new crash-surviving maintenance guarantee. Existing
+writer checks, private-state protections and restore decisions remain in force.
+
+This scope decision supersedes earlier mandatory dual-host packaging obligations
+for #1167. It does not retire delivered capabilities or complete separately owned
+backup/restore, host qualification, remote access, device or migration outcomes.
+It changes no installed runtime, settings, hooks or device authority.
+
 ## Current decision — 2026-10-22
 
 Accepted by the owner in [hub #44](https://github.com/jimmie-potts/agent-device-hub/issues/44):

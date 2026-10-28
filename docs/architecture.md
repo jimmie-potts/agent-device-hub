@@ -161,16 +161,19 @@ Hosting review, October 22, 2026: the source diagram's core/module, SDK and gate
 owners and edges are unchanged. Placement is specified here and in ADR 0008;
 the pinned source diagram and dated September atlas are not installation evidence.
 
-## Planned packaged maintenance
+## Manual maintenance
 
 The owner selected explicit downtime and manual inspection after interrupted
 maintenance. The [container operator](bunny-container.md) implements the reduced
 operating path for the Mac profile; the established WSL installation retains its
 own upgrade procedure. The [packaged maintenance design](runtime-manual-maintenance.md)
-describes deferred persistent-gate and release-binding requirements, replacing
-the earlier descriptor-transfer proposal. It is not the current operator protocol
-or a prerequisite for using the accepted local profile. GitHub owns the remaining
-implementation and host qualification acceptance.
+is retained as an optional future design. Its persistent gate and release binding
+are not requirements for the personal Mac setup. The owner also deferred
+installation without a checkout, generalized update commands and further
+Windows/AMD64 installation qualification. Existing alternate-host code and evidence
+remain retained. Keep current writer-exclusion and private-state protections;
+the operator coordinates maintenance and inspects interruptions manually. GitHub
+owns separately selected backup, host and migration acceptance.
 
 ## Product direction and vocabulary
 
