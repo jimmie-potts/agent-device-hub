@@ -4,6 +4,7 @@
 // edge's refusal, or an edge that was never reached, proves the message was not published. A call that reached the edge
 // and then lost its answer, or an edge that failed, may have published it, so it is uncertain. Nothing sends it again.
 import {request as httpRequest, type ClientRequest, type IncomingMessage} from 'node:http';
+import {request as httpsRequest} from 'node:https';
 import {MAX_DETAIL, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from './envelope.js';
 import {refusalOf} from './refusal.js';
@@ -12,7 +13,7 @@ import {MAX_TIMEOUT_MS, SdkError, type Draft, type SendOptions} from './sdk.js';
 import {childOf, traceFields} from './trace.js';
 
 export type PublishOnceOptions = {
-  /** The edge's base URL, such as `http://127.0.0.1:8788`. Only `http` is supported: an edge listens on loopback. */
+  /** The edge's base HTTP or HTTPS URL. HTTPS always verifies the server's certificate and hostname. */
   url: string;
   /** The source the token was granted to, sent in the `bunny-source` header; the message must come from it. */
   source: string;
@@ -41,7 +42,7 @@ export function prepareMessage<T extends object>(source: string, draft: Draft<T>
   return buildMessage(source, draft.kind, draft, childOf(options.parent), (options.now ?? Date.now)());
 }
 
-/** The edge's publication route for `url`, or undefined when `url` is not an `http` URL. */
+/** The publication route, without credentials, query or fragment in its base URL. */
 function routeOf(url: string): URL | undefined {
   let base: URL;
   try {
@@ -49,7 +50,7 @@ function routeOf(url: string): URL | undefined {
   } catch {
     return undefined;
   }
-  if (base.protocol !== 'http:') return undefined;
+  if (!['http:', 'https:'].includes(base.protocol) || base.username !== '' || base.password !== '' || base.search !== '' || base.hash !== '') return undefined;
   return new URL(`${base.origin}${base.pathname.replace(/\/$/, '')}${REMOTE_PATH}/publish`);
 }
 
@@ -81,7 +82,7 @@ const uncertain = (detail: string, ids: {traceId?: string}): PublishOnceResult =
  * Sends one prepared message, such as one from `prepareMessage`, to the edge's publication call, as the token's source,
  * with no stream, and resolves with what happened within `timeoutMs`; it never rejects for the edge's answer. The call
  * carries the message's `traceparent`. It rejects with `SdkError` (`invalid-request`), before anything is sent, a
- * malformed deadline or a URL that is not `http`. Nothing is sent again, and nothing is reported but the result.
+ * malformed deadline or base URL. Nothing is sent again, and nothing is reported but the result.
  */
 export function publishOnce(options: PublishOnceOptions, key: string, message: Message): Promise<PublishOnceResult> {
   const {source, token, timeoutMs} = options;
@@ -89,7 +90,7 @@ export function publishOnce(options: PublishOnceOptions, key: string, message: M
     return Promise.reject(new SdkError(errorBody('invalid-request', {detail: `timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`})));
   }
   const route = routeOf(options.url);
-  if (route === undefined) return Promise.reject(new SdkError(errorBody('invalid-request', {detail: 'the edge\'s URL must be an http URL'})));
+  if (route === undefined) return Promise.reject(new SdkError(errorBody('invalid-request', {detail: 'the edge URL must be HTTP or HTTPS without credentials, query or fragment'})));
   const traced = traceFields(message);
   const ids = traced === undefined ? {} : {traceId: traced.traceId};
   const body = JSON.stringify({schema: REMOTE_SCHEMA, key, message});
@@ -105,7 +106,9 @@ export function publishOnce(options: PublishOnceOptions, key: string, message: M
     let timer: ReturnType<typeof setTimeout> | undefined;
     let outgoing: ClientRequest;
     try {
-      outgoing = httpRequest(route, {method: 'POST', agent: false, headers}, receive);
+      outgoing = route.protocol === 'https:'
+        ? httpsRequest(route, {method: 'POST', agent: false, headers, rejectUnauthorized: true}, receive)
+        : httpRequest(route, {method: 'POST', agent: false, headers}, receive);
     } catch (error) {
       // Node refuses a header value it cannot send, such as a token with a line break, before connecting.
       reject(new SdkError(errorBody('invalid-request', {detail: 'the token or the source cannot be sent in a header'}), {cause: error}));
@@ -135,7 +138,9 @@ export function publishOnce(options: PublishOnceOptions, key: string, message: M
       finish(reached ? uncertain(`${detail}; the message may have been published`, ids) : {status: 'rejected', error: failure('unavailable', `${detail}; nothing was sent`, ids)});
     }
     outgoing.once('socket', socket => {
-      if (socket.connecting) socket.once('connect', () => { reached = true; });
+      // A TCP connection alone cannot authenticate HTTPS or send its HTTP publication.
+      if (route.protocol === 'https:') socket.once('secureConnect', () => { reached = true; });
+      else if (socket.connecting) socket.once('connect', () => { reached = true; });
       else reached = true;
     });
     // Every error is heard, so one after the call settled never escapes as an unhandled event.

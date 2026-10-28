@@ -524,6 +524,34 @@ it('readProducer gives the runtime\'s origin, the token and the converted source
   assert.equal(await readProducer(await producerFile(context, token, 41999, {receipt: 'applying'})), undefined);
 });
 
+it('private HTTPS requires explicit transport and an exact installed receipt without relaxing old local producers', async context => {
+  const token = producerToken();
+  const endpoint = 'https://hub.synthetic-tailnet.ts.net/api/monitor/v1/events';
+  const shape: Shape = {
+    edit: value => ({...value, endpoint, transport: 'private-https'}),
+    editReceipt: receipt => ({...receipt, input: {...receipt.input, endpoint, transport: 'private-https'}}),
+  };
+  const valid = await producerFile(context, token, 41999, shape);
+  assert.equal((await readProducer(valid))?.edge, 'https://hub.synthetic-tailnet.ts.net');
+  const refused: Shape[] = [
+    {...shape, receipt: 'none'},
+    {...shape, receipt: 'applying'},
+    {...shape, receipt: 'other-token'},
+    {...shape, receipt: 'not-private'},
+    {...shape, edit: value => ({...value, endpoint})},
+    {...shape, editReceipt: receipt => ({...receipt, input: {...receipt.input, endpoint}})},
+    {...shape, editReceipt: receipt => ({...receipt, input: {...receipt.input, endpoint, transport: 'loopback'}})},
+    {...shape, editReceipt: receipt => ({...receipt, input: {...receipt.input, endpoint, transport: 'private-https', source: {...SOURCE, hostId: 'other-host'}}})},
+    ...['http://hub.synthetic-tailnet.ts.net/api/monitor/v1/events', 'https://owner:secret@hub.synthetic-tailnet.ts.net/api/monitor/v1/events',
+      endpoint + '?x=1', endpoint + '#fragment', 'https://hub.synthetic-tailnet.ts.net/api/sdk/v1/publish'].map(invalidEndpoint => ({
+      ...shape, edit: (value: Record<string, unknown>) => ({...value, endpoint: invalidEndpoint, transport: 'private-https'}),
+      editReceipt: (receipt: {version: number; input: Record<string, unknown>}) => ({...receipt, input: {...receipt.input, endpoint: invalidEndpoint, transport: 'private-https'}}),
+    })),
+  ];
+  for (const candidate of refused) assert.equal(await readProducer(await producerFile(context, token, 41999, candidate)), undefined);
+  assert.equal((await readProducer(await producerFile(context, token, 41999, {receipt: 'none'})))?.edge, 'http://127.0.0.1:41999');
+});
+
 // The 1.x envelope the normalizers build, as 2.0.
 
 const IDENTITY = identityOf('session-1');

@@ -1104,7 +1104,7 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?, checkPublication?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
   principal opened, as when the host revokes it. Calls that use a stream must
@@ -1112,6 +1112,12 @@ HTTP status that fits its code.
   principal with the same source cannot subscribe, respond, serve, reply, answer
   or close through that stream. Grants without a principal ID retain their
   source-based ownership.
+- **Host publication checks.** A host-authenticated principal may supply the pure,
+  synchronous `checkPublication(message)` function. The edge invokes it after
+  ordinary schema, source, routing and family/scope checks, before publication.
+  Return a registry error body to refuse without publication, or undefined to
+  continue. This is a host callback, never a wire field, extra grant or command.
+  Principals without it retain their existing behavior.
 - **Permissions (Hub #835).** A grant may list the `calls` it may make and the
   routing-key patterns, `keys`, it may use; either left out allows all. A key it
   publishes or requests must match a pattern; a pattern it subscribes or
@@ -1313,10 +1319,15 @@ const result = await publishOnce({url: 'http://127.0.0.1:8788', source: message.
   `source`, as a participant would send it: a new `id`, the current `time` and a
   `traceparent` that continues `parent`, or starts a new sampled trace.
 - `publishOnce({url, source, token, timeoutMs}, key, message)` posts
-  `{schema, key, message}` to `<url>/api/sdk/v1/publish` over `http`, with the
+  `{schema, key, message}` to `<url>/api/sdk/v1/publish` over HTTP or HTTPS, with the
   token in `authorization` only, the source in `bunny-source` and the message's
   `traceparent` as a header. `timeoutMs`, an integer from 1 to `MAX_TIMEOUT_MS`,
-  bounds the whole call, connecting included. It resolves with what happened and
+  bounds the whole call, including DNS, connection and TLS negotiation. HTTPS
+  explicitly verifies the certificate and hostname against Node's trust roots.
+  It offers no verification bypass and follows no redirect or HTTP downgrade.
+  A failed or unfinished TLS handshake is unpublished `unavailable`; a lost
+  answer after authenticated TLS remains `uncertain-result`.
+  It resolves with what happened and
   never rejects for the edge's answer:
   - `{status: 'published'}`;
   - `{status: 'rejected', error}`: the edge refused the message with a registry
@@ -1327,7 +1338,8 @@ const result = await publishOnce({url: 'http://127.0.0.1:8788', source: message.
 
   Each error body carries the message's trace ID. It rejects with `SdkError`
   (`invalid-request`), before anything is sent, a malformed deadline, a URL that is
-  not `http`, or a token or source that cannot be sent in a header. It sends
+  neither HTTP nor HTTPS, a URL with credentials, query or fragment, or a token
+  or source that cannot be sent in a header. It sends
   nothing again and reports nothing but its result: the caller decides, and the
   edge records its own refusals.
 

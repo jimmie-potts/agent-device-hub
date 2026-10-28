@@ -3,30 +3,30 @@
 // the clients' hook settings run it. It publishes one lifecycle observation to the runtime in one bounded call, as the
 // producer's credential (`runHook` in src/hook/hook.ts). Observational only: no output protocol, permission decision,
 // retry, device or child process. Every path ends within 2.9 s of the process's start, whatever the runtime does, and
-// exits 0 unless a file read is still stuck then, as a title read on a stalled mount can be.
+// exits 0 unless native filesystem or DNS work is still stuck then.
 // The cutover (#840, through #935) installs this file as `bin/monitor-hook.mjs` behind the hook link, where the old
 // Hub's hook is today, so personal hook settings keep their command. It imports only by package name, so it runs there.
 const BUDGET_MS = 2900;
 /**
- * Whether a file system call is still under way. On Node 24 `process.exit` waits for one that never returns, as an open
- * on a stalled mount or a FIFO with no writer does, and nothing runs after a blocked exit, so the hook decides first.
+ * Whether native filesystem or DNS work is still under way. On Node 24 `process.exit` can wait for these worker jobs,
+ * and nothing runs after a blocked exit, so the hook decides first.
  * A check that cannot tell, because the call throws, counts as none, so the hook still exits 0: it stays fail-open.
  */
-const reading = () => {
+const nativeWorkPending = () => {
   try {
-    return process.getActiveResourcesInfo().some(name => name.startsWith('FSReq'));
+    return process.getActiveResourcesInfo().some(name => name.startsWith('FSReq') || name === 'GetAddrInfoReqWrap');
   } catch {
     return false;
   }
 };
-/** The deadline: exit 0, or, with a file read still stuck, the only end that does not wait for it, a signal. */
+/** The deadline: exit 0, or use a signal that cannot wait for a stuck native worker. */
 const end = () => {
-  if (reading()) process.kill(process.pid, 'SIGKILL');
+  if (nativeWorkPending()) process.kill(process.pid, 'SIGKILL');
   else process.exit(0);
 };
-/** The hook is done: it exits 0 once no file read is under way, which a slow one may yet be, or ends at the deadline. */
+/** Exit once native work is finished, or let the hard deadline end it. */
 const finish = () => {
-  if (reading()) setTimeout(finish, 10);
+  if (nativeWorkPending()) setTimeout(finish, 10);
   else process.exit(0);
 };
 process.on('uncaughtException', finish);

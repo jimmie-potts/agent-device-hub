@@ -34,6 +34,7 @@ import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
 import {privateProxyOrigin, wifiProxyOrigin} from './wifi-proxy.js';
 import {GatewayRefusals, methodOf} from './refusals.js';
+import {checkProducerIdentity} from './producer-admission.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
 export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
@@ -158,7 +159,10 @@ export class Gateway {
       })(diagnosticWriter(options.log)),
       authenticate: request => {
         const principal = this.#admitted.get(request);
-        return principal === undefined ? undefined : edgePermissions(principal);
+        if (principal === undefined) return undefined;
+        const permissions = edgePermissions(principal);
+        return privateProxyOrigin(request, options.edge.privateProxy) === undefined ? permissions
+          : {...permissions, checkPublication: checkProducerIdentity};
       },
       onEndpointClosed: ({source, id}) => {
         const own = this.#own;
