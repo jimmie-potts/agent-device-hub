@@ -15,7 +15,7 @@ const MACHINE = {...ENTRY, authorization: 'Bearer ' + TOKEN};
 
 function call(url: string, init: {method?: string; headers?: Record<string, string>; body?: string} = {}): Promise<Response> {
   return new Promise((resolve, reject) => {
-    const sent = request(url, init, response => {
+    const sent = request(url, {...init, headers: {...(init.body === undefined ? {} : {'content-type': 'application/json'}), ...init.headers}}, response => {
       let text = '';
       response.setEncoding('utf8').on('data', (chunk: string) => { text += chunk; }).on('end', () => {
         const headers = new Headers();
@@ -125,6 +125,18 @@ it('private machine revocation ends its SDK stream and rejects later calls', asy
   await runtime.reload();
   await waitFor(closed);
   assert.equal((await call(runtime.url + '/api/v2/build', {headers: MACHINE})).status, 401);
+});
+
+it('private entry refuses administrative and device-role credentials even after reload', async context => {
+  const {runtime, credentials} = await start(context);
+  for (const grant of [
+    {id: 'administrator', source: 'bunny/parts/administrator', scopes: ['read', 'admin']},
+    {id: 'device-link', source: 'bunny/parts/bb8-windows', scopes: [], role: 'bb8-link', robotId: 'synthetic'},
+  ]) {
+    await writeFile(credentials, JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...grant, digest: tokenDigest(TOKEN)}]}));
+    await runtime.reload();
+    assert.equal((await call(runtime.url + '/api/v2/build', {headers: MACHINE})).status, 403);
+  }
 });
 
 it('private entry configuration requires canonical HTTPS and a digest', () => {

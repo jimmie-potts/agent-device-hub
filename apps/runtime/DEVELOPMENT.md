@@ -13,6 +13,11 @@ grants, session expiry, credential revocation and preserved local/Wi-Fi access.
 Run the container entrypoint/operator checks for profile admission, plus the
 owning build/type/lint, SDK, contracts and workflow checks. Real Caddy forwarding,
 disposable browser acceptance and installed iPhone/PC/Mac checks remain distinct.
+Run `BUNNY_TEST_ENTRY=private BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts`
+for the real private forwarder, synthetic TLS termination, owner password,
+scoped machine refusal and mobile-width reconnect/logout/accessibility journey.
+The test overrides only private loopback ports, uses synthetic data and qualifies
+neither Tailscale enrollment nor actual phone/system certificate trust.
 
 Private room models use the existing runtime/core and dashboard test discovery.
 After the root build, run `node --test apps/runtime/dist/tests/room-models.test.js`

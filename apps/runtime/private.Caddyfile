@@ -1,0 +1,32 @@
+{
+ admin off
+ persist_config off
+ auto_https off
+}
+
+http://:{$BUNNY_PRIVATE_PORT:18789} {
+ bind 127.0.0.1
+ @wrong not host {$BUNNY_PRIVATE_HOST}
+ @machine header_regexp Authorization "^Bearer "
+ route {
+  respond @wrong 403
+  handle @machine {
+   reverse_proxy {$BUNNY_PRIVATE_UPSTREAM:127.0.0.1:18788} {
+    header_up -Bunny-Wifi-Proxy
+    header_up Bunny-Private-Proxy {$BUNNY_PRIVATE_PROXY_TOKEN}
+    flush_interval -1
+   }
+  }
+  handle {
+   basic_auth {
+    owner {$BUNNY_PRIVATE_PASSWORD_HASH}
+   }
+   reverse_proxy {$BUNNY_PRIVATE_UPSTREAM:127.0.0.1:18788} {
+    header_up -Authorization
+    header_up -Bunny-Wifi-Proxy
+    header_up Bunny-Private-Proxy {$BUNNY_PRIVATE_PROXY_TOKEN}
+    flush_interval -1
+   }
+  }
+ }
+}

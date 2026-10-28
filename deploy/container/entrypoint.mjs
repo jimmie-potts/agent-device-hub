@@ -8,21 +8,28 @@ const producerSource = /^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/;
 
 export function containerOptions(env) {
   const access = env.BUNNY_ACCESS ?? 'isolated';
+  const loopback = access === 'host-local' || access === 'private-proxy';
   const control = env.BUNNY_CONTROL ?? 'disabled';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
-  const portText = env.BUNNY_PORT ?? (access === 'host-local' ? '18788' : '8788');
+  const portText = env.BUNNY_PORT ?? (loopback ? '18788' : '8788');
   const ingestSource = env.BUNNY_INGEST_SOURCE;
-  if (!['isolated', 'host-local'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
-    || (ingestSource !== undefined && (access !== 'host-local' || !producerSource.test(ingestSource)))
-    || (access === 'host-local' && (control !== 'disabled' || portText !== '18788'
+  if (!['isolated', 'host-local', 'private-proxy'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+    || (ingestSource !== undefined && (!loopback || !producerSource.test(ingestSource)))
+    || (loopback && (control !== 'disabled' || portText !== '18788'
       || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
   return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource})};
 }
 
 // Input has already passed the shared credential parser. This profile narrows its grants further.
-export function checkLocalBrowserCredentials(credentials, ingestSource) {
+export function checkLocalBrowserCredentials(credentials, ingestSource, access = 'host-local') {
+  if (access === 'private-proxy') {
+    if (credentials.some(credential => credential.role !== undefined || credential.robotId !== undefined
+      || credential.scopes.some(scope => !['read', 'control', 'ingest'].includes(scope)))) throw new Error('container-browser-config-refused');
+    if (ingestSource !== undefined) checkLocalBrowserCredentials(credentials.filter(credential => credential.source === ingestSource), ingestSource);
+    return;
+  }
   if (ingestSource === undefined) {
     if (credentials.length !== 0) throw new Error('container-browser-config-refused');
     return;
@@ -39,14 +46,15 @@ export function checkLocalBrowserCredentials(credentials, ingestSource) {
  * without its own secrets and with every module it starts after also hosted. Returns those modules' registrations in
  * `shipped` order.
  */
-export function checkLocalBrowserConfig(config, shipped) {
+export function checkLocalBrowserConfig(config, shipped, access = 'host-local') {
   const admitted = new Set(shipped.filter(registration => registration.simulation === undefined).map(({name}) => name));
   const hosted = shipped.filter(registration => Object.hasOwn(config.modules, registration.name));
   if (Object.entries(config.modules).some(([name, section]) => !admitted.has(name) || Object.hasOwn(Object(section), 'secrets'))
     || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))
     || config.edge?.credentials !== '/run/secrets/bunny/edge.json'
     || config.edge.browserAccess !== 'trusted-loopback' || config.edge.launcher !== false || config.edge.mcp !== false
-    || config.edge.wifiProxy !== undefined) {
+    || config.edge.wifiProxy !== undefined
+    || (access === 'private-proxy' ? config.edge.privateProxy === undefined : config.edge.privateProxy !== undefined)) {
     throw new Error('container-browser-config-refused');
   }
   return hosted;
@@ -56,8 +64,8 @@ export function checkLocalBrowserConfig(config, shipped) {
  * The host-local profile's modules, with device control disabled: the core, then each admitted module that has a
  * section. Built before state effects so that a refusal leaves no trace. `runtime` is the runtime's modules.js.
  */
-export function hostLocalModules(config, {coreFactory, shippedModules, buildModules}, checkConfiguration) {
-  const factories = [coreFactory, ...checkLocalBrowserConfig(config, shippedModules.slice(1))];
+export function hostLocalModules(config, {coreFactory, shippedModules, buildModules}, checkConfiguration, access = 'host-local') {
+  const factories = [coreFactory, ...checkLocalBrowserConfig(config, shippedModules.slice(1), access)];
   const modules = buildModules(factories, false);
   refuseNamedDevices(modules, config, checkConfiguration);
   return {factories, modules};
@@ -85,13 +93,13 @@ async function start(options) {
   const {coreFactory, shippedModules, buildModules} = runtimeModules;
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted;
-  if (options.access === 'host-local') {
+  if (options.access === 'host-local' || options.access === 'private-proxy') {
     const [{readEdgeCredentials}, {checkConfiguration}] = await Promise.all([
       import('../../apps/runtime/dist/src/credentials.js'), import('../../packages/sdk/dist/src/index.js'),
     ]);
     // Device control stays disabled; only configured modules that reach no device join the core.
-    ({factories, modules: hosted} = hostLocalModules(config, runtimeModules, checkConfiguration));
-    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource);
+    ({factories, modules: hosted} = hostLocalModules(config, runtimeModules, checkConfiguration, options.access));
+    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource, options.access);
   }
   await checkStateDirectory(options.stateDir);
   await refusePendingRestore(options.stateDir);
@@ -112,7 +120,7 @@ async function start(options) {
   const parsed = parseArguments(['--port', String(options.port), '--state-dir', options.stateDir, '--environment', 'production']);
   // The real core consumes the held ownership capability; stopping its store cannot release process ownership.
   await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {
-    modules, config, ...(options.access === 'host-local' ? {listener: 'container-host-local'} : {}),
+    modules, config, ...(options.access === 'host-local' || options.access === 'private-proxy' ? {listener: 'container-host-local'} : {}),
   });
 }
 

@@ -26,10 +26,10 @@ test('arguments require an exact project, fixed operation and no arbitrary worke
   for(const args of [[],['start'],['delete','--project','synthetic'],['start','--project','x;bad'],['start','extra','--project','synthetic'],['worker-backup','--revision',revision,'--destination','/backup','--project','x']])assert.throws(()=>parse(args));
 });
 
-function localFixture() {
+function localFixture(profile = 'host-local') {
   const f=fixture(), networkId='a'.repeat(64);
-  Object.assign(f.info.Config.Labels,{'io.bunny.access':'host-local'});
-  f.info.Config.Env=['BUNNY_ACCESS=host-local','BUNNY_CONTROL=disabled','BUNNY_PORT=18788'];
+  Object.assign(f.info.Config.Labels,{'io.bunny.access':profile});
+  f.info.Config.Env=['BUNNY_ACCESS='+profile,'BUNNY_CONTROL=disabled','BUNNY_PORT=18788'];
   f.info.HostConfig.NetworkMode='synthetic_local';
   f.info.HostConfig.PortBindings={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
   f.info.NetworkSettings.Networks={synthetic_local:{NetworkID:networkId}};
@@ -43,6 +43,28 @@ function localFixture() {
   };
   return {...f,network,run};
 }
+
+test('private proxy operations keep loopback publication, selected networks and matching profile labels',async()=>{
+  const allowed=localFixture('private-proxy');
+  assert.equal((await operate(plan('start'),allowed.run)).status,'running');
+  for(const mutate of [
+    f=>f.info.Config.Labels['io.bunny.access']='host-local',
+    f=>f.info.HostConfig.PortBindings['18788/tcp'][0].HostIp='0.0.0.0',
+    f=>f.info.Config.Env[1]='BUNNY_CONTROL=enabled',
+    f=>f.network.Containers['b'.repeat(64)]={},
+  ]) {
+    const f=localFixture('private-proxy');mutate(f);
+    await assert.rejects(operate(plan('start'),f.run));
+    assert.ok(!f.calls.some(a=>a[0]==='start'));
+  }
+  const widened=localFixture('private-proxy');
+  await assert.rejects(operate(plan('start'),async args=>{
+    const result=await widened.run(args);
+    if(args[0]==='start')widened.info.NetworkSettings.Ports['18788/tcp'][0].HostIp='0.0.0.0';
+    return result;
+  }));
+  assert.ok(widened.calls.some(a=>a[0]==='stop'));
+});
 
 test('explicit host-local profile retains stopped backup with network-none maintenance',async()=>{
   const f=localFixture();await operate(parse(['backup','snapshot-1','--archive-volume','archives','--project','synthetic']),f.run);

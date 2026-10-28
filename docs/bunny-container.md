@@ -64,6 +64,13 @@ continues to apply only to that established installation.
 
 ## Mac-local browser profile
 
+For the separately selected private HTTPS entry, use
+[Private access](../apps/runtime/PRIVATE-ACCESS.md) and the explicit
+`compose.private.yaml` override. It permits ordinary scoped clients behind an
+authenticated Mac loopback forwarder while retaining the same port, network,
+volumes, non-device modules and manual operator checks. The local profile below
+remains the default and does not accept private-proxy configuration.
+
 The explicit `deploy/container/compose.local.yaml` profile serves the existing
 dashboard at `http://127.0.0.1:18788/`. It requires an image built from source
 that includes this profile; the earlier isolated image cannot supply it by
