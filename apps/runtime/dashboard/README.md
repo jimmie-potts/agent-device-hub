@@ -489,6 +489,16 @@ inset surface. Device artwork keeps its own material and status meanings.
 Control faces retain their card-flip motion without fading text below contrast;
 reduced-motion appearance removes the animation.
 
+`card-chrome.css` applies the shared frame spacing, compact titles, tab track and
+selection, actionable corner targets and footer links after the shell styles
+(#1217). Its private `--card-*` values live in the Quiet glass skin. Cards retain
+their module-owned artwork, content dimensions and state semantics; agent tiles
+keep their separate attention surface. The shared rules apply on Home and feature
+pages without changing saved placement or acquiring another source. Music and
+Wemo fill their selected Home slot while keeping their feature-page width limits.
+Music omits the neutral initial command placeholder; its existing live feedback
+region still shows command progress, errors and results.
+
 ## Build and checks
 
 `npm run build` builds the page with `apps/runtime/dashboard/build.mjs` into

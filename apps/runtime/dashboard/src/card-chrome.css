@@ -1,0 +1,71 @@
+/* Shared runtime card anatomy. Module styles continue to own artwork and content geometry. */
+.shell :is(.widget,.light-card,.music-card,.wemo-card,.onn-card,.roborock-card,.wispr-card){
+  padding:var(--card-padding);
+  border-radius:var(--card-radius);
+  min-width:0;
+}
+.shell .home-card-content :is(.wemo-module,.music-card){max-width:none}
+.shell :is(.light-card-heading,.onn-card-head,.wispr-card-head,.hub-control-heading,.timeline-heading,.wemo-heading,.music-heading,.widget-head){
+  min-height:var(--card-target-size);
+}
+.shell :is(.light-card-heading h3,.onn-card-identity h2,.wispr-card-identity h2,.hub-control-heading h2,.timeline-heading h2,.widget-head h2,.roborock-head h2,.wemo-heading>span:first-child,.agent-status-card .session-id h3){
+  margin:0;
+  font-family:var(--font);
+  font-size:var(--card-title-size);
+  font-weight:500;
+  line-height:1.4;
+  letter-spacing:normal;
+}
+.shell .agent-status-card.session{border-radius:var(--card-tile-radius)}
+.shell :is(.light-tabs,.wemo-tabs,.onn-tabs,.roborock-tabs){
+  padding:var(--space-xs);
+  gap:var(--space-xs);
+  border-radius:var(--card-tab-track-radius);
+  background:var(--inset);
+}
+.shell :is(.light-tabs,.wemo-tabs,.onn-tabs,.roborock-tabs) button{
+  min-width:0;
+  min-height:var(--card-target-size);
+  padding:var(--space-s) var(--space-xs);
+  border:1px solid transparent;
+  border-radius:var(--card-tab-radius);
+  background:transparent;
+  color:var(--muted-dense);
+  font-size:var(--card-control-size);
+  font-weight:500;
+  line-height:1.4;
+  box-shadow:none;
+}
+.shell :is(.light-tabs,.wemo-tabs,.onn-tabs,.roborock-tabs) button[aria-selected=true]{
+  background:var(--raised);
+  color:var(--text);
+  border-color:var(--edge-strong);
+  box-shadow:var(--shell-shadow);
+}
+.shell :is(.light-tabs,.wemo-tabs,.onn-tabs,.roborock-tabs) button:hover:not(:disabled):not([aria-selected=true]){
+  background:var(--raised);
+  color:var(--text);
+}
+.shell :is(.onn-card,.roborock-card,.wispr-card) :is(.onn-status-button,.onn-help-button,.roborock-warning,.wispr-card-actions button){
+  width:var(--card-target-size);
+  min-width:var(--card-target-size);
+  height:var(--card-target-size);
+  padding:0;
+  border-radius:50%;
+}
+.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a,.widget[data-widget=duck-latest]>a,.widget[data-widget=duck-latest]>p>a){
+  display:inline-flex;
+  align-items:center;
+  gap:var(--space-s);
+  min-height:var(--card-target-size);
+  padding:var(--space-s);
+  border-radius:var(--card-tab-track-radius);
+  color:var(--link);
+  font-size:var(--card-control-size);
+  text-decoration:none;
+}
+.shell :is(.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a):hover{background:var(--raised);color:var(--text)}
+.shell .roborock-history-unavailable{min-height:var(--card-target-size);font-size:var(--card-control-size)}
+.shell :is(.light-face,.onn-control-plane>section,.roborock-plane>section){animation-duration:var(--card-flip-duration)}
+@media(max-width:680px){.shell{--card-padding:var(--space-m)}}
+@media(prefers-reduced-motion:reduce){.shell :is(.light-face,.onn-control-plane>section,.roborock-plane>section){animation:none}}
