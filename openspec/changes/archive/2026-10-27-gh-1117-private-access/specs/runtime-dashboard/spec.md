@@ -30,4 +30,3 @@ The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHA
 - **WHEN** an owner-authenticated private browser navigates at phone width, uses an existing control, loses connectivity and resumes
 - **THEN** the same dashboard resyncs current state without resending the command, and Disconnect ends the session and offers Sign in
 - **AND** actual Mac, PC and iPhone home/away and PC-off checks remain installed acceptance rather than an inference from synthetic browser tests
-

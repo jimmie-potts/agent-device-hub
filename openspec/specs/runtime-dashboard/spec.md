@@ -24,7 +24,7 @@ The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), cop
 
 ### Requirement: Sign-in on the runtime's gateway
 
-The dashboard SHALL sign in only through the gateway's browser routes, with `bunny-request: 1` and its own `Origin` on every change, and SHALL hold no token. On load and on a sign-in click it SHALL use the browser's live session when one exists, so a reload or a second tab opens no new session; without one it SHALL ask for a browser session from trusted loopback or the explicitly configured authenticated home-Wi-Fi entry, and when the runtime does not offer one it SHALL show the launcher's page. A `#launch=<code>` fragment SHALL leave the address before the page exchanges the code once. A sign-in that fails SHALL show an alert with the launcher's text. **Disconnect** SHALL end the browser's session, in every tab of the origin, and offer **Sign in**. When the runtime refuses the browser's session, as after a logout elsewhere, an eviction, its expiry or a runtime restart, the page SHALL say the session ended, keep its last records and offer **Sign in again**, and SHALL NOT sign in by itself. A link on another local app's page with the same host name SHALL open the page signed in; a frame from another local app and another host name's link SHALL be refused.
+The dashboard SHALL sign in only through the gateway's browser routes, with `bunny-request: 1` and its own `Origin` on every change, and SHALL hold no token. On load and on a sign-in click it SHALL use the browser's live session when one exists, so a reload or a second tab opens no new session; without one it SHALL ask for a browser session from trusted loopback or the explicitly configured authenticated home-Wi-Fi or private entry, and when the runtime does not offer one it SHALL show the launcher's page. A `#launch=<code>` fragment SHALL leave the address before the page exchanges the code once. A sign-in that fails SHALL show an alert with the launcher's text. **Disconnect** SHALL end the browser's session, in every tab of the origin, and offer **Sign in**. When the runtime refuses the browser's session, as after a logout elsewhere, an eviction, its expiry or a runtime restart, the page SHALL say the session ended, keep its last records and offer **Sign in again**, and SHALL NOT sign in by itself. A link on another local app's page with the same host name SHALL open the page signed in; a frame from another local app and another host name's link SHALL be refused.
 
 The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHALL each carry valid W3C trace context without changing their authentication protections. With no parent operation, each call SHALL start its own trace.
 
@@ -47,6 +47,11 @@ The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHA
 #### Scenario: Existing dashboard through home Wi-Fi
 - **WHEN** the owner opens the HTTPS bookmark, navigates at phone width, uses an existing control, briefly disconnects and resumes
 - **THEN** the same dashboard and SDK stream show known state, controls retain their existing authorization and tracking, disconnection is visible, recovery resyncs without replay, and no native application or separate mobile interface is required
+
+#### Scenario: Private phone browser recovery
+- **WHEN** an owner-authenticated private browser navigates at phone width, uses an existing control, loses connectivity and resumes
+- **THEN** the same dashboard resyncs current state without resending the command, and Disconnect ends the session and offers Sign in
+- **AND** actual Mac, PC and iPhone home/away and PC-off checks remain installed acceptance rather than an inference from synthetic browser tests
 
 ### Requirement: Agent sessions synced from the core
 

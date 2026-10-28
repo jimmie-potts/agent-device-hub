@@ -347,14 +347,16 @@ export class Gateway {
   /** The SDK edge's routes: the gateway admits the caller, and the edge checks each call against its permissions. */
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
-    const admission = this.access.admit(request, this.#originOf(request));
-    if ('refusal' in admission) {
-      const {code, detail} = admission.refusal;
+    let principal: Principal;
+    try { principal = this.#admit(request); }
+    catch (error) {
+      if (!(error instanceof Refused)) throw error;
+      const {code} = error.body.error;
       this.#refusals.record({'bunny.route': route, 'bunny.code': code});
-      this.#write(response, json(statusOf(code), errorBody(code, {detail})));
+      this.#write(response, json(statusOf(code), error.body));
       return;
     }
-    this.#admitted.set(request, admission.principal);
+    this.#admitted.set(request, principal);
     this.edge.handle(request, response);
   }
 

@@ -136,6 +136,10 @@ it('private entry refuses administrative and device-role credentials even after 
     await writeFile(credentials, JSON.stringify({schema: 'edge-credentials/1.0', credentials: [{...grant, digest: tokenDigest(TOKEN)}]}));
     await runtime.reload();
     assert.equal((await call(runtime.url + '/api/v2/build', {headers: MACHINE})).status, 403);
+    await assert.rejects(stream(context, runtime.url, MACHINE), {message: 'stream status 403'});
+    for (const route of ['sync', 'publish', 'request']) {
+      assert.equal((await call(runtime.url + '/api/sdk/v1/' + route, {method: 'POST', headers: MACHINE, body: '{}'})).status, 403);
+    }
   }
 });
 

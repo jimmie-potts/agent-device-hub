@@ -106,4 +106,3 @@ The optional private HTTPS entry SHALL require an explicitly configured canonica
 - **WHEN** the owner explicitly selects the private-proxy container profile
 - **THEN** it requires private-entry configuration, preserves loopback publication, the dedicated network and non-device module admission, disables device control and admits only ordinary scoped clients plus the unchanged selected local ingest-only producer
 - **AND** the default host-local profile refuses private-entry configuration and retains its stricter credential policy
-
