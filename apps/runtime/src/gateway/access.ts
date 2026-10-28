@@ -55,8 +55,8 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
  * The SDK edge's permissions for a caller's scopes (Hub #835): `read` subscribes to and syncs every state and event
  * key; `ingest` publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control`
  * requests the core's operator commands, and sends every other command through the dispatcher's action routes
- * (#782); `admin` adds nothing at the edge. A part may serve or respond to nothing yet: a remote owner's grant comes
- * with its own story.
+ * (#782); `admin` adds nothing at the edge. A dashboard browser with read and control may explicitly open the
+ * connection-bound speech endpoint. Its grant adds no ordinary responder or publication authority.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
   if (principal.kind === 'credential' && principal.role === 'bb8-link' && principal.source === 'bunny/parts/bb8-windows' && principal.robotId !== undefined && principal.scopes.size === 0) {
@@ -82,7 +82,9 @@ export function edgePermissions(principal: Principal): EdgePrincipal {
     calls.add('request');
     for (const key of CONTROL_KEYS) keys.add(key);
   }
-  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys], publishes};
+  const speech = principal.kind === 'browser' && principal.source === BROWSER_SOURCE && principal.scopes.has('read') && principal.scopes.has('control');
+  return {id: principal.id, source: principal.source, calls: [...calls], keys: [...keys], publishes,
+    ...(speech ? {endpoint: {respond: ['companion-speech-output'], publish: ['companion-speech-playback'], request: ['companion-speech-endpoint']}} : {})};
 }
 
 /**

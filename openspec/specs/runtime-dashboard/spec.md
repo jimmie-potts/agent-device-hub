@@ -8,15 +8,15 @@ Define the B.U.N.N.Y. dashboard that the runtime serves (Hub #922), copied from 
 
 ### Requirement: The dashboard on the runtime
 
-The runtime SHALL serve a copy of the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub's `apps/dashboard` source remains retained for manual return until separately authorized retirement (#839). The copy SHALL keep the shell, its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, the Places navigation and the Neon skin, whose role and private tokens are the only colors its styles use. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing. Approval and input attention SHALL use the fixed blocked chip token; a continuing question SHALL use the separate question token.
+The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub's `apps/dashboard` source remains retained for manual return until separately authorized retirement (#839). The dashboard SHALL keep its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, and the Places links accessible through Settings. The current runtime SHALL use the accepted Quiet glass skin, whose role and private tokens are the only colors its styles use, following light/dark browser appearance. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing. Approval and input attention SHALL use the fixed blocked chip token; a continuing question SHALL use the separate question token.
 
 #### Scenario: Routes and the shell
-- **WHEN** a signed-in page follows the Connections link, goes back, and opens an address that names no page
-- **THEN** each page has its hash address, the back button returns to the home, the unknown address shows that nothing is there with a link home, and nothing is sent
+- **WHEN** a signed-in page opens Settings, follows the Connections link, goes back, and opens an address that names no page
+- **THEN** each page has its hash address, back returns to the preceding page, the unknown address shows that nothing is there with a link home, and nothing is sent
 
 #### Scenario: Accessible pages
-- **WHEN** the home is checked at 1,440 and 390 px, and the launcher's page on its own
-- **THEN** axe finds no WCAG 2.1 A or AA violation, no text overlaps on the desktop home, and the phone width has no horizontal overflow
+- **WHEN** the home and new shell destinations are checked at desktop and 320/390px widths in light/dark appearance and with reduced motion
+- **THEN** the changed pages have no WCAG 2.1 A or AA violations, text and controls fit without horizontal overflow, and keyboard focus remains visible
 
 #### Scenario: Fixed attention colors
 - **WHEN** a session needs approval or input, or reports a continuing question
@@ -50,11 +50,11 @@ The page's sign-in, launch exchange, logout, authority and Places HTTP calls SHA
 
 ### Requirement: Agent sessions synced from the core
 
-The dashboard SHALL keep one copy of the core's `session` family through SDK sync, acting as the browser's session (`bunny/parts/dashboard`), and SHALL follow its live changes. A sync refused as `unauthenticated` or `forbidden` SHALL end the link with no retry. Any other refused sync, or a copy that stops after a later sync failed, SHALL be tried again after 1 s, doubling to 30 s, while the page keeps its last records and marks them stale. After a lost stream the copy SHALL sync again and show the core's current records; nothing the page missed SHALL be replayed and no command SHALL be sent again. Each session row SHALL show, from its record alone, its name (the label, then the title, then the native session ID), its project and client, a chip naming attention first, then work, then an unread finished turn under the dashboard policy below, otherwise the activity, its attention items, its retained notices with who acknowledged them, and behind Details its source, session ID, activity, the age of its last evidence, read evidence, parent and children.
+The dashboard SHALL keep one copy of the core's `session` family through SDK sync, acting as the browser's session (`bunny/parts/dashboard`), and SHALL follow its live changes. A sync refused as `unauthenticated` or `forbidden` SHALL end the link with no retry. Any other refused sync, or a copy that stops after a later sync failed, SHALL be tried again after 1 s, doubling to 30 s, while the page keeps its last records and marks them stale. After a lost stream the copy SHALL sync again and show the core's current records; nothing the page missed SHALL be replayed and no command SHALL be sent again. Each session row SHALL show, from its record alone, its name (the label, then the title, then the native session ID), its project and client, a chip naming attention first, then work, then an unread finished turn under the dashboard policy below, otherwise the activity, in that disclosure its attention items and retained notices with who acknowledged them, and in a native card disclosure its source, session ID, activity, the age of its last evidence, read evidence, parent and children.
 
 #### Scenario: Sessions appear and an approval is raised and cleared
 - **WHEN** a hook observes a session start and a turn, then an approval prompt, then its resolution
-- **THEN** the session appears working by its title and client, then waits for approval with its attention line and the attention summary, then works again with no attention, and the page sends nothing
+- **THEN** the session appears working by its title and client, then waits for approval with an amber card and written attention state, with its attention line available on expansion, then works again with no attention, and the page sends nothing
 
 #### Scenario: A reconnect resyncs with nothing replayed
 - **WHEN** the runtime ends the page's stream and the hook observes a turn's end and a new session meanwhile
@@ -78,11 +78,11 @@ The dashboard SHALL show a session's finished turn as **Finished · unread** whi
 
 ### Requirement: The approved home with its panels
 
-The home SHALL follow the owner-approved mockup ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode panel and the agent sessions in the wide column, the inbox panel and the attention summary in the narrow one. The Hub mode panel SHALL show the synced saved selection with explicit Work/Free/Quiet controls. It SHALL distinguish the saved choice from independently tracked device results. The inbox panel SHALL retain #923's synced failed, uncertain and conflicting operations and its explicit handling controls. An empty synced inbox SHALL say that no commands need handling.
+The home SHALL use the approved responsive glass grid with reusable Hub mode, agent sessions, Inbox and currently selected device, lighting, room and Music cards. The owner's saved desktop or phone arrangement SHALL override default placement through Edit Home; before the first save the built-in arrangement SHALL include the core panels and existing selected module cards. Timeline SHALL remain accessible. Attention SHALL be highlighted on each agent card with an amber surface and written state, without a separate attention panel. The Hub mode card SHALL show the synced saved selection and matching artwork with explicit Work/Free/Quiet controls, including same-mode reapplication. Its concise face SHALL omit routine request sections and device lists; saved choice SHALL remain distinct from device results, with related issues available through its corner Check Inbox control and shared Inbox evidence. The Inbox card SHALL retain #923's synced failed, uncertain and conflicting operations with expandable evidence and explicit handling controls. An empty synced inbox SHALL say that no commands need handling. Both cards SHALL use reusable presentation over existing shared state and adapters.
 
 #### Scenario: The panels in place
 - **WHEN** a signed-in page opens the home with no sessions
-- **THEN** the wide column holds the Hub mode and the sessions, the narrow one the inbox and the attention summary, and the sessions say none were observed
+- **THEN** the default grid holds the Hub mode, sessions and Inbox without a separate attention panel, and the sessions say none were observed
 
 ### Requirement: Places on a run
 
@@ -189,15 +189,15 @@ Connections SHALL offer an Operator tools override labeled `Clear this notice on
 
 ### Requirement: Explicit mode selection with separate outcomes
 
-The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The panel SHALL show each available matching tracked device result independently and SHALL label missing or unsynced evidence honestly. Reload, refresh and reconnect SHALL send nothing. Keyboard access and the changed control's accessibility SHALL be verified.
+The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The concise panel SHALL keep individual device results in shared Inbox and Timeline evidence, with a corner link for issues. Missing or unsynced evidence SHALL NOT establish device success or resolution. Reload, refresh and reconnect SHALL send nothing. Keyboard access and the changed control's accessibility SHALL be verified.
 
 #### Scenario: Select and reload
 - **WHEN** an operator selects Work using the keyboard and reloads after one device succeeds and another fails
-- **THEN** Work remains the saved choice, the separate device results are shown, reload sends nothing and the changed control has no applicable accessibility violations
+- **THEN** Work remains the saved choice, the failed device remains reviewable through Inbox and independent results remain available in Timeline, reload sends nothing and the changed control has no applicable accessibility violations
 
 #### Scenario: Read-only view
 - **WHEN** a read-only connection opens the panel
-- **THEN** it can read the saved selection and results, its mode controls are disabled and it sends nothing
+- **THEN** it can read the saved selection and inspect shared Inbox and Timeline results, its mode controls are disabled and it sends nothing
 
 ### Requirement: Optional artwork on the existing playback card
 
@@ -254,3 +254,106 @@ The operator SHALL explicitly place logical playback cards in zero or more exist
 #### Scenario: Room removal or interrupted save
 - **WHEN** the room is removed, or a save reply becomes uncertain
 - **THEN** a missing room renders no card, and uncertain editing waits for explicit reconciliation without changing playback or retrying the save
+
+### Requirement: Five primary destinations with retained page addresses
+
+The main navigation SHALL contain exactly Home, Habitat, Rooms, Devices and Automation, in that order. Settings SHALL be a separate utility link reachable from every page. Home SHALL link Timeline. Nested brand, component, playback and declared module pages SHALL select Devices as their containing destination; Timeline SHALL select Home; Settings and Connections SHALL select the Settings utility. Existing Home aliases and brand, component, playback, module, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
+
+#### Scenario: Open an existing bookmark
+- **WHEN** the operator opens a brand, module, component or Music bookmark and uses back/forward navigation
+- **THEN** the existing page and guarded controls remain usable with Devices selected, and history restores the preceding address without replaying a command
+
+#### Scenario: A component is named Devices
+- **WHEN** the operator opens `#/component/devices`, `#/component/settings` or an undeclared address
+- **THEN** the component route remains distinct from the built-in landing page, and undeclared addresses show not found without attempting a command
+
+#### Scenario: Session recovery stays reachable
+- **WHEN** the browser session ends or the operator wants to disconnect
+- **THEN** ended-session sign-in remains reachable without an automatic sign-in, and Settings provides Disconnect and the existing connection/operator information
+
+### Requirement: Devices directory derives from the current catalog
+
+Devices SHALL group available brand, display, Audio, component and declared module destinations within Lighting, Displays, Audio and Other sections. It SHALL derive destinations from existing catalog and record evidence, retain unrecognized modules in the generic group, and expose catalog failure, missing observations or refused modules honestly. It SHALL NOT create capabilities or device observations, independently acquire state or mutate any device during browsing. Existing Home widgets, saved room/Home placements and card adapters SHALL retain their behavior.
+
+#### Scenario: Browse existing devices and feature pages
+- **WHEN** the operator opens Devices and selects a category and destination
+- **THEN** the corresponding existing card or declared module page opens in the shared shell with its current observations and capability guards, without adding another main-navigation link
+
+#### Scenario: Catalog or control authority is unavailable
+- **WHEN** the catalog cannot be read, a module is refused, or a view is stale or read-only
+- **THEN** the shell reports the available evidence without inventing destinations or enabling unsupported commands, and passive navigation makes no command attempt
+
+#### Scenario: A retained uncertain attempt crosses navigation
+- **WHEN** the operator leaves and returns to a card with an uncertain attempt
+- **THEN** the card retains its existing lock and explicit refresh behavior and sends no replay
+
+### Requirement: Reusable concise Wemo card
+The dashboard SHALL reuse one Wemo presentation on Home and existing Wemo device routes. Its primary illustration SHALL represent the connected desk lamp with a smaller Wemo plug. Power and Auto-off tabs SHALL retain artwork position and card dimensions at desktop and phone widths. Switching tabs SHALL preserve drafts, send nothing and make inactive controls unavailable to keyboard and accessibility interaction; reduced-motion appearance SHALL remove the flip animation.
+
+Routine controls SHALL omit repeated On/Off observation text, reported-by-plug wording, Smart plug, Armed and the standing warning below Save limit. The selected power button SHALL reflect plug-reported power rather than desired state or command acceptance. Missing observations SHALL not select Off. Stale, unavailable, held and uncertain evidence SHALL remain explicit. A collapsed device evidence disclosure SHALL retain observation age, desired versus observed state, enforcement/run/deadline/attempt evidence and the Hub/reachability limitation without adding a Details or Activity tab.
+
+The card SHALL retain existing control/freshness/capability guards, per-target request identity, independent explicit limit saves, uncertain-operation recovery and no replay. Refresh and explicit hold release SHALL not send power. Weekly schedules SHALL remain in Automation. Illustrations SHALL not claim visible lamp output.
+
+#### Scenario: Switch controls without moving the card
+- **WHEN** a person switches Power and Auto-off at a supported desktop or phone width
+- **THEN** the same card and artwork retain their geometry, drafts remain intact, only active controls are accessible and no device or settings mutation occurs
+
+#### Scenario: Observe power while a request is pending
+- **WHEN** a power command is requested or accepted before a fresh plug report confirms it
+- **THEN** the selected button still follows the reported state and the pending or uncertain outcome remains distinct without an automatic retry
+
+#### Scenario: Edit one limit and revisit the card
+- **WHEN** a person explicitly saves one plug's duration or enabled state and changes tabs or routes
+- **THEN** the existing authoritative limit save remains independent of other plugs and weekly schedules, with no new command on navigation
+
+#### Scenario: Recover uncertain work
+- **WHEN** a lost power or settings reply is followed by refresh, navigation or reload
+- **THEN** unresolved power work keeps its existing gate, a limit save requires fresh current settings before another explicit attempt, refresh sends no power, and only an explicit qualified hold release clears the device hold without repeating its uncertain power write
+
+### Requirement: Shared agent habitat
+
+The dashboard SHALL offer a Habitat destination at `#/habitat`, showing one connected four-room habitat with ten resident slots over its existing session copy. Eligible observed sessions SHALL retain their resident while present; newest sessions SHALL fill free slots with deterministic ID ties; known children SHALL NOT occupy slots and unknown parentage SHALL NOT be guessed. Overflow SHALL be visible and SHALL NOT evict occupants. Confirmed membership removal SHALL free slots, while disconnected or resyncing evidence SHALL freeze residents without inferred departures. Empty residents SHALL be labelled unassigned and resting. The page SHALL preserve manual swaps, explicit demo mode, per-resident aprons, forty positions, furniture routing and hopping, and the shared dashboard state precedence.
+
+#### Scenario: Ten residents, overflow and arrival
+- **WHEN** twelve eligible sessions are observed, reordered and updated, then one assigned session is removed
+- **THEN** ten stable distinct residents and two waiting sessions are shown, and only the freed slot admits the next waiting session
+
+#### Scenario: Reconnect and remount
+- **WHEN** the stream is lost during movement and the owner pauses motion, reconnects, leaves Habitat and returns
+- **THEN** assigned residents freeze without releasing identity, authoritative membership reconciles after sync, local preferences restore, and leaving cancels the old renderer's animation and listeners
+
+#### Scenario: Customization migration
+- **WHEN** the owner explicitly imports a supported preview settings file or an invalid/oversized file
+- **THEN** valid whitelisted preferences are backed up and applied locally without upload, while invalid input leaves existing preferences unchanged
+
+#### Scenario: Deliberate conversation navigation
+- **WHEN** the owner activates a qualified Codex Windows resident twice, or activates a demo/unassigned/unqualified resident
+- **THEN** the first activation inspects and the second same-resident activation requests the exact existing conversation only when qualified, with no rapid-click requirement, command, unread acknowledgment or invented destination
+
+#### Scenario: Safe presentation
+- **WHEN** Habitat is opened at desktop or phone width, with reduced motion, hidden document or unavailable canvas
+- **THEN** status remains readable, controls remain accessible without overflow, motion follows visibility/pause/reduced-motion, and rendering failure does not remove precise session information or crash the dashboard
+
+### Requirement: Consistent reusable card presentation
+
+The runtime dashboard SHALL give existing reusable cards a shared glass frame, responsive padding, card-title hierarchy, tab treatment and footer-link targets across Home and feature destinations. This includes lighting and room/group cards, displays, Music, Wemo, Hub mode, Inbox, Timeline, agent status, Wispr, ONN and Roborock; the optional MicroDuck card SHALL inherit the widget frame without activating a source. Device artwork, domain-specific control-face sizes, fixed tab geometry, attention colors and concise but truthful state wording SHALL remain intact. Styling SHALL NOT change source ownership, command admission, stored layout, collection or device behavior.
+
+#### Scenario: Same card on Home and a feature page
+- **WHEN** an existing card is viewed on Home and its brand, device, Audio or Room destination
+- **THEN** its frame, title treatment and controls follow the same visual rules, while its artwork and domain-specific controls remain available
+
+#### Scenario: Consistent tabs and corner controls
+- **WHEN** the user changes an existing device card's tabs or focuses a corner status control
+- **THEN** tabs have a consistent selected treatment and visible keyboard focus, actionable corner controls have clear touch targets, and changing a tab keeps its artwork and control-face geometry stable without sending a product command
+
+#### Scenario: Phone and theme appearance
+- **WHEN** the cards are viewed at desktop, 390px and 320px widths in light and dark appearance
+- **THEN** padding follows one responsive rule, labels and controls fit without horizontal overflow, footer links have usable targets, and changed content passes applicable WCAG A/AA checks
+
+#### Scenario: Attention and unavailable evidence
+- **WHEN** an agent needs input, a source is stale or unavailable, or a control is disabled
+- **THEN** the existing written states, fixed attention colors, disabled protections and access to evidence remain distinguishable; shared styling does not make missing evidence appear current or turn an observation into success
+
+#### Scenario: Quiet idle command feedback
+- **WHEN** a Music card is opened before any command from that card
+- **THEN** its idle face omits routine no-command boilerplate, while later command progress, errors and results remain visible through the existing feedback region

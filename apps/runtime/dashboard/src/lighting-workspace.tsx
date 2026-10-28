@@ -7,6 +7,7 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
 import {useAttempt} from './command-control.tsx';
 import {LightCard} from './light-card.tsx';
+import {DeviceModeChoice} from './device-mode.tsx';
 import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
 import './lighting.css';
 import {RoomModels} from './room-models.tsx';
@@ -27,8 +28,8 @@ function Placeholder({device}: {device: LightingDevice | undefined}): React.JSX.
   </svg>;
 }
 /** One shell composition owns bindings and persistence; each view supplies only its selection scope. */
-export function LightingWorkspace({runtime, connected, operations, operationsLive, connection, route}: {
-  runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; connection: DashboardConnection; route: Route;
+export function LightingWorkspace({runtime, connected, operations, operationsLive, connection, route, homeSelection, homeSelections}: {
+  runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; connection: DashboardConnection; route: Route; homeSelection?: LightingSelection; homeSelections?: LightingSelection[];
 }): React.JSX.Element {
   const devices = lightingDevices(runtime.copies, connected);
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
@@ -62,7 +63,8 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   const brand = route.kind === 'lighting-brand' ? route.brand : undefined;
   const active = home || roomView || brand !== undefined;
   const viewScope = home ? 'home' : brand === undefined ? 'rooms' : `brand-${brand}`;
-  const cards = roomView ? layout.rooms.map(room => resolveCard({kind: 'room', id: room.id}, layout, devices)) : cardsFor(viewScope, layout, devices);
+  const cards = homeSelections !== undefined ? homeSelections.map(selection => resolveCard(selection, layout, devices)) : roomView ? layout.rooms.map(room => resolveCard({kind: 'room', id: room.id}, layout, devices)) : cardsFor(viewScope, layout, devices);
+  const displayedCards = homeSelection === undefined ? cards : [resolveCard(homeSelection, layout, devices)];
   const selected = cardsFor('home', layout, devices).map(card => card.selection);
   const toggleHome = (selection: LightingSelection, checked: boolean): void => {
     const next = structuredClone(layout);
@@ -70,7 +72,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
     if (checked) next.home.push(selection);
     save(next);
   };
-  const group = (first: LightingSelection, second: LightingSelection): void => { save(groupCards(layout, viewScope, first, second, devices, crypto.randomUUID())); };
+  const group = (first: LightingSelection, second: LightingSelection): void => { save(groupCards(layout, viewScope, first, second, devices, crypto.randomUUID(), homeSelections)); };
   const options = (card: LightingCard): React.ReactNode => <details className="light-options"><summary aria-label={`Options for ${card.name}`}>⋯</summary><div className="light-options-body">
     {card.selection.kind !== 'room' && <label>Group with<select aria-label={`Group ${card.name} with`} value="" disabled={!editable} onChange={event => {
       const target = cards.find(item => selectionKey(item.selection) === event.target.value); if (target !== undefined) group(card.selection, target.selection);
@@ -83,7 +85,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       if (item !== undefined) item.name = name; save(next);
     }}><label>Name<input name="name" aria-label={`Name for ${card.name}`} defaultValue={card.name} maxLength={80} required disabled={!editable}/></label><button type="submit" disabled={!editable}>Save name</button></form>}
     {card.selection.kind === 'room' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, !selected.some(item => selectionKey(item) === selectionKey(card.selection))); }}>{selected.some(item => selectionKey(item) === selectionKey(card.selection)) ? 'Remove from Home' : 'Add to Home'}</button>}
-    {home && card.selection.kind === 'device' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, false); }}>Remove from Home</button>}
+    {home && homeSelection === undefined && card.selection.kind === 'device' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, false); }}>Remove from Home</button>}
     <h4>Details</h4>{card.members.map(id => {
       const device = devices.find(item => item.record.id === id), command = bindings.current.get(id);
       return <div key={id}><a href={`#/component/${encodeURIComponent(id)}`}>{device?.record.label ?? id} · advanced controls</a>
@@ -101,7 +103,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   return <>
     {[...new Set(devices.map(device => device.record.id))].map(target => <AttemptBinding key={target} target={target} operations={operations} operationsLive={operationsLive} bindings={bindings.current} changed={changed}/>)}
     {active && <section className="lighting-workspace" aria-label={home ? 'Lights' : roomView ? 'Rooms' : `${brandName(brand ?? '')} lights`}>
-      <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2><details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
+      {homeSelection === undefined && <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2><details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
         <form onSubmit={event => {
           event.preventDefault(); const form = event.currentTarget; const field = new FormData(form).get('room'); const name = typeof field === 'string' ? field.trim() : '';
           if (name === '') return; const next = structuredClone(layout); next.rooms.push({id: crypto.randomUUID(), name}); save(next); form.reset();
@@ -114,7 +116,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
         <h3>Room assignments</h3>{devices.map(device => <label key={`${device.owner}/${device.record.id}`}>{device.record.label ?? device.record.id}<select aria-label={`Assign ${device.record.label ?? device.record.id} to room`} value={layout.assignments.find(item => item.device === device.record.id)?.room ?? ''} disabled={!editable} onChange={event => {
           const next = structuredClone(layout); next.assignments = next.assignments.filter(item => item.device !== device.record.id); if (event.target.value !== '') next.assignments.push({device: device.record.id, room: event.target.value}); save(next);
         }}><option value="">Unassigned</option>{layout.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>)}
-      </div></details></header>
+      </div></details></header>}
       {!layoutLive && <p role="status">Layout records are unavailable or stale. Arrangement is read-only.</p>}
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}
@@ -129,13 +131,13 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
               const current = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
               if ('reason' in current) { setMessage(current.reason); return; }
               act(current.card, intent);
-            }} options={options(card)}
+            }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
             status={card.members.map(id => ({name: card.name, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
-      <div className="lighting-grid">{cards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
-        act={intent => { act(card, intent); }} options={options(card)} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
+      <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
+        act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);
           return <div key={id}>{device?.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div>;

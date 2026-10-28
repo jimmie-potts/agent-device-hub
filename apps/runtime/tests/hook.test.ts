@@ -112,6 +112,14 @@ const OPEN = Symbol('open');
 /** How long a test lets a hook run before it kills it, so a hook that never ends fails its test instead of outliving it. */
 const KILL_AFTER_MS = 6000;
 
+it('metadata-only callers refuse enrichment before consuming hook input', async context => {
+  const producer = await producerFile(context, producerToken(), 41999, {lifecycleVersion: '1.2'});
+  let reads = 0;
+  const input = {async *[Symbol.asyncIterator]() {reads++; yield await Promise.resolve(Buffer.from(payload('SessionStart', 'synthetic-session')));}};
+  assert.deepEqual(await runHook({producer, input, requireMetadataOnly: true}), {status: 'skipped', reason: 'producer'});
+  assert.equal(reads, 0);
+});
+
 /**
  * Runs the hook as a client's hook command does: `node monitor-hook.mjs <args>`, with `input` on stdin, or stdin left
  * open, and Node's own `options` before the script.

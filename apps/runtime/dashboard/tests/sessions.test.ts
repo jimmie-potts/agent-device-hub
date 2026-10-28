@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {CHIP_TEXT, age, chipOf, clientName, finishedUnread, matches, sessionName, sessionRow} from '../src/sessions.ts';
+import {CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, finishedUnread, matches, sessionName, sessionRow} from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
 /** A synthetic, current, idle Claude Code session. */
@@ -29,6 +29,9 @@ void test('a session is named by its label, then its title, then its native ID, 
   assert.equal(sessionRow(record()).where, 'Claude Code');
   assert.deepEqual([clientName({...record().identity, provider: 'codex', client: 'cli'}), clientName({...record().identity, provider: 'codex', client: 'desktop'})],
     ['Codex CLI', 'Codex Desktop']);
+  assert.equal(clientName({...record().identity,provider:'codex',client:'local'}),'Codex (local)');
+  assert.equal(clientName({...record().identity, provider: 'codex', client: 'local', hostId: 'mac-mini', sourceId: 'codex-local-hooks'}), 'Mac Codex');
+  assert.equal(clientName({...record().identity, provider: 'codex', client: 'local', hostId: 'another-host', sourceId: 'codex-local-hooks'}), 'Codex (local)');
 });
 
 void test('the chip ranks attention over work over a finished turn, and names the attention', () => {
@@ -87,4 +90,25 @@ void test('the search matches the label, title, project or session ID, ignoring 
   assert.equal(matches(labelled, '', 'codex'), false);
   assert.equal(matches(labelled, 'nothing', ''), false);
   assert.deepEqual([age(500), age(42_000), age(180_000)], ['less than 1s', '42s', '3m']);
+});
+
+void test('agent summaries count current work separately from retained attention and unread', () => {
+  const working = sessionRow(record({activity: 'active'}));
+  const stale = sessionRow(record({activity: 'active', freshness: 'uncertain'}));
+  const unread = sessionRow(record({notices: finished()}));
+  const attention = sessionRow(record({attention: [{id: {status: 'known', id: 'q'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}}]}));
+  assert.deepEqual(agentSummary([working, stale, unread, attention], true), {working: 1, attention: 1, unread: 1});
+  assert.deepEqual(agentSummary([working, stale, unread, attention], false), {working: 0, attention: 1, unread: 1});
+  assert.equal(needsAttention(attention), true);
+  assert.equal(needsAttention(unread), false);
+  assert.equal(needsAttention(stale), false);
+});
+
+void test('unread summary evidence survives higher-priority attention and work', () => {
+  const notices = finished();
+  const working = sessionRow(record({activity: 'active', notices}));
+  const attention = sessionRow(record({notices, attention: [{id: {status: 'known', id: 'approval'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]}));
+  assert.deepEqual(agentSummary([working, attention], true), {working: 1, attention: 1, unread: 2});
+  assert.equal(working.chip, 'working');
+  assert.equal(attention.chip, 'approval');
 });

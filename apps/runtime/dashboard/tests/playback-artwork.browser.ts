@@ -1,3 +1,4 @@
+import {openAudio, openConnections} from './navigation-helpers.ts';
 // Focused #1069 RED/green fixture: real producer owner/decoder, authenticated native image and shared Home/Music card.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -122,7 +123,7 @@ try {
     await checkImage();
     await card.getByRole('button', {name: 'Pause', exact: true}).focus();
     assert.equal(await image.evaluate(element => document.activeElement === element), false, 'artwork adds no keyboard stop');
-    await page.getByRole('link', {name: 'Audio', exact: true}).click();
+    await openAudio(page);
     assert.equal(new URL(page.url()).hash, '#/audio');
     await image.waitFor({state: 'attached'}); await checkImage();
     assert.equal(acquisitions, 1, 'Home and Audio reuse one receiver acquisition');
@@ -272,7 +273,7 @@ try {
     }); await noImage(); checks.push('same-title Sony/Sonos');
     // A pending native request is retired when the route unmounts; re-entry uses current membership only.
     await heldImage(() => {select('Unmount A');}, async (_a, old) => {
-      await page.getByRole('link', {name: 'Connections', exact: true}).click();
+      await openConnections(page);
       await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
       assert.equal(await card.count(), 0); assert.equal(await old.evaluate(node => node.isConnected), false);
     });
@@ -340,7 +341,7 @@ try {
       } finally {await page.unroute(imagePattern, handler);}
     };
     await fault('404', true); await fault('invalid');
-    await page.getByRole('link', {name: 'Audio', exact: true}).click();
+    await openAudio(page);
     await fault('404'); await fault('invalid');
     assert.equal(sent.length, 1); assert.deepEqual(speakers.state().sony.commands, ['pause']);
     checks.push('Home/Music 404/invalid PNG and keyboard pause outcome');
@@ -355,7 +356,7 @@ try {
     const completed = await card.getByRole('status').innerText(); assert.ok(completed.includes('Completed: succeeded.'));
     for (const destination of ['Music', 'Home']) {
       const beforeNavigation: number = acquisitions;
-      await page.getByRole('link', {name: destination === 'Home' ? /^Home/ : 'Audio', exact: destination !== 'Home'}).click();
+      if (destination === 'Home') await page.getByRole('link', {name: 'Home', exact: true}).click(); else await openAudio(page);
       await frame(await current({title: longTitle, artwork: 'ready'}), [20, 60, 100, 255]);
       assert.equal(acquisitions, beforeNavigation);
       for (const width of [1440, 390]) {

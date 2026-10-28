@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/home-layout/2.0",
+  "description": "Private Home arrangement metadata, without labels or device effects (Hub #366).",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "revision", "version", "layouts"],
+  "properties": {
+    "id": {"const": "home"}, "version": {"const": 1},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "layouts": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/layouts"}]}
+  },
+  "$defs": {
+    "entry": {"type": "object", "additionalProperties": false, "required": ["widget", "size", "hidden"], "properties": {
+      "widget": {"type": "string", "minLength": 1, "maxLength": 384, "pattern": "^[a-z0-9][a-z0-9:/.-]*$"},
+      "size": {"enum": ["small", "medium", "large"]}, "hidden": {"type": "boolean"}
+    }},
+    "entries": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/entry"}},
+    "layouts": {"type": "object", "additionalProperties": false, "required": ["desktop", "phone"], "properties": {
+      "desktop": {"$ref": "#/$defs/entries"}, "phone": {"$ref": "#/$defs/entries"}
+    }}
+  }
+}

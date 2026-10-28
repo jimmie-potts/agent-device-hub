@@ -332,6 +332,12 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
         this.run('UPDATE rr_runs SET observed_at_ms=?,end_at_ms=?,data=? WHERE record_id=?', canonical.observedAtMs, canonical.endAtMs.status === 'known' ? canonical.endAtMs.value : null, json(canonical), run.recordId);
     }
     getRun(id: number): RunRecord | undefined { this.identity(); integer(id, 1); const r = this.read<RunRecord>('SELECT data FROM rr_runs WHERE record_id=?', id); return r ? this.runView(r) : undefined; }
+    /** putRun requires startAtMs === recordId * 1000, so the indexed key is reported-start order. */
+    getLatestRun(): RunRecord | undefined {
+        this.identity();
+        const run = this.read<RunRecord>('SELECT data FROM rr_runs ORDER BY record_id DESC LIMIT 1');
+        return run === undefined ? undefined : this.runView(run);
+    }
     listRuns(token?: string, size = 25): Page<RunRecord> { this.identity(); limit(size, 25); const max = this.maximum('rr_runs'); let high = max, before = high + 1; if (token !== undefined) {
         [high, before] = cursor(token, 'r1', 2) as [
             number,

@@ -6,6 +6,9 @@
  */
 export type Route =
   | {kind: 'home'}
+  | {kind: 'habitat'}
+  | {kind: 'devices'}
+  | {kind: 'settings'}
   | {kind: 'lighting-brand'; brand: string}
   | {kind: 'rooms'}
   | {kind: 'audio'}
@@ -37,6 +40,9 @@ export function parseRoute(hash: string): Route {
   if (!path.startsWith('/')) return {kind: 'missing', hash};
   const parts = path.slice(1).split('/').map(decode);
   const [first, second, third] = parts;
+  if (parts.length === 1 && first === 'habitat') return {kind: 'habitat'};
+  if (parts.length === 1 && first === 'devices') return {kind: 'devices'};
+  if (parts.length === 1 && first === 'settings') return {kind: 'settings'};
   if (parts.length === 3 && first === 'module' && second !== undefined && third !== undefined && second !== '' && third !== '') return {kind: 'module', module: second, page: third};
   if (parts.length === 1 && first === 'audio') return {kind: 'audio'};
   if (parts.length === 1 && first === 'rooms') return {kind: 'rooms'};
@@ -54,6 +60,9 @@ export function routeHash(route: Route): string {
   switch (route.kind) {
     case 'home':
       return '#/';
+    case 'habitat': return '#/habitat';
+    case 'devices': return '#/devices';
+    case 'settings': return '#/settings';
     case 'audio': return '#/audio';
     case 'rooms': return '#/rooms';
     case 'lighting-brand': return `#/lights/${encodeURIComponent(route.brand)}`;
@@ -73,3 +82,16 @@ export function routeHash(route: Route): string {
 }
 
 export const sameRoute = (a: Route, b: Route): boolean => routeHash(a) === routeHash(b);
+
+/** The containing shell destination, independent of a component's alias or a module's page names. */
+export function navigationDestination(route: Route): 'home' | 'habitat' | 'rooms' | 'devices' | 'automation' | 'settings' | undefined {
+  switch (route.kind) {
+    case 'home': case 'timeline': return 'home';
+    case 'habitat': return 'habitat';
+    case 'rooms': return 'rooms';
+    case 'devices': case 'lighting-brand': case 'component': case 'playback': case 'audio': case 'module': return 'devices';
+    case 'automation': return 'automation';
+    case 'connections': case 'settings': return 'settings';
+    case 'missing': return undefined;
+  }
+}

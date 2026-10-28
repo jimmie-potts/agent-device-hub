@@ -118,12 +118,13 @@ export type EdgeSetup = {
   commandMemory?: {perPrincipal?: number; perSource?: number; total?: number; rememberMs?: number};
   /** The host's own authentication, in place of the sources' grants. */
   authenticate?: EdgeOptions['authenticate'];
+  onEndpointClosed?: EdgeOptions['onEndpointClosed'];
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
   maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
-  heartbeatMs, stallMs, liveness, now, commandMemory, authenticate,
+  heartbeatMs, stallMs, liveness, now, commandMemory, authenticate, onEndpointClosed,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const diagnostics: Diagnostic[] = [];
@@ -139,6 +140,7 @@ export async function startEdge({
     ...(scheduler === undefined ? {} : {scheduler}), ...(heartbeatMs === undefined ? {} : {heartbeatMs}), ...(stallMs === undefined ? {} : {stallMs}),
     ...(liveness === undefined ? {} : {liveness}), ...(now === undefined ? {} : {now}), ...(commandMemory === undefined ? {} : {commandMemory}),
     ...(authenticate === undefined ? {} : {authenticate}),
+    ...(onEndpointClosed === undefined ? {} : {onEndpointClosed}),
   });
   const received = new Map<string, number>();
   const dropped = new Map<string, number>();

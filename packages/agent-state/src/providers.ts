@@ -6,7 +6,7 @@ export const MAX_NORMALIZED_EVENT_BYTES=2048;
 export const MAX_PENDING_EVENTS=128;
 export const MAX_PENDING_BYTES=262144;
 export const MAX_TIMEOUT_MS=3000;
-export type SourceConfiguration=Readonly<{provider:'codex'|'claude';client:'cli'|'desktop'|'code';hostId:string;sourceId:string;hook:string}>;
+export type SourceConfiguration=Readonly<{provider:'codex'|'claude';client:'cli'|'desktop'|'code'|'local';hostId:string;sourceId:string;hook:string}>;
 export type EmitterOptions=Readonly<{source:SourceConfiguration;send:(event:Readonly<Envelope>,signal:AbortSignal)=>Promise<void>;
   enabled?:boolean;qualified?:boolean;clock?:()=>number;timeoutMs?:number;maxPending?:number;maxPendingBytes?:number}>;
 export class EmitterConfigurationError extends Error {
@@ -35,7 +35,7 @@ function supported(provider:string,hook:string):boolean {
 function parseSource(input:unknown):SourceConfiguration|null {
   const record=plain(input);if(!record)return null;
   const provider=string(record,'provider'),client=string(record,'client'),hostId=string(record,'hostId'),sourceId=string(record,'sourceId'),hook=string(record,'hook');
-  if((provider!=='codex'&&provider!=='claude')||(client!=='cli'&&client!=='desktop'&&client!=='code')||
+  if((provider!=='codex'&&provider!=='claude')||(client!=='cli'&&client!=='desktop'&&client!=='code'&&client!=='local')||
     !hostId||!sourceId||!hook||!identifier.test(hostId)||!identifier.test(sourceId)||!supported(provider,hook)||
     (provider==='codex'?client==='code':client!=='code'))return null;
   return Object.freeze({provider,client,hostId,sourceId,hook});

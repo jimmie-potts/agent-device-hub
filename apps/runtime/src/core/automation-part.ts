@@ -4,7 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy} from '@jimmie-potts/sdk';
+import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
@@ -105,14 +105,14 @@ export class AutomationPart implements CorePart {
       owner:id=>this.#configured.find(device=>device.id===id)?.owner,
       read:id=>Promise.resolve(structuredClone(this.#device(id))),current:id=>this.#device(id),
       refused:(requestId,parent)=>recordLog(handle.log, 'command.rejected',{'bunny.participant':'bunny/core',
-        'bunny.request.id':requestId,'bunny.outcome':'rejected','bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
-      failed:(requestId,parent,target)=>recordLog(handle.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':'failed','bunny.code':'internal',
+        'bunny.request.id':requestId,'bunny.outcome':Outcome.rejected,'bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
+      failed:(requestId,parent,target)=>recordLog(handle.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal',
         'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.power-set.${target}`},parent),
       send:async(target:string,on:boolean,record:DeviceRecord,requestId:string,parent:import('@jimmie-potts/sdk').TraceContext)=>{
         const answer=await handle.dispatch({requestId,key:`bunny.cmd.power-set.${target}`,requestedBy:'bunny/core',parent,
           draft:{type:'org.bunny.power.set.requested',subject:target,dataschema:'https://bunny.invalid/events/power-set/2.0',
             data:{on,expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation}}});
-        return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?'uncertain':'not-sent',requestId,reason:answer.error.code}
+        return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?Outcome.uncertain:'not-sent',requestId,reason:answer.error.code}
           : {outcome:'receipt',requestId};
       }} satisfies Omit<import('./power-schedules.js').PowerScheduleOptions,'store'>;
     this.#power=createPowerSchedules({...powerOptions,store});

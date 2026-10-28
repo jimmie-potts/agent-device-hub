@@ -21,12 +21,13 @@ if (!built) {
     detail: 'The verification core or the runtime is not built; run npm run build from the repository root.'}));
   process.exitCode = 3;
 } else {
-  const {runCli} = await import('@jimmie-potts/app-verify');
+  const {runCli, runPortableCli} = await import('@jimmie-potts/app-verify');
   const {default: plugin, startOnlyRefusal} = await import('../apps/runtime/dist/verify/plugin.js');
   // The boundary negative controls fail their start by design; reseeding a running run into one would stop it.
   const refusal = startOnlyRefusal(process.argv.slice(2));
   if (refusal) {
     console.log(JSON.stringify(refusal));
     process.exitCode = 2;
-  } else process.exitCode = await runCli(plugin, process.argv.slice(2));
+  } else if (['portable', 'portable-cleanup'].includes(process.argv[2])) process.exitCode = await runPortableCli(plugin, process.argv.slice(2));
+  else process.exitCode = await runCli(plugin, process.argv.slice(2));
 }

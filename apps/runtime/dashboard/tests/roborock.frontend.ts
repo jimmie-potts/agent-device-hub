@@ -7,6 +7,8 @@ const ROOT = '/modules/roborock/content/';
 type Command = {
     type: 'mount';
     owner: string;
+    widget?: boolean;
+    target?: string;
 } | {
     type: 'unmount';
 } | {
@@ -97,6 +99,7 @@ function samples(id: string, selected: number, gaps: CollectionGap[] = [], next:
 }
 async function ready(page: Page, owner: string, doc: VacuumStatus, list = runs(doc.id)): Promise<void> {
     await send(page, { type: 'mount', owner });
+    if (await page.locator('.roborock-evidence').getAttribute('open') === null) await page.getByText('Evidence', {exact: true}).click();
     await send(page, { type: 'sync', owner, doc });
     await send(page, { type: 'read', owner, path: `${ROOT}status`, value: doc });
     await send(page, { type: 'read', owner, path: `${ROOT}runs?limit=25`, value: list });
@@ -125,7 +128,7 @@ export async function checkRoborockFrontend(context: BrowserContext): Promise<vo
         import React from 'react';
         import {createRoot} from 'react-dom/client';
         import {flushSync} from 'react-dom';
-        import {frontend} from '../../../../modules/roborock/src/frontend/index.tsx';
+        import {frontend, RoborockWidget} from '../../../../modules/roborock/src/frontend/index.tsx';
         const Component = frontend.pages.find(page => page.id === 'status')?.Component;
         if (frontend.module !== 'roborock' || Component === undefined) throw new Error('Wrong contribution');
         const root = createRoot(document.getElementById('root'));
@@ -176,7 +179,7 @@ export async function checkRoborockFrontend(context: BrowserContext): Promise<vo
             if (command.type === 'unmount') {flushSync(() => root.render(null)); return;}
             const value = owner(command.owner);
             if (command.type === 'mount') {
-              flushSync(() => root.render(React.createElement(Component, {context: {
+              flushSync(() => root.render(React.createElement(command.widget ? RoborockWidget : Component, {expectedTarget: command.target, context: {
                 module: 'roborock', api: value.api, ui: {}, connected: true,
                 control: false, operations: [], operationsLive: true
               }})));
@@ -210,7 +213,7 @@ export async function checkRoborockFrontend(context: BrowserContext): Promise<vo
         };
       `,
         },
-        bundle: true, write: false, metafile: true,
+        bundle: true, write: false, metafile: true, loader: {'.css': 'empty'},
         platform: 'browser', format: 'esm', target: 'es2022', logLevel: 'silent',
     });
     const output = bundle.outputFiles[0];
@@ -252,6 +255,7 @@ export async function checkRoborockFrontend(context: BrowserContext): Promise<vo
         assert.deepEqual(late.reads, []);
         const a = status('vacuum-a', 66);
         await send(page, { type: 'mount', owner: 'a' });
+        await page.getByText('Evidence', {exact: true}).click();
         await send(page, { type: 'sync', owner: 'a', doc: a });
         const b = status('vacuum-b', 11);
         await ready(page, 'b', b);
@@ -417,4 +421,50 @@ export async function checkRoborockFrontend(context: BrowserContext): Promise<vo
             await page.close();
         }
     }
+    page = await open();
+    try {
+        const doc = status('vacuum', 78, {status: 'known', value: 1_000});
+        doc.activity = 'cleaning'; doc.consumables.observedAtMs = doc.observedAtMs;
+        await send(page, {type: 'mount', owner: 'card', widget: true, target: 'vacuum'});
+        await send(page, {type: 'sync', owner: 'card', doc});
+        await send(page, {type: 'read', owner: 'card', path: `${ROOT}status`, value: doc});
+        const card = page.locator('[data-roborock-card]');
+        assert.equal(await card.getAttribute('data-state'), 'current');
+        const newer = {...doc, revision: 2};
+        await send(page, {type: 'update', owner: 'card', doc: newer});
+        const next = runs(doc.id, [200]); next.revision = 2;
+        const nextRun = next.runs[0]; assert.ok(nextRun !== undefined);
+        nextRun.complete = {status: 'known', value: 1}; nextRun.cleanedAreaMm2 = {status: 'known', value: 48_000_000};
+        await send(page, {type: 'read', owner: 'card', path: `${ROOT}latest-run`, value: next, latest: true});
+        await send(page, {type: 'read', owner: 'card', path: `${ROOT}latest-run`, value: {...runs(doc.id), owner_note: 'SYNTHETIC_RETIRED_CARD_READ'}});
+        await card.getByRole('tab', {name: 'Last run', exact: true}).click();
+        await card.getByText('48 m²', {exact: true}).waitFor();
+        assert.equal(await card.getByText('Completed', {exact: true}).count(), 1);
+        assert(!(await page.locator('body').innerText()).includes('SYNTHETIC_'));
+        const beforeClock = (await stats(page)).card; assert.ok(beforeClock !== undefined);
+        await send(page, {type: 'now', at: 121_001});
+        await page.waitForFunction(() => document.querySelector('[data-roborock-card]')?.getAttribute('data-state') === 'stale');
+        assert.deepEqual((await stats(page)).card?.reads, beforeClock.reads, 'the age clock performs no read');
+        await send(page, {type: 'now', at: 10_000});
+        const conflict = {...newer, status: {...newer.status, batteryPercent: {status: 'known' as const, value: 11}}};
+        await send(page, {type: 'update', owner: 'card', doc: conflict});
+        assert.equal(await card.getAttribute('data-state'), 'unavailable');
+        await send(page, {type: 'update', owner: 'card', doc: {...newer, revision: 3}});
+        assert.equal(await card.getAttribute('data-state'), 'unavailable', 'a later update cannot hide an equal-revision conflict');
+        await card.getByRole('button', {name: 'Roborock status', exact: true}).click();
+        await card.getByText('Roborock read refused: invalid-message.', {exact: true}).waitFor();
+        await send(page, {type: 'unmount'});
+        assert.equal((await stats(page)).card?.closes, 1);
+    } finally {await page.close();}
+    page = await open();
+    try {
+        await send(page, {type: 'mount', owner: 'wrong-target', widget: true, target: 'selected-vacuum'});
+        await send(page, {type: 'sync', owner: 'wrong-target', doc: status('another-vacuum', 66)});
+        const card = page.locator('[data-roborock-card]');
+        assert.equal(await card.getAttribute('data-state'), 'unavailable');
+        assert.equal(await card.getByText('66%', {exact: true}).count(), 0);
+        assert.equal(await card.getAttribute('data-device'), 'selected-vacuum');
+        await send(page, {type: 'unmount'});
+        assert.equal((await stats(page))['wrong-target']?.closes, 1);
+    } finally {await page.close();}
 }

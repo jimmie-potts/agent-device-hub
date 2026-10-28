@@ -1,3 +1,4 @@
+import {openConnections, openSettings} from './navigation-helpers.ts';
 // The runtime dashboard's full browser suite (Hub #922), converted from `apps/dashboard/tests/browser.mjs`: the shell,
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
@@ -38,39 +39,51 @@ try {
   await feed(page, 'connected');
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
-  assert.deepEqual(await page.locator('.home-wide>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions']);
-  assert.deepEqual(await page.locator('.home-narrow>[data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['inbox', 'attention']);
+  assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions', 'inbox']);
+  assert.equal(await page.locator('.home-layout-grid').evaluate(node => getComputedStyle(node).display), 'grid');
   assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
-  await page.getByText('No attention needed.', {exact: true}).waitFor();
-  checks.push('the home follows the mockup: Hub mode and sessions wide, the inbox and attention narrow');
+  assert.equal(await page.locator('[data-widget=attention]').count(), 0);
+  checks.push('Home composes reusable agent cards without a duplicate attention panel');
 
   // Places: a run is a preview (Hub #495), so Wall leads to the paired run named in the runtime's links.
+  await openSettings(page);
   const places = page.getByRole('navigation', {name: 'Places'});
   await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
   assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local', 'WallLocal']);
   assert.equal(await places.getByRole('link', {name: 'Wall Local'}).getAttribute('href'), PAIRED);
   checks.push('Places link Wall to the paired run and keep retained public documents');
+  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
 
   // Sessions appear as the hook observes them.
   await world.observe(sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});
   await world.observe(turnStarted);
   await chip('Port the wall', 'Working');
-  assert.equal(await row('Port the wall').locator('.session-id p').textContent(), 'Claude Code');
-  await page.getByText('1 working · 1 sessions', {exact: true}).waitFor();
+  assert.equal(await row('Port the wall').locator('.agent-client').textContent(), 'Claude Code');
+  assert.equal(await page.locator('.agent-summary > div').first().locator('strong').textContent(), '1');
+  assert.equal(await page.locator('article.session').count(), 1);
   checks.push('a session appears, working');
 
   // An approval prompt is raised and cleared.
   await world.observe(approvalPrompt('approval-1'));
   await chip('Port the wall', 'Waiting for approval');
+  assert.equal(await row('Port the wall').getAttribute('data-attention'), 'true');
+  const ordinary = await row('Port the wall').evaluate(card => getComputedStyle(card).backgroundColor);
+  await row('Port the wall').locator('summary').focus();
+  await page.keyboard.press('Enter');
   await row('Port the wall').getByText('Approval · blocked attention', {exact: true}).waitFor();
-  await page.locator('[data-widget=attention]').getByText('Waiting for approval', {exact: false}).waitFor();
+  assert.equal(await row('Port the wall').evaluate(card => getComputedStyle(card).backgroundColor), ordinary, 'inspection retains the amber highlight');
   await world.observe(approvalResolved('approval-1'));
   await chip('Port the wall', 'Working');
-  await page.getByText('No attention needed.', {exact: true}).waitFor();
+  assert.equal(await page.locator('[data-widget=attention]').count(), 0);
   checks.push('an approval prompt is raised and cleared');
 
   // A finished turn shows unread from the record, and nothing on the page or a timer clears it.
   await world.observe(turnEnded);
+  await chip('Port the wall', 'Finished · unread');
+  await world.observe({kind: 'question-continuing', attention: {status: 'known', id: 'unread-question'}});
+  await chip('Port the wall', 'Question');
+  assert.deepEqual(await page.getByRole('group', {name: 'Agent summary'}).locator('strong').allTextContents(), ['0', '1', '1'], 'attention and unread coexist');
+  await world.observe(approvalResolved('unread-question'));
   await chip('Port the wall', 'Finished · unread');
   await row('Port the wall').getByRole('heading', {name: 'Retained notices', exact: true}).waitFor();
   await row('Port the wall').getByText('Acknowledged by: none.', {exact: false}).waitFor();
@@ -86,6 +99,7 @@ try {
   await chip('Plan wave three', 'Finished · unread');
   await world.observe(turnStarted, {identity: DESKTOP, turn: 'turn-2'});
   await chip('Plan wave three', 'Working');
+  await row('Plan wave three').locator('summary').click();
   await row('Plan wave three').getByText('Acknowledged by: nanoleaf, pixoo.', {exact: false}).waitFor();
   checks.push('a new turn clears the earlier finished turn, as the record says');
 
@@ -108,9 +122,11 @@ try {
     await world.observe(sessionStarted, {identity: {...OTHER, sessionId: 'session-sim-3'}, title: {value: 'Review the inbox', source: 'provider'}});
     await replacement;
     await feed(page, 'connected');
-    assert.match(await row('Plan wave three').innerText(), /Stale evidence/, 'retained rows remain stale while the replacement snapshot is held');
-    assert.match(await page.locator('main#main').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
-    await chip('Plan wave three', 'Working');
+    assert.match(await row('Plan wave three').innerText(), /Freshness is uncertain/, 'retained rows remain stale while the replacement snapshot is held');
+    assert.match(await page.locator('.sidebar-foot').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
+    await chip('Plan wave three', 'Stale');
+    assert.equal(await page.locator('.agent-summary > div').first().locator('strong').textContent(), '0');
+    assert.equal(await page.locator('article.session').count(), 2);
     assert.equal(await row('Review the inbox').count(), 0, 'new membership waits for the replacement snapshot');
     assert.deepEqual(sent, [], 'holding a replacement sync sends no command');
     assert.equal(await row('Plan wave three').getByRole('button', {name: 'Edit label for Plan wave three', exact: true}).isDisabled(), true, 'a stale retained row cannot edit');
@@ -145,7 +161,7 @@ try {
   checks.push('a session that ended leaves the list');
 
   // Details keep the rare facts; the search filters without sending anything.
-  await row('Port the wall').locator('details>summary').click();
+  assert.equal(await row('Port the wall').locator('details').getAttribute('open'), '');
   await row('Port the wall').getByText('Top-level session', {exact: true}).waitFor();
   await page.getByLabel('Find a session').fill('no-match');
   await page.getByRole('heading', {name: 'No matching sessions'}).waitFor();
@@ -153,10 +169,10 @@ try {
   checks.push('details and the search');
 
   // Hash routes: every page has an address and the back button walks the history (Hub #247).
-  await page.getByRole('link', {name: 'Connections', exact: true}).click();
+  await openConnections(page);
   await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
   assert.equal(new URL(page.url()).hash, '#/connections');
-  assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Connections']);
+  assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Settings']);
   assert.deepEqual(await page.locator('.cards.two>.card>h2').allTextContents(), ['Connection', 'Running build', 'Operator tools', 'Observed sources']);
   const cards = await page.locator('.cards.two>.card').evaluateAll(all => all.map(card => card.getBoundingClientRect().toJSON() as DOMRect));
   assert.equal(cards.length, 4);
@@ -170,12 +186,40 @@ try {
   await page.getByText('claude / host-sim / claude-code', {exact: true}).waitFor();
   await shot(page, 'runtime-connections');
   await page.goBack();
+  await page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
+  await page.goBack();
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.evaluate(() => { location.hash = '#/component/nothing'; });
   await page.getByRole('heading', {name: 'No component named nothing', exact: true}).waitFor();
   await page.getByRole('link', {name: 'Go to the home', exact: true}).click();
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   checks.push('hash routes, the back button and a missing address');
+
+  for (const kind of ['attention-input', 'question-continuing'] as const) {
+    await world.observe({kind, attention: {status: 'known', id: kind}});
+    await page.waitForFunction(() => document.querySelector('.agent-status-card[data-attention=true]') !== null);
+    assert.equal(await row('Port the wall').getAttribute('data-attention'), 'true');
+    await chip('Port the wall', kind === 'attention-input' ? 'Waiting for input' : 'Question');
+    await world.observe(approvalResolved(kind));
+    await page.waitForFunction(() => document.querySelector('.agent-status-card[data-attention=true]') === null);
+  }
+
+  // Both themes retain amber as a distinct surface, with explicit attention text.
+  await world.observe(approvalPrompt('approval-colors'));
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({colorScheme});
+    await chip('Port the wall', 'Waiting for approval');
+    assert.notEqual(await row('Port the wall').evaluate(card => getComputedStyle(card).backgroundColor),
+      await row('Plan wave three').evaluate(card => getComputedStyle(card).backgroundColor));
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({width, height: 900});
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.deepEqual(await axe(page), []);
+      await shot(page, `agent-cards-${colorScheme}-${width}`);
+    }
+  }
+  await world.observe(approvalResolved('approval-colors'));
+  await page.setViewportSize({width: 1440, height: 900});
 
   // Layout and accessibility, desktop and phone.
   assert.deepEqual(await textOverlaps(page), [], 'home text never overlaps');
@@ -197,11 +241,14 @@ try {
   assert.equal(world.browserSessions(), 0, 'the page did not sign in by itself');
   await page.getByRole('button', {name: 'Sign in again', exact: true}).click();
   await feed(page, 'connected');
-  await chip('Port the wall', 'Idle');
+  await chip('Port the wall', 'Stale');
+  await row('Port the wall').locator('summary').click();
+  await row('Port the wall').getByText('Last known: Idle.', {exact: false}).waitFor();
   assert.equal(world.browserSessions(), 1);
   checks.push('an ended session offers one sign-in, which restores the page');
 
   // Disconnect ends the session; Sign in opens a new one.
+  await openSettings(page);
   await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
   await page.getByRole('heading', {name: 'You’re signed out.', exact: true}).waitFor();
   assert.equal(world.browserSessions(), 0);
@@ -209,10 +256,28 @@ try {
   await feed(page, 'connected');
   assert.equal(world.browserSessions(), 1);
   checks.push('Disconnect and Sign in');
+  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
 
   assert.deepEqual(sent, [], 'the page sent no command before explicit label controls');
 
   checks.push(await labelJourney(page, world, sent, axe));
+  const sentBeforeInspection = sent.length;
+  await row('Port the wall').getByRole('button', {name: 'Edit label for Port the wall', exact: true}).click();
+  await page.getByLabel('Session label', {exact: true}).fill('Retire this draft');
+  await world.observe(runtimeEnded, {turn: 'turn-label-conflict'});
+  await row('Port the wall').waitFor({state: 'detached'});
+  await world.observe(sessionStarted, {turn: 'turn-replacement', title: {value: 'Replacement session', source: 'provider'}});
+  await row('Replacement session').waitFor();
+  assert.equal(await row('Replacement session').locator('details').getAttribute('open'), null, 'replacement starts with a new disclosure');
+  await row('Replacement session').locator('summary').click();
+  assert.equal(await page.getByLabel('Session label', {exact: true}).count(), 0, 'replacement retires the old draft');
+  await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
+  await page.reload(); await feed(page, 'connected');
+  await row('Replacement session').locator('summary').click();
+  await row('Replacement session').getByText('Top-level session', {exact: true}).waitFor();
+  assert.equal(await page.getByRole('button', {name: /^Edit label/}).count(), 0, 'read-only inspection exposes no label controls');
+  assert.equal(sent.length, sentBeforeInspection, 'typing, replacement, reload and read-only inspection send nothing');
+  checks.push('replacement retires drafts and disclosure; read-only cards retain evidence without controls');
   assert.deepEqual(errors, []);
   process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);
 } catch (error) {
@@ -226,3 +291,6 @@ try {
 
 // The same focused journey runs in hosted smoke and the full local browser suite.
 await import('./tidbyt-card.browser.ts');
+await import('./shell.browser.ts');
+
+await import('./home-layout.browser.ts');

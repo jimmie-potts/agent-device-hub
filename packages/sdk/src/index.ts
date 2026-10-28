@@ -37,7 +37,7 @@ export {childOf, traceFields} from './trace.js';
 export {
   HEARTBEAT_MS, MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, REFUSAL_WINDOW_MS, REMEMBER_MS, RemoteEdge, STALL_MS, type EdgeOptions, type EdgePermissions, type EdgePrincipal, type RemoteGrant,
 } from './remote-edge.js';
-export {IDLE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type RemoteParticipant} from './remote-client.js';
+export {IDLE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type RemoteParticipant, type RemoteEndpoint, type RemoteEndpointOptions} from './remote-client.js';
 export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';
 export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
 export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged, type OutcomeLiteral} from './evidence.js';

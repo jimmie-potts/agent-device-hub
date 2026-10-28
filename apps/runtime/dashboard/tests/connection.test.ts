@@ -6,30 +6,112 @@ import test, {type TestContext} from 'node:test';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import type {Diagnostic, RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
 import {startSync, type SyncAnswer, type SyncHandler, type SyncOptions, type SyncTransport} from '../../../../packages/sdk/dist/src/sync.js';
+import {buildMessage} from '../../../../packages/sdk/dist/src/envelope.js';
 import {DashboardConnection} from '../src/connection.ts';
 
 /** One already authenticated shell with a module that owns a feature family. No listener or second connection. */
-async function moduleConnection(context: TestContext, control = true) {
+async function moduleConnection(context: TestContext, control = true, moduleName = 'pixoo') {
   const requests: {path: string; init: RequestInit}[] = [];
   context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit = {}) => {
     requests.push({path, init});
     if (path === '/api/v2/modules') return Promise.resolve(Response.json({schema: 'module-list/2.0', modules: [
-      {name: 'pixoo', state: 'running', serves: ['pixoo-library'], pages: []},
+      {name: moduleName, state: 'running', serves: ['pixoo-library'], pages: []},
     ]}));
     if (path.includes('/authority')) return Promise.resolve(Response.json({}, {status: control ? 200 : 403}));
     return Promise.resolve(Response.json({schema: 'module-settings/2.0', settings: {}}));
   });
   const script = scripted(['synced'], () => 0);
-  let connects = 0;
-  const connection = new DashboardConnection({url: 'http://127.0.0.1:1', connect: () => { connects += 1; return Promise.resolve(script.participant); }});
+  let connects = 0, diagnose: (value: Diagnostic) => void = () => {};
+  const connection = new DashboardConnection({url: 'http://127.0.0.1:1', connect: options => {
+    connects += 1; diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(script.participant);
+  }});
   context.after(() => connection.close());
   await connection.start();
   await new Promise(resolve => { setImmediate(resolve); });
-  assert.equal(connection.getState().runtime.modules?.[0]?.name, 'pixoo');
-  return {connection, script, requests, connects: () => connects};
+  assert.equal(connection.getState().runtime.modules?.[0]?.name, moduleName);
+  return {connection, script, requests, connects: () => connects, diagnose: (value: Diagnostic) => {diagnose(value);}};
 }
+
+void test('only the companions page can open a speech endpoint, and read-only access sends nothing', async context => {
+  const {connection, script, connects} = await moduleConnection(context, false, 'companions');
+  let opened = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => {opened += 1; throw new Error('must not open');});
+  assert.equal(connection.openModule('pixoo').api.speech, undefined);
+  const page = connection.openModule('companions');
+  assert.ok(page.api.speech);
+  await assert.rejects(page.api.speech.open({respond: () => ({status: 'accepted'})}));
+  assert.equal(opened, 0); assert.equal(connects(), 1);
+});
+
+void test('a speech page uses only its declared families and retires its endpoint on unmount', async context => {
+  const {connection, script, connects} = await moduleConnection(context, true, 'companions');
+  const calls: {family: string; data: unknown}[] = [];
+  let options: RemoteEndpointOptions<SpeechOutput> | undefined, closed = 0, cancelled = 0, commands = 0;
+  const endpoint: RemoteEndpoint = {id: 'endpoint-test', close: () => {closed += 1; options?.onClosed?.(); return Promise.resolve();},
+    publish: (family, draft) => {calls.push({family, data: draft.data}); return Promise.resolve(buildMessage('bunny/parts/dashboard', draft.kind,
+      {...draft, subject: 'endpoint-test'}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0));},
+    request: (family, draft, request) => {
+      calls.push({family, data: draft.data});
+      const requestId = request.requestId ?? 'missing';
+      return Promise.resolve({status: 'accepted', requestId, reply: buildMessage<{requestId: string; status: 'accepted'}>('bunny/modules/companions', 'reply', {
+        type: draft.type.replace(/requested$/, 'replied'), subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/reply/2.0',
+        data: {requestId, status: 'accepted'},
+      }, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0)});
+    },
+  };
+  context.mock.method(script.participant, 'openEndpoint', (given: RemoteEndpointOptions<SpeechOutput>) => {options = given; return Promise.resolve(endpoint);});
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const handle = await page.api.speech.open({respond: () => {commands += 1; return {status: 'accepted'};}, onClosed: () => {cancelled += 1;}});
+  assert.equal(options?.family, 'companion-speech-output'); assert.equal(handle.id, 'endpoint-test');
+  assert.notEqual(options, undefined);
+  const output = buildMessage<SpeechOutput>('bunny/parts/other', 'command', {
+    type: 'org.bunny.companion-speech.output.requested', subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/companion-speech-output/2.0',
+    data: {requestId: 'stop-request', operationId: 'speech-test', action: 'stop'},
+  }, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0, 1000);
+  const refused = await options.respond(output);
+  assert.ok('error' in refused && refused.error.code === 'forbidden'); assert.equal(commands, 0);
+  assert.deepEqual(await options.respond({...output, source: 'bunny/modules/companions'}), {status: 'accepted'});
+  assert.equal(commands, 1);
+  await handle.control({requestId: 'enable-test', action: 'enable', available: true});
+  await handle.observe({operationId: 'speech-test', status: 'completed', started: true}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+  assert.deepEqual(calls.map(call => call.family), ['companion-speech-endpoint', 'companion-speech-playback']);
+  await page.close(); assert.equal(cancelled, 1); assert.equal(closed, 1); assert.equal(connects(), 1);
+  await assert.rejects(handle.control({requestId: 'late-test', action: 'stop'}));
+  assert.equal(calls.length, 2);
+});
+
+void test('a speech endpoint that opens after unmount is closed without reaching the page', async context => {
+  const {connection, script} = await moduleConnection(context, true, 'companions');
+  let finish: (endpoint: RemoteEndpoint) => void = () => {throw new Error('not opening');};
+  let closed = 0, cancelled = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => new Promise<RemoteEndpoint>(resolve => {finish = resolve;}));
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const rejected = assert.rejects(page.api.speech.open({respond: () => ({status: 'accepted'}), onClosed: () => {cancelled += 1;}}));
+  await page.close(); assert.equal(cancelled, 1);
+  finish({id: 'late-endpoint', close: () => {closed += 1; return Promise.resolve();},
+    publish: () => Promise.reject(new Error('must not publish')), request: () => Promise.reject(new Error('must not request'))});
+  await rejected; assert.equal(closed, 1); assert.equal(cancelled, 1);
+});
+
+for (const event of ['remote.disconnected', 'remote.refused'] as const) void test(`speech closes immediately on ${event} and does not reopen itself`, async context => {
+  const {connection, script, diagnose} = await moduleConnection(context, true, 'companions');
+  let opened = 0, closed = 0, cancelled = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => {
+    opened += 1;
+    return Promise.resolve({id: 'endpoint-test', close: () => {closed += 1; return Promise.resolve();},
+      publish: () => Promise.reject(new Error('must not publish')), request: () => Promise.reject(new Error('must not request'))} satisfies RemoteEndpoint);
+  });
+  const page = connection.openModule('companions'); assert.ok(page.api.speech);
+  const endpoint = await page.api.speech.open({respond: () => ({status: 'accepted'}), onClosed: () => {cancelled += 1;}});
+  diagnose({event, level: 'warn', source: 'bunny/parts/dashboard', ...(event === 'remote.refused' ? {code: 'forbidden'} : {})});
+  assert.equal(cancelled, 1); assert.equal(closed, 1);
+  await assert.rejects(endpoint.control({requestId: 'late-request', action: 'stop'}));
+  if (event === 'remote.disconnected') diagnose({event: 'remote.reconnected', level: 'info', source: 'bunny/parts/dashboard'});
+  assert.equal(opened, 1); assert.equal(cancelled, 1);
+});
 
 void test('a module page shares the shell participant and closes both active and late sync copies on unmount', async context => {
   const {connection, script, connects} = await moduleConnection(context);
@@ -56,6 +138,22 @@ void test('a module page shares the shell participant and closes both active and
   finish(answer);
   assert.equal((await pending).status, 'rejected', 'a late copy cannot outlive its page');
   assert.equal(closed, 2);
+});
+
+void test('a module copy hears only its scoped restart callback while its page is active', async context => {
+  const {connection, script} = await moduleConnection(context);
+  let restart: (() => void) | undefined;
+  context.mock.method(script.participant, 'sync', (_families: readonly string[], _handler: unknown, options: SyncOptions) => {
+    restart = options.onRestarted;
+    return Promise.resolve({status: 'synced', copy: {states: () => [], get: () => undefined, close: async () => {}}});
+  });
+  const page = connection.openModule('pixoo');
+  let restarts = 0;
+  await page.api.sync(['pixoo-library'], () => {}, {onRestarted: () => {restarts++;}});
+  assert.ok(restart);
+  restart(); assert.equal(restarts, 1);
+  await page.close();
+  restart(); assert.equal(restarts, 1, 'an unmounted page cannot hear late copy restarts');
 });
 
 void test('module reads use browser authentication, refuse outside routes and release with the session; read-only commands send nothing', async context => {
@@ -164,6 +262,7 @@ function scripted(answers: readonly ('synced' | ErrorCode)[], at: () => number):
   let handler: ((change: SyncChange<SessionRecord>) => void) | undefined;
   let closed = false;
   const participant = {
+    openEndpoint: () => Promise.reject(new Error('no endpoint was expected')),
     sync: (_families: readonly string[], handle: (change: SyncChange<SessionRecord>) => void): Promise<SyncResult<SessionRecord>> => {
       syncs.push(at());
       handler = handle;
@@ -275,4 +374,115 @@ void test('retained records stay stale until the SDK replacement snapshot comple
       await connection.close();
     }
   }
+});
+
+void test('applied session callbacks cannot restore freshness during an interrupted replacement snapshot', async context => {
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json({schema: 'module-list/2.0', modules: []})));
+  let diagnose: (value: Diagnostic) => void = () => {};
+  let overflow = (): void => {};
+  let finish = (): void => {};
+  let requests = 0;
+  let copy: SyncedCopy<SessionRecord> | undefined;
+  const answer = (requestId: string, revision: number): SyncAnswer => ({
+    status: 'served', requestId,
+    states: ['a', 'b'].map(id => ({...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0',
+      data: {...record, id, revision}})),
+    completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
+      data: {requestId, revision, members: ['a', 'b'].map(id => ({family: 'session', id}))}},
+  });
+  const transport: SyncTransport = {
+    now: Date.now,
+    subscribe: (_pattern, _handler, options) => {
+      overflow = () => {void options.onOverflow?.({});};
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      requests++;
+      if (requests < 3) return Promise.resolve(answer(request.requestId, requests));
+      return new Promise(resolve => {finish = () => {resolve(answer(request.requestId, 2));};});
+    },
+    report: error => {throw error;},
+    restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
+  };
+  const participant = {
+    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
+      const result = await startSync<SessionRecord>(transport, families, handler, options);
+      if (result.status === 'synced') copy = result.copy;
+      return result;
+    },
+    close: async () => {await copy?.close();},
+  } as unknown as RemoteParticipant;
+  const connection = new DashboardConnection({url: 'http://synthetic.invalid', connect: options => {
+    diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(participant);
+  }});
+  context.after(() => connection.close());
+  await connection.start();
+  let interrupted = false;
+  connection.subscribe(() => {
+    if (!interrupted && connection.getState().sessions.records.some(row => row.revision === 2)) {
+      interrupted = true; overflow();
+    }
+  });
+  overflow();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(requests, 3);
+  assert.deepEqual(connection.getState().sessions.records.map(row => [row.id, row.revision]), [['a', 2], ['b', 2]], 'all applied records remain projected');
+  assert.equal(connection.getState().sessions.syncs, 1, 'obsolete completion is not counted');
+  assert.equal(connection.getState().sessions.synced, false, 'core sessions stay unavailable until the third snapshot completes');
+  finish();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.syncs], [true, 2]);
+});
+
+void test('a late initial session-sync promise cannot restore freshness after its copy restarts', async context => {
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(Response.json({schema: 'module-list/2.0', modules: []})));
+  let diagnose: (value: Diagnostic) => void = () => {};
+  let overflow = (): void => {};
+  let finish = (): void => {};
+  let release = (): void => {};
+  let requests = 0;
+  let copy: SyncedCopy<SessionRecord> | undefined;
+  const held = new Promise<void>(resolve => {release = resolve;});
+  const answer = (requestId: string): SyncAnswer => ({status: 'served', requestId,
+    states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0'}],
+    completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
+      data: {requestId, revision: 3, members: [{family: 'session', id: record.id}]}},
+  });
+  const transport: SyncTransport = {
+    now: Date.now,
+    subscribe: (_pattern, _handler, options) => {
+      overflow = () => {void options.onOverflow?.({});};
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      if (++requests === 1) return Promise.resolve(answer(request.requestId));
+      return new Promise(resolve => {finish = () => {resolve(answer(request.requestId));};});
+    },
+    report: error => {throw error;},
+    restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
+  };
+  const participant = {
+    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
+      const result = await startSync<SessionRecord>(transport, families, handler, options);
+      if (result.status === 'synced') copy = result.copy;
+      await held;
+      return result;
+    },
+    close: async () => {await copy?.close();},
+  } as unknown as RemoteParticipant;
+  const connection = new DashboardConnection({url: 'http://synthetic.invalid', connect: options => {
+    diagnose = options.onDiagnostic ?? (() => {}); return Promise.resolve(participant);
+  }});
+  context.after(() => connection.close());
+  const started = connection.start();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.ok(copy, 'the actual SDK completed before the wrapper promise returns');
+  overflow();
+  await new Promise(resolve => {setImmediate(resolve);});
+  release(); await started;
+  assert.equal(requests, 2);
+  assert.equal(connection.getState().sessions.synced, false, 'a retained initial completion cannot revive the copy');
+  finish();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(connection.getState().sessions.synced, true);
 });

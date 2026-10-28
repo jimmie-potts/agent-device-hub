@@ -12,6 +12,23 @@ Privacy changes invalidate pending reads and completed replies whose delivery is
 
 The content adapter returns shared registry refusals or bounded content. JSON documents use `wispr-analytics/2.0`; CSV uses `text/csv; charset=utf-8`. The API 1.3 module contributes its React analytics page at `#/module/wispr/analytics`; the shared shell places its numeric home widget only when browser exposure is enabled. The fixed browser source entry compiles with the dashboard, including its scoped CSS, without importing the reader or worker. Reads use the shell connection and the dedicated gateway adapter, with a fixed CSV download filename. Filters remain in page-session memory; reading, filtering and downloading send no commands. Refresh is explicit, and language is hidden on a failed or refused read. Source and browser checks do not establish installed acceptance.
 
+## Reusable Home card
+
+The browser entry exports `WisprCard`, its props and the numeric `wisprSummary`
+projection. The card acquires no resources: its adapter supplies captured data
+and an explicit refresh callback. `WisprWidget` uses the existing shared frontend
+context and numeric-only read lifecycle. Existing Home layout IDs and exposure
+conditions still apply.
+
+Quiet line shows words and speaking minutes, seven reporting dates, a selectable
+word line and **Open Wispr**. Missing dates remain gaps; captured zero stays zero,
+and missing speech duration stays unknown. The producer's expired Today window
+uses the captured date with **Stale**. The small **!** explains stale/unavailable
+states; a failed read cannot make its retained observation newer. Refresh reads
+published files and never starts collection. The full analytics page retains its
+filters, language protections and numeric downloads. No collection or sharing
+choice is enabled by placing this card.
+
 ## Validation
 
 After the repository build compiles the SDK and unchanged Wispr contracts, compile this package with `fnm exec --using=.nvmrc -- node node_modules/typescript/bin/tsc -p modules/wispr/tsconfig.json`. Run its compiled tests with `fnm exec --using=.nvmrc -- node --test modules/wispr/dist/tests/*.test.js` and lint `modules/wispr` with the repository strict profile. The root build and typecheck include this package; `npm run test:wispr-module:built` runs its tests in CI. Only this module has the scoped permission to import the existing pure Wispr contracts.

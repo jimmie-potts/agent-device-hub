@@ -58,8 +58,46 @@ void test('assistant recovery waits for a delayed reader resync before submittin
   } finally {await h.close(); assert.equal((await run.stop()).code, 0);}
 });
 
+for (const stalled of [false, true]) {
+  void test(stalled ? 'agent hooks reject a reader that never resyncs' : 'agent hooks wait for a delayed reader resync before judging the restarted session', {timeout: 300_000}, async context => {
+    const selected = scenario('agent-hooks'); assert.ok(selected);
+    const at = await base(context), run = await startRun(context, at, selected.id);
+    const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
+    try {
+      const hook = h.hook.bind(h), wait = h.wait.bind(h), states = h.reader.states.bind(h.reader), syncs = h.reader.syncs.bind(h.reader);
+      let heldPolls = 0, oldSyncs = 0, oldStates: Message<unknown>[] = [], freshHooks = 0;
+      h.hook = async (payload, options) => {
+        if (options?.runtime === 'stopped') {
+          oldStates = states('session'); oldSyncs = syncs('session');
+          const result = await hook(payload, options);
+          heldPolls = stalled ? 0 : 400;
+          return result;
+        }
+        if (h.generation() === 2) {
+          assert.equal(heldPolls, 0, 'the next live hook waits for the reader to catch up');
+          freshHooks += 1;
+        }
+        return hook(payload, options);
+      };
+      // Keep the pre-restart copy for four seconds of polling, beyond the usual three-second expectation budget.
+      h.wait = async ms => {await wait(ms); heldPolls = Math.max(0, heldPolls - 1);};
+      h.reader.states = <T>(family: string, owner?: string): Message<T>[] =>
+        family === 'session' && heldPolls > 0 ? oldStates as Message<T>[] : states<T>(family, owner);
+      // In the stalled case, expose real state but withhold the completed-sync signal: matching values alone are insufficient.
+      h.reader.syncs = (family, owner) => family === 'session' && (heldPolls > 0 || (stalled && h.generation() === 2)) ? oldSyncs : syncs(family, owner);
+      const result = await runScenario(selected, h);
+      assert.equal(result.outcome, stalled ? 'failed' : 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+      if (stalled) {
+        assert.equal(result.steps.at(-1)?.name, 'the reader syncs the restarted session');
+        assert.match(result.steps.at(-1)?.detail ?? '', /^session syncs /);
+      }
+      assert.equal(freshHooks, stalled ? 0 : 1, 'only a completed resync permits the next explicit live hook');
+    } finally {await h.close(); assert.equal((await run.stop()).code, 0);}
+  });
+}
+
 void test('the capture steps include edge grants, every catalog scenario and request following', () => {
-  assert.deepEqual(reference, ['edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'follow-one-request']);
+  assert.deepEqual(reference, ['mac-codex-local', 'edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'browser-speech', 'follow-one-request']);
 });
 
 // Each capture keeps its own timeout and fresh run. Catalog growth must not consume another case's test budget;
@@ -76,6 +114,7 @@ for (const step of reference) {
       const scenario = JSON.parse(await readFile(attached, 'utf8')) as {synthetic: boolean; physical: boolean; outcome: string; tier: string; problems: unknown[]};
       assert.deepEqual([scenario.synthetic, scenario.physical, scenario.outcome, scenario.tier, scenario.problems], [true, false, 'passed', 'run', []]);
     }
+    if (step === 'follow-one-request') await assertFollowAttachments(result);
   });
 }
 
@@ -93,10 +132,9 @@ void test('the follow negative control fails in a fresh run', {timeout: 300_000}
   assert.ok((absent.reason ?? '').startsWith('assertion failed: the run found a request that was never sent'), absent.reason);
 });
 
-void test('the follow step attaches one answer for each case it judges, and each holds only registered, validated values', {timeout: 300_000}, async context => {
-  const at = await base(context);
-  const result = await judge(context, at, 'follow-one-request');
-  assert.equal(result.outcome, 'passed', result.reason ?? '');
+// Judge the attachment contract on the same fresh capture as the generic checks above. A second capture repeats
+// the eight real cases and their safety windows without adding coverage.
+async function assertFollowAttachments(result: CaptureStepResult): Promise<void> {
   const names = result.attachments.map(file => file.slice(file.lastIndexOf('/') + 1)).sort();
   assert.deepEqual(names, ['follow-capped.json', 'follow-crash.json', 'follow-missing.json', 'follow-refusal.json', 'follow-replayed.json',
     'follow-success.json', 'follow-trace.json', 'follow-uncertain.json']);
@@ -111,4 +149,4 @@ void test('the follow step attaches one answer for each case it judges, and each
   assert.equal(answers.get('follow-crash.json')?.followed.gaps.some(gap => gap.kind === 'generation-ended-without-stop'), true);
   assert.equal(answers.get('follow-capped.json')?.followed.gaps.some(gap => gap.kind === 'capped'), true);
   assert.equal(result.assertions.length, 9, 'each of the eight cases is judged, and the run\'s boundaries');
-});
+}

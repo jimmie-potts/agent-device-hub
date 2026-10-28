@@ -1,7 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContentRequest, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContentRequest, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import {APPS, KEYS, keyCommand, textCommand} from './actions.js';
 import {configureOnn, type OnnConfig} from './configuration.js';
 import {FAMILIES, schemaOf, types, type Family, type Input, type OnnState} from './contracts.js';
@@ -23,12 +23,12 @@ const actionOf = (family: Family, data: Input): OnnAction | undefined => {
   if (family === 'onn-text' && 'text' in data && textCommand(data.text) !== undefined) return {kind: 'text', text: data.text};
   return undefined;
 };
-const failure = (requestId: string, code: ErrorCode, started = false): CompletedOutcome => ({requestId, result: started ? 'uncertain' : 'failed', evidence: 'none', error: errorBody(code, {detail: started ? 'the interrupted action may have reached ONN; it will not be sent again' : 'the action ended before device work'}).error});
+const failure = (requestId: string, code: ErrorCode, started = false): CompletedOutcome => ({requestId, result: started ? Outcome.uncertain : Outcome.failed, evidence: Outcome.none, error: errorBody(code, {detail: started ? 'the interrupted action may have reached ONN; it will not be sent again' : 'the action ended before device work'}).error});
 
 export function createOnnModule(options: {transport?: OnnTransport} = {}): BunnyModule<OnnConfig> {
   let owner: OnnOwner | undefined;
   return {manifest: {name: 'onn', apiVersion: '1.3', configure: configureOnn,
-    pages: [{id: 'controls', title: 'ONN', presentation: 'react'}],
+    pages: [{id: 'controls', title: 'ONN', presentation: 'react'}, {id: 'history', title: 'History', presentation: 'react'}],
     content: (ref, request) => owner === undefined ? errorBody('unavailable', {detail:'ONN has not started'}) : owner.content(ref,request),
     tools: [{name: 'status', description: 'Read the configured ONN connection, neutral current app and qualified controls. App observations become stale after 15 seconds. Reading sends no control. Use core_send_command with onn-key-press, onn-app-open or onn-text; seeking requires a focused TV timeline. Results report transmission, not visible playback.',
       input: {type: 'object', additionalProperties: false, properties: {}}, output: onnStatusSchema,
@@ -226,12 +226,12 @@ class OnnOwner {
         if (family === 'onn-text') this.#store.privateDigest.assertAvailable();
         return undefined;
       } catch (error) {return error instanceof SdkError ? error.body.error.code : 'internal';}
-    }), remaining);} catch {result = {result: 'uncertain', evidence: 'none', code: 'uncertain-result', connection: 'unknown'};}
-    call.end(result.result === 'succeeded' ? 'unset' : 'error');
+    }), remaining);} catch {result = {result: Outcome.uncertain, evidence: Outcome.none, code: 'uncertain-result', connection: 'unknown'};}
+    call.end(result.result === Outcome.succeeded ? 'unset' : 'error');
     if (result.connection === 'available') this.#availability.reached(this.#config.id, trace);
     else if (result.connection === 'unavailable') this.#availability.unreachable(this.#config.id, result.code ?? 'unavailable', trace);
     const outcome: CompletedOutcome = {requestId, result: result.result, evidence: result.evidence,
-      ...(result.code === undefined ? {} : {error: errorBody(result.code, {detail: result.result === 'uncertain' ? 'the ONN effect is uncertain; it will not be repeated' : 'ONN device work was refused'}).error})};
+      ...(result.code === undefined ? {} : {error: errorBody(result.code, {detail: result.result === Outcome.uncertain ? 'the ONN effect is uncertain; it will not be repeated' : 'ONN device work was refused'}).error})};
     await this.#finish(row, outcome, result.connection);
   }
   async #bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number, extra?: AbortSignal): Promise<T> {
@@ -248,14 +248,14 @@ class OnnOwner {
     this.#pending.delete(row.requestId);
     try {await this.#commitOutcome(row, outcome, connection);} catch {
       // Its accepted/started fence remains. Restart settles it; no effect is retried.
-      recordLog(this.#context.log, 'command.completed', {'bunny.device.id': this.#config.id, 'bunny.request.id': row.requestId, 'bunny.outcome': 'uncertain', 'bunny.code': 'internal'}, row);
+      recordLog(this.#context.log, 'command.completed', {'bunny.device.id': this.#config.id, 'bunny.request.id': row.requestId, 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'internal'}, row);
     }
   }
   async #commitOutcome(row: RequestRow, outcome: CompletedOutcome, connection?: Attempt['connection']): Promise<void> {
     await this.#transaction(add => {
       if (connection === 'available' || connection === 'unavailable') this.#connection(connection);
       this.#store.outcome(row, outcome); this.#lastOutcome = outcome;
-      if (outcome.evidence === 'transmitted') this.#lastTransmission = {status: 'known', requestId: row.requestId, transmittedAtMs: this.#context.clock.now(), operationIds: []};
+      if (outcome.evidence === Outcome.transmitted) this.#lastTransmission = {status: 'known', requestId: row.requestId, transmittedAtMs: this.#context.clock.now(), operationIds: []};
       this.#records(add, row);
       add(`bunny.event.${row.family}.${this.#config.id}`, {kind: 'outcome', type: types[row.family].replace(/\.requested$/, '.completed'), subject: this.#config.id,
         dataschema: 'https://bunny.invalid/events/outcome/2.0', data: outcome}, {parent: row});

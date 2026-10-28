@@ -11,6 +11,7 @@ import {prepareWisprFixture} from '../tests/fixtures/wispr.js';
 import {MODULE_FILES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, producerToken, writeConfiguration} from '../tests/scenarios/parts.js';
 import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, type Fault, type RunFile, type RunRuntime} from './paths.js';
+import {prepareMacCodex} from './mac-codex.js';
 
 export {
   RUN_FILE, RUN_SCHEMA, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunFile, type RunRuntime,
@@ -32,6 +33,7 @@ export type RunScenario = {
 const CONFIGURED: readonly string[] = shippedModules.filter(factory => factory.simulatedSection !== undefined).map(factory => factory.name);
 
 export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
+  'mac-codex-local': {description: 'The core with a synthetic metadata-only shared Mac source', runtime: 'fixtures', modules: ['core'], prepare: prepareMacCodex},
   fixtures: {description: 'The core with its stand-in parts, the lamp and the chime with simulated devices, for exploring', runtime: 'fixtures', modules: ['core', 'lamp', 'chime']},
   shipped: {
     description: 'The runtime\'s own entry point with the shipped module list: the core and each device module, configured for its simulated devices',

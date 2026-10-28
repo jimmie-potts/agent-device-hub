@@ -10,6 +10,7 @@ import {LibraryError, type ItemInput, type Library, type PlaybackPolicy} from '.
 import {MediaError, type MediaProfile, type Transform} from '../media/index.js';
 import {PlaybackError, type MediaOperationEvent, type Player} from '../playback/index.js';
 import {ApiError, type MonitorPresentation} from '../presentation/index.js';
+import {Outcome} from '@jimmie-potts/sdk';
 
 /** A command's completed result, as the outcome payload reports it, and what reached the device for it. */
 export type Completion = {
@@ -38,10 +39,10 @@ export type AssetChange =
   | {operation: 'delete'; assetId: string};
 
 /** The module's own state already shows the change: it committed it, and its state message is the observation. */
-export const OBSERVED: Completion = Object.freeze({result: 'succeeded', evidence: 'observed'});
-const failed = (code: ErrorCode, detail: string): Completion => ({result: 'failed', evidence: 'none', error: errorBody(code, {detail}).error});
+export const OBSERVED: Completion = Object.freeze({result: Outcome.succeeded, evidence: Outcome.observed});
+const failed = (code: ErrorCode, detail: string): Completion => ({result: Outcome.failed, evidence: Outcome.none, error: errorBody(code, {detail}).error});
 /** A command whose effect may have begun but whose result is unknown: never a refusal (ADR 0012). */
-const uncertain = (detail: string): Completion => ({result: 'uncertain', evidence: 'none', error: errorBody('uncertain-result', {detail}).error});
+const uncertain = (detail: string): Completion => ({result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail}).error});
 
 // Device failure codes. A connectivity failure is the device being unavailable; nothing in the result says it acted.
 const DEVICE_CODES: Readonly<Record<string, ErrorCode>> = {
@@ -61,12 +62,12 @@ const ANSWERED: readonly string[] = ['device-error', 'http-error', 'protocol-err
 export function deviceCompletion(result: OperationResult<unknown> | undefined, operation: string): Completion {
   if (result === undefined) return failed('cancelled', 'a newer request superseded it before it was sent');
   const transmission = {transmittedAtMs: result.timing.completedAtMs, operationIds: [operation]};
-  if (result.ok) return {result: 'succeeded', evidence: 'transmitted', transmission};
+  if (result.ok) return {result: Outcome.succeeded, evidence: Outcome.transmitted, transmission};
   if (result.code === 'protocol-error') {
-    return {result: 'uncertain', evidence: 'transmitted', error: errorBody('uncertain-result', {detail: `the device's answer to the ${operation} send could not be read`}).error, transmission};
+    return {result: Outcome.uncertain, evidence: Outcome.transmitted, error: errorBody('uncertain-result', {detail: `the device's answer to the ${operation} send could not be read`}).error, transmission};
   }
   if (ANSWERED.includes(result.code)) {
-    return {result: 'failed', evidence: 'transmitted', error: errorBody(DEVICE_CODES[result.code] ?? 'internal', {detail: `the device refused the ${operation} send: ${result.code}`}).error, transmission};
+    return {result: Outcome.failed, evidence: Outcome.transmitted, error: errorBody(DEVICE_CODES[result.code] ?? 'internal', {detail: `the device refused the ${operation} send: ${result.code}`}).error, transmission};
   }
   if (result.priorEffects === 'possible') return uncertain(`the ${operation} send may have reached the device: ${result.code}`);
   return failed(DEVICE_CODES[result.code] ?? 'internal', `the ${operation} send did not reach the device: ${result.code}`);

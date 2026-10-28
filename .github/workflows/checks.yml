@@ -1,4 +1,5 @@
-# Markdown-only changes skip this workflow; the Workflow checks and retained documentation checks still run (#861).
+# Markdown-only main pushes skip this workflow (#861); every PR must emit the required core check.
+# The selector leaves product suites unselected for Markdown-only PRs; Workflow documentation checks still run.
 # GitHub-hosted runners replaced Depot CI in #870.
 # The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
 # Pull requests run affected checks (#1080): the select job maps the PR's changed paths to check groups with
@@ -11,8 +12,7 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
-  pull_request:
-    paths-ignore: ['**/*.md']
+  pull_request: {}
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -29,6 +29,7 @@ jobs:
       groups: ${{ steps.select.outputs.groups }}
       firmware: ${{ steps.select.outputs.firmware }}
       app-verify: ${{ steps.select.outputs.app-verify }}
+      runtime-verify: ${{ steps.select.outputs.runtime-verify }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -94,6 +95,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime:scenarios:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:lifecycle:built
@@ -136,6 +139,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wispr-module:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        # Includes #501 preference lifecycle/import/rollback and private-state checks.
         run: npm run test:companions:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:roborock-transport:built
@@ -183,10 +187,9 @@ jobs:
     needs: select
     if: needs.select.outputs.app-verify == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Its Playwright install with system dependencies takes 22 s to 227 s on hosted runners. By 2026-10-07 the job took
-    # 11 to 15 minutes as the runtime verify suite grew with each module (to about 217 s), and timed out at 15 in that suite.
-    # The limit leaves room for two stalled browser-install attempts and their cleanups before a slow successful one (#862).
+    timeout-minutes: 40
+    # Preserve #366's finite 40-minute budget for browser journeys and the existing apt retries.
+    # Runtime catalog verification now has its own required job; this job retains all other checks (#1183).
     # GitHub-hosted runners have a systemd user manager, but app-verify's lease timer does not read back under their
     # systemd 255 (#873). Hiding the user bus keeps the coverage Depot's runner gave: lifecycle tests skip.
     env:
@@ -218,15 +221,14 @@ jobs:
         run: npm run test:chompi-bridge:verify:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
         run: npm run test:chompi-bridge:browser
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        # Includes the ONN title-history browser, keyboard, phone and accessibility journey (#1041).
-        run: npm run test:runtime:verify:built
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:dashboard:smoke
       # The runtime dashboard's browser smoke check (#922); the full `test:runtime-dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:smoke
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/timeline-card.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/playback-artwork.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
@@ -238,14 +240,39 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        # Includes #501 preferences, active-only copy, import/export and accessibility.
         run: npm run test:companions:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:wemo:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
+  runtime-verify:
+    name: Runtime verification on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.runtime-verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The unchanged serial catalog takes 16-18 minutes. Its own finite job budget keeps
+    # apt retries and the remaining App browser checks from exhausting one shared limit (#1183).
+    env:
+      XDG_RUNTIME_DIR: ''
+      DBUS_SESSION_BUS_ADDRESS: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium with its system dependencies
+        timeout-minutes: 20
+        run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
+      - run: npm run build
+      # Full catalog, including ONN title-history browser, keyboard, phone and accessibility (#1041).
+      - run: npm run test:runtime:verify:built
   gate:
     name: Selected checks gate
-    needs: [select, core, firmware, app-verify]
+    needs: [select, core, firmware, app-verify, runtime-verify]
     # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
     if: always()
     runs-on: ubuntu-latest

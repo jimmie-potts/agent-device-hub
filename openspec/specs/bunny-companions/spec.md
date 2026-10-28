@@ -59,3 +59,87 @@ The module SHALL persist only settings and bounded admission/repetition/presenta
 - **WHEN** a reader opens the page or a keyboard user operates it
 - **THEN** source metadata and decision reasons are legible and accessible
 - **AND** reader authority cannot change controls or submit fixtures
+
+### Requirement: Deliberate grounded coding suggestions
+The Reachy page SHALL accept a bounded owner-supplied form for one known synced coding session and named task, with explicit check statuses, observation time, evidence references and owner-reported current and evidence revisions. Passed, failed, skipped, unrun and unknown SHALL remain distinct. Unknown turn, base or repository SHALL remain unknown. Input and preview SHALL remain transient browser data, without capture, persistence or provider calls.
+
+#### Scenario: Tests pass and browser is unrun
+- **WHEN** the owner supplies fresh matching-head evidence for passed tests and an explicitly unrun browser check
+- **THEN** a deterministic inspect/copy prompt proposes the browser check and shows both statuses, references, attribution, target task/session/turn, known revisions and expiry
+- **AND** the result makes no independent claim that tests passed
+
+#### Scenario: Insufficient or ambiguous evidence
+- **WHEN** only turn-ended metadata exists, task identity is absent, a claim is unsupported, evidence is stale/future, a result is ambiguous or head revisions differ
+- **THEN** the page shows no proposal or an explicit evidence gap without invented success
+
+#### Scenario: Isolated supersession without replay
+- **WHEN** task/session/context changes, newer evidence replaces the form, older evidence is submitted, or a disconnect/reconnect/sync occurs
+- **THEN** the old proposal cannot be copied or contaminate the new task/session, older evidence cannot restore it, and sync never admits a proposal
+- **AND** identical repeated inspection creates no additional admission
+
+### Requirement: Policy guarded inspect and copy
+Suggestions SHALL reuse Reachy enablement/category mute, current source freshness and attention priority. The page SHALL recheck policy, source context, input and expiry immediately before copy. Copy SHALL occur only on the owner's explicit action; it SHALL change only the clipboard. Keyboard, narrow viewport and accessible inspection SHALL be supported.
+
+#### Scenario: Policy or source changes
+- **WHEN** Reachy is disabled/muted, output/core is unavailable, attention takes priority, the selected session/turn changes or evidence expires
+- **THEN** the suggestion is unavailable with a reason and cannot be copied
+- **AND** normal session attention remains independent
+
+#### Scenario: Explicit clipboard and safe failure
+- **WHEN** the owner inspects without copying, explicitly copies, or clipboard access fails
+- **THEN** inspection changes no clipboard, a valid explicit copy contains the attributed prompt, and failure reports that copying could not be confirmed
+- **AND** no composer typing, harness API, submission, approval, task continuation, audio or device command occurs
+
+### Requirement: Explicit browser speech availability
+Speech SHALL default to off. Enabling text companions SHALL NOT enable speech. An authorized operator SHALL explicitly select one qualified browser endpoint and declare availability for its current connection. The UI SHALL explain that calls and other applications are not detected and that the operator must mute before interruption-sensitive activity. Quiet, category mute, stale or cleared attention, missing live state and unavailable output SHALL prevent new unsolicited speech. Work and Free SHALL permit a fresh eligible coding question after explicit enablement.
+
+#### Scenario: Independent enablement
+- **WHEN** text companions are enabled but speech has not been enabled on the current connection
+- **THEN** eligible coding attention remains visible and produces zero audio
+
+#### Scenario: Current question with permission
+- **WHEN** the selected endpoint receives a fresh coding question in Work or Free with live evidence, enabled text and speech, manual availability and an unmuted category
+- **THEN** it can speak the existing fixed phrase once after a final policy check
+- **AND** Quiet, mute or cleared attention before playback suppresses the output
+
+#### Scenario: Availability ends with the endpoint
+- **WHEN** the selected endpoint reloads, disconnects, is lost, unmounts or observes runtime restart
+- **THEN** its availability is invalidated and any local speech is cancelled
+- **AND** reconnect requires explicit enablement, admits only new opportunities and never selects another tab
+
+### Requirement: Qualified local voice and bounded playback
+Missing installation qualification, an unavailable browser identity or a different Chrome version or platform SHALL leave speech unavailable while preserving text companions. Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
+
+#### Scenario: Browser qualification unavailable
+- **WHEN** the installation has no valid private qualification receipt or the page cannot match its qualified Chrome version on macOS
+- **THEN** speech remains unavailable without disabling text companions or selecting a replacement route
+
+#### Scenario: Voice unavailable
+- **WHEN** the qualified voice is absent, changed or not local after the bounded enumeration
+- **THEN** speech remains unavailable and zero utterances are submitted
+
+#### Scenario: Ambiguous output
+- **WHEN** an end arrives without a start, callbacks are lost, a deadline passes or the endpoint connection is lost after submission
+- **THEN** the operation remains uncertain and no utterance is replayed
+
+#### Scenario: Stop and mute
+- **WHEN** the operator stops or mutes active speech
+- **THEN** local cancellation runs immediately, pending speech is discarded and the UI distinguishes a confirmed stopped state from uncertain cancellation
+- **AND** partial playback remains recorded and stopping does not cancel a coding task or grant permission
+
+### Requirement: Single speech coordinator
+The companions owner SHALL reserve one browser endpoint, admit at most one active and one current pending announcement, and reuse its existing opportunity, deduplication, admission and fixed-text rules. Actionable coding attention SHALL take priority over social speech. Replacement SHALL wait for confirmed cancellation and SHALL recheck current policy after every asynchronous wait and immediately before submission. Uncertain output SHALL prevent automatic replacement. Speech suppression SHALL NOT suppress ordinary visual coding attention. Existing synthetic scenario controls SHALL produce zero audio.
+
+#### Scenario: Competing candidates and tabs
+- **WHEN** two tabs enable speech or duplicate and competing opportunities arrive
+- **THEN** one reserved endpoint receives at most one active command and one current pending candidate
+- **AND** a second tab cannot take over and duplicate opportunities cannot speak again
+
+#### Scenario: Separate social allowance
+- **WHEN** a social candidate is blocked by its Free-only, busy, media, snooze, daily or spacing policy
+- **THEN** it cannot consume coding admission or hide visual coding attention
+- **AND** manual coding availability does not qualify unknown social inputs or make scenario fixtures audible
+
+#### Scenario: Durable result without replay
+- **WHEN** an accepted speech operation restarts before its receipt is committed
+- **THEN** the owner reports uncertainty through its existing outcome path without restoring availability or executing the utterance again

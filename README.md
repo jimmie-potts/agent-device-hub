@@ -3,13 +3,18 @@
 Shared local agent status and device integration contracts for Codex, Claude Code,
 Nanoleaf, Pixoo, Tidbyt and LIFX.
 
-B.U.N.N.Y. runs as one [TypeScript runtime](apps/runtime/README.md) on the
-established WSL host. Its core and fixed device modules communicate through the
-[SDK](packages/sdk/README.md) using [message profile 2.0](packages/event-contracts/README.md).
-The runtime serves the [React dashboard](apps/runtime/dashboard/README.md),
-authenticated remote clients and MCP. Start with [architecture](docs/architecture.md)
-for boundaries and [runtime setup](apps/runtime/SETUP.md) for the fresh setup and
-manual return procedure.
+B.U.N.N.Y. runs as one [TypeScript runtime](apps/runtime/README.md). Its core and
+fixed device modules communicate through the [SDK](packages/sdk/README.md) using
+[message profile 2.0](packages/event-contracts/README.md). The runtime serves the
+[React dashboard](apps/runtime/dashboard/README.md), authenticated remote clients
+and MCP. The [Mac Mini is the selected primary host](docs/decisions/0008-runtime-hosting.md),
+using the Linux ARM64 container on Docker Desktop, with the PC optional to hub
+operation. That target is distinct from the established WSL installation and the
+limited Mac-local profile; it does not claim a completed production migration.
+Start with [architecture](docs/architecture.md) for boundaries and the
+[container operator guide](docs/bunny-container.md) for Mac operation.
+[Runtime setup](apps/runtime/SETUP.md) retains the WSL fresh setup and manual return
+procedure.
 
 The [accepted cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records installed and representative physical
 evidence separately from source checks. Old services are stopped and disabled;
@@ -147,11 +152,11 @@ snapshot ([#25](https://github.com/jimmie-potts/agent-device-hub/issues/25)).
 The Nanoleaf port is [#26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
 Their old services are stopped and disabled after the accepted cutover; code and
 private stores remain for manual return until separately authorized retirement.
-[ADR 0008](docs/decisions/0008-runtime-hosting.md) decides where the runtime
-runs: in the Ubuntu WSL distribution, with linger, an idle timeout and one
-Windows scheduled task still to be installed, until the dedicated Linux server
-of #44 is triggered. The hub setup guide documents how to
-[start the runtime at boot](apps/hub/SETUP.md#start-the-runtime-at-boot).
+[ADR 0008](docs/decisions/0008-runtime-hosting.md) selects the Mac Mini as the
+primary host, with manual startup after sign-in and no PC dependency for normal
+hub operation. Its historical WSL decision and the old
+[boot setup](apps/hub/SETUP.md#start-the-runtime-at-boot) remain scoped records,
+not prerequisites for Mac adoption.
 
 ## Shared lifecycle metadata
 

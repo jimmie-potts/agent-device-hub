@@ -9,6 +9,7 @@
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
+import {Outcome as OutcomeWord} from '@jimmie-potts/sdk';
 
 /** The meta key, per device, that holds the mode revision an uncertain or unsent command held (controller_state.HOLD). */
 export const HOLD = 'controller_hold_revision';
@@ -163,19 +164,19 @@ export function holdOf(db: Db, revision: number, device: string = DEFAULT): Held
  */
 export function outcomeOf(row: Pick<JournalRow, 'device' | 'id' | 'completed' | 'uncertain'>, end: End): Outcome {
   const base = {type: 'outcome' as const, device: row.device, requestId: row.id};
-  const evidence: Evidence = row.completed > 0 ? 'transmitted' : 'none';
+  const evidence: Evidence = row.completed > 0 ? OutcomeWord.transmitted : OutcomeWord.none;
   const possible = row.completed === 0 && row.uncertain > 0;
   const error = (code: ErrorCode): ErrorDetail => errorBody(code).error;
   switch (end.kind) {
-    case 'sent': return {...base, result: 'succeeded', evidence: 'transmitted'};
-    case 'unchanged': return {...base, result: 'succeeded', evidence: 'observed'};
-    case 'uncertain': return {...base, result: 'uncertain', evidence, error: error('uncertain-result')};
+    case 'sent': return {...base, result: OutcomeWord.succeeded, evidence: OutcomeWord.transmitted};
+    case 'unchanged': return {...base, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed};
+    case 'uncertain': return {...base, result: OutcomeWord.uncertain, evidence, error: error('uncertain-result')};
     case 'retired':
-      return possible ? {...base, result: 'uncertain', evidence: 'none', error: error('uncertain-result')}
-        : {...base, result: 'failed', evidence, error: error('cancelled')};
-    case 'expired': return {...base, result: 'failed', evidence: 'none', error: error('expired')};
-    case 'refused': return {...base, result: 'failed', evidence: 'none', error: error(end.code)};
-    case 'answered': return {...base, result: 'failed', evidence: 'transmitted', error: error(end.code)};
+      return possible ? {...base, result: OutcomeWord.uncertain, evidence: OutcomeWord.none, error: error('uncertain-result')}
+        : {...base, result: OutcomeWord.failed, evidence, error: error('cancelled')};
+    case 'expired': return {...base, result: OutcomeWord.failed, evidence: OutcomeWord.none, error: error('expired')};
+    case 'refused': return {...base, result: OutcomeWord.failed, evidence: OutcomeWord.none, error: error(end.code)};
+    case 'answered': return {...base, result: OutcomeWord.failed, evidence: OutcomeWord.transmitted, error: error(end.code)};
   }
 }
 
@@ -202,7 +203,7 @@ export function finish(db: Db, row: JournalRow, end: End, report: Report): void 
   execute(db, 'DELETE FROM control_journal WHERE seq=?', row.seq);
   const outcome = outcomeOf(row, end);
   const override = OVERRIDES[row.kind];
-  if (outcome.result === 'failed' && override !== undefined && journal(db, row.device, 'AND kind=?', row.kind).length === 0) {
+  if (outcome.result === OutcomeWord.failed && override !== undefined && journal(db, row.device, 'AND kind=?', row.kind).length === 0) {
     execute(db, 'DELETE FROM meta WHERE key=?', metaKey(override, row.device));
   }
   report(outcome);

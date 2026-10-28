@@ -160,6 +160,16 @@ export class Gateway {
         const principal = this.#admitted.get(request);
         return principal === undefined ? undefined : edgePermissions(principal);
       },
+      onEndpointClosed: ({source, id}) => {
+        const own = this.#own;
+        if (source !== BROWSER_SOURCE || own === undefined || this.#closed) return;
+        void own.publish(`bunny.event.companion-speech-lost.${id}`, {
+          kind: 'occurrence', type: 'org.bunny.companion-speech.endpoint-lost', subject: id,
+          dataschema: `${SCHEMA_BASE}companion-speech-lost/2.0`, data: {id},
+        }).catch(() => {
+          diagnosticWriter(options.log)({event: 'edge.failed', level: 'error', route: 'close', source, code: 'internal'});
+        });
+      },
       ...(options.liveness?.heartbeatMs === undefined ? {} : {heartbeatMs: options.liveness.heartbeatMs}),
       ...(options.liveness?.stallMs === undefined ? {} : {stallMs: options.liveness.stallMs}),
       ...(options.liveness?.scheduler === undefined ? {} : {liveness: options.liveness.scheduler}),
@@ -382,7 +392,7 @@ export class Gateway {
     if (path === '/api/v2/history') {
       if (query.some(key => url.searchParams.getAll(key).length !== 1)) throw refuse('invalid-request', 'history filters appear once');
       const values = Object.fromEntries(url.searchParams);
-      const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
+      const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
       const rows = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
       if (this.#options.redactions.holds(JSON.stringify(rows))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
@@ -875,7 +885,7 @@ export class Gateway {
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
-    const incoming = family === 'mode-set' || family === 'lighting-layout-set' || family === 'playback-layout-set' ? request?.headers.traceparent : undefined;
+    const incoming = (family === 'mode-set' || family === 'mode-override-set') || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
     const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
       ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);
@@ -900,6 +910,7 @@ export class Gateway {
   #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
+    if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;

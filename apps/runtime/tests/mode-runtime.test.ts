@@ -68,6 +68,9 @@ it('real mode admission saves once, maps independent outcomes and never replays 
   const initial = (await states())[0]; assert.equal(initial?.mode, 'free'); assert.equal(nano.commands.length + pixoo.commands.length, 0);
   const raw = await contextOf(watcher).sdk.request('bunny.cmd.mode-set.hub', action('quiet', 'raw').draft, {timeoutMs: 2000});
   assert.equal(raw.status === 'rejected' && raw.error.error.code, 'forbidden');
+  const rawIndividual = await contextOf(watcher).sdk.request('bunny.cmd.mode-override-set.wall', {type: 'org.bunny.mode-override.set.requested', subject: 'wall',
+    dataschema: 'https://bunny.invalid/events/mode-override-set/2.0', data: {mode: 'quiet'}}, {timeoutMs: 2000});
+  assert.equal(rawIndividual.status === 'rejected' && rawIndividual.error.error.code, 'forbidden');
   assert.deepEqual(await core.actions.dispatch(action('work', 'req-work', initial?.revision)), {status: 'accepted', requestId: 'req-work'});
   const nanoId = await modeChildRequestId('req-work', 'wall'), pixooId = await modeChildRequestId('req-work', 'pixoo-1');
   const records = async () => {
@@ -132,6 +135,15 @@ it('qualified failed modules remain targets; refused modules are excluded and pe
     assert.equal(items.find(item => item.requestId === pixooId)?.result, 'uncertain', 'restart uncertainty enters the real inbox without resend');
     await inbox.copy.close();
   }
+  const offline = await restored.actions.dispatch({key: 'bunny.cmd.mode-override-set.wall', requestId: 'offline-individual', requestedBy: 'bunny/parts/operator',
+    draft: {type: 'org.bunny.mode-override.set.requested', subject: 'wall', dataschema: 'https://bunny.invalid/events/mode-override-set/2.0', data: {mode: 'free'}}});
+  assert.equal('status' in offline ? offline.status : '', 'accepted');
+  const offlineChild = await modeChildRequestId('offline-individual', 'wall');
+  await waitFor(() => coreHandle?.operation(offlineChild)?.status === 'rejected');
+  const saved = await coreHandle.sdk.sync<ModeState>(['mode'], () => {}, {timeoutMs: 2000});
+  assert.equal(saved.status, 'synced');
+  if (saved.status === 'synced') {assert.deepEqual(saved.copy.states()[0]?.data.overrides?.map(choice => [choice.target, choice.mode]), [['wall', 'free']]); await saved.copy.close();}
+  assert.equal(pixoo.commands.length, 1, 'offline individual selection sends nothing to the other target');
   await second.runtime.stop();
   nano.failStart = false; nano.refuse = true; const thirdCore = createCoreModule({parts: [{start: handle => {coreHandle = handle; return Promise.resolve();}}]});
   const third = await run(context, {modules: [thirdCore, nano.module(), pixoo.module()], configFile: files.config, clock: {now: clock.now}, scheduler: clock.scheduler});

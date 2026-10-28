@@ -13,7 +13,7 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Messag
 import {
   registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import type {HistoryFilter, HistoryRow} from './history.js';
@@ -23,6 +23,7 @@ import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
 import {LightingLayoutPart} from './lighting-layout.js';
 import {PlaybackLayoutPart} from './playback-layout.js';
+import {HomeLayoutPart} from './home-layout.js';
 import {AutomationError} from './automation.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
@@ -34,6 +35,7 @@ import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
+import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
 import {readRoomContent} from './room-models.js';
 
 export {CORE_MODULE};
@@ -123,7 +125,7 @@ const REASONS: Partial<Record<ErrorCode, string>> = {
   'unknown-schema': 'invalid-input', 'not-found': 'invalid-input', 'forbidden': 'unauthorized', 'duplicate-conflict': 'duplicate',
   'capacity': 'busy', 'unavailable': 'unavailable',
 };
-const refused = (code: ErrorCode): LogFields => ({'bunny.outcome': 'rejected', 'bunny.code': code, ...(REASONS[code] === undefined ? {} : {'bunny.reason': REASONS[code]})});
+const refused = (code: ErrorCode): LogFields => ({'bunny.outcome': OutcomeWord.rejected, 'bunny.code': code, ...(REASONS[code] === undefined ? {} : {'bunny.reason': REASONS[code]})});
 const requestField = (requestId: unknown): LogFields => typeof requestId === 'string' && REQUEST_ID.test(requestId) ? {'bunny.request.id': requestId} : {};
 const MESSAGE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const SOURCE = /^bunny(?:\/[a-z0-9][a-z0-9-]*)+$/;
@@ -175,10 +177,36 @@ export interface CoreModule extends BunnyModule {
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
 export const isCoreModule = (module: BunnyModule): module is CoreModule => module.manifest.name === CORE_MODULE && 'actions' in module;
 
+// Structural module names cannot convey early data ownership.
+const factoryStarts = new WeakMap<object, CoreModule>();
+const factoryCores = new WeakMap<CoreModule, {bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined}>();
+/** Internal future entrypoint bridge. The core must be the original, not a structural copy. */
+export function bindCoreRuntimeOwnership(core: CoreModule, token: RuntimeOwnership): void {
+  const factory = factoryCores.get(core);
+  if (factory === undefined) throw ownershipUnavailable();
+  factory.bind(token);
+}
+/** Reserves every bound owner synchronously before waiting for any path checks. */
+export async function admitBoundCoreOwnership(modules: readonly BunnyModule[], stateDir: string): Promise<void> {
+  for (const module of modules) {
+    // Inspect function identity without taking an invocable unbound method.
+    const start: unknown = Reflect.get(module, 'start');
+    const original = typeof start === 'function' ? factoryStarts.get(start) : undefined;
+    if (original !== undefined && original !== module && factoryCores.get(original)?.ownership() !== undefined) throw ownershipUnavailable();
+  }
+  const admissions = modules.flatMap(module => {
+    const binding = factoryCores.get(module as CoreModule)?.ownership();
+    return binding === undefined ? [] : [admitRuntimeOwnership(binding, stateDir)];
+  });
+  await Promise.all(admissions);
+}
+
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let core: Core | undefined;
   let contentContext: ModuleContext | undefined;
+  let ownership: CoreOwnership | undefined;
+  let started = false;
   const automation = (): AutomationControls => {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
@@ -189,15 +217,20 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     return controls;
   };
   const limits=()=>{const value=automation().limits;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
-  return {
+  const module = {
     manifest: {name: CORE_MODULE, apiVersion: '1.3',
       content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
     start: context => {
+      if (ownership !== undefined) {
+        if (started) throw ownershipUnavailable();
+        assertRuntimeOwnership(ownership);
+      }
+      started = true;
       contentContext = context;
-      core = new Core(context, options);
+      core = new Core(context, options, ownership);
       return core.start();
     },
     stop: () => core?.stop(),
@@ -226,7 +259,17 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       if (core === undefined) throw new Error('core-not-started');
       core.setModeParticipants(participants);
     },
-  };
+  } satisfies CoreModule;
+  factoryStarts.set(module.start, module);
+  factoryCores.set(module, {
+    bind: token => {
+      if (started || ownership !== undefined) throw ownershipUnavailable();
+      bindRuntimeOwnership(token, module);
+      ownership = {token, core: module};
+    },
+    ownership: () => ownership,
+  });
+  return module;
 }
 
 class Core {
@@ -267,7 +310,7 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit}: CoreOptions) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit}: CoreOptions, ownership?: CoreOwnership) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -284,13 +327,19 @@ class Core {
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
+      changed: (tx, command, before, after) => {homeLayout.reconcileLighting(tx, command, before, after);},
     });
     const playbackLayout = new PlaybackLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, this.#automation, this.#companions, ...added];
+    const homeLayout = new HomeLayoutPart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    });
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -302,6 +351,7 @@ class Core {
     this.#ready.catch(() => {});
     this.#store = new CoreStore({
       database: context.database(), clock: context.clock,
+      ...(ownership === undefined ? {} : {ownership}),
       sdk: {source:context.sdk.source,publishMessage:async(key,message)=>{
         const failed=this.#automation.publishing(message);
         const companionFailed=this.#companions.publishing(message);
@@ -688,7 +738,7 @@ class Core {
         const record = current();
         if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
         let committed: (() => void) | undefined;
-        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}); };
         if ((label === null && record.label === undefined) || (record.label?.origin === 'user' && record.label.value === label)) {
           try {
             await this.#store.transaction(complete);
@@ -744,7 +794,7 @@ class Core {
         if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
         const notice = record.notices.at(-1);
         let committed: (() => void) | undefined;
-        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: 'succeeded', evidence: 'observed'}); };
+        const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}); };
         if (noticeId === null || this.#consumers.every(consumer => notice?.acknowledgedBy.includes(consumer.id) === true)) {
           try { await this.#store.transaction(complete); }
           catch { return errorBody(this.#store.takeFailure() === 'full' ? 'capacity' : 'internal', {detail: 'the core could not complete the notice action'}); }

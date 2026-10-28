@@ -1,6 +1,7 @@
 // Wispr's actual file reader and authenticated dashboard, using explicitly selected synthetic files only.
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {mkdir, readFile} from 'node:fs/promises';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -36,11 +37,65 @@ try {
       const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
       const page = await context.newPage(); page.setDefaultTimeout(8000);
       const sent = changes(page);
+      const homeReads: string[] = [];
+      page.on('request', request => {if (request.url().includes('/modules/wispr/content/')) homeReads.push(request.url());});
       await page.goto(`${world.url}/#/home`); await feed(page, 'connected');
       const widget = page.locator('[data-widget="wispr-summary"]');
       await widget.getByText('120', {exact: true}).first().waitFor();
       assert.equal(await widget.getByText('=SUM(1,2)', {exact: true}).count(), 0, 'home remains numeric');
       assert.deepEqual(sent, []);
+      const daily = widget.getByRole('group', {name: 'Captured daily words'});
+      assert.equal(await daily.getByRole('button').count(), 7);
+      const missing = daily.getByRole('button', {name: /Not observed/}).first();
+      await missing.focus(); await missing.press('Enter');
+      assert.equal(await missing.getAttribute('aria-pressed'), 'true');
+      await widget.locator('figcaption').getByText(/Not observed/).waitFor();
+      assert.equal(await widget.locator('polyline').count(), 1, 'a single observed day has no line through missing dates');
+      const refreshHome = widget.getByRole('button', {name: 'Refresh Wispr summary'});
+      const observedAt = await widget.locator('time').getAttribute('datetime');
+      await page.route('**/modules/wispr/content/status', route => route.abort('failed'));
+      await refreshHome.click();
+      await widget.getByRole('status').filter({hasText: 'Stale'}).waitFor();
+      await widget.getByText('120', {exact: true}).first().waitFor();
+      assert.equal(await widget.locator('time').getAttribute('datetime'), observedAt, 'failed refresh cannot renew observation time');
+      await widget.getByRole('button', {name: 'Wispr status', exact: true}).click();
+      await widget.getByText(/does not run collection/).waitFor();
+      await page.unroute('**/modules/wispr/content/status');
+      await refreshHome.click();
+      await widget.getByRole('status').filter({hasText: /^Today$/}).waitFor();
+      assert.equal(await widget.getByRole('button', {name: 'Wispr status', exact: true}).count(), 0);
+      // Retire numeric data on denied exposure, even after a successful capture.
+      await page.route('**/modules/wispr/content/status', route => route.fulfill({status: 403, contentType: 'application/json', body: JSON.stringify(errorBody('forbidden'))}));
+      await refreshHome.click();
+      await widget.getByRole('status').filter({hasText: /^Unavailable$/}).waitFor();
+      assert.equal(await widget.getByText('120', {exact: true}).count(), 0);
+      assert.equal(await widget.locator('dd').allTextContents().then(values => values.join('|')), '—|—');
+      assert.equal(await widget.locator('svg.wispr-card-chart').count(), 0);
+      await page.unroute('**/modules/wispr/content/status');
+      let releaseRead: (() => void) | undefined;
+      const gate = new Promise<void>(resolve => {releaseRead = resolve;});
+      await page.route('**/modules/wispr/content/status', async route => {await gate; await route.continue();});
+      await refreshHome.click();
+      await widget.getByText('Loading…', {exact: true}).waitFor();
+      assert.equal(await refreshHome.isDisabled(), true);
+      releaseRead?.();
+      await widget.getByText('120', {exact: true}).first().waitFor();
+      await page.unroute('**/modules/wispr/content/status');
+      const readCount = homeReads.length;
+      for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 736, 390, 320]) {
+        await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+        await page.setViewportSize({width, height: 1100});
+        assert.equal(await widget.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, `${colorScheme}/${width} card overflow`);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${colorScheme}/${width} document overflow`);
+        assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), [], `${colorScheme}/${width} axe`);
+        if (process.env.DASHBOARD_RECEIPTS !== undefined) {
+          await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});
+          await widget.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/wispr-${colorScheme}-${width}.png`});
+        }
+      }
+      assert.equal(homeReads.length, readCount, 'local selection and viewport changes do not poll');
+      assert.equal(homeReads.some(path => path.includes('/language') || path.includes('includeText')), false, 'Home remains numeric-only');
+      await page.setViewportSize({width: 1440, height: 1000});
       await widget.getByRole('link', {name: 'Open Wispr'}).click();
       const analytics = page.getByRole('region', {name: 'Wispr analytics', exact: true});
       await analytics.getByRole('heading', {name: 'Overview', exact: true}).waitFor();
@@ -83,7 +138,7 @@ try {
       assert.deepEqual(sent, []); assert.deepEqual(errors, []);
       process.stdout.write(`${JSON.stringify({passed: true, journey: 'wispr', source: 'synthetic selected files', machineReadWithoutExtraGrant: true,
         browserExposure: true, numericWidget: true, filtersSurviveNavigation: true, numericDownloads: ['CSV', 'JSON'], textRetiredOnOptOut: true,
-        inspectionCommands: 0, keyboard: true, axe: 'passed'})}\n`);
+        quietLine: true, selectableGaps: true, failedRefreshAge: true, accessRetiresNumeric: true, loadingDisablesRefresh: true, responsiveThemes: 8, inspectionCommands: 0, keyboard: true, axe: 'passed'})}\n`);
     } finally { await context.close(); }
   } finally { await world.close(); }
 } finally { await browser?.close(); }

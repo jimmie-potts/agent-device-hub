@@ -7,6 +7,10 @@ September 25 decision. The runtime's shell now lives under
 `apps/runtime/dashboard`; [ADR 0012](0012-bunny-event-platform.md) and the
 [architecture guide](../architecture.md#module-frontend-ownership) own its current
 module boundary. Preserve the original follow-up list as history, not a current queue.
+The current runtime uses the owner-selected Quiet glass shell (#1173), with
+four main destinations and Places inside Settings. The historical Neon context
+below remains a record of the original decision; shared art, semantic roles and
+fixed state meanings remain unchanged.
 
 Status: Accepted direction under [hub #271](https://github.com/jimmie-potts/agent-device-hub/issues/271),
 2026-09-25. The owner chose the dashboard shell on 2026-09-25. Implementation,

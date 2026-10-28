@@ -40,7 +40,7 @@ try {
     assert.equal((await world.pixooMedia()).items.length, index + 1);
   }
   const setupRequests = sent.length;
-  await page.getByRole('link', {name: /^Home /}).click();
+  await page.getByRole('link', {name: /^Home/}).click();
   const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
   await card.getByRole('tab', {name: 'Display', exact: true}).waitFor();
   const artwork = await card.locator('[data-pixoo-artwork]').elementHandle(); assert.notEqual(artwork, null);
@@ -51,6 +51,8 @@ try {
   await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
   const picker = card.getByRole('region', {name: 'Media picker', exact: true});
   await picker.scrollIntoViewIfNeeded();
+  // Home card geometry can leave the last thumbnail below the viewport. Decode is intentionally visibility-bound.
+  await picker.locator('button.pixoo-media-tile').nth(5).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(5).waitFor();
   assert.equal(await picker.getByRole('img').count(), 6, 'only six visible previews are decoded');
   const firstTile = picker.locator('button.pixoo-media-tile').first();
@@ -63,6 +65,9 @@ try {
   await firstTile.click();
   await picker.getByRole('button', {name: 'Next media', exact: true}).click();
   await picker.getByText('7–8 of 8', {exact: true}).waitFor();
+  // The offset can render before the asynchronous page payload replaces the old tiles.
+  await picker.getByText(/^Synthetic 8(?:\.gif)?$/).waitFor();
+  await picker.locator('button.pixoo-media-tile').nth(1).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
   await picker.getByRole('searchbox').fill('Synthetic 1');
   await picker.getByText('1–1 of 1', {exact: true}).waitFor();
@@ -184,6 +189,7 @@ try {
     });
     await card.getByRole('tab', {name: 'Display', exact: true}).click();
     assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
+    for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await card.locator('[data-mode-target]').getByRole('button', {name, exact: true}).isDisabled(), true);
   } finally { releaseSync(); await page.unrouteAll({behavior: 'wait'}); }
   await feed(page, 'connected');
   for (let attempt = 0; await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled() && attempt < 100; attempt++) await delay(20);
@@ -202,6 +208,7 @@ try {
   await card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
   assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
   assert.equal(sent.length, uncertainCount);
+  for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await card.locator('[data-mode-target]').getByRole('button', {name, exact: true}).isDisabled(), true, 'uncertain native writes also lock saved mode controls');
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected');
   await card.getByText('Read-only access.', {exact: true}).waitFor();

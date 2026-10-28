@@ -1,8 +1,10 @@
 // Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {SyncHandler, SyncResult} from './remote.js';
+import type {Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SpeechEndpointControl, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
+import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from './remote.js';
+import type {TraceContext} from './sdk.js';
 
 /** An explicit command; acceptance is separate from the operation's completed or uncertain outcome. */
 export type FrontendAction = {family: string; target: string; data: object; requestId: string};
@@ -16,8 +18,18 @@ export type FrontendCommand = {
   run(action: FrontendAction | FrontendUpload | string): Promise<void>;
 };
 
+/** The companions page can control and report only its own connection-bound speech endpoint. */
+export type FrontendSpeechEndpoint = {
+  readonly id: string;
+  control(command: SpeechEndpointControl, parent?: TraceContext): Promise<RequestResult>;
+  observe(playback: SpeechPlayback, parent: TraceContext): Promise<void>;
+  close(): Promise<void>;
+};
+
 /** Authenticated facilities owned by one mounted module page. No token, storage or device transport is exposed. */
 export type FrontendApi = {
+  /** Present only for the companions module. Opening still requires current control authority. */
+  speech?: {open(options: Omit<RemoteEndpointOptions<SpeechOutput>, 'family'>): Promise<FrontendSpeechEndpoint>};
   /** Reads a runtime JSON route. The feature checks the document's schema before using it. */
   read(path: string): Promise<unknown>;
   /** Reads an image from this module's content references with the same authentication and page lifetime. */
@@ -27,7 +39,7 @@ export type FrontendApi = {
   /** Stages bounded media and dispatches its declared command once, using the same tracked outcome UI. */
   upload(action: FrontendUpload): Promise<FrontendActionReply>;
   /** Syncs this module's families on the shell's existing participant; the page closes the copy when done. */
-  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>): Promise<SyncResult<T>>;
+  sync<T extends object>(families: readonly string[], changed: SyncHandler<T>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>>;
 };
 
 /** Shared shell components, with the same props as the dashboard's existing UI. */
@@ -38,6 +50,8 @@ export type FrontendUi = {
   Select: ComponentType<{label: string; value: string; onChange: (value: string) => void; options: readonly {value: string; label: string}[]}>;
   /** The existing command attempt UI behavior, including retained identities, outcomes and no resend after reload. */
   Command: ComponentType<{context: FrontendContext; target: string; children: (command: FrontendCommand) => ReactNode}>;
+  /** Optional shell-owned saved Hub-mode selector, using the shell's existing synced mode and command attempt. */
+  ModeChoice?: ComponentType<{target: string}>;
 };
 
 export type FrontendContext = {
@@ -48,6 +62,8 @@ export type FrontendContext = {
   readonly control: boolean;
   readonly operations: readonly OperationRecord[];
   readonly operationsLive: boolean;
+  /** Existing shell-owned core copies for module previews. No new subscription or source authority. */
+  readonly core?: {readonly sessions: readonly SessionRecord[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean};
 };
 
 /** Export as `frontend` from a module package's explicit `./frontend` browser entry. */

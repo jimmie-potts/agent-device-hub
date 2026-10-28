@@ -10,11 +10,17 @@ export async function labelJourney(page: Page, world: World, sent: string[], axe
   // Label controls send one action per explicit attempt; synced records establish the name.
   await world.observe(turnStarted, {turn: 'turn-label'});
   await chip('Port the wall', 'Working');
+  if (await row('Port the wall').locator('details').getAttribute('open') === null) await row('Port the wall').locator('summary').click();
   const edit = row('Port the wall').getByRole('button', {name: 'Edit label for Port the wall', exact: true});
   await edit.click();
   assert.equal(await page.getByLabel('Session label', {exact: true}).inputValue(), '', 'the provider title is not an explicit label');
   assert.equal(await page.getByLabel('Session label', {exact: true}).evaluate(input => input === document.activeElement), true);
   await page.getByLabel('Session label', {exact: true}).fill('Review label');
+  await row('Port the wall').locator('summary').click();
+  await page.getByLabel('Find a session').fill('no-match');
+  await page.getByLabel('Find a session').fill('');
+  await row('Port the wall').locator('summary').click();
+  assert.equal(await page.getByLabel('Session label', {exact: true}).inputValue(), 'Review label', 'collapse and filtering retain the draft');
   const labelRequests: {requestId: string; data: {expectedRevision: number}}[] = [];
   page.on('request', request => {
     if (new URL(request.url()).pathname === '/api/v2/commands/session-label-set') labelRequests.push(request.postDataJSON() as {requestId: string; data: {expectedRevision: number}});
@@ -46,6 +52,7 @@ export async function labelJourney(page: Page, world: World, sent: string[], axe
   await row('Review label').waitFor();
   assert.equal(sent.length, sentBeforeReload, 'reload reads the persisted label without resending');
 
+  await row('Review label').locator('summary').click();
   await row('Review label').getByRole('button', {name: 'Edit label for Review label', exact: true}).click();
   await page.getByLabel('Session label', {exact: true}).fill('Updated label');
   const beforeConflict = await page.locator('main#main').getAttribute('data-revision');

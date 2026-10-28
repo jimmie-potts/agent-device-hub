@@ -1,13 +1,17 @@
+import {chmod, mkdir, writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {knowledgeScenarios} from '../knowledge.js';
+import {preferenceScenarios} from '../preferences.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../fixtures/agents.js';
-import {StepFailure, act, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type Scenario} from '../framework.js';
+import {StepFailure, act, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type ModuleRun, type Scenario} from '../framework.js';
 const state = (h: Harness): CompanionState | undefined => h.reader.states<CompanionState>('companion-state', 'bunny/modules/companions')[0]?.data;
 const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
 const command = (family: string, data: object) => ({key: `bunny.cmd.${family}.reachy`, draft: {
   type: `org.bunny.${family.slice(0, family.lastIndexOf('-'))}.${family.slice(family.lastIndexOf('-') + 1)}.requested`, subject: 'reachy',
   dataschema: `https://bunny.invalid/events/${family}/2.0`, data}});
-export const scenarios: readonly Scenario[] = [{
+export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowledgeScenarios, {
   id: 'reachy-text', title: 'optional fixed-text Reachy preserves core attention, scenario attribution and restart without replay',
   seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation']},
     {owner: 'bunny/modules/companions', families: ['companion-state']}]},
@@ -83,3 +87,17 @@ async function assistantInput(h: Harness, requestId: string, answer = false): Pr
       expectedRevision: state?.revision, ...(answer ? {taskId: task?.taskId, questionId: task?.questionId} : {})}});
   if (result.status !== 200) throw new StepFailure(`synthetic assistant input returned ${String(result.status)}`);
 }
+
+export const runs: Readonly<Record<string, ModuleRun>> = {
+  'browser-speech': {
+    description: 'The simulated shipped runtime with private synthetic browser speech qualification',
+    prepare: async dataDir => {
+      const directory = join(dataDir, 'state', 'modules', 'companions');
+      await mkdir(directory, {recursive: true, mode: 0o700});
+      const file = join(directory, 'speech-qualification.json');
+      await writeFile(file, JSON.stringify({schema: 'browser-speech-qualification/1.0', browserVersion: '150.0.0.1', platform: 'macos',
+        qualifiedAt: '2026-10-24T12:00:00.000Z', voice: {name: 'Synthetic local English', lang: 'en-US', voiceURI: 'synthetic-local'}}), {mode: 0o600});
+      await chmod(file, 0o600);
+    },
+  },
+};

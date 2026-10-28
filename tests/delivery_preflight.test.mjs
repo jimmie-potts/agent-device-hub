@@ -103,6 +103,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Build, lint and core tests on ubuntu-latest',
     'Firmware host tests and ARM build on ubuntu-latest',
     'Retained documentation checks',
+    'Runtime verification on ubuntu-latest',
     'Select affected checks',
     'Selected checks gate',
     'Workflow checks on ubuntu-latest',
@@ -112,6 +113,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Checks / App verification on ubuntu-latest',
     'Checks / Build, lint and core tests on ubuntu-latest',
     'Checks / Firmware host tests and ARM build on ubuntu-latest',
+    'Checks / Runtime verification on ubuntu-latest',
     'Checks / Select affected checks',
     'Checks / Selected checks gate',
     'Workflow / Retained documentation checks',
@@ -121,19 +123,19 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(source.selection.mode, 'full');
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
-  // Hub #861: a Markdown-only change skips Checks but still runs the workflow and retained documentation jobs.
+  // Hub #861's main-push filter remains; a PR must still emit its required core check.
   assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Retained documentation checks', 'Workflow checks on ubuntu-latest']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(mixed.jobs.length, 7, 'one non-Markdown path keeps every job expected');
+  assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 7, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 8, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(narrow.jobs.length, 7);
+  assert.equal(narrow.jobs.length, 8);
   assert.deepEqual(narrow.jobs.filter(item => !item.selected).map(item => item.name).sort(), [
-    'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest',
+    'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest', 'Runtime verification on ubuntu-latest',
   ]);
   const mainPush = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
   assert.ok(mainPush.jobs.every(item => item.selected), 'main runs every check');
@@ -316,21 +318,32 @@ test('CI: filters that skip every job leave the candidate unresolved', async () 
   assertUnresolved(await preflight(world), 'ci-pr', /no configured job applies to this change/);
 });
 
-test('CI: a Markdown-only change needs only the workflow and retained documentation jobs (Hub #861)', async () => {
-  const world = cleanWorld();
-  world.files = [{ filename: 'docs/development.md', status: 'modified' }, { filename: 'README.md', status: 'modified' }];
-  world.compares[`${BASE}...${HEAD}`].files = world.files;
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => /^(Workflow checks|Retained documentation) /.test(run.name));
-  assert.equal(world.checkRuns[HEAD].length, 2);
+test('CI: a Markdown-only PR requires the core and gate while product jobs remain unselected', async () => {
+  const files = ['docs/development.md', 'README.md'];
+  const world = narrowWorld(files);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
-  world.files.push({ filename: 'apps/hub/src/server.ts', status: 'modified' });
+  assert.deepEqual(ci.evidence.selection.groups, []);
+  assert.deepEqual(ci.evidence.jobs.filter(item => item.selected !== false).map(item => item.name).sort(), [
+    'Build, lint and core tests on ubuntu-latest', 'Retained documentation checks',
+    'Select affected checks', 'Selected checks gate', 'Workflow checks on ubuntu-latest',
+  ]);
+  assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
+    ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
+    ['Runtime verification on ubuntu-latest', 'skipped'],
+  ]);
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !/^Build, lint/.test(run.name));
   assertUnresolved(await preflight(world), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
+  for (const conclusion of ['failure', 'skipped']) {
+    const refused = narrowWorld(files);
+    runNamed(refused, /^Build, lint/).conclusion = conclusion;
+    assertUnresolved(await preflight(refused), 'ci-pr', new RegExp(`Build, lint and core tests on ubuntu-latest: ${conclusion}`));
+  }
 });
 
 // Hub #1080: pull requests run affected checks. The preflight recomputes the selection from the same mapping and
 // accepts a skip only for a job that selection deliberately left out.
-const unselectedJob = /^(Firmware host tests|App verification) /;
+const unselectedJob = /^(Firmware host tests|App verification|Runtime verification) /;
 function narrowWorld(files = ['apps/maintenance/src/planner.ts']) {
   const world = cleanWorld();
   world.files = files.map(filename => ({ filename, status: 'modified' }));
@@ -348,6 +361,7 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   assert.deepEqual(ci.evidence.selection.omitted, ['runtime', 'modules', 'chompi', 'shared']);
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
     ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
+    ['Runtime verification on ubuntu-latest', 'skipped'],
   ]);
   assert.ok(ci.evidence.jobs.filter(item => item.selected !== false).every(item => item.result === 'success'));
   assert.match(ci.reasons.join('\n'), /App verification on ubuntu-latest: not selected for this change \(omitted: runtime, modules, chompi, shared\); skipped, not run/);
@@ -362,6 +376,17 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   const executed = gate(await preflight(ran), 'ci-pr');
   assert.equal(executed.status, 'satisfied', executed.reasons.join('; '));
   assert.equal(executed.evidence.jobs.find(item => /^Firmware/.test(item.name)).result, 'success');
+});
+
+test('CI: the separate runtime verification remains mandatory in the original preflight', async () => {
+  for (const conclusion of ['failure', 'cancelled', 'skipped']) {
+    const world = cleanWorld();
+    runNamed(world, /^Runtime verification/).conclusion = conclusion;
+    assertUnresolved(await preflight(world), 'ci-pr', /Runtime verification on ubuntu-latest:/);
+  }
+  const missing = cleanWorld();
+  missing.checkRuns[HEAD] = missing.checkRuns[HEAD].filter(run => !/^Runtime verification/.test(run.name));
+  assertUnresolved(await preflight(missing), 'ci-pr', /Runtime verification on ubuntu-latest: missing/);
 });
 
 const selectionCases = [
@@ -887,6 +912,8 @@ test('pagination: a failed later page, an off-host next link and too many pages 
 
 test('an incomplete changed-file list keeps path-filtered jobs expected', async () => {
   const world = cleanWorld();
+  // Checks now admits every PR; retain an explicit filtered workflow to exercise this generic refusal.
+  world.workflows[HEAD][ACTIONS.directory]['filtered.yml'] = "name: Filtered\non:\n  pull_request:\n    paths-ignore: ['**/*.md']\njobs:\n  check:\n    name: Filtered check\n    runs-on: ubuntu-latest\n    steps: [{run: 'true'}]\n";
   world.files = [{filename: 'README.md', status: 'modified'}];
   world.checkRuns[HEAD] = [];
   world.pr.changed_files = world.files.length + 1;
@@ -986,7 +1013,7 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
   const workflows = ['checks.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
-  assert.equal(dotfile.jobs.length, 7, 'a dot-file is not Markdown, so both workflows apply');
+  assert.equal(dotfile.jobs.length, 8, 'a dot-file is not Markdown, so both workflows apply');
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
@@ -1072,6 +1099,71 @@ test('proof: an unreadable verified set is a read failure that names no local pa
 });
 
 // ---- Merged candidates ----
+
+test('a merged PR uses its squash parent despite an old REST base and later main advances', async () => {
+  const world = mergeWorld(cleanWorld());
+  // The candidate did not rebase: its merge-base stays BASE, but final review
+  // assessed integration onto NEWER_MAIN before the guarded squash merge.
+  world.commits[MERGE].parents = [{ sha: NEWER_MAIN }];
+  world.compares[`${NEWER_MAIN}...${HEAD}`] = {
+    status: 'diverged', merge_base_commit: { sha: BASE }, files: world.files,
+  };
+  world.compares[`${POLICY}...${NEWER_MAIN}`] = {
+    status: 'ahead', merge_base_commit: { sha: POLICY }, files: [],
+  };
+  world.comments = [comment(reviewReport({ base: NEWER_MAIN, mergeBase: BASE }))];
+  for (const main of [MERGE, 'f'.repeat(40)]) {
+    world.refs.main = main;
+    const report = await preflight(world, { head: HEAD, base: NEWER_MAIN });
+    assert.equal(report.candidate.base, NEWER_MAIN);
+    assert.equal(report.candidate.mergeBase, BASE);
+    assert.equal(gate(report, 'review').status, 'satisfied');
+    assert.equal(report.result, 'satisfied');
+  }
+  assert.ok(!world.requests.some(request => request.url.endsWith('/git/ref/heads/main')));
+  assert.equal(world.requests.filter(request => request.url.endsWith(`/commits/${MERGE}`)).length, 2);
+});
+
+for (const [label, alter] of [
+  ['missing merge SHA', world => { world.pr.merge_commit_sha = null; }],
+  ['malformed merge SHA', world => { world.pr.merge_commit_sha = 'not-a-commit'; }],
+  ['different returned commit', world => { world.commits[MERGE].sha = HEAD; }],
+  ['missing parents', world => { delete world.commits[MERGE].parents; }],
+  ['no parent', world => { world.commits[MERGE].parents = []; }],
+  ['ambiguous merge parents', world => { world.commits[MERGE].parents.push({ sha: HEAD }); }],
+  ['malformed parent', world => { world.commits[MERGE].parents = [{ sha: 'main' }]; }],
+  ['self parent', world => { world.commits[MERGE].parents = [{ sha: MERGE }]; }],
+]) {
+  test(`merged comparison refuses ${label} rather than trusting the old REST base`, async () => {
+    const world = mergeWorld(cleanWorld());
+    alter(world);
+    const report = await preflight(world);
+    assert.equal(report.candidate.base, null);
+    assert.equal(gate(report, 'identity').status, 'unresolved');
+    assert.notEqual(gate(report, 'review').status, 'satisfied');
+    assert.equal(report.result, 'unresolved');
+  });
+}
+
+test('unreadable merged evidence remains a read failure without falling back to the PR base', async () => {
+  const world = mergeWorld(cleanWorld());
+  delete world.commits[MERGE];
+  const report = await preflight(world);
+  assert.equal(report.candidate.base, null);
+  assert.equal(gate(report, 'identity').status, 'read-failure');
+  assert.equal(report.result, 'read-failure');
+});
+
+for (const mismatch of [{ base: OLD_HEAD }, { head: OLD_HEAD }, { mergeBase: OLD_HEAD }]) {
+  test(`a merged PR still rejects a mismatched review ${Object.keys(mismatch)[0]}`, async () => {
+    const world = mergeWorld(cleanWorld());
+    world.comments = [comment(reviewReport(mismatch))];
+    const report = await preflight(world);
+    assert.equal(report.candidate.base, BASE);
+    assert.notEqual(gate(report, 'review').status, 'satisfied');
+    assert.notEqual(report.result, 'satisfied');
+  });
+}
 
 test('a merged PR also needs its main revision CI', async () => {
   const world = mergeWorld(cleanWorld());

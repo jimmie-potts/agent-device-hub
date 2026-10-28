@@ -1,6 +1,12 @@
 # Set up a fresh runtime
 
-This is the fresh-cutover and manual-return procedure. The accepted
+This is the established WSL installation's fresh-cutover and manual-return
+procedure. The [Mac primary-host decision](../../docs/decisions/0008-runtime-hosting.md)
+uses the separate [container operator guide](../../docs/bunny-container.md).
+Do not use these systemd or fresh-state steps to install the Mac container or
+move existing runtime state between hosts.
+
+The accepted
 [#840 record](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
 owns the completed installation and its selected module/health exceptions.
 This guide is not a qualified routine upgrade/rollback procedure; the legacy

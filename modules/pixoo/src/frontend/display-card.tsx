@@ -67,6 +67,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
       }}>{name}</button>)}</div>
     <div className="pixoo-face-space"><div className="light-face" hidden={tab !== 'Display'} id={`${id}-Display-face`} role="tabpanel" aria-labelledby={`${id}-Display`} tabIndex={0}>
       <>
+        {context.ui.ModeChoice !== undefined && <context.ui.ModeChoice target={device.id}/>}
         {context.control && <>
           {device.capabilities.power.supported && <div className="light-power">
             <button type="button" disabled={deviceBlocked} aria-pressed={screenOn === true} onClick={() => { send('power-set', {on: true}); }}>Screen on</button>

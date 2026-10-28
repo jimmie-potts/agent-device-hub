@@ -163,3 +163,43 @@ qualification targets. Delegated workers request preview operations through
 their coordinator; reviewer restrictions remain. Source setup is documented in
 the [host-route contract](../app-verification.md#explicit-host-route-for-codex-development-coordinators);
 personal activation and fresh/parallel host acceptance remain separate.
+
+## Finite offline runtime Acceptance amendment, 2026-10-22
+
+Owner-approved under [#1188](https://github.com/jimmie-potts/agent-device-hub/issues/1188):
+the runtime may additionally use an explicit finite container operation for
+independent Acceptance on an existing Docker host without a systemd user
+manager. This is a deliberate exception to this ADR's earlier rejection of
+containers and its user-unit/timer and two-root storage requirements. It does
+not change the managed preview, composition or other application adapters.
+
+The runtime and pinned browser run together offline with synthetic state, no
+host ports, personal mounts, devices, engine socket, host namespaces or elevated
+privileges. The exact clean revision and built artifact are bound to an
+immutable image and run/container identity. The candidate is not writable.
+Private HOME, credentials, state and temporary proof occupy a disk-backed
+container layer outside the checkout and `/tmp`; validated proof subsequently
+survives under the canonical ignored proof root.
+
+An in-container GNU timeout is armed before any application/browser child and
+kills the run independently of the caller and stalled application event loop.
+It has no renewal, handoff or preview restart, and makes no realtime-expiry
+claim across host/VM suspension or inaccessible Docker. Unconfirmed stop or
+cleanup remains unknown, preserves the resource and cannot pass. Exact stopped
+identity must be established before exporting proof or removing that container.
+No auto-removal destroys evidence before inspection. Failed/partial captures
+remain private until explicit cleanup; that cleanup cannot promote their result.
+
+The alternative uses a separate portable receipt rather than fabricating
+systemd unit/timer ownership. It reuses the runtime plug-in, its synthetic
+scenarios, transport/private-state guards and shared assertion/PNG/finalized
+WebM capture. Closed source export and artifact checks replace only the in-image
+Git/mtime check. Proof export is limited to a closed path/size/hash manifest,
+with no raw credential, log, configuration or database export. The independent
+reviewer still chooses and executes affected scenarios, inspects the retained
+evidence and reports a verdict; automatic catalog results alone are insufficient.
+
+The [portable procedure](../../apps/runtime/verify/PORTABLE.md) owns the exact
+commands, separate receipt, failure recovery and qualification limits. A prior
+unsupported managed attempt stays incomplete; this amendment does not relabel it
+as passed or waive any source review, CI or merge gate.

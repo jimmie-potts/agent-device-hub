@@ -1,7 +1,14 @@
+import {SpeechControls, type CompanionSpeechCopy} from './speech.js';
+import {CodingSuggestions} from './suggestions.js';
+import {KnowledgePage} from './knowledge.js';
+import {DuckConversation} from './duck.js';
+export {DuckWidget} from './duck.js';
+import {PreferencesPage} from './preferences.js';
 import {AssistantPage} from './assistant.js';
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
+import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
 
 const labels: Readonly<Record<CompanionCategory, string>> = {'coding-attention': 'Coding attention', 'coding-notice': 'Turn endings', 'simulated-social': 'Simulated social'};
 const reasons: Readonly<Record<string, string>> = {
@@ -18,31 +25,47 @@ const reasons: Readonly<Record<string, string>> = {
 function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
   const [state, setState] = useState<CompanionState>();
   const [unavailable, setUnavailable] = useState(false);
+  const [synced, setSynced] = useState(false);
+  // Speech's final check must see callback updates before React renders them.
+  const speech = useRef<CompanionSpeechCopy>({state: undefined, live: false});
   const {api, connected} = context;
   useEffect(() => {
+    const invalidate = (): void => {speech.current = {state: speech.current.state, live: false}; setSynced(false);};
+    invalidate();
     if (!connected) return;
     let active = true;
+    let replacing = false;
+    let copy: SyncedCopy<CompanionState> | undefined;
     let close: (() => Promise<void>) | undefined;
+    const show = (): void => {
+      const current = copy?.states().find(message => message.data.id === 'reachy');
+      if (current !== undefined) {speech.current = {state: current.data, live: true}; setState(current.data); setUnavailable(false); setSynced(true);}
+      else {setUnavailable(true); invalidate();}
+    };
     void api.sync<CompanionState>(['companion-state'], change => {
       if (!active) return;
-      if (change.type === 'updated') {setState(change.message.data); setUnavailable(false);}
-      else if (change.type === 'failed') setUnavailable(true);
-    }).then(result => {
+      if (change.type === 'updated') {speech.current = {...speech.current, state: change.message.data}; setState(change.message.data); setUnavailable(false);}
+      else if (change.type === 'failed') {replacing = true; setUnavailable(true); invalidate();}
+      else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
+      else if (change.type === 'removed' && change.entity.id === 'reachy') {setUnavailable(true); invalidate();}
+    }, {onRestarted: () => {if (active) {replacing = true; invalidate();}}}).then(result => {
       if (result.status !== 'synced') {if (active) setUnavailable(true); return;}
       if (!active) {void result.copy.close(); return;}
       close = () => result.copy.close();
-      const current = result.copy.states().find(message => message.data.id === 'reachy');
-      if (current !== undefined) {setState(current.data); setUnavailable(false);}
+      copy = result.copy;
+      if (!replacing) show();
     }, () => {if (active) setUnavailable(true);});
-    return () => {active = false; void close?.();};
+    return () => {active = false; speech.current = {state: speech.current.state, live: false}; void close?.();};
   }, [api, connected]);
-  const live = connected && !unavailable && state !== undefined;
+  const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;
   const presentation = state?.presentation;
+  const textContext = {...context, operations: context.operations.filter(operation => operation.family !== 'companion-speech-play')};
   return <section aria-label="Reachy" className="panel">
     <h2>Reachy</h2>
-    <p>A fixed-text desk companion. Enablement adds text cards; speech stays off.</p>
+    <p>A fixed-text desk companion. Text cards and spoken alerts have separate enable controls.</p>
     {!live && <p role="status">Reachy state is unavailable.</p>}
+    <SpeechControls context={context} companion={speech}/>
     {state !== undefined && <>
       <p role="status">{reasons[state.decision] ?? 'No reaction.'} <small>Reason: {state.decision}</small></p>
       <Facts items={[
@@ -64,7 +87,7 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
         ]}/>
         {presentation.opportunity.context === 'live' && presentation.opportunity.session !== null && <a href="#/">Open session attention on Home</a>}
       </article>}
-      <Command context={context} target="reachy">{command => {
+      <Command context={textContext} target="reachy">{command => {
         const locked = command.locked || !live || !context.control;
         const save = (enabled: boolean, muted: CompanionCategory[], snooze: 'keep' | 'one-hour' | 'clear' = 'keep'): void => {
           void command.run({family: 'companion-settings-set', target: 'reachy', requestId: crypto.randomUUID(),
@@ -94,7 +117,8 @@ function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {
           {command.text !== '' && <p role="status">{command.text}</p>}
         </>;
       }}</Command>
+      <CodingSuggestions context={context} state={state} live={live}/>
     </>}
   </section>;
 }
-export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}]};
+export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'assistant', Component: AssistantPage}, {id: 'preferences', Component: PreferencesPage}, {id: 'knowledge', Component: KnowledgePage}, {id: 'duck-conversation', Component: DuckConversation}]};

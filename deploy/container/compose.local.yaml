@@ -1,0 +1,39 @@
+# Explicit trusted-local browser profile. Devices are always disabled.
+services:
+  core:
+    image: bunny-core:local
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 4g
+    cpus: 2
+    restart: "no"
+    stop_grace_period: 30s
+    labels:
+      io.bunny.access: host-local
+    environment:
+      BUNNY_ACCESS: host-local
+      BUNNY_CONTROL: disabled
+      BUNNY_PORT: "18788"
+    ports:
+      - "127.0.0.1:18788:18788/tcp"
+    networks: [local]
+    tmpfs:
+      - /tmp:mode=1777,size=256m
+    volumes:
+      - state:/var/lib/bunny
+      - config:/etc/bunny:ro
+      - secrets:/run/secrets/bunny:ro
+networks:
+  local:
+    driver: bridge
+    internal: false
+    attachable: false
+    enable_ipv6: false
+volumes:
+  state:
+  config:
+  secrets:

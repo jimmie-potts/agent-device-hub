@@ -5,6 +5,9 @@ export {validateReceipt} from './receipt.js';
 export {holdSingleRun, runActiveDetail, SingleRunRefused, type SingleRun} from './single-run.js';
 export {liveRuns} from './systemd.js';
 export {runCaptureStep} from './capture.js';
+export {runPortableCli, PORTABLE_RECEIPT_VERSION, type PortableManifest} from './portable.js';
+export {artifactDigest} from './roots.js';
+export {hex256 as artifactHash} from './util.js';
 export {createProofHandler, proofLinks, PROOF_PREFIX, type ProofHandler, type ProofLink} from './proof.js';
 
 export {VERSION} from './version.js';

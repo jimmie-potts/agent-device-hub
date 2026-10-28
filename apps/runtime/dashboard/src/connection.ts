@@ -6,8 +6,9 @@
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
 import {
-  SdkError, childOf, connectRemote, type Diagnostic, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
+  SdkError, childOf, connectRemote, type Diagnostic, type RemoteEndpoint, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
   type SyncCompleted, type SyncedCopy, type SyncResult,
 } from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -74,6 +75,7 @@ export class DashboardConnection {
   #participant: RemoteParticipant | undefined;
   readonly #runtime: RuntimeFeeds;
   readonly #moduleScopes = new Set<ModuleScope>();
+  readonly #speechChecks = new Set<() => void>();
   #copy: SyncedCopy<SessionRecord> | undefined;
   #closed = false;
   /** The `sync.completed` last counted. */
@@ -192,6 +194,47 @@ export class DashboardConnection {
         copies.clear();
       },
       api: {
+        ...(name === 'companions' ? {speech: {open: async options => {
+          const participant = this.#participant;
+          if (!active() || participant === undefined) throw unavailable();
+          if (!this.#state.runtime.control) throw new SdkError(errorBody('forbidden', {detail: 'the page has read-only access'}));
+          let endpoint: RemoteEndpoint | undefined, retired = false, closing: Promise<void> | undefined;
+          const live = (): boolean => !retired && active() && this.#state.runtime.control && this.#participant === participant;
+          const retire = (): void => {
+            if (retired) return;
+            retired = true; copies.delete(lease); this.#speechChecks.delete(check);
+            try {options.onClosed?.();} catch { /* A page callback cannot preserve output authority. */ }
+          };
+          const lease: Subscription = {close: () => {
+            if (closing !== undefined) return closing;
+            retire(); closing = endpoint?.close() ?? Promise.resolve(); return closing;
+          }};
+          const check = (): void => {if (!live()) void lease.close();};
+          copies.add(lease); this.#speechChecks.add(check);
+          try {
+            const opened = await participant.openEndpoint<SpeechOutput>({family: 'companion-speech-output', onClosed: retire, respond: command => {
+              if (!live()) return errorBody('unavailable', {detail: 'the speech page is no longer available'});
+              if (command.source !== 'bunny/modules/companions') return errorBody('forbidden', {detail: 'the command is not from the speech owner'});
+              return options.respond(command);
+            }});
+            endpoint = opened;
+            if (!live()) {await opened.close(); throw unavailable();}
+            return {
+              id: opened.id, close: () => lease.close(),
+              control: (command, parent) => {
+                if (!live()) return Promise.reject(unavailable());
+                return opened.request('companion-speech-endpoint', {type: 'org.bunny.companion-speech.endpoint.requested',
+                  dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.0', data: command},
+                {timeoutMs: 5000, requestId: command.requestId, ...(parent === undefined ? {} : {parent})});
+              },
+              observe: async (playback, parent) => {
+                if (!live()) throw unavailable();
+                await opened.publish('companion-speech-playback', {kind: 'occurrence', type: 'org.bunny.companion-speech.playback.observed',
+                  dataschema: 'https://bunny.invalid/events/companion-speech-playback/2.0', data: playback}, {parent});
+              },
+            };
+          } catch (error) {retire(); throw error;}
+        }}} : {}),
         read: async path => {
           const response = await readResponse(path);
           let body: unknown;
@@ -220,14 +263,17 @@ export class DashboardConnection {
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
           return sendUpload(name, action);
         },
-        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>): Promise<SyncResult<T>> => {
+        sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;
           if (!active() || participant === undefined) return rejected<T>();
           const module = this.#state.runtime.modules?.find(candidate => candidate.name === name);
           if (module === undefined || families.some(family => !module.serves.includes(family))) {
             return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
           }
-          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS});
+          const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {
+            owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS,
+            onRestarted: () => {if (!closed) options?.onRestarted?.();},
+          });
           if (result.status === 'rejected') return result;
           if (!active()) { await result.copy.close(); return rejected<T>(); }
           const copy: SyncedCopy<T> = {
@@ -247,8 +293,15 @@ export class DashboardConnection {
     const participant = this.#participant;
     if (participant === undefined || this.#closed) return;
     let synced: SyncResult<SessionRecord>;
+    let replacing = false;
     try {
-      synced = await participant.sync<SessionRecord>(['session'], change => { this.#changed(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
+      synced = await participant.sync<SessionRecord>(['session'], change => {
+        if (change.type === 'synced') replacing = false;
+        this.#changed(change);
+      }, {timeoutMs: SYNC_TIMEOUT_MS, onRestarted: () => {
+        replacing = true;
+        this.#update({sessions: {...this.#state.sessions, synced: false}});
+      }});
     } catch (error) {
       synced = {status: 'rejected', requestId: 'not-sent', error: errorBody(codeOf(error) ?? 'unavailable', {detail: 'the sync could not be sent'})};
     }
@@ -268,7 +321,7 @@ export class DashboardConnection {
     }
     this.#copy = synced.copy;
     this.#retryMs = FIRST_RETRY_MS;
-    this.#show(synced.message);
+    this.#show(replacing ? undefined : synced.message);
   }
 
   /** One change of the copy, in order: the copy itself holds the records, so the page shows its states. */
@@ -300,7 +353,8 @@ export class DashboardConnection {
 
   /**
    * Shows the copy's current records. A `sync.completed` counts one sync, once: the first sync's may reach the handler as
-   * well as the sync's own answer. Before the first sync resolves, the copy is not the page's yet.
+   * well as the sync's own answer. Before the first sync resolves, the copy is not the page's yet. Applied entity
+   * callbacks refresh records while stale; only a current completion restores freshness.
    */
   #show(completed: Message<SyncCompleted> | undefined): void {
     const copy = this.#copy;
@@ -310,7 +364,7 @@ export class DashboardConnection {
     const records = copy.states().map(message => message.data);
     const revision = Math.max(completed?.data.revision ?? 0, this.#state.sessions.revision ?? 0, ...records.map(record => record.revision));
     this.#update({sessions: {
-      synced: true, records, revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
+      synced: completed !== undefined || this.#state.sessions.synced, records, revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
     }});
   }
 
@@ -340,6 +394,7 @@ export class DashboardConnection {
 
   #update(change: Partial<DashboardState>): void {
     this.#state = {...this.#state, ...change};
+    for (const check of [...this.#speechChecks]) check();
     for (const listener of this.#listeners) listener();
   }
 }

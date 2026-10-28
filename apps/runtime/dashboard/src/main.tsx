@@ -1,7 +1,12 @@
+import {HabitatPage} from './habitat.tsx';
+import {HomeLayout} from './home-layout.tsx';
+import type {HomeCardDefinition} from './home-catalog.ts';
+import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {LightingWorkspace} from './lighting-workspace.tsx';
-import {isLighting, brandName} from './lighting.ts';
-import {InboxPanel} from './inbox.tsx';
-import {Timeline} from './timeline.tsx';
+import {DeviceDirectory} from './device-directory.tsx';
+import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
+import {InboxPanel, type InboxFocus} from './inbox.tsx';
+import {Timeline, TimelinePanel} from './timeline.tsx';
 import {AutomationPage} from './automation.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
 // shell, its hash routes, the Places navigation, browser sign-in on the runtime's gateway and the agent sessions, which
@@ -12,7 +17,12 @@ import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
+import {DeviceModesProvider} from './device-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
+import {WemoDeviceCard} from './wemo-device-card.tsx';
+import {OnnDeviceCard} from './onn-device-card.tsx';
+import {RoborockDeviceCard} from './roborock-device-card.tsx';
+import {RoborockWidget} from '@jimmie-potts/roborock/frontend';
 import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
@@ -20,44 +30,19 @@ import {ModuleFrontend, ModulePageView} from './module-page.tsx';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
+import {DuckWidget} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
-import {parseRoute, routeHash, type Route} from './routes.ts';
-import {age, matches, sessionRows, type NoticeRow, type SessionRow} from './sessions.ts';
+import {navigationDestination} from './routes.ts';
+import {age, sessionRows} from './sessions.ts';
+import {AgentSessions} from './agent-sessions.tsx';
 import {OperatorTools} from './operator-tools.tsx';
-import {LabelEditor} from './label-editor.tsx';
 import {currentSession, launchCode, launchSignIn, previewPlaces, signOut, trustedSignIn} from './signin.ts';
-import {Badge, Facts, InfoTip, Select} from './ui.tsx';
-import {homeLayout, widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
+import {Facts, InfoTip} from './ui.tsx';
+import {widgetDefinition, type Placement, type WidgetSize} from './widgets.ts';
 import './style.css';
-
-/** The current page comes from the location hash, so every page has a URL and the back button walks the history. */
-const routeListeners = new Set<() => void>();
-const emitRoute = (): void => { for (const listener of routeListeners) listener(); };
-addEventListener('hashchange', emitRoute);
-const subscribeRoute = (listener: () => void): (() => void) => {
-  routeListeners.add(listener);
-  return () => { routeListeners.delete(listener); };
-};
-const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribeRoute, () => location.hash));
-/**
- * Setting the hash updates `location.hash` at once; only the hashchange event is deferred, so the listeners are told now.
- * A link click applies its route in the same event, so two pages are never shown at once.
- */
-function navigate(hash: string): void {
-  if (location.hash !== hash) location.hash = hash;
-  emitRoute();
-}
-
-/** A navigation link: a plain anchor with the route's hash, so it opens in a new tab with a modifier key. */
-function NavLink({route, current, children}: {route: Route; current?: Route; children: React.ReactNode}): React.JSX.Element {
-  const href = routeHash(route);
-  return <a href={href} aria-current={current !== undefined && routeHash(current) === href ? 'page' : undefined} onClick={event => {
-    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    navigate(href);
-  }}>{children}</a>;
-}
+import './shell.css';
+import './card-chrome.css';
 
 type Place = {id: string; label: string; group: 'Public' | 'Local'; publicUrl?: string; localUrl?: string};
 const places = placesManifest.places as Place[];
@@ -96,10 +81,10 @@ function PlacesNav({links}: {links: Readonly<Record<string, string>> | undefined
 }
 
 /** The frame every widget renders in: a labelled region, so assistive technology groups its content under its name. */
-function Widget({id, size, children}: {id: string; size: WidgetSize; children: React.ReactNode}): React.JSX.Element {
+function Widget({id, size, children, showHeading = true}: {id: string; size: WidgetSize; children: React.ReactNode; showHeading?: boolean}): React.JSX.Element {
   const definition = widgetDefinition(id);
   return <article className="widget" role="region" data-widget={id} data-size={size} aria-labelledby={`widget-${id}`}>
-    <header className="widget-head"><h2 id={`widget-${id}`}>{definition?.name ?? id}</h2></header>
+    {showHeading && <header className="widget-head"><h2 id={`widget-${id}`}>{definition?.name ?? id}</h2></header>}
     {children}
   </article>;
 }
@@ -108,70 +93,6 @@ function Widget({id, size, children}: {id: string; size: WidgetSize; children: R
 function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
   const text = 'Failed and uncertain device commands will be listed here. This page does not show them yet.';
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
-}
-
-/**
- * One retained notice of a finished turn and who acknowledged it. The row offers no acknowledgment of its own (owner
- * decision, 2026-10-08): the record clears a finished turn, and clearing one on every device is #1009's.
- */
-function Notice({notice}: {notice: NoticeRow}): React.JSX.Element {
-  const by = notice.acknowledgedBy.length === 0 ? 'none' : notice.acknowledgedBy.join(', ');
-  return <div className="notice">
-    <p>Turn {notice.turn} ended</p>
-    <p className="hint">Acknowledged by: {by}. This does not establish success or readership.</p>
-  </div>;
-}
-
-/** The name, state and attention stay visible; the evidence and the rare facts sit behind Details. */
-function SessionRowView({row, live, now, control}: {row: SessionRow; live: boolean; now: number; control: boolean}): React.JSX.Element {
-  const stale = row.uncertain || !live;
-  const elapsed = Math.max(0, now - row.lastEvidenceAtMs);
-  return <article className="session" data-session={row.id} data-chip={row.chip}>
-    <div className="session-head">
-      <span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
-      <div className="session-id"><h3>{row.name}</h3><p className="muted">{row.where}</p></div>
-      <span className="chip" data-chip={row.chip}>{row.chipText}</span>
-      <InfoTip warning={stale} label={<><span aria-hidden="true">{stale ? '◷' : '●'}</span> {stale ? 'Stale evidence' : 'Current'}</>}>
-        Activity: {row.facts.activity}. Last evidence: {age(elapsed)} ago. {stale ? 'Freshness is uncertain.' : 'Current observation; not a completion estimate.'}
-      </InfoTip>
-    </div>
-    {control && <LabelEditor row={row} live={live}/>}
-    {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
-    {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
-    <details className="details session-details"><summary>Details</summary><Facts className="strip" items={[
-      ['Source', row.facts.source], ['Session ID', row.facts.sessionId], ['Activity', row.facts.activity], ['Last evidence', `${age(elapsed)} ago`],
-      ['Read evidence', row.facts.read], ['Parent', row.facts.parent], ['Attributable children', row.facts.children],
-    ]}/></details>
-  </article>;
-}
-
-function SessionsWidget({state, rows, live, now, size}: {
-  state: DashboardState; rows: readonly SessionRow[]; live: boolean; now: number; size: WidgetSize;
-}): React.JSX.Element {
-  const [query, setQuery] = useState('');
-  const [provider, setProvider] = useState('');
-  const records = state.sessions.records;
-  const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
-  const filtering = query !== '' || provider !== '';
-  return <Widget id="sessions" size={size}>
-    <p className="hint">Current state, synced from the core. A finished turn stays unread until the next turn starts, the session record shows it read, or a device acknowledges it.</p>
-    <div className="filters">
-      <label>Find a session<input type="search" maxLength={120} value={query} onChange={event => { setQuery(event.target.value); }} placeholder="Label, title, project or session ID"/></label>
-      <Select label="Provider" value={provider} onChange={setProvider} options={[{value: '', label: 'All providers'}, {value: 'codex', label: 'codex'}, {value: 'claude', label: 'claude'}]}/>
-    </div>
-    {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : state.sessions.synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
-      <p>{filtering ? 'Change the filters to see other sessions.' : 'The page shows sessions as soon as the core reports them.'}</p></div>}
-    <div className="sessions">{rows.map(row => <div key={`${row.id}:${row.generation}`} hidden={!shown.has(row.id)}>
-      <SessionRowView row={row} live={live} now={now} control={state.runtime.control}/>
-    </div>)}</div>
-  </Widget>;
-}
-
-function AttentionWidget({rows, size}: {rows: readonly SessionRow[]; size: WidgetSize}): React.JSX.Element {
-  const waiting = rows.filter(row => row.attention.length > 0);
-  if (waiting.length === 0) return <p className="attention-summary" data-widget="attention">No attention needed.</p>;
-  return <Widget id="attention" size={size}><ul className="plain">{waiting.map(row =>
-    <li key={row.id}><span className="attention">{row.chipText}</span> · {row.name}</li>)}</ul></Widget>;
 }
 
 const FEED_TEXT: Readonly<Record<DashboardState['feed'], string>> = {connecting: 'Connecting', connected: 'Feed connected', reconnecting: 'Reconnecting', ended: 'Signed out'};
@@ -229,6 +150,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const state = useSyncExternalStore(connection.subscribe, connection.getState);
   const route = useRoute();
   const [now, setNow] = useState(Date.now());
+  const [inboxFocus, setInboxFocus] = useState<InboxFocus>();
   // The clock only ages what the page shows; it reads nothing.
   useEffect(() => {
     const clock = setInterval(() => { setNow(Date.now()); }, 1000);
@@ -236,9 +158,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   }, []);
   const rows = useMemo(() => sessionRows(state.sessions.records), [state.sessions.records]);
   const live = state.feed === 'connected' && state.sessions.synced;
-  const working = rows.filter(row => row.chip === 'working').length;
   const notice = liveNotice(state);
-  const layout = homeLayout();
   const runtime = state.runtime;
   const devices = runtime.copies.filter(copy => copy.family === 'device').flatMap(copy => (copy.records as readonly DeviceRecord[]).map(record => ({record, copy})));
   const playback = runtime.copies.filter(copy => copy.family === 'playback').flatMap(copy => (copy.records as readonly PlaybackState[]).map(record => ({record, copy})));
@@ -247,96 +167,116 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const operationsLive = state.feed === 'connected' && operationsCopy?.synced === true;
   const modeCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
   const mode = (modeCopy?.records as readonly ModeState[] | undefined)?.find(record => record.id === 'hub');
+  const modeDevices = devices.map(({record, copy}) => ({record, owner: copy.owner, live: state.feed === 'connected' && copy.synced}));
+  const inboxCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'inbox-item');
+  const inboxItems = (inboxCopy?.records ?? []) as readonly InboxItem[];
+  const inboxLive = state.feed === 'connected' && inboxCopy?.synced === true;
   const limitsCopy=runtime.copies.find(copy=>copy.owner==='bunny/core'&&copy.family==='power-limit');
   const limits=(limitsCopy?.records??[]) as readonly PowerLimitRecord[];
   const selectedDevice = route.kind === 'component' && devices.some(({record}) => record.id === route.id);
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
-  const place = (placement: Placement): React.ReactNode => {
+  const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
+    : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
+  const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (record.kind === 'pixoo' && copy.owner === 'bunny/modules/pixoo' && runtime.modules?.some(module => module.name === 'pixoo' && module.serves.includes('pixoo-display')) === true && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
+            <ModuleFrontend module="pixoo" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
+              control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
+            {route.kind === 'component' && <details><summary>Advanced device controls</summary><DeviceCard record={record} owner={copy.owner}
+              live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
+          </> : record.kind === 'tidbyt' && copy.owner === 'bunny/modules/tidbyt' && runtime.modules?.some(module => module.name === 'tidbyt' && module.state === 'running' && module.pages.some(page => page.id === 'display')) === true && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <><ModuleFrontend
+            module="tidbyt" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
+            control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
+            {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}
+              live={state.feed === 'connected' && copy.synced} control={false} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
+          </> : record.kind === 'onn' && copy.owner === 'bunny/modules/onn' && runtime.modules?.some(module => module.name === 'onn' && module.state === 'running' && module.pages.some(page => page.id === 'controls')) === true
+            ? <OnnDeviceCard record={record} owner={copy.owner} connection={connection} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
+              control={runtime.control} operations={operations} operationsLive={operationsLive}/>
+            : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
+              live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'roborock' && module.state === 'running' && module.serves.includes('roborock-vacuum')) === true}/>
+            : record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?<WemoDeviceCard record={record} owner={copy.owner}
+            live={state.feed==='connected'&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}
+            limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
+          : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
+            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>);
+  const place = (definition: HomeCardDefinition, placement: HomePlacement, selections: import('@jimmie-potts/event-contracts/v2/families').LightingSelection[]): React.ReactNode => {
+    if (definition.source.kind === 'device') {
+      const source = definition.source, device = devices.find(item => item.copy.owner === source.owner && item.record.id === source.instance);
+      if (device === undefined && source.owner === 'bunny/modules/roborock') return <RoborockDeviceCard target={source.instance} connection={connection} live={false}/>;
+      return device === undefined ? <article className="card"><h2>{definition.name}</h2><p>Device unavailable.</p></article> : deviceCard(device);
+    }
+    if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;
+    if (definition.source.kind === 'music') return <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSource={definition.source}/>;
+
+    if (placement.widget === 'module:roborock') return <ModuleFrontend module="roborock" connection={connection}
+      connected={state.feed === 'connected' && !runtime.catalogFailed}
+      control={false} operations={[]} operationsLive={false} Component={RoborockWidget}/>;
     if (placement.widget === 'wispr') {
       const exposed = runtime.modules?.some(module => module.name === 'wispr' && module.state === 'running' && module.pages.some(page => page.id === 'analytics'));
       if (route.kind !== 'home' || state.feed !== 'connected' || exposed !== true) return null;
       return <ModuleFrontend key="wispr" module="wispr" connection={connection} connected={true} control={false}
         operations={operations} operationsLive={operationsLive} Component={WisprWidget}/>;
     }
-    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size}><HubMode record={mode}
+    if (placement.widget === 'duck-latest') return <ModuleFrontend key="duck-latest" module="companions" connection={connection}
+      connected={state.feed === 'connected'} control={false} operations={operations} operationsLive={operationsLive} Component={DuckWidget}/>;
+    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode} devices={modeDevices}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
-      devices={devices.map(({record}) => record)}/></Widget>;
+      items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
+    if (placement.widget === 'timeline') return <Widget key="timeline" id="timeline" size={placement.size} showHeading={false}><TimelinePanel headingId="widget-timeline" connected={state.feed === 'connected'}/></Widget>;
     if (placement.widget === 'inbox') {
-      const copy = runtime.copies.find(item => item.family === 'inbox-item');
-      return <Widget key="inbox" id="inbox" size={placement.size}><InboxPanel items={(copy?.records ?? []) as readonly InboxItem[]} live={state.feed === 'connected' && copy?.synced === true} control={runtime.control}/></Widget>;
+      return <Widget key="inbox" id="inbox" size={placement.size} showHeading={false}><InboxPanel items={inboxItems} live={inboxLive} control={runtime.control}
+        devices={devices.map(({record}) => record)} focus={inboxFocus} headingId="widget-inbox"/></Widget>;
     }
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
-    if (placement.widget === 'sessions') return <SessionsWidget key="sessions" state={state} rows={rows} live={live} now={now} size={placement.size}/>;
-    if (placement.widget === 'attention') return <AttentionWidget key="attention" rows={rows} size={placement.size}/>;
+    if (placement.widget === 'sessions') return <Widget key="sessions" id="sessions" size={placement.size}><AgentSessions records={state.sessions.records}
+      synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <div className="shell">
+  return <DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
-      <nav aria-label="Main navigation">
-        <NavLink route={{kind: 'home'}} current={route}>Home <span>{rows.length}</span></NavLink>
-        <NavLink route={{kind: 'timeline'}} current={route}>Timeline</NavLink>
-        <NavLink route={{kind: 'automation'}} current={route}>Automation</NavLink>
-        <NavLink route={{kind: 'connections'}} current={route}>Connections</NavLink>
-        <NavLink route={{kind: 'rooms'}} current={route}>Rooms</NavLink>
-        {runtime.modules?.filter(module => devices.some(device => device.copy.owner === `bunny/modules/${module.name}` && isLighting(device.record))).map(module => <NavLink key={`brand-${module.name}`} route={{kind: 'lighting-brand', brand: module.name}} current={route}>{brandName(module.name)}</NavLink>)}
-        {devices.filter(({record}) => !isLighting(record)).map(({record, copy}) => <NavLink key={`${copy.owner}:${record.id}`} route={{kind: 'component', id: record.id}} current={route}>{record.label ?? record.id}</NavLink>)}
-        {playback.length > 0 && <NavLink route={{kind: 'audio'}} current={route}>Audio</NavLink>}
-        {runtime.modules?.flatMap(module => module.pages.map(page => <NavLink key={`${module.name}:${page.id}`} route={{kind: 'module', module: module.name, page: page.id}} current={route}>{page.title}</NavLink>))}
-      </nav>
-      <PlacesNav links={links}/>
+      <ShellNavigation route={route}/>
       <div className="sidebar-foot">
-        <Badge warning={!live}>{FEED_TEXT[state.feed]}</Badge>
-        <p>Inspection sends no device commands.</p>
+        <FeedIndicator state={state} now={now}/>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
-        <button type="button" className="secondary" onClick={disconnect}>Disconnect</button>
       </div>
     </aside>
     <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
-      <header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span></header>
-      <section hidden={route.kind !== 'home'} aria-label="Home">
-        <header className="page"><h1>Home</h1><div className="home-status">
-          <span>{working} working · {rows.length} sessions</span><FeedIndicator state={state} now={now}/>
-        </div></header>
+      <header className="top"><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span><nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}>Settings</NavLink></nav></header>
+      {navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
+      {contextModule !== undefined && contextModule.pages.length > 0 && <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page => <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}</nav>}
+      {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
+      {route.kind === 'home' && <section aria-label="Home">
         {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
-        <div className="home-columns">
-          <div className="home-wide">{layout.wide.map(place)}</div>
-          <div className="home-narrow">{layout.narrow.map(place)}</div>
-        </div>
-      </section>
-      <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>
-      {(route.kind === 'home' || route.kind === 'component') && <section aria-label="Devices">
-        {route.kind === 'home' && <h2>Devices</h2>}
+        <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
+          attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place}/>
+      </section>}
+      <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
+      {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
+        <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
+          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
+          <article className="card"><PlacesNav links={links}/></article></div>
+      </section>}
+      {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
+      {route.kind === 'component' && <section aria-label="Devices">
         {selectedDevice && route.kind === 'component' && <header className="page"><h1>{devices.find(({record}) => record.id === route.id)?.record.label ?? route.id}</h1></header>}
         {runtime.catalogFailed && <p role="alert">The module catalog is unavailable. Retrying the read; controls stay unavailable.</p>}
         {runtime.modules?.filter(module => module.state === 'failed' || module.state === 'refused').map(module => <p className="warning" key={module.name}>{module.name}: {module.state}. Its devices are unavailable.</p>)}
         {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
         {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
-        <div className="cards">{devices.filter(({record}) => route.kind !== 'home' || !isLighting(record)).map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id}>
-          {record.kind === 'pixoo' && copy.owner === 'bunny/modules/pixoo' && runtime.modules?.some(module => module.name === 'pixoo' && module.serves.includes('pixoo-display')) === true && (route.kind === 'home' || record.id === route.id) ? <>
-            <ModuleFrontend module="pixoo" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
-              control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
-            {route.kind === 'component' && <details><summary>Advanced device controls</summary><DeviceCard record={record} owner={copy.owner}
-              live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : record.kind === 'tidbyt' && copy.owner === 'bunny/modules/tidbyt' && runtime.modules?.some(module => module.name === 'tidbyt' && module.state === 'running' && module.pages.some(page => page.id === 'display')) === true && (route.kind === 'home' || record.id === route.id) ? <><ModuleFrontend
-            module="tidbyt" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
-            control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
-            {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}
-              live={state.feed === 'connected' && copy.synced} control={false} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
-            control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>}
+        <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id}>
+          {deviceCard({record, copy})}
         </div>)}</div>
       </section>}
-      <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>
+      {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
-      {route.kind === 'timeline' && <Timeline/>}
+      {route.kind === 'habitat' && <HabitatPage records={state.sessions.records} live={live}/>}
+      {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
       {!known && <section aria-label="Not found"><div className="empty">
@@ -345,7 +285,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>
-  </div>;
+  </div></DeviceModesProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */

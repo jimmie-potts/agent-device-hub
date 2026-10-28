@@ -1,5 +1,6 @@
 // Existing Monitor controls through authenticated content and tracked Pixoo commands; synthetic sessions only (Hub #932).
 import assert from 'node:assert/strict';
+import {directoryLink} from './navigation-helpers.ts';
 import {setTimeout as delay} from 'node:timers/promises';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
@@ -24,11 +25,12 @@ try {
     await page.getByRole('link', {name: 'Monitor', exact: true}).click();
     await page.getByRole('heading', {name: 'Agent monitor', exact: true, level: 2}).waitFor();
     await page.getByRole('link', {name: 'Edit session labels', exact: true}).click();
+    await page.locator('.agent-status-card').filter({has: page.getByRole('heading', {name: 'Synthetic monitor task', exact: true})}).locator('summary').click();
     await page.getByRole('button', {name: 'Edit label for Synthetic monitor task', exact: true}).click();
     await page.getByRole('textbox', {name: 'Session label', exact: true}).fill('Unsaved synthetic label');
     assert.equal(requests(), 0, 'the Monitor link reaches the real LabelEditor; opening and drafting sends nothing');
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
-    await page.getByRole('link', {name: 'Monitor', exact: true}).click();
+    await (await directoryLink(page, 'Displays', 'Monitor')).click();
     await page.getByRole('heading', {name: 'Synthetic monitor task', exact: true, level: 3}).waitFor();
     const readCoarseState = () => page.evaluate(async () => {
       const responses = await Promise.all([fetch('/modules/pixoo/content/monitor'), fetch('/modules/pixoo/content/monitor-sessions')]);

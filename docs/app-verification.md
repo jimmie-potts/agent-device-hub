@@ -37,6 +37,14 @@ Actual Windows-host qualification belongs to
 
 ## Vocabulary
 
+The runtime additionally supports an explicit
+[finite offline Acceptance operation](../apps/runtime/verify/PORTABLE.md), under
+the [ADR 0009 amendment](decisions/0009-app-verification-runs.md#finite-offline-runtime-acceptance-amendment-2026-10-22).
+It uses a separate receipt and bounded container lifetime, with no preview
+handoff or realtime sleep-expiry guarantee. The managed lifecycle below and
+other application adapters are unchanged. Independent review and verified
+cleanup remain required; unsupported managed attempts are not passed evidence.
+
 - **Run**: one disposable application instance with its own identity, state,
   port, supervisor unit and lease. `run-id` is
   `<app>-<UTC start, yyyymmddThhmmssZ>-<6 hex>`, for example
@@ -333,8 +341,8 @@ remain workflow requirements.
 The required qualification targets are Desktop with WSL execution, interactive
 WSL Codex CLI and WSL `codex exec` development coordinators. Each independent
 chat owns its runs. Delegated workers request preview operations through their
-coordinator. Standards and Specification reviewers stay read-only. An
-Acceptance reviewer owns its own disposable runs within the authority in
+coordinator. Independent reviewers keep source and tracker access read-only. The reviewer
+performing an acceptance exercise owns its disposable runs within the authority in
 [Acceptance review](sdlc.md#acceptance-review) (owner decision, 2026-10-05). Fresh-client and two-session acceptance
 are [#613](https://github.com/jimmie-potts/agent-device-hub/issues/613), not a
 claim made by this source delivery.

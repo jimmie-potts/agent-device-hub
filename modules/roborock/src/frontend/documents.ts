@@ -222,6 +222,12 @@ export function runsDocument(input: unknown, expectedId: string): RunsPage {
     }
     return value;
 }
+export function latestRunDocument(input: unknown, expectedId: string, minimumRevision = 0): RunsPage {
+    const page = runsDocument(input, expectedId);
+    if (page.runs.length > 1 || page.next.status !== 'unknown' || page.revision < minimumRevision)
+        throw new Refused('invalid-message');
+    return page;
+}
 export function runDocument(input: unknown, expectedId: string, expectedRecord: number): RunDocument {
     const value = checked<RunDocument>(input, runDocumentCheck);
     if (value.id !== expectedId || value.run.recordId !== expectedRecord) {

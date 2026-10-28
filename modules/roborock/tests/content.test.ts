@@ -23,4 +23,13 @@ void test('public content admits only fixed references and closed bounded querie
     controller.abort();
     const cancelled = readContent('status', { query: {}, signal: controller.signal }, state, undefined);
     assert.equal(cancelled && 'error' in cancelled ? cancelled.error.code : undefined, 'cancelled');
+    for (const query of [{limit: '1'}, {cursor: '1'}, {path: '/private'}, {sort: 'newest'}]) {
+        const refused = readContent('latest-run', {query, signal}, state, undefined);
+        assert.equal(refused && 'error' in refused ? refused.error.code : undefined, 'invalid-request');
+    }
+    const stopped = readContent('latest-run', {query: {}, signal: controller.signal}, state, undefined);
+    assert.equal(stopped && 'error' in stopped ? stopped.error.code : undefined, 'cancelled');
+    const empty = readContent('latest-run', {query: {}, signal}, state, undefined);
+    assert.ok(empty !== undefined && 'bytes' in empty);
+    assert.deepEqual(JSON.parse(Buffer.from(empty.bytes).toString()), {schema: 'roborock-runs/2.0', id: 'vacuum', revision: 0, history: 'partial', runs: [], next: {status: 'unknown'}});
 });
