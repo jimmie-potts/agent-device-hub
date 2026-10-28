@@ -3,8 +3,7 @@
 ## Authority and preparation
 
 GitHub issues own requested outcomes, acceptance criteria, dependencies, status
-and delivery targets. OpenSpec owns reviewed capability scenarios and proposed
-deltas. Architecture/ADRs own lasting decisions. PRs own candidate revisions,
+and delivery targets. OpenSpec owns substantial capability scenarios and contract deltas when needed. Architecture/ADRs own lasting decisions. PRs own candidate revisions,
 reviews and CI evidence. Link to those sources instead of copying status ledgers.
 
 Planning/review stays read-only unless the user explicitly authorizes document or
@@ -34,20 +33,12 @@ supports, and the devices explicitly configured there. Add hosts, users,
 services or automation only when the story needs them. These defaults never
 remove an already accepted capability.
 
-Assess scope when drafting a story, at pickup and after a material scope or
-assumption change, whether or not `plan-work` or `deliver-work` was invoked.
-Use the shared assessment in the installed deliver-work package's
-`references/work-assessment.md`, found through the host's skill discovery.
-Reading it does not invoke either skill. If it is unavailable, report that and
-apply this section. Codex and Claude follow the same policy. A read-only request
-reports the assessment instead of editing the issue.
-
-A story split from an epic or another story is drafted too, so it carries its
-assessment when filed. For a shared interface decision or integration dependency,
-name the affected interface and integration owner. Independent proposals may
-proceed in separate worktrees, including changes to the same files; follow
-[Parallel delivery](#parallel-delivery). Each story still adds its own checks,
-documentation and spec deltas.
+At pickup or a material scope change, check the requested outcome, actual setup,
+risks and smallest useful change. Keep the assessment in the existing issue/PR;
+a separate template, skill lookup or dossier is not required. Read-only work
+reports the assessment without writing. Shared interface work names its owner
+and integration order; independent work continues in separate worktrees under
+[Parallel delivery](#parallel-delivery).
 
 At every pickup, read the current issue and dependencies, current main, the
 accepted [project direction and architecture](architecture.md#product-direction-and-vocabulary),
@@ -61,24 +52,13 @@ remove an accepted capability or change scope, acceptance, compatibility, author
 or accepted risk. In unattended work, defer that decision-dependent branch and
 continue independent authorized work. A read-only assessment makes no changes.
 
-Draft stories with the recognized detailed headings of the
-[Work item template](../.github/ISSUE_TEMPLATE/feature.md), using the same headings
-for maintenance and investigation issues. New stories also begin with the
-[opening below](#new-story-opening). A small story may answer each detailed
-prompt in a few sentences.
-
-Use the [issue conventions](issue-conventions.md) for Epic, Work item and Bug
-intake, native membership and portfolio views. Outcome and observable acceptance
-are required. Implementation, preservation and deferral details are conditional
-on the work; keep their recognized headings without inventing irrelevant prose.
-No model choice or Execution recommendation is required to file an issue.
-
-1. Outcome and real setup.
-2. Smallest useful implementation, with dependencies.
-3. Behavior and protections to preserve.
-4. Observable acceptance and planned evidence, with the delivery target.
-5. Meaningful deferrals, each with its consequence or manual alternative and
-   its owning issue or revisit trigger.
+A small issue needs the requested outcome, acceptance checks and delivery target.
+Add implementation, risks, dependencies and deferrals only when they matter.
+The [Work item template](../.github/ISSUE_TEMPLATE/feature.md) supplies optional
+prompts, not a mandatory dossier. No fixed bullet count, empty headings, model
+recommendation or assessment fingerprint is required for ordinary delivery.
+Preserve existing issue structure where tooling consumes it; do not bulk-reformat
+old issues. Put evidence in CI and a concise PR, linking it from affected issues.
 
 Work that crosses a component boundary, in ordinary work as well as under
 `plan-work` or `deliver-work`, names these in the issue, plan or brief:
@@ -123,8 +103,8 @@ facilities where possible; this is not a general backup-tooling requirement.
 For each meaningful cut, name the capability or assurance lost and reconcile
 dependent issues and specifications within the task's authority. Never silently
 remove requested behavior; ask the user when a cut would change it. Scope
-defaults keep review, CI, UI verification, OpenSpec and the source, installation and
-physical boundaries, with their existing exceptions, and add no new gate.
+defaults retain focused review, applicable CI, UI verification and the source,
+installation and physical boundaries. OpenSpec is proportional to the change.
 
 For a consequential change to credentials, persistent state, concurrency or
 device commands, define acceptance examples before implementation. Give the owner
@@ -159,71 +139,26 @@ installed trial ([#22](https://github.com/jimmie-potts/agent-device-hub/issues/2
 
 ### New-story opening
 
-For every new story created after this rule is adopted, keep the normal GitHub
-issue title and start the body with a separate descriptive `##` headline followed
-immediately by exactly five top-level bullets. Put this opening before the five
-detailed sections and any optional origin or planning history. Apply it to new
-feature, maintenance, investigation and child stories written through the GitHub
-template, CLI or an agent, whether or not a shared workflow skill is invoked.
-
-The headline itself explains the planned benefit, for example, "Change my lights
-and display together." Avoid generic headings such as "In plain English,"
-"Summary" or "Overview." Use one short sentence per bullet, with familiar words
-and specific nouns. Choose five distinct details about actions, triggers,
-responding devices, visible results or practical limits; these are writing
-prompts, not mandatory labels. Keep necessary technical detail in the sections
-below. Product names and essential user-facing terms may stay.
-
-Describe planned work without claiming it is already delivered, installed or
-physically verified. An investigation promises findings or a decision, not a
-working feature. Preserve unresolved choices and unknowns; never invent behavior,
-prerequisites or success claims to fill the five bullets. Keep the opening
-visible, outside tables, code fences and collapsed details.
-
-Preserve the five recognized detailed headings in their existing order and the
-applicable assessment and execution advice. The
-opening summarizes the detailed scope, dependencies, acceptance and evidence;
-it does not replace them or become a new parsed scope or readiness field.
-
-**Future stories only.** Do not backfill, rename, reformat or otherwise edit
-existing issues for this rule. Picking up or editing an existing issue does not
-trigger a retrofit. A new child uses the opening; its existing parent remains
-unchanged. Existing stories remain valid without it.
-
-The GitHub chooser uses a Markdown template so the author's headline can appear
-first at level two. YAML forms add fixed field headings and cannot substitute
-an answer as the headline. The Work item template retains the labels, recognized detailed headings and
-scope guidance; Markdown does not enforce required inputs.
-Complete outcome and acceptance, fill the other detailed sections when relevant,
-and replace all opening prompts before filing.
-For CLI or agent-created issues, write the same structure directly without
-frontmatter or template comments. No live test issue or existing-story rewrite
-is needed to demonstrate the format.
-
-Reading check: can the owner read only the headline and five bullets, then
-explain what the story will do without opening another issue? Check that each
-bullet agrees with the detailed scope and preserves uncertainty. Use the
-centrally installed `unslop` skill for the final editorial pass, as required by
-`AGENTS.md`.
+Start with a short description of the useful outcome and how to check it.
+Use a few bullets when they help. The template's detailed prompts are optional;
+there is no exact headline or bullet-count requirement. Investigations promise
+findings, not shipped features. State unknowns and the delivery target honestly.
+Tools that parse detailed sections still use their recognized headings when
+those sections are present. Existing issue bodies remain valid.
 
 ## Scope and implementation
 
-Follow this workflow for authorized delivery. Select code-review for review,
-writing-for-agents for instructions, grill-with-docs for unsettled
-implementation-changing decisions, and tdd for meaningful executable behavior.
-Use installed central methods; missing prerequisites are reported without local
-copies or silent replacement.
+Use available code-review for independent review and writing-for-agents for
+instructions. Design and tdd skills are useful aids. A missing workflow skill is
+not a delivery gate: report it once and do the needed design, meaningful failing
+regression scenario or editorial check directly. Do not copy or install skills
+as incidental work. Use deliver-work only when explicitly invoked; repository
+scope and authority still apply.
 
-Use the shared deliver-work skill only when the user names it; ordinary delivery
-follows this document. Both paths retain independent reviews, CI, guarded merge,
-issue readback and installation authority.
-
-Refresh the repository-defined main, inspect worktrees and create
-codex/gh-<issue-number>-<slug> in an isolated worktree. Each deliverable's coordinator
-owns its scoped repository/GitHub writes. Standards and Specification reviewers
-are independent and read-only. An Acceptance reviewer is independent and limited to the
-authority in [Acceptance review](#acceptance-review). Preserve
-other sessions' worktrees, branches, installations and ownership.
+Refresh current main and work in an isolated branch/worktree with one coordinating
+writer. Preserve other sessions' work. The independent reviewer covers both axes
+in [Review and merge](#review-and-merge); additional review follows actual risk.
+Reviewers may test in disposable copies, never rewrite the coordinator's outputs.
 
 New Tidbyt and LIFX work belongs in this monorepo under their scoped controller
 instructions. Assign one writer per deliverable; coordinate the integration of
@@ -232,11 +167,13 @@ before dependent work claims compatibility. A controller change validates its
 affected consumers; shared changes validate every affected controller.
 Pixoo's code is staged under `modules/pixoo` (#25); the Nanoleaf port is #26.
 
-Features/changed contracts need an exact issue-linked OpenSpec proposal,
-capability deltas and tasks. Timing, concurrency, migration, installation and
-significant design changes also need applicable design/failure/recovery work.
-Documentation/tooling with no product behavior delta needs an issue/PR and a
-recorded explanation, without invented product specs.
+Substantial behavior changes and shared contract changes use an issue-linked
+OpenSpec proposal, capability deltas and tasks. Small fixes, documentation and
+tooling use a concise issue/PR with focused checks; update any affected existing
+spec without inventing a proposal for unchanged requirements. Storage migration,
+writer exclusion and installation changes need a short failure/recovery design
+before implementation. The manual-maintenance design is a design input, not a
+shipped contract or permission to change installed behavior.
 
 Use npm run openspec -- <arguments> from the assigned root and an exact
 gh-<issue-number>-<slug> change under openspec/changes. Inspect active and archived
@@ -323,174 +260,65 @@ undo a verified source merge or claim updated instructions.
 
 ## Tracker reconciliation
 
-At accepted child completion, reopening, material scope or prerequisite change,
-and ownership handoff, the task's coordinating writer reads and applies the
-[native issue procedure](tracker-reconciliation.md) before the final closeout
-report. This applies to ordinary Codex and Claude work whether or not a shared
-workflow skill is invoked.
+Update the selected issue at completion or a material scope/dependency change.
+Update related parents or dependents only when their acceptance, next action or
+ownership actually changes. No backlog sweep, recommendation regeneration or
+portfolio pass is required for a routine PR. Use the narrow read/write/readback
+rules in [native issue reconciliation](tracker-reconciliation.md).
 
-Read-only work reports discrepancies without writing. Tracker-only work stays
-within the named records and sections. Normal authorized delivery includes
-routine reconciliation of affected trackers under this repository's existing
-authority; narrower user scope prevails. The checkpoint grants no additional
-installation, device, publication, Project configuration or cross-repository
-policy-write authority.
-
-At authorized planning, implementation, review and closeout checkpoints, follow
-[Project maintenance](project-maintenance.md) for selected Project items. Run the
-native checkpoint before projecting its resulting state. Project synchronization
-failure remains a reported tracker gap; it does not erase verified source delivery.
+Link existing PR/CI evidence rather than copying it into multiple reports.
+Never infer installed or physical acceptance from a source merge. Project updates
+are needed for changed selected-item status or explicit portfolio work; preserve
+owner Phase/Commitment choices. Unavailable projection access is a reported gap,
+not a source-delivery blocker. See [Project maintenance](project-maintenance.md).
 
 ## Shared manual delivery claim
 
-This procedure applies only to repositories participating in the installed
-nightly queue. Ordinary work outside that queue needs no nightly configuration,
-claim or client wrapping; retain the scoped ownership rules above.
-
-When Hub participates in the installed cross-repository nightly queue, start a
-manual delivery client under the same claim before its first write:
-
-```text
-python3 ~/.dotfiles/scripts/nightly_queue.py claim-run --config ~/.config/nightly-queue/config.json --repository jimmie-potts/agent-device-hub --issue <n> -- <manual-client argv>
-```
-
-Read `~/.dotfiles/docs/nightly-queue.md#shared-manual-claims` for the installed
-procedure. Retain the claim through validation, reviews, publication, merge,
-installation and tracker reconciliation, including when the scheduler is paused
-or disabled. Explicitly assigned workers under the supervisor's existing claim
-do not acquire nested claims. Before activation, existing unwrapped clients must
-finish or hand off. Desktop or other clients that cannot be wrapped stay read-only
-until a qualified claim/handoff covers their complete delivery. The helper
-excludes adopted cooperating clients; it cannot fence arbitrary same-user
-processes. A missing or uncertain claim blocks delivery writes without granting
-permission to replace an owner.
+Hub withdrew from the nightly queue under #734. No nightly claim, helper or client
+wrapper is required. Rejoining would need a separate owner decision. Use ordinary
+checkout and runtime ownership; do not revive the old claim as a delivery gate.
 
 ## Review and merge
 
-1. Complete authorized changes, relevant checks and applicable OpenSpec artifacts.
-   Obtain successful current sync/archive lookups; synchronize every affected spec
-   and archive on the delivery branch before final review. Incomplete tasks,
-   missing acceptance or failed lookups prevent archive.
-   Validate locally before every push: build once, then run the affected
-   `:built` checks; `npm run ci:select` lists the groups and commands hosted
-   CI would select for the change. Prove that a check fails with a local
-   negative control.
-   Before review, check every acceptance item against its evidence. Search the
-   docs for each fact the change alters. Search at least `README.md`,
-   `AGENTS.md`, `docs/architecture.md`, `docs/development.md`, `docs/sdlc.md`,
-   the ADRs under `docs/decisions/`, the contract documents, the OpenSpec specs
-   and the affected app, package, controller and module READMEs and guides.
-   State limits and remaining uncertainty in the review brief and the PR body.
-2. Commit the candidate, push it once its local checks pass, and open a PR with
-   Refs #<issue>. Start step 3's reviews on that head while hosted CI runs:
-   hosted runners find problems local checks cannot, such as #873, #875 and
-   #877. Push one head per fix round, not intermediate commits. A push that
-   only gathers hosted evidence, such as a failing probe, goes on its own draft
-   PR with no closing keyword, closed unmerged afterwards, never on the head
-   under review. Record base, head,
-   merge-base, diff command, clean worktree and validation. Avoid automatic issue
-   closure before merged-revision CI: use no `close`, `fix` or `resolve`
-   keyword (or variant) before `#<n>` anywhere in the body, including inside an
-   ordinary sentence. PR #261 closed #87 at merge because its body said "the
-   only wording fix #87 needs". Before a merge whose acceptance follows it,
-   query the PR's `closingIssuesReferences`; a closing keyword anywhere in the
-   body, including a "remaining work" bullet, links the issue. Reword the body
-   to clear a reference (the read can lag a few minutes), and read back the
-   issue state, not just its labels.
-3. Obtain independent read-only Standards and Specification reviews of the same
-   fixed comparison through code-review. When the change has observable
-   behavior, also obtain an independent [Acceptance review](#acceptance-review)
-   of that comparison. Fix P0-P2 findings. Also fix a P3 that affects
-   correctness, test coverage or a named later story, such as a mutant the
-   suite lets survive; reviewers mark which P3s these are. Record a disposition
-   for every other P3. Reassess changed candidates. Self-review cannot
-   authorize merge.
-
-   For a change that crosses a component boundary, the reviewer brief names the
-   boundaries the diff crosses. The Standards and Specification axes each check
-   the change against ADR 0012's
-   [Errors, effects and outcomes](decisions/0012-bunny-event-platform.md#errors-effects-and-outcomes)
-   and [Observability](decisions/0012-bunny-event-platform.md#observability)
-   and the [diagnostic contract](observability-contract.md):
-   - **Standards:** privacy and safe errors on every outward surface, records
-     at decision points with their levels and trace continuity, and test
-     integrity (the negative controls of step 1, and no unexplained weakened
-     assertion).
-   - **Specification:** outcome and effect semantics, codes and retries,
-     coverage of the issue's fault cases, and whether each exception to a rule
-     is honest, stated and justified.
-
-   [ADR 0012 rules and their checks](development.md#adr-0012-rules-and-their-checks)
-   shows which rules a test, kit check or lint rule already enforces, and
-   which ones the reviewer checks.
-
-   Each axis owns review sources. The Standards axis owns every `AGENTS.md` and
-   `CLAUDE.md`, this file and `docs/development.md`. The Specification axis
-   owns the issue, the OpenSpec specs and the contract documents. For a change
-   that crosses a component boundary, ADR 0012 and the diagnostic contract are
-   sources of both axes. A later delta
-   goes back to both reviewers, with three exceptions that one reviewer
-   confirms:
-   - **Pure rebase:** the range-diff shows every commit identical. Either
-     reviewer confirms it. If the new base changed one axis's sources, or the
-     issue changed since the review, that axis confirms it. If both axes'
-     sources changed, both confirm.
-   - **Documentation only:** the delta changes only Markdown documentation that
-     no tool reads. The axis that owns the changed files confirms it; files
-     that neither axis owns may be confirmed by either. If it changes files that
-     both axes own, both confirm.
-   - **Code comments only:** the delta changes only comments that direct no
-     tool. The Standards reviewer confirms it.
-
-   These still go back to both: any change to an `AGENTS.md`, a `CLAUDE.md` or
-   this file, directive comments such as `@ts-expect-error`, Markdown that a
-   tool reads (such as issue templates or fixtures), a delta that mixes
-   documentation and code comments, and any change to code, schemas, tests or
-   configuration. The confirming reviewer's return names the new head. The
-   other axis's earlier verdict carries over to that head, and the PR body
-   records the carry-over with the range-diff or the diff. The
-   [Acceptance review](#acceptance-review) rules are unchanged.
-   Reviewer briefs say that reviewers make no GitHub writes, including reruns,
-   merges and comments. Each brief names a short TMPDIR outside every checkout
-   that no other agent uses, including the coordinator, such as
-   `~/.cache/agent-device-hub/r917s` for PR #917's Standards reviewer, within
-   the [TMPDIR length limit](development.md#standalone-hub-checks): two
-   reviewers that chose the same name deleted each other's copies. The reviewer
-   removes it at the end. Standards and Specification reviewers read a shared worktree but never
-   build or test in it, because a build rewrites `dist/` under the coordinator
-   and the other reviewers. They build and test in a `git clone` of the
-   repository under their TMPDIR, checked out detached at the head; a
-   `git archive` extract lacks the Git metadata that the Hub and observability
-   package suites read. The coordinator leaves a worktree under review
-   unchanged until that round's reviews return. An Acceptance reviewer follows
-   [Acceptance review](#acceptance-review).
-   Merge each story as soon as its gates pass, and start new work from merged
-   main rather than from an unmerged branch.
-4. Read all GitHub reviews/threads and verify the [CI evidence](#ci-evidence)
-   for the current PR head. Require every applicable configured job to succeed,
-   including matrix jobs; missing, pending, skipped, cancelled or failed jobs
-   prevent merge. The only allowed skip is a job the
-   [affected-check selection](#affected-pr-checks) deliberately leaves out.
-   Apply the UI verification policy below.
-5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
-   tests/reviews when either commit changes. Squash only the reviewed head with
-   gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "<text>".
-   Always pass an explicit `--body`: by default the squash commit copies the PR
-   description, and a "close #n" line in it closes the issue at merge, before
-   the post-merge checks (this happened to #252). Use a short body with no
-   closing keyword, such as `Refs #<n>`.
-   Never use --admin, a background merge service or account/privacy changes.
-   When main advances during review and a spec file conflicts, keep both sides
-   but reconcile a requirement that both changed into one paragraph; a stacked
-   resolution was a P2 finding on PR #421.
-6. Read back the main merge revision and verify its CI evidence using the same
-   rules. Close the delivered
-   issue only after its acceptance is met, clear workflow labels and verify
-   closure, with stderr visible as [tracker writes](tracker-reconciliation.md)
-   require. Apply [tracker reconciliation](#tracker-reconciliation) to affected
-   related issues; each retains its own acceptance gate.
-   Do not close future implementation or device acceptance issues with a bootstrap.
-7. Clean up this delivery's own worktree and scratch as described in
+1. Finish the scoped change and run the checks selected by its owning guide and
+   `npm run ci:select`. Use regression tests for meaningful behavior; demonstrate
+   that they catch the defect or unsafe case. Documentation uses link, instruction
+   and readback checks. Search the documents whose facts changed. Complete and
+   sync/archive an OpenSpec change when this task uses one.
+2. Commit and publish a PR with a short description of the problem, resulting
+   behavior, relevant tests and limits. Record the comparison base/head. Start
+   independent review while hosted CI runs. Keep the candidate stable during a
+   review round; push one tested candidate per fix round.
+3. One independent reviewer uses code-review when available and reports separately
+   on **Standards** (correctness, security, maintainability and tests) and
+   **Specification** (the requested outcome and acceptance). Self-review is not
+   sufficient. For component boundaries, check ADR 0012 outcomes, effects, retries
+   and the diagnostic contract. Add a focused second independent review for
+   substantive credential, storage-migration, writer-exclusion or device-command
+   safety changes; document which risk it covers. A prose-only policy change does
+   not automatically need a second reviewer, but a new safety design does.
+   Fix P0–P2 and correctness/test-coverage P3 findings; disposition other P3s.
+   The same reviewer may perform the disposable acceptance exercise below.
+   Re-review changed behavior and affected assumptions, not unchanged evidence.
+   A pure rebase or prose correction needs one confirmation of the delta and new
+   comparison. Never carry a verdict over a change that invalidates its evidence.
+   Reviewers make no GitHub/source writes. They read the shared candidate or build
+   and test in their own disposable clone and clean it up; they do not build in
+   the coordinator's worktree.
+4. Resolve published blocking feedback and require every applicable CI job on the
+   exact head to pass under [CI evidence](#ci-evidence). Keep existing CI coverage;
+   this policy does not remove tests or weaken branch protection. No extra report
+   format or duplicated receipt dossier is required; a PR review summary with
+   comparison, verdicts and links to existing evidence is sufficient.
+5. Recheck scope, base and head, then squash the reviewed head with
+   `gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "Refs #<issue>"`
+   or the API equivalent with an expected-head guard. Never use `--admin`.
+   Avoid closing keywords while acceptance remains pending. If GitHub links a
+   closing reference, remove it and read back before merging.
+6. Read back the merge revision and its applicable main CI. Close only issues
+   whose own acceptance is met, with installation/device evidence where required.
+   Update affected related issues and verify writes. Keep incomplete acceptance
+   open with the missing evidence. Clean up only this task's resources under
    [Cleanup after delivery](#cleanup-after-delivery).
 
 ### Acceptance review
@@ -513,10 +341,12 @@ Verification has three tiers.
    [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
    adds both for the new runtime that
    [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
-2. **Acceptance reviewer.** A PR with observable behavior gets a third
-   independent reviewer beside Standards and Specification. The reviewer has
-   no part in the implementation or the other review axes. It works through
-   these steps:
+2. **Acceptance exercise.** A PR with observable behavior needs the affected
+   user journey exercised against the reviewed head in a disposable run. The
+   independent code reviewer may do this; a separate third reviewer is optional.
+   Reuse applicable automated/browser evidence and run only missing scenarios.
+   The reviewer has no part in implementation and follows these steps when a
+   run is needed:
    1. Create a detached worktree of the exact reviewed head under the main
       checkout's `.local/worktrees/` or `.local/scratch/<task>/`. Install and
       build it there with `fnm exec --using=.nvmrc -- npm ci` and
@@ -574,7 +404,7 @@ Verification has three tiers.
    remains available for explicit opt-in; it is not required for task launches.
 
    A PR with no observable behavior skips this axis. It states "no observable
-   behavior" and why, and the Standards reviewer checks the claim against the
+   behavior" and why, and the independent reviewer checks the claim against the
    definition above. A user-requested read-only review or planning task starts
    no runs.
 3. **Milestone sweep.** An epic may define installation milestones. A sweep
@@ -685,9 +515,9 @@ merge or completion gate pending. Preserve independent reviews, the head guard a
 No project UI requires human approval, including new or materially changed Hub,
 dashboard and device-facing interfaces. Record the affected UI and
 applicable automated, browser, visual and accessibility evidence in the PR.
-Independent Standards and Specification reviews, an
-[Acceptance review](#acceptance-review) for observable behavior, applicable CI
-and guarded merge remain required. A missing required check or blocking finding
+The independent review and proportionate
+[acceptance exercise](#acceptance-review), applicable CI and guarded merge
+remain required. A missing required check or blocking finding
 still prevents merge.
 
 This policy supersedes older human UI approval requirements in issues, plans and

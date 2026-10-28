@@ -7,12 +7,10 @@ issues remain authoritative; do not create a second status store.
 
 ## Discover the affected records
 
-Read the selected issue, its acceptance evidence and current ownership.
-Follow its native parent chain, native dependency/dependent links, and explicit
-tracker links whose acceptance or remaining work the change affects. Read the
-child records needed to assess those parent outcomes. Follow necessary pagination
-and deduplicate visited records. Do not scan the whole backlog or treat every
-mention as a dependency.
+Read the selected issue, its acceptance evidence and current ownership. Follow
+parents, dependencies and tracker links only where this change affects their
+acceptance, next action or ownership. Do not recursively audit unchanged parent
+chains or the backlog. Paginate only the relationships needed for that decision.
 
 A failed, unavailable or incomplete relationship read means unknown, not an
 empty graph. Record the affected discovery gap and its consequence. Continue
@@ -52,32 +50,12 @@ update as acceptance evidence.
 
 ## Reassess execution recommendations
 
-When scope, prerequisites or the next step changes, reassess the affected
-recommendation against current shared policy. Read the installed
-`plan-work/references/execution-recommendations.md` through host skill discovery
-and the repository's [recommendation mechanics](../apps/maintenance/recommendations/README.md).
-Reading that policy does not invoke the skill. If the policy or required inputs
-are unavailable, report the gap rather than claiming current advice.
-
-Use `apps/maintenance/recommendations/recommendations.py`'s canonical parser and upsert.
-The tool renders assessor input; it does not perform the assessment. Parse the
-current live body and review the intended recommendation before any write.
-Preserve `insufficient` with named missing inputs where no supported assessment
-is possible. Never refresh a fingerprint merely to conceal stale advice.
-Dependency and state changes can require reassessment even when the body
-fingerprint is unchanged.
-
-Run the canonical dry run from the repository root:
-
-```bash
-python3 apps/maintenance/recommendations/recommendations.py upsert --input <entries.json> --dry-run
-```
-
-Keep assessor input and receipts in the main checkout's ignored
-`.local/evidence/` area. Apply only authorized, reviewed entries using the same
-command without `--dry-run` and with `--receipt <receipt.jsonl>`. Parse the
-authoritative readback. This procedure does not require refreshing guide inputs
-or generated output.
+Execution recommendations are optional planning advice, not delivery gates.
+When an existing recommendation becomes materially stale, mark its outdated
+assumption and current next step; do not generate a new model assessment or
+fingerprint merely because a PR completed. Dedicated recommendation maintenance
+still uses [the canonical tooling](../apps/maintenance/recommendations/README.md)
+and its parser/dry run. Routine delivery does not require that separate workflow.
 
 ## Write narrowly and recover from uncertainty
 
