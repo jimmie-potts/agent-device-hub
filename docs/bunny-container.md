@@ -6,6 +6,14 @@ qualification. It uses the existing Node 24 runtime and embedded stores. The
 separate sealed-package prototype and installed WSL upgrade procedure remain
 unchanged. This profile does not claim their acceptance or perform a live cutover.
 
+The owner's [personal-project scope decision](decisions/0008-runtime-hosting.md#personal-installation-scope--2026-10-28)
+accepts this manual Mac setup. Further Windows/AMD64 installation qualification,
+distribution without a source checkout and generalized update commands are optional
+future work. Existing alternate-host code and evidence remain retained. The
+[optional maintenance design](runtime-manual-maintenance.md) adds no prerequisite
+to this procedure. Keep existing data and writer protections, and coordinate the
+maintenance window manually; no persistent maintenance gate is promised.
+
 Run the host commands below from the repository root with Node 24, Docker Desktop's
 Linux engine and its Compose plugin available. Use an already built, reviewed
 local image; the operator commands never pull or build one. Keep the operator
