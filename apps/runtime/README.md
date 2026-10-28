@@ -521,30 +521,35 @@ none of the rest of the runtime.
   hook derives the same source from the producer file (`producerSource`), so
   the file needs no new member. Its `ingest` scope lets it publish lifecycle
   observations and nothing else ([Grants at the SDK edge](#grants-at-the-sdk-edge)).
-  For helper-derived `bunny/parts/hub-<digest>` sources, remote admission also
-  checks that the observation's provider, client, hostId and sourceId derive
+  At the private HTTPS ingress, helper-derived `bunny/parts/hub-<digest>` sources
+  are also checked so the observation's provider, client, hostId and sourceId derive
   that exact source. A mismatched payload is `forbidden` before bus publication.
+  Released local producers retain their complete configuration-derived source,
+  including ignored extension members. The existing server refusal record names
+  code, source and route; it does not claim the rejected message's trace.
+  The publisher's returned error retains its own prepared-message trace ID.
   Until grant operations exist (owner decision, 2026-10-07), a new producer is
   added by hand: `grantCredential` with that ID and source, its token's digest
   and `ingest`, then SIGHUP, then `GET /api/v2/authority?scope=ingest` with
   its token, which answers 200.
-- **Bounded and fail-open.** Every path writes nothing, and every path but one
-  exits 0 (see the next item): no output protocol, permission decision, retry,
+- **Bounded and fail-open.** Every path writes nothing, and ordinary paths
+  exit 0 (see the next item): no output protocol, permission decision, retry,
   device or child process. A 2.9 s deadline, armed before anything loads, ends
   the process inside the clients' 3 s hook timeout whatever the runtime does,
   and the publication gets what is left of it. A stopped runtime, a refused or revoked credential, a lost answer,
   an unusable producer file or input the normalizers do not map end the hook
   quietly. The observation is then lost, as hooks fail open, and the session's
   freshness shows the gap. Input over 8 MiB is dropped.
-- **A stalled file read.** For lifecycle 1.1 and 1.2, `enrichHook` reads the
+- **Stalled native work.** For lifecycle 1.1 and 1.2, `enrichHook` reads the
   session's title from its transcript or Codex's `session_index.jsonl` and stops
   waiting after 100 ms, but an open on a stalled mount never returns, and on
-  Node 24 `process.exit` waits for it. So the hook exits once no file read is
-  under way, and if one still is at the deadline, it ends by `SIGKILL` instead.
-  A check that cannot tell counts as no read, so the hook stays fail-open. That
-  is the only path that does not exit 0; the clients treat a non-zero exit as a
-  non-blocking error. Its observation was published first, unless the stall
-  left no time for it.
+  Node 24 `process.exit` waits for it. Native DNS resolution can block exit too.
+  Both hook entrypoints wait only within the existing budget while `FSReq` or
+  `GetAddrInfoReqWrap` resources remain. At the hard deadline they end themselves
+  by `SIGKILL`, which cannot wait for a stuck worker. A check that throws counts
+  as no pending native work, preserving the existing fail-open fallback. These
+  are nonblocking client errors. A stuck file read may follow publication;
+  a stuck resolver has sent no HTTP observation.
 - **Concurrency.** Each hook is a new Node process, and many at once share the
   CPU. In the failure-isolation review (2026-10-07), 5 sessions sending 20 hooks
   at once all landed, at 0.95 to 1.4 s at the median; 10 sessions sending 20 at

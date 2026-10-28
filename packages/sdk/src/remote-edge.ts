@@ -40,7 +40,12 @@ export type RemoteGrant = {source: string; token: string} & EdgePermissions;
  * Who an authenticated call acts as: its source and permissions, and an `id` naming its credential, so that the host
  * can end the streams of a credential it revokes (`disconnectPrincipal`).
  */
-export type EdgePrincipal = {readonly source: string; readonly id?: string} & EdgePermissions;
+export type EdgePrincipal = {
+  readonly source: string;
+  readonly id?: string;
+  /** Host-owned, pure admission after schema/source/scope checks and before publication. No wire field or extra grant. */
+  readonly checkPublication?: (message: Message) => ErrorBody | undefined;
+} & EdgePermissions;
 export type EdgeOptions = {
   bus: InProcessBus;
   /** Validates every inbound message: profile 2.0, the registered payload schemas and the 256 KiB cap. */
@@ -594,6 +599,8 @@ export class RemoteEdge {
         if (endpoint === undefined && route !== undefined && principal.publishes !== undefined && (family === undefined || !principal.publishes.includes(family))) {
           throw refuse('forbidden', 'this grant may not publish messages of that family');
         }
+        const refusal = principal.checkPublication?.(message);
+        if (refusal !== undefined) throw new Refusal(refusal);
         await this.#participant(source).publishMessage(key, message);
         return {status: 'published'};
       }

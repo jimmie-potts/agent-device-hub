@@ -1910,7 +1910,11 @@ Remote hook qualification (#566) builds with Node 24, then runs
 and the native wrapper suite below. HTTPS fixtures use the host's `openssl` to
 create a disposable synthetic certificate; they never disable certificate
 verification. These suites are already discovered by the SDK and runtime core
-CI commands. Run build/type/lint, SDK, event and existing contract-consumer tests,
+CI commands. The Linux resolver regression compiles its synthetic
+`stalled-dns.c` fixture with `cc` and uses `LD_PRELOAD` only in disposable hook
+subprocesses. It proves both entrypoints terminate a real pending resolver at
+their own deadline, with literal-IP controls; other platforms explicitly skip
+this Linux fixture. It contacts no DNS server. Run build/type/lint, SDK, event and existing contract-consumer tests,
 plus workflow checks. Disposable TLS and four synthetic host/provider feeds do
 not qualify installed clients, source credentials or the real private route.
 

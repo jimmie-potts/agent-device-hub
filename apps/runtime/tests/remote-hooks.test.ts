@@ -13,7 +13,7 @@ import {getCACertificates, setDefaultCACertificates} from 'node:tls';
 import {fileURLToPath} from 'node:url';
 import {normalizeHook, type SourceConfiguration} from '@jimmie-potts/agent-state/providers';
 import type {LifecycleObservation, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
+import {prepareMessage, publishOnce, traceFields} from '@jimmie-potts/sdk';
 import {lifecycleMessage, observationOf, producerCredentialId, producerSource, runHook} from '../src/hook/index.js';
 import {createCoreModule, revokeCredential, tokenDigest} from '../src/index.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
@@ -104,15 +104,49 @@ async function invokeHook(context: TestContext, script: string, producer: string
   return performance.now() - started;
 }
 
-it('a producer token cannot impersonate another host or provider inside its lifecycle payload', async context => {
+it('a granted legacy local producer keeps its complete source configuration identity', async context => {
+  const source = sources[0]; assert.ok(source);
+  const legacy = {...source, description: 'synthetic legacy extension'};
+  const token = randomBytes(32).toString('base64url');
+  const reader = randomBytes(32).toString('base64url');
+  const files = await edgeConfig(context, [
+    {id: producerCredentialId(legacy), source: producerSource(legacy), token, scopes: ['ingest']},
+    {source: 'bunny/parts/reader', token: reader, scopes: ['read']},
+  ]);
+  const {runtime} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}});
+  const producer = join(files.dir, 'producer.json');
+  await writeFile(producer, JSON.stringify({enabled: true, qualified: true, source: legacy, token,
+    endpoint: runtime.url + '/api/monitor/v1/events'}), {mode: 0o600});
+  const result = await runHook({producer, deadline: performance.now() + 2900,
+    input: Readable.from([Buffer.from(JSON.stringify({hook_event_name: 'SessionStart', session_id: 'legacy-session'}))])});
+  assert.equal(result.status, 'published', 'released local configuration extensions must retain their granted source');
+  await waitFor(async () => {
+    const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader}});
+    assert.equal(response.status, 200);
+    const {records} = await response.json() as {records: SessionRecord[]};
+    return records.length === 1 && records[0]?.identity.hostId === legacy.hostId;
+  });
+});
+
+it('a private-ingress producer token cannot impersonate another host or provider inside its lifecycle payload', async context => {
+  const entry = await tlsEntry(context);
   const source = sources[0];
   assert.ok(source);
   const token = randomBytes(32).toString('base64url');
   const files = await edgeConfig(context, [{id: producerCredentialId(source), source: producerSource(source), token, scopes: ['ingest']}]);
+  await writeFile(files.config, JSON.stringify({schema: 'runtime-config/1.0', modules: {}, edge: {
+    credentials: files.credentials, privateProxy: {origin: entry.url, tokenDigest: tokenDigest(PROOF)},
+  }}), {mode: 0o600});
   const {runtime, logs} = await run(context, {modules: [createCoreModule()], configFile: files.config, edge: {schemas: {}}});
-  const send = (value: LifecycleObservation, sender = producerSource(source)) => {
+  entry.forwardTo(runtime.url);
+  let lastTrace: string | undefined;
+  const send = async (value: LifecycleObservation, sender = producerSource(source)) => {
     const {key, draft} = lifecycleMessage(value);
-    return publishOnce({url: runtime.url, source: sender, token, timeoutMs: 2000}, key, prepareMessage(sender, draft));
+    const message = prepareMessage(sender, draft);
+    lastTrace = traceFields(message)?.traceId;
+    const result = await publishOnce({url: entry.url, source: sender, token, timeoutMs: 2000}, key, message);
+    if (result.status === 'rejected') assert.equal(result.error.error.traceId, lastTrace, 'the publisher retains its own prepared-message correlation');
+    return result;
   };
   const codex = sources[1]; assert.ok(codex);
   for (const other of [...sources.slice(1), {...source, sourceId: 'other-feed'}, {...codex, client: 'cli' as const}]) {
@@ -123,7 +157,14 @@ it('a producer token cannot impersonate another host or provider inside its life
   const spoofedHeader = await send(observation(source), 'bunny/modules/codex-desktop');
   assert.equal(spoofedHeader.status, 'rejected');
   assert.equal(logs.filter(record => record.event_name === 'message.received').length, 0, 'refusal precedes core intake');
+  const refused = logs.find(record => record.event_name === 'runtime.edge.refused' && record.attributes['bunny.code'] === 'forbidden');
+  assert.ok(refused);
+  assert.equal(refused.attributes['bunny.participant'], producerSource(source));
+  assert.equal(refused.attributes['bunny.route'], 'publish');
+  assert.equal(refused.trace_id, undefined, 'the established edge refusal record does not claim message trace correlation');
+  assert.equal(refused.span_id, undefined);
   assert.deepEqual(await send(observation(source)), {status: 'published'}, 'the same credential retains its own feed');
+  await waitFor(() => logs.some(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'accepted' && record.trace_id === lastTrace));
 });
 
 it('four qualified HTTPS host/provider hooks stay independent, deduplicate and refuse revocation without content leakage', async context => {
@@ -196,4 +237,45 @@ it('the actual remote hook process stays quiet and bounded when HTTPS takes a ca
   const elapsedMs = await invokeHook(context, HOOK, producer, entry.cert);
   assert.equal(entry.calls.length, 1, 'one real TLS publication attempt and no retry');
   assert.ok(elapsedMs < 3100, 'the process retains its 2.9-second budget plus startup scheduling tolerance');
+});
+
+for (const [entrypoint, script, index] of [['monitor', HOOK, 0], ['codex', CODEX_HOOK, 1]] as const) it(`${entrypoint} hook ends a genuine stalled native DNS lookup at its own deadline`, async context => {
+  if (process.platform !== 'linux') {
+    context.skip('the delayed native resolver fixture requires Linux LD_PRELOAD');
+    return;
+  }
+  const directory = await realpath(await mkdtemp(join(tmpdir(), 'hook-dns-')));
+  context.after(() => rm(directory, {recursive: true, force: true}));
+  const shim = join(directory, 'stalled-dns.so');
+  execFileSync('cc', ['-shared', '-fPIC', '-o', shim, fileURLToPath(new URL('../../tests/fixtures/stalled-dns.c', import.meta.url)), '-ldl']);
+  const source = sources[index]; assert.ok(source);
+  for (const [name, origin] of [['ip-control', 'https://127.0.0.1:1'], ['stalled', 'https://stall.synthetic.invalid']] as const) {
+    const selected = join(directory, `${index}-${name}`);
+    const producer = await producerFile(selected, origin, source, randomBytes(32).toString('base64url'));
+    const marker = join(selected, 'resolver-entered');
+    let controllerKilled = false;
+    const started = performance.now();
+    const child = spawn(process.execPath, [script, producer], {env: {...process.env, LD_PRELOAD: shim, BUNNY_TEST_RESOLVER_MARKER: marker}, stdio: ['pipe', 'pipe', 'pipe']});
+    const controller = setTimeout(() => { controllerKilled = true; child.kill('SIGKILL'); }, 6000);
+    context.after(() => { clearTimeout(controller); if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stdin.end(JSON.stringify({hook_event_name: 'SessionStart', source: 'startup', session_id: 'dns-session'}));
+    const result = await once(child, 'exit');
+    clearTimeout(controller);
+    const elapsedMs = performance.now() - started;
+    const entered = await readFile(marker, 'utf8').then(value => value === 'entered', () => false);
+    assert.equal(output, '', `${index}/${name}`);
+    assert.equal(controllerKilled, false, `${index}/${name}: the independent controller must not enforce the hook deadline`);
+    if (name === 'stalled') {
+      assert.equal(entered, true, 'a real getaddrinfo call entered the stalled native resolver');
+      assert.deepEqual(result, [null, 'SIGKILL']);
+      assert.ok(elapsedMs > 2500 && elapsedMs < 3100, `the hook ended at its own budget after ${Math.round(elapsedMs)} ms`);
+    } else {
+      assert.equal(entered, false, 'the literal-IP control bypasses DNS');
+      assert.deepEqual(result, [0, null]);
+      assert.ok(elapsedMs < 2000);
+    }
+  }
 });

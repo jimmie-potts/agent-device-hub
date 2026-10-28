@@ -33,8 +33,11 @@ an optional hook name is excluded from the existing credential derivation.
 Derive the credential ID and source with `producerCredentialId` and
 `producerSource` from the reviewed release's `@jimmie-potts/runtime/hook`.
 Grant that source `ingest` only. Give another feed its own token and identity.
-The gateway refuses helper-derived sources whose lifecycle payload names a
-different provider, client, host or source. Session IDs can repeat across feeds.
+The private ingress refuses helper-derived sources whose lifecycle payload names
+a different provider, client, host or source. Released local producers keep their
+complete configuration-derived identity, including ignored extensions. New remote
+qualification uses the four-field feed configuration above. Session IDs can repeat
+across feeds.
 
 ## Prepare the private producer and receipt
 
@@ -93,6 +96,11 @@ Core-container startup remains separate and does not read another host's home
 or application database. Missing credentials, host sleep and an unreachable
 core lose observations silently. The hook has one attempt inside its existing
 2.9-second process budget. It queues nothing and changes no agent permissions.
+If native filesystem or DNS work remains stuck at that deadline, the hook ends
+itself by signal instead of waiting for Node's native worker to return. It stays
+silent and nonblocking. The ordinary SDK error result retains its prepared trace;
+server edge-refusal records retain their existing code/source/route fields without
+claiming a message trace that was not admitted.
 Without fresh evidence the core may show stale state; lack of an event never
 means that work finished or was read.
 

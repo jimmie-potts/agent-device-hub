@@ -38,22 +38,22 @@ export async function* sanitizedInput(input, maxBytes) {
 
 async function main() {
   const budget = 2900;
-  const reading = () => {
+  const nativeWorkPending = () => {
     try {
-      return process.getActiveResourcesInfo().some(name => name.startsWith('FSReq'));
+      return process.getActiveResourcesInfo().some(name => name.startsWith('FSReq') || name === 'GetAddrInfoReqWrap');
     } catch {
       return false;
     }
   };
   const finish = () => {
-    if (reading()) setTimeout(finish, 10);
+    if (nativeWorkPending()) setTimeout(finish, 10);
     else process.exit(0);
   };
   process.on('uncaughtException', finish);
   process.on('unhandledRejection', finish);
-  // Arm before loading runtime dependencies. A stalled file read must not hold up Codex.
+  // Arm before loading runtime dependencies. Native filesystem or DNS work must not hold up Codex.
   setTimeout(() => {
-    if (reading()) process.kill(process.pid, 'SIGKILL');
+    if (nativeWorkPending()) process.kill(process.pid, 'SIGKILL');
     else process.exit(0);
   }, Math.max(1, budget - performance.now()));
   try {

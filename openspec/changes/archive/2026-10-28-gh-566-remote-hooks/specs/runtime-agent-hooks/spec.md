@@ -48,3 +48,29 @@ host; a phone UI SHALL NOT establish local hook coverage for cloud-only work.
 #### Scenario: Endpoint switch
 - **WHEN** the operator selects a new qualified core endpoint
 - **THEN** the producer stays disabled until its endpoint, private grant and matching installed receipt are verified, with no queue, fallback credential or automatic replay
+
+## MODIFIED Requirements
+
+### Requirement: Bounded, quiet and fail-open hooks
+
+Every path of the hook SHALL write nothing to stdout or stderr and exit 0, except unfinished native filesystem or DNS work at the deadline, which `process.exit` would wait for: the hook SHALL then end itself by `SIGKILL`. The hook SHALL make no permission decision, retry, device call or child process. A deadline 2.9 s from the process's start SHALL be armed before anything loads and SHALL end the process, inside the clients' 3 s hook timeout, whatever the runtime does; the publication SHALL get what is left of it. A hook whose work is done SHALL exit once no native filesystem or DNS worker remains. A check that cannot tell whether one remains SHALL count as none, so the hook still exits 0. Input over 8 MiB, input that is not UTF-8 JSON, and a hook the normalizers do not map SHALL end the hook with nothing sent. A refused, revoked or unknown credential, a stopped runtime and a lost answer SHALL end it quietly too: the observation is lost, and nothing sends it again.
+
+#### Scenario: A stopped runtime or a refused credential
+- **WHEN** the hook runs against a port nothing listens on, or with a token the runtime does not hold
+- **THEN** it exits 0 at once and writes nothing
+
+#### Scenario: A runtime that never answers
+- **WHEN** the hook runs against a listener that takes the call and never answers, or its client never closes stdin
+- **THEN** it exits 0 on its own once its 2.9 s budget passes, within 3 s of its start, and writes nothing
+
+#### Scenario: A file read stuck at the deadline
+- **WHEN** a file read in the hook's process is stuck in an `open` that never returns, as a title read on a stalled mount is
+- **THEN** the hook publishes its observation and ends by `SIGKILL` at its 2.9 s budget, within 3 s of its start, writing nothing; a FIFO as the transcript, which the title read opens without blocking, ends the hook at once with exit 0, and so does a process whose check for a pending read throws
+
+#### Scenario: Input the normalizers do not map
+- **WHEN** the hook gets no input, input that is not JSON or not an object, no hook name, a hook the normalizers do not map, no or a malformed session ID, input over 8 MiB or input that is not UTF-8
+- **THEN** it exits 0, writes nothing and nothing reaches the core
+
+#### Scenario: Native DNS remains blocked
+- **WHEN** either hook entrypoint starts a native hostname lookup that cannot finish within the hook budget
+- **THEN** its own hard deadline ends it silently by signal within the existing client timeout without waiting for the resolver; no HTTP observation has been sent, and an independent controller does not enforce the deadline

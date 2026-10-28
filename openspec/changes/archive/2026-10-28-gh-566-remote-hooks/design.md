@@ -24,23 +24,33 @@ handshake failures before then are unpublished `unavailable`. A lost answer
 after that remains `uncertain-result`. Redirects are answers, never another
 destination; there is no downgrade or automatic retry.
 
-The runtime validates the helper-derived producer source against the observation's
-provider/client/host/source tuple. Session IDs remain outside the credential
+At the private ingress, the runtime validates a helper-derived producer source
+against the observation's provider/client/host/source tuple. Session IDs remain outside the credential
 identity so different sessions can share their selected feed. The check follows
-schema validation and precedes bus publication. Ordinary module sources retain
+ordinary schema/source/scope validation and precedes bus publication through a
+pure host-owned check on the authenticated SDK principal. This avoids another body
+parser or credential-file format. Loopback admission keeps the released full
+configuration hash, including ignored extension members. Ordinary module sources retain
 their contracts. A changed configured identity needs its own grant, never another
 host's token. This closes payload impersonation as well as header impersonation.
 
 ADR 0012's error/effect rules and diagnostic contract remain authoritative.
-Hooks stay silent, bounded and fail open. Existing edge refusal records retain
-the message trace and registry code. No exception text, credential, raw provider
+Hooks stay silent, bounded and fail open. The established edge-refusal record
+retains code, authenticated source and route, without a rejected message trace.
+This preserves the existing SDK diagnostic boundary; it does not claim server
+correlation for an unadmitted observation. The publisher error retains its own
+prepared trace, and accepted core intake retains its existing trace correlation. No exception text, credential, raw provider
 input or address becomes a new diagnostic. Lost observations are not queued or
 replayed, and missing evidence never establishes completion or connectivity.
 
 ## Risks and qualification
 
-Remote DNS/TLS can consume the whole hook budget; subprocess tests exercise the
-hard deadline and the publisher tests distinguish before-send from uncertain
+Remote DNS/TLS can consume the whole hook budget. Node can wait for native
+resolver work even during process.exit, so both entrypoints detect pending
+GetAddrInfoReqWrap as well as filesystem work and use their existing signal exit
+at the hard deadline. A Linux test shim stalls a real getaddrinfo call without
+network access; independent controllers and literal-IP controls distinguish the
+hook deadline from an external kill. Subprocess tests exercise the hard deadline and the publisher tests distinguish before-send from uncertain
 effects. Synthetic TLS uses only a disposable test CA and cannot establish
 Tailscale or OS trust. Four normalizer-produced provider/host feeds with the same
 session ID must remain independent. Refused source/identity changes and revoked

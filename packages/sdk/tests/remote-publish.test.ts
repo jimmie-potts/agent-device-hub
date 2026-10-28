@@ -116,6 +116,42 @@ it('TLS negotiation that never completes is bounded and has not sent an HTTP pub
   }
 });
 
+it('a host publication check runs after ordinary admission and before any bus effect', async () => {
+  const seen: string[] = [], checked: string[] = [];
+  let allowed = false;
+  await withEdge(async edge => {
+    await edge.bus.connect('bunny/second').subscribe(KEY, message => { seen.push(message.id); });
+    const message = prepareMessage('bunny/core', session('s1', 1));
+    const send = () => publishOnce({url: edge.url, source: 'bunny/core', token: 'synthetic-policy-token', timeoutMs: 2000}, KEY, message);
+    const refused = await send();
+    assert.equal(refused.status, 'rejected');
+    if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'forbidden');
+    assert.deepEqual(checked, [message.id]);
+    assert.deepEqual(seen, [], 'the host refusal precedes publication');
+    for (const body of [
+      {key: KEY, message: {...message, bunnyprofile: '3.0'}},
+      {key: KEY, message: {...message, source: 'bunny/wall'}},
+      {key: 'bunny.event.test-turn.s1', message},
+    ]) {
+      const response = await fetch(edge.url + REMOTE_PATH + '/publish', {method: 'POST', headers: {authorization: 'Bearer synthetic-policy-token', 'content-type': 'application/json'},
+        body: JSON.stringify({schema: REMOTE_SCHEMA, ...body})});
+      assert.ok(response.status >= 400);
+      await response.body?.cancel();
+    }
+    assert.deepEqual(checked, [message.id], 'invalid schema, forged source and wider routing never reach the host check');
+    allowed = true;
+    assert.deepEqual(await send(), {status: 'published'});
+    await until(() => seen.length === 1, 'the accepted publication');
+    assert.deepEqual(checked, [message.id, message.id]);
+  }, {authenticate: request => request.headers.authorization === 'Bearer synthetic-policy-token' ? {
+    source: 'bunny/core', calls: ['publish'], keys: [KEY], publishes: [SESSION_FAMILY],
+    checkPublication: (message: Message) => {
+      checked.push(message.id);
+      return allowed ? undefined : errorBody('forbidden', {detail: 'the host refuses this publication'});
+    },
+  } : undefined});
+});
+
 async function withEdge(body: (edge: Edge) => Promise<void>, setup: Parameters<typeof startEdge>[0] = {}): Promise<void> {
   const edge = await startEdge(setup);
   try {

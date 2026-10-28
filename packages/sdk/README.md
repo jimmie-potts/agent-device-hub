@@ -1104,7 +1104,7 @@ HTTP status that fits its code.
   `forbidden`. Tokens appear only in the `authorization` header, never in a
   message, diagnostic, log record or error body. A host may authenticate calls
   itself instead, with `authenticate(request)`, which returns the principal a
-  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?}`, or undefined for
+  call acts as, `{source, id?, calls?, keys?, publishes?, endpoint?, checkPublication?}`, or undefined for
   `unauthenticated`; the runtime's gateway does, for its credentials and
   browser sessions (Hub #835). `disconnectPrincipal(id)` ends the streams a
   principal opened, as when the host revokes it. Calls that use a stream must
@@ -1112,6 +1112,12 @@ HTTP status that fits its code.
   principal with the same source cannot subscribe, respond, serve, reply, answer
   or close through that stream. Grants without a principal ID retain their
   source-based ownership.
+- **Host publication checks.** A host-authenticated principal may supply the pure,
+  synchronous `checkPublication(message)` function. The edge invokes it after
+  ordinary schema, source, routing and family/scope checks, before publication.
+  Return a registry error body to refuse without publication, or undefined to
+  continue. This is a host callback, never a wire field, extra grant or command.
+  Principals without it retain their existing behavior.
 - **Permissions (Hub #835).** A grant may list the `calls` it may make and the
   routing-key patterns, `keys`, it may use; either left out allows all. A key it
   publishes or requests must match a pattern; a pattern it subscribes or

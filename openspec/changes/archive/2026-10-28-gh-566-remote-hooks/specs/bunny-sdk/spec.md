@@ -35,3 +35,24 @@ The SDK SHALL export `prepareMessage(source, draft, {now?, parent?})`, which giv
 #### Scenario: HTTPS redirect or lost answer
 - **WHEN** the authenticated peer redirects to another HTTPS or HTTP destination, or accepts the publication but never answers
 - **THEN** the result is `uncertain-result`, no destination is followed and no publication is retried
+
+## ADDED Requirements
+
+### Requirement: Host publication admission
+
+A host-authenticated SDK principal SHALL optionally supply a synchronous, pure
+`checkPublication(message)` function. The edge SHALL invoke it only after the
+ordinary message schema, authenticated source, routing and family/scope checks,
+and before any bus publication. Returning the shared registry error body SHALL
+refuse the publication without effects; returning undefined SHALL preserve the
+ordinary publication path. The check SHALL grant no additional authority and
+SHALL NOT be a remote wire field or stored command. Principals without a check
+SHALL retain their existing behavior.
+
+#### Scenario: Host refusal before publication
+- **WHEN** a valid permitted publication reaches a principal's host check and the check returns forbidden
+- **THEN** the caller receives the ordinary forbidden refusal and no subscriber receives a message; a later permitted publication can still succeed
+
+#### Scenario: Ordinary admission precedes host policy
+- **WHEN** a publication has an invalid schema, another source or a key outside its grant
+- **THEN** ordinary admission refuses it before the host check is called

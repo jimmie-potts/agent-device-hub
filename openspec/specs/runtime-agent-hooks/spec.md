@@ -39,7 +39,7 @@ The hook SHALL read the client's existing lifecycle 1.x producer file with the o
 
 ### Requirement: Bounded, quiet and fail-open hooks
 
-Every path of the hook SHALL write nothing to stdout or stderr and exit 0, except one: a file read still under way at the deadline, which `process.exit` would wait for, SHALL end the process by `SIGKILL`. The hook SHALL make no permission decision, retry, device call or child process. A deadline 2.9 s from the process's start SHALL be armed before anything loads and SHALL end the process, inside the clients' 3 s hook timeout, whatever the runtime does; the publication SHALL get what is left of it. A hook whose work is done SHALL exit once no file read is under way. A check that cannot tell whether one is SHALL count as none, so the hook still exits 0. Input over 8 MiB, input that is not UTF-8 JSON, and a hook the normalizers do not map SHALL end the hook with nothing sent. A refused, revoked or unknown credential, a stopped runtime and a lost answer SHALL end it quietly too: the observation is lost, and nothing sends it again.
+Every path of the hook SHALL write nothing to stdout or stderr and exit 0, except unfinished native filesystem or DNS work at the deadline, which `process.exit` would wait for: the hook SHALL then end itself by `SIGKILL`. The hook SHALL make no permission decision, retry, device call or child process. A deadline 2.9 s from the process's start SHALL be armed before anything loads and SHALL end the process, inside the clients' 3 s hook timeout, whatever the runtime does; the publication SHALL get what is left of it. A hook whose work is done SHALL exit once no native filesystem or DNS worker remains. A check that cannot tell whether one remains SHALL count as none, so the hook still exits 0. Input over 8 MiB, input that is not UTF-8 JSON, and a hook the normalizers do not map SHALL end the hook with nothing sent. A refused, revoked or unknown credential, a stopped runtime and a lost answer SHALL end it quietly too: the observation is lost, and nothing sends it again.
 
 #### Scenario: A stopped runtime or a refused credential
 - **WHEN** the hook runs against a port nothing listens on, or with a token the runtime does not hold
@@ -56,6 +56,11 @@ Every path of the hook SHALL write nothing to stdout or stderr and exit 0, excep
 #### Scenario: Input the normalizers do not map
 - **WHEN** the hook gets no input, input that is not JSON or not an object, no hook name, a hook the normalizers do not map, no or a malformed session ID, input over 8 MiB or input that is not UTF-8
 - **THEN** it exits 0, writes nothing and nothing reaches the core
+
+#### Scenario: Native DNS remains blocked
+- **WHEN** either hook entrypoint starts a native hostname lookup that cannot finish within the hook budget
+- **THEN** its own hard deadline ends it silently by signal within the existing client timeout without waiting for the resolver; no HTTP observation has been sent, and an independent controller does not enforce the deadline
+
 
 ### Requirement: The producer's grant
 

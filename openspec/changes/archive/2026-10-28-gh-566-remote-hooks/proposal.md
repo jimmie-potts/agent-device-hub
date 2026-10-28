@@ -12,7 +12,10 @@ still accept only the old loopback HTTP path.
 - Support certificate-verified HTTPS in the existing one-shot SDK publisher.
   Preserve the total deadline, no redirects, no retry and existing outcomes.
 - Bind helper-derived producer sources to their provider/client/host/source
-  identity at remote admission, before any observation reaches the bus.
+  identity at private-ingress admission, before an observation reaches the bus,
+  while retaining released local configuration hashes. The host policy follows
+  ordinary SDK validation without adding a wire field.
+- Keep both hook entrypoints bounded when native DNS work blocks process exit.
 - Document enrollment, endpoint switching and actual-client qualification
   separately from the core container lifecycle.
 
