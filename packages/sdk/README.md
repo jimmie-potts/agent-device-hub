@@ -1313,10 +1313,15 @@ const result = await publishOnce({url: 'http://127.0.0.1:8788', source: message.
   `source`, as a participant would send it: a new `id`, the current `time` and a
   `traceparent` that continues `parent`, or starts a new sampled trace.
 - `publishOnce({url, source, token, timeoutMs}, key, message)` posts
-  `{schema, key, message}` to `<url>/api/sdk/v1/publish` over `http`, with the
+  `{schema, key, message}` to `<url>/api/sdk/v1/publish` over HTTP or HTTPS, with the
   token in `authorization` only, the source in `bunny-source` and the message's
   `traceparent` as a header. `timeoutMs`, an integer from 1 to `MAX_TIMEOUT_MS`,
-  bounds the whole call, connecting included. It resolves with what happened and
+  bounds the whole call, including DNS, connection and TLS negotiation. HTTPS
+  explicitly verifies the certificate and hostname against Node's trust roots.
+  It offers no verification bypass and follows no redirect or HTTP downgrade.
+  A failed or unfinished TLS handshake is unpublished `unavailable`; a lost
+  answer after authenticated TLS remains `uncertain-result`.
+  It resolves with what happened and
   never rejects for the edge's answer:
   - `{status: 'published'}`;
   - `{status: 'rejected', error}`: the edge refused the message with a registry
@@ -1327,7 +1332,8 @@ const result = await publishOnce({url: 'http://127.0.0.1:8788', source: message.
 
   Each error body carries the message's trace ID. It rejects with `SdkError`
   (`invalid-request`), before anything is sent, a malformed deadline, a URL that is
-  not `http`, or a token or source that cannot be sent in a header. It sends
+  neither HTTP nor HTTPS, a URL with credentials, query or fragment, or a token
+  or source that cannot be sent in a header. It sends
   nothing again and reports nothing but its result: the caller decides, and the
   edge records its own refusals.
 

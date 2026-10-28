@@ -4,6 +4,13 @@
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
+import {createServer as createHttpsServer} from 'node:https';
+import {execFileSync} from 'node:child_process';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {getCACertificates, setDefaultCACertificates} from 'node:tls';
+import type {Duplex} from 'node:stream';
 import {createServer as createListener, type AddressInfo, type Socket} from 'node:net';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {MAX_TIMEOUT_MS, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, SdkError, prepareMessage, publishOnce} from '../src/index.js';
@@ -13,6 +20,101 @@ import {startEdge, type Edge} from './transports.js';
 const KEY = `bunny.state.${SESSION_FAMILY}.s1`;
 const TRACE = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 const refused = (code: string) => (error: unknown): boolean => error instanceof SdkError && error.body.error.code === code;
+
+async function withHttps(body: (url: string, calls: string[], certificate: string, respond: (status: number, body: string, location?: string) => void, connections: () => number) => Promise<void>): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), 'sdk-tls-'));
+  const keyFile = join(directory, 'key.pem'), certificateFile = join(directory, 'certificate.pem');
+  const originalTrust = getCACertificates('default');
+  const calls: string[] = [];
+  let answer = {status: 200, body: JSON.stringify({schema: REMOTE_SCHEMA, status: 'published'}), location: ''};
+  const sockets = new Set<Duplex>();
+  let connections = 0;
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyFile, '-out', certificateFile,
+      '-subj', '/CN=synthetic-hook', '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1'], {stdio: 'ignore'});
+    const certificate = await readFile(certificateFile, 'utf8');
+    const server = createHttpsServer({key: await readFile(keyFile), cert: certificate}, (request, response) => {
+      let text = '';
+      request.setEncoding('utf8').on('data', (chunk: string) => { text += chunk; }).once('end', () => {
+        calls.push(text);
+        if (answer.status !== 0) response.writeHead(answer.status, {'content-type': 'application/json', ...(answer.location !== '' ? {location: answer.location} : {})}).end(answer.body);
+      });
+    });
+    server.on('connection', socket => { connections++; sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const address = server.address();
+      assert.ok(address !== null && typeof address !== 'string');
+      await body(`https://127.0.0.1:${address.port}`, calls, certificate, (status, text, location = '') => { answer = {status, body: text, location}; }, () => connections);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+      await once(server, 'close');
+    }
+  } finally {
+    setDefaultCACertificates(originalTrust);
+    await rm(directory, {recursive: true, force: true});
+  }
+}
+
+it('HTTPS verifies trust before publishing and never follows a redirect or retries a lost answer', () => withHttps(async (url, calls, certificate, respond, connections) => {
+  const message = prepareMessage('bunny/core', session('s1', 1));
+  const send = (timeoutMs = 2000) => publishOnce({url, source: 'bunny/core', token: 'tok_SYNTHETIC566', timeoutMs}, KEY, message);
+  const untrusted = await send();
+  assert.equal(untrusted.status, 'rejected');
+  if (untrusted.status === 'rejected') assert.equal(untrusted.error.error.code, 'unavailable');
+  assert.equal(calls.length, 0, 'an untrusted peer receives no credential or publication');
+  setDefaultCACertificates([...getCACertificates('default'), certificate]);
+  const beforeWrongName = connections();
+  const wrongName = await publishOnce({url: url.replace('127.0.0.1', 'localhost'), source: 'bunny/core', token: 'tok_SYNTHETIC566', timeoutMs: 2000}, KEY, message);
+  assert.equal(wrongName.status, 'rejected');
+  if (wrongName.status === 'rejected') assert.equal(wrongName.error.error.code, 'unavailable');
+  assert.ok(connections() > beforeWrongName, 'the wrong-name case reaches the same TLS listener');
+  assert.equal(calls.length, 0, 'a trusted certificate for another hostname receives no publication');
+  assert.deepEqual(await send(), {status: 'published'});
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0] ?? '{}'), {schema: REMOTE_SCHEMA, key: KEY, message});
+  await withServer(() => ({status: 200, body: JSON.stringify({schema: REMOTE_SCHEMA, status: 'published'})}), async (destination, redirected) => {
+    respond(302, '', destination);
+    const result = await send();
+    assert.equal(result.status, 'uncertain');
+    assert.equal(calls.length, 2);
+    assert.equal(redirected.length, 0, 'HTTPS never downgrades or forwards credentials');
+  });
+  respond(0, '');
+  const result = await send(150);
+  assert.equal(result.status, 'uncertain');
+  if (result.status === 'uncertain') assert.equal(result.error.error.code, 'uncertain-result');
+  assert.equal(calls.length, 3, 'one attempt per invocation, including the lost answer');
+}));
+
+it('TLS negotiation that never completes is bounded and has not sent an HTTP publication', async () => {
+  const sockets = new Set<Socket>();
+  let received = '';
+  const server = createListener(socket => {
+    sockets.add(socket); socket.once('close', () => sockets.delete(socket));
+    socket.on('data', (chunk: Buffer) => { received += chunk.toString('latin1'); });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const address = server.address();
+    assert.ok(address !== null && typeof address !== 'string');
+    const before = performance.now();
+    const result = await publishOnce({url: `https://127.0.0.1:${address.port}`, source: 'bunny/core', token: 'tok_SYNTHETIC566', timeoutMs: 150}, KEY, prepareMessage('bunny/core', session('s1', 1)));
+    assert.equal(result.status, 'rejected');
+    if (result.status === 'rejected') assert.equal(result.error.error.code, 'unavailable');
+    assert.ok(performance.now() - before < 1000, 'DNS, TCP and TLS share the whole-call deadline');
+    assert.ok(received.length > 0, 'the server observed a TLS handshake');
+    assert.equal(received.includes('tok_SYNTHETIC566'), false);
+    assert.equal(received.includes('POST '), false);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    server.close();
+    await once(server, 'close');
+  }
+});
 
 async function withEdge(body: (edge: Edge) => Promise<void>, setup: Parameters<typeof startEdge>[0] = {}): Promise<void> {
   const edge = await startEdge(setup);
@@ -269,7 +371,7 @@ it('a malformed call is refused before anything is sent', async () => {
     for (const timeoutMs of [0, -1, 1.5, MAX_TIMEOUT_MS + 1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       await assert.rejects(publishOnce({url, source: 'bunny/core', token: 't', timeoutMs}, KEY, message), refused('invalid-request'), String(timeoutMs));
     }
-    for (const invalidUrl of ['https://127.0.0.1:1', 'ws://127.0.0.1:1', 'ftp://127.0.0.1:1', 'file:///synthetic', 'not a url']) {
+    for (const invalidUrl of ['http://owner:secret@127.0.0.1:1', 'https://127.0.0.1:1?secret=x', 'https://127.0.0.1:1#fragment', 'ws://127.0.0.1:1', 'ftp://127.0.0.1:1', 'file:///synthetic', 'not a url']) {
       await assert.rejects(publishOnce({url: invalidUrl, source: 'bunny/core', token: 't', timeoutMs: 100}, KEY, message), refused('invalid-request'), invalidUrl);
     }
     for (const invalidHeaders of [{token: 'tok_SYNTHETIC566\r\ninjected: value'}, {token: 'tok_SYNTHETIC566\0'}, {source: 'bunny/core\ninjected: value'}]) {

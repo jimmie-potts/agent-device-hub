@@ -482,7 +482,8 @@ automatically. Inspect the current rules/settings before another edit.
 Code and Codex, `node bin/monitor-hook.mjs <producer.json>`, with the hook's
 JSON on stdin. For each hook it:
 
-1. reads the client's existing lifecycle 1.x producer file, unchanged;
+1. reads the client's existing lifecycle 1.x producer file, or an explicitly
+   qualified private HTTPS producer;
 2. normalizes the hook with agent-state's normalizers: `normalizeHook`, or
    `enrichHook` for a producer that selected lifecycle 1.1 or 1.2;
 3. turns the 1.x envelope into the 2.0 `lifecycle` observation that
@@ -506,6 +507,11 @@ none of the rest of the runtime.
   `http://127.0.0.1:<port>/api/monitor/v1/events`. A `receipt.json` beside it,
   when there is one, must be private, installed and match it. The hook uses only
   the endpoint's host and port: the runtime keeps the Hub's port, 8788 (#835).
+  For a selected remote core, add `transport: "private-https"` and an HTTPS
+  endpoint with the same path, without URL credentials, query or fragment.
+  A remote producer requires a matching private installed receipt, including
+  `input.transport`. An old local qualification or a URL-only edit cannot enable
+  it. Follow [remote hook setup](../../docs/remote-agent-hooks.md).
 - **The credential.** The token authenticates as the producer's explicitly
   granted credential (or one from the optional legacy conversion). The Hub's
   setup named it `hub-` and the first 32 hex digits of the
@@ -515,6 +521,9 @@ none of the rest of the runtime.
   hook derives the same source from the producer file (`producerSource`), so
   the file needs no new member. Its `ingest` scope lets it publish lifecycle
   observations and nothing else ([Grants at the SDK edge](#grants-at-the-sdk-edge)).
+  For helper-derived `bunny/parts/hub-<digest>` sources, remote admission also
+  checks that the observation's provider, client, hostId and sourceId derive
+  that exact source. A mismatched payload is `forbidden` before bus publication.
   Until grant operations exist (owner decision, 2026-10-07), a new producer is
   added by hand: `grantCredential` with that ID and source, its token's digest
   and `ingest`, then SIGHUP, then `GET /api/v2/authority?scope=ingest` with

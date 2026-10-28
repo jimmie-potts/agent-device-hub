@@ -1,9 +1,5 @@
-// A hook's producer file, read unchanged from lifecycle 1.x (Hub #926). The Hub's setup (apps/hub/src/setup.ts) writes
-// `producer.json` beside its `receipt.json`; the cutover keeps both. The checks are the old hook's
-// (apps/hub/bin/monitor-hook.mjs at main 8590332f): an owner-only regular file with one link, read without following a
-// link, of exactly the known members, enabled and qualified, with a loopback endpoint; and a receipt beside it, when there
-// is one, that is installed and matches. The 2.0 hook keeps the endpoint's host and port, which the runtime keeps (#835),
-// and the token, which the cutover's conversion keeps under the same credential.
+// Keep released local producer files compatible. Remote producers explicitly select private HTTPS and require a
+// matching installed receipt; changing an old endpoint alone never activates remote publication (Hub #566).
 import {createHash} from 'node:crypto';
 import {constants} from 'node:fs';
 import {open, type FileHandle} from 'node:fs/promises';
@@ -21,7 +17,7 @@ const MEMBERS = 'enabled,endpoint,qualified,source,token';
 export type LifecycleVersion = '1.1' | '1.2';
 /** What the 2.0 hook needs from a producer file. */
 export type Producer = {
-  /** The runtime's origin, from the producer's endpoint: `http://127.0.0.1:<port>`. */
+  /** The qualified runtime origin: legacy loopback HTTP, or explicitly selected private HTTPS. */
   edge: string;
   token: string;
   /** The producer's source configuration, which the hook completes with each hook's name for the normalizers. */
@@ -86,8 +82,8 @@ async function readPrivateJson(path: string, limit: number): Promise<unknown> {
   }
 }
 
-/** The runtime's origin from a 1.x endpoint, or undefined unless it is `http://127.0.0.1:<port>/api/monitor/v1/events`. */
-function edgeOf(endpoint: unknown): string | undefined {
+/** The qualified endpoint's origin; a remote endpoint never inherits the old loopback qualification. */
+function edgeOf(endpoint: unknown, transport: unknown): string | undefined {
   if (typeof endpoint !== 'string') return undefined;
   let url: URL;
   try {
@@ -95,8 +91,10 @@ function edgeOf(endpoint: unknown): string | undefined {
   } catch {
     return undefined;
   }
-  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.port === '' || url.username !== '' || url.password !== '' ||
-    url.search !== '' || url.hash !== '' || url.pathname !== PRODUCER_PATH) return undefined;
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' || url.pathname !== PRODUCER_PATH) return undefined;
+  if (transport === undefined) {
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.port === '') return undefined;
+  } else if (transport !== 'private-https' || url.protocol !== 'https:') return undefined;
   return url.origin;
 }
 
@@ -106,26 +104,26 @@ function edgeOf(endpoint: unknown): string | undefined {
  */
 async function receiptAllows(path: string, producer: Fields): Promise<boolean> {
   const receipt = await readPrivateJson(join(dirname(path), 'receipt.json'), MAX_RECEIPT_BYTES);
-  if (receipt === MISSING) return true;
+  if (receipt === MISSING) return producer.transport === undefined;
   if (!isFields(receipt)) return false;
   const input = receipt.input;
   return receipt.version === 1 && receipt.state === 'installed' && receipt.token === producer.token && isFields(input) &&
     input.directory === dirname(path) && input.endpoint === producer.endpoint && input.qualified === true &&
-    input.lifecycleVersion === producer.lifecycleVersion && canonical(input.source) === canonical(producer.source);
+    input.lifecycleVersion === producer.lifecycleVersion && input.transport === producer.transport && canonical(input.source) === canonical(producer.source);
 }
 
 /**
  * The producer at `path`, or undefined when the hook must not emit: the file is not private, not the known shape, not
- * enabled and qualified, has no loopback endpoint or token, or its receipt is not installed or does not match.
+ * enabled and qualified, has no qualified endpoint or token, or its required receipt is not installed or does not match.
  */
 export async function readProducer(path: string): Promise<Producer | undefined> {
   const value = await readPrivateJson(path, MAX_PRODUCER_BYTES);
   if (!isFields(value)) return undefined;
   const {lifecycleVersion, enabled, qualified, token, source} = value;
-  if (Object.keys(value).filter(key => key !== 'lifecycleVersion').sort().join(',') !== MEMBERS) return undefined;
+  if (Object.keys(value).filter(key => key !== 'lifecycleVersion' && key !== 'transport').sort().join(',') !== MEMBERS) return undefined;
   if (lifecycleVersion !== undefined && lifecycleVersion !== '1.1' && lifecycleVersion !== '1.2') return undefined;
   if (enabled !== true || qualified !== true || typeof token !== 'string' || !TOKEN.test(token) || !isFields(source)) return undefined;
-  const edge = edgeOf(value.endpoint);
+  const edge = edgeOf(value.endpoint, value.transport);
   if (edge === undefined || !await receiptAllows(path, value)) return undefined;
   return {edge, token, configuration: source, source: producerSource(source), ...(lifecycleVersion === undefined ? {} : {lifecycleVersion})};
 }

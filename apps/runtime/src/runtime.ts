@@ -5,7 +5,7 @@
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
+import {recordLog, MODULE_API_VERSION, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
@@ -13,6 +13,7 @@ import {automationDevices} from './core/automation-devices.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
+import {RuntimeEdgeValidator} from './gateway/validator.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
@@ -233,7 +234,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
   }
   const credentials: EdgeCredential[] | undefined = options.edge === undefined || edgeConfig === undefined ? undefined : await readEdgeCredentials(edgeConfig.credentials);
-  const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
+  const validator = options.edge === undefined ? undefined : new RuntimeEdgeValidator(options.edge.schemas);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
   const recent: string[] = [];
   let evicted = 0;
