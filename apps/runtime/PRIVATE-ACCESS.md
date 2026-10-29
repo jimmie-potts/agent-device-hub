@@ -94,7 +94,9 @@ permissions for eight hours. Disconnect ends the B.U.N.N.Y. session and streams;
 the browser may cache its Basic password, so Sign in can reuse it. Expiry offers
 Sign in again. Remove an enrolled device or rotate the owner password to control
 future entry. Removing/rotating a machine credential and reloading ends that
-credential's streams. Browser passwords are not SDK Bearer tokens.
+credential's streams. Browser passwords are not SDK Bearer tokens. A TV browser on the ONN uses this
+same entry and session; its owner setup and checks are in
+[ONN dashboard display qualification](../../docs/onn-dashboard-qualification.md).
 
 Connection loss shows unavailable/stale evidence. Reconnect resyncs state and
 never resends commands; a lost reply retains its existing uncertain outcome.
