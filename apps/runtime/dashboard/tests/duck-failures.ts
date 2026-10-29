@@ -29,7 +29,7 @@ export async function duckFailureJourney(context: BrowserContext): Promise<void>
     createRoot(document.getElementById('root')).render(React.createElement(React.Fragment, null,
       React.createElement(DuckWidget, {context}), React.createElement(DuckConversation, {context})));
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'duck-failure-entry.js'},
-  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent'});
+  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent', loader: {'.css': 'empty'}});
   assert.ok(bundle.outputFiles[0]);
   const page = await context.newPage();
   try {
@@ -46,6 +46,7 @@ export async function duckFailureJourney(context: BrowserContext): Promise<void>
       await page.getByText(error, {exact: true}).nth(1).waitFor();
       assert.equal(await page.getByText('Loading selected conversation.', {exact: true}).count(), 0);
       await page.evaluate('window.fixture.allow = true');
+      await page.getByRole('button', {name: 'MicroDuck connection notice', exact: true}).click();
       const buttons = page.getByRole('button', {name: 'Refresh conversation', exact: true});
       await buttons.first().click(); await buttons.first().click();
       await page.getByText('No conversation selected.', {exact: true}).nth(1).waitFor();

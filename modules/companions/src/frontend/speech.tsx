@@ -16,7 +16,7 @@ const playbackLabels = {
 
 export type CompanionSpeechCopy = {state: CompanionState; live: true} | {state: CompanionState | undefined; live: false};
 
-export function SpeechControls({context, companion}: {context: FrontendContext; companion: Readonly<RefObject<CompanionSpeechCopy>>}): React.JSX.Element {
+export function SpeechControls({context, companion, compact = false}: {context: FrontendContext; companion: Readonly<RefObject<CompanionSpeechCopy>>; compact?: boolean}): React.JSX.Element {
   const {state, live} = companion.current;
   const [local, setLocal] = useState(initial);
   const [remote, setRemote] = useState<SpeechState>();
@@ -88,15 +88,35 @@ export function SpeechControls({context, companion}: {context: FrontendContext; 
   const other = remote?.availability === 'available' && !selected && local.availability !== 'enabling';
   const playback = selected || local.playback !== null ? local.playback : remote?.playback;
   const operation = playback === undefined || playback === null ? undefined : context.operations.find(value => value.requestId === playback.operationId && value.family === 'companion-speech-play');
+  const availabilityText = !ready ? 'Speech unavailable. A qualified Chrome browser, local English voice and current connection are required.'
+    : other ? 'Another tab has spoken alerts enabled.'
+    : selected && remote?.availability === 'available' ? 'Spoken alerts enabled in this tab.'
+    : local.availability === 'enabling' ? 'Checking the qualified local voice.'
+    : local.availability === 'unavailable' || remote?.availability === 'unavailable' ? 'Speech unavailable. Mute and enable again only after the endpoint is ready.' : 'Spoken alerts are off in this tab.';
+  if (compact) return <section aria-label="Spoken alerts" className="companion-speech-compact">
+    <p className="companion-small">This tab only. Mute before calls or media; they aren’t detected.</p>
+    <p role="status">{ready ? availabilityText : 'Speech unavailable.'}</p>
+    {context.core?.mode === 'quiet' && <p>Quiet mode suppresses new spoken alerts.</p>}
+    <div className="actions">
+      {selected || local.availability === 'enabling'
+        ? <button type="button" onClick={() => {void session.current?.mute();}}>Mute spoken alerts</button>
+        : <button type="button" aria-label="Enable spoken alerts in this tab" disabled={!ready || other || local.busy}
+          onClick={() => {void session.current?.enable();}}>Enable in this tab</button>}
+      <button type="button" disabled={!selected} onClick={() => {void session.current?.stop();}}>Stop speaking</button>
+    </div>
+    {playback != null && <p role="status">Playback: {playbackLabels[playback.status]}</p>}
+    {operation !== undefined && <p>Tracked operation: {context.operationsLive ? operation.result ?? operation.status : 'unavailable'}.</p>}
+    <details><summary>Voice requirements</summary>
+      {!ready && <p>{availabilityText}</p>}
+      <p>Enable declares availability for this connected tab. Text enablement does not enable speech. Reload, navigation or disconnect requires fresh enablement; missed alerts never replay.</p>
+      <p>Stop speaking stops audio only; it does not cancel a task or answer a question. Playback reports do not establish hearing.</p>
+    </details>
+  </section>;
   return <section aria-label="Spoken alerts">
     <h3>Spoken alerts</h3>
     <p>Enable means "I am available for spoken alerts" in this tab. Mute before calls, meetings or media. Calls and other applications are not detected automatically.</p>
     <p>Speech starts off. Reloading, leaving this page or losing the connection requires a fresh enable action. Missed alerts are not replayed.</p>
-    <p role="status">{!ready ? 'Speech unavailable. A qualified Chrome browser, local English voice and current connection are required.'
-      : other ? 'Another tab has spoken alerts enabled.'
-      : selected && remote?.availability === 'available' ? 'Spoken alerts enabled in this tab.'
-      : local.availability === 'enabling' ? 'Checking the qualified local voice.'
-      : local.availability === 'unavailable' || remote?.availability === 'unavailable' ? 'Speech unavailable. Mute and enable again only after the endpoint is ready.' : 'Spoken alerts are off in this tab.'}</p>
+    <p role="status">{availabilityText}</p>
     {context.core?.mode === 'quiet' && <p>Quiet mode suppresses new spoken alerts.</p>}
     <div className="actions">
       <button type="button" disabled={!ready || selected || other || local.busy} onClick={() => {void session.current?.enable();}}>Enable spoken alerts in this tab</button>

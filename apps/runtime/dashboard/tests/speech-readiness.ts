@@ -72,7 +72,7 @@ export async function speechReadinessJourney(browser: Browser): Promise<void> {
       fixture.voices = true; events.dispatchEvent(new Event('voiceschanged'));
     };
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'speech-readiness-entry.js'},
-  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent'});
+  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent', loader: {'.css': 'empty'}});
   const context = await browser.newContext();
   try {
     await context.route('https://speech-readiness.invalid/**', route => route.fulfill(new URL(route.request().url()).pathname === '/bundle.js'
@@ -83,6 +83,7 @@ export async function speechReadinessJourney(browser: Browser): Promise<void> {
     for (const gap of cases) {
       const page = await context.newPage(); page.setDefaultTimeout(5000);
       await page.goto('https://speech-readiness.invalid/');
+      await page.getByRole('tab', {name: 'Voice', exact: true}).click();
       await page.getByRole('button', {name: 'Enable spoken alerts in this tab', exact: true}).click();
       await page.getByText('Spoken alerts enabled in this tab.', {exact: true}).waitFor();
       assert.equal(await page.evaluate("window.fixture.begin().status"), 'accepted', `${gap} starts with an admitted output waiting for voices`);

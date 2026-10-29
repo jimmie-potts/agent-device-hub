@@ -67,6 +67,7 @@ export async function suggestionsJourney(world: World, page: Page, context: Brow
   assert.equal(await card.count(), 0); assert.equal(await form.getByRole('combobox', {name: 'tests status', exact: true}).inputValue(), 'unknown');
   await fill('SYNTHETIC1098_OTHER_TASK'); await inspect.click(); await card.waitFor();
   assert.ok(!(await card.innerText()).includes('SYNTHETIC1098_TASK'));
+  await page.getByRole('tab', {name: 'Controls', exact: true}).click();
   const mute = page.getByRole('button', {name: 'Mute Turn endings', exact: true}); await mute.click();
   await form.getByText(/Turn endings are muted/).waitFor(); assert.equal(await card.count(), 0);
   await page.getByRole('button', {name: 'Unmute Turn endings', exact: true}).click(); await card.waitFor();

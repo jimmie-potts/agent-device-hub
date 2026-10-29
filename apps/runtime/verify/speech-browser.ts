@@ -26,6 +26,7 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
   const visit = async (p: Page): Promise<void> => {
     await p.goto(new URL('/#/module/companions/reachy', t.url).href);
     await p.locator('main#main[data-feed="connected"]').waitFor();
+    await tab('Voice', p);
   };
   let step = 0, sequence = 0;
   const indicate = async (label: string, target?: Locator): Promise<void> => {
@@ -66,8 +67,17 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await indicate(`New synthetic coding question: ${id}`);
     await publish(run, turnStarted, {turn: id, sequence: ++sequence});
     await publish(run, {kind: 'question-continuing', attention: {status: 'known', id}}, {turn: id, sequence: ++sequence, nativeEventId: id});
+    await tab('Latest');
     await page.getByRole('article', {name: 'Reachy card', exact: true}).getByText('Coding attention', {exact: true}).waitFor();
+    await tab('Voice');
     await page.waitForTimeout(200);
+  };
+  const tab = async (name: string, target = page): Promise<void> => {
+    const control = target.getByRole('tab', {name, exact: true});
+    if (target === page) await click(control, `Open ${name} controls`); else await control.click();
+  };
+  const category = async (name: string, label: string): Promise<void> => {
+    await tab('Controls'); await click(page.getByRole('button', {name, exact: true}), label); await tab('Voice');
   };
   const mode = async (value: 'work' | 'free' | 'quiet'): Promise<void> => {
     await indicate(`Synthetic operator selects ${value} mode`);
@@ -82,8 +92,10 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
   };
   try {
     await visit(page); await visit(other);
+    await tab('Controls');
     await click(page.getByRole('button', {name: 'Enable Reachy text cards', exact: true}), 'Enable text cards');
-    await page.getByText('Controls saved.', {exact: false}).waitFor();
+    await page.getByRole('button', {name: 'Disable Reachy text cards', exact: true}).waitFor();
+    await tab('Voice');
     await publish(run, sessionStarted, {sequence: ++sequence});
     await question('default-off');
     await t.expect('text enablement alone submits no speech', async () => assert.equal(await count(), 0));
@@ -118,28 +130,29 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       assert.equal(await count(), 4); assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 2);
     });
     await click(enable(), 'Enable speech again'); await enabled().waitFor();
-    await click(page.getByRole('button', {name: 'Mute Coding attention', exact: true}), 'Mute Coding attention');
+    await category('Mute Coding attention', 'Mute Coding attention');
     await question('category-muted');
     await t.expect('category mute suppresses new speech without catch-up', async () => assert.equal(await count(), 4));
-    await click(page.getByRole('button', {name: 'Unmute Coding attention', exact: true}), 'Unmute Coding attention');
+    await category('Unmute Coding attention', 'Unmute Coding attention');
     await mode('quiet'); await region().getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor();
     await question('quiet');
     await t.expect('Quiet mode suppresses new speech', async () => assert.equal(await count(), 4));
     await mode('work'); await region().getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor({state: 'detached'});
     await page.evaluate(() => {window.speechFixture.voices = false;});
     await question('delayed-voices');
-    await click(page.getByRole('button', {name: 'Mute Coding attention', exact: true}), 'Mute category while voice discovery waits');
+    await category('Mute Coding attention', 'Mute category while voice discovery waits');
     await indicate('Synthetic voice discovery completes after mute'); await page.evaluate(() => window.speechFixture.releaseVoices());
     await t.expect('delayed voice discovery rechecks current policy and stays silent', async () => {
       await region().getByText('Playback: Speech did not start.', {exact: true}).waitFor(); assert.equal(await count(), 4);
     });
-    await click(page.getByRole('button', {name: 'Unmute Coding attention', exact: true}), 'Unmute category');
+    await category('Unmute Coding attention', 'Unmute category');
     await t.expect('desktop controls have no targeted accessibility violations or overlapping speech', async () => {
       assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(v => v.id), []);
       assert.equal(await page.evaluate(() => window.speechFixture.overlap), 0);
     });
     await indicate('Reload this synthetic tab; speech availability must be renewed'); await page.reload();
     await page.locator('main#main[data-feed="connected"]').waitFor();
+    await tab('Voice');
     await t.expect('reload loses availability and does not replay', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
     await click(enable(), 'Enable speech after reload'); await enabled().waitFor();
     await question('callback-error'); await page.waitForFunction(() => window.speechFixture.calls === 1);
@@ -147,10 +160,13 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await t.expect('uncertain playback is explicit and does not disable independent text controls', async () => {
       await region().getByText('Playback: Playback is uncertain. It will not be replayed automatically.', {exact: true}).waitFor();
       assert.equal(await count(), 1);
+      await tab('Controls');
       assert.equal(await page.getByRole('button', {name: 'Disable Reachy text cards', exact: true}).isEnabled(), true);
+      await tab('Voice');
     });
     await indicate('Restart only this synthetic runtime'); await run.restart(); await page.reload();
     await page.locator('main#main[data-feed="connected"]').waitFor();
+    await tab('Voice');
     await t.expect('runtime restart does not restore availability or replay output', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
     await indicate('Inspect the same controls at a phone viewport'); await page.setViewportSize({width: 390, height: 844});
     await region().scrollIntoViewIfNeeded(); await page.waitForTimeout(240);
