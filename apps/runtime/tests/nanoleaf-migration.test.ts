@@ -15,8 +15,8 @@ import {EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from '../src/
 import {abortOnSignals} from '../src/signals.js';
 import {CONFIG_SCHEMA} from '../src/state.js';
 import {it, stateDir, waitFor} from './support.js';
+import {migrationRuntime} from './fixtures/migration-runtime.js';
 
-const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const ENTRY = fileURLToPath(new URL('../src/migrate-nanoleaf.js', import.meta.url));
 const INTERRUPT = fileURLToPath(new URL('./fixtures/nanoleaf-interrupt.js', import.meta.url));
 
@@ -71,19 +71,6 @@ async function untouched(p: Paths): Promise<boolean> {
 const nothingCreated = async (p: Paths): Promise<boolean> => await absent(p.state) && await absent(p.secrets);
 
 const mode = async (path: string): Promise<number> => (await lstat(path)).mode & 0o777;
-
-/** Starts the shipped runtime on `dir` and waits for its ready line. */
-async function startRuntime(dir: string): Promise<{stop: () => Promise<void>}> {
-  const child = spawn(process.execPath, [MAIN, '--port', '0', '--state-dir', dir], {stdio: ['ignore', 'pipe', 'ignore']});
-  let stdout = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
-  const exited = once(child, 'exit');
-  await waitFor(() => stdout.includes('\n'), 15_000, 'the ready line');
-  return {stop: async () => {
-    child.kill('SIGTERM');
-    await exited;
-  }};
-}
 
 it('migrates and verifies, each with one JSON line of counts and hashes and exit 0', async context => {
   const p = await paths(context);
@@ -169,10 +156,11 @@ it('refuses malformed arguments with exit 2', async context => {
   assert.ok(await nothingCreated(p));
 });
 
-it('refuses while a runtime runs on the state directory, and a runtime that starts while it runs cannot take the lease', async context => {
+it('migration and verify refuse a running runtime, and migration succeeds after it stops', async context => {
   const p = await paths(context);
   await mkdir(p.state, {mode: 0o700});
-  const runtime = await startRuntime(p.state);
+  const runtime = migrationRuntime(context, p.state);
+  await runtime.ready();
   try {
     const migrate = await tool(args('migrate', p));
     assert.deepEqual([migrate.exit, migrate.line.result, migrate.line.code], [EXIT.refused, 'refused', 'runtime-running']);
@@ -186,22 +174,25 @@ it('refuses while a runtime runs on the state directory, and a runtime that star
   }
   // Once the runtime has stopped, the migration runs.
   assert.equal((await tool(args('migrate', p))).exit, EXIT.ok);
-  const again = await startRuntime(p.state);
+  const again = migrationRuntime(context, p.state);
+  await again.ready();
   try {
     const {exit, line} = await tool(args('verify', p));
     assert.deepEqual([exit, line.code], [EXIT.refused, 'runtime-running']);
   } finally {
     await again.stop();
   }
-  // The reverse: while the tool holds the lease, a runtime's core waits for it until its deadline and fails.
+});
+
+// Keep this separate from the two successful startups, preserving the normal per-test deadline.
+it('a runtime that starts while the migration tool holds the lease fails without taking it', async context => {
+  const p = await paths(context);
+  await mkdir(p.state, {mode: 0o700});
   const lease = await holdRuntimeLease(p.state);
   try {
-    const child = spawn(process.execPath, [MAIN, '--port', '0', '--state-dir', p.state], {stdio: ['ignore', 'pipe', 'pipe']});
-    let stderr = '';
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
-    const [code] = await once(child, 'exit') as [number | null];
-    assert.equal(code, 1);
-    assert.match(stderr, /"error\.code":"core-failed"/);
+    const runtime = migrationRuntime(context, p.state);
+    assert.deepEqual(await runtime.exited, [1, null]);
+    assert.match(runtime.stderr(), /"error\.code":"core-failed"/);
   } finally {
     lease.release();
   }
