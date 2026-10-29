@@ -34,7 +34,7 @@ import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
 import {privateProxyOrigin, wifiProxyOrigin} from './wifi-proxy.js';
 import {GatewayRefusals, methodOf} from './refusals.js';
-import {checkProducerIdentity} from './producer-admission.js';
+import {checkDesktopFeedIdentity, checkKeyFamily, checkProducerIdentity} from './producer-admission.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
 export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
@@ -160,9 +160,13 @@ export class Gateway {
       authenticate: request => {
         const principal = this.#admitted.get(request);
         if (principal === undefined) return undefined;
+        // On every entry a lifecycle observation or Desktop snapshot travels on its own family's key, and a snapshot is
+        // bound to its feed's collector credential; a lifecycle observation is bound to its producer's identity on the
+        // private entry only, so released local producer configuration stays admitted.
         const permissions = edgePermissions(principal);
-        return privateProxyOrigin(request, options.edge.privateProxy) === undefined ? permissions
-          : {...permissions, checkPublication: checkProducerIdentity};
+        const privateEntry = privateProxyOrigin(request, options.edge.privateProxy) !== undefined;
+        return {...permissions, checkPublication: (message, key) => checkKeyFamily(message, key) ?? checkDesktopFeedIdentity(message) ??
+          (privateEntry ? checkProducerIdentity(message) : undefined)};
       },
       onEndpointClosed: ({source, id}) => {
         const own = this.#own;

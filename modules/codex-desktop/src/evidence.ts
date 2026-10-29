@@ -12,8 +12,12 @@ export const READ_SETTLE_MS = 5000;
 export type DesktopSource = {readonly hostId: string; readonly sourceId: string};
 export type Evidence = {readonly session: SessionRecord; readonly state: 'read' | 'unread'};
 
-/** The read evidence `unread` gives for `sessions` at `nowMs`: each session whose read state it changes. */
-export function readEvidence(sessions: readonly SessionRecord[], unread: ReadonlySet<string>, source: DesktopSource, nowMs: number): Evidence[] {
+/**
+ * The read evidence `unread` gives for `sessions`: each session whose read state it changes. `readAtMs` is when the
+ * marker's facts were current, the receipt of a remote snapshot (Hub #567) or now for a local read, so the settle rule
+ * never counts time the marker was not yet read.
+ */
+export function readEvidence(sessions: readonly SessionRecord[], unread: ReadonlySet<string>, source: DesktopSource, nowMs: number, readAtMs = nowMs): Evidence[] {
   const evidence: Evidence[] = [];
   for (const session of sessions) {
     const {identity} = session;
@@ -21,7 +25,7 @@ export function readEvidence(sessions: readonly SessionRecord[], unread: Readonl
       session.parent.status === 'known') continue;
     // The marker lists only unread threads, so absence means read once the flag has had time to appear. Unordered
     // interrupt and end hooks leave activity unknown, so only a known running turn waits.
-    const settled = session.read === 'unknown' && session.activity !== 'active' && nowMs - session.lastEvidenceAtMs >= READ_SETTLE_MS;
+    const settled = session.read === 'unknown' && session.activity !== 'active' && Math.min(nowMs, readAtMs) - session.lastEvidenceAtMs >= READ_SETTLE_MS;
     const state = unread.has(identity.sessionId) ? 'unread' : session.read === 'unread' || settled ? 'read' : undefined;
     if (state !== undefined && state !== session.read) evidence.push({session, state});
   }

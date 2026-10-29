@@ -180,6 +180,16 @@ refusal, before state effects, for:
 - a section whose module starts after a module without a section;
 - an accepted configuration that names a device.
 
+The Codex Desktop module declares a simulation, so its released local section is
+refused here. A section whose sources are all remote, with no `home`, is admitted
+through its registration's `hostLocal` predicate (Hub #567): the module then reads
+no local file and the collector on the other computer feeds it. Any `home` in the
+section refuses startup as before. The collector's own ingest credential and its
+remote ingress need the [private-access profile](../apps/runtime/PRIVATE-ACCESS.md):
+the host-local profile admits exactly one ingest credential, the selected local
+hook's, and no remote entry, so a collector on another computer cannot reach it
+and a second ingest grant is refused there.
+
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the
 one-writer cutover in [Hub #568](https://github.com/jimmie-potts/agent-device-hub/issues/568).

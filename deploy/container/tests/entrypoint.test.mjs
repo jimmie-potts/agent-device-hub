@@ -63,6 +63,18 @@ test('browser-only configuration refuses devices, unselected references and othe
   }
 });
 
+test('a module that declares a simulation is admitted only for a section its registration calls host-local (Hub #567)', () => {
+  const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
+  const remoteOnly = section => Array.isArray(section?.sources) && section.sources.every(source => source.home === undefined);
+  const withDesktop = [...shipped, {name: 'desktop', simulation: {}, hostLocal: remoteOnly}];
+  assert.deepEqual(checkLocalBrowserConfig({modules: {desktop: {sources: [{hostId: 'pc', sourceId: 'desktop'}]}}, edge}, withDesktop).map(({name}) => name), ['desktop']);
+  for (const section of [{home: '/home/owner/.codex', hostId: 'pc', sourceId: 'desktop'}, {sources: [{home: '/home/owner/.codex', hostId: 'pc', sourceId: 'desktop'}]}, {}, {sources: [{hostId: 'pc', sourceId: 'desktop'}], secrets: {}}]) {
+    assert.throws(() => checkLocalBrowserConfig({modules: {desktop: section}, edge}, withDesktop), {message: 'container-browser-config-refused'});
+  }
+  // The predicate belongs to the registration: the same section is refused for a module without one.
+  assert.throws(() => checkLocalBrowserConfig({modules: {playback: {sources: [{hostId: 'pc', sourceId: 'desktop'}]}}, edge}, withDesktop), {message: 'container-browser-config-refused'});
+});
+
 test('browser-only configuration admits sections for modules that reach no device, in shipped order', () => {
   const config = {modules: {listener: {}, wispr: {sourceId: 'synthetic'}, companions: {}},
     edge: {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false}};
@@ -103,6 +115,11 @@ test('the host-local profile over the real shipped list starts admitted modules 
   for (const {name} of devices) {
     assert.throws(() => hostLocalModules({modules: {[name]: {}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
   }
+  // The Codex Desktop module is the one device module with a host-local section: remote sources only, no local home (Hub #567).
+  assert.deepEqual(listed.filter(registration => registration.hostLocal !== undefined).map(({name}) => name), ['codex-desktop']);
+  const remote = {sources: [{hostId: 'pc-sim', sourceId: 'codex-desktop'}]};
+  assert.deepEqual(hostLocalModules({modules: {'codex-desktop': remote}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'codex-desktop']);
+  assert.throws(() => hostLocalModules({modules: {'codex-desktop': {home: '/home/owner-sim/.codex', hostId: 'pc-sim', sourceId: 'codex-desktop'}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-local-modules-')));
   t.after(() => rm(root, {recursive: true, force: true}));
   async function run(modules) {
@@ -119,6 +136,10 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const admitted = await run({wispr: {}, companions: {}});
   assert.equal(admitted.status, 'degraded');
   assert.deepEqual(admitted.modules.map(({name, state}) => [name, state]), [['core', 'running'], ['companions', 'running'], ['wispr', 'refused']]);
+  // A remote-only Codex Desktop section runs beside the core with no local file read.
+  const desktop = await run({'codex-desktop': remote});
+  assert.equal(desktop.status, 'ok');
+  assert.deepEqual(desktop.modules.map(({name, state}) => [name, state]), [['core', 'running'], ['codex-desktop', 'running']]);
 });
 
 test('one lifecycle producer requires an explicit host-local source selection', () => {

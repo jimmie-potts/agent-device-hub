@@ -24,7 +24,7 @@ import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/framework.js';
-import {writeProducer} from '../tests/scenarios/parts.js';
+import {writeCollector, writeProducer} from '../tests/scenarios/parts.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {ChildHome} from './home.js';
@@ -234,8 +234,10 @@ async function start(): Promise<void> {
   runtimePort = Number(new URL(runtimeUrl).port);
   await childHome.settle();
   // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
-  const {producer} = JSON.parse(readFileSync(partTokensOf(dataDir), 'utf8')) as {producer?: unknown};
+  const {producer, collector} = JSON.parse(readFileSync(partTokensOf(dataDir), 'utf8')) as {producer?: unknown; collector?: unknown};
   if (typeof producer === 'string') await writeProducer(configDirOf(dataDir), runtimePort, producer);
+  // So does the Desktop metadata collector's, in a run that seeds one (Hub #567).
+  if (typeof collector === 'string') await writeCollector(configDirOf(dataDir), runtimePort, collector);
 }
 
 /** The start-failure line, which the plug-in's `failureCause` matches: the cause a `StartFailed` names, or `unknown`. */

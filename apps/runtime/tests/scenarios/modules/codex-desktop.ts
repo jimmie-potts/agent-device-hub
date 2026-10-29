@@ -3,7 +3,7 @@
 import {CODEX_DESKTOP_SIMULATED_SECTION} from '@jimmie-potts/codex-desktop';
 import {sessionEntityId, sessionTitle, type Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {observation, turnEnded} from '../../fixtures/agents.js';
-import {act, expect, holds, logged, publish, running, session, show, type Harness, type Scenario, type Simulation} from '../framework.js';
+import {act, expect, holds, logged, publish, running, session, show, type Harness, type ModuleRun, type Scenario, type Simulation} from '../framework.js';
 
 const desktopIdentity = (sessionId: string): Identity => ({
   provider: 'codex', client: 'desktop', hostId: CODEX_DESKTOP_SIMULATED_SECTION.hostId, sourceId: CODEX_DESKTOP_SIMULATED_SECTION.sourceId, sessionId,
@@ -77,3 +77,17 @@ const codexDesktopRead: Scenario = {
 };
 
 export const scenarios: readonly Scenario[] = [codexDesktopRead];
+
+/**
+ * The module's own disposable run (Hub #567): the core and the module with one remote source, `host-sim`/`desktop-sim`,
+ * and no local home. The run grants the collector's credential and writes its producer, collector file and synthetic
+ * Codex home under its config folder, for a reviewer to run the real collector against and edit by hand.
+ */
+export const runs: Readonly<Record<string, ModuleRun>> = {
+  'codex-desktop-remote': {
+    description: 'The core and the Codex Desktop module with one remote source, fed by the collector from a synthetic Codex home under the run\'s config (Hub #567)',
+    prepare: async () => {},
+    seed: {modules: ['core', 'codex-desktop'], config: {'codex-desktop': {sources: [{hostId: 'host-sim', sourceId: 'desktop-sim'}]}}},
+    collector: true,
+  },
+};

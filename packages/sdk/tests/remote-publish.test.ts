@@ -117,7 +117,7 @@ it('TLS negotiation that never completes is bounded and has not sent an HTTP pub
 });
 
 it('a host publication check runs after ordinary admission and before any bus effect', async () => {
-  const seen: string[] = [], checked: string[] = [];
+  const seen: string[] = [], checked: string[] = [], keys: string[] = [];
   let allowed = false;
   await withEdge(async edge => {
     await edge.bus.connect('bunny/second').subscribe(KEY, message => { seen.push(message.id); });
@@ -143,10 +143,12 @@ it('a host publication check runs after ordinary admission and before any bus ef
     assert.deepEqual(await send(), {status: 'published'});
     await until(() => seen.length === 1, 'the accepted publication');
     assert.deepEqual(checked, [message.id, message.id]);
+    assert.deepEqual(keys, [KEY, KEY], 'the host check sees the routing key the message is published on');
   }, {authenticate: request => request.headers.authorization === 'Bearer synthetic-policy-token' ? {
     source: 'bunny/core', calls: ['publish'], keys: [KEY], publishes: [SESSION_FAMILY],
-    checkPublication: (message: Message) => {
+    checkPublication: (message: Message, key: string) => {
       checked.push(message.id);
+      keys.push(key);
       return allowed ? undefined : errorBody('forbidden', {detail: 'the host refuses this publication'});
     },
   } : undefined});

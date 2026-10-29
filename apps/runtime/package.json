@@ -15,6 +15,10 @@
     "./hook": {
       "types": "./dist/src/hook/index.d.ts",
       "import": "./dist/src/hook/index.js"
+    },
+    "./codex-desktop-collector": {
+      "types": "./dist/src/collector/codex-desktop.d.ts",
+      "import": "./dist/src/collector/codex-desktop.js"
     }
   },
   "dependencies": {

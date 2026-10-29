@@ -8,12 +8,13 @@ import {chmod, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile} from 'nod
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import {MARKER_FILE, SimulatedMarker, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
-import {sessionEntityId, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import type {Sdk, SyncedCopy} from '@jimmie-potts/sdk';
+import {DESKTOP_METADATA_SCHEMA, MARKER_FILE, SimulatedMarker, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
+import {desktopFeedId, sessionEntityId, type DesktopMetadataSnapshot, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {prepareMessage, publishOnce, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
+import {producerSource} from '../src/hook/index.js';
 import {createCoreModule, type LogRecord} from '../src/index.js';
 import {lifecycleOf} from './fixtures/agents.js';
-import {contextOf, entry, fixture, flush, health, it, manualClock, run, stateDir} from './support.js';
+import {contextOf, edgeConfig, entry, fixture, flush, health, it, manualClock, run, stateDir} from './support.js';
 
 const SOURCE = {hostId: 'host-sim', sourceId: 'codex-desktop'} as const;
 const desktop = (sessionId: string, sourceId: string = SOURCE.sourceId): Identity => ({provider: 'codex', client: 'desktop', hostId: SOURCE.hostId, sourceId, sessionId});
@@ -260,4 +261,56 @@ it('Desktop archive batches above the SDK queue limit retain trailing admission 
   await until(copy, desktop('one'), record => record.title?.value === 'First title' && record.read === 'unread', 'independent title and unread evidence after the archive batch');
   marker.title('one', 'Next title');marker.list([]);
   await until(copy, desktop('one'), record => record.title?.value === 'Next title' && record.read === 'read', 'continued title and read evidence across another archive batch');
+});
+
+it('a remote source\'s snapshots, published through the edge by the collector\'s own credential, become evidence the core takes, and a forged feed is refused (Hub #567)', async context => {
+  const pc = {hostId: 'pc-sim', sourceId: 'codex-desktop'};
+  const feed = {provider: 'codex', client: 'desktop', ...pc} as const;
+  const feedId = desktopFeedId(feed);
+  const collector = producerSource({...feed, feed: 'desktop-metadata'});
+  const hook = producerSource({...feed, hook: 'Stop'});
+  const token = 'tok_SYNTHETIC567_collector_abcdefghijklmnopqrstuvwxyz0123456789';
+  const hookToken = 'tok_SYNTHETIC567_hook_abcdefghijklmnopqrstuvwxyz0123456789abc';
+  const {config} = await edgeConfig(context, [{source: collector, token, scopes: ['ingest']}, {source: hook, token: hookToken, scopes: ['ingest']}],
+    {modules: {'codex-desktop': {sources: [{...pc}]}}});
+  const probe = fixture('probe');
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), createCodexDesktopModule({transport: new SimulatedMarker()}), probe], configFile: config, edge: {schemas: {}}});
+  const {sdk} = contextOf(probe);
+  const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  if (synced.status !== 'synced') assert.fail('the core served its sessions');
+  const {copy} = synced;
+  const identity = (sessionId: string): Identity => ({...feed, sessionId});
+  await observe(sdk, identity('one'), {kind: 'turn-ended'});
+  await observe(sdk, identity('two'), {kind: 'turn-ended'});
+  await until(copy, identity('two'), () => true, 'the sessions');
+  const publish = (source: string, bearer: string, data: DesktopMetadataSnapshot, subject = feedId) => publishOnce(
+    {url: runtime.url, source, token: bearer, timeoutMs: 4000}, `bunny.event.desktop-metadata.${subject}`,
+    prepareMessage(source, {kind: 'occurrence', type: 'org.bunny.desktop-metadata.observed', subject, dataschema: DESKTOP_METADATA_SCHEMA, data}),
+  );
+  const snapshot = (fields: Partial<DesktopMetadataSnapshot>): DesktopMetadataSnapshot => ({feed, observedAtMs: Date.now(), stamp: `s${Date.now()}`, unread: [], archived: [], titles: [], ...fields});
+  // The collector's first snapshot: one listed as unread, a title for the other, and an archived conversation.
+  assert.deepEqual(await publish(collector, token, snapshot({unread: ['one'], archived: ['closed'], titles: [{id: 'two', title: {value: 'PC title', source: 'provider'}}]})), {status: 'published'});
+  await until(copy, identity('one'), record => record.read === 'unread', 'the unread session');
+  await until(copy, identity('two'), record => record.title?.value === 'PC title', 'the titled session');
+  // A late hook for the archived conversation is refused admission while the positive evidence is fresh.
+  await observe(sdk, identity('closed'), {kind: 'turn-ended'});
+  await new Promise(resolve => { setTimeout(resolve, 300); });
+  assert.equal(readOf(copy, identity('closed')), undefined, 'the archived conversation was admitted');
+  // Desktop clears the flag: the next snapshot reads the session as read.
+  assert.deepEqual(await publish(collector, token, snapshot({unread: [], archived: ['closed']})), {status: 'published'});
+  await until(copy, identity('one'), record => record.read === 'read', 'the read session');
+  // A hook's credential cannot speak for the feed, and the collector's cannot speak for another feed: neither changes a record.
+  const before = [readOf(copy, identity('one')), readOf(copy, identity('two'))];
+  const forged = await publish(hook, hookToken, snapshot({unread: ['one', 'two']}));
+  assert.equal(forged.status === 'rejected' ? forged.error.error.code : forged.status, 'forbidden');
+  const mac = {provider: 'codex', client: 'desktop', hostId: 'mac-sim', sourceId: 'codex-desktop'} as const;
+  const other = await publish(collector, token, {...snapshot({unread: ['one', 'two']}), feed: mac}, desktopFeedId(mac));
+  assert.equal(other.status === 'rejected' ? other.error.error.code : other.status, 'forbidden');
+  await new Promise(resolve => { setTimeout(resolve, 2500); });
+  assert.deepEqual([readOf(copy, identity('one')), readOf(copy, identity('two'))], before, 'a refused snapshot changed read state');
+  // The module published as itself, and nothing carried a token.
+  const intake = logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/codex-desktop');
+  assert.ok(intake.length >= 2);
+  assert.equal(JSON.stringify(logs).includes('SYNTHETIC567'), false, 'a token reached a record');
+  await copy.close();
 });

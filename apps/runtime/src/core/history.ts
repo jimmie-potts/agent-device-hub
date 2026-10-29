@@ -47,8 +47,12 @@ export type HistoryEntry = {kind: 'message'; message: Message<unknown>} | {kind:
 /** At most this many refused messages are kept for diagnosis; the oldest goes first. */
 export const MAX_REFUSED = 1000;
 const SCHEMA_BASE = 'https://bunny.invalid/events/';
-/** Messages history never keeps: a hook's raw observation, which the core reduces into the changes it keeps, and the acknowledgments. */
+/**
+ * Messages history never keeps: a hook's raw observation, which the core reduces into the changes it keeps, a collector's
+ * Desktop snapshot, which the Codex Desktop module reduces into observations (Hub #567), and the acknowledgments.
+ */
 const LIFECYCLE_TYPE = 'org.bunny.lifecycle.observed';
+const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
 
 /** The family a state's `dataschema` names, or undefined. */
 export const familyOf = (dataschema: string): string | undefined => {
@@ -58,9 +62,9 @@ export const familyOf = (dataschema: string): string | undefined => {
   return family === '' ? undefined : family;
 };
 
-/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation and an acknowledgment. */
+/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation, a Desktop snapshot and an acknowledgment. */
 export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean =>
-  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
+  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== DESKTOP_METADATA_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;

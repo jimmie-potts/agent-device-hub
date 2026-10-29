@@ -164,6 +164,32 @@ export function sessionEntityId(identity: Identity): string {
   return createHash('sha256').update(JSON.stringify({client, hostId, provider, sessionId, sourceId}), 'utf8').digest('hex');
 }
 
+/** One Codex Desktop feed a host-local collector reports for: the session identity without its session (Hub #567). */
+export type DesktopFeed = {provider: 'codex'; client: 'desktop'; hostId: string; sourceId: string};
+/**
+ * `org.bunny.desktop-metadata.observed`: one bounded snapshot of Codex Desktop's three metadata inputs for one feed, as
+ * a source-bound collector publishes it on `bunny.event.desktop-metadata.<feed ID>` (Hub #567). `unread` is the marker's
+ * unread thread IDs, or null when the marker is missing, unusable or over its bounds; `archived` is the positive rollout
+ * filename scan, or null when it is unavailable or over its bounds; `titles` is the bounded index tail's latest valid
+ * title per thread. `stamp` names the snapshot's content, so an unchanged one is recognized without comparing the sets.
+ * Only the Codex Desktop module turns a snapshot into lifecycle evidence; the core ignores the family.
+ */
+export type DesktopMetadataSnapshot = {
+  feed: DesktopFeed; observedAtMs: number; stamp: string;
+  unread: string[] | null; archived: string[] | null; titles: {id: string; title: Title}[];
+};
+/** The `desktop-metadata` family's type, schema and routing-key prefix, for its one publisher and its one consumer (Hub #567). */
+export const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
+export const DESKTOP_METADATA_SCHEMA = 'https://bunny.invalid/events/desktop-metadata/2.0';
+export const DESKTOP_METADATA_KEY_PREFIX = 'bunny.event.desktop-metadata.';
+/** The routing key of one feed's snapshots. */
+export const desktopMetadataKey = (feed: DesktopFeed): string => `${DESKTOP_METADATA_KEY_PREFIX}${desktopFeedId(feed)}`;
+/** The ID of a Desktop feed's entity: the lowercase hex SHA-256 of its four identity fields, sorted, in UTF-8 JSON. */
+export function desktopFeedId(feed: DesktopFeed): string {
+  const {client, hostId, provider, sourceId} = feed;
+  return createHash('sha256').update(JSON.stringify({client, hostId, provider, sourceId}), 'utf8').digest('hex');
+}
+
 /** The ID of an operation entity: the lowercase hex SHA-256 of its request ID in UTF-8, so one request has one entity. */
 export function operationEntityId(requestId: string): string {
   return createHash('sha256').update(requestId, 'utf8').digest('hex');
@@ -219,6 +245,13 @@ const checkOccurrence: PayloadCheck = message => {
 const checkRaised: PayloadCheck = message => {
   const raised = message.data as AttentionRaised;
   return checkOccurrence(message) ?? (sameId(raised.attention.turn, raised.turn) ? undefined : 'payload /attention/turn not the observed turn');
+};
+// A Desktop snapshot's subject is its feed, and it names each thread once: the schema refuses a repeated unread or
+// archived ID, and this check a repeated title ID, which `uniqueItems` cannot state.
+const checkDesktopMetadata: PayloadCheck = message => {
+  const snapshot = message.data as DesktopMetadataSnapshot;
+  if (message.subject !== desktopFeedId(snapshot.feed)) return 'envelope /subject not the feed';
+  return repeated(snapshot.titles.map(title => title.id)) ? 'payload /titles duplicate id' : undefined;
 };
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
 // An operation's entity is its request's, and its command is its family's.
@@ -286,6 +319,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('playback', 'state', 'org.bunny.playback.updated', checkPlaybackArtwork, '2.1'),
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
+  define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
   define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence),
   define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence),

@@ -400,7 +400,11 @@ A turn end is not proof of successful work or readership. Nanoleaf's current
 Codex unread reconciliation remains a provider/consumer capability during
 migration. The standalone Hub can also read Codex Desktop's unread marker from
 the mounted Windows Codex home and record `read.observed` for top-level Desktop
-sessions. Pixoo dismissal changes monitor state only. New generic consumers
+sessions. The runtime's Codex Desktop module reads that home locally or takes a
+host-local collector's bounded `desktop-metadata` snapshots for a source on
+another computer, under the same rules, and remains the only publisher of that
+evidence ([#567](https://github.com/jimmie-potts/agent-device-hub/issues/567)).
+Pixoo dismissal changes monitor state only. New generic consumers
 must not assume every provider supplies read receipts.
 
 Session titles, project names, prompts, transcripts and agent output may enter shared data under the owner-approved policy. Credentials, tokens and secrets remain excluded. Only fields declared by the selected versioned contract are transmitted; prompt, response and transcript-content capture requires its separate implementation under Hub #425.

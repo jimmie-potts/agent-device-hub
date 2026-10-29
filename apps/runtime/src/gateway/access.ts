@@ -53,10 +53,12 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
 
 /**
  * The SDK edge's permissions for a caller's scopes (Hub #835): `read` subscribes to and syncs every state and event
- * key; `ingest` publishes lifecycle observations only, on lifecycle keys, so a hook can do nothing else; `control`
- * requests the core's operator commands, and sends every other command through the dispatcher's action routes
- * (#782); `admin` adds nothing at the edge. A dashboard browser with read and control may explicitly open the
- * connection-bound speech endpoint. Its grant adds no ordinary responder or publication authority.
+ * key; `ingest` publishes lifecycle observations and Codex Desktop metadata snapshots only, on their own keys, so a
+ * hook or a host-local collector can do nothing else (Hub #567: the gateway admits a snapshot only from the derived
+ * collector credential of its feed); `control` requests the core's operator commands, and sends every other command
+ * through the dispatcher's action routes (#782); `admin` adds nothing at the edge. A dashboard browser with read and
+ * control may explicitly open the connection-bound speech endpoint. Its grant adds no ordinary responder or publication
+ * authority.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
   if (principal.kind === 'credential' && principal.role === 'bb8-link' && principal.source === 'bunny/parts/bb8-windows' && principal.robotId !== undefined && principal.scopes.size === 0) {
@@ -75,8 +77,8 @@ export function edgePermissions(principal: Principal): EdgePrincipal {
   }
   if (principal.scopes.has('ingest')) {
     calls.add('publish');
-    keys.add('bunny.event.lifecycle.*');
-    publishes.push('lifecycle');
+    keys.add('bunny.event.lifecycle.*').add('bunny.event.desktop-metadata.*');
+    publishes.push('lifecycle', 'desktop-metadata');
   }
   if (principal.scopes.has('control')) {
     calls.add('request');

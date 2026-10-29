@@ -587,6 +587,84 @@ place so the client's unchanged complete script path and
 `@jimmie-potts/runtime/hook` resolve there. Until then the installed Hub keeps
 its hook unchanged.
 
+## Codex Desktop collector
+
+`bin/codex-desktop-collector.mjs` is a host-local collector for Codex Desktop's
+metadata (#567): `node bin/codex-desktop-collector.mjs <collector.json>`. It runs
+where Codex Desktop runs, on the PC (WSL, with the Codex home on `/mnt/c`) or on
+the Mac, so the core never reads another host's files. The code is
+`src/collector/`, which the package exports as
+`@jimmie-potts/runtime/codex-desktop-collector`.
+
+- **What it reads.** Every 2 s by default, the Codex Desktop module's own
+  readers (`readMarker` and `readDesktopMetadata`) read the read marker
+  `.codex-global-state.json`, the `archived_sessions/rollout-*.jsonl` file names
+  and the `session_index.jsonl` tail in the configured Codex home. It opens no
+  transcript and writes no file.
+- **What it publishes.** One `org.bunny.desktop-metadata.observed` occurrence on
+  `bunny.event.desktop-metadata.<feed ID>`, whose subject is the feed ID
+  (`desktopFeedId`) and whose data is a `DesktopMetadataSnapshot`:
+  `{feed, observedAtMs, stamp, unread, archived, titles}`. It sends the snapshot
+  with `publishOnce` when its `stamp` changed, or at least 5 s after the last
+  publication as a heartbeat, so the receiving module can judge freshness.
+  `observedAtMs` is the collector's clock at the read. The module ignores a
+  snapshot whose `observedAtMs` is not newer than the last one it took, so a
+  delayed publication cannot reorder evidence.
+  `stamp` is the first 32 hex digits of the SHA-256 of the canonical JSON of the
+  bounded `{unread, archived, titles}`. Unread and archived IDs are distinct and
+  sorted.
+- **Bounds.** More than 4096 unread IDs or 2048 archived IDs makes that set
+  `null` (unavailable), never truncated. Titles keep the newest 512 in index
+  order. A serialized message over 224 KiB keeps the newest 256, then 128, then
+  no titles, then drops the archive, and as a last resort the unread set, so it
+  stays under the profile's 256 KiB cap.
+- **`collector.json`.** A private file under the producer file's rules
+  (owner-only regular file with one link, opened without following a link, at
+  most 8 KiB) with exactly
+  `{"producer": "<absolute path to producer.json>", "home": "<absolute Codex home>"}`
+  and an optional integer `intervalMs` from 1000 to 5000. A longer interval is
+  refused: every cycle must reach the 5 s heartbeat, because the module treats a
+  feed older than 10 s as unavailable. Both paths are
+  absolute, normalized, at most 1024 characters and contain no NUL. Both files
+  are read once, at start.
+- **The producer.** The [hook's producer file and receipt](#agent-hooks), read
+  with `readProducer`, whose `source` is exactly
+  `{"provider": "codex", "client": "desktop", "hostId": "<id>", "sourceId": "<id>", "feed": "desktop-metadata"}`
+  (IDs `^[A-Za-z0-9_.-]{1,128}$`). Its credential is `producerCredentialId` and
+  its source `producerSource` of that five-member object, so it is distinct from
+  a hook credential for the same feed. The snapshot's `feed` is the same object
+  without `feed`, and the gateway binds it to that derived source.
+- **Reads and stalls.** The three reads run together with a 5 s deadline. A read
+  past it publishes nothing, and no other read starts until it returns. An
+  unchanged marker keeps the last unread set, and a marker that changed while it
+  was read gives nothing that cycle. A missing or unusable marker publishes
+  `unread: null`.
+- **Records.** [Diagnostic contract](../../docs/observability-contract.md)
+  records, written by the runtime's own `LogWriter` (minimum level INFO) as JSON
+  lines on stderr; stdout stays empty. They use scope `bunny.module` with
+  `bunny.module` `codex-desktop`, the module the collector feeds, because the
+  contract registers the operation and device events in that scope only. Each
+  publication is `operation.completed` at DEBUG with `bunny.operation`
+  `lifecycle`, `bunny.outcome` `succeeded`, the message's ID and kind and its
+  trace. The first rejected or uncertain publication is one `operation.failed`
+  (`recordLog`, so the SDK's code table sets its level) with its outcome, its
+  registry code and the message's trace, then a DEBUG summary at most once a
+  minute while it lasts, and one INFO `operation.completed` when publishing works
+  again. A stalled or failed read goes through the SDK's `DeviceAvailability` for
+  device `marker`: WARN `device.unavailable` (`unavailable`, or `internal`), DEBUG
+  summaries and INFO `device.available`. No path, token, thread ID, title, host
+  name or exception text appears in a record. Nothing retries a publication; the
+  next cycle publishes the next snapshot.
+- **Exit.** SIGTERM or SIGINT ends it with 0 within 1 s. A read stuck in a file
+  system call does not hold it: as the hook entrypoints do, it waits only while
+  `FSReq` work remains and ends itself by `SIGKILL` at that budget. An unusable
+  command line, collector file or producer file ends it with 2 and one fixed
+  line naming which, with no value from either file. An unexpected fault ends it
+  with 1.
+
+Installation (the collector's service unit, its private files and its
+credential grant on each host) is separate from this source.
+
 ## Run
 
 From the repository root, with Node 24, after `npm run build`:

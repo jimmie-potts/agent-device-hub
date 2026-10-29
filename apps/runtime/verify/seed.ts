@@ -14,7 +14,7 @@ import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, typ
 import {prepareMacCodex} from './mac-codex.js';
 
 export {
-  RUN_FILE, RUN_SCHEMA, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunFile, type RunRuntime,
+  RUN_FILE, RUN_SCHEMA, collectorOf, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunFile, type RunRuntime,
 } from './paths.js';
 
 /**
@@ -27,6 +27,8 @@ export type RunScenario = {
   description: string; runtime: RunRuntime; modules: readonly ModuleName[]; fault?: Fault; config?: Seed['config']; simulated?: readonly ModuleFactory[];
   prepare?: (dataDir: string) => Promise<void>; refused?: readonly string[];
   wisprFixture?: Seed['wisprFixture']; sections?: Seed['sections'];
+  /** Whether the run grants the Desktop metadata collector's credential and writes its files at each start (Hub #567). */
+  collector?: boolean;
 };
 
 /** The shipped modules that take a section: a run that gives no sections, as the shipped controls do, has them refused. */
@@ -40,9 +42,11 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     // Each shipped module's simulated section (Hub #844, #929), so a run of the shipped list starts every module.
     runtime: 'shipped', modules: [], simulated: shippedModules,
   },
-  // A module's own runs: the shipped list, each module on its simulated section, readied by the module's `prepare`.
-  ...Object.fromEntries(Object.values(MODULE_FILES).flatMap(file => Object.entries(file.runs ?? {})).map(([name, {description, prepare}]) =>
-    [name, {description, runtime: 'shipped', modules: [], simulated: shippedModules, prepare} satisfies RunScenario])),
+  // A module's own runs: the shipped list, each module on its simulated section, readied by the module's `prepare`, or,
+  // with a `seed`, the fixture runtime with the seed's modules and sections, and the collector when the run asks (Hub #567).
+  ...Object.fromEntries(Object.values(MODULE_FILES).flatMap(file => Object.entries(file.runs ?? {})).map(([name, {description, prepare, seed, collector}]) =>
+    [name, seed === undefined ? {description, runtime: 'shipped', modules: [], simulated: shippedModules, prepare} satisfies RunScenario
+      : {description, runtime: 'fixtures', modules: seed.modules as ModuleName[], ...(seed.config === undefined ? {} : {config: seed.config}), prepare, ...(collector === true ? {collector} : {})} satisfies RunScenario])),
   ...Object.fromEntries(SCENARIOS.map(scenario => [scenario.id, {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
@@ -77,14 +81,16 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
   if (scenario === undefined) throw new Error(`no run scenario ${name}`);
   const tokens = partTokens();
   const producer = producerToken();
+  const collector = scenario.collector === true ? producerToken() : undefined;
   const dir = configDirOf(dataDir);
   const modules = scenario.wisprFixture === undefined ? scenario.config
     : {...scenario.config, wispr: await prepareWisprFixture(dir, Date.now(), scenario.wisprFixture)};
   const config = await writeConfiguration(dir, {
     ...(modules === undefined ? {} : {modules}),
     sections: {...scenario.sections, ...scenario.simulated === undefined ? {} : await simulatedSections(dir, scenario.simulated)}, tokens, producer,
+    ...(collector === undefined ? {} : {collector}),
   });
-  await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer})}\n`, {mode: 0o600});
+  await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer, ...(collector === undefined ? {} : {collector})})}\n`, {mode: 0o600});
   await chmod(partTokensOf(dataDir), 0o600);
   const run: RunFile = {schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}), config};
   await writeFile(join(dataDir, RUN_FILE), `${JSON.stringify(run)}\n`, {mode: 0o600});

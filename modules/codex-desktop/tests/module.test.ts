@@ -255,7 +255,7 @@ it('the module publishes only read observations of Codex Desktop sessions, sends
     }
     assert.deepEqual(world.harness.sent, [{call: 'sync', families: ['session']}]);
     const module = createCodexDesktopModule({transport: new SimulatedMarker()});
-    const shown = module.manifest.settings?.show({home, hostId: SECTION.hostId, sourceId: SECTION.sourceId});
+    const shown = module.manifest.settings?.show({sources: [{home, hostId: SECTION.hostId, sourceId: SECTION.sourceId}], legacy: true});
     assert.deepEqual(shown, {hostId: 'host', sourceId: 'desktop'});
     const evidence = JSON.stringify({published: world.published, logs: world.hosted.map(harness => harness.logs), shown});
     for (const part of ['owner-sim', '.codex', '/mnt/c']) assert.equal(evidence.includes(part), false, 'the Codex home left the module');

@@ -31,7 +31,7 @@ type Fields = Record<string, unknown>;
 const isFields = (value: unknown): value is Fields => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** The Hub's canonical JSON (apps/hub/src/common.ts): object keys sorted at every depth. */
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (isFields(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
@@ -56,7 +56,7 @@ export const producerSource = (configuration: Readonly<Record<string, unknown>>)
 const MISSING = Symbol('missing');
 
 /** Reads a private JSON file of at most `limit` bytes, `MISSING` when there is none, or undefined when it is not one. */
-async function readPrivateJson(path: string, limit: number): Promise<unknown> {
+export async function readPrivateJson(path: string, limit: number): Promise<unknown> {
   let file: FileHandle;
   try {
     file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);

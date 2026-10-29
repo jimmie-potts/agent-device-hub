@@ -15,7 +15,7 @@ import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, modul
 import {lampSchemas} from '../fixtures/lamp.js';
 import {SYNTHETIC_TOKEN, signSchemas} from '../fixtures/sign.js';
 import {
-  GRANTS, PRODUCER, ROLES, StepFailure, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
+  COLLECTOR, GRANTS, PRODUCER, ROLES, StepFailure, TOKEN_PREFIX, type Follow, type GatewayAnswer, type GatewayCall, type HookPayload, type HookRun, type ReaderView, type Role, type Seed,
 } from './framework.js';
 
 /** A part's source: `bunny/parts/<role>`, never a module's or the core's. */
@@ -78,10 +78,12 @@ async function writePrivate(file: string, text: string): Promise<void> {
  * the launcher off.
  * Returns the configuration file's path for `--config`.
  */
-export async function writeConfiguration(dir: string, {modules: config = {}, sections = {}, tokens, producer}: {
+export async function writeConfiguration(dir: string, {modules: config = {}, sections = {}, tokens, producer, collector}: {
   modules?: Seed['config']; sections?: Readonly<Record<string, object>>; tokens: Readonly<Record<Role, string>>;
   /** The agent hooks' producer token (Hub #926), granted `ingest` under its converted credential's ID and source. */
   producer?: string;
+  /** The Desktop metadata collector's token (Hub #567), granted `ingest` under its own derived credential. */
+  collector?: string;
 }): Promise<string> {
   const secrets = join(dir, 'secrets');
   for (const folder of [dir, secrets]) {
@@ -99,6 +101,7 @@ export async function writeConfiguration(dir: string, {modules: config = {}, sec
   const listed = [
     ...ROLES.map(role => ({id: role, source: sourceOf(role), digest: tokenDigest(tokens[role]), scopes: [...GRANTS[role].scopes]})),
     ...producer === undefined ? [] : [{id: producerCredentialId(PRODUCER), source: producerSource(PRODUCER), digest: tokenDigest(producer), scopes: ['ingest']}],
+    ...collector === undefined ? [] : [{id: producerCredentialId(COLLECTOR), source: producerSource(COLLECTOR), digest: tokenDigest(collector), scopes: ['ingest']}],
   ];
   await writePrivate(credentials, `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: listed}, null, 2)}\n`);
   const file = join(dir, 'runtime-config.json');
@@ -119,6 +122,28 @@ export async function writeProducer(dir: string, port: number, token: string): P
   await chmod(folder, 0o700);
   const file = join(folder, 'producer.json');
   await writePrivate(file, `${JSON.stringify({lifecycleVersion: '1.2', enabled: true, qualified: true, source: PRODUCER, endpoint: `http://127.0.0.1:${port}/api/monitor/v1/events`, token})}\n`);
+  return file;
+}
+
+/**
+ * Writes the Desktop metadata collector's files (Hub #567) as an operator would, owner-only under `dir/collector`: its
+ * producer file naming the runtime's port, its `collector.json` naming that producer and a synthetic Codex home,
+ * `dir/collector/home`, with an empty version 1 marker, an empty `archived_sessions` folder and an empty
+ * `session_index.jsonl` for a reviewer to edit by hand. Returns the collector file's path, the collector's argument.
+ */
+export async function writeCollector(dir: string, port: number, token: string): Promise<string> {
+  const folder = join(dir, 'collector');
+  const home = join(folder, 'home');
+  for (const path of [folder, home, join(home, 'archived_sessions')]) {
+    await mkdir(path, {recursive: true, mode: 0o700});
+    await chmod(path, 0o700);
+  }
+  await writePrivate(join(home, '.codex-global-state.json'), `${JSON.stringify({'electron-thread-read-state-v1': {version: 1, unreadByIdentity: {'host-sim': {'local:sim': []}}}})}\n`);
+  await writePrivate(join(home, 'session_index.jsonl'), '');
+  const producer = join(folder, 'producer.json');
+  await writePrivate(producer, `${JSON.stringify({enabled: true, qualified: true, source: COLLECTOR, endpoint: `http://127.0.0.1:${port}/api/monitor/v1/events`, token})}\n`);
+  const file = join(folder, 'collector.json');
+  await writePrivate(file, `${JSON.stringify({producer, home})}\n`);
   return file;
 }
 

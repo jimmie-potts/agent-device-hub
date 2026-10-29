@@ -34,5 +34,7 @@ export const partTokensOf = (dataDir: string): string => join(configDirOf(dataDi
  * known and the hook script takes as its argument: `<data>/config/producer/producer.json`.
  */
 export const producerOf = (dataDir: string): string => join(configDirOf(dataDir), 'producer', 'producer.json');
+/** The Desktop metadata collector's file of a run that seeds one (Hub #567), beside its producer file and synthetic home. */
+export const collectorOf = (dataDir: string): string => join(configDirOf(dataDir), 'collector', 'collector.json');
 /** Where a run that migrates a module's installed data keeps the migration tool's JSON lines: `<data>/migration/`. */
 export const migrationOf = (dataDir: string): string => join(dataDir, 'migration');

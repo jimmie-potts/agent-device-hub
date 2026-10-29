@@ -109,6 +109,14 @@ occurrence instant are forbidden. The core accepts this input only from
 for known roots, and never maps it to a 1.x lifecycle observation. Metadata
 alone selects no turn and creates no activity, read or notice evidence.
 
+Hub #567 adds the separate `desktop-metadata/2.0` family, which also has no
+1.x field or event to convert. It carries a host-local collector's bounded
+snapshot of one Codex Desktop feed's unread IDs, archived IDs and provider
+titles, published with the feed's source-bound `ingest` credential. Only the
+Codex Desktop module consumes it, and the core ignores it; the module's
+`metadata-observed` and read observations above remain the core's only Desktop
+metadata input.
+
 1.x had byte limits of its own: 8 KiB for the lifecycle envelope and 2,048 bytes
 for an event the owner admits. In 2.0 only the profile's 256 KiB cap is in the
 contract. The owner and the hook keep their own bounds.

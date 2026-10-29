@@ -435,6 +435,23 @@ npm run -s verify:runtime -- capture <run-id> scenario-codex-desktop-read
 npm run -s verify:runtime -- stop <run-id>
 ```
 
+To watch a remote Codex Desktop source (#567) become evidence, start `codex-desktop-remote`: the core and the Codex
+Desktop module with one remote source, `host-sim`/`desktop-sim`, and no local home. The run grants the collector's own
+ingest credential and writes, under its config folder, `collector/producer.json`, `collector/collector.json` and a
+synthetic Codex home `collector/home` with an empty version 1 marker, an empty `archived_sessions` folder and an empty
+`session_index.jsonl`. Run the real collector against it from the same checkout, end a Desktop turn for that source by
+hand, then edit the synthetic home as Desktop would: list the thread in the marker's `unreadByIdentity` lists to see it
+read unread, drop it to see it read read, add a `rollout-<date>-<id>.jsonl` name under `archived_sessions` to keep a
+late hook for that conversation out, and append `{"id": "<thread id>", "thread_name": "<title>"}` to the index to title
+it. Stop the collector (SIGTERM) and watch the marker turn unavailable after about 15 s without snapshots, and recover
+when it runs again. The collector's records go to its stderr; nothing in them names a path, thread, title or token.
+
+```bash
+npm run -s verify:runtime -- start --scenario codex-desktop-remote
+node apps/runtime/bin/codex-desktop-collector.mjs <run data dir>/config/collector/collector.json
+npm run -s verify:runtime -- stop <run-id>
+```
+
 To check the Nanoleaf migration (#933) as an operator would, start the migrated run, read what the migration reported
 and what the runtime serves, then run the tool by hand in a private folder. Its lines hold counts, codes and hashes
 only:
