@@ -235,6 +235,9 @@ jobs:
         run: node apps/runtime/dashboard/tests/room-models.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/music-card.browser.ts
+      # #1112: the shell at a television viewport, driven from the keyboard only; synthetic, qualifies no TV browser.
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/tv.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
