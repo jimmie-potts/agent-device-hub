@@ -113,6 +113,12 @@ export const TOKEN_PREFIX = 'tok_SYNTHETIC835';
  * the 2.0 hook script, with a token in the Hub's form that carries `TOKEN_PREFIX`.
  */
 export const PRODUCER = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code-hooks', hook: 'SessionStart'} as const;
+/**
+ * The Desktop metadata collector's producer (Hub #567): the synthetic Desktop feed a module's run configures as a remote
+ * source, with the `feed` member that makes its credential distinct from a hook's. A run that seeds it grants its
+ * derived credential (`ingest`) and writes its producer and collector files.
+ */
+export const COLLECTOR = {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop-sim', feed: 'desktop-metadata'} as const;
 
 /**
  * What the simulated devices show, as plain data so a disposable run can report it too: the fixture modules' devices,
@@ -222,7 +228,13 @@ export const holds = (name: string, check: Check, forMs = 1000): Step => ({kind:
  * module's simulated section, which `prepare` readies once the run's directories exist, as an installer's step before the
  * runtime's first start would, such as a migration of the module's installed data.
  */
-export type ModuleRun = {readonly description: string; readonly prepare: (dataDir: string) => Promise<void>};
+export type ModuleRun = {
+  readonly description: string; readonly prepare: (dataDir: string) => Promise<void>;
+  /** Without it, the run is the shipped list on simulated sections; with it, the fixture runtime with these modules and sections (Hub #567). */
+  readonly seed?: {readonly modules: readonly string[]; readonly config?: Readonly<Record<string, object>>};
+  /** Whether the run grants the Desktop metadata collector's credential and writes its files at each start (Hub #567). */
+  readonly collector?: boolean;
+};
 export type Scenario = {
   readonly id: string; readonly title: string; readonly seed: Seed; readonly steps: readonly Step[];
   /** Optional browser observations after the same scenario passes in a disposable run. */

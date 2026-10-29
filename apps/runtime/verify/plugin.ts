@@ -288,7 +288,7 @@ export default definePlugin({
     {id: 'gateway', kind: 'actual', note: 'the runtime\'s gateway on its listener: the SDK edge, /api/v2, MCP, module pages and browser sign-in; each part has a run-generated credential in the run\'s configuration'},
     {id: 'fixture-modules', kind: 'simulated', note: 'the core, with its tracker and history (#782) and stand-in parts for the inbox and a readable copy of history until #923, the fixture lamp, chime and sign, every registered module the scenario seeds, built through its registration (Hub #999), and a harness module that reports what the bus publishes'},
     {id: 'devices', kind: 'simulated', note: 'the fixture modules\' SimulatedLamps, SimulatedChime and SimulatedSigns, and each registered module\'s simulated device as its registration holds it, in the supervisor, reached over the child\'s IPC channel, so they outlive a runtime crash; a device that lives beside its module is handed what the last runtime left'},
-    {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step, and the 2.0 agent hook script with a synthetic 1.x producer file'},
+    {id: 'parts', kind: 'simulated', note: 'the scenario\'s hook, operator, panel and reader, remote parts of the capture step, and the 2.0 agent hook script with a synthetic 1.x producer file, and, in a run that seeds it, the Desktop metadata collector on a synthetic Codex home (Hub #567)'},
   ],
   checks: [
     {id: 'build-current', doctor: true, run: () => buildCurrent()},

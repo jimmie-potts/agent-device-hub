@@ -3,6 +3,7 @@
 // reads it over its link; no path crosses it.
 import type {DeviceAction, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
 import {codexDesktopFactory} from './factory.js';
+import {remoteOnlySection} from './configuration.js';
 import {metadataOf} from './metadata.js';
 import type {MarkerRead} from './marker.js';
 import {createCodexDesktopModule} from './module.js';
@@ -70,4 +71,5 @@ export const codexDesktopSimulation: DeviceSimulation<SimulatedMarker, Simulated
   },
 };
 
-export const registration: ModuleRegistration = {...codexDesktopFactory, shipped: true, order: 600, simulation: codexDesktopSimulation};
+/** The module reaches no local file for a section whose sources are all remote, so a host without device control may admit it (Hub #567). */
+export const registration: ModuleRegistration = {...codexDesktopFactory, shipped: true, order: 600, simulation: codexDesktopSimulation, hostLocal: remoteOnlySection};

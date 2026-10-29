@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator, errorCodes} from '../dist/v2/index.js';
-import {coreFamilies, registerCoreFamilies, sessionEntityId, sessionTitle} from '../dist/v2/families.js';
+import {coreFamilies, desktopFeedId, registerCoreFamilies, sessionEntityId, sessionTitle} from '../dist/v2/families.js';
 import {consumerCopy, familyOf} from './consumer.mjs';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8'));
@@ -102,6 +102,23 @@ test('the session ID is the SHA-256 of the identity, whatever its key order', ()
   assert.equal(sessionEntityId(Object.fromEntries(Object.entries(identity).reverse())), id);
   assert.notEqual(sessionEntityId({...identity, sourceId: 'codex-cli'}), id);
   assert.match(id, /^[0-9a-f]{64}$/);
+});
+
+test('a Desktop snapshot names its feed by the feed ID and admits its sets up to their bounds (Hub #567)', () => {
+  const v = validator();
+  const base = fixtures.valid['desktop-metadata'];
+  assert.equal(desktopFeedId(base.data.feed), base.subject);
+  assert.equal(desktopFeedId(Object.fromEntries(Object.entries(base.data.feed).reverse())), base.subject);
+  assert.notEqual(desktopFeedId({...base.data.feed, hostId: 'pc-sim'}), base.subject);
+  assert.notEqual(desktopFeedId(base.data.feed), sessionEntityId({...base.data.feed, sessionId: 'thread-a'}));
+  const ids = count => Array.from({length: count}, (_, index) => `thread-${index}`);
+  const title = id => ({id, title: {value: 'Synthetic title', source: 'provider'}});
+  const snapshot = data => ({...structuredClone(base), data: {...structuredClone(base.data), ...data}});
+  assert.equal(v.validate(snapshot({unread: ids(4096), archived: ids(2048), titles: ids(512).map(title)})).ok, true);
+  assert.equal(v.validate(snapshot({archived: ids(2049)})).ok, false, 'the archived bound');
+  assert.equal(v.validate(snapshot({titles: ids(513).map(title)})).ok, false, 'the title bound');
+  for (const stamp of ['', 'x'.repeat(65), 'has space', 'slash/stamp']) assert.equal(v.validate(snapshot({stamp})).ok, false, stamp);
+  assert.equal(v.validate(snapshot({unread: ['not an id']})).ok, false, 'an unread ID is an identifier');
 });
 
 test('the title keeps its precedence: the winning label, then the title, then the consumer fallback', () => {

@@ -157,6 +157,7 @@ carries a device-specific payload: modules define those.
 | --- | --- | --- |
 | state | `session`, `mode`, `inbox-item`, `playback`, `operation`, `power-limit` | `org.bunny.<family>.updated` |
 | occurrence | `lifecycle` (hook or Desktop metadata evidence for the core) | `org.bunny.lifecycle.observed` |
+| occurrence | `desktop-metadata` (a collector's Codex Desktop metadata snapshot for the Desktop module) | `org.bunny.desktop-metadata.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
 | occurrence | `outcome-recorded` (the core's outcome acknowledgment) | `org.bunny.outcome.recorded` |
@@ -203,6 +204,17 @@ The rules:
   titles update known roots without refreshing activity or restart evidence.
   This additive input has no lifecycle 1.x equivalent and emits no synthetic
   lifecycle, read or notice occurrence.
+- `desktop-metadata` ([Hub #567](https://github.com/jimmie-potts/agent-device-hub/issues/567))
+  carries one bounded snapshot of Codex Desktop's metadata inputs for one feed:
+  `{feed, observedAtMs, stamp, unread, archived, titles}`. `feed` is a Codex
+  Desktop identity without its session, and the envelope `subject` and the key's
+  last token are `desktopFeedId(feed)`. `unread` (at most 4,096 IDs) and
+  `archived` (at most 2,048) are null when their input is missing, unusable or
+  over its bounds; `titles` holds at most 512 provider titles. No ID repeats in
+  any of them. A host-local collector publishes it with a source-bound `ingest`
+  credential derived from the feed and `feed: 'desktop-metadata'`, which the
+  runtime's edge requires on every entry. The Codex Desktop module consumes it
+  and alone turns a snapshot into lifecycle evidence; the core ignores it.
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the

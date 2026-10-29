@@ -1375,6 +1375,34 @@ additive `metadata-observed` input. Its runtime consumers are the complete
 the catalog scenario covers archive admission and independent titles alongside
 read evidence. These behaviors need no data conversion or migration.
 
+Hub #567 adds the host-local Codex Desktop collector
+(`apps/runtime/src/collector/`, `apps/runtime/bin/codex-desktop-collector.mjs`;
+see [its README section](../apps/runtime/README.md#codex-desktop-collector)).
+Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
+`node --test apps/runtime/dist/tests/codex-desktop-collector.test.js` from the
+worktree root. The suite covers snapshot bounds, the byte budget and the stamp,
+the collector and producer file refusals, record fields and transitions, and the
+real entry point against a real runtime's edge with a synthetic Codex home: the
+first snapshot, a heartbeat, a changed marker, quiet stderr and SIGTERM. That
+integration test needs Linux, because the runtime reads its configuration file
+only where `/proc/self/fd` exists; it skips elsewhere. No test reads a real
+Codex home.
+
+Hub #567 adds remote sources: the `sources` section, the `RemoteFeed` transport
+fed by `desktop-metadata` snapshots and one run per source. After the root
+build, `npm run test:codex-desktop:built` also runs `remote.test.js` (snapshots as
+reads, a feed that stops and recovers, refused snapshots, a local and a remote
+source side by side) and the extended `configuration.test.js`. The real core's
+remote path, through the edge with the collector's own credential, a hook's
+credential and another feed, is the last case of
+`apps/runtime/dist/tests/codex-desktop.test.js`; the edge binding itself is in
+`remote-hooks.test.js`. The container profile's admission of a remote-only section
+is in `deploy/container/tests/entrypoint.test.mjs`. Runtime tests that read an
+edge configuration file need Linux (`/proc/self/fd`); run them in the core CI job
+or a disposable Linux container. The disposable run `codex-desktop-remote`
+([runtime verification runs](#runtime-verification-runs)) hosts the real collector
+for the acceptance exercise.
+
 ## Nanoleaf port
 
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under

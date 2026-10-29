@@ -40,6 +40,12 @@ export type ModuleRegistration = ModuleFactory & {
   readonly registerFamilies?: (validator: MessageValidator) => void;
   /** How the scenario harnesses simulate the module's devices, if it has any. */
   readonly simulation?: DeviceSimulation;
+  /**
+   * Whether a section of this module reaches no local device or file, so that a host which disables device control, such
+   * as the personal container profile, may admit that section although the module declares a simulation (Hub #567). A
+   * module without it is admitted there only when it declares no simulation.
+   */
+  readonly hostLocal?: (section: unknown) => boolean;
 };
 
 /** What a scenario asks a simulated device to do: the device's module, the action, and any fields the action takes. */

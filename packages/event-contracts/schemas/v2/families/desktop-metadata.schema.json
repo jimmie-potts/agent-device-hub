@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/desktop-metadata/2.0",
+  "description": "Occurrence: one bounded snapshot of Codex Desktop's metadata inputs for one feed, which a source-bound host-local collector publishes and only the Codex Desktop module consumes; the core ignores it (Hub #567). `unread` and `archived` are null when their input is missing, unusable or over its bounds; `titles` holds the latest valid provider title per thread. The envelope subject is `desktopFeedId(feed)`, and the validator also refuses a repeated title ID (families.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feed", "observedAtMs", "stamp", "unread", "archived", "titles"],
+  "properties": {
+    "feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "client", "hostId", "sourceId"],
+      "properties": {
+        "provider": {"const": "codex"},
+        "client": {"const": "desktop"},
+        "hostId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity/properties/hostId"},
+        "sourceId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity/properties/sourceId"}
+      }
+    },
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "stamp": {"type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,64}$"},
+    "unread": {"type": ["array", "null"], "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
+    "archived": {"type": ["array", "null"], "maxItems": 2048, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
+    "titles": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+          "title": {"allOf": [
+            {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/title"},
+            {"type": "object", "properties": {"source": {"const": "provider"}}}
+          ]}
+        }
+      }
+    }
+  }
+}

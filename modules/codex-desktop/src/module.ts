@@ -1,7 +1,9 @@
 // The Codex Desktop runtime module (Hub #926): Codex Desktop's read marker as read evidence in the runtime, as the old
 // Hub's reader made it (`startDesktopRead` in apps/hub/src/codex-desktop.ts at main 8590332f). It follows the core's
-// sessions, reads the marker every 2 s through its transport, read-only, and publishes a `read-observed` lifecycle
-// observation to the core for each configured top-level Desktop session whose read state the marker changes.
+// sessions, reads each configured source's marker every 2 s through its transport, read-only, and publishes a
+// `read-observed` lifecycle observation to the core for each configured top-level Desktop session whose read state the
+// marker changes. A source is read locally from its Codex home, or, without one, from a host-local collector's
+// `desktop-metadata` snapshots over the bus (Hub #567, remote.ts); the rules are the same either way.
 //
 // Under policy A (ADR 0012) the marker's folder is the module's device. Start never waits on it. Evidence comes only
 // from a read that answered. A read that does not answer within 5 s makes the marker unavailable, logged once with a
@@ -11,9 +13,10 @@
 import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, DeviceAvailability, errorType, Outcome, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
-import {configureCodexDesktop, type CodexDesktopConfig} from './configuration.js';
+import {recordLog, DeviceAvailability, Outcome, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
+import {configureCodexDesktop, type CodexDesktopConfig, type DesktopSourceConfig} from './configuration.js';
 import {readEvidence, readObservation, type Evidence} from './evidence.js';
+import {DESKTOP_METADATA_KEYS, RemoteFeeds} from './remote.js';
 import type {MarkerRead, MarkerTransport} from './transport.js';
 
 export const MODULE_NAME = 'codex-desktop';
@@ -27,116 +30,156 @@ export const READ_BACKOFF_MAX_MS = 60_000;
 export const RESEND_FIRST_MS = 4000;
 /** The longest wait between two sends of the same evidence: the wait doubles each time the record stays the same. */
 export const RESEND_MAX_MS = 60_000;
-/** The marker's name in the module's records: the one thing the module reaches. */
+/** The marker's name in the module's records when one source is configured: the one thing the module reaches. */
 export const MARKER_DEVICE = 'marker';
 export const LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.0';
 const SYNC_TIMEOUT_MS = 5000;
 const RESYNC_FIRST_MS = 1000;
 const RESYNC_MAX_MS = 60_000;
+/** How many refused feed messages are logged, one per sender and feed, before the rest are counted silently. */
+const MAX_REFUSALS_LOGGED = 64;
 
-/** What the gateway shows of the module's settings: the producer it speaks for, never the Codex home's path. */
+/** What the gateway shows of the module's settings: the producers it speaks for and how each is read, never a Codex home. */
 const SETTINGS_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['hostId', 'sourceId'],
-  properties: {hostId: {type: 'string'}, sourceId: {type: 'string'}},
+  type: 'object', additionalProperties: false,
+  properties: {
+    hostId: {type: 'string'}, sourceId: {type: 'string'},
+    sources: {type: 'array', items: {
+      type: 'object', additionalProperties: false, required: ['hostId', 'sourceId', 'remote'],
+      properties: {hostId: {type: 'string'}, sourceId: {type: 'string'}, remote: {type: 'boolean'}},
+    }},
+  },
 } as const;
 
+/** The settings shown: the released form as it was, and the `sources` form with each source's kind. */
+const showSettings = (config: CodexDesktopConfig): Record<string, unknown> => {
+  const [first] = config.sources;
+  return config.legacy && first !== undefined ? {hostId: first.hostId, sourceId: first.sourceId}
+    : {sources: config.sources.map(source => ({hostId: source.hostId, sourceId: source.sourceId, remote: source.home === undefined}))};
+};
+
+/** The device name of one source's marker in the module's records: `marker` alone when one source is configured. */
+export const markerDeviceOf = (source: DesktopSourceConfig, alone: boolean): string => alone ? MARKER_DEVICE : `${MARKER_DEVICE}:${source.hostId}:${source.sourceId}`;
+
 export type CodexDesktopModuleOptions = {
-  /** How the module reads the marker: `folderReader()` for the real Codex home, or a `SimulatedMarker`. */
+  /** How the module reads a local source's marker: `folderReader()` for the real Codex home, or a `SimulatedMarker`. */
   transport: MarkerTransport;
 };
 
 export function createCodexDesktopModule({transport}: CodexDesktopModuleOptions): BunnyModule<CodexDesktopConfig> {
-  let run: DesktopRun | undefined;
+  let started: ModuleStart | undefined;
   return {
     manifest: {
       name: MODULE_NAME, apiVersion: '1.2', configure: configureCodexDesktop,
-      settings: {schema: SETTINGS_SCHEMA, show: config => ({hostId: config.hostId, sourceId: config.sourceId})},
+      settings: {schema: SETTINGS_SCHEMA, show: showSettings},
     },
     async start(context) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
       if (context.config === undefined) throw new Error('the Codex Desktop module started without its configuration');
-      run = new DesktopRun(context, context.config, transport);
-      await run.open();
+      started = new ModuleStart(context, context.config, transport);
+      await started.open();
     },
     async stop() {
-      await run?.stop();
+      await started?.stop();
     },
   };
 }
 
-/** One start of the module, from `start` to `stop`. */
-class DesktopRun {
+/** One start of the module, from `start` to `stop`: the shared copy of the core's sessions, and one run per source. */
+class ModuleStart {
   readonly #context: ModuleContext<CodexDesktopConfig>;
   readonly #config: CodexDesktopConfig;
   readonly #transport: MarkerTransport;
-  readonly #availability: DeviceAvailability;
-  /** Publications under way, which the stop waits for. */
-  readonly #work = new Set<Promise<void>>();
-  #closing = false;
-  // The core's sessions.
-  #copy: SyncedCopy<SessionRecord> | undefined;
-  #resync: Cancel | undefined;
-  #resyncDelayMs = RESYNC_FIRST_MS;
-  #feedDown = false;
-  // The marker.
-  #poll: Cancel | undefined;
-  /** Whether a read or its publications are under way: the next waits, keeping scans and evidence in order. */
-  #reading = false;
-  /** Whether the read under way has outlasted its deadline, so the marker is unavailable. */
-  #overdue = false;
-  /** Consecutive reads that failed, for the backoff. */
-  #failures = 0;
-  #stamp = '';
-  readonly #archived = new Set<string>();
-  /** Serialize paced batches, including deadline clears followed by a late reader answer. */
-  #metadataWork: Promise<void> = Promise.resolve();
-  readonly #metadataSent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
-  /** The unread threads of the last good read, or null when the marker gives no evidence now. */
-  #unread: ReadonlySet<string> | null = null;
-  /** Whether the last read found a usable marker, for logging each change once. */
-  #usable: boolean | undefined;
-  /**
-   * The evidence last sent for each session, by its record's revision, when and how long it waits for the record to
-   * change before it goes out again: the core may have refused it, and only the record says whether it took it.
-   */
-  readonly #sent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
+  readonly #sessions: SessionFeed;
+  readonly #feeds = new RemoteFeeds();
+  readonly #runs: DesktopRun[] = [];
+  /** The senders and feeds whose refusal was logged, bounded: the rest are refused silently. */
+  readonly #refused = new Set<string>();
 
   constructor(context: ModuleContext<CodexDesktopConfig>, config: CodexDesktopConfig, transport: MarkerTransport) {
     this.#context = context;
     this.#config = config;
     this.#transport = transport;
-    this.#availability = new DeviceAvailability({log: context.log, clock: context.clock});
+    this.#sessions = new SessionFeed(context);
   }
 
   async open(): Promise<void> {
-    this.#context.signal.addEventListener('abort', () => { this.#close(); }, {once: true});
-    await this.#follow();
-    // The first read comes at once; start never waits for it.
-    this.#schedule(0);
-  }
-
-  async stop(): Promise<void> {
-    this.#close();
-    while (this.#work.size > 0) await Promise.allSettled([...this.#work]);
-    this.#transport.close();
-  }
-
-  #close(): void {
-    if (this.#closing) return;
-    this.#closing = true;
-    this.#cancel(this.#poll);
-    this.#cancel(this.#resync);
-  }
-
-  #cancel(cancel: Cancel | undefined): void {
+    const {clock} = this.#context;
+    const alone = this.#config.sources.length === 1;
+    this.#context.signal.addEventListener('abort', () => { this.#feeds.close(); }, {once: true});
+    await this.#sessions.open();
+    for (const source of this.#config.sources) {
+      const transport = source.home === undefined ? this.#feeds.open(source, () => clock.now()) : this.#transport;
+      const run = new DesktopRun(this.#context, source, transport, this.#sessions, markerDeviceOf(source, alone));
+      this.#runs.push(run);
+      run.open();
+    }
+    if (this.#feeds.size === 0) return;
     try {
-      cancel?.();
+      await this.#context.sdk.subscribe<Record<string, unknown>>(DESKTOP_METADATA_KEYS, message => { this.#deliver(message); });
     } catch {
-      // A timer the runtime already cancelled.
+      // The module is stopping, and its participant refuses use.
     }
   }
 
-  // The core's sessions
+  async stop(): Promise<void> {
+    this.#feeds.close();
+    this.#sessions.close();
+    await Promise.all(this.#runs.map(run => run.stop()));
+    this.#transport.close();
+  }
+
+  /** A message on the feed keys: a configured source's snapshot, or a refusal logged once per sender and feed. */
+  #deliver(message: Message): void {
+    const refusal = this.#feeds.deliver(message);
+    if (refusal === undefined) {
+      this.#context.log.debug('message.received', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.observed, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
+      return;
+    }
+    const key = `${message.source} ${message.subject}`;
+    if (this.#refused.has(key) || this.#refused.size >= MAX_REFUSALS_LOGGED) return;
+    this.#refused.add(key);
+    recordLog(this.#context.log, 'message.received', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.rejected, 'bunny.code': refusal === 'unknown' ? 'not-found' : 'forbidden'}, message);
+  }
+}
+
+/** The module's copy of the core's sessions, synced again with capped backoff when it is lost. */
+class SessionFeed {
+  readonly #context: ModuleContext<CodexDesktopConfig>;
+  #copy: SyncedCopy<SessionRecord> | undefined;
+  #resync: Cancel | undefined;
+  #resyncDelayMs = RESYNC_FIRST_MS;
+  #feedDown = false;
+  #closing = false;
+
+  constructor(context: ModuleContext<CodexDesktopConfig>) {
+    this.#context = context;
+  }
+
+  /** The core's session records now, or none while the copy is lost. */
+  states(): SessionRecord[] {
+    return this.#copy?.states().map(message => message.data) ?? [];
+  }
+
+  /** The entity IDs of the sessions the copy holds now. */
+  ids(): Set<string> {
+    return new Set(this.#copy?.states().map(message => message.subject) ?? []);
+  }
+
+  get following(): boolean {
+    return this.#copy !== undefined;
+  }
+
+  async open(): Promise<void> {
+    this.#context.signal.addEventListener('abort', () => { this.close(); }, {once: true});
+    await this.#follow();
+  }
+
+  close(): void {
+    if (this.#closing) return;
+    this.#closing = true;
+    cancelQuietly(this.#resync);
+  }
 
   /** Syncs the core's sessions. A sync the core refuses leaves no evidence, and the module syncs again later. */
   async #follow(): Promise<void> {
@@ -175,17 +218,90 @@ class DesktopRun {
     const delayMs = this.#resyncDelayMs;
     this.#resyncDelayMs = Math.min(RESYNC_MAX_MS, delayMs * 2);
     try {
-      this.#resync = this.#context.scheduler.after(delayMs, () => { this.#track(this.#follow()); });
+      this.#resync = this.#context.scheduler.after(delayMs, () => {
+        this.#follow().catch((error: unknown) => {
+          recordLog(this.#context.log, 'operation.failed', {'bunny.code': 'internal', 'error.type': errorType(error)});
+        });
+      });
     } catch {
       // The module is stopping.
     }
+  }
+}
+
+const cancelQuietly = (cancel: Cancel | undefined): void => {
+  try {
+    cancel?.();
+  } catch {
+    // A timer the runtime already cancelled.
+  }
+};
+
+/** One source's run, from the module's start to its stop: its reads, its archive and title metadata and its read evidence. */
+class DesktopRun {
+  readonly #context: ModuleContext<CodexDesktopConfig>;
+  readonly #source: DesktopSourceConfig;
+  readonly #transport: MarkerTransport;
+  readonly #sessions: SessionFeed;
+  readonly #device: string;
+  readonly #availability: DeviceAvailability;
+  /** Publications under way, which the stop waits for. */
+  readonly #work = new Set<Promise<void>>();
+  #closing = false;
+  // The marker.
+  #poll: Cancel | undefined;
+  /** Whether a read or its publications are under way: the next waits, keeping scans and evidence in order. */
+  #reading = false;
+  /** Whether the read under way has outlasted its deadline, so the marker is unavailable. */
+  #overdue = false;
+  /** Consecutive reads that failed, for the backoff. */
+  #failures = 0;
+  #stamp = '';
+  readonly #archived = new Set<string>();
+  /** Serialize paced batches, including deadline clears followed by a late reader answer. */
+  #metadataWork: Promise<void> = Promise.resolve();
+  readonly #metadataSent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
+  /** The unread threads of the last good read, or null when the marker gives no evidence now. */
+  #unread: ReadonlySet<string> | null = null;
+  /** Whether the last read found a usable marker, for logging each change once. */
+  #usable: boolean | undefined;
+  /**
+   * The evidence last sent for each session, by its record's revision, when and how long it waits for the record to
+   * change before it goes out again: the core may have refused it, and only the record says whether it took it.
+   */
+  readonly #sent = new Map<string, {mark: string; atMs: number; waitMs: number}>();
+
+  constructor(context: ModuleContext<CodexDesktopConfig>, source: DesktopSourceConfig, transport: MarkerTransport, sessions: SessionFeed, device: string) {
+    this.#context = context;
+    this.#source = source;
+    this.#transport = transport;
+    this.#sessions = sessions;
+    this.#device = device;
+    this.#availability = new DeviceAvailability({log: context.log, clock: context.clock});
+  }
+
+  open(): void {
+    this.#context.signal.addEventListener('abort', () => { this.#close(); }, {once: true});
+    // The first read comes at once; start never waits for it.
+    this.#schedule(0);
+  }
+
+  async stop(): Promise<void> {
+    this.#close();
+    while (this.#work.size > 0) await Promise.allSettled([...this.#work]);
+  }
+
+  #close(): void {
+    if (this.#closing) return;
+    this.#closing = true;
+    cancelQuietly(this.#poll);
   }
 
   // The marker
 
   /** Sets the next poll, replacing any already set: one poll is ever pending. */
   #schedule(delayMs: number): void {
-    this.#cancel(this.#poll);
+    cancelQuietly(this.#poll);
     this.#poll = undefined;
     if (this.#closing) return;
     try {
@@ -208,7 +324,7 @@ class DesktopRun {
       this.#read();
       return;
     }
-    if (this.#overdue) this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
+    if (this.#overdue) this.#availability.unreachable(this.#device, 'unavailable');
     this.#schedule(POLL_MS);
   }
 
@@ -223,7 +339,7 @@ class DesktopRun {
     }
     let reading: Promise<MarkerRead>;
     try {
-      reading = this.#transport.read(this.#config.home, this.#stamp);
+      reading = this.#transport.read(this.#source.home ?? '', this.#stamp);
     } catch (error) {
       reading = Promise.reject(error instanceof Error ? error : new Error('the marker could not be read'));
     }
@@ -244,13 +360,13 @@ class DesktopRun {
     if (this.#closing || !this.#reading) return;
     this.#overdue = true;
     this.#track(this.#metadata(null, []));
-    this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
+    this.#availability.unreachable(this.#device, 'unavailable');
     this.#schedule(POLL_MS);
   }
 
   /** A read ended, with the marker's answer, or undefined when the reader failed. */
   async #settled(deadline: Cancel | undefined, read: MarkerRead | undefined): Promise<void> {
-    this.#cancel(deadline);
+    cancelQuietly(deadline);
     this.#overdue = false;
     if (this.#closing) return;
     if (read === undefined) {
@@ -258,14 +374,14 @@ class DesktopRun {
       this.#stamp = '';
       this.#unread = null;
       await this.#metadata(null, []);
-      this.#availability.unreachable(MARKER_DEVICE, 'unavailable');
+      this.#availability.unreachable(this.#device, 'unavailable');
       // After the nth failure in a row, the next read waits 2 s times 2 to the n, at most a minute.
       this.#schedule(Math.min(READ_BACKOFF_MAX_MS, POLL_MS * 2 ** this.#failures));
       return;
     }
     this.#failures = 0;
     this.#schedule(POLL_MS);
-    this.#availability.reached(MARKER_DEVICE);
+    this.#availability.reached(this.#device);
     switch (read.status) {
       case 'unchanged':
         break;
@@ -304,7 +420,7 @@ class DesktopRun {
   async #publishMetadataBatch(archived: readonly string[] | null, titles: readonly {id: string; title: Title}[], nowMs: number): Promise<void> {
     if (this.#closing) return;
     const confirmed = new Set(archived ?? []);
-    const identity = (sessionId: string): Identity => ({provider: 'codex', client: 'desktop', hostId: this.#config.hostId, sourceId: this.#config.sourceId, sessionId});
+    const identity = (sessionId: string): Identity => ({provider: 'codex', client: 'desktop', hostId: this.#source.hostId, sourceId: this.#source.sourceId, sessionId});
     for (const id of this.#archived) {
       if (this.#closing) return;
       if (!confirmed.has(id)) await this.#publishMetadata(identity(id), nowMs, undefined, false);
@@ -317,11 +433,9 @@ class DesktopRun {
       await this.#publishMetadata(identity(id), nowMs, undefined, true);
     }
     const indexed = new Map(titles.map(entry => [entry.id, entry.title]));
-    for (const message of this.#copy?.states() ?? []) {
+    for (const session of this.#sessions.states()) {
       if (this.#closing) return;
-      const session = message.data;
-      if (session.identity.provider !== 'codex' || session.identity.client !== 'desktop' || session.identity.hostId !== this.#config.hostId ||
-        session.identity.sourceId !== this.#config.sourceId || session.parent.status === 'known') continue;
+      if (!this.#owns(session)) continue;
       const title = indexed.get(session.identity.sessionId);
       if (title === undefined || title.value === session.title?.value && title.source === session.title.source) continue;
       const mark = JSON.stringify([session.revision, title]);
@@ -330,8 +444,15 @@ class DesktopRun {
       this.#metadataSent.set(session.id, {mark, atMs: nowMs, waitMs: sent?.mark === mark ? Math.min(RESEND_MAX_MS, sent.waitMs * 2) : RESEND_FIRST_MS});
       await this.#publishMetadata(session.identity, nowMs, title);
     }
-    const current = new Set((this.#copy?.states() ?? []).map(message => message.subject));
+    const current = this.#sessions.ids();
     for (const id of this.#metadataSent.keys()) if (!current.has(id)) this.#metadataSent.delete(id);
+  }
+
+  /** Whether a session is one of this source's top-level Codex Desktop sessions. */
+  #owns(session: SessionRecord): boolean {
+    const {identity} = session;
+    return identity.provider === 'codex' && identity.client === 'desktop' && identity.hostId === this.#source.hostId &&
+      identity.sourceId === this.#source.sourceId && session.parent.status !== 'known';
   }
 
   /** A title/archive observation is no activity, read, end or notice evidence. */
@@ -357,13 +478,12 @@ class DesktopRun {
    */
   #evaluate(): void {
     const unread = this.#unread;
-    const copy = this.#copy;
-    if (unread === null || copy === undefined) return;
-    const sessions = copy.states().map(message => message.data);
+    if (unread === null || !this.#sessions.following) return;
+    const sessions = this.#sessions.states();
     const current = new Set(sessions.map(session => session.id));
     for (const id of [...this.#sent.keys()]) if (!current.has(id)) this.#sent.delete(id);
     const nowMs = this.#context.clock.now();
-    for (const evidence of readEvidence(sessions, unread, this.#config, nowMs)) {
+    for (const evidence of readEvidence(sessions, unread, this.#source, nowMs)) {
       const mark = `${evidence.session.revision} ${evidence.state}`;
       const sent = this.#sent.get(evidence.session.id);
       if (sent?.mark === mark && nowMs - sent.atMs < sent.waitMs) continue;

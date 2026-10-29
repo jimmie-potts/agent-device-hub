@@ -43,13 +43,19 @@ export function checkLocalBrowserCredentials(credentials, ingestSource, access =
 
 /**
  * Admits the browser-only edge and a section only for a shipped module that declares no device simulation (Hub #1202),
+ * or whose registration says of that section that it reaches no local device or file (`hostLocal`, Hub #567),
  * without its own secrets and with every module it starts after also hosted. Returns those modules' registrations in
  * `shipped` order.
  */
 export function checkLocalBrowserConfig(config, shipped, access = 'host-local') {
-  const admitted = new Set(shipped.filter(registration => registration.simulation === undefined).map(({name}) => name));
+  // A module that declares a simulation reaches a device, unless it says of this section that it reaches none (Hub #567).
+  const byName = new Map(shipped.map(registration => [registration.name, registration]));
+  const admits = (name, section) => {
+    const registration = byName.get(name);
+    return registration !== undefined && (registration.simulation === undefined || registration.hostLocal?.(section) === true);
+  };
   const hosted = shipped.filter(registration => Object.hasOwn(config.modules, registration.name));
-  if (Object.entries(config.modules).some(([name, section]) => !admitted.has(name) || Object.hasOwn(Object(section), 'secrets'))
+  if (Object.entries(config.modules).some(([name, section]) => !admits(name, section) || Object.hasOwn(Object(section), 'secrets'))
     || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))
     || config.edge?.credentials !== '/run/secrets/bunny/edge.json'
     || config.edge.browserAccess !== 'trusted-loopback' || config.edge.launcher !== false || config.edge.mcp !== false

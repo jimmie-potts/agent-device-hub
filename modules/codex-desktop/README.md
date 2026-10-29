@@ -87,7 +87,32 @@ The module's section of the runtime's configuration file, the old Hub's
   evidence.
 
 The module reads no secret; the runtime's `secrets` member is ignored. No refusal
-repeats a value from the section. `convertHubCodexDesktop(hostConfiguration)`
+repeats a value from the section.
+
+Hub #567 adds the `sources` form, for a runtime that follows more than one
+Codex Desktop producer or one whose Codex home lies on another computer:
+
+```json
+{"sources": [
+  {"home": "/mnt/c/Users/<user>/.codex", "hostId": "<host id>", "sourceId": "<source id>"},
+  {"hostId": "<other host id>", "sourceId": "<Codex Desktop source id>"}
+]}
+```
+
+- One to four sources, each with `hostId` and `sourceId` as above. A source
+  with a `home` is read locally, as the released section is. A source without
+  one is **remote**: the [collector](../../apps/runtime/README.md#codex-desktop-collector)
+  on the computer that holds its Codex home publishes `desktop-metadata`
+  snapshots, and the module takes them as that source's reads.
+- No two sources may name the same host and source, so one producer is never
+  collected both locally and remotely.
+- A section mixes neither form with the other. The released section stays as
+  it is and shows its settings as before; the `sources` form shows each
+  source's `hostId`, `sourceId` and whether it is `remote`, never a home.
+
+Each source has its own marker device in records: `marker` when one source is
+configured, `marker:<hostId>:<sourceId>` otherwise. Every observation carries
+its own source's identity, so the same thread ID on two sources is two sessions. `convertHubCodexDesktop(hostConfiguration)`
 turns the old Hub's `host.json` into this section, or gives undefined when the Hub
 has no `codexDesktop`, and checks the result with the module's own `configure`.
 This is an optional legacy utility. The selected
@@ -161,18 +186,54 @@ the runtime leaves the PC ([#751](https://github.com/jimmie-potts/agent-device-h
 Desktop's read state has to reach it from the PC instead
 ([#567](https://github.com/jimmie-potts/agent-device-hub/issues/567)).
 
+## Remote sources (Hub #567)
+
+A remote source stands in for the folder reader, not for the module. The
+collector reads the same marker, archive filenames and index tail with this
+module's readers, bounds them, and publishes one `desktop-metadata` snapshot
+(`org.bunny.desktop-metadata.observed`, on
+`bunny.event.desktop-metadata.<feed ID>`) on every change and at least every
+5 s, through `publishOnce` with its own ingest credential. The runtime's edge
+admits the family only from a credential derived from the snapshot's feed with
+the `feed: desktop-metadata` member, so a hook's credential, another feed's
+collector or any other source is refused `forbidden` before the bus has the
+message. The core ignores the family and keeps no snapshot in history.
+
+The module subscribes to `bunny.event.desktop-metadata.*` once and hands each
+snapshot to the source whose feed it names. A snapshot from a source that is
+not a remote part, whose subject is not its feed's, or whose feed is not
+configured changes nothing; the first such message from each sender on each
+key is logged (`message.received`, `forbidden` at WARN, or `not-found` at INFO
+for a feed the module does not follow), the rest are refused silently.
+
+A read answers from the latest snapshot younger than 10 s: `unchanged` when
+its stamp is the one the module holds, so the read rules, archive refresh and
+resends run as they do locally. Without a fresh snapshot a read waits for the
+next one, so the existing 5 s deadline makes the marker unavailable, logged
+once, and clears archive positives; no read state changes meanwhile. The next
+snapshot answers the waiting read at once and logs the recovery. The module
+reads no local file for a remote source, so the personal container profile
+admits a section whose sources are all remote
+([container guide](../../docs/bunny-container.md#admit-a-module-that-reaches-no-device)).
+
+Only `client: desktop` identities get evidence. The shared Mac feed's
+`client: local` sessions (#1183) get none: the session and lifecycle contracts
+keep read, archive and title evidence Desktop-only, and #567 records the
+owner decision still pending on that feed.
+
 ## Diagnostics
 
 Records carry `bunny.module` `codex-desktop`, never the home or the marker:
 
 | Record | Level | When |
 | --- | --- | --- |
-| `device.unavailable` (`bunny.device.id` `marker`) | WARN, then DEBUG summaries | A read outlasted its deadline or the reader failed. |
+| `device.unavailable` (`bunny.device.id` `marker`, or `marker:<hostId>:<sourceId>` with several sources) | WARN, then DEBUG summaries | A read outlasted its deadline, the reader failed, or a remote source's snapshots stopped. |
 | `device.available` | INFO | A read answered after that. |
 | `operation.failed` (`bunny.operation` `lifecycle`, `bunny.reason` `invalid-input`) | WARN | The marker became unusable. |
 | `operation.completed` (`bunny.operation` `lifecycle`) | INFO | It became usable again. |
 | `operation.failed`, `operation.completed` (`bunny.operation` `feed`) | WARN, INFO | The copy of the core's sessions was lost, and synced again. |
 | `lifecycle.observed` | DEBUG | One observation published, in its trace. |
+| `message.received` (`bunny.operation` `feed`) | DEBUG; WARN `forbidden` or INFO `not-found` once per sender and key | A remote source's snapshot taken, or one refused. |
 
 ## What leaves the module
 
