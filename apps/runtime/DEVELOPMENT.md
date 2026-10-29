@@ -504,6 +504,19 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+The television journey (#1112) runs the existing shell at a 1,920 × 1,080
+viewport from the keyboard only, as a TV browser presents the D-pad. After the
+root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks
+visible focus at every Tab stop on its way to Settings, a mode button, a card and
+Sign in again; the agent cards' name, client, state and attention on their face
+and last-evidence, attention and host/provider source text when opened; a dropped
+stream marked stale and reconnected without a command; a mode changed by another
+browser shown once and not repeated; Sign in again after a runtime restart from
+the keyboard; no text overlap, no horizontal scroll and axe in light and dark. It runs in App verification and in the
+full local browser suite. It is synthetic Chromium evidence for the shell; the
+owner's checks on the actual ONN are in
+[ONN dashboard display qualification](../../docs/onn-dashboard-qualification.md).
+
 Card consistency (#1217) extends the existing hosted smoke entry with
 `node apps/runtime/dashboard/tests/card-consistency.browser.ts`. It compares real
 synthetic-runtime cards, including an empty room and optional empty MicroDuck

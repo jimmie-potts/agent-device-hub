@@ -146,6 +146,14 @@ simulated, protocol, installed-client and physically observed evidence.
 approved fixed read-only metadata reader, selected-title semantics and minimum
 retention/query contract. It does not claim production or installed history.
 
+[ONN dashboard display qualification](onn-dashboard-qualification.md) records
+how the shared dashboard reaches the TV's browser through the Mac private
+route, the read/control permission decision, the owner's device setup and the
+checks to record on the actual ONN. Its source evidence is the television
+keyboard journey under
+[runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks);
+it qualifies no TV browser or device.
+
 ### ONN focused-text admission checks
 
 The issue-linked `gh-1039-onn-controls` change adds a narrow privacy exception to the existing core dispatcher. After the root build, run `npm run test:runtime:onn-admission:built` for the actual dispatcher/store regression. The runtime unit suite discovers this test, and CI's existing `test:runtime:built` step runs it; shared SDK checks cover the private digest primitive. Retain the failing-before result and verify semantic duplicates, missing/replaced keys, durable plaintext exclusion, no replay and inbox refusal. This is source evidence; installed ONN acceptance remains separate.
