@@ -15,8 +15,8 @@ import {InstalledLibrary, writeSyntheticLibrary, type SyntheticLibrary} from '@j
 import {holdRuntimeLease} from '../src/lease.js';
 import {DEFAULT_MIN_FREE_BYTES, EXIT, runPixooMigration, spaceNeeded, type PixooMigrationOptions} from '../src/pixoo-migration.js';
 import {it, stateDir, waitFor} from './support.js';
+import {migrationRuntime} from './fixtures/migration-runtime.js';
 
-const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const ENTRY = fileURLToPath(new URL('../src/migrate-pixoo.js', import.meta.url));
 const FULL_DISK = fileURLToPath(new URL('./fixtures/pixoo-full-disk.js', import.meta.url));
 
@@ -64,19 +64,6 @@ async function untouched(state: string): Promise<boolean> {
 const room = (freeBytes: number): NonNullable<PixooMigrationOptions['freeSpace']> => () => Promise.resolve({freeBytes, blockSize: 4096});
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
-/** Starts the shipped runtime on `dir` and waits for its ready line. */
-async function startRuntime(dir: string): Promise<{stop: () => Promise<void>}> {
-  const child = spawn(process.execPath, [MAIN, '--port', '0', '--state-dir', dir], {stdio: ['ignore', 'pipe', 'ignore']});
-  let stdout = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
-  const exited = once(child, 'exit');
-  await waitFor(() => stdout.includes('\n'), 15_000, 'the ready line');
-  return {stop: async () => {
-    child.kill('SIGTERM');
-    await exited;
-  }};
-}
-
 it('migrates and verifies, each with one JSON line of counts and hashes and exit 0', async context => {
   const state = join(await stateDir(context), 'state');
   const migrated = await tool(args('migrate', state));
@@ -123,9 +110,10 @@ it('refuses malformed arguments with exit 2', async context => {
   assert.ok(await untouched(state));
 });
 
-it('refuses while a runtime runs on the state directory, and a runtime that starts while it runs cannot take the lease', async context => {
+it('migration and verify refuse a running runtime, and migration succeeds after it stops', async context => {
   const dir = await stateDir(context);
-  const runtime = await startRuntime(dir);
+  const runtime = migrationRuntime(context, dir);
+  await runtime.ready();
   try {
     for (const operation of ['migrate', 'verify']) {
       const {exit, line} = await tool(args(operation, dir));
@@ -137,7 +125,8 @@ it('refuses while a runtime runs on the state directory, and a runtime that star
   }
   // Once the runtime has stopped, the migration runs.
   assert.equal((await tool(args('migrate', dir))).exit, EXIT.ok);
-  const runtimeAgain = await startRuntime(dir);
+  const runtimeAgain = migrationRuntime(context, dir);
+  await runtimeAgain.ready();
   try {
     const {exit, line} = await tool(args('verify', dir));
     assert.deepEqual([exit, line.code], [EXIT.refused, 'runtime-running']);
@@ -145,15 +134,16 @@ it('refuses while a runtime runs on the state directory, and a runtime that star
     await runtimeAgain.stop();
   }
 
-  // The reverse: while the tool holds the lease, a runtime's core waits for it until its deadline and fails.
+});
+
+// Give the reverse exclusion its own unchanged 20-second budget, independent of the two successful startups above.
+it('a runtime that starts while the migration tool holds the lease fails without taking it', async context => {
+  const dir = await stateDir(context);
   const lease = await holdRuntimeLease(dir);
   try {
-    const child = spawn(process.execPath, [MAIN, '--port', '0', '--state-dir', dir], {stdio: ['ignore', 'pipe', 'pipe']});
-    let stderr = '';
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
-    const [code] = await once(child, 'exit') as [number | null];
-    assert.equal(code, 1);
-    assert.match(stderr, /"error\.code":"core-failed"/);
+    const runtime = migrationRuntime(context, dir);
+    assert.deepEqual(await runtime.exited, [1, null]);
+    assert.match(runtime.stderr(), /"error\.code":"core-failed"/);
   } finally {
     lease.release();
   }
