@@ -211,12 +211,13 @@ for a feed the module does not follow), the rest are refused silently.
 
 A read answers from the latest snapshot received less than 10 s ago: `unchanged`
 when its stamp is the one the module holds, so the read rules, archive refresh
-and resends run as they do locally. While the feed is fresh, a snapshot whose
-`observedAtMs` is not newer than the last one taken arrived late or out of
-order: it is ignored (one DEBUG record), renews no freshness and reorders no
-evidence; once the feed has gone stale, the next snapshot is taken whatever its
-stamp, so a clock step on the collector's host holds the feed for one freshness
-window at most. The settle rule counts
+and resends run as they do locally. A snapshot whose `observedAtMs` is not newer
+than the last one taken arrived late or out of order: it is never taken (one
+DEBUG record), renews no freshness and reorders no evidence. Once the feed has
+gone stale, such a snapshot resets the ordering baseline to its own stamp, so
+the next snapshot newer than it is taken: a clock step on the collector's host
+holds the feed for one freshness window and one cycle, and a delayed old
+snapshot still gives no evidence. The settle rule counts
 from the receipt of the snapshot a read answers from, so a session that ended
 after that snapshot never settles to read from it. Without a fresh snapshot a read waits for the
 next one, so the existing 5 s deadline makes the marker unavailable, logged

@@ -41,16 +41,20 @@ export class RemoteFeed implements MarkerTransport {
   /**
    * Takes a snapshot of this feed, with the trace of the message that carried it: the next reads answer from it, and a
    * read that waits answers at once. Evidence drawn from the snapshot continues its trace. One collector reads one
-   * clock, so while the feed is fresh a snapshot whose `observedAtMs` is not newer than the last one taken arrived late
-   * or out of order: it is ignored, and neither renews the feed's freshness nor reorders evidence. Once the feed has gone
-   * stale the next snapshot is the collector's current view whatever its clock says, so a clock that stepped back on the
-   * collector's host, or a snapshot stamped in the future, holds the feed for one freshness window, never for good.
-   * Returns whether the snapshot was taken.
+   * clock, so a snapshot whose `observedAtMs` is not newer than the last one taken arrived late or out of order: it is
+   * never taken, and neither renews the feed's freshness nor reorders evidence. Once the feed has gone stale, such a
+   * snapshot resets the ordering baseline to its own stamp instead, so that the next snapshot newer than it is taken: a
+   * clock that stepped back on the collector's host, or a snapshot stamped in the future, holds the feed for one
+   * freshness window and one cycle, never for good, while a delayed old snapshot still gives no evidence. Returns
+   * whether the snapshot was taken.
    */
   take(snapshot: DesktopMetadataSnapshot, parent: {traceparent: string}): boolean {
     if (this.#closed) return false;
     const latest = this.#latest;
-    if (latest !== undefined && this.#now() - latest.atMs < FEED_FRESH_MS && snapshot.observedAtMs <= latest.observedAtMs) return false;
+    if (latest !== undefined && snapshot.observedAtMs <= latest.observedAtMs) {
+      if (this.#now() - latest.atMs >= FEED_FRESH_MS) latest.observedAtMs = snapshot.observedAtMs;
+      return false;
+    }
     const metadata = metadataOf({archived: snapshot.archived, titles: snapshot.titles});
     const unread = snapshot.unread === null ? null : snapshot.unread.filter(id => ID.test(id));
     this.#latest = {read: {stamp: snapshot.stamp, unread, archived: metadata.archived ?? null, titles: metadata.titles ?? [], parent: {traceparent: parent.traceparent}}, atMs: this.#now(), observedAtMs: snapshot.observedAtMs};
