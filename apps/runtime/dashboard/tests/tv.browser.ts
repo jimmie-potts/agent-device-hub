@@ -30,14 +30,6 @@ async function open(viewport: {width: number; height: number}): Promise<{context
 }
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`}); };
 const focused = (page: Page, target: Locator): Promise<boolean> => target.evaluate(element => element === document.activeElement);
-/** Presses Tab until `target` holds focus, as a remote's directional keys would, within a bound that covers the Home page. */
-async function tabTo(page: Page, target: Locator, bound = 80): Promise<void> {
-  for (let presses = 0; presses < bound; presses += 1) {
-    if (await focused(page, target)) return;
-    await page.keyboard.press('Tab');
-  }
-  assert.fail(`focus never reached ${await target.evaluate(element => element.outerHTML.slice(0, 80))} within ${bound} presses`);
-}
 /** The focused control shows the style guide's outline, so a viewer across the room can see where the ring is. */
 const focusVisible = (page: Page): Promise<boolean> => page.evaluate(() => {
   const element = document.activeElement;
@@ -45,6 +37,22 @@ const focusVisible = (page: Page): Promise<boolean> => page.evaluate(() => {
   const style = getComputedStyle(element);
   return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) >= 2;
 });
+const focusedName = (page: Page): Promise<string> => page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80) ?? 'nothing');
+/**
+ * Presses Tab until `target` holds focus, as a remote's directional keys would, within a bound that covers the Home page.
+ * Every stop on the way must show the ring (style guide: keyboard focus is visible on every interactive element).
+ */
+async function tabTo(page: Page, target: Locator, bound = 80): Promise<void> {
+  for (let presses = 0; presses < bound; presses += 1) {
+    if (await focused(page, target)) return;
+    await page.keyboard.press('Tab');
+    // A press that parks focus on the document (Chromium's turn through the browser chrome after a re-render) is no stop.
+    if (await page.evaluate(() => document.activeElement !== null && document.activeElement !== document.body)) {
+      assert.equal(await focusVisible(page), true, `focus is visible on each stop: ${await focusedName(page)}`);
+    }
+  }
+  assert.fail(`focus never reached ${await target.evaluate(element => element.outerHTML.slice(0, 80))} within ${bound} presses`);
+}
 const modeCommands = (sent: string[]): number => sent.filter(item => item.endsWith('/commands/mode-set')).length;
 
 try {
@@ -71,14 +79,11 @@ try {
     const box = element.getBoundingClientRect(); return box.top >= 0 && box.bottom <= window.innerHeight;
   }).length);
   assert.equal(inView, 2, 'both cards sit within the first television screen');
-  const smallestText = await page.evaluate(() => Math.min(...[...document.querySelectorAll<HTMLElement>('main p, main h1, main h2, main h3, main span, main a, main button, main dt, main dd, main label')]
-    .filter(element => element.offsetParent !== null && (element.textContent ?? '').trim() !== '')
-    .map(element => Number.parseFloat(getComputedStyle(element).fontSize))));
   assert.deepEqual(await textOverlaps(page), []);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'no horizontal scroll');
   checks.push('the agent cards show name, client, state and attention within one 1080p screen');
 
-  // The remote: Tab reaches Settings, Enter opens it, Back returns; every stop shows the focus ring.
+  // The remote: Tab reaches Settings, Enter opens it, Back returns; tabTo checks the ring at every stop.
   const settings = page.getByRole('navigation', {name: 'Utilities'}).getByRole('link', {name: 'Settings', exact: true});
   await tabTo(page, settings);
   assert.equal(await focusVisible(page), true, 'focus is visible on the Settings link');
@@ -96,14 +101,16 @@ try {
   await card('Port the wall').locator('details[open]').waitFor();
   await card('Port the wall').getByText(/^Last evidence: .* ago\./).waitFor();
   await card('Port the wall').locator('.attention', {hasText: 'Approval · blocked attention'}).waitFor();
+  await card('Port the wall').locator('dd', {hasText: 'host-sim / claude-code'}).waitFor();
   await shot(page, 'tv-card-open');
   await page.keyboard.press('Enter');
   assert.equal(await card('Port the wall').locator('details[open]').count(), 0, 'Select again closes the card');
   assert.equal(tv.sent.length, 0, 'reading and navigating send nothing');
-  checks.push('Tab, Enter and Back reach Settings, the mode buttons and a card with a visible focus ring');
+  checks.push('Tab, Enter and Back reach Settings, the mode buttons and a card, with a visible focus ring at every stop, and the opened card names its host and provider');
 
   // Away: the television loses its network while another browser changes the mode. Back: the current state appears once.
   const phone = await open({width: 390, height: 844});
+  assert.equal(await quiet.getAttribute('aria-pressed'), 'false', 'the television does not show Quiet before the other browser selects it');
   await tv.context.setOffline(true);
   world.dropDashboardStreams();
   await page.waitForFunction(() => document.querySelector('main#main')?.getAttribute('data-feed') !== 'connected');
@@ -123,11 +130,16 @@ try {
   await phone.context.close();
   checks.push('a lost stream marks the cards stale, and reconnecting shows the mode another browser set without a command');
 
-  // Accessibility at television size, with a card open and the ring on it.
+  // Accessibility at television size in both color schemes, with the ring on a card.
   await tabTo(page, face);
-  const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-  assert.deepEqual(violations.map(violation => `${violation.id}: ${violation.nodes.map(node => node.target.join(' ')).join(', ')}`), []);
-  checks.push('axe passes at 1,920 × 1,080');
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({colorScheme});
+    const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
+    assert.deepEqual(violations.map(violation => `${violation.id}: ${violation.nodes.map(node => node.target.join(' ')).join(', ')}`), [], colorScheme);
+    assert.equal(await focusVisible(page), true, `focus is visible in ${colorScheme}`);
+  }
+  await page.emulateMedia({colorScheme: null});
+  checks.push('axe passes at 1,920 × 1,080 in light and dark');
 
   // The session ends with a runtime restart; Sign in again is reachable from the keyboard and signs the television back in.
   await world.restart();
@@ -144,7 +156,7 @@ try {
 
   assert.deepEqual(errors, []);
   await tv.context.close();
-  process.stdout.write(`${JSON.stringify({passed: true, viewport: '1920x1080', smallestTextPx: smallestText, checks, actualOnn: false, tvBrowser: false})}\n`);
+  process.stdout.write(`${JSON.stringify({passed: true, viewport: '1920x1080', checks, actualOnn: false, tvBrowser: false})}\n`);
 } finally {
   await browser.close();
   await world.close();

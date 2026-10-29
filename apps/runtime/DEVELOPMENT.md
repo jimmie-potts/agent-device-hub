@@ -507,11 +507,12 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
 root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks
-visible focus on every control it reaches, the agent cards' name, host/provider,
-state, attention and last-evidence text, a dropped stream marked stale and
-reconnected without a command, a mode changed by another browser shown once and
-not repeated, Sign in again after a runtime restart from the keyboard, no text
-overlap, no horizontal scroll and axe. It runs in App verification and in the
+visible focus at every Tab stop on its way to Settings, a mode button, a card and
+Sign in again; the agent cards' name, client, state and attention on their face
+and last-evidence, attention and host/provider source text when opened; a dropped
+stream marked stale and reconnected without a command; a mode changed by another
+browser shown once and not repeated; Sign in again after a runtime restart from
+the keyboard; no text overlap, no horizontal scroll and axe in light and dark. It runs in App verification and in the
 full local browser suite. It is synthetic Chromium evidence for the shell; the
 owner's checks on the actual ONN are in
 [ONN dashboard display qualification](../../docs/onn-dashboard-qualification.md).

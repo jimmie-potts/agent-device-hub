@@ -63,7 +63,7 @@ stays pending.
 | Check | What to observe |
 | --- | --- |
 | Sign-in | The bookmark prompts for the owner password once, then shows the signed-in dashboard with its Home. Wrong or cancelled credentials show the browser's refusal, not the dashboard. |
-| Reading from the sofa | On Home, each agent card shows the session name, the host/provider line, the state chip and, when opened, the last-evidence age. The Hub mode and the inbox are legible. Note anything that is too small to read from the normal viewing position. |
+| Reading from the sofa | On Home, each agent card shows the session name, the client line (the provider and client it runs in), the state chip and any attention line, and, when opened, the last-evidence age, the attention text and the source (host and provider). The Hub mode and the inbox are legible. Note anything that is too small to read from the normal viewing position. |
 | Remote navigation | The directional keys move a visible focus ring between the navigation links, the mode buttons and the cards; Select opens a card and activates a link; Back returns to the previous page. Note any control the ring cannot reach. |
 | Disconnect and app switch | Pause the Mac route or drop the TV's network: the cards mark their evidence stale and the page says the feed is not connected. Restore it: the current state returns and the TV sends nothing. Press Home, use another app, return to the browser: the page shows current state and repeats no command. A mode changed from the phone while the TV was away shows once reconnected and is not applied again. |
 | Session end | Disconnect in Settings ends the session and offers Sign in; expiry or a runtime restart offers Sign in again. Both are reachable and work from the remote. |
@@ -79,12 +79,14 @@ Until then the shell is unchanged.
 `node apps/runtime/dashboard/tests/tv.browser.ts` runs the existing shell on
 the disposable synthetic runtime at a 1,920 × 1,080 viewport and drives it from
 the keyboard only, as a TV browser presents the D-pad: Tab, Enter and the
-browser's Back. It checks that focus is visible on every control it reaches,
-that the agent cards show name, host/provider, state, attention and last
-evidence, that a dropped stream marks evidence stale and reconnects without a
-command, that a mode changed by another browser appears without being repeated,
-that a runtime restart offers Sign in again from the keyboard, and that the page
-has no overlapping text, no horizontal scroll and no axe violation. It runs in
+browser's Back. It checks that focus is visible at every Tab stop on its way
+to Settings, a mode button, a card and Sign in again, that the agent cards show
+name, client, state and attention on their face and last-evidence age, attention
+text and the host/provider source when opened, that a dropped stream marks
+evidence stale and reconnects without a command, that a mode changed by another
+browser appears without being repeated, that a runtime restart offers Sign in
+again from the keyboard, and that the page has no overlapping text, no
+horizontal scroll and no axe violation in light or dark. It runs in
 CI's App verification job and in the full local dashboard browser suite. Its
 screenshots, saved under `DASHBOARD_RECEIPTS`, are synthetic.
 
