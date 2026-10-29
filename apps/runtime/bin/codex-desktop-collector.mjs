@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // The host-local Codex Desktop collector (Hub #567): `node codex-desktop-collector.mjs <collector.json>`. The logic is
-// `@jimmie-potts/runtime/codex-desktop-collector`; this entry owns the process's streams, signals and exit. Records go to
-// stderr as JSON lines; stdout stays empty. Exit 0 after SIGTERM or SIGINT, 2 when the collector or producer file is
-// unusable, 1 for an unexpected fault.
+// `@jimmie-potts/runtime/codex-desktop-collector`; this entry owns the process's streams, signals and exit. Diagnostic
+// contract records go to stderr as JSON lines through the runtime's `LogWriter`; stdout stays empty. Exit 0 after SIGTERM
+// or SIGINT, 2 when the collector or producer file is unusable, 1 for an unexpected fault.
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
@@ -52,7 +52,12 @@ async function main() {
     process.stderr.write(`${REFUSAL_TEXT[collector]}\n`);
     process.exit(2);
   }
-  await runCollector(collector, {signal: controller.signal, write: line => { process.stderr.write(`${line}\n`); }});
+  // Records are the diagnostic contract's, written by the runtime's own writer as JSON lines on stderr. The contract
+  // registers operation and device events in the module scope only, so the collector logs as the module it feeds.
+  const [{INSTANCE_ID, LogWriter, stderrSink}, {runtimeResource, MODULE_SCOPE}] = await Promise.all([import('../dist/src/log.js'), import('../dist/src/record.js')]);
+  const log = new LogWriter(stderrSink, 'info', {now: () => Date.now()}, runtimeResource('production', INSTANCE_ID))
+    .logger(MODULE_SCOPE, {'bunny.module': 'codex-desktop'});
+  await runCollector(collector, {signal: controller.signal, log});
   finish(0);
 }
 

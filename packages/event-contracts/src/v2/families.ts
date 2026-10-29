@@ -178,6 +178,12 @@ export type DesktopMetadataSnapshot = {
   feed: DesktopFeed; observedAtMs: number; stamp: string;
   unread: string[] | null; archived: string[] | null; titles: {id: string; title: Title}[];
 };
+/** The `desktop-metadata` family's type, schema and routing-key prefix, for its one publisher and its one consumer (Hub #567). */
+export const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
+export const DESKTOP_METADATA_SCHEMA = 'https://bunny.invalid/events/desktop-metadata/2.0';
+export const DESKTOP_METADATA_KEY_PREFIX = 'bunny.event.desktop-metadata.';
+/** The routing key of one feed's snapshots. */
+export const desktopMetadataKey = (feed: DesktopFeed): string => `${DESKTOP_METADATA_KEY_PREFIX}${desktopFeedId(feed)}`;
 /** The ID of a Desktop feed's entity: the lowercase hex SHA-256 of its four identity fields, sorted, in UTF-8 JSON. */
 export function desktopFeedId(feed: DesktopFeed): string {
   const {client, hostId, provider, sourceId} = feed;

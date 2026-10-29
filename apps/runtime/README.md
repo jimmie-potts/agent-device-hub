@@ -607,6 +607,9 @@ the Mac, so the core never reads another host's files. The code is
   `{feed, observedAtMs, stamp, unread, archived, titles}`. It sends the snapshot
   with `publishOnce` when its `stamp` changed, or at least 5 s after the last
   publication as a heartbeat, so the receiving module can judge freshness.
+  `observedAtMs` is the collector's clock at the read. The module ignores a
+  snapshot whose `observedAtMs` is not newer than the last one it took, so a
+  delayed publication cannot reorder evidence.
   `stamp` is the first 32 hex digits of the SHA-256 of the canonical JSON of the
   bounded `{unread, archived, titles}`. Unread and archived IDs are distinct and
   sorted.
@@ -619,7 +622,9 @@ the Mac, so the core never reads another host's files. The code is
   (owner-only regular file with one link, opened without following a link, at
   most 8 KiB) with exactly
   `{"producer": "<absolute path to producer.json>", "home": "<absolute Codex home>"}`
-  and an optional integer `intervalMs` from 1000 to 30000. Both paths are
+  and an optional integer `intervalMs` from 1000 to 5000. A longer interval is
+  refused: every cycle must reach the 5 s heartbeat, because the module treats a
+  feed older than 10 s as unavailable. Both paths are
   absolute, normalized, at most 1024 characters and contain no NUL. Both files
   are read once, at start.
 - **The producer.** The [hook's producer file and receipt](#agent-hooks), read
@@ -634,16 +639,22 @@ the Mac, so the core never reads another host's files. The code is
   unchanged marker keeps the last unread set, and a marker that changed while it
   was read gives nothing that cycle. A missing or unusable marker publishes
   `unread: null`.
-- **Records.** JSON lines on stderr with only `time`, `level`, `event`,
-  `bunny.code` and, when the edge's error body has one, `trace_id`. A
-  publication is `collector.published` at DEBUG. The first rejected or uncertain
-  publication is one WARN `operation.failed` with its registry code, then one
-  per minute while it lasts, and INFO `operation.completed` when publishing
-  works again. A stalled or failed read follows the same rule with
-  `device.unavailable` (`unavailable`, or `internal`) and `device.available`. No
-  path, token, thread ID, title, host name or exception text appears in a record,
-  and stdout stays empty. Nothing retries a publication; the next cycle publishes
-  the next snapshot.
+- **Records.** [Diagnostic contract](../../docs/observability-contract.md)
+  records, written by the runtime's own `LogWriter` (minimum level INFO) as JSON
+  lines on stderr; stdout stays empty. They use scope `bunny.module` with
+  `bunny.module` `codex-desktop`, the module the collector feeds, because the
+  contract registers the operation and device events in that scope only. Each
+  publication is `operation.completed` at DEBUG with `bunny.operation`
+  `lifecycle`, `bunny.outcome` `succeeded`, the message's ID and kind and its
+  trace. The first rejected or uncertain publication is one `operation.failed`
+  (`recordLog`, so the SDK's code table sets its level) with its outcome, its
+  registry code and the message's trace, then a DEBUG summary at most once a
+  minute while it lasts, and one INFO `operation.completed` when publishing works
+  again. A stalled or failed read goes through the SDK's `DeviceAvailability` for
+  device `marker`: WARN `device.unavailable` (`unavailable`, or `internal`), DEBUG
+  summaries and INFO `device.available`. No path, token, thread ID, title, host
+  name or exception text appears in a record. Nothing retries a publication; the
+  next cycle publishes the next snapshot.
 - **Exit.** SIGTERM or SIGINT ends it with 0 within 1 s. A read stuck in a file
   system call does not hold it: as the hook entrypoints do, it waits only while
   `FSReq` work remains and ends itself by `SIGKILL` at that budget. An unusable

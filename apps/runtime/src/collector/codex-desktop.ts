@@ -2,21 +2,20 @@
 // marker, the archived rollout filenames and the `session_index.jsonl` tail) from a local Codex home with the module's own
 // readers, and publishes one bounded `desktop-metadata` snapshot per cycle to the runtime's SDK edge with `publishOnce`,
 // as a private producer's credential. It runs where Codex Desktop runs, on the PC (WSL, with the home on /mnt/c) and on
-// the Mac, so the core never reads another host's files. It writes no file, retries no publication and reports only
-// fixed-shape records that carry registry codes and trace IDs: no path, token, thread ID, title or exception text.
+// the Mac, so the core never reads another host's files. It writes no file, retries no publication and reports through
+// the diagnostic contract's records only, with registry codes and the message's trace: no path, token, thread ID, title
+// or exception text.
 // `bin/codex-desktop-collector.mjs` runs it and owns the process's streams, signals and exit.
 import {createHash} from 'node:crypto';
-import {constants} from 'node:fs';
-import {open, type FileHandle} from 'node:fs/promises';
 import {isAbsolute, normalize} from 'node:path';
 import {readDesktopMetadata, readMarker, type DesktopMetadata} from '@jimmie-potts/codex-desktop';
-import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
-import {desktopFeedId, type DesktopFeed, type DesktopMetadataSnapshot, type Title} from '@jimmie-potts/event-contracts/v2/families';
-import {prepareMessage, publishOnce, type PublishOnceResult} from '@jimmie-potts/sdk';
-import {readProducer, type Producer} from '../hook/producer.js';
+import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {
+  DESKTOP_METADATA_SCHEMA, DESKTOP_METADATA_TYPE, desktopFeedId, desktopMetadataKey, type DesktopFeed, type DesktopMetadataSnapshot, type Title,
+} from '@jimmie-potts/event-contracts/v2/families';
+import {DeviceAvailability, Outcome, SUMMARY_MS, prepareMessage, publishOnce, recordLog, type Logger, type PublishOnceResult} from '@jimmie-potts/sdk';
+import {canonical, readPrivateJson, readProducer, type Producer} from '../hook/producer.js';
 
-export const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
-export const DESKTOP_METADATA_SCHEMA = 'https://bunny.invalid/events/desktop-metadata/2.0';
 /** The most distinct unread IDs a snapshot carries; more makes `unread` unavailable (null), never truncated. */
 export const MAX_UNREAD = 4096;
 /** The most distinct archived IDs a snapshot carries; more makes `archived` unavailable (null), never truncated. */
@@ -33,11 +32,12 @@ export const HEARTBEAT_MS = 5000;
 export const PUBLISH_TIMEOUT_MS = 4000;
 export const DEFAULT_INTERVAL_MS = 2000;
 export const MIN_INTERVAL_MS = 1000;
-export const MAX_INTERVAL_MS = 30000;
+/** The longest interval: every cycle must reach the 5 s heartbeat, since the module treats an older feed as unavailable. */
+export const MAX_INTERVAL_MS = 5000;
 /** The largest collector file read. */
 export const MAX_COLLECTOR_BYTES = 8192;
-/** How often a lasting failure is summarized after its first record. */
-export const SUMMARY_MS = 60_000;
+/** The device name the collector's read availability records carry. */
+const MARKER_DEVICE = 'marker';
 const MAX_PATH = 1024;
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const FEED_MEMBERS = 'client,feed,hostId,provider,sourceId';
@@ -47,25 +47,14 @@ const TITLE_STEPS = [MAX_TITLES, 256, 128, 0] as const;
 export type CollectorConfig = {producer: string; home: string; intervalMs: number};
 /** What one cycle observed, before its bounds. */
 export type Observed = {unread: readonly string[] | null; archived: readonly string[] | null; titles: DesktopMetadata['titles']};
-/** One record, as one JSON line: only these fields, ever. */
-export type CollectorRecord = {
-  time: string; level: 'DEBUG' | 'INFO' | 'WARN'; event: string; 'bunny.code'?: ErrorCode; trace_id?: string;
-};
 
 type Fields = Record<string, unknown>;
 const isFields = (value: unknown): value is Fields => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** Canonical JSON: object keys sorted at every depth, arrays as given. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (isFields(value)) return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  return JSON.stringify(value) ?? 'null';
-}
-
-/** A snapshot's content stamp: the first 32 hex digits of the SHA-256 of its bounded sets' canonical JSON. */
+/** A snapshot's content stamp: the first 32 hex digits of the SHA-256 of its bounded sets' canonical JSON (`canonical`). */
 export function snapshotStamp(content: Pick<DesktopMetadataSnapshot, 'unread' | 'archived' | 'titles'>): string {
   const {unread, archived, titles} = content;
-  return createHash('sha256').update(canonicalJson({unread, archived, titles}), 'utf8').digest('hex').slice(0, 32);
+  return createHash('sha256').update(canonical({unread, archived, titles}), 'utf8').digest('hex').slice(0, 32);
 }
 
 /** The distinct IDs, sorted so the stamp does not depend on directory or marker order, or null past `limit`. */
@@ -74,8 +63,6 @@ function boundedSet(ids: readonly string[] | null, limit: number): string[] | nu
   const distinct = [...new Set(ids)].sort();
   return distinct.length > limit ? null : distinct;
 }
-
-const routingKey = (feed: DesktopFeed): string => `bunny.event.desktop-metadata.${desktopFeedId(feed)}`;
 
 /**
  * The bounded snapshot and its prepared message from `source`. Counts are bounded first: over-limit unread or archived
@@ -87,7 +74,7 @@ export function snapshotMessage(source: string, feed: DesktopFeed, observed: Obs
   key: string; snapshot: DesktopMetadataSnapshot; message: Message<DesktopMetadataSnapshot>;
 } {
   const subject = desktopFeedId(feed);
-  const key = routingKey(feed);
+  const key = desktopMetadataKey(feed);
   let unread = boundedSet(observed.unread, MAX_UNREAD);
   let archived = boundedSet(observed.archived, MAX_ARCHIVED);
   const allTitles: {id: string; title: Title}[] = observed.titles.map(({id, title}) => ({id, title: {value: title.value, source: title.source}}));
@@ -120,40 +107,13 @@ export function desktopFeedOf(configuration: Readonly<Record<string, unknown>>):
   return {provider, client, hostId, sourceId};
 }
 
-/** Reads a private JSON file of at most `limit` bytes, as `readPrivateJson` in hook/producer.ts does, or undefined. */
-async function readPrivateJson(path: string, limit: number): Promise<unknown> {
-  let file: FileHandle;
-  try {
-    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  } catch {
-    return undefined;
-  }
-  try {
-    const info = await file.stat();
-    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0 || info.size > limit) return undefined;
-    const buffer = Buffer.alloc(limit + 1);
-    let size = 0;
-    for (;;) {
-      const {bytesRead} = await file.read(buffer, size, buffer.length - size, null);
-      if (bytesRead === 0) break;
-      size += bytesRead;
-      if (size > limit) return undefined;
-    }
-    return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(buffer.subarray(0, size))) as unknown;
-  } catch {
-    return undefined;
-  } finally {
-    await file.close().catch(() => {});
-  }
-}
-
 const isPath = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= MAX_PATH && !value.includes('\0') &&
   isAbsolute(value) && normalize(value) === value && (value === '/' || !value.endsWith('/'));
 
 /**
  * The collector file at `path`, or undefined unless it is private (an owner-only regular file with one link, opened
  * without following a link, of at most 8 KiB) and exactly `{producer, home}` with an optional integer `intervalMs`
- * from 1000 to 30000.
+ * from 1000 to 5000.
  */
 export async function readCollectorConfig(path: string): Promise<CollectorConfig | undefined> {
   const value = await readPrivateJson(path, MAX_COLLECTOR_BYTES);
@@ -187,42 +147,44 @@ export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   producer: 'codex-desktop-collector: the producer file is missing, not private, not enabled and qualified, or not a Codex Desktop metadata producer',
 };
 
-/** A condition that logs its transition, a summary per minute while it lasts, and its recovery (ADR 0012, "Repetition"). */
-class Transition {
+/**
+ * The publication's failures, as ADR 0012's "Repetition" asks: the first failure after successes is one
+ * `operation.failed` record at its table level, later ones are summarized at DEBUG at most once a minute, and the first
+ * success after them is one `operation.completed` record.
+ */
+class PublicationFailures {
+  readonly #log: Logger;
   #since: number | undefined;
   #summarized = 0;
-  readonly #failed: string;
-  readonly #recovered: string;
-  readonly #emit: (record: Omit<CollectorRecord, 'time'>) => void;
-  constructor(failed: string, recovered: string, emit: (record: Omit<CollectorRecord, 'time'>) => void) {
-    this.#failed = failed;
-    this.#recovered = recovered;
-    this.#emit = emit;
+  constructor(log: Logger) {
+    this.#log = log;
   }
-  fail(at: number, code: ErrorCode, traceId?: string): void {
-    const fields = {'bunny.code': code, ...(traceId === undefined ? {} : {trace_id: traceId})};
+  failed(at: number, result: Exclude<PublishOnceResult, {status: 'published'}> | 'late', message: Message): void {
+    const uncertain = result === 'late' || result.status === 'uncertain';
+    const code: ErrorCode = result === 'late' ? 'uncertain-result' : result.error.error.code;
+    const fields = {'bunny.operation': 'lifecycle', 'bunny.outcome': uncertain ? Outcome.uncertain : Outcome.rejected, 'bunny.code': code} as const;
     if (this.#since === undefined) {
       this.#since = at;
       this.#summarized = at;
-      this.#emit({level: 'WARN', event: this.#failed, ...fields});
+      recordLog(this.#log, 'operation.failed', fields, message);
     } else if (at - this.#summarized >= SUMMARY_MS) {
       this.#summarized = at;
-      this.#emit({level: 'WARN', event: this.#failed, ...fields});
+      this.#log.debug('operation.failed', fields, message);
     }
   }
-  succeed(): void {
+  succeeded(): void {
     if (this.#since === undefined) return;
     this.#since = undefined;
-    this.#emit({level: 'INFO', event: this.#recovered});
+    recordLog(this.#log, 'operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': Outcome.succeeded});
   }
 }
 
 export type RunOptions = {
-  /** Writes one record line; the entry point sends it to stderr. */
-  write: (line: string) => void;
+  /** The diagnostic contract's logger: the entry point's runtime `LogWriter` over stderr. */
+  log: Logger;
   /** Ends the loop: the collector resolves promptly, without waiting for a stuck read or a publication. */
   signal: AbortSignal;
-  /** The wall clock for `observedAtMs`, the message's `time` and records. Defaults to `Date.now`. */
+  /** The wall clock for `observedAtMs`, the message's `time` and the failure summaries. Defaults to `Date.now`. */
   now?: () => number;
   /** The publication call. Defaults to the SDK's `publishOnce`. */
   publish?: typeof publishOnce;
@@ -266,10 +228,9 @@ function race<T>(promise: Promise<T>, ms: number, signal: AbortSignal): Promise<
  * past its deadline publishes nothing and starts no other read until it returns. Nothing is retried.
  */
 export async function runCollector(collector: Collector, options: RunOptions): Promise<void> {
-  const {write, signal, now = Date.now, publish = publishOnce, readMarker: marker = readMarker, readMetadata = readDesktopMetadata} = options;
-  const emit = (record: Omit<CollectorRecord, 'time'>): void => { write(JSON.stringify({time: new Date(now()).toISOString(), ...record})); };
-  const publication = new Transition('operation.failed', 'operation.completed', emit);
-  const reading = new Transition('device.unavailable', 'device.available', emit);
+  const {log, signal, now = Date.now, publish = publishOnce, readMarker: marker = readMarker, readMetadata = readDesktopMetadata} = options;
+  const publication = new PublicationFailures(log);
+  const reading = new DeviceAvailability({log, clock: {now}});
   const {home, intervalMs, feed, publisher} = collector;
   let markerStamp = '';
   let unread: readonly string[] | null = null;
@@ -279,7 +240,7 @@ export async function runCollector(collector: Collector, options: RunOptions): P
 
   const cycle = async (): Promise<void> => {
     if (stuck !== undefined) {
-      reading.fail(now(), 'unavailable');
+      reading.unreachable(MARKER_DEVICE, 'unavailable');
       return;
     }
     const reads = Promise.all([marker(home, markerStamp), readMetadata(home)]);
@@ -287,17 +248,17 @@ export async function runCollector(collector: Collector, options: RunOptions): P
     try {
       result = await race(reads, READ_DEADLINE_MS, signal);
     } catch {
-      reading.fail(now(), 'internal');
+      reading.unreachable(MARKER_DEVICE, 'internal');
       return;
     }
     if (result === ABORTED) return;
     if (result === LATE) {
       const pending = reads.then(() => {}, () => {}).finally(() => { if (stuck === pending) stuck = undefined; });
       stuck = pending;
-      reading.fail(now(), 'unavailable');
+      reading.unreachable(MARKER_DEVICE, 'unavailable');
       return;
     }
-    reading.succeed();
+    reading.reached(MARKER_DEVICE);
     const [read, metadata] = result;
     if (read.status === 'retry') return;
     if (read.status === 'read') {
@@ -314,20 +275,21 @@ export async function runCollector(collector: Collector, options: RunOptions): P
     try {
       outcome = await race(publish({url: publisher.edge, source: publisher.source, token: publisher.token, timeoutMs: PUBLISH_TIMEOUT_MS}, key, message), PUBLISH_TIMEOUT_MS + 1000, signal);
     } catch {
-      publication.fail(now(), 'invalid-request');
+      // Only a malformed deadline or edge URL rejects, before anything is sent.
+      publication.failed(now(), {status: 'rejected', error: errorBody('invalid-request')}, message);
       return;
     }
     if (outcome === ABORTED) return;
     if (outcome === LATE) {
-      publication.fail(now(), 'uncertain-result');
+      publication.failed(now(), 'late', message);
       return;
     }
     if (outcome.status === 'published') {
-      emit({level: 'DEBUG', event: 'collector.published'});
-      publication.succeed();
+      log.debug('operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': Outcome.succeeded, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
+      publication.succeeded();
       return;
     }
-    publication.fail(now(), outcome.error.error.code, outcome.error.error.traceId);
+    publication.failed(now(), outcome, message);
   };
 
   while (!signal.aborted) {

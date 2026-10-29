@@ -12,12 +12,11 @@ import type {TestContext} from 'node:test';
 import {getCACertificates, setDefaultCACertificates} from 'node:tls';
 import {fileURLToPath} from 'node:url';
 import {normalizeHook, type SourceConfiguration} from '@jimmie-potts/agent-state/providers';
-import {desktopFeedId, type DesktopFeed, type DesktopMetadataSnapshot, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {DESKTOP_METADATA_SCHEMA, desktopFeedId, sessionEntityId, type DesktopFeed, type DesktopMetadataSnapshot, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {prepareMessage, publishOnce, traceFields} from '@jimmie-potts/sdk';
 import {lifecycleMessage, observationOf, producerCredentialId, producerSource, runHook} from '../src/hook/index.js';
 import {createCoreModule, revokeCredential, tokenDigest} from '../src/index.js';
-import {DESKTOP_METADATA_SCHEMA} from '../src/gateway/producer-admission.js';
 import {edgeConfig, fixture, it, run, waitFor} from './support.js';
 
 const HOOK = fileURLToPath(new URL('../../bin/monitor-hook.mjs', import.meta.url));
@@ -374,4 +373,56 @@ it('on the private entry the collector credential publishes its snapshot and own
   const lifecycle = await send(collector, key, prepareMessage(collector.source, draft));
   assert.equal(lifecycle.status === 'rejected' && lifecycle.error.error.code, 'forbidden', 'the collector owns no lifecycle identity of its feed');
   assert.deepEqual(await send(hook, key, prepareMessage(hook.source, draft)), {status: 'published'}, 'the hook credential keeps its lifecycle identity');
+});
+
+it('a lifecycle observation or Desktop snapshot published on the other family\'s key is refused, however many subjects it names', async context => {
+  const feed = desktopFeed('pc-sim');
+  const collector = {id: producerCredentialId(collectorConfiguration(feed)), source: producerSource(collectorConfiguration(feed)), token: randomBytes(32).toString('base64url')};
+  const hook = {id: producerCredentialId(feed), source: producerSource(feed), token: randomBytes(32).toString('base64url')};
+  const reader = {source: 'bunny/parts/reader', token: randomBytes(32).toString('base64url')};
+  const files = await edgeConfig(context, [{...collector, scopes: ['ingest']}, {...hook, scopes: ['ingest']}, {...reader, scopes: ['read']}]);
+  const heard: Message[] = [];
+  const listener = fixture('listener', async ({sdk}) => {
+    await sdk.subscribe('bunny.event.desktop-metadata.*', message => { heard.push(message); });
+    await sdk.subscribe('bunny.event.lifecycle.*', message => { heard.push(message); });
+  });
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), listener], configFile: files.config, edge: {schemas: {}}});
+  const send = (credential: {source: string; token: string}, key: string, message: Message) =>
+    publishOnce({url: runtime.url, source: credential.source, token: credential.token, timeoutMs: 2000}, key, message);
+  const KEY_REFUSAL = 'a lifecycle observation or Desktop snapshot must use its own family\'s routing key';
+  const refused = async (credential: {source: string; token: string}, key: string, message: Message, what: string) => {
+    const result = await send(credential, key, message);
+    assert.equal(result.status, 'rejected', what);
+    if (result.status === 'rejected') assert.deepEqual([result.error.error.code, result.error.error.detail], ['forbidden', KEY_REFUSAL], what);
+  };
+  const observation = (sessionId: string): LifecycleObservation => ({identity: {...feed, sessionId}, turn: {status: 'unknown'}, parent: {status: 'top-level'},
+    event: {kind: 'session-started'}, observedAtMs: Date.now(), ordering: {status: 'unknown'}});
+
+  const {draft} = lifecycleMessage(observation('thread-a'));
+  await refused(hook, `bunny.event.desktop-metadata.${draft.subject}`, prepareMessage(hook.source, draft), 'a lifecycle observation on a Desktop key');
+  const own = snapshotMessage(collector.source, feed);
+  await refused(collector, `bunny.event.lifecycle.${desktopFeedId(feed)}`, own.message, 'a Desktop snapshot on a lifecycle key');
+  // A hook credential cannot spread observations over Desktop subjects, which would exhaust a consumer's refusal budget.
+  for (let index = 0; index < 50; index += 1) {
+    const sessionId = `thread-${index}`;
+    const message = prepareMessage(hook.source, lifecycleMessage(observation(sessionId)).draft);
+    await refused(hook, `bunny.event.desktop-metadata.${sessionEntityId({...feed, sessionId})}`, message, `Desktop subject ${index}`);
+  }
+  await new Promise(resolve => { setTimeout(resolve, 50); });
+  assert.deepEqual(heard, [], 'no cross-published message reaches a subscriber');
+  const sessions = async (): Promise<SessionRecord[]> => {
+    const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader.token}});
+    assert.equal(response.status, 200);
+    return (await response.json() as {records: SessionRecord[]}).records;
+  };
+  assert.deepEqual(await sessions(), [], 'nor the core');
+  assert.equal(logs.filter(record => record.event_name === 'message.received').length, 0);
+  assert.equal(logs.filter(record => record.event_name === 'runtime.edge.refused' && record.attributes['bunny.code'] === 'forbidden').length > 0, true);
+
+  // Each family still travels on its own key.
+  assert.deepEqual(await send(collector, own.key, own.message), {status: 'published'});
+  const {key} = lifecycleMessage(observation('thread-a'));
+  assert.deepEqual(await send(hook, key, prepareMessage(hook.source, draft)), {status: 'published'});
+  await waitFor(() => heard.length === 2, 5000, 'both own-key publications reach the subscriber');
+  await waitFor(async () => (await sessions()).length === 1, 5000, 'the core takes in the hook\'s own observation');
 });

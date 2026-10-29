@@ -1381,9 +1381,12 @@ see [its README section](../apps/runtime/README.md#codex-desktop-collector)).
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `node --test apps/runtime/dist/tests/codex-desktop-collector.test.js` from the
 worktree root. The suite covers snapshot bounds, the byte budget and the stamp,
-the collector and producer file refusals, record fields and transitions, and the
-real entry point against a real runtime's edge with a synthetic Codex home: the
-first snapshot, a heartbeat, a changed marker, quiet stderr and SIGTERM. That
+the collector and producer file refusals (including `intervalMs` 5000 accepted
+and 5001 refused), and record transitions, with every
+record checked by the diagnostic contract's `parseRecord` and for private values.
+It also runs the real entry point against a real runtime's edge with a synthetic
+Codex home: the edge admits the family, then the first snapshot, a heartbeat, a
+changed marker, contract-only stderr and SIGTERM. That
 integration test needs Linux, because the runtime reads its configuration file
 only where `/proc/self/fd` exists; it skips elsewhere. No test reads a real
 Codex home.

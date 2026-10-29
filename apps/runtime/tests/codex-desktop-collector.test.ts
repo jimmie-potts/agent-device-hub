@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {once} from 'node:events';
-import {chmod, link, mkdir, mkdtemp, realpath, rm, utimes, writeFile} from 'node:fs/promises';
+import {chmod, link, mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
@@ -12,13 +12,16 @@ import {fileURLToPath} from 'node:url';
 import {MARKER_FILE} from '@jimmie-potts/codex-desktop';
 import {MAX_MESSAGE_BYTES, type Message} from '@jimmie-potts/event-contracts/v2';
 import {desktopFeedId, type DesktopFeed, type DesktopMetadataSnapshot, type Title} from '@jimmie-potts/event-contracts/v2/families';
-import {connectRemote, publishOnce} from '@jimmie-potts/sdk';
+import {parseRecord} from '@jimmie-potts/bunny-observability';
+import {connectRemote, publishOnce, traceFields} from '@jimmie-potts/sdk';
 import {
   MAX_ARCHIVED, MAX_TITLES, MAX_UNREAD, MESSAGE_BUDGET_BYTES, loadCollector, readCollectorConfig, runCollector, snapshotMessage, snapshotStamp,
   type Collector,
 } from '../src/collector/codex-desktop.js';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
 import {createCoreModule} from '../src/index.js';
+import {INSTANCE_ID, LogWriter, type LogRecord} from '../src/log.js';
+import {MODULE_SCOPE, runtimeResource} from '../src/record.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
 
 const BIN = fileURLToPath(new URL('../../bin/codex-desktop-collector.mjs', import.meta.url));
@@ -111,13 +114,20 @@ it('the collector file must be private and exactly its shape', async context => 
   const good = {producer: join(directory, 'feed', 'producer.json'), home: join(directory, 'home')};
   assert.deepEqual(await readCollectorConfig(await collectorFile(directory, good)), {...good, intervalMs: 2000});
   assert.deepEqual(await readCollectorConfig(await collectorFile(directory, {...good, intervalMs: 1000})), {...good, intervalMs: 1000});
+  assert.deepEqual(await readCollectorConfig(await collectorFile(directory, {...good, intervalMs: 5000})), {...good, intervalMs: 5000});
   assert.equal(await readCollectorConfig(await collectorFile(directory, good, 0o640)), undefined, 'group-readable');
   assert.equal(await readCollectorConfig(await collectorFile(directory, good, 0o604)), undefined, 'other-readable');
+  const symlinked = join(directory, 'symlinked.json');
+  await symlink(await collectorFile(directory, good), symlinked);
+  assert.equal(await readCollectorConfig(symlinked), undefined, 'a symbolic link is not followed');
+  const large = await collectorFile(directory, good);
+  await writeFile(large, JSON.stringify(good) + ' '.repeat(8192), {mode: 0o600});
+  assert.equal(await readCollectorConfig(large), undefined, 'a file over 8 KiB');
   const linked = await collectorFile(directory, good);
   await link(linked, join(directory, 'second-link.json'));
   assert.equal(await readCollectorConfig(linked), undefined, 'a second link');
   for (const body of [
-    {...good, extra: true}, {producer: good.producer}, {...good, intervalMs: 999}, {...good, intervalMs: 30001}, {...good, intervalMs: 1500.5},
+    {...good, extra: true}, {producer: good.producer}, {...good, intervalMs: 999}, {...good, intervalMs: 5001}, {...good, intervalMs: 1500.5},
     {...good, home: 'relative/home'}, {...good, home: `${directory}/a/../home`}, {...good, home: `${directory}/home/`}, {...good, home: `/${'h'.repeat(1024)}`},
     {...good, home: `${directory}/ho\0me`}, {...good, producer: 7}, [good],
   ]) assert.equal(await readCollectorConfig(await collectorFile(directory, body)), undefined, JSON.stringify(body).slice(0, 80));
@@ -151,9 +161,18 @@ it('the producer must be the five-member Codex Desktop metadata source', async c
   assert.equal(await loadCollector(await collectorFile(directory, {producer: join(directory, 'good', 'producer.json'), home, extra: 1})), 'collector');
 });
 
-it('records carry only fixed fields: one warning per failure run, a recovery, and stall transitions', async context => {
+/** Fails unless every record is a diagnostic contract record carrying no private value. */
+function assertQuietRecords(records: readonly unknown[], secrets: readonly string[]): void {
+  for (const entry of records) {
+    const line = JSON.stringify(entry);
+    assert.equal(parseRecord(line).ok, true, `a contract record: ${line.slice(0, 200)}`);
+    for (const secret of secrets) assert.equal(line.includes(secret), false, 'no path, token, thread ID or title');
+  }
+}
+
+it('records are contract records: one failure per run, its recovery, and read stall transitions', async context => {
   const directory = await scratch(context);
-  const lines: string[] = [];
+  const records: LogRecord[] = [];
   const controller = new AbortController();
   context.after(() => { controller.abort(); });
   const collector: Collector = {
@@ -161,6 +180,7 @@ it('records carry only fixed fields: one warning per failure run, a recovery, an
     publisher: {edge: 'http://127.0.0.1:9', token: 'x'.repeat(43), configuration: CONFIGURATION, source: SOURCE},
   };
   let clock = 0;
+  const writer = new LogWriter(entry => { records.push(entry); }, 'debug', {now: () => clock}, runtimeResource('test', INSTANCE_ID));
   const results: Awaited<ReturnType<typeof publishOnce>>[] = [
     {status: 'rejected', error: {error: {code: 'forbidden', retryable: false, traceId: 'a'.repeat(32)}}},
     {status: 'uncertain', error: {error: {code: 'uncertain-result', retryable: true}}},
@@ -170,9 +190,13 @@ it('records carry only fixed fields: one warning per failure run, a recovery, an
   let reads = 0;
   let stall = false;
   let release: (() => void) | undefined;
+  const sent: Message[] = [];
   const done = runCollector(collector, {
-    signal: controller.signal, write: line => { lines.push(line); }, now: () => clock,
-    publish: () => Promise.resolve(results[Math.min(calls++, results.length - 1)] ?? {status: 'published'}),
+    signal: controller.signal, log: writer.logger(MODULE_SCOPE, {'bunny.module': 'codex-desktop'}), now: () => clock,
+    publish: (_options, _key, message) => {
+      sent.push(message);
+      return Promise.resolve(results[Math.min(calls++, results.length - 1)] ?? {status: 'published'});
+    },
     // Each read changes the unread set, so every cycle publishes without waiting for a heartbeat.
     readMarker: () => Promise.resolve({status: 'read', stamp: `s${reads}`, unread: [`${THREAD}-${reads++}`]}),
     readMetadata: () => stall ? new Promise(resolve => { release = () => { resolve({archived: null, titles: []}); }; })
@@ -181,24 +205,27 @@ it('records carry only fixed fields: one warning per failure run, a recovery, an
   await waitFor(() => calls >= 3, 8000, 'three publications');
   clock += 10_000;
   stall = true;
-  await waitFor(() => lines.some(line => line.includes('device.unavailable')), 9000, 'a stall record');
+  await waitFor(() => records.some(entry => entry.event_name === 'device.unavailable'), 9000, 'a stall record');
   stall = false;
   release?.();
-  await waitFor(() => lines.some(line => line.includes('device.available')), 4000, 'a recovery record');
+  await waitFor(() => records.some(entry => entry.event_name === 'device.available'), 4000, 'a recovery record');
   controller.abort();
   await done;
-  const records = lines.map(line => JSON.parse(line) as Record<string, string | undefined>);
-  for (const record of records) {
-    assert.deepEqual(Object.keys(record).filter(name => !['time', 'level', 'event', 'bunny.code', 'trace_id'].includes(name)), []);
-  }
-  const events = records.map(record => `${record.level ?? ''} ${record.event ?? ''} ${record['bunny.code'] ?? ''}`.trim());
-  assert.deepEqual(events.filter(event => !event.startsWith('DEBUG')), [
-    'WARN operation.failed forbidden', 'INFO operation.completed', 'WARN device.unavailable unavailable', 'INFO device.available',
+  assert.equal(writer.counts().dropped, 0, 'the contract refused no record');
+  assertQuietRecords(records, [THREAD, SECRET_TITLE, directory, 'x'.repeat(43), 'pc-sim']);
+  const summary = records.map(entry => `${entry.severity_text} ${entry.event_name} ${String(entry.attributes['bunny.code'] ?? entry.attributes['bunny.outcome'] ?? '')}`.trimEnd());
+  assert.deepEqual(summary.filter(line => !line.startsWith('DEBUG')), [
+    'WARN operation.failed forbidden', 'INFO operation.completed succeeded', 'WARN device.unavailable unavailable', 'INFO device.available',
   ], 'the uncertain result inside the same failure run is summarized, not logged again');
-  assert.equal(records[0]?.trace_id, 'a'.repeat(32));
-  assert.ok(events.includes('DEBUG collector.published'));
-  const text = lines.join('\n');
-  for (const secret of [THREAD, SECRET_TITLE, directory, 'x'.repeat(43)]) assert.equal(text.includes(secret), false);
+  const failed = records.find(entry => entry.event_name === 'operation.failed');
+  assert.equal(failed?.attributes['bunny.outcome'], 'rejected');
+  assert.equal(failed?.attributes['bunny.operation'], 'lifecycle');
+  assert.equal(failed?.trace_id, traceFields(sent[0] ?? {traceparent: ''})?.traceId, 'the record carries the message\'s trace');
+  assert.equal(records.find(entry => entry.event_name === 'device.unavailable')?.attributes['bunny.device.id'], 'marker');
+  const published = records.filter(entry => entry.event_name === 'operation.completed' && entry.severity_text === 'DEBUG');
+  assert.ok(published.length >= 1);
+  assert.equal(published[0]?.attributes['bunny.message.kind'], 'occurrence');
+  assert.equal(published[0]?.attributes['bunny.message.id'], sent[2]?.id);
 });
 
 it('the entry point publishes snapshots, heartbeats and changes to a real runtime and stops on SIGTERM', async context => {
@@ -223,13 +250,9 @@ it('the entry point publishes snapshots, heartbeats and changes to a real runtim
   const endpoint = `${runtime.url}/api/monitor/v1/events`;
   const producer = await producerFiles(join(directory, 'feed'), endpoint, token);
 
-  // The edge must admit the family before the collector can publish: worker-1's gateway change registers it.
   const probe = snapshotMessage(SOURCE, FEED, {unread: [], archived: [], titles: []}, Date.now());
   const admitted = await publishOnce({url: runtime.url, source: SOURCE, token, timeoutMs: 2000}, probe.key, probe.message);
-  if (admitted.status !== 'published') {
-    context.skip(`the edge refused the desktop-metadata family (${admitted.error.error.code}); its gateway admission is not registered yet`);
-    return;
-  }
+  assert.deepEqual(admitted, {status: 'published'});
 
   const received: {at: number; data: DesktopMetadataSnapshot}[] = [];
   const subscriber = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: reader});
@@ -268,6 +291,16 @@ it('the entry point publishes snapshots, heartbeats and changes to a real runtim
   const changed = received.slice(before).find(entry => entry.data.stamp !== first.data.stamp);
   assert.deepEqual(changed?.data.unread, ['synthetic567-thread-beta']);
 
+  // A stopped runtime refuses the next heartbeat: the bin's own writer reports it as one contract record.
+  await subscriber.close();
+  await runtime.stop();
+  await waitFor(() => stderr.includes('"operation.failed"'), 7000, 'the failed publication record');
+  const failure = stderr.split('\n').filter(line => line !== '').map(line => JSON.parse(line) as LogRecord).find(entry => entry.event_name === 'operation.failed');
+  assert.equal(failure?.severity_text, 'WARN');
+  assert.equal(failure.attributes['bunny.code'], 'unavailable');
+  assert.equal(failure.attributes['bunny.module'], 'codex-desktop');
+  assert.match(failure.trace_id ?? '', /^[0-9a-f]{32}$/, 'the record carries the message\'s trace');
+
   child.kill('SIGTERM');
   const started = performance.now();
   const [code, signal] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
@@ -275,10 +308,7 @@ it('the entry point publishes snapshots, heartbeats and changes to a real runtim
   assert.ok(performance.now() - started < 1000, 'the collector stops within 1 s');
   assert.equal(stdout, '');
   for (const secret of [directory, home, THREAD, 'synthetic567-archived-one', SECRET_TITLE, token, 'pc-sim']) assert.equal(stderr.includes(secret), false, 'stderr carries no path, ID, title or token');
-  for (const line of stderr.trim().split('\n')) {
-    const record = JSON.parse(line) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(record).filter(name => !['time', 'level', 'event', 'bunny.code', 'trace_id'].includes(name)), []);
-  }
+  assertQuietRecords(stderr.split('\n').filter(line => line !== '').map(line => JSON.parse(line) as unknown), [directory, THREAD, SECRET_TITLE, token]);
 });
 
 it('the entry point refuses an unusable collector or producer file with exit 2 and a fixed line', async context => {

@@ -21,7 +21,7 @@ async function snapshot(part: Participant, world: World, fields: Partial567 = {}
   const data: DesktopMetadataSnapshot = {
     feed: FEED, observedAtMs: world.clock.now(), stamp: fields.stamp ?? `s${world.clock.now()}`,
     unread: fields.unread === undefined ? [] : fields.unread, archived: fields.archived === undefined ? [] : fields.archived, titles: fields.titles ?? [],
-    ...(fields.feed === undefined ? {} : {feed: fields.feed}),
+    ...(fields.feed === undefined ? {} : {feed: fields.feed}), ...(fields.observedAtMs === undefined ? {} : {observedAtMs: fields.observedAtMs}),
   };
   await part.publish(`bunny.event.desktop-metadata.${subject}`, {kind: 'occurrence', type: 'org.bunny.desktop-metadata.observed', subject, dataschema: DESKTOP_METADATA_SCHEMA, data});
   await flush();
@@ -61,6 +61,11 @@ it('a remote source\'s snapshots give read, archive and title evidence under the
     for (const message of world.published.filter(message => message.source === 'bunny/modules/codex-desktop')) {
       assert.deepEqual([message.type, (message.data as unknown as LifecycleObservation).identity.client], ['org.bunny.lifecycle.observed', 'desktop']);
     }
+    // Evidence drawn from a snapshot continues that snapshot's trace, so one read can be followed from the collector.
+    const traceOf = (traceparent: string): string => traceparent.split('-')[1] ?? '';
+    const snapshots = world.published.filter(message => message.source === COLLECTOR).map(message => traceOf(message.traceparent));
+    const observations = world.published.filter(message => message.source === 'bunny/modules/codex-desktop').map(message => traceOf(message.traceparent));
+    assert.ok(observations.length > 0 && observations.every(trace => snapshots.includes(trace)), 'an observation started a trace of its own');
     assert.deepEqual(world.invalid, []);
   } finally {
     await collector.close();
@@ -144,7 +149,11 @@ it('a local and a remote source run side by side, each with its own marker devic
     await world.clock.advance(POLL_MS);
     assert.equal(world.record('shared')?.read, 'unread');
     assert.equal(world.record('shared', PC)?.read, 'unknown');
+    // The remote session settles to read only from a snapshot received 5 s after its last evidence.
     await world.clock.advance(READ_SETTLE_MS + POLL_MS);
+    assert.equal(world.record('shared', PC)?.read, 'unknown');
+    await snapshot(collector, world, {unread: []});
+    await world.clock.advance(POLL_MS);
     assert.equal(world.record('shared')?.read, 'unread');
     assert.equal(world.record('shared', PC)?.read, 'read');
     // The local folder stalls while the remote feed goes on: only the local marker is unavailable, under its own name.
@@ -157,12 +166,55 @@ it('a local and a remote source run side by side, each with its own marker devic
     const unavailable = world.logs('device.unavailable').filter(entry => entry.level === 'warn');
     assert.deepEqual(unavailable.map(entry => entry.fields['bunny.device.id']), [markerDeviceOf(SECTION, false)]);
     assert.equal(markerDeviceOf(PC, false), 'marker:pc:desktop');
+    const long = markerDeviceOf({hostId: 'h'.repeat(128), sourceId: 's'.repeat(128)}, false);
+    assert.match(long, /^marker:[0-9a-f]{32}$/);
+    assert.equal(long, markerDeviceOf({hostId: 'h'.repeat(128), sourceId: 's'.repeat(128)}, false));
+    assert.notEqual(long, markerDeviceOf({hostId: 'h'.repeat(128), sourceId: 't'.repeat(128)}, false));
     // Each observation names its own source's identity.
     const hosts = new Set(world.published.filter(message => message.source === 'bunny/modules/codex-desktop').map(message => (message.data as unknown as LifecycleObservation).identity.hostId));
     assert.deepEqual([...hosts].sort(), ['host', 'pc']);
     assert.deepEqual(world.invalid, []);
   } finally {
     world.marker.answer();
+    await collector.close();
+    await world.close();
+  }
+});
+
+it('a snapshot not newer than the feed\'s last is ignored, so a delayed publication neither reorders evidence nor renews freshness, and the settle rule counts from the snapshot\'s receipt', async () => {
+  const world = await World.open({section: {sources: [PC]}});
+  const collector = world.bus.connect(COLLECTOR);
+  try {
+    await world.session('one', PC);
+    const fresh = world.clock.now();
+    await snapshot(collector, world, {observedAtMs: fresh, unread: ['one']});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('one', PC)?.read, 'unread');
+    await snapshot(collector, world, {observedAtMs: fresh + 2000, unread: []});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('one', PC)?.read, 'read');
+    // A snapshot observed before the last one arrives late: nothing moves, and it is noted at DEBUG only.
+    await snapshot(collector, world, {observedAtMs: fresh + 1000, unread: ['one']});
+    await snapshot(collector, world, {observedAtMs: fresh + 2000, unread: ['one']});
+    await world.clock.advance(POLL_MS * 2);
+    assert.equal(world.record('one', PC)?.read, 'read');
+    const stale = world.logs('message.received').filter(entry => entry.fields['bunny.outcome'] === 'stale');
+    assert.equal(stale.length, 2);
+    assert.ok(stale.every(entry => entry.level === 'debug'));
+    // Nor does a late snapshot renew freshness: with no newer one, the marker is unavailable on schedule.
+    await world.clock.advance(FEED_FRESH_MS + READ_TIMEOUT_MS);
+    assert.equal(world.logs('device.unavailable').filter(entry => entry.level === 'warn').length, 1);
+    // A session that ended 1 s before the snapshot was received does not settle to read from it, however late the module reads it.
+    await snapshot(collector, world, {observedAtMs: fresh + 30_000, unread: []});
+    await world.clock.advance(0);
+    await world.session('two', {...PC, lastEvidenceAtMs: world.clock.now() - 1000});
+    await world.clock.advance(READ_SETTLE_MS + POLL_MS);
+    assert.equal(world.record('two', PC)?.read, 'unknown', 'settled from a snapshot older than the session');
+    await snapshot(collector, world, {observedAtMs: fresh + 40_000, unread: []});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('two', PC)?.read, 'read');
+    assert.deepEqual(world.invalid, []);
+  } finally {
     await collector.close();
     await world.close();
   }

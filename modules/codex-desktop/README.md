@@ -111,8 +111,11 @@ Codex Desktop producer or one whose Codex home lies on another computer:
   source's `hostId`, `sourceId` and whether it is `remote`, never a home.
 
 Each source has its own marker device in records: `marker` when one source is
-configured, `marker:<hostId>:<sourceId>` otherwise. Every observation carries
-its own source's identity, so the same thread ID on two sources is two sessions. `convertHubCodexDesktop(hostConfiguration)`
+configured, `marker:<hostId>:<sourceId>` otherwise, or `marker:<32 hex digits of
+the pair's SHA-256>` when that name would pass the record contract's 128
+characters. Every observation carries its own source's identity, so the same
+thread ID on two sources is two sessions, and an observation derived from a
+remote snapshot continues that snapshot's trace. `convertHubCodexDesktop(hostConfiguration)`
 turns the old Hub's `host.json` into this section, or gives undefined when the Hub
 has no `codexDesktop`, and checks the result with the module's own `configure`.
 This is an optional legacy utility. The selected
@@ -206,9 +209,13 @@ configured changes nothing; the first such message from each sender on each
 key is logged (`message.received`, `forbidden` at WARN, or `not-found` at INFO
 for a feed the module does not follow), the rest are refused silently.
 
-A read answers from the latest snapshot younger than 10 s: `unchanged` when
-its stamp is the one the module holds, so the read rules, archive refresh and
-resends run as they do locally. Without a fresh snapshot a read waits for the
+A read answers from the latest snapshot received less than 10 s ago: `unchanged`
+when its stamp is the one the module holds, so the read rules, archive refresh
+and resends run as they do locally. A snapshot whose `observedAtMs` is not newer
+than the last one taken arrived late or out of order: it is ignored (one DEBUG
+record), renews no freshness and reorders no evidence. The settle rule counts
+from the receipt of the snapshot a read answers from, so a session that ended
+after that snapshot never settles to read from it. Without a fresh snapshot a read waits for the
 next one, so the existing 5 s deadline makes the marker unavailable, logged
 once, and clears archive positives; no read state changes meanwhile. The next
 snapshot answers the waiting read at once and logs the recovery. The module

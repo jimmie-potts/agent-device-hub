@@ -6,14 +6,13 @@
 // count, and the edge binds a snapshot's feed to the credential that published it, so another producer cannot speak for
 // a source.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {desktopFeedId, type DesktopFeed, type DesktopMetadataSnapshot, type Title} from '@jimmie-potts/event-contracts/v2/families';
+import {DESKTOP_METADATA_KEY_PREFIX, DESKTOP_METADATA_SCHEMA, DESKTOP_METADATA_TYPE, desktopFeedId, type DesktopFeed, type DesktopMetadataSnapshot, type Title} from '@jimmie-potts/event-contracts/v2/families';
 import {metadataOf} from './metadata.js';
 import type {MarkerRead, MarkerTransport} from './transport.js';
 
-export const DESKTOP_METADATA_SCHEMA = 'https://bunny.invalid/events/desktop-metadata/2.0';
-export const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
+export {DESKTOP_METADATA_SCHEMA, DESKTOP_METADATA_TYPE};
 /** The routing key pattern the module follows for its remote sources. */
-export const DESKTOP_METADATA_KEYS = 'bunny.event.desktop-metadata.*';
+export const DESKTOP_METADATA_KEYS = `${DESKTOP_METADATA_KEY_PREFIX}*`;
 /**
  * How long a snapshot stands as the source's current read. A collector publishes a snapshot on every change and at
  * least every 5 s, so a source without one for twice that is unavailable: a read waits for the next snapshot, and the
@@ -30,7 +29,7 @@ type Waiting = {stamp: string; resolve: (read: MarkerRead) => void};
 export class RemoteFeed implements MarkerTransport {
   readonly feedId: string;
   readonly #now: () => number;
-  #latest: {read: {stamp: string; unread: readonly string[] | null; archived: readonly string[] | null; titles: readonly {id: string; title: Title}[]}; atMs: number} | undefined;
+  #latest: {read: {stamp: string; unread: readonly string[] | null; archived: readonly string[] | null; titles: readonly {id: string; title: Title}[]; parent: {traceparent: string}}; atMs: number; observedAtMs: number} | undefined;
   #waiting: Waiting[] = [];
   #closed = false;
 
@@ -39,15 +38,22 @@ export class RemoteFeed implements MarkerTransport {
     this.#now = now;
   }
 
-  /** Takes a snapshot of this feed: the next reads answer from it, and a read that waits answers at once. */
-  take(snapshot: DesktopMetadataSnapshot): void {
-    if (this.#closed) return;
+  /**
+   * Takes a snapshot of this feed, with the trace of the message that carried it: the next reads answer from it, and a
+   * read that waits answers at once. Evidence drawn from the snapshot continues its trace. One collector reads one
+   * clock, so a snapshot whose `observedAtMs` is not newer than the last one taken arrived late or out of order: it is
+   * ignored, and neither renews the feed's freshness nor reorders evidence. Returns whether the snapshot was taken.
+   */
+  take(snapshot: DesktopMetadataSnapshot, parent: {traceparent: string}): boolean {
+    if (this.#closed) return false;
+    if (this.#latest !== undefined && snapshot.observedAtMs <= this.#latest.observedAtMs) return false;
     const metadata = metadataOf({archived: snapshot.archived, titles: snapshot.titles});
     const unread = snapshot.unread === null ? null : snapshot.unread.filter(id => ID.test(id));
-    this.#latest = {read: {stamp: snapshot.stamp, unread, archived: metadata.archived ?? null, titles: metadata.titles ?? []}, atMs: this.#now()};
+    this.#latest = {read: {stamp: snapshot.stamp, unread, archived: metadata.archived ?? null, titles: metadata.titles ?? [], parent: {traceparent: parent.traceparent}}, atMs: this.#now(), observedAtMs: snapshot.observedAtMs};
     const waiting = this.#waiting;
     this.#waiting = [];
     for (const {stamp, resolve} of waiting) resolve(this.#answer(stamp));
+    return true;
   }
 
   /** The source's read: its latest fresh snapshot, unchanged when its stamp is `stamp`, or the next one when none is fresh. */
@@ -67,14 +73,15 @@ export class RemoteFeed implements MarkerTransport {
   #answer(stamp: string): MarkerRead {
     const latest = this.#latest;
     if (latest === undefined) return {status: 'read', stamp: '', unread: null};
-    const {read} = latest;
-    return read.stamp === stamp ? {status: 'unchanged', archived: read.archived, titles: read.titles}
-      : {status: 'read', stamp: read.stamp, unread: read.unread, archived: read.archived, titles: read.titles};
+    const {read, atMs} = latest;
+    // The facts were current when the snapshot arrived, not when the module reads it: the settle rule measures from there.
+    return read.stamp === stamp ? {status: 'unchanged', archived: read.archived, titles: read.titles, parent: read.parent, readAtMs: atMs}
+      : {status: 'read', stamp: read.stamp, unread: read.unread, archived: read.archived, titles: read.titles, parent: read.parent, readAtMs: atMs};
   }
 }
 
-/** Why a `desktop-metadata` message was not taken for any configured source. */
-export type FeedRefusal = 'source' | 'feed' | 'unknown';
+/** Why a `desktop-metadata` message was not taken for any configured source: `stale` is one not newer than the feed's last. */
+export type FeedRefusal = 'source' | 'feed' | 'unknown' | 'stale';
 
 /** The module's remote feeds, by feed ID, and which message each takes. */
 export class RemoteFeeds {
@@ -103,8 +110,7 @@ export class RemoteFeeds {
     if (feed.provider !== 'codex' || feed.client !== 'desktop' || desktopFeedId(feed) !== message.subject) return 'feed';
     const opened = this.#feeds.get(message.subject);
     if (opened === undefined) return 'unknown';
-    opened.take(snapshot);
-    return undefined;
+    return opened.take(snapshot, message) ? undefined : 'stale';
   }
 
   close(): void {

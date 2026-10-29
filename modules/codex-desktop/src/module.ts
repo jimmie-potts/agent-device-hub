@@ -10,6 +10,7 @@
 // summary while it lasts, and the next read waits for that one, so a stalled mount holds one reader, never more. A
 // reader that fails is tried again with capped backoff. The module never fails for the folder, and its stop never waits
 // on a read.
+import {createHash} from 'node:crypto';
 import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
 import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -58,8 +59,18 @@ const showSettings = (config: CodexDesktopConfig): Record<string, unknown> => {
     : {sources: config.sources.map(source => ({hostId: source.hostId, sourceId: source.sourceId, remote: source.home === undefined}))};
 };
 
-/** The device name of one source's marker in the module's records: `marker` alone when one source is configured. */
-export const markerDeviceOf = (source: DesktopSourceConfig, alone: boolean): string => alone ? MARKER_DEVICE : `${MARKER_DEVICE}:${source.hostId}:${source.sourceId}`;
+/** The longest device name the record contract carries (`bunny.device.id`). */
+const MAX_DEVICE_NAME = 128;
+/**
+ * The device name of one source's marker in the module's records: `marker` alone when one source is configured,
+ * `marker:<hostId>:<sourceId>` otherwise, or, when that would pass the contract's bound, `marker:` and 32 hex digits of
+ * the pair's SHA-256, so two sources' outages never share a nameless record.
+ */
+export const markerDeviceOf = (source: DesktopSourceConfig, alone: boolean): string => {
+  if (alone) return MARKER_DEVICE;
+  const named = `${MARKER_DEVICE}:${source.hostId}:${source.sourceId}`;
+  return named.length <= MAX_DEVICE_NAME ? named : `${MARKER_DEVICE}:${createHash('sha256').update(`${source.hostId}\0${source.sourceId}`, 'utf8').digest('hex').slice(0, 32)}`;
+};
 
 export type CodexDesktopModuleOptions = {
   /** How the module reads a local source's marker: `folderReader()` for the real Codex home, or a `SimulatedMarker`. */
@@ -134,6 +145,11 @@ class ModuleStart {
     const refusal = this.#feeds.deliver(message);
     if (refusal === undefined) {
       this.#context.log.debug('message.received', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.observed, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
+      return;
+    }
+    if (refusal === 'stale') {
+      // A late or repeated snapshot of a configured feed: a bounded polling condition, not a refusal to warn about.
+      this.#context.log.debug('message.received', {'bunny.operation': 'feed', 'bunny.outcome': 'stale', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
       return;
     }
     const key = `${message.source} ${message.subject}`;
@@ -257,6 +273,10 @@ class DesktopRun {
   /** Consecutive reads that failed, for the backoff. */
   #failures = 0;
   #stamp = '';
+  /** The trace of the remote snapshot the last read came from, which the evidence it gives continues; none for a local read. */
+  #parent: {traceparent: string} | undefined;
+  /** When the last read's facts were current: a remote snapshot's receipt, or undefined for a local read, which is current now. */
+  #readAtMs: number | undefined;
   readonly #archived = new Set<string>();
   /** Serialize paced batches, including deadline clears followed by a late reader answer. */
   #metadataWork: Promise<void> = Promise.resolve();
@@ -382,6 +402,8 @@ class DesktopRun {
     this.#failures = 0;
     this.#schedule(POLL_MS);
     this.#availability.reached(this.#device);
+    this.#parent = read.parent;
+    this.#readAtMs = read.readAtMs;
     switch (read.status) {
       case 'unchanged':
         break;
@@ -405,8 +427,8 @@ class DesktopRun {
     if (this.#usable === usable) return;
     const before = this.#usable;
     this.#usable = usable;
-    if (!usable) recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'unavailable', 'bunny.reason': 'invalid-input'});
-    else if (before === false) recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'current'});
+    if (!usable) recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'unavailable', 'bunny.reason': 'invalid-input', 'bunny.device.id': this.#device});
+    else if (before === false) recordLog(this.#context.log, 'operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': 'current', 'bunny.device.id': this.#device});
   }
 
   /** Metadata is independent of marker usability. Archive absence/unavailability clears earlier positives. */
@@ -463,7 +485,7 @@ class DesktopRun {
         kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject: id, dataschema: LIFECYCLE_SCHEMA,
         data: {identity, turn: {status: 'unknown'}, parent: {status: 'unknown'}, ordering: {status: 'unknown'}, observedAtMs,
           event: {kind: 'metadata-observed', ...(archived === undefined ? {} : {archived})}, ...(title === undefined ? {} : {title})},
-      });
+      }, this.#parent === undefined ? undefined : {parent: this.#parent});
       this.#context.log.debug('lifecycle.observed', {'bunny.operation': 'lifecycle', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
     } catch { this.#metadataSent.delete(id); }
     // Publish acceptance is not delivery. Let the SDK's bounded subscriber queues drain before the next input.
@@ -483,7 +505,7 @@ class DesktopRun {
     const current = new Set(sessions.map(session => session.id));
     for (const id of [...this.#sent.keys()]) if (!current.has(id)) this.#sent.delete(id);
     const nowMs = this.#context.clock.now();
-    for (const evidence of readEvidence(sessions, unread, this.#source, nowMs)) {
+    for (const evidence of readEvidence(sessions, unread, this.#source, nowMs, this.#readAtMs ?? nowMs)) {
       const mark = `${evidence.session.revision} ${evidence.state}`;
       const sent = this.#sent.get(evidence.session.id);
       if (sent?.mark === mark && nowMs - sent.atMs < sent.waitMs) continue;
@@ -499,7 +521,7 @@ class DesktopRun {
     try {
       message = await this.#context.sdk.publish(`bunny.event.lifecycle.${id}`, {
         kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject: id, dataschema: LIFECYCLE_SCHEMA, data: readObservation(evidence, nowMs),
-      });
+      }, this.#parent === undefined ? undefined : {parent: this.#parent});
     } catch {
       // The module is stopping, and its participant refuses use; the next start reads again.
       this.#sent.delete(id);

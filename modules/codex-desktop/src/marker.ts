@@ -22,8 +22,12 @@ const ID = /^[A-Za-z0-9_.-]{1,128}$/;
  * thread IDs, or null when it is missing, unreadable, oversized or not the known shape. A missing or unreadable marker
  * has the empty stamp, so the next read looks again.
  */
-/** Existing marker response with independently read, validated Desktop metadata over the same private IPC. */
-export type MarkerRead = ({status: 'unchanged'} | {status: 'retry'} | {status: 'read'; stamp: string; unread: readonly string[] | null}) & Partial<DesktopMetadata>;
+/**
+ * Existing marker response with independently read, validated Desktop metadata over the same private IPC. A read from a
+ * remote source's snapshot also carries that snapshot's trace context (Hub #567), which the evidence it gives continues.
+ */
+export type MarkerRead = ({status: 'unchanged'} | {status: 'retry'} | {status: 'read'; stamp: string; unread: readonly string[] | null}) & Partial<DesktopMetadata> &
+  {parent?: {traceparent: string}; /** When the read's facts were current: the module's receipt of a remote snapshot; a local read is current now. */ readAtMs?: number};
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isId = (value: unknown): value is string => typeof value === 'string' && ID.test(value);

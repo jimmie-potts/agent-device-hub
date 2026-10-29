@@ -1,6 +1,6 @@
 ## 1. Contract and edge
 
-- [x] 1.1 Add the `desktop-metadata` family, schema, fixtures and parity, with invalid cases for a wrong subject, a `local` client, oversize sets, duplicate IDs and a user title; `npm run test:events:built` and `npm run test:events:python` pass.
+- [x] 1.1 Add the `desktop-metadata` family, schema and fixtures, with invalid cases for a wrong subject, a `local` client, oversize sets, duplicate IDs and a user title; `npm run test:events:built` passes, and `npm run test:events:python` (the 1.x profile check, unchanged) still passes.
 - [x] 1.2 Grant the `ingest` scope the family on its keys and bind a snapshot's feed to the credential's derived source on every entry; tests prove a hook credential, another feed and a read credential are refused `forbidden` and the core takes no session change from a snapshot.
 
 ## 2. Module and collector

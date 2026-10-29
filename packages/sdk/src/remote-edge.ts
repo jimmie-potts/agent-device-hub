@@ -43,8 +43,11 @@ export type RemoteGrant = {source: string; token: string} & EdgePermissions;
 export type EdgePrincipal = {
   readonly source: string;
   readonly id?: string;
-  /** Host-owned, pure admission after schema/source/scope checks and before publication. No wire field or extra grant. */
-  readonly checkPublication?: (message: Message) => ErrorBody | undefined;
+  /**
+   * Host-owned, pure admission after schema/source/scope checks and before publication, given the message and the
+   * routing key it is published on. No wire field or extra grant.
+   */
+  readonly checkPublication?: (message: Message, key: string) => ErrorBody | undefined;
 } & EdgePermissions;
 export type EdgeOptions = {
   bus: InProcessBus;
@@ -599,7 +602,7 @@ export class RemoteEdge {
         if (endpoint === undefined && route !== undefined && principal.publishes !== undefined && (family === undefined || !principal.publishes.includes(family))) {
           throw refuse('forbidden', 'this grant may not publish messages of that family');
         }
-        const refusal = principal.checkPublication?.(message);
+        const refusal = principal.checkPublication?.(message, key);
         if (refusal !== undefined) throw new Refusal(refusal);
         await this.#participant(source).publishMessage(key, message);
         return {status: 'published'};

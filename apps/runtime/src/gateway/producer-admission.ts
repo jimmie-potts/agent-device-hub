@@ -1,11 +1,22 @@
-import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import type {DesktopMetadataSnapshot, LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
+import {SCHEMA_BASE, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {DESKTOP_METADATA_SCHEMA, type DesktopMetadataSnapshot, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {LIFECYCLE_SCHEMA} from '../hook/observation.js';
 import {producerSource} from '../hook/producer.js';
 
-/** The `desktop-metadata` family's schema (Hub #567). */
-export const DESKTOP_METADATA_SCHEMA = 'https://bunny.invalid/events/desktop-metadata/2.0';
 const PRODUCER = /^bunny\/parts\/hub-[0-9a-f]{32}$/;
+/** The families an `ingest` credential publishes, each only on its own `bunny.event.<family>.` keys. */
+const INGESTED = ['lifecycle', 'desktop-metadata'] as const;
+
+/**
+ * Admission on every entry (Hub #567): a lifecycle observation or Desktop snapshot travels only on its own family's
+ * routing key, so neither reaches the other family's subscribers. The SDK edge matches the message's family to the grant
+ * and its subject to the key's last token, but not the key's family to the message's.
+ */
+export function checkKeyFamily(message: Message, key: string): ErrorBody | undefined {
+  const family = INGESTED.find(name => message.dataschema.startsWith(`${SCHEMA_BASE}${name}/`));
+  return family === undefined || key.startsWith(`bunny.event.${family}.`) ? undefined
+    : errorBody('forbidden', {detail: 'a lifecycle observation or Desktop snapshot must use its own family\'s routing key'});
+}
 
 /** Additional private-ingress admission; released local producer configuration stays unchanged. */
 export function checkProducerIdentity(message: Message): ErrorBody | undefined {
