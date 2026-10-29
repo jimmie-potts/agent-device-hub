@@ -144,7 +144,8 @@ class ModuleStart {
   #deliver(message: Message): void {
     const refusal = this.#feeds.deliver(message);
     if (refusal === undefined) {
-      this.#context.log.debug('message.received', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.observed, 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
+      // `accepted` is the contract's word for a consumer that took a message, as the core records its intake.
+      this.#context.log.debug('message.received', {'bunny.operation': 'feed', 'bunny.outcome': 'accepted', 'bunny.message.id': message.id, 'bunny.message.kind': message.kind}, message);
       return;
     }
     if (refusal === 'stale') {

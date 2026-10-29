@@ -66,6 +66,10 @@ it('a remote source\'s snapshots give read, archive and title evidence under the
     const snapshots = world.published.filter(message => message.source === COLLECTOR).map(message => traceOf(message.traceparent));
     const observations = world.published.filter(message => message.source === 'bunny/modules/codex-desktop').map(message => traceOf(message.traceparent));
     assert.ok(observations.length > 0 && observations.every(trace => snapshots.includes(trace)), 'an observation started a trace of its own');
+    // Each snapshot taken is one DEBUG intake record with the contract's `accepted` outcome, in the snapshot's trace.
+    const taken = world.logs('message.received').filter(entry => entry.fields['bunny.outcome'] === 'accepted');
+    assert.equal(taken.length, snapshots.length);
+    assert.ok(taken.every(entry => entry.level === 'debug' && entry.fields['bunny.operation'] === 'feed' && entry.trace !== undefined && snapshots.includes(traceOf(entry.trace.traceparent))));
     assert.deepEqual(world.invalid, []);
   } finally {
     await collector.close();
@@ -204,6 +208,19 @@ it('a snapshot not newer than the feed\'s last is ignored, so a delayed publicat
     // Nor does a late snapshot renew freshness: with no newer one, the marker is unavailable on schedule.
     await world.clock.advance(FEED_FRESH_MS + READ_TIMEOUT_MS);
     assert.equal(world.logs('device.unavailable').filter(entry => entry.level === 'warn').length, 1);
+    // A snapshot stamped far ahead, as after a clock step on the collector's host, holds the feed for one freshness window only.
+    await snapshot(collector, world, {observedAtMs: fresh + 10 * 365 * 86_400_000, unread: []});
+    await world.clock.advance(0);
+    await snapshot(collector, world, {observedAtMs: fresh + 20_000, unread: ['one']});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('one', PC)?.read, 'read', 'a snapshot behind a future-stamped one was taken while the feed was fresh');
+    await world.clock.advance(FEED_FRESH_MS);
+    await snapshot(collector, world, {observedAtMs: fresh + 21_000, unread: ['one']});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('one', PC)?.read, 'unread', 'the feed did not recover after its freshness window');
+    await snapshot(collector, world, {observedAtMs: fresh + 22_000, unread: []});
+    await world.clock.advance(POLL_MS);
+    assert.equal(world.record('one', PC)?.read, 'read');
     // A session that ended 1 s before the snapshot was received does not settle to read from it, however late the module reads it.
     await snapshot(collector, world, {observedAtMs: fresh + 30_000, unread: []});
     await world.clock.advance(0);
