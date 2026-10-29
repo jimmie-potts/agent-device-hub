@@ -98,15 +98,19 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
     await editRegion.getByRole('button', {name: 'Import missing companion records', exact: true}).click();
     await widget.getByText('Synthetic widget message 27', {exact: true}).waitFor();
     assert.equal(await widget.getByText('Synthetic widget message 28', {exact: true}).count(), 0, 'later Reachy reply does not replace Duck');
-    await widget.getByText('Playback unknown. Delivery references are recorded; they do not establish playback or hearing.', {exact: true}).waitFor();
+    await widget.getByText('Playback unknown.', {exact: true}).waitFor();
+    await widget.getByText(/Delivery reference recorded/).waitFor();
     await widget.getByText(/Time unavailable/).waitFor();
   } finally {await editor.close();}
   await page.route('**/modules/companions/content/duck-widget?*', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
-  await page.reload(); await feed(page, 'connected'); await widget.getByText('Access denied. Private conversation hidden.', {exact: true}).waitFor();
+  await page.reload(); await feed(page, 'connected'); await widget.getByRole('button', {name: 'MicroDuck connection notice', exact: true}).click();
+  await widget.getByText('Access denied. Private conversation hidden.', {exact: true}).waitFor();
   assert.equal((await widget.innerText()).includes(conversationId), false);
   await page.unroute('**/modules/companions/content/duck-widget?*');
   await widget.getByRole('button', {name: 'Refresh conversation', exact: true}).click(); await widget.getByText('Synthetic widget message 27', {exact: true}).waitFor();
   await context.setOffline(true); world.dropDashboardStreams();
+  const warning = widget.getByRole('button', {name: 'MicroDuck connection notice', exact: true});
+  if (await warning.getAttribute('aria-expanded') !== 'true') await warning.click();
   await widget.getByText('Disconnected. Conversation is stale and hidden.', {exact: true}).waitFor();
   assert.equal((await widget.innerText()).includes(conversationId), false);
   assert.equal((await widget.innerText()).includes('Synthetic widget message'), false);

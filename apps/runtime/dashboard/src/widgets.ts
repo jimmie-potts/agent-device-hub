@@ -28,12 +28,16 @@ export type WidgetDefinition = {
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
+    id: 'reachy', name: 'Reachy', description: 'Latest fixed-text reaction, guarded text controls and separately enabled browser speech.',
+    sizes: ['medium', 'large'], source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
+  },
+  {
     id: 'roborock', name: 'Roborock', description: 'Observed vacuum state, battery, recorded run and care usage.',
     sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
   },
   {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
-    sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget']}, commands: false,
+    sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
   },
   {
     id: 'timeline', name: 'Timeline', description: 'Retained Hub activity with read-only filters and evidence.',

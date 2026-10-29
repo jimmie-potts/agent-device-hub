@@ -39,6 +39,34 @@ checks, `reachy-text` catalog and the runtime dashboard browser/axe journey.
 These checks use synthetic inputs and private disposable stores. Installed
 client smoke and desk installation are separate evidence in the owning issues.
 
+## Reusable companion cards
+
+Home and the Reachy/MicroDuck pages use the same quiet glass cards. Add either
+through **Edit Home → Add card**; Reachy stays optional and existing MicroDuck
+placements keep their identity. Adding or opening a card enables no text or
+speech. Illustrations remain mounted while tabs change only the controls.
+Long messages stay readable, and changing tabs preserves the card's dimensions
+for unchanged content.
+
+Reachy's **Latest**, **Controls** and **Voice** keep fixed-text reactions,
+category mute, social snooze and browser speech separate. Muted categories are
+struck through. **Evidence & tools** on its page retains provenance and labelled
+fixtures; Coding suggestions remains below the card. The Voice face stays
+mounted when hidden, so switching tabs does not withdraw an explicitly enabled
+endpoint. Removing the card or navigating away closes that endpoint and requires
+fresh enablement. Voice requirements explains qualification and availability.
+
+MicroDuck's **Meaning** shows one latest intended meaning, original time and
+provenance, with playback still unknown. **Conversation → Choose conversation**
+lists stored exchanges containing Reachy and MicroDuck; **More conversations**
+loads the next existing bounded page. Records have participant/identifier labels,
+not saved topic names. **Use conversation** changes the existing selection;
+Cancel leaves it alone, and **Clear selection** retains history. Read-only or
+stale contexts cannot change it. **View conversation** opens separate permitted
+history. Disconnection, denied access and replacement sync hide private card
+content; obsolete reads cannot restore it. Browsing produces no dialogue, audio,
+capture or robot output.
+
 The assistant persistence qualification uses `node --test
 modules/companions/dist/tests/checkpointer.test.js` after the root build. It
 opens SQLite through the SDK, terminates a disposable process after a saved

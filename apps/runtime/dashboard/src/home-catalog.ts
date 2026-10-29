@@ -10,12 +10,13 @@ export type HomeCardDefinition = {id: string; name: string; category: string; si
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock metadata describes each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: widget.id !== 'wispr' && widget.id !== 'duck-latest' && widget.id !== 'timeline'}));
-  const duck = result.find(card => card.id === 'duck-latest');
-  if (duck !== undefined) {
-    duck.category = 'Companions';
-    if (runtime.modules?.some(module => module.name === 'companions' && module.state === 'running' && module.pages.some(page => page.id === 'duck-conversation')) !== true) {
-      duck.source = {kind: 'unavailable'}; duck.reason = 'Companion conversation is unavailable.';
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
+  for (const id of ['duck-latest', 'reachy']) {
+    const card = result.find(card => card.id === id);
+    if (card === undefined) continue;
+    card.category = 'Companions';
+    if (runtime.modules?.some(module => module.name === 'companions' && module.state === 'running' && module.pages.some(page => page.id === (id === 'reachy' ? 'reachy' : 'duck-conversation'))) !== true) {
+      card.source = {kind: 'unavailable'}; card.reason = 'Companion source is unavailable.';
     }
   }
   const wispr = result.find(card => card.id === 'wispr');

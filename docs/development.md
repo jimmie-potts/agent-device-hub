@@ -1902,6 +1902,15 @@ latest/history isolation, correction/removal, restart, stale/denied reads,
 keyboard, narrow layout and axe. Existing CI already selects these suites for
 companions/dashboard changes; no new job is needed. Use only synthetic data.
 
+Reusable companion cards (#1230) extend the same companion browser journey with
+Home/page reuse, explicit conversation selection, stationary artwork, stable tab
+geometry, qualified speech lifetime, replacement-sync privacy and reduced motion.
+Run the focused `node apps/runtime/dashboard/tests/companion-cards.browser.ts`
+after the root build, then `npm run test:companions:browser` and the full runtime
+dashboard browser suite. Existing companion/runtime/dashboard test discovery and
+App verification CI cover these paths; no new CI job is required. Use private
+disposable synthetic state, never installed voices, conversations or robot output.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

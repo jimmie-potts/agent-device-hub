@@ -91,9 +91,13 @@ adds the current reusable device, light/group, room and Music instances, togethe
 with availability and supported sizes. The editor reuses the existing adapters,
 shared authenticated connection and module-owned frontend entries.
 
-The optional MicroDuck card uses the companions frontend through that same scope.
-Choose one Reachy–Duck conversation on Companion knowledge, save it with **Show
-selected conversation on Home**, then add MicroDuck through **Edit Home**. The
+The optional Reachy and MicroDuck cards use the companions frontend through that
+same scope on Home and their module pages. Add either through **Edit Home**;
+opening a card enables neither text nor speech. Reachy has Latest, Controls and
+Voice faces, with full evidence, fixtures and coding suggestions on its page.
+MicroDuck's Conversation face can choose or clear a stored Reachy–Duck exchange
+through the existing revision-checked owner command; More conversations reads
+further bounded pages. Companion knowledge retains its selection controls. The
 card shows one latest meaning and its original time; **View conversation** opens
 bounded history separately. Selection and records remain with companions. Reads
 produce no output; stale or denied content is hidden, and playback stays unknown
@@ -350,6 +354,11 @@ remains on the separate non-executable content route.
 ## Reachy
 
 `#/module/companions/reachy` opens the optional fixed-text companion page.
+Its reusable card also appears on Home when selected. Latest, Controls and Voice
+keep the illustration mounted and preserve tab geometry. Evidence & tools holds
+the detailed record and synthetic fixtures. The Voice face remains mounted when
+hidden; removing the card or navigating away withdraws its connection-bound
+endpoint. Fresh enablement is required and missed alerts never replay.
 Reachy defaults to disabled. Enablement, category mute, social snooze and labelled
 synthetic arrival/visit fixtures use the existing tracked command component.
 Cards show source/session, real coding metadata or simulated scenario, evidence,

@@ -66,13 +66,14 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     Object.defineProperty(navigator, 'clipboard', {value: {writeText: async text => {fixture.copied.push(text);}}});
     fixture.render(true);
   `, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'suggestions-reconnect-entry.js'},
-  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent'});
+  bundle: true, format: 'esm', platform: 'browser', target: 'es2022', write: false, logLevel: 'silent', loader: {'.css': 'empty'}});
   const page = await context.newPage();
   try {
     await page.route('https://suggestions-fixture.invalid/**', route => route.fulfill(new URL(route.request().url()).pathname === '/bundle.js'
       ? {contentType: 'text/javascript', body: bundle.outputFiles[0]?.text ?? ''}
       : {contentType: 'text/html', body: '<!doctype html><html lang="en"><title>Synthetic settings recovery</title><div id="root"></div><script type="module" src="/bundle.js"></script></html>'}));
     await page.goto('https://suggestions-fixture.invalid/');
+    await page.getByRole('tab', {name: 'Controls', exact: true}).click();
     const form = page.getByRole('region', {name: 'Coding suggestions', exact: true});
     const inspect = form.getByRole('button', {name: 'Inspect coding suggestion', exact: true});
     const card = form.getByRole('article', {name: 'Coding suggestion', exact: true});
@@ -117,6 +118,7 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     assert.equal(await page.evaluate('window.fixture.copied.length'), 1);
     // An overflow restarts the real SDK copy while transport and core stay live.
     await page.goto('https://suggestions-fixture.invalid/?mode=overflow');
+    await page.getByRole('tab', {name: 'Controls', exact: true}).click();
     await inspect.waitFor(); await fill(); await inspect.click(); await card.waitFor();
     await page.evaluate('window.fixture.overflow()');
     await page.waitForFunction('window.fixture.calls === 2');
@@ -135,12 +137,14 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     await form.getByRole('button', {name: 'Copy coding suggestion', exact: true}).click();
     assert.equal(await page.evaluate('window.fixture.copied.length'), 1, 'only a completed fresh SDK snapshot permits Copy');
     await page.goto('https://suggestions-fixture.invalid/?mode=overflow&late=1');
+    await page.getByRole('tab', {name: 'Controls', exact: true}).click();
     await page.waitForFunction('window.fixture.calls === 2');
     assert.equal(await inspect.isDisabled(), true, 'an overflow before the first sync promise returns cannot restore retained readiness');
     assert.equal(await card.count(), 0);
     await page.evaluate('window.fixture.finish(false)');
     await page.getByRole('button', {name: 'Enable Reachy text cards', exact: true}).waitFor();
     await page.goto('https://suggestions-fixture.invalid/?mode=overflow&during=1');
+    await page.getByRole('tab', {name: 'Controls', exact: true}).click();
     await page.waitForFunction('window.fixture.calls === 2');
     assert.equal(await inspect.isDisabled(), true, 'an interrupted snapshot cannot announce old sync completion after overflow');
     assert.equal(await card.count(), 0);
