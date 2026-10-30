@@ -346,8 +346,12 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 native mode the device must be in. The module refuses the command with
 `invalid-state` at admission, before any device write, when the device's
 current mode differs or a mode change is pending, so a scheduled playlist never
-displaces a status display. The field is optional in the unchanged 2.0 schemas;
-a command without it behaves as before.
+displaces a status display. The field is added in place to the two 2.0
+schemas, as #1185 widened `session/2.0`, rather than as a new minor version
+beside them: an optional command field changes no consumer's reading of an
+existing message, so every valid 2.0 command stays valid and one without
+`requireMode` behaves as before. A module that does not know the field still
+validates it against the shared schema and ignores it.
 
 A `device` record is the full record of one device, published by the module
 that controls it, with the device `id` as its `subject`. The `id` is a routing

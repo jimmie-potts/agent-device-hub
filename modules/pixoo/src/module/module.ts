@@ -926,19 +926,22 @@ class PixooRuntime {
 
   /**
    * A media command's `requireMode` precondition (Hub #1276), checked in the admission queue so the check and the
-   * admission cannot race: the Pixoo must already be in that mode, with no mode change applying or accepted and not
-   * completed. Otherwise the command is refused with `invalid-state` before any device write; nothing is queued or
+   * admission cannot race. A mode the Pixoo does not advertise is refused with `unsupported-capability`, as a
+   * `device-mode-set` for it would be. Otherwise the Pixoo must already be in that mode, with no `device-mode-set`
+   * accepted and not yet completed: an accepted change stays pending until its outcome commits, after the presentation
+   * has applied it, so that record covers the whole window. A view change (`pixoo-monitor-set`) keeps the mode and does
+   * not count. Otherwise the command is refused with `invalid-state` before any device write; nothing is queued or
    * deferred. A command without the precondition is admitted as before. A refused resume while nothing is selected keeps
    * its own detail, so this check runs after it.
    */
   #modeRequired(requireMode: string | undefined): ErrorBody | undefined {
     if (requireMode === undefined) return undefined;
+    if (requireMode !== 'monitor' && requireMode !== 'media') return errorBody('unsupported-capability', {detail: 'the Pixoo does not offer that mode'});
     const status = this.#monitor?.status();
     if (status === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation to require a mode of'});
-    const changing = status.pendingMode !== null || (this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set');
-    if (changing) return errorBody('invalid-state', {detail: 'a mode change is pending'});
+    if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
     const {mode} = status.configuration;
-    return mode === requireMode ? undefined : errorBody('invalid-state', {detail: `the Pixoo is in ${mode}, not ${requireMode === 'monitor' ? 'monitor' : 'media'}`});
+    return mode === requireMode ? undefined : errorBody('invalid-state', {detail: mode === 'monitor' ? 'the Pixoo is in monitor, not media' : 'the Pixoo is in media, not monitor'});
   }
 
   /**

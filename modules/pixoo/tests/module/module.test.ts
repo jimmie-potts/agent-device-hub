@@ -790,32 +790,36 @@ void describe('Media-mode precondition', () => {
       assert.deepEqual(Object.keys(started).sort(), Object.keys(plainStart).sort(), 'the reply with the precondition has the shape of one without it');
       assert.deepEqual((await world.outcome(plain)).data, {requestId: plain, result: 'succeeded', evidence: 'transmitted'});
       await waitFor(() => world.display()?.mode === 'media' ? true : undefined, 'Media after the plain start');
-      // A required mode outside the Pixoo's own refuses before admission, through the show's closed schema.
+      // A required mode outside the Pixoo's own refuses before admission: the show's closed schema refuses it as a message,
+      // and the general families, whose schema takes any native mode name, refuse it as a capability the Pixoo lacks.
       const other = await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId: rendition.id, requireMode: 'work'});
       assert.equal(other.status === 'rejected' && other.error.error.code, 'invalid-message');
+      const unadvertised = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode: 'free'});
+      assert.deepEqual(unadvertised.status === 'rejected' && [unadvertised.error.error.code, unadvertised.error.error.detail], ['unsupported-capability', 'the Pixoo does not offer that mode']);
+      // A view change keeps the mode, so it does not stand in the way of a command that requires the current mode.
+      const viewed = await accepted(world.request(FAMILIES.monitor, 'org.bunny.pixoo-monitor.set.requested', {filter: {}, cadenceMs: 1000}));
+      const during = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', ...requireMedia});
+      assert.equal(during.status, 'accepted', JSON.stringify(during));
+      await world.outcome(viewed); await world.outcome(during.requestId);
     });
   });
 
-  void it('yields a refusal or a clean apply, never a partial apply, when a mode change is admitted immediately before', async () => {
+  void it('refuses a start that requires Media while a mode change admitted just before is still pending, then admits it', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       const {list} = await readyPlaylist(world);
       await world.outcome(await mode(world, 'monitor'));
-      // Both commands are sent back to back: the mode change is admitted first and may still be applying when the start is checked.
+      // Both commands are sent back to back. Admissions run one at a time, and the mode change stays pending until its
+      // outcome commits, after the presentation has applied it, so the start is always checked while it is pending.
       const [changing, started] = await Promise.all([
         world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'media'}),
         world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia}),
       ]);
       assert.equal(changing.status, 'accepted');
+      assert.deepEqual(started.status === 'rejected' && [started.error.error.code, started.error.error.detail], ['invalid-state', 'a mode change is pending']);
       assert.deepEqual((await world.outcome(changing.requestId)).data, {requestId: changing.requestId, result: 'succeeded', evidence: 'observed'});
-      if (started.status === 'rejected') {
-        assert.deepEqual([started.error.error.code, started.error.error.detail], ['invalid-state', 'a mode change is pending']);
-        assert.equal(world.device.state().uploads, 0, 'a refused start uploaded nothing');
-      } else {
-        assert.equal(started.status, 'accepted');
-        assert.deepEqual((await world.outcome(started.requestId)).data, {requestId: started.requestId, result: 'succeeded', evidence: 'transmitted'});
-      }
+      assert.equal(world.device.state().uploads, 0, 'the refused start uploaded nothing');
       assert.equal(world.display()?.mode, 'media');
       // Once the change has completed, the same start is admitted and plays.
       const again = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia}));
