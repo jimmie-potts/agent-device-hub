@@ -236,7 +236,7 @@ test('a host that exports without association leaves an active span\'s attribute
   assert.equal(exported.invalid,0,'nothing counted against the span');
   assert.equal(exported.registered,1,'the span itself is the only registration');
   assert.ok(exported.span,'the span reaches the sink');
-  assert.deepEqual(exported.span.attributes.map(item=>item.key).sort(),['bunny.operation','bunny.provenance'],'the span keeps its own attributes');
+  assert.deepEqual(exported.span.attributes.map(item=>item.key).sort(),['bunny.operation','bunny.provenance','bunny.schema.version'],'the span keeps its own attributes and the profile the projection adds');
   assert.equal(exported.span.attributes.some(item=>item.key==='bunny.module'||item.key==='bunny.outcome'),false,'none of the record\'s attributes');
   assert.ok(associated.invalid>=1,'with association on, the other scope\'s record counts against the span');
   await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,associateRecords:'no'}),/Invalid host/);
