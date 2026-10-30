@@ -62,8 +62,12 @@ try {
       await widget.getByText(/does not run collection/).waitFor();
       await page.unroute('**/modules/wispr/content/status');
       await refreshHome.click();
+      // A refresh keeps the last state, failure included, while it loads, and may show a bare loading render before the
+      // new read lands; the card is settled only when it is available and no longer busy, so wait for that, not for the
+      // period text alone (the text reads Today in the transient render too).
+      await page.locator('[data-widget="wispr-summary"][data-state="available"][aria-busy="false"]').waitFor();
       await widget.getByRole('status').filter({hasText: /^Today$/}).waitFor();
-      assert.equal(await widget.getByRole('button', {name: 'Wispr status', exact: true}).count(), 0);
+      assert.equal(await widget.getByRole('button', {name: 'Wispr status', exact: true}).count(), 0, 'a successful refresh clears the warning');
       // Retire numeric data on denied exposure, even after a successful capture.
       await page.route('**/modules/wispr/content/status', route => route.fulfill({status: 403, contentType: 'application/json', body: JSON.stringify(errorBody('forbidden'))}));
       await refreshHome.click();
