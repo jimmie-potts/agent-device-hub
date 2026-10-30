@@ -1,0 +1,8 @@
+# Apply after compose.local.yaml. Private ingress is still configured separately.
+services:
+  core:
+    labels:
+      io.bunny.access: production
+    environment:
+      BUNNY_ACCESS: production
+      BUNNY_CONTROL: ${BUNNY_CONTROL:-disabled}

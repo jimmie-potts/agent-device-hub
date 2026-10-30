@@ -77,7 +77,13 @@ Tailscale Serve HTTPS on the Mac and forwards through a password-authenticated
 loopback Caddy process. Its distinct configured proof admits the selected origin;
 machine Bearer credentials still require ordinary gateway source/scopes. Browser
 sessions and state stay in the existing runtime. The opt-in private container
-profile retains host-loopback publication and disabled device control. No PC relay,
+profile retains host-loopback publication and disabled device control. The explicit
+[production profile](bunny-container.md#production-device-profile) uses that same
+private entry and fixed runtime to admit configured shipped modules after
+explicit control enablement. Its optional Pixoo hosted-GIF binding is separate
+from the loopback gateway. #568 owns the fresh-state handoff after the PC device
+runtime stops, retaining the existing Mac core. This changes profile admission,
+not the core/module/SDK topology in the current diagram. No PC relay,
 public ingress, additional core or automatic startup is introduced.
 
 **Connect/reconnect:** a remote client authenticates, syncs current membership

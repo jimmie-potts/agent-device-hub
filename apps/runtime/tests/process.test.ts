@@ -35,9 +35,33 @@ function spawnRuntime(context: TestContext, script: string, args: readonly strin
   let stdout = '';
   child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
   child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
-  const records = (): LogRecord[] => stderr.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line) as LogRecord);
+  const records = (): LogRecord[] => stderr.split('\n').slice(0, -1).filter(line => line.startsWith('{')).map(line => JSON.parse(line) as LogRecord);
   return {child, records, stdout: () => stdout, exited};
 }
+
+it('process log polling waits for a complete line and retains every completed record', async context => {
+  const runtime = spawnRuntime(context, '--eval', [String.raw`
+    const held = setInterval(() => {}, 1000);
+    process.on('SIGTERM', () => {
+      process.stderr.write(',"attributes":{}}\n{"event_name":"fixture.third","attributes":{}}\n');
+      clearInterval(held);
+    });
+    process.stderr.write('{"event_name":"fixture.first","attributes":{}}\n{"event_name":"fixture.second"');
+  `]);
+  const stderr = runtime.child.stderr;
+  assert.ok(stderr);
+  await once(stderr, 'data');
+  assert.deepEqual(runtime.records(), [{event_name: 'fixture.first', attributes: {}}]);
+  const completed = once(stderr, 'data');
+  runtime.child.kill('SIGTERM');
+  await completed;
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+  assert.deepEqual(runtime.records(), [
+    {event_name: 'fixture.first', attributes: {}},
+    {event_name: 'fixture.second', attributes: {}},
+    {event_name: 'fixture.third', attributes: {}},
+  ]);
+});
 
 /** Starts a runtime process and waits for its ready line. */
 async function launch(context: TestContext, script: string, args: readonly string[]): Promise<Launched> {

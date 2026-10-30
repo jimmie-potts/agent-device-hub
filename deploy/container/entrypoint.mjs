@@ -1,25 +1,36 @@
 // The small, manually operated container profile. The sealed-package profile is separate and unchanged.
 import {constants} from 'node:fs';
 import {lstat, mkdir, open, readdir} from 'node:fs/promises';
-import {isAbsolute, join} from 'node:path';
+import {isAbsolute, join, resolve} from 'node:path';
+import {isIP} from 'node:net';
 import {fileURLToPath} from 'node:url';
 
 const producerSource = /^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/;
 
+export function privateIPv4(value) {
+  if (typeof value !== 'string' || isIP(value) !== 4) return false;
+  const [a, b] = value.split('.').map(Number);
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
 export function containerOptions(env) {
   const access = env.BUNNY_ACCESS ?? 'isolated';
-  const loopback = access === 'host-local' || access === 'private-proxy';
+  const production = access === 'production';
+  const loopback = access === 'host-local' || access === 'private-proxy' || production;
   const control = env.BUNNY_CONTROL ?? 'disabled';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
   const portText = env.BUNNY_PORT ?? (loopback ? '18788' : '8788');
   const ingestSource = env.BUNNY_INGEST_SOURCE;
-  if (!['isolated', 'host-local', 'private-proxy'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+  const pixooBind = env.BUNNY_PIXOO_BIND;
+  if (!['isolated', 'host-local', 'private-proxy', 'production'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
     || (ingestSource !== undefined && (!loopback || !producerSource.test(ingestSource)))
-    || (loopback && (control !== 'disabled' || portText !== '18788'
+    || (pixooBind !== undefined && (!production || control !== 'enabled' || !privateIPv4(pixooBind)))
+    || (loopback && ((!production && control !== 'disabled') || portText !== '18788'
       || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
-  return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource})};
+  return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource}),
+    ...(pixooBind === undefined ? {} : {pixooBind})};
 }
 
 // Input has already passed the shared credential parser. This profile narrows its grants further.
@@ -57,13 +68,42 @@ export function checkLocalBrowserConfig(config, shipped, access = 'host-local') 
   const hosted = shipped.filter(registration => Object.hasOwn(config.modules, registration.name));
   if (Object.entries(config.modules).some(([name, section]) => !admits(name, section) || Object.hasOwn(Object(section), 'secrets'))
     || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))
-    || config.edge?.credentials !== '/run/secrets/bunny/edge.json'
-    || config.edge.browserAccess !== 'trusted-loopback' || config.edge.launcher !== false || config.edge.mcp !== false
-    || config.edge.wifiProxy !== undefined
-    || (access === 'private-proxy' ? config.edge.privateProxy === undefined : config.edge.privateProxy !== undefined)) {
+    || !browserEdge(config.edge, access)) {
     throw new Error('container-browser-config-refused');
   }
   return hosted;
+}
+
+function browserEdge(edge, access) {
+  return edge?.credentials === '/run/secrets/bunny/edge.json'
+    && edge.browserAccess === 'trusted-loopback' && edge.launcher === false && edge.mcp === false
+    && edge.wifiProxy === undefined
+    && (access === 'private-proxy' ? edge.privateProxy !== undefined : edge.privateProxy === undefined);
+}
+
+export function productionModules(config, runtime, checkConfiguration, options) {
+  if (options.control === 'disabled') return hostLocalModules(config, runtime, checkConfiguration, 'private-proxy');
+  const shipped = runtime.shippedModules.slice(1);
+  const names = new Set(shipped.map(({name}) => name));
+  const hosted = shipped.filter(({name}) => Object.hasOwn(config.modules, name));
+  const refuse = () => {throw new Error('container-browser-config-refused');};
+  if (!browserEdge(config.edge, 'private-proxy')
+    || Object.keys(config.modules).some(name => !names.has(name))
+    || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))) refuse();
+  for (const section of Object.values(config.modules)) {
+    if (section !== null && typeof section === 'object' && Object.hasOwn(section, 'secrets')) {
+      if (section.secrets === null || typeof section.secrets !== 'object' || Array.isArray(section.secrets)
+        || Object.values(section.secrets).some(path => typeof path !== 'string' || !path.startsWith('/run/secrets/bunny/')
+          || path.includes('\0') || resolve(path) !== path)) refuse();
+    }
+  }
+  const hostedGif = config.modules.pixoo?.hostedGif;
+  if (hostedGif !== undefined || options.pixooBind !== undefined) {
+    if (options.pixooBind === undefined || hostedGif?.bind !== '0.0.0.0' || hostedGif.port !== 41240
+      || hostedGif.origin !== 'http://' + options.pixooBind + ':41240') refuse();
+  }
+  const factories = [runtime.coreFactory, ...hosted];
+  return {factories, modules: runtime.buildModules(factories, false)};
 }
 
 /**
@@ -99,13 +139,16 @@ async function start(options) {
   const {coreFactory, shippedModules, buildModules} = runtimeModules;
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted;
-  if (options.access === 'host-local' || options.access === 'private-proxy') {
+  if (['host-local', 'private-proxy', 'production'].includes(options.access)) {
     const [{readEdgeCredentials}, {checkConfiguration}] = await Promise.all([
       import('../../apps/runtime/dist/src/credentials.js'), import('../../packages/sdk/dist/src/index.js'),
     ]);
     // Device control stays disabled; only configured modules that reach no device join the core.
-    ({factories, modules: hosted} = hostLocalModules(config, runtimeModules, checkConfiguration, options.access));
-    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource, options.access);
+    ({factories, modules: hosted} = options.access === 'production'
+      ? productionModules(config, runtimeModules, checkConfiguration, options)
+      : hostLocalModules(config, runtimeModules, checkConfiguration, options.access));
+    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource,
+      options.access === 'production' ? 'private-proxy' : options.access);
   }
   await checkStateDirectory(options.stateDir);
   await refusePendingRestore(options.stateDir);
@@ -126,7 +169,7 @@ async function start(options) {
   const parsed = parseArguments(['--port', String(options.port), '--state-dir', options.stateDir, '--environment', 'production']);
   // The real core consumes the held ownership capability; stopping its store cannot release process ownership.
   await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {
-    modules, config, ...(options.access === 'host-local' || options.access === 'private-proxy' ? {listener: 'container-host-local'} : {}),
+    modules, config, ...(['host-local', 'private-proxy', 'production'].includes(options.access) ? {listener: 'container-host-local'} : {}),
   });
 }
 
