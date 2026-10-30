@@ -217,6 +217,10 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   await privateFile(join(root, 'unreadable.json'), valid, 0o000);
   await privateFile(join(root, 'list.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: []}));
   await privateFile(join(root, 'none.json'), JSON.stringify({schema: CONFIG_SCHEMA}));
+  // The diagnostics section (Hub #811) is refused as the edge section is: a bad level, another member, or a name that is no module's.
+  await privateFile(join(root, 'level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: 'fatal'}}));
+  await privateFile(join(root, 'floor.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {floor: 'info'}}));
+  await privateFile(join(root, 'unhosted.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {modules: {retired: 'debug'}}}));
   const cases: readonly (readonly [string, string])[] = [
     ['relative/config.json', 'config-relative'],
     ['/mnt/bunny-runtime-test/config.json', 'config-mount'],
@@ -234,6 +238,9 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     [join(root, 'extra.json'), 'config-invalid'],
     [join(root, 'list.json'), 'config-invalid'],
     [join(root, 'none.json'), 'config-invalid'],
+    [join(root, 'level.json'), 'config-invalid'],
+    [join(root, 'floor.json'), 'config-invalid'],
+    [join(root, 'unhosted.json'), 'config-invalid'],
   ];
   for (const [file, expected] of cases) {
     const started = fixture('started');
@@ -245,6 +252,12 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   }
   const fine = await startRuntime({port: 0, stateDir: await stateDir(context), modules: [], configFile: good, log: () => {}});
   await fine.stop();
+  const leveled = await privateFile(join(root, 'leveled.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: 'warn', modules: {started: 'debug'}}}));
+  const records: LogRecord[] = [];
+  const started = fixture('started', ({log}) => { log.debug('command.completed', {'bunny.outcome': 'succeeded'}); });
+  const quiet = await startRuntime({port: 0, stateDir: await stateDir(context), modules: [started], configFile: leveled, log: record => { records.push(record); }});
+  await quiet.stop();
+  assert.deepEqual(records.map(record => [record.event_name, record.severity_text]), [['command.completed', 'DEBUG']], 'the file\'s floors apply: WARN for the runtime, DEBUG for the named module');
 });
 
 it('a module\'s private folder sits beside its database, is mode 700, keeps its files across restarts, and is never a link', async context => {

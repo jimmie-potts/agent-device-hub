@@ -200,10 +200,15 @@ export class LogWriter {
     return {...out, 'bunny.exception.redacted_count': replaced, 'bunny.exception.truncated': truncated};
   }
 
-  /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
-  logger(scope: string, base: LogFields = {}): RuntimeLogger {
+  /**
+   * A logger for one scope. `base` attributes are added to every record and win over the caller's fields. `minimum` is
+   * this logger's own floor, in place of the writer's (Hub #811): a module's configured level raises or lowers only that
+   * module's records. A record below the floor is not written and not counted as dropped.
+   */
+  logger(scope: string, base: LogFields = {}, minimum?: LogLevel): RuntimeLogger {
+    const floor = minimum === undefined ? this.#minimum : LEVELS.indexOf(minimum);
     const at = (level: LogLevel) => (event: string, fields: LogFields = {}, trace?: TraceContext): void => {
-      if (LEVELS.indexOf(level) < this.#minimum) return;
+      if (LEVELS.indexOf(level) < floor) return;
       let entry: LogRecord | undefined;
       try {
         const attributes = this.#filteredException({...fields, ...base});

@@ -222,12 +222,20 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   await admitBoundCoreOwnership(modules, options.stateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
-  const logs = new LogWriter(
-    options.log ?? stderrSink, options.logLevel ?? 'info', clock, runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
-  );
-  const log = logs.logger(RUNTIME_SCOPE);
   const stateDir = await prepareStateDirectory(options.stateDir);
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
+  // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
+  // level applies to that module's records only, and may name only a module this runtime hosts.
+  const levels = config?.diagnostics?.modules ?? {};
+  const hostedNames = new Set(modules.map(module => module.manifest.name));
+  for (const name of Object.keys(levels)) {
+    if (!hostedNames.has(name)) throw new RuntimeError('config-invalid', 'the configuration file\'s diagnostics section names a module this runtime does not host');
+  }
+  const logs = new LogWriter(
+    options.log ?? stderrSink, config?.diagnostics?.level ?? options.logLevel ?? 'info', clock,
+    runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
+  );
+  const log = logs.logger(RUNTIME_SCOPE);
   const edgeConfig = config?.edge;
   if (options.edge !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
@@ -256,6 +264,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   const host = new ModuleHost(modules, {
     clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
+    ...(Object.keys(levels).length === 0 ? {} : {levels}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
   });
   const startedAtMs = clock.now();
