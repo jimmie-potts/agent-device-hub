@@ -85,7 +85,8 @@ try {
     assert.equal(restored.brightness, baseline.brightness);
     page = await context.newPage(); page.setDefaultTimeout(12_000); watch(page); await page.goto(`${world.url}/#/automation`); await loaded();
     await automation().getByRole('listitem').filter({hasText: 'completed · succeeded · transmitted'}).waitFor();
-    const log = automation().getByRole('listitem'); assert.equal(await log.count(), 1);
+    const attempts = () => automation().locator('article', {has: page.getByRole('heading', {name: 'Recent automation attempts', exact: true})});
+    const log = attempts().getByRole('listitem'); assert.equal(await log.count(), 1);
     assert.match(await log.innerText(), /Admission.*accepted/s, 'admission and completion are shown separately');
     await automation().getByRole('button', {name: 'Edit Turn end Celebrate', exact: true}).click();
     // Edit only changes the definition; the already enabled state remains enabled.
@@ -98,52 +99,90 @@ try {
     await save('Delete Edited Celebrate'); await automation().getByText('No rules yet. Create a rule, then enable it explicitly.', {exact: true}).waitFor();
     assert.ok(writes.every(write => write.header === '1'), 'every mutation, including DELETE, carries bunny-request:1');
     assert.equal(writes.filter(write => write.method === 'DELETE').length, 1);
-    const schedules=()=>automation().getByRole('region',{name:'Weekly power schedules',exact:true});
-    const device=schedules().getByLabel('Power device',{exact:true});
-    const choices=await device.locator('option').evaluateAll(options=>options.map(option=>(option as HTMLOptionElement).value).filter(Boolean));
-    const firstTarget=choices[0],secondTarget=choices[1];
-    assert.ok(firstTarget!==undefined && secondTarget!==undefined,'independent configured power targets are available');
-    const schedule=async(name:string,target:string):Promise<void>=>{
-      await schedules().getByLabel('Schedule name',{exact:true}).fill(name);await device.selectOption(target);
-      await schedules().getByLabel('On time',{exact:true}).fill('00:00');await schedules().getByLabel('Off time',{exact:true}).fill('00:01');
-      await save('Create disabled schedule');
-      await schedules().getByRole('heading',{name:`${name} Disabled`,exact:true}).waitFor();
+    const routines = () => automation().getByRole('region', {name: 'Weekly routines', exact: true});
+    const step = (position: number) => routines().getByRole('group', {name: `Action ${String(position)}`, exact: true});
+    const submit = (name: string) => routines().getByRole('button', {name, exact: true});
+    const choices = await step(1).getByLabel('Device', {exact: true}).locator('option')
+      .evaluateAll(options => options.map(option => (option as HTMLOptionElement).value).filter(Boolean));
+    // The simulated LIFX `beam` is unqualified and offers no power: every configured device is a target, whatever its capabilities.
+    assert.ok(choices.includes('pendant-1') && choices.includes('beam'), `every configured device is a target: ${choices.join()}`);
+    const offered = async (target: string): Promise<string[]> => {
+      await step(1).getByLabel('Device', {exact: true}).selectOption(target);
+      return step(1).getByLabel('Action', {exact: true}).locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value));
     };
-    await schedule('Weekday desk',firstTarget);await schedule('Weekend reading',secondTarget);
-    await save('Enable schedule Weekday desk');
-    await schedules().getByRole('heading',{name:'Weekday desk Enabled',exact:true}).waitFor();
-    await schedules().getByRole('heading',{name:'Weekend reading Disabled',exact:true}).waitFor();
-    await schedules().getByRole('button',{name:'Edit schedule Weekday desk',exact:true}).click();
-    await schedules().getByLabel('Off time',{exact:true}).fill('00:00');
-    assert.equal(await schedules().getByRole('button',{name:'Save schedule',exact:true}).isDisabled(),true);
-    await schedules().getByLabel('Off time',{exact:true}).fill('00:02');await save('Save schedule');
-    await schedules().getByRole('heading',{name:'Weekday desk Enabled',exact:true}).waitFor();
-    const scheduleWrites=writes.length;
-    world.dropDashboardStreams();await feed(page,'connected');await pause(300);
-    assert.equal(writes.length,scheduleWrites,'power schedules are not resent after reconnect');
-    const powerViolations=(await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations;
-    assert.deepEqual(powerViolations.map(item=>item.id),[]);
-    await save('Disable schedule Weekday desk');
-    await page.route('**/api/v2/automation/power-schedules',async route=>{
-      if(route.request().method()==='POST'){await route.fetch();await route.abort('failed');}else await route.continue();
+    assert.equal((await offered('beam')).includes('power-set'), false);
+    const firstTarget = 'pendant-1';
+    let secondTarget: string | undefined;
+    for (const target of choices.filter(value => value !== firstTarget)) if ((await offered(target)).includes('power-set')) { secondTarget = target; break; }
+    assert.ok(secondTarget !== undefined, 'a second configured power target is available');
+    await step(1).getByLabel('Device', {exact: true}).selectOption('');
+    await routines().getByLabel('Routine name', {exact: true}).fill('Weekday desk');
+    assert.equal(await submit('Create disabled routine').isDisabled(), true, 'an action without a device is incomplete');
+    await routines().getByRole('button', {name: 'Remove action 1', exact: true}).click();
+    await routines().getByText('Add at least one action.', {exact: true}).waitFor();
+    assert.equal(await submit('Create disabled routine').isDisabled(), true, 'a routine needs an action');
+    await routines().getByRole('button', {name: 'Add action', exact: true}).click();
+    assert.equal(await submit('Create disabled routine').isDisabled(), true);
+    const routine = async (name: string, target: string): Promise<void> => {
+      await routines().getByLabel('Routine name', {exact: true}).fill(name); await routines().getByLabel('Time', {exact: true}).fill('00:00');
+      await step(1).getByLabel('Device', {exact: true}).selectOption(target);
+      assert.equal(await step(1).getByLabel('Action', {exact: true}).inputValue(), 'power-set');
+      assert.equal(await step(1).getByLabel('Required mode', {exact: true}).inputValue(), '', 'power has no precondition by default');
+      await step(1).getByLabel('Power', {exact: true}).selectOption('on');
+      await save('Create disabled routine');
+      await routines().getByRole('heading', {name: `${name} Disabled`, exact: true}).waitFor();
+    };
+    await routine('Weekday desk', firstTarget); await routine('Weekend reading', secondTarget);
+    await save('Enable routine Weekday desk');
+    await routines().getByRole('heading', {name: 'Weekday desk Enabled', exact: true}).waitFor();
+    await routines().getByRole('heading', {name: 'Weekend reading Disabled', exact: true}).waitFor();
+    await routines().getByRole('button', {name: 'Edit routine Weekday desk', exact: true}).click();
+    await routines().getByRole('heading', {name: 'Edit routine', exact: true}).waitFor();
+    await routines().getByLabel('Time', {exact: true}).fill('00:02');
+    await routines().getByRole('button', {name: 'Add action', exact: true}).click();
+    assert.equal(await submit('Save routine').isDisabled(), true, 'an incomplete second action blocks saving');
+    await step(2).getByLabel('Device', {exact: true}).selectOption(firstTarget);
+    await step(2).getByLabel('Action', {exact: true}).selectOption('lifx-color-set');
+    await step(2).getByLabel('Hue', {exact: true}).fill('120'); await step(2).getByLabel('Saturation', {exact: true}).fill('50');
+    await routines().getByRole('button', {name: 'Move action 2 up', exact: true}).click();
+    assert.equal(await step(1).getByLabel('Action', {exact: true}).inputValue(), 'lifx-color-set');
+    await routines().getByRole('button', {name: 'Move action 1 down', exact: true}).click();
+    assert.equal(await step(1).getByLabel('Action', {exact: true}).inputValue(), 'power-set');
+    await save('Save routine');
+    await routines().getByRole('heading', {name: 'Weekday desk Enabled', exact: true}).waitFor();
+    await routines().getByText(/color hue 120 \/ saturation 50$/).waitFor();
+    await save('Run routine Weekday desk now');
+    const ran = attempts().getByRole('listitem').filter({hasText: 'Weekday desk'}).filter({hasText: 'Action 1'}).first();
+    await ran.waitFor();
+    assert.match(await ran.innerText(), /Action 1 · power-set/);
+    assert.match(await ran.innerText(), /Admission\s*accepted/, 'the simulated LIFX admits the routine power action');
+    const routineWrites = writes.length;
+    world.dropDashboardStreams(); await feed(page, 'connected'); await pause(300);
+    assert.equal(writes.length, routineWrites, 'routines are not resent or run after reconnect');
+    const routineViolations = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
+    assert.deepEqual(routineViolations.map(item => item.id), []);
+    await save('Disable routine Weekday desk');
+    await page.route('**/api/v2/automation/routines', async route => {
+      if (route.request().method() === 'POST') { await route.fetch(); await route.abort('failed'); } else await route.continue();
     });
-    await schedules().getByLabel('Schedule name',{exact:true}).fill('Reply lost');await device.selectOption(firstTarget);
-    const beforeLost=Number(writes.length);
-    await schedules().getByRole('button',{name:'Create disabled schedule',exact:true}).click();
-    await automation().getByRole('alert').filter({hasText:'The last change has no reliable reply.'}).waitFor();
-    await pause(200);assert.equal(writes.length,beforeLost+1,'a lost mutation reply is not retried');
-    assert.equal(await schedules().getByRole('button',{name:'Create disabled schedule',exact:true}).isDisabled(),true);
-    await page.unroute('**/api/v2/automation/power-schedules');
-    await automation().getByRole('button',{name:'Refresh rules and logs',exact:true}).click();await loaded();
-    await schedules().getByRole('heading',{name:'Reply lost Disabled',exact:true}).waitFor();
-    for(const name of ['Weekday desk','Weekend reading','Reply lost']) await save(`Delete schedule ${name}`);
-    await schedules().getByText('No power schedules yet.',{exact:true}).waitFor();
+    await routines().getByLabel('Routine name', {exact: true}).fill('Reply lost');
+    await step(1).getByLabel('Device', {exact: true}).selectOption(firstTarget);
+    const beforeLost = Number(writes.length);
+    await submit('Create disabled routine').click();
+    await automation().getByRole('alert').filter({hasText: 'The last change has no reliable reply.'}).waitFor();
+    await pause(200); assert.equal(writes.length, beforeLost + 1, 'a lost mutation reply is not retried');
+    assert.equal(await submit('Create disabled routine').isDisabled(), true);
+    await page.unroute('**/api/v2/automation/routines');
+    await automation().getByRole('button', {name: 'Refresh rules and logs', exact: true}).click(); await loaded();
+    await routines().getByRole('heading', {name: 'Reply lost Disabled', exact: true}).waitFor();
+    for (const name of ['Weekday desk', 'Weekend reading', 'Reply lost']) await save(`Delete routine ${name}`);
+    await routines().getByText('No routines yet.', {exact: true}).waitFor();
     const beforeReadonly = writes.length;
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await loaded(); await automation().getByText('Your session is read-only.', {exact: true}).waitFor();
-    for (const button of ['Create disabled rule', 'Create disabled schedule', 'Save settings', 'Save interrupt set']) assert.equal(await automation().getByRole('button', {name: button, exact: true}).isDisabled(), true);
+    for (const button of ['Create disabled rule', 'Create disabled routine', 'Save settings', 'Save interrupt set']) assert.equal(await automation().getByRole('button', {name: button, exact: true}).isDisabled(), true);
     assert.equal(writes.length, beforeReadonly); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'automation', checks: ['explicit disabled-create/enable', 'interrupt and settings persisted', 'passive drafts and reconnect',
-      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'keyboard', 'axe', 'read-only UI interception only','independent power schedules','invalid power windows','power reconnect passive','lost power mutation reply','power axe'], mutations: writes.length})}\n`);
+      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'keyboard', 'axe', 'read-only UI interception only','independent routines', 'incomplete routine actions', 'ordered action edit', 'run now logged', 'routine reconnect passive', 'lost routine mutation reply', 'routine axe'], mutations: writes.length})}\n`);
   } finally { await context.close(); }
 } finally { try { await browser?.close(); } finally { await world.close(); } }

@@ -20,32 +20,32 @@ import {
 import {PLAYBACK_SECTION} from './playback.js';
 
 /** What the simulated Pixoo shows. */
-const pixooState = (h: Harness): SimulatedPixooState => deviceState<SimulatedPixooState>(h, 'pixoo');
+export const pixooState = (h: Harness): SimulatedPixooState => deviceState<SimulatedPixooState>(h, 'pixoo');
 
-const PIXOO_ID = PIXOO_SIMULATED.config.device.id;
+export const PIXOO_ID = PIXOO_SIMULATED.config.device.id;
 /** The Pixoo's section: the module's simulated section, which names the observed GIF profile, with a label. */
 export const PIXOO_SECTION = {device: {...PIXOO_SIMULATED.config.device, label: 'Desk Pixoo'}} as const;
 /** The Pixoo module's source: `device` is a shared family, so its reader names the owner it syncs from (Hub #967). */
 const PIXOO_OWNER = 'bunny/modules/pixoo';
 /** The Pixoo's families, which the reader copies from the Pixoo by name. */
-const PIXOO_FAMILIES: Follow = {owner: PIXOO_OWNER, families: ['device', PIXOO.display, PIXOO.rendition, PIXOO.playlist]};
+export const PIXOO_FAMILIES: Follow = {owner: PIXOO_OWNER, families: ['device', PIXOO.display, PIXOO.rendition, PIXOO.playlist]};
 /** A 1x1 red PNG, which the module renders to 64x64 in its media child process. */
 const RED_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-const pixooCommand = (family: string, verb: string, data: object): {key: string; draft: CommandDraft<object>} => ({
+export const pixooCommand = (family: string, verb: string, data: object): {key: string; draft: CommandDraft<object>} => ({
   key: `bunny.cmd.${family}.${PIXOO_ID}`, draft: {type: `org.bunny.${verb}.requested`, subject: PIXOO_ID, dataschema: schemaOf(family), data},
 });
-const pixooMode = (mode: 'monitor' | 'media'): {key: string; draft: CommandDraft<object>} => pixooCommand('device-mode-set', 'device-mode.set', {mode});
-const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device', PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
-const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display, PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
+export const pixooMode = (mode: 'monitor' | 'media'): {key: string; draft: CommandDraft<object>} => pixooCommand('device-mode-set', 'device-mode.set', {mode});
+export const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device', PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
+export const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display, PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
 /** The reader heard the request's outcome as `result` with `evidence`. */
-const completedAs = (h: Harness, requestId: string, result: string, evidence: string): Outcome => {
+export const completedAs = (h: Harness, requestId: string, result: string, evidence: string): Outcome => {
   const outcome = h.reader.heard().find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId);
   const data = outcome?.data as {result?: string; evidence?: string} | undefined;
   return (data?.result === result && data.evidence === evidence) || `${requestId}'s outcome is ${show(data)}`;
 };
 const pixooAvailability = (h: Harness, availability: DeviceRecord['availability']): Outcome =>
   pixooDevice(h)?.availability === availability || `the reader's copy shows the Pixoo ${String(pixooDevice(h)?.availability)}`;
-const shownFrames = (h: Harness, frames: number): Outcome => pixooState(h).shown?.frames === frames || `the Pixoo shows ${show(pixooState(h).shown)}`;
+export const shownFrames = (h: Harness, frames: number): Outcome => pixooState(h).shown?.frames === frames || `the Pixoo shows ${show(pixooState(h).shown)}`;
 /**
  * The Pixoo with the owners of what it follows: the core's sessions for Monitor, and the playback module's record for
  * Now Playing, as in the shipped list, so its syncs are served and a run's records show only what its scenario does.
@@ -90,7 +90,7 @@ const pixooMonitor: Scenario = {
 };
 
 /** The operator imports a picture, creates a playlist and puts the picture in it, as a person would in the Pixoo pages. */
-const pixooPlaylist = (): Step[] => [
+export const pixooPlaylist = (): Step[] => [
   act('the operator imports a picture', h => dispatchOnce(h, 'operator', 'pixoo-import',
     pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {change: {operation: 'import', name: 'Red', content: {inline: RED_PIXEL}}}), 'pixoo-import-1')),
   expect('the import completes, decoded in the module\'s media process', h => completedAs(h, 'pixoo-import-1', 'succeeded', 'observed'), 20_000),
@@ -107,7 +107,7 @@ const pixooPlaylist = (): Step[] => [
   }),
 ];
 /** The operator starts the playlist the reader holds, as `requestId`. */
-const startPlaylist = (h: Harness, label: string, requestId: string): Promise<string> => {
+export const startPlaylist = (h: Harness, label: string, requestId: string): Promise<string> => {
   const [list] = h.reader.states<PlaylistRecord>(PIXOO.playlist);
   if (list === undefined) throw new StepFailure('no playlist');
   return h.dispatch('operator', label, pixooCommand('media-start', 'media.start', {playlistId: list.data.id}), requestId);
