@@ -197,6 +197,8 @@ export function nextOccurrence(routine:Pick<Routine,'days'|'time'>,afterMs:numbe
 type Fire='scheduled'|'run';
 /** How a Run now ended: its occurrence ran (each action answered, was skipped or failed), or an occurrence was already in flight. */
 export type RunResult={id:string;atMs:number;outcome:'ran'|'busy'};
+/** How one occurrence ended: ran, dropped as busy, or (scheduled only) skipped before any action because it was obsolete, late or already claimed. */
+type FireOutcome=RunResult['outcome']|'skipped';
 export function createRoutines(options:RoutineOptions) {
   const {store}=options;
   migratePowerWindows(store,options.clock());
@@ -262,12 +264,12 @@ export function createRoutines(options:RoutineOptions) {
    * One occurrence: the actions in order, each with fresh identity; a refused, failed, skipped or uncertain action does not
    * stop the next. One occurrence of a routine runs at a time: an overlap is recorded once and dropped.
    */
-  async function fire(saved:Routine,occurrence:RoutineOccurrence,kind:Fire,parent:TraceContext):Promise<RunResult['outcome']> {
+  async function fire(saved:Routine,occurrence:RoutineOccurrence,kind:Fire,parent:TraceContext):Promise<FireOutcome> {
     const first=saved.actions[0];
-    if(first===undefined) return 'busy';
+    if(first===undefined) return 'skipped';
     if(kind==='scheduled') {
-      if(!current(saved,kind) || !inWindow(occurrence)) return 'busy';
-      if(!store.claimPowerBoundary(saved.id,saved.definitionId,occurrence.atMs)) return 'busy';
+      if(!current(saved,kind) || !inWindow(occurrence)) return 'skipped';
+      if(!store.claimPowerBoundary(saved.id,saved.definitionId,occurrence.atMs)) return 'skipped';
     }
     if(inFlight.has(saved.id)) {
       try {if(!stopped()) store.appendLog([logRow(saved,occurrence,kind,first.target,`${saved.id}-${occurrence.atMs}-busy`,'blocked','busy',{family:first.family})]);}
@@ -333,7 +335,7 @@ export function createRoutines(options:RoutineOptions) {
     async run(id:string,parent?:TraceContext):Promise<RunResult> {
       const saved=find(id),atMs=options.clock();
       let outcome:RunResult['outcome']='busy';
-      const task=fire(saved,{atMs},'run',childOf(parent)).then(result=>{outcome=result;});
+      const task=fire(saved,{atMs},'run',childOf(parent)).then(result=>{outcome=result==='busy'?'busy':'ran';});
       pending.add(task);
       try {await task;} finally {pending.delete(task);}
       return {id,atMs,outcome};

@@ -141,7 +141,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
     try {
       await automationRequest(path, method, value);
       if (!mounted.current) return;
-      after?.(); setStatus('Saved. Reading current state…'); await refresh();
+      after?.(); setStatus(path.endsWith('/run') ? 'Run now answered. Reading current state…' : 'Saved. Reading current state…'); await refresh();
     } catch (error) {
       if (!mounted.current) return;
       if (error instanceof AutomationFailure && error.uncertain) { locked.current = true; setUncertain(true); }

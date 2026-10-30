@@ -223,7 +223,7 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
             }}>{action.family==='' && <option value="">Choose an action</option>}
               {familyChoices.map(family=><option key={family} value={family}>{FAMILY_LABELS[family]}</option>)}</select></label>
             <ActionFields action={action} record={record} change={data=>{setAction(index,current=>({...current,data}));}}/>
-            {content(action.family) && <p className="routine-mode">Runs only in {action.requireMode??contentMode(record)??'its content mode'}; the device's status presentation is never displaced.</p>}
+            {content(action.family) && <p>Runs only in {action.requireMode??contentMode(record)??'its content mode'}; the device's status presentation is never displaced.</p>}
             {action.family!=='' && !content(action.family) && <label>Required mode<select aria-label="Required mode" value={action.requireMode??''} onChange={event=>{
               const mode=event.target.value;
               setAction(index,current=>{const {requireMode:_previous,...rest}=current;return mode===''?rest:{...rest,requireMode:mode};});

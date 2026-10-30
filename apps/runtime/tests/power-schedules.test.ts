@@ -265,13 +265,15 @@ void test('a window whose row cannot be read refuses to migrate and leaves every
     assert.equal(store.insertRule(broken,64),true);
     assert.throws(()=>migratePowerWindows(store,0),/invalid-state/);
     assert.deepEqual(store.rules().map(row=>row.trigger),[broken.trigger]);
-    const fine={...broken,id:'power-fine',name:'Fine',trigger:JSON.stringify({schema:'power-window/1.0',days:[1],onTime:'17:00',offTime:'20:00'})};
+    // The readable row sorts first (`rules()` orders by created_at_ms, id), so a per-row commit would have split it before the refusal.
+    const fine={...broken,id:'power-fine',name:'Fine',createdAtMs:0,trigger:JSON.stringify({schema:'power-window/1.0',days:[1],onTime:'17:00',offTime:'20:00'})};
     assert.equal(store.insertRule(fine,64),true);
     assert.throws(()=>migratePowerWindows(store,0),/invalid-state/,'one unreadable row refuses the whole migration');
-    assert.deepEqual(store.rules().map(row=>[row.id,row.trigger]),[['power-broken',broken.trigger],['power-fine',fine.trigger]],'the readable row is not split on its own');
+    assert.deepEqual(store.rules().map(row=>[row.id,row.trigger]),[['power-fine',fine.trigger],['power-broken',broken.trigger]],'the readable row is not split on its own');
     const malformed={...broken,id:'power-json',action:'{not json'};
     store.deleteRule('power-broken');assert.equal(store.insertRule(malformed,64),true);
     assert.throws(()=>migratePowerWindows(store,0),/invalid-state/,'malformed JSON is the same refusal');
+    assert.deepEqual(store.rules().map(row=>[row.id,row.trigger]),[['power-fine',fine.trigger],['power-json',broken.trigger]],'nothing is written before the malformed row either');
   }finally {db.close();}
 });
 void test('migrated names stay valid display text: code-point truncation only when needed, and a neutral name when the suffix would be refused',async()=>{
@@ -284,14 +286,16 @@ void test('migrated names stay valid display text: code-point truncation only wh
     assert.equal(store.insertRule(window('w-emoji',lamps),64),true);
     assert.equal(store.insertRule(window('w-long',long),64),true);
     assert.equal(store.insertRule(window('w-token',`ghp_${'A'.repeat(36)}`),64),true);
-    assert.equal(migratePowerWindows(store,0),3);
+    assert.equal(store.insertRule(window('w-suffix','Desk token:'),64),true);
+    assert.equal(migratePowerWindows(store,0),4);
     const names=new Map(store.rules().map(row=>[row.id,row.name]));
     assert.equal(names.get('w-emoji'),`${lamps} on`,'a valid name is not cut');
     assert.equal(names.get('w-long'),`${'a'.repeat(76)}💡 on`,'cut by code points, never through a surrogate pair');
     assert.equal(names.get('w-token'),'Power window on','a name the reader refuses takes the neutral one');
+    assert.equal(names.get('w-suffix'),'Power window on','a valid legacy name that only the suffix turns into a credential pattern takes the neutral one');
     for(const row of store.rules()) assert.ok([...row.name].length<=80 && !row.name.includes('\uFFFD'),row.name);
     const w=world(db);
-    try {assert.equal(w.routines.list().length,6,'every migrated row reads back');} finally {await w.routines.close();}
+    try {assert.equal(w.routines.list().length,8,'every migrated row reads back');} finally {await w.routines.close();}
   }finally {db.close();}
 });
 void test('a scene action on a Nanoleaf runs in Free, and a scene the device no longer offers is blocked before dispatch',async()=>{
@@ -303,10 +307,13 @@ void test('a scene action on a Nanoleaf runs in Free, and a scene the device no 
     await w.routines.run(saved.id);
     assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.requireMode??'-'}`),['scene-activate free']);
     assert.deepEqual(log(w),['wall-1 receipt','wall-1 blocked mode']);
-    wall.capabilities.scenes={supported:true,sceneIds:['focus']};
+    wall.desired.mode={status:'known',value:'status'};
     await w.routines.run(saved.id);
-    assert.deepEqual(log(w).slice(2),['wall-1 blocked unavailable','wall-1 blocked mode']);
-    assert.equal(w.sent.length,1);
+    assert.deepEqual(log(w).slice(2),['wall-1 blocked mode','wall-1 receipt'],'while the wall shows status the scene is skipped and the status-only action runs');
+    wall.desired.mode={status:'known',value:'free'};wall.capabilities.scenes={supported:true,sceneIds:['focus']};
+    await w.routines.run(saved.id);
+    assert.deepEqual(log(w).slice(4),['wall-1 blocked unavailable','wall-1 blocked mode']);
+    assert.equal(w.sent.length,2);
   }finally {await w.routines.close();w.db.close();}
 });
 void test('a scheduled action whose turn comes after the minute\'s tolerance is logged expired, not dropped',async()=>{
