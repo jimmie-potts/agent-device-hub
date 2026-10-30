@@ -435,22 +435,46 @@ Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `tu
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
 
-The core also owns weekly power schedules for configured devices that declare
-power support. This registry is separate from Nanoleaf/Pixoo mode participation.
-Each schedule selects weekdays and one same-day on/off window on the Hub host's
-local clock. New schedules default to disabled; edits preserve enabled state.
-The core stores definitions and a bounded per-rule occurrence watermark under its
-existing lease, and submits each admitted boundary once through the tracked,
-configuration/generation-guarded `power-set` path. It never calls a transport.
-Unavailable, held or externally controlled devices are refused independently.
+The core also owns weekly routines for configured devices
+([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which
+generalizes the one on/off power window of #483). A routine selects weekdays
+and one time on the Hub host's local clock and holds an ordered list of typed
+actions, each naming a configured target and one of the tracked command
+families its module declares: `power-set`, `brightness-set`, `media-start`,
+`media-control`, `device-mode-set`, `pixoo-media-show` or `lifx-color-set`,
+with that family's own payload. A content action (`media-start`,
+`media-control`, `pixoo-media-show`) always carries `requireMode`, by default
+`media` for a Pixoo and `free` for a Nanoleaf. New routines default to
+disabled; edits preserve the enabled state. This registry is separate from
+Nanoleaf/Pixoo mode participation.
 
-Restart, reconnect, editing and enabling select future boundaries only. Callbacks
-more than 60 seconds late are discarded, and duplicate intent is never replayed.
-Manual off during an on window causes no automatic re-on. The Hub must remain
-running with a reachable device; this is separate from any device maximum-on
-feature and provides no offline protection. Source checks do not establish
-installed or physical qualification. Saved routine rows need
-actual release verification and focused storage-change assessment under [UPGRADE.md](UPGRADE.md).
+At its minute, or on an explicit Run now, the core runs the actions in order:
+each reads the current device record, checks the same configuration and
+generation after the read, the capability, availability, hold and external
+control, then the mode precondition against the record's desired mode and
+pending mode changes, and submits one tracked, guarded command through the
+dispatcher with fresh request identity; the mode-checked families carry
+`requireMode` so the Pixoo checks it again at admission (#1276). A refused,
+failed, uncertain or skipped action does not stop the next; a skipped content
+action is logged `blocked` with reason `mode`. One occurrence per routine runs
+at a time; an overlapping occurrence or Run now is logged `blocked` with reason
+`busy` and dropped. Nothing is retried, rolled back or caught up, and the core
+never calls a transport.
+
+The core stores definitions as `rules.kind = routine` rows with
+`trigger.schema = routine/1.0` and a bounded per-rule occurrence watermark under
+its existing lease. At its first open after the upgrade it migrates each
+retained `power-window/1.0` row once, in one transaction, into an on routine
+(the row's id, definition identity and watermark, with a `power-set on` action)
+and an off routine (a new id, the watermark copied, `power-set off`); a row it
+cannot read refuses the open and leaves every row unchanged. Restart,
+reconnect, editing and enabling select future occurrences only. Callbacks more
+than 60 seconds late are discarded, and duplicate intent is never replayed. The
+Hub must remain running with a reachable device; this is separate from any
+device maximum-on feature and provides no offline protection. Source checks do
+not establish installed or physical qualification. Saved routine rows need
+actual release verification and focused storage-change assessment under
+[UPGRADE.md](UPGRADE.md).
 
 The core separately stores per-target maximum-on definitions and continuous-run
 state in `automation_power_limits`. Its `power-limit/2.0` state family uses the
@@ -468,14 +492,15 @@ upgrade and cannot authorize an older reader.
 The shared dashboard's Automation page manages these fresh rules and settings.
 The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
 (GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
-`power-schedules` (GET/POST), `power-schedules/<id>` (GET/PUT/DELETE),
-`power-schedules/<id>/enable` and `disable` (POST with `{}`),
+`routines` (GET/POST), `routines/<id>` (GET/PUT/DELETE),
+`routines/<id>/enable`, `disable` and `run` (POST with `{}`; `run` submits one
+occurrence now, enabled or not, and answers once each action's dispatch has),
 `power-limits` (GET), `power-limits/<target>` (GET/PUT with enabled, durationMs
 and optional expectedSettingsRevision), `interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
 1–500 and `before` sequence). Success responses use schema `automation/2.0`.
 Reads require read scope; all mutations require control and `bunny-request: 1`,
-including client credentials. Rule bodies and interrupt sets are bounded to
-8 KiB, settings to 1 KiB, and enable/disable bodies to 16 bytes. The gateway
+including client credentials. Rule, routine and interrupt-set bodies are bounded to
+8 KiB, settings to 1 KiB, and enable/disable/run bodies to 16 bytes. The gateway
 rechecks the original request's authority immediately before changing state;
 expected refusal codes leave the core running. A lost reply is never retried
 automatically. Inspect the current rules/settings before another edit.

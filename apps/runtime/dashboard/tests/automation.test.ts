@@ -21,12 +21,14 @@ const require = createRequire(import.meta.url);
 const react = require.resolve('react'), jsxRuntime = require.resolve('react/jsx-runtime');
 await build({stdin: {contents: `
   export * from './src/automation.tsx';
+  export {routineInput} from './src/routines.tsx';
 `, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'automation-test.ts'},
   bundle: true, platform: 'browser', format: 'cjs', outfile: output, logLevel: 'silent',
   alias: {react, 'react/jsx-runtime': jsxRuntime}, external: [react, jsxRuntime]});
 type Page = {
   automationRuleInput(draft: typeof rule, creating: boolean): typeof rule;
-  automationOutcome(entry: {family?:'power-set';requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
+  routineInput(draft: typeof routine, creating: boolean): typeof routine & {enabled?: boolean};
+  automationOutcome(entry: {family?: string; requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
   AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
@@ -35,6 +37,11 @@ const page = require(output) as Page;
 const rule = {name: 'Finished turn', kind: 'event' as const, enabled: true,
   trigger: {source: 'core', kind: 'turn-ended', alias: 'selected'},
   action: {mood: 'celebrate', priorityClass: 'event' as const, durationMs: 1000, palette: ['#123456'], targets: ['wall']}};
+const routine = {name: 'Morning', days: [1, 2, 3], time: '07:30', actions: [
+  {target: 'desk-pixoo', family: 'media-start', data: {playlistId: 'morning'}, requireMode: 'media'},
+  {target: 'pendant-1', family: 'lifx-color-set', data: {hue: 120, saturation: 50}},
+  {target: 'wall', family: 'power-set', data: {on: false}},
+] as {target: string; family: string; data: Record<string, unknown>; requireMode?: string}[]};
 
 void test('creation is disabled until explicit enable; editing retains the definition without changing enabled', () => {
   const created = page.automationRuleInput(rule, true), edited = page.automationRuleInput(rule, false);
@@ -46,6 +53,31 @@ void test('creation is disabled until explicit enable; editing retains the defin
   const preserved = page.automationRuleInput(configured, false);
   assert.deepEqual(preserved.trigger, configured.trigger); assert.deepEqual(preserved.action, configured.action);
   created.action.targets.push('other'); assert.deepEqual(rule.action.targets, ['wall']);
+});
+
+void test('a routine is created disabled, edited without enabled, and keeps its ordered actions with exact keys', () => {
+  const created = page.routineInput(routine, true), edited = page.routineInput({...routine, actions: [...routine.actions].reverse()}, false);
+  assert.equal(created.enabled, false); assert.equal(Object.hasOwn(edited, 'enabled'), false);
+  assert.deepEqual(created, {...routine, enabled: false});
+  assert.deepEqual(edited.actions.map(action => action.target), ['wall', 'pendant-1', 'desk-pixoo']);
+  for (const action of created.actions) {
+    assert.deepEqual(Object.keys(action), Object.hasOwn(action, 'requireMode') ? ['target', 'family', 'data', 'requireMode'] : ['target', 'family', 'data']);
+  }
+  // A payload left over from another family keeps only the current family's keys.
+  const stale = page.routineInput({...routine, actions: [{target: 'wall', family: 'power-set', data: {on: true, percent: 40}}]}, false);
+  assert.deepEqual(stale.actions, [{target: 'wall', family: 'power-set', data: {on: true}}]);
+  const first = created.actions[0]; assert.ok(first); first.data.playlistId = 'changed'; created.days.push(4);
+  assert.deepEqual(routine.actions[0]?.data, {playlistId: 'morning'}); assert.deepEqual(routine.days, [1, 2, 3]);
+});
+
+void test('routine replies, including Run now, pass only with their declared shapes', async context => {
+  const replies: Record<string, unknown>[] = [];
+  context.mock.method(globalThis, 'fetch', () => Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...replies.shift()}), {status: 200})));
+  const saved = {...routine, id: 'morning', enabled: false, definitionId: 'definition-1', createdAtMs: 1, updatedAtMs: 1};
+  replies.push(saved, {id: 'morning', atMs: 5, ran: true}, saved);
+  assert.equal((await page.automationRequest('routines', 'POST', page.routineInput(routine, true))).id, 'morning');
+  assert.equal((await page.automationRequest('routines/morning/run', 'POST', {})).ran, true);
+  await assert.rejects(page.automationRequest('routines/morning/run', 'POST', {}), /Refresh.*before another attempt/);
 });
 
 void test('every explicit mutation sends once with same-origin credentials and the write header, DELETE included', async context => {
@@ -105,7 +137,7 @@ void test('settings readback removes the response envelope before an explicit se
   context.mock.method(globalThis, 'fetch', (path: string, init?: RequestInit) => {
     if (init?.method !== 'GET') { assert.equal(typeof init?.body, 'string'); writes.push(JSON.parse(init?.body as string) as unknown); }
     const value = path.endsWith('/rules') ? {rules: []} : path.endsWith('/settings') ? settings
-      : path.endsWith('/interrupt-set') ? {kinds: ['turn-ended']} : path.endsWith('/power-schedules') ? {schedules:[],timeZone:'UTC'} : {entries: []};
+      : path.endsWith('/interrupt-set') ? {kinds: ['turn-ended']} : path.endsWith('/routines') ? {routines: [], timeZone: 'UTC'} : {entries: []};
     return Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...value}), {status: 200}));
   });
   const snapshot = await page.readAutomation(new AbortController().signal);
@@ -124,5 +156,9 @@ void test('read-only server markup has a labelled Automation page and disabled f
   assert.match(html, /aria-label="Automation"/); assert.match(html, /<h1>Automation<\/h1>/);
   assert.match(html, /read-only/); assert.match(html, /fieldset disabled/);
   for (const label of ['Rule name', 'Occurrence', 'Quiet hours start', 'Per agent task', 'Interrupt kinds']) assert.ok(html.includes(label), label);
+  const routines = /<section aria-label="Weekly routines"><h2>Weekly routines<\/h2>.*?<\/section>/s.exec(html)?.[0] ?? '';
+  assert.match(routines, /<fieldset disabled=""><legend class="vh">Routine definition<\/legend>/);
+  for (const label of ['Routine name', 'Days', 'Time', 'Action 1', 'Device', 'Add action', 'Create disabled routine', 'No routines yet.',
+    'New routines are disabled. Saving or enabling runs nothing; Run now runs one occurrence.']) assert.ok(routines.includes(label), label);
   assert.equal(calls, 0);
 });

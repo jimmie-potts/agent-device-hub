@@ -13,7 +13,7 @@ import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTIN
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
-import {createPowerSchedules, type PowerSchedules} from './power-schedules.js';
+import {MODE_FAMILIES, createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
 
@@ -22,7 +22,7 @@ const KINDS = new Map([
   ['org.bunny.turn.ended','turn-ended'], ['org.bunny.session.ended','session-ended'],
 ]);
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
-export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {power?:Omit<PowerSchedules,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
+export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
 
 type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
 
@@ -35,7 +35,7 @@ export class AutomationPart implements CorePart {
   constructor(scheduler: ModuleScheduler, signal: AbortSignal) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
-  #power:PowerSchedules|undefined;
+  #routines:Routines|undefined;
   #configured:readonly AutomationDevice[]=[];
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
@@ -114,8 +114,19 @@ export class AutomationPart implements CorePart {
             data:{on,expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation}}});
         return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?Outcome.uncertain:'not-sent',requestId,reason:answer.error.code}
           : {outcome:'receipt',requestId};
-      }} satisfies Omit<import('./power-schedules.js').PowerScheduleOptions,'store'>;
-    this.#power=createPowerSchedules({...powerOptions,store});
+      }} satisfies Omit<PowerDispatchOptions,'store'>;
+    // Routines (#1297) take every configured device the core holds a record of; each action is one tracked dispatch of
+    // its family's 2.0 command with the fresh guards, and a mode-checked family carries `requireMode` for its owner (#1276).
+    this.#routines=createRoutines({...powerOptions,store,
+      targets:()=>this.#configured.filter(device=>this.#device(device.id)!==undefined).map(device=>device.id),
+      send:async(action,record,requestId,parent)=>{
+        const {key,type,dataschema}=routineCommand(action);
+        const data={...action.data,...(action.requireMode!==undefined && MODE_FAMILIES.includes(action.family)?{requireMode:action.requireMode}:{}),
+          expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation};
+        const answer=await handle.dispatch({requestId,key,requestedBy:'bunny/core',parent,draft:{type,subject:action.target,dataschema,data}});
+        return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?Outcome.uncertain:'not-sent',requestId,reason:answer.error.code}
+          : {outcome:'receipt',requestId};
+      }});
     this.#limits=createPowerLimits({...powerOptions,store:new PowerLimitStore(database,work=>handle.transaction(work))});
     this.#automation=createAutomation({store,clock:()=>handle.clock.now(),monotonic:()=>handle.clock.now(),active:()=>!this.#closed && !this.#signal.aborted,
       routed:()=>this.#participants.map(p=>p.id),
@@ -166,14 +177,14 @@ export class AutomationPart implements CorePart {
     const engine=this.#automation;
     if(engine===undefined || this.#closed) throw new AutomationError('unavailable',503);
     return {
-      ...(this.#power===undefined?{}:{power:this.#power}),
+      ...(this.#routines===undefined?{}:{routines:this.#routines}),
       ...(this.#limits===undefined?{}:{limits:this.#limits}),
       rules:()=>engine.rules(),rule:id=>engine.rule(id),
       create:(value,owner,authorize)=>engine.create(value,owner,authorize),
       update:(id,value,authorize)=>engine.update(id,value,authorize),
       setEnabled:(id,enabled)=>engine.setEnabled(id,enabled),remove:id=>engine.remove(id),
       interruptSet:()=>engine.interruptSet(),replaceInterruptSet:value=>engine.replaceInterruptSet(value),
-      settings:()=>engine.settings(),replaceSettings:value=>engine.replaceSettings(value),settled:async()=>{await Promise.all([engine.settled(),this.#power?.settled(),this.#limits?.settled()]);},
+      settings:()=>engine.settings(),replaceSettings:value=>engine.replaceSettings(value),settled:async()=>{await Promise.all([engine.settled(),this.#routines?.settled(),this.#limits?.settled()]);},
       log:(limit,before)=>engine.log(limit,before).map(entry=>{
       const operation=entry.requestId===undefined?undefined:this.#handle?.operation(entry.requestId);
       return {...entry,...(operation===undefined?{}:{operation})};
@@ -181,7 +192,7 @@ export class AutomationPart implements CorePart {
   }
   async close(): Promise<void> {
     this.#closed=true;this.#eligibility.clear();
-    await Promise.all([this.#power?.close(),this.#limits?.close()]);
+    await Promise.all([this.#routines?.close(),this.#limits?.close()]);
     await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
     await this.#automation?.close();

@@ -82,12 +82,15 @@ corrected/removal fallback after restart. The companions browser journey checks
 Home placement, selection labels, access loss, navigation, keyboard and axe.
 
 
-`weekly-power-schedules` uses the core and a simulated LIFX consumer. It saves,
-enables and edits a future definition, rejects read-only enabling, restarts on
-the same private state and confirms no catch-up command. It does not wait for a
-weekly boundary: the focused fake-clock and real-dispatcher tests cover due
-boundaries. Use it with the Automation browser journey for shared schedule
-acceptance. Neither establishes Wemo, installed or physical acceptance.
+`weekly-routines` uses the core and a simulated LIFX consumer. It saves,
+enables and edits a disabled routine through the authenticated routes, refuses
+the read-only client's enable and Run now, restarts and dispatches nothing
+before a future occurrence. `routine-actions` adds the playback, Pixoo and LIFX
+modules: it imports a picture into a Pixoo playlist, saves a routine that starts
+the playlist and paints the pendant green, runs it now in Monitor (the start is
+skipped for the mode, the color runs) and in Media (the start completes once the
+media reached the simulated Pixoo), then enables it for the next minute and
+observes both actions once, in order, with nothing replayed after a restart.
 
 `wemo-power-limit` uses the actual core, Wemo module and authenticated controls
 with two supervisor-owned synthetic plugs. It checks read-only refusal, explicit
