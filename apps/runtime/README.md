@@ -1099,7 +1099,8 @@ edge's section (#835):
   },
   "diagnostics": {
     "level": "info",
-    "modules": {"sign": "debug"}
+    "modules": {"sign": "debug"},
+    "export": {"collector": "http://host.docker.internal:4318"}
   }
 }
 ```
@@ -1123,6 +1124,17 @@ records about a module (`runtime.module.starting` at DEBUG, the bus's
 floor affects the records written after the runtime reads the file; nothing
 recovers a record an earlier floor kept out, and a record below the floor is not
 counted as dropped.
+
+`export.collector` (Hub #813) names the OpenTelemetry Collector the runtime's
+records and spans also go to, beside the stderr journal: an exact owned origin,
+`http://127.0.0.1:<port>`, `http://[::1]:<port>` or
+`http://host.docker.internal:<port>`, the name Docker Desktop gives a container
+for the Mac's own loopback, which is how the container profiles reach the
+[Mac-local diagnostics stack](../../docs/bunny-container.md#diagnostics-stack)
+without joining another network. Any other host, a DNS name, a path, a query,
+user information or a missing port refuses the file with `config-invalid`. Without the member
+nothing leaves the process. See [Logs](#logs) for what the export carries and
+how its loss shows.
 
 The `edge` section names the [credentials file](#credentials) by its absolute
 path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),
@@ -1568,7 +1580,28 @@ stdout ready line, which keeps its own contract, the process writes a
 `runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
 listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
-(`bunny.telemetry.failure_count`), with the spans lost.
+(`bunny.telemetry.failure_count`), with the spans lost and, with a Collector,
+the records and spans the export lost.
+
+With the configuration file's `diagnostics.export.collector`
+([Configuration](#configuration), Hub #813), each record the writer lets through
+goes to the journal first and then to the observability host adapter's bounded
+OTLP log queue, the same adapter that records the spans, so each signal has one
+ingestion path and the floors apply once; the journal is never scraped into the
+same backend. The export is never acknowledged to the work that wrote the
+record: a Collector that refuses, stalls or is absent changes no result, reply
+or retry, and the queue drops what the Collector will not take within a second
+and counts it. Once a minute, while that loss grows, the runtime writes one
+`telemetry.dropped` record at WARN with the adapter's totals so far
+(`bunny.telemetry.dropped_count`, `bunny.telemetry.failure_count`), and no more
+than one a minute, so an outage cannot flood the journal; the summary itself
+goes to the export, so while the Collector is down each minute's summary is
+the next minute's growth and the journal keeps one WARN a minute for as long
+as the outage lasts, and stops once the Collector takes records again. The
+exported records are the journal's copy: the adapter attaches none of them to
+a span, so a span keeps the attributes its owner gave it. `runtime.stopped`
+carries the totals, written after the final flush so they are complete: it is
+the journal's last word, and the export ends before it.
 
 The log keeps INFO and above by default. The configuration file's
 [`diagnostics` section](#configuration) moves that floor and gives one module
@@ -1643,16 +1676,19 @@ device that stays offline.
 
 The runtime records spans through the observability package's
 `createHostDiagnostics`, with tracing on, 100% head sampling that honors a
-parent's sampled flag, no exporter and the adapter's bounded local span sink;
-it installs no process context manager. The bus records each command's
+parent's sampled flag, the adapter's bounded local span sink and, only with a
+configured Collector, its OTLP export; it installs no process context manager. The bus records each command's
 `bunny.command.request`, `.queue` and `.execute` spans under `bunny.runtime`, and
 `trace.start` records a module's own spans under `bunny.module` with its name.
 Each finished span goes to `RuntimeOptions.spans` as one projected OTLP JSON
 document; without that option the runtime keeps the latest 1,024 for
 `runtime.spans()`, which returns them oldest first with the count of older
 spans it evicted, so a span missing from memory was evicted only while that
-count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts spans
-lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
+count is above zero. With the configuration file's
+`diagnostics.export.collector` the same adapter also sends each span to that
+Collector after the local sink, through its bounded queue, beside the records
+([Logs](#logs), Hub #813). `runtime.stopped` counts spans lost as invalid,
+dropped, unfinished at shutdown or failed in the sink or the export, with the
 records. If the adapter cannot start, the runtime runs without recorded spans
 and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
 

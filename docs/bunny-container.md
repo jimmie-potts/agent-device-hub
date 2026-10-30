@@ -354,6 +354,115 @@ and reaching a physical device remains #568's exact-target check.
 | Roborock | Outbound TCP 58867 to the selected device address for the local protocol and MQTT over TLS (TCP 8883) to the session's broker. The regional `roborock.com` HTTPS API serves only the interactive session setup tool, not the container. Read-only, with the existing private target and session files. |
 | Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |
 
+## Diagnostics stack
+
+The Mac-local log and trace viewer for the personal runtime
+([#813](https://github.com/jimmie-potts/agent-device-hub/issues/813)) is one
+owned Compose project, `bunny-diagnostics`, defined in
+`deploy/diagnostics/compose.yaml`: an OpenTelemetry Collector, Loki, Tempo and
+Grafana, each pinned by its multi-architecture image digest. It is operated by
+hand beside the runtime, with the same accepted downtime: start it after the
+runtime after sign-in, stop it before maintenance. Only two ports exist, on the
+Mac's loopback: Grafana at `http://127.0.0.1:3000/` and the Collector's OTLP/HTTP
+receiver at `127.0.0.1:4318`. Nothing is published on the LAN, and the viewer is
+never reachable through the private remote entry; the dashboard's Connections
+page links it only when the runtime's configuration names it.
+
+The runtime container reaches the Collector through Docker Desktop's
+`host.docker.internal`, the name a container gets for its host's own loopback,
+so the runtime keeps its own `local` network and the operator checks are
+unchanged. Logs and spans travel on one path each (OTLP), from the runtime's
+own log writer and span pipeline; the stderr journal stays as it is and is never
+scraped into the same backend.
+
+Everything the stack stores is diagnostic data the owner has agreed to lose:
+seven-day retention in Loki and Tempo, enforced by their compactors; admission
+limits that bound a week's worst case (Loki 1 MiB/s with a 4 MiB burst and
+16 KB lines, Tempo 2 MiB/s with 5 MiB per trace); a Collector that retries a
+refusing backend for 30 seconds and then drops; a runtime whose bounded queue
+drops what the Collector will not take within a second and counts it
+(`telemetry.dropped`, `runtime.stopped`). Memory limits are 256 MiB for the
+Collector and 768 MiB each for Loki, Tempo and Grafana, about 2.5 GiB at most
+beside the runtime's 4 GiB, within the Linux engine's 8 GiB (Grafana idles near
+400 MiB).
+Nothing here backs up, restores, spools or replays; an outage is a gap in the
+viewer, never a change to an application result, and a missing record is never
+proof that nothing happened. This retention and deletion applies to the three
+`bunny-diagnostics_*` volumes only, never to the runtime's state, configuration
+or archives.
+
+### Set up once
+
+Pull the four pinned images, then create the project without starting it:
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml pull
+docker compose -f deploy/diagnostics/compose.yaml create --pull never
+```
+
+Point the runtime at the Collector and name the viewer for the dashboard by
+adding to the private `runtime.json`, through the one-shot replacement in
+[Admit a module that reaches no device](#admit-a-module-that-reaches-no-device),
+stopped and backed up first:
+
+```json
+{
+  "diagnostics": {"export": {"collector": "http://host.docker.internal:4318"}},
+  "edge": {"placeLinks": {"grafana": "http://127.0.0.1:3000/"}}
+}
+```
+
+(`diagnostics` and `placeLinks` join the existing sections; keep the rest of the
+file as it is.) The runtime accepts only that alias or a numeric loopback origin
+for the Collector and refuses anything else with `config-invalid`. Start the
+runtime again after the edit; the export begins at startup, and the Connections
+page shows **Open Grafana · Local**.
+
+### Start, stop and inspect
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml start
+docker compose -f deploy/diagnostics/compose.yaml ps
+curl -s http://127.0.0.1:3000/api/health
+docker compose -f deploy/diagnostics/compose.yaml stop
+```
+
+`ps` shows the four containers `Up`; Grafana's health answers
+`"database": "ok"`. Read actual storage with
+`docker system df -v`, under the `bunny-diagnostics_loki-data`,
+`bunny-diagnostics_tempo-data` and `bunny-diagnostics_grafana-data` volumes;
+the figures recorded at installation are in #813. Loss shows in three places:
+the Collector's own log (`docker compose -f deploy/diagnostics/compose.yaml
+logs collector`), the runtime's `telemetry.dropped` records, and the
+`runtime.stopped` record's counts.
+
+In Grafana, **Dashboards → B.U.N.N.Y. → B.U.N.N.Y. diagnostics** holds the
+starter queries: records by module, severity, event and outcome, failures and
+warnings, and one trace's records and spans by trace ID. **Explore → Loki**
+takes any query, such as
+`{service_namespace="bunny"} | bunny_module="companions" | severity_text="WARN"`;
+labels are the contract's three (`service_namespace`, `service_name`,
+`deployment_environment_name`), and everything else, `trace_id` and `span_id`
+included, is structured metadata. A record's details offer **Open trace** on
+`trace_id`; a span in **Explore → Tempo** offers **Logs for this span**, which
+runs the Loki query for that trace. Grafana itself is reached without a
+password, as the dashboard's trusted loopback sign-in is, as an anonymous
+Editor: that role keeps Explore (a Viewer has no `datasources:explore` in
+Grafana 12) and may save dashboards, which are diagnostic data too, but cannot
+add a data source, so no program on this Mac can turn Grafana's proxy into a
+relay. Grafana 12 warns that a later release will support only Viewer for
+anonymous access; a future image pin may then need a signed-in Editor. Another
+program trusted on this Mac may open Grafana, so keep the port on loopback.
+
+To discard every diagnostic record and start again, which the owner accepts:
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml down -v
+```
+
+That removes only this project's containers, network and the three
+`bunny-diagnostics_*` volumes.
+
 ## Replace an image
 
 `start` resumes the selected existing container; it does not apply a changed

@@ -1,0 +1,109 @@
+# The Mac-local diagnostics backend for B.U.N.N.Y. (Hub #813): one OpenTelemetry Collector, Loki, Tempo and Grafana,
+# started and stopped by hand beside the runtime (docs/bunny-container.md "Diagnostics stack"). Only Grafana and the
+# Collector's OTLP/HTTP receiver are published, on the Mac's loopback; the runtime reaches the Collector through Docker
+# Desktop's host alias. Images are pinned by their multi-architecture index digests (linux/arm64 and linux/amd64).
+# Diagnostic data lives in the three named volumes and is deletable: seven-day retention, ingestion limits and loss are
+# accepted (epic #810). No restart policy: collection resumes when the operator starts the project after sign-in.
+name: bunny-diagnostics
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b
+    command: ["--config=/etc/otelcol/config.yaml"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1
+    restart: "no"
+    stop_grace_period: 10s
+    ports:
+      - "127.0.0.1:4318:4318/tcp"
+    networks: [diagnostics]
+    volumes:
+      - ./otelcol.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [loki, tempo]
+  loki:
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    command: ["-config.file=/etc/loki/config.yaml"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1
+    restart: "no"
+    stop_grace_period: 20s
+    networks: [diagnostics]
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    volumes:
+      - ./loki.yaml:/etc/loki/config.yaml:ro
+      # The image's own data directory, owned by its user (10001), so the fresh volume takes that ownership.
+      - loki-data:/loki
+  tempo:
+    image: grafana/tempo:2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1
+    restart: "no"
+    stop_grace_period: 20s
+    networks: [diagnostics]
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    volumes:
+      - ./tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+  grafana:
+    image: grafana/grafana:12.4.14@sha256:ae509d9ae8c1021ca32ec370a9ca975d40165eda9fccd1e1102d317ff8787cd7
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1
+    restart: "no"
+    stop_grace_period: 10s
+    ports:
+      - "127.0.0.1:3000:3000/tcp"
+    networks: [diagnostics]
+    environment:
+      # Mac-loopback viewer for one operator, trusted as the dashboard's loopback sign-in is: no password, no sign-up,
+      # no login form, no analytics or plugin fetches. Anything published beyond 127.0.0.1 needs a different profile.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      # Editor keeps Explore (Viewer lacks `datasources:explore` in Grafana 12) and still cannot add a data source, so
+      # no local program can turn Grafana's proxy into a relay. Grafana 12 warns that only Viewer will stay supported.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://127.0.0.1:3000/
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/bunny:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [loki, tempo]
+networks:
+  diagnostics:
+    driver: bridge
+    enable_ipv6: false
+volumes:
+  loki-data:
+  tempo-data:
+  grafana-data:
