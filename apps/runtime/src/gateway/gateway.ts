@@ -198,6 +198,7 @@ export class Gateway {
         modules: () => this.#options.host.modules(), invoke: (name, call) => this.#options.host.invoke(name, call), access: this.access,
         recover: (id, input) => this.#recoverFor(id, input), dispatch: (id, input) => this.#dispatchFor(id, input),
         scheduler: this.#options.scheduler, holdsSecret: text => this.#options.redactions.holds(text),
+        ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
       }, hosts);
     }
     if (this.#options.edge.launcher) this.#closeLauncher = await startLauncher(this.#options.stateDir, () => ({url: `${this.#origin}/`, code: this.access.issueLaunch()}));

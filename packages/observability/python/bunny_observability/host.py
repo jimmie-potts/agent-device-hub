@@ -41,7 +41,8 @@ class _Transport:
     def __init__(self, origin, signal):
         from urllib.parse import urlsplit
         u = urlsplit(origin)
-        if (u.scheme != 'http' or u.hostname not in ('127.0.0.1', '::1') or u.username or u.password
+        # The owned hosts: numeric loopback, and Docker Desktop's name for the container host's own loopback (Hub #813).
+        if (u.scheme != 'http' or u.hostname not in ('127.0.0.1', '::1', 'host.docker.internal') or u.username or u.password
                 or u.path or u.query or u.fragment or origin != f'http://{u.netloc}'):
             raise ValueError('invalid-collector-origin')
         self._signal = signal

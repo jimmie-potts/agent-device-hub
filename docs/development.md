@@ -859,6 +859,17 @@ are separate evidence.
 
 See [Runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) for the authoritative procedure.
 
+For the Collector export and the Mac-local diagnostics stack (Hub #813), build
+first and run `node --test apps/runtime/dist/tests/export.test.js` with Node 24:
+it drives a loopback fake Collector through accepting, refusing, stalling and
+absent cases and checks the configuration's owned-origin refusals, so it needs
+no Docker. The stack's own files are checked only by a disposable boot on
+alternate ports, as [the operator guide](bunny-container.md#diagnostics-stack)
+describes: `docker compose -p <disposable name> -f deploy/diagnostics/compose.yaml -f <ports override> up -d`,
+post one profile 1.7 record and one span to the Collector, read them back
+through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
+export test with the runtime suites; it does not boot the stack.
+
 ### Runtime test layers
 
 See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.
