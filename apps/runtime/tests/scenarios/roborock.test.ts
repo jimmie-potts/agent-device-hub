@@ -57,10 +57,11 @@ for (const transport of TRANSPORTS) {
       const action = device.action.bind(device), read = device.readStatus.bind(device);
       let holdNext = false, latestAt = 0, started: (() => void) | undefined;
       device.readStatus = async readOptions => {
+        const held = holdNext;
+        holdNext = false;
         const answer = await read(readOptions);
         if (answer.ok) latestAt = Date.parse(answer.observedAt);
-        if (holdNext) {
-          holdNext = false;
+        if (held) {
           sampledAt = latestAt;
           started?.();
           await new Promise<void>(resolve => {
@@ -76,8 +77,8 @@ for (const transport of TRANSPORTS) {
         if (value !== 'offline') return action(value);
         beforeAt = latestAt;
         const begun = new Promise<void>(resolve => {started = resolve;});
-        holdNext = true;
-        void action('online');
+        // Give the later sample a distinct time, independent of how I/O and microtasks interleave.
+        options.scheduler.after(1, () => {holdNext = true; void action('online');});
         await begun;
         return action('offline');
       };
