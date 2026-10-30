@@ -47,7 +47,7 @@ export type ExceptionOptions = {
   /**
    * The text is a stack whose header, the error's name and this message, ends before its frames. A payload in the header
    * is bounded by the header's end, one in a frame by the next frame; without this, the whole text is one message and a
-   * payload may run to its end. A stack whose header holds no such message is bounded at its first frame.
+   * payload may run to its end. A stack whose header does not hold this message is bounded as one message too.
    */
   readonly stackOf?: string;
 };
@@ -148,17 +148,15 @@ function opensLikeJson(text: string, start: number): boolean {
 }
 
 /**
- * Where a stack's header ends: after `message` when the stack begins with a name and that message, else at its first
- * frame, else at its end. A message text is all header.
+ * Where a stack's header ends: after `message` when the stack begins with a name and that message. A message text is
+ * all header, and so is a stack whose header cannot be found that way (a stack written without its message, or with
+ * another, or an error name over `MAX_NAME` characters): a frame-like line inside such a text could be a payload's, so
+ * the payload bound wins and a payload the header leaves open takes the frames with it.
  */
 function headerEnd(text: string, message: string | undefined): number {
-  if (message === undefined) return text.length;
-  if (message !== '') {
-    const at = text.indexOf(message);
-    if (at !== -1 && at <= MAX_NAME) return at + message.length;
-  }
-  const frame = text.indexOf(FRAME);
-  return frame === -1 ? text.length : frame;
+  if (message === undefined || message === '') return text.length;
+  const at = text.indexOf(message);
+  return at !== -1 && at <= MAX_NAME ? at + message.length : text.length;
 }
 // The longest error name, with its colon and space, a stack's header may start with before its message.
 const MAX_NAME = 128;

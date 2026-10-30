@@ -184,3 +184,21 @@ it('a module\'s own exception text goes through the same filters, bounds and sec
   assert.equal(fault?.attributes['error.type'], 'Error');
   assert.deepEqual(writer.counts(), {written: 3, dropped: 0, failed: 0});
 });
+
+it('a module-written stack without its message, or with another, still omits an open payload whole', () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', clock);
+  const log = writer.logger('bunny.module', {'bunny.module': 'lamp'});
+  const body = `{"detail":"Error: inner\n    at inner (/opt/x.js:1:1)","transcript":"${'my finances are private. '.repeat(5)}","password":"hunter2"}`;
+  const stack = `Error: bad body ${body}\n    at real (/mods/y.js:1:1)`;
+  log.error('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'failed', 'exception.stacktrace': stack, 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  log.error('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'failed', 'exception.message': 'unrelated', 'exception.stacktrace': stack, 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  log.error('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'failed', 'exception.message': `bad body ${body}`, 'exception.stacktrace': stack, 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  assert.equal(written.length, 3);
+  for (const record of written) {
+    const text = JSON.stringify(record.attributes);
+    assert.equal(text.includes('finances'), false, text);
+    assert.equal(text.includes('hunter2'), false, text);
+  }
+  assert.ok(String(written[2]?.attributes['exception.stacktrace']).endsWith('\n    at real (/mods/y.js:1:1)'), 'a matched header keeps the frame');
+});

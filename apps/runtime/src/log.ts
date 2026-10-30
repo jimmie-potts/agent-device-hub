@@ -183,7 +183,7 @@ export class LogWriter {
       const value = out[name];
       if (value === undefined) continue;
       if (typeof value !== 'string') { delete out[name]; continue; }
-      // The message as the module wrote it, since the filtered one no longer matches the stack's header.
+      // The message as the record carries it, before this pass, since the filtered one no longer matches the stack's header.
       const message = attributes['exception.message'];
       const clean = filterExceptionText(value, limit, {
         filter: text => this.#redactions.scrub(text), ...(name === 'exception.stacktrace' ? {stackOf: typeof message === 'string' ? message : ''} : {}),

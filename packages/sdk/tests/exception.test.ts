@@ -263,3 +263,16 @@ it('a frame-like line inside a payload is the payload\'s, in a message and in a 
   const kept = String(exceptionFields(custom)['exception.stacktrace']);
   assert.equal(kept, `Custom\n    at one (/a.js:1:1)\n    at two (${OMITTED})\n    at three (/c.js:3:3)`, 'a payload in a frame ends with that frame');
 });
+
+it('a stack whose header cannot be matched to its message is bounded as one text, so an open payload takes the frames', () => {
+  const body = `{"detail":"Error: inner\n    at inner (/opt/x.js:1:1)","transcript":"${'my finances are private. '.repeat(5)}","password":"hunter2"}`;
+  const frames = '\n    at real (/mods/y.js:1:1)\n    at run (/mods/z.js:2:2)';
+  const stack = `Custom failure: ${body}${frames}`;
+  for (const [message, why] of [['short', 'another message'], ['', 'no message'], [undefined, 'as a message'], [`${'N'.repeat(130)}: ${body}`, 'a name over 128 characters']] as const) {
+    const out = filterExceptionText(message === undefined ? stack : `${message.length > 128 ? '' : 'Custom failure: '}${message.length > 128 ? message : body}${frames}`, 4096, message === undefined ? {} : {stackOf: message});
+    assert.equal(out.text.includes('finances'), false, why);
+    assert.equal(out.text.includes('hunter2'), false, why);
+  }
+  const matched = filterExceptionText(stack, 4096, {stackOf: body});
+  assert.ok(matched.text.endsWith(frames) && !matched.text.includes('finances'), `a matched header keeps the frames: ${matched.text}`);
+});

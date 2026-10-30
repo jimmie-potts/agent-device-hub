@@ -317,7 +317,10 @@ only a diagnostic record changes, and only on the private path.
   header ends with the header, so a lone quote or bracket in a message
   (`Unexpected token " in JSON`) keeps every frame while a frame-like line
   inside a quoted body stays part of the body, and a payload in a frame ends
-  with that frame; a message has no such bound; an
+  with that frame; a message has no such bound, and neither has a stack whose
+  header cannot be matched to its message (a module-written stack without its
+  message or with another, or an error name over 128 characters), so a payload
+  such a header leaves open takes its frames with it; an
   unquoted member name with its colon, as Node inspects an object, opens a
   block like JSON; and a quote that follows a letter or digit, as in a
   contraction, opens nothing. Control and format characters are removed before
