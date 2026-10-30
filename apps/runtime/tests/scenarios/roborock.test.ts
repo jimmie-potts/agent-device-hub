@@ -48,6 +48,52 @@ for (const transport of TRANSPORTS) {
     } finally {await h.close();}
   });
 
+  it(`Roborock scenario preserves a successful read already in flight over ${transport}`, async () => {
+    const simulation = registration.simulation;
+    assert.ok(simulation);
+    let sampledAt = 0, beforeAt = 0;
+    const delayed = {...registration, simulation: {...simulation, memory: {...simulation.memory, create(options: SimulationOptions) {
+      const device = new SimulatedRoborock(options.now);
+      const action = device.action.bind(device), read = device.readStatus.bind(device);
+      let holdNext = false, latestAt = 0, started: (() => void) | undefined;
+      device.readStatus = async readOptions => {
+        const answer = await read(readOptions);
+        if (answer.ok) latestAt = Date.parse(answer.observedAt);
+        if (holdNext) {
+          holdNext = false;
+          sampledAt = latestAt;
+          started?.();
+          await new Promise<void>(resolve => {
+            const finish = (): void => {cancel(); readOptions?.signal?.removeEventListener('abort', finish); resolve();};
+            const cancel = options.scheduler.after(100, finish);
+            readOptions?.signal?.addEventListener('abort', finish, {once: true});
+            if (readOptions?.signal?.aborted === true) finish();
+          });
+        }
+        return readOptions?.signal?.aborted === true ? read(readOptions) : answer;
+      };
+      device.action = async value => {
+        if (value !== 'offline') return action(value);
+        beforeAt = latestAt;
+        const begun = new Promise<void>(resolve => {started = resolve;});
+        holdNext = true;
+        void action('online');
+        await begun;
+        return action('offline');
+      };
+      return device;
+    }}}};
+    const h = await startMemoryHarness(selected.seed, transport, {
+      registrations: registrations.map(value => value.name === registration.name ? delayed : value),
+    });
+    try {
+      const result = await runScenario(selected, h);
+      assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+      assert.ok(sampledAt > beforeAt, 'a later successful observation completes while the offline transition is pending');
+      assert.deepEqual(h.problems(), []);
+    } finally {await h.close();}
+  });
+
   for (const fault of ['missing-transition', 'lost-history', 'changed-time'] as const) {
     it(`Roborock scenario rejects ${fault} over ${transport}`, async () => {
       const h = await startMemoryHarness(selected.seed, transport);

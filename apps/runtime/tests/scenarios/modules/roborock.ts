@@ -3,7 +3,6 @@ import { act, answers, bodyOf, deviceState, expect, holds, noToken, refusedWith,
 const OWNER = 'bunny/modules/roborock';
 const ROOT = '/modules/roborock/content/';
 const status = (h: Harness): VacuumStatus | undefined => h.reader.states<VacuumStatus>('roborock-vacuum', OWNER)[0]?.data;
-const beforeOffline = new WeakMap<Harness, VacuumStatus['observedAtMs']>();
 const calls = (h: Harness): readonly string[] => deviceState<{
     calls: string[];
 }>(h, 'roborock').calls;
@@ -79,18 +78,20 @@ export const scenarios: readonly Scenario[] = [{
             expect('unauthenticated content is refused', answers({ as: 'anonymous', method: 'GET', path: ROOT + 'status' }, answer => refusedWith(answer, 401, 'unauthenticated'))),
             expect('another origin cannot read through a browser session', answers({ as: 'browser', method: 'GET', path: ROOT + 'status', origin: 'other' }, answer => refusedWith(answer, 403, 'forbidden'))),
             expect('reader cannot send device commands', answers({ as: 'reader', method: 'POST', path: '/api/v2/commands/power-set', body: { target: 'vacuum', data: { on: true } } }, answer => refusedWith(answer, 403, 'forbidden'))),
-            act('vendor temporarily becomes unavailable', h => {
-                const value = status(h);
-                if (value !== undefined) beforeOffline.set(h, value.observedAtMs);
-                h.simulate({ device: 'roborock', action: 'offline' });
-            }),
+            act('vendor temporarily becomes unavailable', h => { h.simulate({ device: 'roborock', action: 'offline' }); }),
             // A status read has a nine-second transport budget and ten-second collector fence. Wait for that
             // transition separately so a pending read is not reported as erased history by the default three-second check.
             expect('the reader observes the unavailable status', h => status(h)?.availability === 'unavailable'
                 || 'unavailable observation did not arrive', 10_000),
             expect('unavailable input preserves retained history and original observation time', h => {
                 const value = status(h);
-                const previous = beforeOffline.get(h);
+                // A successful read already in flight may publish after the offline action. The preserved time is
+                // the last available observation before this unavailable revision, not an earlier reader snapshot.
+                const previous = h.published()
+                    .filter(({message}) => message.source === OWNER && message.type === 'org.bunny.roborock-vacuum.updated')
+                    .map(({message}) => message.data as VacuumStatus)
+                    .filter(candidate => candidate.availability === 'available' && candidate.revision < (value?.revision ?? 0))
+                    .sort((left, right) => right.revision - left.revision)[0]?.observedAtMs;
                 return value?.availability === 'unavailable' && value.collection.retainedRuns === 30
                     && value.observedAtMs.status === 'known' && previous?.status === 'known'
                     && value.observedAtMs.value === previous.value && value.collection.gaps > 0 || 'unavailable state erased evidence';
