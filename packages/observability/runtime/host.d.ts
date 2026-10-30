@@ -9,5 +9,7 @@ export type HostDiagnostics={
  counts():Record<string,unknown>;
  shutdown():Promise<void>;
 };
+/** The exact owned Collector origins an application may name: numeric loopback or Docker Desktop's host alias, with a port. */
+export function createOwnedOrigins(values:readonly string[]):{has(value:string):boolean};
 export function streamSink(stream:{write(line:string,callback:(error?:Error|null)=>void):unknown}):(line:string,signal?:AbortSignal)=>Promise<void>;
 export function createHostDiagnostics(options?:{enabled?:boolean;resource?:Record<string,string>;tracing?:boolean;samplingRatio?:number;collectorOrigin?:string;localSink?:(line:string,signal:AbortSignal)=>unknown;localSpanSink?:(line:string,signal:AbortSignal)=>unknown;globalContext?:boolean;schemaVersion?:SchemaVersion;queueOptions?:{maxRecords?:number;maxBytes?:number;flushMs?:number;minimumSeverity?:number}}):Promise<HostDiagnostics>;

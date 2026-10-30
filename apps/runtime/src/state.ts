@@ -6,6 +6,7 @@ import {lstat, mkdir, open, readdir, readlink, realpath} from 'node:fs/promises'
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
+import {createOwnedOrigins} from '@jimmie-potts/bunny-observability/host';
 
 /** A refusal the runtime makes itself. Its `code` names the reason in log records, which hold no messages. */
 export class RuntimeError extends Error {
@@ -328,10 +329,14 @@ export type ConfiguredLogLevel = 'debug' | 'info' | 'warn' | 'error';
  * The configuration file's `diagnostics` section (Hub #811): the floor of the runtime's log, `level`, `info` unless
  * set, and a floor per module, `modules`, by module name, which raises or lowers only that module's records. Enabling
  * `debug` affects the records written after the runtime reads it; nothing recovers records an earlier floor dropped.
+ * `export.collector` (Hub #813) names the OpenTelemetry Collector origin the runtime's records and spans go to beside the
+ * stderr journal: an exact owned origin, `http://127.0.0.1:<port>`, `http://[::1]:<port>` or
+ * `http://host.docker.internal:<port>`, the last being how the runtime container reaches the Mac's loopback.
  */
 export type DiagnosticsConfig = {
   readonly level?: ConfiguredLogLevel;
   readonly modules?: Readonly<Record<string, ConfiguredLogLevel>>;
+  readonly export?: {readonly collector: string};
 };
 
 /**
@@ -394,16 +399,23 @@ const MAX_MODULE_LEVELS = 32;
 const invalidDiagnostics = (detail: string): RuntimeError => new RuntimeError('config-invalid', `the configuration file's diagnostics section ${detail}`);
 
 /**
- * The diagnostics section (Hub #811): `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>}}`.
- * Refuses, with `config-invalid`, any other member, a level outside those four (`fatal` included, since only the
- * process's own failure uses it), a name that is not a module name, or more than 32 module entries; no refusal quotes a
- * value. Whether each named module is one this runtime hosts is checked at startup, against the shipped list.
+ * The diagnostics section (Hub #811): `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>},
+ * "export"?: {"collector": <origin>}}`. Refuses, with `config-invalid`, any other member, a level outside those four
+ * (`fatal` included, since only the process's own failure uses it), a name that is not a module name, more than 32
+ * module entries, or an export whose collector is not an exact owned origin (Hub #813); no refusal quotes a value.
+ * Whether each named module is one this runtime hosts is checked at startup, against the shipped list.
  */
 export function checkDiagnosticsSection(value: unknown): DiagnosticsConfig {
   if (!isRecord(value)) throw invalidDiagnostics('must be an object');
-  if (Object.keys(value).some(key => key !== 'level' && key !== 'modules')) throw invalidDiagnostics('has a member other than level and modules');
+  if (Object.keys(value).some(key => key !== 'level' && key !== 'modules' && key !== 'export')) throw invalidDiagnostics('has a member other than level, modules and export');
   const isLevel = (candidate: unknown): candidate is ConfiguredLogLevel => typeof candidate === 'string' && (CONFIGURED_LEVELS as readonly string[]).includes(candidate);
-  const {level, modules = {}} = value;
+  const {level, modules = {}, export: exported} = value;
+  if (exported !== undefined) {
+    if (!isRecord(exported) || Object.keys(exported).some(key => key !== 'collector')) throw invalidDiagnostics('must give export as an object with collector only');
+    if (typeof exported.collector !== 'string' || !ownedOrigin(exported.collector)) {
+      throw invalidDiagnostics('must give export.collector as an exact owned origin: http://127.0.0.1, http://[::1] or http://host.docker.internal with a port');
+    }
+  }
   if (level !== undefined && !isLevel(level)) throw invalidDiagnostics('must have a level of debug, info, warn or error');
   if (!isRecord(modules) || Object.keys(modules).length > MAX_MODULE_LEVELS) throw invalidDiagnostics('must give modules as an object of at most 32 levels by module name');
   const checked: Record<string, ConfiguredLogLevel> = {};
@@ -412,7 +424,17 @@ export function checkDiagnosticsSection(value: unknown): DiagnosticsConfig {
     if (!isLevel(candidate)) throw invalidDiagnostics('gives a module a level other than debug, info, warn or error');
     checked[name] = candidate;
   }
-  return {...(level === undefined ? {} : {level}), modules: checked};
+  return {...(level === undefined ? {} : {level}), modules: checked, ...(isRecord(exported) && typeof exported.collector === 'string' ? {export: {collector: exported.collector}} : {})};
+}
+
+/** Whether `value` is an origin the observability host adapter accepts as a Collector; the check never echoes the value. */
+function ownedOrigin(value: string): boolean {
+  try {
+    createOwnedOrigins([value]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

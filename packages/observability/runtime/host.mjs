@@ -5,6 +5,8 @@ import {createSpanPipeline} from './span-pipeline.mjs';
 import {createOtlpTransport} from './otlp-http.mjs';
 import {createOwnedOrigins} from './propagation.mjs';
 
+export {createOwnedOrigins};
+
 const increment = value => Math.min(Number.MAX_SAFE_INTEGER, value + 1);
 const noHost = Object.freeze({emit:()=>false,event:()=>false,counts:()=>({enabled:false}),
   tracerFor:()=>undefined,run:async(_options,action)=>action(),shutdown:async()=>{}});

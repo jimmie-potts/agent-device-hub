@@ -47,9 +47,12 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
   adapter", so the same floor and the same records reach both, and the adapter's own severity filter is set to TRACE
   so it never filters a second time. Spans export from the adapter the runtime already starts. The stderr journal is
   never scraped. Rejected: a Collector `filelog` receiver over `docker logs` (two ingestion paths, duplicates).
-- **Loss summary.** Profile 1.7 admits `telemetry.dropped` under `bunny.runtime`; the runtime writes one when the
-  adapter's export counts first grow, then at most one a minute while they keep growing, with the drops and
-  failures since the last summary, and `runtime.stopped` keeps its totals. ADR 0012's repetition rule.
+- **Loss summary.** Profile 1.7 admits `telemetry.dropped` under `bunny.runtime`; once a minute the runtime reads the
+  adapter's export counts and writes one summary with the totals when they grew since the last one, so an outage
+  shows within a minute and never floods the journal (ADR 0012's repetition rule). `runtime.stopped` carries the
+  totals and is written before the adapter's final flush, so the export carries it; a last summary after the flush,
+  in the journal alone, counts what that flush lost. Rejected: a summary at the first loss (the pipeline reports
+  loss asynchronously, and a timer-driven read keeps the writer free of the adapter's callbacks).
 - **Retention and the disk bound.** Loki `retention_period: 168h` with the compactor; Tempo `block_retention: 168h`.
   Neither supports a byte-based cap, so the bound is admission: Loki 1 MiB/s with a 4 MiB burst and 16 KB lines,
   Tempo 2 MiB/s with 5 MiB per trace and 20,000 traces, so even a flood holds at most about 600 GB raw in a week on a

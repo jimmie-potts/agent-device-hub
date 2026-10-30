@@ -32,7 +32,7 @@ export {convertHubEdge, sourceForHubId, type ConvertedEdge} from './convert.js';
 export {GATEWAY_SOURCE, Gateway} from './gateway/gateway.js';
 export {LAUNCH_SOCKET, requestBrowserLaunch, type BrowserLaunch} from './gateway/launcher.js';
 export {RETIRED_ROUTES, retiredRoute, type RetiredRoute} from './gateway/retired.js';
-export {HEALTH_PATH, RECENT_SPANS, startRuntime, type RecentSpans, type Runtime, type RuntimeHealth, type RuntimeOptions} from './runtime.js';
+export {EXPORT_SUMMARY_MS, HEALTH_PATH, RECENT_SPANS, startRuntime, type RecentSpans, type Runtime, type RuntimeHealth, type RuntimeOptions} from './runtime.js';
 export {holdRuntimeLease, type RuntimeLease} from './lease.js';
 export {DEFAULT_MIN_FREE_BYTES as PIXOO_MIGRATION_MIN_FREE_BYTES, EXIT as PIXOO_MIGRATION_EXIT, runPixooMigration, type PixooMigrationOptions} from './pixoo-migration.js';
 export {EXIT as NANOLEAF_MIGRATION_EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from './nanoleaf-migration.js';

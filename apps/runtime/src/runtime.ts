@@ -15,7 +15,7 @@ import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
+import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogRecord, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {openSpanFile} from './span-file.js';
 import {RuntimeError, prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from './state.js';
@@ -135,6 +135,8 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 
 /** How many finished spans the runtime keeps in memory when it has no span sink: the contract's queue bound. */
 export const RECENT_SPANS = 1024;
+/** How often, at most, the runtime summarizes the export's growing loss with one `telemetry.dropped` record (Hub #813). */
+export const EXPORT_SUMMARY_MS = 60_000;
 
 /**
  * The latest `RECENT_SPANS` finished spans, oldest first, and how many older ones the runtime let go to keep that
@@ -232,8 +234,20 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   for (const name of Object.keys(levels)) {
     if (!hostedNames.has(name)) throw new RuntimeError('config-invalid', 'the configuration file\'s diagnostics section names a module this runtime does not host');
   }
+  // Each record goes to the journal first and then, with a configured Collector (Hub #813), to the export's bounded
+  // queue; the export never acknowledges, so a journal that fails still loses only its own write.
+  const journal = options.log ?? stderrSink;
+  const collector = config?.diagnostics?.export?.collector;
+  let exporter: ((record: LogRecord) => void) | undefined;
   const logs = new LogWriter(
-    options.log ?? stderrSink, config?.diagnostics?.level ?? options.logLevel ?? 'info', clock,
+    record => {
+      try {
+        journal(record);
+      } finally {
+        exporter?.(record);
+      }
+    },
+    config?.diagnostics?.level ?? options.logLevel ?? 'info', clock,
     runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
   );
   const log = logs.logger(RUNTIME_SCOPE);
@@ -254,9 +268,28 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   const spanFile = options.spans === 'state-file' ? openSpanFile(stateDir) : undefined;
   const sink = spanFile?.sink ?? (typeof options.spans === 'function' ? options.spans : keep);
-  const tracing = await startTracing(logs.resource, sink, log);
-  // Ends the host adapter, which flushes spans to the sink within the contract's bound, and then the file.
+  const tracing = await startTracing(logs.resource, sink, log, undefined, collector);
+  if (tracing !== undefined && collector !== undefined) exporter = record => { tracing.export(record); };
+  // While the export's loss grows, one `telemetry.dropped` summary a minute at most says so in the journal (and, when the
+  // Collector takes records again, in the export); `runtime.stopped` keeps the totals.
+  let summarized = 0;
+  let cancelSummary: (() => void) | undefined;
+  const summarize = (again: boolean): void => {
+    if (tracing === undefined) return;
+    const {dropped, failed} = tracing.counts();
+    if (dropped + failed > summarized) {
+      summarized = dropped + failed;
+      recordLog(log, 'telemetry.dropped', {'bunny.telemetry.dropped_count': dropped, 'bunny.telemetry.failure_count': failed});
+    }
+    if (again) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, () => { summarize(true); });
+  };
+  if (exporter !== undefined) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, () => { summarize(true); });
+  // Ends the host adapter, which flushes spans and exported records to their sinks within the contract's bound, and then
+  // the file.
   const endTracing = async (): Promise<void> => {
+    cancelSummary?.();
+    cancelSummary = undefined;
+    exporter = undefined;
     try {
       await tracing?.shutdown();
     } finally {
@@ -371,15 +404,20 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       if (serving.state === 'serving') await serving.gateway.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
-      // The modules' work has ended, so its spans have too: flush them within the contract's bound.
-      await endTracing();
-      // The records this runtime's writer dropped or its sink lost, and the spans lost, so the journal shows the loss.
+      // The records this runtime's writer dropped or its sink lost, the spans lost and, with a Collector, the records the
+      // export lost so far, so the journal shows the loss. The record is written before the adapter ends, so that the
+      // export carries it too.
       const {dropped, failed} = logs.counts();
       const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
+      summarized = spans.dropped + spans.failed;
       recordLog(log, 'runtime.stopped', {
         'bunny.telemetry.dropped_count': Math.min(Number.MAX_SAFE_INTEGER, dropped + spans.dropped),
         'bunny.telemetry.failure_count': Math.min(Number.MAX_SAFE_INTEGER, failed + spans.failed),
       });
+      // The modules' work has ended, so its spans have too: flush them and the exported records within the contract's
+      // bound. What that final flush loses is counted after it, in the journal alone, as the last summary.
+      await endTracing();
+      if (collector !== undefined) summarize(false);
     })(),
   };
 }
