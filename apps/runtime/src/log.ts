@@ -1,7 +1,9 @@
 // The runtime's log records: diagnostic-contract records (ADR 0012, Observability), one JSON object per line, carrying
 // the trace and span IDs of the work being handled. A failing sink never changes what the runtime does.
 import {randomUUID} from 'node:crypto';
-import {REDACTED, SdkError, exceptionFields, traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
+import {
+  MAX_EXCEPTION_MESSAGE, MAX_EXCEPTION_STACKTRACE, REDACTED, SdkError, exceptionFields, filterExceptionText, traceFields, type Clock, type LogFields, type Logger, type TraceContext,
+} from '@jimmie-potts/sdk';
 import {LEVELS, record, runtimeResource, type LogLevel, type LogRecord, type Resource} from './record.js';
 
 export type {Environment, LogLevel, LogRecord, Resource} from './record.js';
@@ -166,15 +168,51 @@ export class LogWriter {
     return this.#redactions;
   }
 
+  /**
+   * A module's own exception text, `exception.message` and `exception.stacktrace` written directly into a record's fields,
+   * through the same filters and bounds as `exceptionFields`, with each secret this writer knows replaced (Hub #777):
+   * the module path and the runtime's meet the same rules. The counts follow the texts.
+   */
+  #filteredException(attributes: Record<string, string | number | boolean>): Record<string, string | number | boolean> {
+    const texts = [['exception.message', MAX_EXCEPTION_MESSAGE], ['exception.stacktrace', MAX_EXCEPTION_STACKTRACE]] as const;
+    if (!texts.some(([name]) => Object.hasOwn(attributes, name))) return attributes;
+    const out = {...attributes};
+    let replaced = typeof out['bunny.exception.redacted_count'] === 'number' ? out['bunny.exception.redacted_count'] : 0;
+    let truncated = out['bunny.exception.truncated'] === true;
+    for (const [name, limit] of texts) {
+      const value = out[name];
+      if (value === undefined) continue;
+      if (typeof value !== 'string') { delete out[name]; continue; }
+      const clean = filterExceptionText(value, limit, {filter: text => this.#redactions.scrub(text)});
+      replaced = Math.min(Number.MAX_SAFE_INTEGER, replaced + clean.replaced);
+      truncated ||= clean.truncated;
+      if (clean.text === '') delete out[name]; else out[name] = clean.text;
+    }
+    if (out['exception.message'] === undefined && out['exception.stacktrace'] === undefined) {
+      delete out['bunny.exception.redacted_count'];
+      delete out['bunny.exception.truncated'];
+      return out;
+    }
+    return {...out, 'bunny.exception.redacted_count': replaced, 'bunny.exception.truncated': truncated};
+  }
+
   /** A logger for one scope. `base` attributes are added to every record and win over the caller's fields. */
   logger(scope: string, base: LogFields = {}): RuntimeLogger {
     const at = (level: LogLevel) => (event: string, fields: LogFields = {}, trace?: TraceContext): void => {
       if (LEVELS.indexOf(level) < this.#minimum) return;
       let entry: LogRecord | undefined;
       try {
-        const attributes = {...fields, ...base};
-        entry = this.#redactions.carried(attributes) ? undefined
-          : record(level, scope, event, attributes, this.#clock.now(), this.#resource, trace === undefined ? undefined : traceFields(trace));
+        const attributes = this.#filteredException({...fields, ...base});
+        const ids = trace === undefined ? undefined : traceFields(trace);
+        entry = this.#redactions.carried(attributes) ? undefined : record(level, scope, event, attributes, this.#clock.now(), this.#resource, ids);
+        // A record the contract refuses with its exception text, as one too large once serialized, is written without it
+        // (profile 1.7): the fault's type, code and correlation are worth more than nothing.
+        if (entry === undefined && (Object.hasOwn(attributes, 'exception.message') || Object.hasOwn(attributes, 'exception.stacktrace'))) {
+          const {
+            ['exception.message']: _message, ['exception.stacktrace']: _stack, ['bunny.exception.redacted_count']: _count, ['bunny.exception.truncated']: _cut, ...rest
+          } = attributes;
+          entry = this.#redactions.carried(rest) ? undefined : record(level, scope, event, rest, this.#clock.now(), this.#resource, ids);
+        }
       } catch {
         entry = undefined;
       }

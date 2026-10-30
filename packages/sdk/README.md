@@ -1016,8 +1016,10 @@ stack with `bunny.exception.redacted_count` and `bunny.exception.truncated`, as
 the diagnostic contract's profile 1.7 admits them under `bunny.module`. It reads
 only an `Error`'s own message and V8's own stack, never a getter, a cause or a
 non-Error value, and replaces credential-like and payload-like segments with
-`[redacted]` and `[omitted]`; the runtime's log writer also replaces each secret
-its modules have read. It returns `{}` for a value with no text of its own.
+`[redacted]` and `[omitted]`; the runtime's log writer passes the two texts, from
+`exceptionFields` or written by the module itself, through the same filters
+again with each secret its modules have read replaced, and drops a record whose
+attribute still holds one. It returns `{}` for a value with no text of its own.
 These fields belong to the private diagnostic path; an error body's `detail`
 stays fixed text.
 

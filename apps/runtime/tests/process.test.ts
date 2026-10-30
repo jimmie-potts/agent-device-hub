@@ -440,8 +440,10 @@ it('--config reads a private configuration file, and a file the runtime cannot t
   for (const [file, code] of [...cases, [join(root, 'linked.json'), 'config-link'] as const]) {
     const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', file]);
     assert.deepEqual(await runtime.exited, {code: 1, signal: null}, file);
-    assert.deepEqual(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes,
-      {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, file);
+    const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} =
+      runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes ?? {};
+    assert.deepEqual(decision, {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, file);
+    assert.ok(typeof message === 'string' && message.startsWith('the configuration file') && typeof stack === 'string' && redacted === 0, `${file}: the refusal's own fixed text`);
     assert.equal(runtime.stdout(), '', `${file}: no ready line`);
   }
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
@@ -465,8 +467,9 @@ it('an error that escapes every module carrying a secret a module read leaves th
   const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
   const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = fatal?.attributes ?? {};
   assert.deepEqual(decision, {'error.type': 'Error', 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, 'the record is written, without the code that holds the secret');
-  assert.equal(typeof stack, 'string');
-  assert.ok(Number(redacted) >= 1 || !String(message).includes('tok_'), 'a secret in the message is replaced');
+  assert.equal(message, 'the device refused [redacted]', 'the secret the module read is replaced in the message');
+  assert.match(String(stack), /^Error: the device refused \[redacted\]\n/);
+  assert.equal(redacted, 2);
   assert.equal(runtime.records().some(record => JSON.stringify(record).includes(secret)), false, 'no record holds the secret');
   assert.equal(runtime.stdout().includes(secret), false);
 });

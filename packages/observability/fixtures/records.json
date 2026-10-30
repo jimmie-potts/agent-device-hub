@@ -5354,6 +5354,116 @@
           "bunny.telemetry.dropped_count": 3
         }
       }
+    },
+    {
+      "name": "exception-truncated-not-boolean",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.reason": "none",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "Cannot read properties of undefined (reading 'power')",
+          "exception.stacktrace": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": "yes"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-count-negative",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.reason": "none",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "Cannot read properties of undefined (reading 'power')",
+          "exception.stacktrace": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": -1,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-on-a-non-fault-event-is-schema-valid",
+      "valid": true,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "runtime.module.started",
+        "body": "Module started",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "exception.message": "Cannot read properties of undefined (reading 'power')",
+          "exception.stacktrace": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
     }
   ]
 }

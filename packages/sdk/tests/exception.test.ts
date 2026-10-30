@@ -3,7 +3,7 @@
 // bounds both texts and reads nothing a value supplies through a getter of its own.
 import assert from 'node:assert/strict';
 import {validateRecord} from '@jimmie-potts/bunny-observability';
-import {MAX_EXCEPTION_MESSAGE, MAX_EXCEPTION_STACKTRACE, OMITTED, REDACTED, exceptionFields} from '../src/index.js';
+import {MAX_EXCEPTION_MESSAGE, MAX_EXCEPTION_STACKTRACE, OMITTED, REDACTED, exceptionFields, filterExceptionText} from '../src/index.js';
 import {it} from './support.js';
 
 const SECRET = 'tok_SYNTHETIC123';
@@ -158,4 +158,44 @@ it('credential-named members in colon, quoted and single-quoted forms are replac
   assert.equal(quoted.includes('dentist'), false, 'a quoted prompt across lines is omitted');
   const stack = String(exceptionFields(new Error('frames stay'))['exception.stacktrace']);
   assert.ok(stack.split('\n').length > 3 && !stack.includes(OMITTED), 'a stack of frames is never a block');
+});
+
+it('costs time in proportion to a bounded prefix, whatever the message\'s size, and never reads a proxy', () => {
+  for (const hostile of ['a+'.repeat(512 * 1024), '{"'.repeat(256 * 1024), 'ab='.repeat(256 * 1024), '"'.repeat(512 * 1024), '{'.repeat(512 * 1024)]) {
+    const started = performance.now();
+    const fields = exceptionFields(new Error(hostile));
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 250, `a ${hostile.length}-character message took ${elapsed.toFixed(0)} ms`);
+    assert.ok(String(fields['exception.message']).length <= MAX_EXCEPTION_MESSAGE);
+    assert.equal(fields['bunny.exception.truncated'], true);
+  }
+  let trapped = 0;
+  const proxied = new Proxy(new Error(SECRET), {getPrototypeOf(target) { trapped += 1; return Object.getPrototypeOf(target) as object; },
+    getOwnPropertyDescriptor(target, key) { trapped += 1; return Object.getOwnPropertyDescriptor(target, key); }});
+  assert.deepEqual(exceptionFields(proxied), {});
+  assert.equal(trapped, 0, 'a proxy is refused before any trap runs');
+});
+
+it('bounds the serialized form, so a text of quotes and backslashes still fits the record', () => {
+  const fields = exceptionFields(new Error('"\\'.repeat(2000)));
+  const message = String(fields['exception.message']);
+  assert.ok(message.length <= MAX_EXCEPTION_MESSAGE);
+  assert.ok(Buffer.byteLength(JSON.stringify(message)) - 2 <= MAX_EXCEPTION_MESSAGE, 'escaped bytes within the limit');
+  assert.ok(Buffer.byteLength(JSON.stringify(String(fields['exception.stacktrace']))) - 2 <= MAX_EXCEPTION_STACKTRACE);
+  assert.equal(fields['bunny.exception.truncated'], true);
+  const cookie = String(exceptionFields(new Error('refused; cookie: session=abc123; csrftoken=xyz789\nnext line'))['exception.message']);
+  assert.equal(cookie.includes('abc123') || cookie.includes('xyz789'), false, 'every cookie pair goes');
+  assert.ok(cookie.endsWith('\nnext line'), 'the next line stays');
+  const escaped = String(exceptionFields(new Error(`body {\\"name\\":\\"${'x'.repeat(120)}\\",\\"diagnosis\\":\\"synthetic-private-condition\\"} rejected`))['exception.message']);
+  assert.equal(escaped.includes('synthetic-private-condition'), false, 'an escaped body is still a block');
+  const path = String(exceptionFields(new Error(`Cannot find module '/opt/bunny/releases/${'a'.repeat(140)}/x.js'`))['exception.message']);
+  assert.ok(path.includes(OMITTED), 'a very long quoted path is omitted, a documented limit');
+});
+
+it('is idempotent: filtering a filtered text again changes nothing and counts nothing', () => {
+  const once = exceptionFields(new Error(`GET http://192.0.2.7/api?token=secret-token refused for Bearer ${SECRET}; "${'p'.repeat(200)}"`));
+  const again = filterExceptionText(String(once['exception.message']), MAX_EXCEPTION_MESSAGE);
+  assert.equal(again.text, once['exception.message']);
+  assert.equal(again.replaced, 0);
+  assert.equal(again.truncated, false);
 });

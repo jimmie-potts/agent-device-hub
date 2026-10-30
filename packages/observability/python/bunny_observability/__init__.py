@@ -167,15 +167,19 @@ def create_record(value):
 
 
 def project_record(value, version):
+    """The record at `version`, as the TypeScript helper projects it: 1.0 loses queue depth, and every profile before
+    1.7 loses the private exception fields; any other later-profile vocabulary fails the target's validation."""
     result = validate_record(value)
-    if not result['ok'] or version not in ('1.0', '1.1'):
+    catalog = _definitions()[0]
+    versions = catalog['schema_versions']
+    if not result['ok'] or version not in versions:
         return _failure()
     result['value']['schema_version'] = version
     if version == '1.0':
         result['value']['attributes'].pop('bunny.queue.depth', None)
-    # Profile 1.7's private exception fields never reach an earlier profile's consumer.
-    for name in _definitions()[0]['additions']['1.7']['attributes']:
-        result['value']['attributes'].pop(name, None)
+    if versions.index(version) < versions.index('1.7'):
+        for name in catalog['additions']['1.7']['attributes']:
+            result['value']['attributes'].pop(name, None)
     return validate_record(result['value'])
 
 

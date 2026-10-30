@@ -279,11 +279,13 @@ only a diagnostic record changes, and only on the private path.
 - **Attributes:** `exception.message` (1 to 1,024 characters),
   `exception.stacktrace` (1 to 4,096 characters), `bunny.exception.redacted_count`
   (a nonnegative safe integer) and `bunny.exception.truncated` (a boolean). They
-  are admitted only under `bunny.runtime` and `bunny.module`, and only together:
-  a text needs both counts, and the counts need at least one text. The producer
-  also bounds each text to the same number of UTF-8 bytes, so the record stays
-  within 8 KiB. Every earlier profile refuses each of them, and the raw
-  `error.stack` field stays refused.
+  are admitted only under `bunny.runtime` and `bunny.module`, on any event of
+  those scopes (the producer decides which records carry them), and only
+  together: a text needs both counts, and the counts need at least one text. The
+  producer also bounds each text to the same number of serialized (JSON-escaped)
+  UTF-8 bytes, so a fault record stays within 8 KiB, and writes the record
+  without the four fields if the contract still refuses it. Every earlier profile
+  refuses each of them, and the raw `error.stack` field stays refused.
 - **Source:** one serializer, the SDK's `exceptionFields`
   (`packages/sdk/src/exception.ts`), reads an `Error`'s own `message` and the
   stack V8 itself formats, through their property descriptors. An accessor is
@@ -300,12 +302,19 @@ only a diagnostic record changes, and only on the private path.
   than 128 characters, on one line or across lines, which may be a request body,
   a prompt or a transcript, with `[omitted]`; counts the replacements in
   `bunny.exception.redacted_count`; and cuts each text to its limit, a stack
-  between its frames, setting `bunny.exception.truncated`. Detection has limits:
-  a credential in a shape no rule knows, such as a short opaque token, a
-  digits-only secret or a token broken by a zero-width character, survives
-  unless a module registered it. A text that still holds a registered secret is
-  left out of the record whole, with its counts; the record keeps its type and
-  code.
+  between its frames, setting `bunny.exception.truncated`. It reads at most four
+  times each limit of the raw text and every step is linear in that prefix, so a
+  message of any size costs a bounded amount of time. Detection has limits: a
+  credential in a shape no rule knows, such as a short opaque token or a
+  digits-only secret, survives unless a module registered it, and a credential
+  that spans the four-kilobyte segment the payload scanner reads is cut rather
+  than omitted. Useful context can go too: a quoted path of 128 characters or
+  more and a 40-hexadecimal commit hash outside a path become `[omitted]` and
+  `[redacted]`. A text that still holds a registered secret is left out of the
+  record whole, with its counts; the record keeps its type and code. A module
+  that writes `exception.message` or `exception.stacktrace` into its own record
+  goes through the same filters, bounds and secret replacement in the runtime's
+  log writer, so neither path admits raw text.
 - **Where the runtime writes them:** its fault records, `runtime.module.failed`,
   `runtime.module.refused` with an error, `runtime.handler.failed`,
   `runtime.module.stop-failed`, `runtime.module.error-after-stop` and

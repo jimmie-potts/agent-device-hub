@@ -157,3 +157,30 @@ it('an error\'s record fields are its type and an identifier code, never its mes
   assert.deepEqual(errorFields(new SdkError(errorBody('unavailable', {detail: 'secret'}))), {'error.type': 'SdkError', 'error.code': 'unavailable'});
   assert.deepEqual(errorFields('a thrown string'), {'error.type': 'string'});
 });
+
+it('a module\'s own exception text goes through the same filters, bounds and secret replacement, and an oversized fault record falls back to its type', () => {
+  const written: LogRecord[] = [];
+  const writer = new LogWriter(record => { written.push(record); }, 'info', clock);
+  writer.redact('tok_MODULE_SECRET');
+  const log = writer.logger('bunny.module', {'bunny.module': 'lamp'});
+  log.warn('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'failed', 'error.type': 'Error',
+    'exception.message': 'GET http://192.0.2.7/?token=tok_MODULE_SECRET refused', 'exception.stacktrace': `Error: x\n    at a (/opt/bunny/x.js:1:1)\n${'    at frame (/opt/bunny/y.js:2:2)\n'.repeat(400)}`,
+    'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  const [filtered] = written;
+  assert.equal(filtered?.attributes['exception.message'], 'GET http://192.0.2.7/?token=[redacted] refused', 'the registered secret and the parameter are replaced');
+  assert.ok(String(filtered?.attributes['exception.stacktrace']).length <= 4096 && String(filtered?.attributes['exception.stacktrace']).endsWith('[truncated]'));
+  assert.equal(filtered?.attributes['bunny.exception.truncated'], true);
+  assert.ok(Number(filtered?.attributes['bunny.exception.redacted_count']) >= 1);
+  // A message that is not a string is left out, and its counts with it when no text remains.
+  log.warn('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'failed', 'exception.message': 7 as unknown as string, 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  assert.deepEqual(Object.keys(written[1]?.attributes ?? {}).filter(key => key.includes('exception')), []);
+  // A fault record the contract refuses with its text, here through a wide stack of multibyte characters, keeps its type.
+  const wide = writer.logger('bunny.runtime');
+  wide.error('runtime.module.failed', {'bunny.module': 'lamp', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error',
+    ...Object.fromEntries(Array.from({length: 20}, (_, index) => [`bunny.attempt_count`, index])), 'exception.message': '€'.repeat(340), 'exception.stacktrace': 'Error: €\n    at €€€€'.repeat(300),
+    'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': false});
+  const fault = written[2];
+  assert.equal(fault?.event_name, 'runtime.module.failed');
+  assert.equal(fault?.attributes['error.type'], 'Error');
+  assert.deepEqual(writer.counts(), {written: 3, dropped: 0, failed: 0});
+});

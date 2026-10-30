@@ -97,7 +97,7 @@ class Profiles(unittest.TestCase):
         cases = json.loads((ROOT / 'fixtures/records.json').read_text())['cases']
         private = [case for case in cases if case['record'].get('schema_version') == '1.7']
         self.assertEqual(sorted(case['name'] for case in private if case['valid']),
-                         ['module-operation-failed-exception', 'runtime-module-failed-exception', 'runtime-telemetry-dropped'])
+                         ['exception-on-a-non-fault-event-is-schema-valid', 'module-operation-failed-exception', 'runtime-module-failed-exception', 'runtime-telemetry-dropped'])
         for case in private:
             with self.subTest(case=case['name']):
                 self.assertEqual(validate_record(case['record'])['ok'], case['valid'])
@@ -114,6 +114,15 @@ class Profiles(unittest.TestCase):
         hub['attributes'].update({'exception.message': 'boom', 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': False})
         self.assertFalse(validate_record(hub)['ok'], 'exception text never joins a hub record')
         self.assertFalse(project_record(failed, '1.0')['ok'], 'a runtime record never projects to 1.0')
+        for version in ('1.2', '1.3', '1.4', '1.5', '1.6'):
+            projected = project_record(failed, version)
+            self.assertTrue(projected['ok'], version)
+            self.assertEqual(projected['value']['schema_version'], version)
+            for name in ('exception.message', 'exception.stacktrace', 'bunny.exception.redacted_count', 'bunny.exception.truncated'):
+                self.assertNotIn(name, projected['value']['attributes'], f'{name} removed at {version}')
+            self.assertEqual(projected['value']['attributes']['error.type'], 'TypeError')
+            self.assertEqual(projected['value']['trace_id'], failed['trace_id'])
+        self.assertEqual(project_record(failed, '1.7')['value']['attributes'], failed['attributes'], 'the same profile keeps the text')
         queued = hub_record()
         queued['schema_version'] = '1.7'
         self.assertEqual(project_record(queued, '1.1')['value']['schema_version'], '1.1')
