@@ -229,7 +229,7 @@ test('a host that exports without association leaves an active span\'s attribute
     span.end();
     await host.shutdown();
     const traces=host.counts().traces;
-    // With association on, the other scope's record makes the span invalid and the span is lost with it.
+    // With association on, the other scope's record counts against the span as invalid.
     outcomes.push({associateRecords,invalid:traces.invalid,registered:traces.registered,span:spans[0]});
   }
   const [associated,exported]=outcomes;

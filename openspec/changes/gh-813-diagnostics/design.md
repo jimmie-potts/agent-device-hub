@@ -52,7 +52,7 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
   adapter's export counts and writes one summary with the totals when they grew since the last one, so an outage
   shows within a minute and never floods the journal (ADR 0012's repetition rule); the summary itself is exported, so
   through an outage each minute's summary is the next minute's growth and the journal keeps one WARN a minute until
-  the Collector takes records again, which is the heartbeat the owner wanted of a loss that goes on. Exported records
+  the Collector takes records again: a once-a-minute reminder while the loss goes on. Exported records
   are not attached to the active span their trace names (the adapter's `associateRecords: false`): the bus's spans
   carry their own attributes, and a module's record from another scope would only count as loss. `runtime.stopped` carries the
   totals after the adapter's final flush, so an unfinished span and an in-flight failure are in them; it is the
