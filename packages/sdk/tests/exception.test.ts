@@ -221,3 +221,23 @@ it('keeps library prose that names a key, response or signature, and a contracti
   assert.equal(scrubbed.replaced, 1, 'a secret that straddles the prefix is replaced before the prefix is read');
   assert.equal(scrubbed.truncated, true);
 });
+
+it('a lone quote or bracket in the message keeps every stack frame, and an inspected object is a block', () => {
+  for (const message of ['Unexpected token " in JSON at position 0', 'Unexpected token \' in JSON at position 3', 'Expected " but found }', 'Unterminated string in JSON: "abc', 'Unterminated JSON: {"abc', 'Unexpected token \'}\', "{"a":1,}" is not valid JSON']) {
+    const error = new Error(message);
+    const frames = String(error.stack).split('\n').filter(line => line.startsWith('    at ')).length;
+    const fields = exceptionFields(error);
+    const kept = String(fields['exception.stacktrace']).split('\n').filter(line => line.startsWith('    at ')).length;
+    assert.equal(kept, frames, `${message}: ${String(fields['exception.stacktrace'])}`);
+    assert.ok(String(fields['exception.message']).startsWith(message.slice(0, 16)), message);
+  }
+  const quotedThenFrame = new Error(`panel "${'remind me about the dentist. '.repeat(6)}`);
+  quotedThenFrame.stack = `Error: ${quotedThenFrame.message}\n    at Object.<anonymous> (/Users/x's Mac/mods/y.js:1:1)\n    at run (/mods/z.js:2:2)`;
+  const stack = String(exceptionFields(quotedThenFrame)['exception.stacktrace']);
+  assert.equal(stack.includes('dentist'), false, 'the unclosed prompt is omitted');
+  assert.ok(stack.endsWith('\n    at Object.<anonymous> (/Users/x\'s Mac/mods/y.js:1:1)\n    at run (/mods/z.js:2:2)'), stack);
+  const inspected = String(exceptionFields(new Error(`bad { prompt: "${'remind me about the dentist and my sister tomorrow. '.repeat(2)}", password: "hunter2", transcript: "my finances are private" } rejected`))['exception.message']);
+  assert.equal(inspected, `bad ${OMITTED} rejected`, 'an inspected object of payload length goes whole');
+  const split = filterExceptionText('said REGISTERED​-SECRET ok', 1024, {filter: text => ({text: text.replaceAll('REGISTERED-SECRET', REDACTED), replaced: 1})});
+  assert.equal(split.text, `said ${REDACTED} ok`, 'a secret split by a format character is whole for the filter');
+});

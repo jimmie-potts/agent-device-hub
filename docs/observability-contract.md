@@ -312,9 +312,13 @@ only a diagnostic record changes, and only on the private path.
   response: 502` keeps its status. A registered secret is replaced in the whole
   raw text before the prefix is read. A payload whose closing bracket or quote
   lies beyond the scanner's four-kilobyte window, or that never closes, is
-  omitted from its opening to the end of the text, so a member before the
-  opening stays; a quote that follows a letter or digit, as in a contraction,
-  opens nothing. Useful context can go too: a quoted path of 128 characters or
+  omitted from its opening to the end of the message, so a member before the
+  opening stays; no payload runs into a stack frame, so a lone quote or
+  bracket in a message (`Unexpected token " in JSON`) keeps every frame; an
+  unquoted member name with its colon, as Node inspects an object, opens a
+  block like JSON; and a quote that follows a letter or digit, as in a
+  contraction, opens nothing. Control and format characters are removed before
+  a module's registered secrets are replaced. Useful context can go too: a quoted path of 128 characters or
   more and a 40-hexadecimal commit hash outside a path become `[omitted]` and
   `[redacted]`. A text that still holds a registered secret is left out of the
   record whole, with its counts; the record keeps its type and code. A module

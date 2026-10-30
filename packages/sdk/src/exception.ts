@@ -106,14 +106,18 @@ function ownText(error: Error, name: 'message' | 'stack'): string | undefined {
 
 const QUOTES = new Set(['"', '\'', '`']);
 const WORD = /[\p{L}\p{N}_]/u;
+// A stack frame as V8 formats it; a payload in an error's message never continues into one.
+const FRAME = '\n    at ';
+// An `util.inspect`-style member, `{ prompt: ...`, which Node's assertion and template messages print without quotes.
+const MEMBER = /^\s*[A-Za-z_$][\w$]*\s*:/;
 
 /**
- * The index of the bracket that closes the one at `start`, counting brackets only, or -1 within `MAX_SEGMENT`. A bracket
- * inside a quoted value ends the block early; what follows is still text the credential rules see, and an escaped body
- * (`{\"name\":...}`, as a library quotes JSON inside JSON) is a block like any other.
+ * The index of the bracket that closes the one at `start`, counting brackets only, or -1 within `MAX_SEGMENT` and before
+ * `limit`. A bracket inside a quoted value ends the block early; what follows is still text the credential rules see, and
+ * an escaped body (`{\"name\":...}`, as a library quotes JSON inside JSON) is a block like any other.
  */
-function closingBracket(text: string, start: number): number {
-  const stop = Math.min(text.length, start + MAX_SEGMENT);
+function closingBracket(text: string, start: number, limit: number): number {
+  const stop = Math.min(limit, start + MAX_SEGMENT);
   let depth = 0;
   for (let index = start; index < stop; index += 1) {
     const character = text[index];
@@ -126,18 +130,23 @@ function closingBracket(text: string, start: number): number {
   return -1;
 }
 
-/** Whether the text after `start`, past spaces and escaping backslashes, begins as JSON content does: a quote or a bracket. */
+/**
+ * Whether the text after `start`, past spaces and escaping backslashes, begins as JSON or an inspected object does: a
+ * quote, a bracket or an unquoted member name with its colon.
+ */
 function opensLikeJson(text: string, start: number): boolean {
   let index = start;
   while (index < text.length && (text[index] === '\\' || /\s/.test(text[index] ?? ''))) index += 1;
   const next = text[index];
-  return next === '"' || next === '[' || next === '{';
+  return next === '"' || next === '[' || next === '{' || MEMBER.test(text.slice(index, index + 64));
 }
 
 /**
  * Replaces, in one pass, each JSON-shaped block and each quoted string of `PAYLOAD_LENGTH` characters or more with
  * `[omitted]`: a request body, a prompt or a transcript that an exception quoted, on one line or across several. A block
- * goes whole, so its member names go with its values. Each start scans at most `MAX_SEGMENT` characters.
+ * goes whole, so its member names go with its values. Each start scans at most `MAX_SEGMENT` characters. No payload
+ * runs into a stack frame: a quote or block the message leaves open, as `Unexpected token " in JSON` does, is omitted
+ * to the end of the message when enough follows, and every frame after it stays.
  */
 function omitPayloads(text: string): {text: string; replaced: number} {
   let out = '';
@@ -148,24 +157,30 @@ function omitPayloads(text: string): {text: string; replaced: number} {
     const bracket = (character === '{' || character === '[') && opensLikeJson(text, index + 1);
     // A quote opens a string when nothing of a word precedes it; the apostrophe of a contraction opens nothing.
     const quote = QUOTES.has(character) && (index === 0 || !WORD.test(text[index - 1] ?? ''));
-    let end = -1;
-    if (bracket) end = closingBracket(text, index);
-    else if (quote) {
-      const close = text.indexOf(character, index + 1);
-      end = close === -1 || close - index > MAX_SEGMENT ? -1 : close;
+    if (!bracket && !quote) {
+      out += character;
+      index += 1;
+      continue;
     }
+    // The first frame after this start bounds the payload: a closer inside a frame is no closer of the message's payload.
+    const frame = text.indexOf(FRAME, index);
+    const limit = frame === -1 ? text.length : frame;
+    const close = bracket ? closingBracket(text, index, limit) : text.indexOf(character, index + 1);
+    const end = close === -1 || close >= limit || close - index > MAX_SEGMENT ? -1 : close;
     if (end !== -1 && end - index + 1 >= PAYLOAD_LENGTH) {
       out += OMITTED;
       replaced += 1;
       index = end + 1;
       continue;
     }
-    // A JSON-shaped start or a quote with no closer in the window, followed by a payload's worth of text, is a payload
-    // the pre-cut or the window has already shortened: the rest of it goes too, since an unclosed body is still a body.
-    if (end === -1 && (bracket || quote) && text.length - index >= PAYLOAD_LENGTH) {
+    // A JSON-shaped start or a quote with no closer in the window, followed by a payload's worth of text before the next
+    // frame, is a payload the pre-cut or the window has already shortened: the rest of it goes too, since an unclosed
+    // body is still a body. The frames after it stay.
+    if (end === -1 && limit - index >= PAYLOAD_LENGTH) {
       out += OMITTED;
       replaced += 1;
-      break;
+      index = limit;
+      continue;
     }
     if (end !== -1 && quote) {
       // A short quoted string is kept whole, so its closing quote opens nothing.
@@ -180,7 +195,7 @@ function omitPayloads(text: string): {text: string; replaced: number} {
 }
 
 function filtered(text: string): {text: string; replaced: number} {
-  let out = text.replace(CONTROL, '');
+  let out = text;
   let replaced = 0;
   // Payload-like segments go first and whole, so a credential inside one counts once; then each credential rule.
   const omitted = omitPayloads(out);
@@ -228,8 +243,10 @@ function bounded(text: string, limit: number): {text: string; truncated: boolean
  * this to an exception field a module wrote itself, so the module path and `exceptionFields` meet the same rules.
  */
 export function filterExceptionText(raw: string, limit: number, options: ExceptionOptions = {}): FilteredText {
-  // The caller's filter sees the whole text, so a registered secret that straddles the pre-cut leaves no fragment.
-  const own = options.filter?.(raw) ?? {text: raw, replaced: 0};
+  // Control and format characters go first, so a secret one of them splits is whole when the caller's filter sees it;
+  // the filter sees the whole text, so a registered secret that straddles the pre-cut leaves no fragment.
+  const plain = raw.replace(CONTROL, '');
+  const own = options.filter?.(plain) ?? {text: plain, replaced: 0};
   const clean = filtered(own.text.slice(0, limit * PRECUT));
   const cut = bounded(clean.text, limit);
   // A text the pre-cut shortened is cut, whatever the filter then left of it.
