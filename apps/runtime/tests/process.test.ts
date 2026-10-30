@@ -138,7 +138,13 @@ it('an error that no module raised exits with a failure, for the service manager
   assert.deepEqual(await runtime.exited, {code: 1, signal: null});
   const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
   assert.equal(fatal?.severity_text, 'FATAL');
-  assert.deepEqual(fatal.attributes, {'error.type': 'RangeError', 'error.code': 'EFIXTURE', 'bunny.provenance': 'source'}, 'the type and code, never the raw message');
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = fatal.attributes;
+  assert.deepEqual(decision, {'error.type': 'RangeError', 'error.code': 'EFIXTURE', 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, 'the type and code');
+  // The fault record carries the filtered message and stack (profile 1.7): the URL keeps its host, its token is replaced.
+  assert.equal(message, 'a bug outside every module, quoting http://device.invalid/?token=[redacted]');
+  assert.match(String(stack), /^RangeError: a bug outside every module, quoting http:\/\/device\.invalid\/\?token=\[redacted\]\n {4}at /);
+  assert.equal(redacted, 2);
+  assert.equal(JSON.stringify(runtime.records()).includes('token=secret'), false);
 });
 
 it('an abort listener that throws or rejects stays with its own module, on a handler error, a failed start and the runtime\'s stop', async context => {
@@ -255,7 +261,11 @@ it('a refused state directory names its reason in the runtime.failed record, so 
     const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
     assert.deepEqual(await runtime.exited, {code: 1, signal: null}, dir);
     const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
-    assert.deepEqual(fatal?.attributes, {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source'}, dir);
+    const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = fatal?.attributes ?? {};
+    assert.deepEqual(decision, {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, dir);
+    assert.ok(typeof message === 'string' && message.startsWith('the state directory'), `${dir}: the refusal's own fixed text`);
+    assert.ok(typeof stack === 'string' && stack.startsWith('RuntimeError: '), dir);
+    assert.equal(redacted, 0, dir);
   }
 });
 
@@ -453,7 +463,10 @@ it('an error that escapes every module carrying a secret a module read leaves th
   const runtime = spawnRuntime(context, FIXTURE, ['secret-escape', '--port', '0', '--state-dir', await stateDir(context), '--config', join(dir, 'config.json')]);
   assert.deepEqual(await runtime.exited, {code: 1, signal: null}, 'an error outside every module is the runtime\'s own failure');
   const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
-  assert.deepEqual(fatal?.attributes, {'error.type': 'Error', 'bunny.provenance': 'source'}, 'the record is written, without the code that holds the secret');
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = fatal?.attributes ?? {};
+  assert.deepEqual(decision, {'error.type': 'Error', 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, 'the record is written, without the code that holds the secret');
+  assert.equal(typeof stack, 'string');
+  assert.ok(Number(redacted) >= 1 || !String(message).includes('tok_'), 'a secret in the message is replaced');
   assert.equal(runtime.records().some(record => JSON.stringify(record).includes(secret)), false, 'no record holds the secret');
   assert.equal(runtime.stdout().includes(secret), false);
 });

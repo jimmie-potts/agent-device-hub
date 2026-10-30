@@ -1,7 +1,7 @@
 // The runtime's log records: diagnostic-contract records (ADR 0012, Observability), one JSON object per line, carrying
 // the trace and span IDs of the work being handled. A failing sink never changes what the runtime does.
 import {randomUUID} from 'node:crypto';
-import {SdkError, traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
+import {REDACTED, SdkError, exceptionFields, traceFields, type Clock, type LogFields, type Logger, type TraceContext} from '@jimmie-potts/sdk';
 import {LEVELS, record, runtimeResource, type LogLevel, type LogRecord, type Resource} from './record.js';
 
 export type {Environment, LogLevel, LogRecord, Resource} from './record.js';
@@ -19,8 +19,8 @@ export const INSTANCE_ID = randomUUID();
 const IDENTIFIER = /^[A-Za-z0-9_.$-]{1,64}$/;
 
 /**
- * The error's type and, when it has one, its code, for a record's attributes. The diagnostic contract keeps raw
- * exception messages and stacks out of records, because a library's message may quote a URL with a token in it.
+ * The error's type and, when it has one, its code, for a record's attributes. A record of a decision carries only these;
+ * the runtime's fault records add the filtered exception text through `faultFields`.
  */
 export function errorFields(error: unknown): Record<string, string> {
   if (!(error instanceof Error)) return {'error.type': typeof error};
@@ -29,6 +29,17 @@ export function errorFields(error: unknown): Record<string, string> {
     'error.type': IDENTIFIER.test(error.name) ? error.name : 'Error',
     ...(typeof code === 'string' && IDENTIFIER.test(code) ? {'error.code': code} : {}),
   };
+}
+
+/**
+ * A fault record's attributes (profile 1.7, Hub #777): the error's type and code, and its message and stack as the SDK's
+ * `exceptionFields` filters and bounds them, with each secret `redactions` holds replaced before any rule runs. A record
+ * of a refusal or a decision carries `errorFields` only; this is for an exception the runtime could not contain or a
+ * module's own failure, whose text is what a reader needs to diagnose it. The text stays on the private diagnostic path:
+ * the journal and the export; never an error body, health or history.
+ */
+export function faultFields(error: unknown, redactions?: Redactions): Record<string, string | number | boolean> {
+  return {...errorFields(error), ...exceptionFields(error, redactions === undefined ? {} : {filter: text => redactions.scrub(text)})};
 }
 
 let stderrGuarded = false;
@@ -74,6 +85,19 @@ export class Redactions {
     if (this.#secrets.size === 0) return false;
     const view = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     return [...this.#secrets].some(secret => view.includes(Buffer.from(secret, 'utf8')));
+  }
+
+  /** `text` with each secret it holds replaced by the SDK's `[redacted]` marker, and how many it replaced. */
+  scrub(text: string): {text: string; replaced: number} {
+    let out = text;
+    let replaced = 0;
+    for (const secret of this.#secrets) {
+      if (!out.includes(secret)) continue;
+      const parts = out.split(secret);
+      replaced += parts.length - 1;
+      out = parts.join(REDACTED);
+    }
+    return {text: out, replaced};
   }
 
   /** Whether any of `attributes` holds a secret. */

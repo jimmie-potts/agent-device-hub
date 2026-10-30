@@ -99,10 +99,15 @@ it('a module whose section is missing or invalid is refused alone, and health na
   });
   for (const module of [lacking, malformed, secretless, refusing, throwing]) assert.equal(module.context, undefined, `${module.manifest.name} never started`);
   assert.deepEqual(refusedRecord(logs, 'lacking')?.attributes, {'bunny.module': 'lacking', 'bunny.code': 'not-found', 'bunny.phase': 'manifest', 'bunny.provenance': 'source'});
-  assert.deepEqual(refusedRecord(logs, 'throwing')?.attributes, {
-    'bunny.module': 'throwing', 'bunny.code': 'internal', 'bunny.phase': 'manifest', 'error.type': 'TypeError', 'bunny.provenance': 'source',
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...refusal} = refusedRecord(logs, 'throwing')?.attributes ?? {};
+  assert.deepEqual(refusal, {
+    'bunny.module': 'throwing', 'bunny.code': 'internal', 'bunny.phase': 'manifest', 'error.type': 'TypeError', 'bunny.provenance': 'source', 'bunny.exception.truncated': false,
   });
-  assert.equal(JSON.stringify(logs).includes(SECRET), false, 'the record never quotes what configure threw');
+  // The refusal's fault record carries configure's message and stack with the secret replaced (profile 1.7).
+  assert.equal(message, 'a configure bug quoting [redacted]');
+  assert.match(String(stack), /^TypeError: a configure bug quoting \[redacted\]\n/);
+  assert.equal(redacted, 2);
+  assert.equal(JSON.stringify(logs).includes(SECRET), false, 'the record never quotes the secret configure threw');
 });
 
 it('without a configuration file, a module that takes none starts and one that needs a section is refused', async context => {
@@ -433,9 +438,14 @@ it('a module failure whose error code holds the module\'s secret is still record
   });
   await waitFor(() => entry(runtime.health(), 'failing').state === 'failed', 5000, 'the module to fail');
   const failed = logs.find(record => record.event_name === 'runtime.module.failed' && record.attributes['bunny.module'] === 'failing');
-  assert.deepEqual(failed?.attributes, {
-    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source',
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = failed?.attributes ?? {};
+  assert.deepEqual(decision, {
+    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source', 'bunny.exception.truncated': false,
   }, 'the decision record survives, without the error code that holds the secret');
+  // The secret the module read is replaced in the filtered message and stack before the record is built (profile 1.7).
+  assert.equal(message, 'the device refused [redacted]');
+  assert.match(String(stack), /^Error: the device refused \[redacted\]\n/);
+  assert.equal(redacted, 2);
   assert.equal(JSON.stringify(logs).includes(SECRET), false);
 });
 

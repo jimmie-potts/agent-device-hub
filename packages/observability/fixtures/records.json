@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.7",
+      "name": "unsupported-1.8",
       "valid": false,
       "record": {
-        "schema_version": "1.7",
+        "schema_version": "1.8",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -4946,6 +4946,413 @@
         "trace_id": "0af7651916cd43dd8448eb211c80319c",
         "span_id": "b7ad6b7169203331",
         "trace_flags": "01"
+      }
+    },
+    {
+      "name": "runtime-module-failed-exception",
+      "valid": true,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.reason": "none",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "Cannot read properties of undefined (reading 'power')",
+          "exception.stacktrace": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "module-operation-failed-exception",
+      "valid": true,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "operation.failed",
+        "body": "Operation failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "pixoo",
+          "bunny.operation": "media",
+          "bunny.outcome": "failed",
+          "error.type": "Error",
+          "exception.message": "request to http://[redacted]@device.invalid/upload failed",
+          "bunny.exception.redacted_count": 1,
+          "bunny.exception.truncated": true
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-earlier-profile-refused",
+      "valid": false,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.reason": "none",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "Cannot read properties of undefined (reading 'power')",
+          "exception.stacktrace": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-outside-runtime-scopes",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "process.failed",
+        "body": "Process failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "startup",
+          "bunny.outcome": "failed",
+          "exception.message": "boom",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false
+        }
+      }
+    },
+    {
+      "name": "exception-message-too-long",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": true
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-message-empty",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-without-counts",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "exception.message": "boom"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-counts-without-text",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "bunny.exception.redacted_count": 2,
+          "bunny.exception.truncated": false
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "exception-stack-raw-field-refused",
+      "valid": false,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 17,
+        "severity_text": "ERROR",
+        "event_name": "runtime.module.failed",
+        "body": "Module failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "lifx",
+          "bunny.code": "internal",
+          "bunny.phase": "handler",
+          "error.type": "TypeError",
+          "error.stack": "TypeError: Cannot read properties of undefined (reading 'power')\n    at LifxModule.apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)\n    at InProcessBus.execute (/opt/bunny/packages/sdk/dist/src/in-process.js:458:9)",
+          "bunny.exception.redacted_count": 0,
+          "bunny.exception.truncated": false,
+          "exception.message": "boom"
+        },
+        "trace_id": "0af7651916cd43dd8448eb211c80319c",
+        "span_id": "b7ad6b7169203331",
+        "trace_flags": "01"
+      }
+    },
+    {
+      "name": "runtime-telemetry-dropped",
+      "valid": true,
+      "record": {
+        "schema_version": "1.7",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "telemetry.dropped",
+        "body": "Diagnostic records dropped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "telemetry",
+          "bunny.telemetry.dropped_count": 3,
+          "bunny.telemetry.failure_count": 1
+        }
+      }
+    },
+    {
+      "name": "runtime-telemetry-dropped-earlier-profile-refused",
+      "valid": false,
+      "record": {
+        "schema_version": "1.6",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "telemetry.dropped",
+        "body": "Diagnostic records dropped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000002",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "telemetry",
+          "bunny.telemetry.dropped_count": 3,
+          "bunny.telemetry.failure_count": 1
+        }
+      }
+    },
+    {
+      "name": "hub-telemetry-dropped-still-valid-at-1.1",
+      "valid": true,
+      "record": {
+        "schema_version": "1.1",
+        "timestamp": "2026-10-30T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "telemetry.dropped",
+        "body": "Diagnostic records dropped",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "hub",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.host",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.operation": "telemetry",
+          "bunny.telemetry.dropped_count": 3
+        }
       }
     }
   ]

@@ -2,11 +2,13 @@
 // Profile 1.3 (Hub #949) adds the runtime's decision records, the outbox's and a device's records, and two span names.
 // Profile 1.4 (Hub #835) adds the gateway's route and method to the edge's refusal records, and the credentials reload.
 // Profile 1.5 (Hub #976) adds a store's costly saves: the state block's size and one save's time.
+// Profile 1.6 (Hub #499) adds assistant execution. Profile 1.7 (Hub #777) adds filtered private exception fields to the
+// runtime's own scopes, and admits the runtime's telemetry-loss summary under bunny.runtime.
 // Each profile's additions are closed to the earlier profiles, and producers still default to profile 1.1.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {ARTIFACT_VERSION, SCHEMA_VERSION, catalog, createRecord, projectRecord, validateRecord} from '../dist/index.js';
+import {ARTIFACT_VERSION, EXCEPTION_ATTRIBUTES, SCHEMA_VERSION, catalog, createRecord, projectRecord, validateRecord} from '../dist/index.js';
 import {record as hub} from './sample.mjs';
 
 const schema = JSON.parse(readFileSync(new URL('../src/record.schema.json', import.meta.url), 'utf8'));
@@ -82,14 +84,22 @@ const examples = {
   'bunny.assistant.task_id': 'task-test',
   'bunny.assistant.run_id': 'run-test',
   'bunny.assistant.effect_id': 'task-test-step-0',
+  'exception.message': 'Cannot read properties of undefined (reading \'power\')',
+  'exception.stacktrace': 'TypeError: Cannot read properties of undefined (reading \'power\')\n    at apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)',
+  'bunny.exception.redacted_count': 1,
+  'bunny.exception.truncated': false,
 };
+/** Profile 1.7's exception fields travel together, under the runtime's scopes: a module failure record carries them all. */
+const EXCEPTION = Object.fromEntries(EXCEPTION_ATTRIBUTES.map(name => [name, examples[name]]));
+const failed = {...runtime, schema_version: '1.7', event_name: 'runtime.module.failed', body: catalog.events['runtime.module.failed'], severity_text: 'ERROR', severity_number: 17,
+  attributes: {'bunny.provenance': 'source', 'bunny.module': 'lamp', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'TypeError', ...EXCEPTION}};
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.6.0 adds profile 1.6, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.6.0');
-  assert.equal(catalog.artifact_version, '1.6.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6']);
+test('artifact 1.7.0 adds profile 1.7, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.7.0');
+  assert.equal(catalog.artifact_version, '1.7.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -128,7 +138,8 @@ test('each profile\'s additions are registered, and every earlier profile reject
     const earlier = versions.slice(0, versions.indexOf(version));
     for (const name of addition.attributes ?? []) {
       assert.ok(catalog.attributes[name], name);
-      const uses = {...hub, attributes: {...hub.attributes, [name]: examples[name]}};
+      // The exception fields are admitted only together, under the runtime's scopes, so their example is a module failure.
+      const uses = EXCEPTION_ATTRIBUTES.includes(name) ? failed : {...hub, attributes: {...hub.attributes, [name]: examples[name]}};
       assert.equal(valid(at(uses, version)), true, `${name} in ${version}`);
       for (const old of earlier) assert.equal(valid(at(uses, old)), false, `${name} in ${old}`);
     }
@@ -159,14 +170,15 @@ test('the runtime\'s scopes allow only their own service and events, and a modul
   const runtimeEvents = catalog.scope_rules['bunny.runtime'].events;
   const moduleEvents = catalog.scope_rules['bunny.module'].events;
   assert.deepEqual(catalog.scope_rules['bunny.module'].required_attributes, ['bunny.module']);
-  assert.ok(runtimeEvents.every(name => name.startsWith('runtime.')));
+  // The runtime's own events, and from profile 1.7 the shared telemetry-loss summary, which a hub host writes too.
+  assert.ok(runtimeEvents.every(name => name.startsWith('runtime.') || name === 'telemetry.dropped'));
   assert.ok(moduleEvents.every(name => !name.startsWith('runtime.')));
   const latest = versions.at(-1);
   for (const name of runtimeEvents) {
     const record = {...at(runtime, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: module.scope, attributes: module.attributes}), false, `${name} under bunny.module`);
-    assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
+    if (name !== 'telemetry.dropped') assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
   }
   for (const name of moduleEvents) {
     const record = {...at(module, latest), event_name: name, body: catalog.events[name]};
@@ -187,7 +199,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.7').ok, false);
+  assert.equal(projectRecord(hub, '1.8').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -253,6 +265,64 @@ test('profile 1.5 records a costly save with only the state block\'s size or the
     assert.equal(projectRecord(record, '1.4').ok, false, 'the save\'s cost is profile 1.5 vocabulary');
   }
   assert.equal(projectRecord(at(module, '1.4'), '1.5').value.schema_version, '1.5', 'a 1.4 record projects to 1.5');
+});
+
+test('profile 1.6 records assistant execution with identifiers only', () => {
+  const started = {...module, schema_version: '1.6', event_name: 'assistant.run.started', body: catalog.events['assistant.run.started'],
+    attributes: {'bunny.provenance': 'source', 'bunny.module': 'companions', 'bunny.assistant.task_id': 'task-test', 'bunny.assistant.run_id': 'run-test'}};
+  assert.equal(valid(started), true);
+  assert.equal(valid(at(started, '1.5')), false, 'labeled 1.5');
+  assert.equal(projectRecord(started, '1.5').ok, false, 'assistant identifiers are profile 1.6 vocabulary');
+  assert.equal(valid({...started, attributes: {...started.attributes, 'assistant.prompt': 'PRIVATE-SYNTHETIC'}}), false, 'no conversation text');
+  assert.equal(valid({...started, scope: runtime.scope}), false, 'a module\'s record');
+  assert.equal(projectRecord(at(module, '1.5'), '1.6').value.schema_version, '1.6', 'a 1.5 record projects to 1.6');
+});
+
+test('profile 1.7 admits filtered exception text with its counts under the runtime\'s scopes, and nowhere else', () => {
+  assert.deepEqual(EXCEPTION_ATTRIBUTES, ['exception.message', 'exception.stacktrace', 'bunny.exception.redacted_count', 'bunny.exception.truncated']);
+  const check = (attributes, record = failed) => valid({...record, attributes: {...record.attributes, ...attributes}});
+  const without = (record, ...names) => ({...record, attributes: Object.fromEntries(Object.entries(record.attributes).filter(([key]) => !names.includes(key)))});
+  assert.equal(valid(failed), true, 'a module failure under bunny.runtime');
+  const operation = {...module, schema_version: '1.7', event_name: 'operation.failed', body: catalog.events['operation.failed'], severity_text: 'WARN', severity_number: 13,
+    attributes: {'bunny.provenance': 'source', 'bunny.module': 'lamp', 'bunny.operation': 'status', 'bunny.outcome': 'failed', 'error.type': 'Error', ...EXCEPTION}};
+  assert.equal(valid(operation), true, 'a module\'s own failure under bunny.module');
+  assert.equal(valid(without(failed, 'exception.stacktrace')), true, 'a message alone');
+  assert.equal(valid(without(failed, 'exception.message')), true, 'a stack alone');
+  assert.equal(valid(without(failed, 'exception.message', 'exception.stacktrace')), false, 'the counts need a text');
+  assert.equal(valid(without(failed, 'bunny.exception.redacted_count')), false, 'a text needs its counts');
+  assert.equal(valid(without(failed, 'bunny.exception.truncated')), false, 'a text needs its counts');
+  assert.equal(check({'exception.message': 'x'.repeat(1024)}), true, 'at most 1,024 characters');
+  assert.equal(check({'exception.message': 'x'.repeat(1025)}), false);
+  assert.equal(check({'exception.message': ''}), false, 'never empty');
+  assert.equal(check({'exception.stacktrace': 'x'.repeat(4096)}), true, 'at most 4,096 characters');
+  assert.equal(check({'exception.stacktrace': 'x'.repeat(4097)}), false);
+  assert.equal(check({'bunny.exception.redacted_count': -1}), false);
+  assert.equal(check({'bunny.exception.redacted_count': 1.5}), false);
+  assert.equal(check({'bunny.exception.truncated': 'yes'}), false);
+  assert.equal(check({'error.stack': 'Error: raw'}), false, 'the raw field stays refused');
+  assert.equal(valid({...hub, schema_version: '1.7', attributes: {...hub.attributes, ...EXCEPTION}}), false, 'never under a hub scope');
+  for (const old of versions.slice(0, versions.indexOf('1.7'))) {
+    assert.equal(valid(at(failed, old)), false, `labeled ${old}`);
+    const projected = projectRecord(failed, old);
+    if (old === '1.0' || old === '1.1') {
+      assert.equal(projected.ok, false, `a runtime record never projects to ${old}`);
+      continue;
+    }
+    assert.equal(projected.ok, true, `projects to ${old}`);
+    assert.equal(projected.value.schema_version, old);
+    for (const name of EXCEPTION_ATTRIBUTES) assert.equal(projected.value.attributes[name], undefined, `${name} removed at ${old}`);
+    assert.equal(projected.value.attributes['error.type'], 'TypeError', 'the type and the correlation stay');
+    assert.equal(projected.value.trace_id, failed.trace_id);
+  }
+  assert.equal(projectRecord(at(module, '1.6'), '1.7').value.schema_version, '1.7', 'a 1.6 record projects to 1.7');
+  // The runtime's telemetry-loss summary joins bunny.runtime at 1.7; a hub host's stays as it was.
+  const lost = {...at(runtime, '1.7'), event_name: 'telemetry.dropped', body: catalog.events['telemetry.dropped'], severity_text: 'WARN', severity_number: 13,
+    attributes: {'bunny.provenance': 'source', 'bunny.operation': 'telemetry', 'bunny.telemetry.dropped_count': 3, 'bunny.telemetry.failure_count': 1}};
+  assert.equal(valid(lost), true);
+  assert.equal(valid(at(lost, '1.6')), false, 'labeled 1.6');
+  assert.equal(projectRecord(lost, '1.6').ok, false, 'the runtime\'s loss summary is profile 1.7 vocabulary');
+  assert.equal(valid({...lost, scope: module.scope, attributes: {...lost.attributes, 'bunny.module': 'lamp'}}), false, 'not a module event');
+  assert.equal(valid({...hub, event_name: 'telemetry.dropped', body: catalog.events['telemetry.dropped'], severity_text: 'WARN', severity_number: 13}), true, 'a hub host at 1.1');
 });
 
 test('construction keeps only the attributes the record\'s own profile registers', () => {

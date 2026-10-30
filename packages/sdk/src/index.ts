@@ -6,6 +6,7 @@ export {
 export {
   noSpans, startSpan, type Span, type SpanAttributes, type SpanKind, type SpanName, type SpanOptions, type SpanRecorder, type SpanStatus,
 } from './spans.js';
+export {MAX_EXCEPTION_MESSAGE, MAX_EXCEPTION_STACKTRACE, OMITTED, REDACTED, exceptionFields, type ExceptionFields, type ExceptionFilter, type ExceptionOptions} from './exception.js';
 export {Outbox, type AddMessage, type OutboxOptions} from './outbox.js';
 export {fullDisk, openModuleDatabaseFile} from './database.js';
 export {PrivateRequestDigest} from './private-request-digest.js';

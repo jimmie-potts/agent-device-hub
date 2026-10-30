@@ -16,7 +16,7 @@ class TraceContext(TypedDict):
 
 
 class DiagnosticRecord(TypedDict):
-    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6']
+    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']
     timestamp: NotRequired[str]
     observed_timestamp: NotRequired[str]
     severity_number: int
@@ -30,7 +30,7 @@ class DiagnosticRecord(TypedDict):
     span_id: NotRequired[str]
     trace_flags: NotRequired[str]
 
-ARTIFACT_VERSION = '1.6.0'
+ARTIFACT_VERSION = '1.7.0'
 SCHEMA_VERSION = '1.1'
 SEMANTIC_CONVENTIONS_VERSION = '1.44.0'
 MAX_RECORD_BYTES = 8192
@@ -173,6 +173,9 @@ def project_record(value, version):
     result['value']['schema_version'] = version
     if version == '1.0':
         result['value']['attributes'].pop('bunny.queue.depth', None)
+    # Profile 1.7's private exception fields never reach an earlier profile's consumer.
+    for name in _definitions()[0]['additions']['1.7']['attributes']:
+        result['value']['attributes'].pop(name, None)
     return validate_record(result['value'])
 
 

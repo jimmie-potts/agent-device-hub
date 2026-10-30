@@ -1,4 +1,4 @@
-"""Profiles 1.2 (Hub #903), 1.3 (Hub #949), 1.4 (Hub #835) and 1.5 (Hub #976): Python construction keeps only the attributes the record's own profile registers."""
+"""Profiles 1.2 (Hub #903), 1.3 (Hub #949), 1.4 (Hub #835), 1.5 (Hub #976), 1.6 (Hub #499) and 1.7 (Hub #777): Python construction keeps only the attributes the record's own profile registers."""
 import json
 import sys
 import unittest
@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'python'))
-from bunny_observability import ARTIFACT_VERSION, _definitions, _profile_span_names, create_record, validate_record
+from bunny_observability import ARTIFACT_VERSION, _definitions, _profile_span_names, create_record, project_record, validate_record
 
 
 def hub_record():
@@ -24,6 +24,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(_profile_span_names(catalog, '1.4'), [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names']], 'profile 1.4 adds no span name')
         self.assertEqual(_profile_span_names(catalog, '1.5'), [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names']], 'profile 1.5 adds no span name')
         self.assertEqual(_profile_span_names(catalog, '1.6'), catalog['span_names'])
+        self.assertEqual(_profile_span_names(catalog, '1.7'), catalog['span_names'], 'profile 1.7 adds no span name')
 
     def test_default_profile_leaves_out_later_attributes(self):
         record = hub_record()
@@ -43,7 +44,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
     def test_profile_1_5_attributes_stay_in_profile_1_5(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.6.0')
+        self.assertEqual(ARTIFACT_VERSION, '1.7.0')
         record = hub_record()
         record['attributes'].update({'bunny.state.bytes': 8388609, 'bunny.save.duration_ms': 150, 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.4'})
@@ -90,6 +91,32 @@ class Profiles(unittest.TestCase):
         for case in runtime:
             with self.subTest(case=case['name']):
                 self.assertTrue(validate_record(case['record'])['ok'])
+
+
+    def test_profile_1_7_exception_fields_stay_in_profile_1_7(self):
+        cases = json.loads((ROOT / 'fixtures/records.json').read_text())['cases']
+        private = [case for case in cases if case['record'].get('schema_version') == '1.7']
+        self.assertEqual(sorted(case['name'] for case in private if case['valid']),
+                         ['module-operation-failed-exception', 'runtime-module-failed-exception', 'runtime-telemetry-dropped'])
+        for case in private:
+            with self.subTest(case=case['name']):
+                self.assertEqual(validate_record(case['record'])['ok'], case['valid'])
+        failed = next(case for case in cases if case['name'] == 'runtime-module-failed-exception')['record']
+        earlier = create_record({**failed, 'schema_version': '1.6'})
+        self.assertTrue(earlier['ok'])
+        self.assertNotIn('exception.message', earlier['value']['attributes'])
+        self.assertNotIn('exception.stacktrace', earlier['value']['attributes'])
+        self.assertEqual(earlier['value']['attributes']['error.type'], 'TypeError')
+        latest = create_record(failed)
+        self.assertEqual(latest['value']['attributes'], failed['attributes'])
+        hub = hub_record()
+        hub['schema_version'] = '1.1'
+        hub['attributes'].update({'exception.message': 'boom', 'bunny.exception.redacted_count': 0, 'bunny.exception.truncated': False})
+        self.assertFalse(validate_record(hub)['ok'], 'exception text never joins a hub record')
+        self.assertFalse(project_record(failed, '1.0')['ok'], 'a runtime record never projects to 1.0')
+        queued = hub_record()
+        queued['schema_version'] = '1.7'
+        self.assertEqual(project_record(queued, '1.1')['value']['schema_version'], '1.1')
 
 
 if __name__ == '__main__':

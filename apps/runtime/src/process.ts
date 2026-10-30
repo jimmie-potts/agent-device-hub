@@ -6,7 +6,7 @@ import {parseArgs} from 'node:util';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
-import {INSTANCE_ID, LogWriter, Redactions, errorFields, stderrSink} from './log.js';
+import {INSTANCE_ID, LogWriter, Redactions, faultFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
 import {startRuntime, type Runtime} from './runtime.js';
@@ -107,7 +107,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
   const resource = runtimeResource(options.environment, INSTANCE_ID);
   const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}, resource, redactions).logger(RUNTIME_SCOPE);
   const fail = (error: unknown): never => {
-    log.fatal('runtime.failed', redactions.without(errorFields(error)));
+    log.fatal('runtime.failed', redactions.without(faultFields(error, redactions)));
     process.exit(1);
   };
   const escaped = (error: unknown): void => { if (!contain(error)) fail(error); };
