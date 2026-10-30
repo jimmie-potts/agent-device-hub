@@ -115,9 +115,11 @@ it('every written record and every span reach the Collector once, with their tra
   assert.equal(reply.status, 'accepted');
   await waitFor(() => received.spans.length >= 4, 3000, 'the request\'s spans at the Collector');
   await runtime.stop();
-  await waitFor(() => received.logs.length >= logs.length, 3000, `${logs.length} records at the Collector (${received.logs.length} so far)`);
-  assert.deepEqual(received.logs.map(log => log.event), events(logs), 'each record once, in the journal\'s order');
-  assert.deepEqual(received.logs.map(log => log.traceId), logs.map(record => record.trace_id), 'each with its trace');
+  // `runtime.stopped` is the journal's last word, written after the export's final flush, so the export ends before it.
+  const exported = logs.slice(0, -1);
+  await waitFor(() => received.logs.length >= exported.length, 3000, `${exported.length} records at the Collector (${received.logs.length} so far)`);
+  assert.deepEqual(received.logs.map(log => log.event), events(exported), 'each record once, in the journal\'s order');
+  assert.deepEqual(received.logs.map(log => log.traceId), exported.map(record => record.trace_id), 'each with its trace');
   assert.deepEqual(received.spans.map(span => span.name).sort(), ['bunny.command.execute', 'bunny.command.queue', 'bunny.command.request', 'bunny.device.call']);
   const traced = received.logs.filter(log => log.traceId !== undefined);
   assert.ok(traced.length > 0 && traced.every(log => received.spans.some(span => span.traceId === log.traceId)), 'a traced record\'s trace has spans');
@@ -154,12 +156,10 @@ it('a Collector that refuses, stalls or is absent changes no result; the loss is
   assert.equal((await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000})).status, 'accepted', 'a stalling Collector changes no reply');
   assert.equal((await health(runtime.url)).body.status, 'ok', 'health does not wait for the Collector');
   await runtime.stop();
-  const stopped = logs.find(record => record.event_name === 'runtime.stopped');
-  assert.ok(stopped !== undefined, 'stop completes within its bound while the Collector holds requests');
-  const final = logs.at(-1);
+  const stopped = logs.at(-1);
+  assert.equal(stopped?.event_name, 'runtime.stopped', 'stop completes within its bound while the Collector holds requests, and the totals are the last word');
   const total = (record: LogRecord | undefined): number => Number(record?.attributes['bunny.telemetry.failure_count']) + Number(record?.attributes['bunny.telemetry.dropped_count']);
-  assert.ok(total(final) > Number(first?.attributes['bunny.telemetry.failure_count']), `the totals include the stalled export: ${JSON.stringify(final?.attributes)}`);
-  assert.ok(['runtime.stopped', 'telemetry.dropped'].includes(final?.event_name ?? ''), 'the journal ends with the totals or the final flush\'s loss');
+  assert.ok(total(stopped) > Number(first?.attributes['bunny.telemetry.failure_count']), `the totals include the stalled export: ${JSON.stringify(stopped?.attributes)}`);
   assert.equal(timers.pending(), 0, 'the summary timer is cancelled at stop');
   assertContractRecords(logs);
 
@@ -169,11 +169,10 @@ it('a Collector that refuses, stalls or is absent changes no result; the loss is
   const {runtime: alone} = await run(context, {modules: [wall(), absent], log: record => { aloneLogs.push(record); }, config: {modules: {}, diagnostics: {export: {collector: 'http://127.0.0.1:9'}}}});
   assert.equal((await contextOf(absent).sdk.request(KEY, setMode, {timeoutMs: 1000})).status, 'accepted', 'an absent Collector changes no reply');
   await alone.stop();
-  const tail = aloneLogs.filter(record => ['runtime.stopped', 'telemetry.dropped'].includes(record.event_name));
-  assert.equal(tail[0]?.event_name, 'runtime.stopped');
-  // A refused connection fails after `runtime.stopped` is written, so the final flush's loss is the last summary.
-  assert.ok(tail.some(record => Number(record.attributes['bunny.telemetry.failure_count']) > 0), `the connection failures are counted: ${JSON.stringify(tail.map(record => record.attributes))}`);
-  assert.deepEqual(events(aloneLogs).slice(0, -1).filter(event => event === 'telemetry.dropped'), [], 'no minute passed, no summary before the stop');
+  const last = aloneLogs.at(-1);
+  assert.equal(last?.event_name, 'runtime.stopped');
+  assert.ok(Number(last?.attributes['bunny.telemetry.failure_count']) > 0, `the connection failures are counted: ${JSON.stringify(last?.attributes)}`);
+  assert.deepEqual(events(aloneLogs).filter(event => event === 'telemetry.dropped'), [], 'no minute passed, no summary');
   assertContractRecords(aloneLogs);
 });
 

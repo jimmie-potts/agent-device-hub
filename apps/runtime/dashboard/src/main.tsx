@@ -133,7 +133,7 @@ function liveNotice(state: DashboardState): string | undefined {
 function DiagnosticsCard({links}: {links: Readonly<Record<string, string>> | undefined}): React.JSX.Element {
   const href = links === undefined ? undefined : loopbackLink(links.grafana);
   return <div className="card" data-diagnostics={links === undefined ? 'loading' : href === undefined ? 'absent' : 'linked'}><h2>Diagnostics</h2>
-    {href !== undefined && <p><a href={href} target="_blank" rel="noopener noreferrer">Open Grafana<small>Local</small></a></p>}
+    {href !== undefined && <p><a href={href} target="_blank" rel="noopener noreferrer">Open Grafana <small>Local</small></a></p>}
     {links !== undefined && href === undefined && <p>No diagnostics viewer is configured for this runtime.</p>}
     <p className="hint">Logs and traces open in Grafana on this computer's loopback only. The viewer is not reachable through the private remote entry, and a missing record there is a gap, never proof that nothing happened.</p></div>;
 }

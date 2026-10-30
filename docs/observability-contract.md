@@ -416,7 +416,8 @@ adapter's own severity filter is set below every level, since the runtime's
 floors already apply. The export is never acknowledged to the work that wrote
 the record; its bounded queue counts drops and failures, the runtime writes a
 `telemetry.dropped` summary at most once a minute while the loss grows, and
-`runtime.stopped` carries the totals. The journal itself is not scraped.
+`runtime.stopped`, the journal's last word after the final flush, carries the
+totals; the export ends before it. The journal itself is not scraped.
 
 Map OTLP logs to Loki and traces to Tempo in the pilot. Loki stream labels are
 limited to namespace, service name and environment. Keep version, instance ID,

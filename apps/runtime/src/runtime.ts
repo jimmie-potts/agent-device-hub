@@ -271,19 +271,19 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const tracing = await startTracing(logs.resource, sink, log, undefined, collector);
   if (tracing !== undefined && collector !== undefined) exporter = record => { tracing.export(record); };
   // While the export's loss grows, one `telemetry.dropped` summary a minute at most says so in the journal (and, when the
-  // Collector takes records again, in the export); `runtime.stopped` keeps the totals.
+  // Collector takes records again, in the export); `runtime.stopped` carries the totals after the final flush.
   let summarized = 0;
   let cancelSummary: (() => void) | undefined;
-  const summarize = (again: boolean): void => {
+  const summarize = (): void => {
     if (tracing === undefined) return;
     const {dropped, failed} = tracing.counts();
     if (dropped + failed > summarized) {
       summarized = dropped + failed;
       recordLog(log, 'telemetry.dropped', {'bunny.telemetry.dropped_count': dropped, 'bunny.telemetry.failure_count': failed});
     }
-    if (again) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, () => { summarize(true); });
+    cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, summarize);
   };
-  if (exporter !== undefined) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, () => { summarize(true); });
+  if (exporter !== undefined) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, summarize);
   // Ends the host adapter, which flushes spans and exported records to their sinks within the contract's bound, and then
   // the file.
   const endTracing = async (): Promise<void> => {
@@ -404,20 +404,17 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       if (serving.state === 'serving') await serving.gateway.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
+      // The modules' work has ended, so its spans have too: flush them and the exported records within the contract's bound.
+      await endTracing();
       // The records this runtime's writer dropped or its sink lost, the spans lost and, with a Collector, the records the
-      // export lost so far, so the journal shows the loss. The record is written before the adapter ends, so that the
-      // export carries it too.
+      // export lost, so the journal shows the loss. Written after the flush, so its totals are complete: it is the
+      // journal's last word, and the export ends before it.
       const {dropped, failed} = logs.counts();
       const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
-      summarized = spans.dropped + spans.failed;
       recordLog(log, 'runtime.stopped', {
         'bunny.telemetry.dropped_count': Math.min(Number.MAX_SAFE_INTEGER, dropped + spans.dropped),
         'bunny.telemetry.failure_count': Math.min(Number.MAX_SAFE_INTEGER, failed + spans.failed),
       });
-      // The modules' work has ended, so its spans have too: flush them and the exported records within the contract's
-      // bound. What that final flush loses is counted after it, in the journal alone, as the last summary.
-      await endTracing();
-      if (collector !== undefined) summarize(false);
     })(),
   };
 }

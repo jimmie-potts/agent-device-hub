@@ -8,7 +8,7 @@
 
 - [x] 2.1 Admit `host.docker.internal` as an owned Collector origin in the Node adapter and the Python helper, with tests for the accepted and refused forms.
 - [x] 2.2 Add `diagnostics.export.collector` to the configuration file, start the adapter's log pipeline with that origin at a TRACE floor, feed every record of the runtime's writer to it after stderr, and export spans from the same adapter; refuse a malformed origin with `config-invalid`.
-- [x] 2.3 Write `telemetry.dropped` with the export's totals once a minute at most while its drops or failures grow, keep `runtime.stopped`'s totals (written before the final flush, so the export carries it) and count what the final flush loses in one last summary.
+- [x] 2.3 Write `telemetry.dropped` with the export's totals once a minute at most while its drops or failures grow, and keep `runtime.stopped`'s complete totals after the final flush as the journal's last word.
 - [x] 2.4 Test the export against a loopback fake Collector: every record and span of a request arrives once with its trace, a Collector that refuses, stalls or is absent changes no result and leaves the loss counted and summarized, and a run without the section exports nothing.
 
 ## 3. The viewer link and coverage

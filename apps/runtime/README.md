@@ -1595,9 +1595,8 @@ and counts it. Once a minute, while that loss grows, the runtime writes one
 `telemetry.dropped` record at WARN with the export's totals so far
 (`bunny.telemetry.dropped_count`, `bunny.telemetry.failure_count`), and no more
 than one a minute, so an outage cannot flood the journal. `runtime.stopped`
-carries the totals and is written before the adapter flushes, so the export
-carries it too; a last `telemetry.dropped` after the flush, in the journal
-alone, counts anything that final flush lost.
+carries the totals, written after the final flush so they are complete: it is
+the journal's last word, and the export ends before it.
 
 The log keeps INFO and above by default. The configuration file's
 [`diagnostics` section](#configuration) moves that floor and gives one module

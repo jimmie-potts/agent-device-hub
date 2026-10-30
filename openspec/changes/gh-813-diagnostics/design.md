@@ -50,9 +50,11 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
 - **Loss summary.** Profile 1.7 admits `telemetry.dropped` under `bunny.runtime`; once a minute the runtime reads the
   adapter's export counts and writes one summary with the totals when they grew since the last one, so an outage
   shows within a minute and never floods the journal (ADR 0012's repetition rule). `runtime.stopped` carries the
-  totals and is written before the adapter's final flush, so the export carries it; a last summary after the flush,
-  in the journal alone, counts what that flush lost. Rejected: a summary at the first loss (the pipeline reports
-  loss asynchronously, and a timer-driven read keeps the writer free of the adapter's callbacks).
+  totals after the adapter's final flush, so an unfinished span and an in-flight failure are in them; it is the
+  journal's last word, and the export ends before it. Rejected: writing `runtime.stopped` before the flush so the
+  export carries it (its totals then miss what the flush counts, which the tracker's crashed-module scenario
+  checks); a summary at the first loss (the pipeline reports loss asynchronously, and a timer-driven read keeps the
+  writer free of the adapter's callbacks).
 - **Retention and the disk bound.** Loki `retention_period: 168h` with the compactor; Tempo `block_retention: 168h`.
   Neither supports a byte-based cap, so the bound is admission: Loki 1 MiB/s with a 4 MiB burst and 16 KB lines,
   Tempo 2 MiB/s with 5 MiB per trace and 20,000 traces, so even a flood holds at most about 600 GB raw in a week on a
