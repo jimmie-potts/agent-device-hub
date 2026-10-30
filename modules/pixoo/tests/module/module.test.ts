@@ -796,11 +796,17 @@ void describe('Media-mode precondition', () => {
       assert.equal(other.status === 'rejected' && other.error.error.code, 'invalid-message');
       const unadvertised = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode: 'free'});
       assert.deepEqual(unadvertised.status === 'rejected' && [unadvertised.error.error.code, unadvertised.error.error.detail], ['unsupported-capability', 'the Pixoo does not offer that mode']);
-      // A view change keeps the mode, so it does not stand in the way of a command that requires the current mode.
-      const viewed = await accepted(world.request(FAMILIES.monitor, 'org.bunny.pixoo-monitor.set.requested', {filter: {}, cadenceMs: 1000}));
-      const during = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', ...requireMedia});
+      // A view change keeps the mode, so even while it applies it does not stand in the way of a command that requires
+      // the current mode: in Monitor the change awaits the player's pause, and the pause command is sent before it settles.
+      await world.outcome(await mode(world, 'monitor'));
+      const [viewed, during] = await Promise.all([
+        world.request(FAMILIES.monitor, 'org.bunny.pixoo-monitor.set.requested', {filter: {}, cadenceMs: 1000}),
+        world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode: 'monitor'}),
+      ]);
+      assert.equal(viewed.status, 'accepted', JSON.stringify(viewed));
       assert.equal(during.status, 'accepted', JSON.stringify(during));
-      await world.outcome(viewed); await world.outcome(during.requestId);
+      await world.outcome(viewed.requestId); await world.outcome(during.requestId);
+      assert.equal(world.display()?.mode, 'monitor');
     });
   });
 

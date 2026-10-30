@@ -350,8 +350,12 @@ displaces a status display. The field is added in place to the two 2.0
 schemas, as #1185 widened `session/2.0`, rather than as a new minor version
 beside them: an optional command field changes no consumer's reading of an
 existing message, so every valid 2.0 command stays valid and one without
-`requireMode` behaves as before. A module that does not know the field still
-validates it against the shared schema and ignores it.
+`requireMode` behaves as before. A module that answers these families owes the
+field its check: it refuses a mode the device does not advertise with
+`unsupported-capability`, and a current mode that differs, or a pending
+`device-mode-set`, with `invalid-state`, before any device write. Today only the
+Pixoo answers them for a device that supports media; Nanoleaf and Tidbyt refuse
+both families as unsupported before the field matters.
 
 A `device` record is the full record of one device, published by the module
 that controls it, with the device `id` as its `subject`. The `id` is a routing
