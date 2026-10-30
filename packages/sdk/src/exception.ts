@@ -44,6 +44,12 @@ export type ExceptionFilter = (text: string) => {text: string; replaced: number}
 
 export type ExceptionOptions = {
   readonly filter?: ExceptionFilter;
+  /**
+   * The text is a stack whose header, the error's name and this message, ends before its frames. A payload in the header
+   * is bounded by the header's end, one in a frame by the next frame; without this, the whole text is one message and a
+   * payload may run to its end. A stack whose header holds no such message is bounded at its first frame.
+   */
+  readonly stackOf?: string;
 };
 
 /** One text after the filters and the bound: what it became, how many segments were replaced, whether it was cut. */
@@ -142,13 +148,30 @@ function opensLikeJson(text: string, start: number): boolean {
 }
 
 /**
+ * Where a stack's header ends: after `message` when the stack begins with a name and that message, else at its first
+ * frame, else at its end. A message text is all header.
+ */
+function headerEnd(text: string, message: string | undefined): number {
+  if (message === undefined) return text.length;
+  if (message !== '') {
+    const at = text.indexOf(message);
+    if (at !== -1 && at <= MAX_NAME) return at + message.length;
+  }
+  const frame = text.indexOf(FRAME);
+  return frame === -1 ? text.length : frame;
+}
+// The longest error name, with its colon and space, a stack's header may start with before its message.
+const MAX_NAME = 128;
+
+/**
  * Replaces, in one pass, each JSON-shaped block and each quoted string of `PAYLOAD_LENGTH` characters or more with
  * `[omitted]`: a request body, a prompt or a transcript that an exception quoted, on one line or across several. A block
  * goes whole, so its member names go with its values. Each start scans at most `MAX_SEGMENT` characters. No payload
- * runs into a stack frame: a quote or block the message leaves open, as `Unexpected token " in JSON` does, is omitted
- * to the end of the message when enough follows, and every frame after it stays.
+ * runs into a stack frame: one in the header (the text before `header`) ends with the header, so a quote or block the
+ * message leaves open, as `Unexpected token " in JSON` does, is omitted to the header's end when enough follows and every
+ * frame stays, while a frame-like line inside a quoted body is still the body's; one in a frame ends with that frame.
  */
-function omitPayloads(text: string): {text: string; replaced: number} {
+function omitPayloads(text: string, header: number): {text: string; replaced: number} {
   let out = '';
   let replaced = 0;
   let index = 0;
@@ -162,9 +185,9 @@ function omitPayloads(text: string): {text: string; replaced: number} {
       index += 1;
       continue;
     }
-    // The first frame after this start bounds the payload: a closer inside a frame is no closer of the message's payload.
-    const frame = text.indexOf(FRAME, index);
-    const limit = frame === -1 ? text.length : frame;
+    // The header's end bounds a payload in it; the next frame bounds one in a frame: a closer past the bound is none.
+    const frame = index < header ? -1 : text.indexOf(FRAME, index);
+    const limit = index < header ? header : frame === -1 ? text.length : frame;
     const close = bracket ? closingBracket(text, index, limit) : text.indexOf(character, index + 1);
     const end = close === -1 || close >= limit || close - index > MAX_SEGMENT ? -1 : close;
     if (end !== -1 && end - index + 1 >= PAYLOAD_LENGTH) {
@@ -194,11 +217,11 @@ function omitPayloads(text: string): {text: string; replaced: number} {
   return {text: out, replaced};
 }
 
-function filtered(text: string): {text: string; replaced: number} {
+function filtered(text: string, header: number): {text: string; replaced: number} {
   let out = text;
   let replaced = 0;
   // Payload-like segments go first and whole, so a credential inside one counts once; then each credential rule.
-  const omitted = omitPayloads(out);
+  const omitted = omitPayloads(out, header);
   out = omitted.text;
   replaced += omitted.replaced;
   for (const [pattern, replacement] of CREDENTIAL_RULES) {
@@ -247,7 +270,9 @@ export function filterExceptionText(raw: string, limit: number, options: Excepti
   // the filter sees the whole text, so a registered secret that straddles the pre-cut leaves no fragment.
   const plain = raw.replace(CONTROL, '');
   const own = options.filter?.(plain) ?? {text: plain, replaced: 0};
-  const clean = filtered(own.text.slice(0, limit * PRECUT));
+  // The header is found in the filtered text with the message filtered the same way, so a replaced secret in it still lines up.
+  const message = options.stackOf === undefined ? undefined : (options.filter?.(options.stackOf.replace(CONTROL, '')) ?? {text: options.stackOf.replace(CONTROL, '')}).text;
+  const clean = filtered(own.text.slice(0, limit * PRECUT), headerEnd(own.text, message));
   const cut = bounded(clean.text, limit);
   // A text the pre-cut shortened is cut, whatever the filter then left of it.
   return {text: cut.text, replaced: own.replaced + clean.replaced, truncated: cut.truncated || own.text.length > limit * PRECUT};
@@ -267,7 +292,7 @@ export function exceptionFields(error: unknown, options: ExceptionOptions = {}):
   for (const [name, attribute, limit] of [['message', 'exception.message', MAX_EXCEPTION_MESSAGE], ['stack', 'exception.stacktrace', MAX_EXCEPTION_STACKTRACE]] as const) {
     const raw = ownText(error, name);
     if (raw === undefined) continue;
-    const clean = filterExceptionText(raw, limit, options);
+    const clean = filterExceptionText(raw, limit, name === 'stack' ? {...options, stackOf: ownText(error, 'message') ?? ''} : options);
     replaced = Math.min(Number.MAX_SAFE_INTEGER, replaced + clean.replaced);
     truncated ||= clean.truncated;
     if (clean.text !== '') fields[attribute] = clean.text;

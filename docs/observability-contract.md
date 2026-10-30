@@ -313,8 +313,11 @@ only a diagnostic record changes, and only on the private path.
   raw text before the prefix is read. A payload whose closing bracket or quote
   lies beyond the scanner's four-kilobyte window, or that never closes, is
   omitted from its opening to the end of the message, so a member before the
-  opening stays; no payload runs into a stack frame, so a lone quote or
-  bracket in a message (`Unexpected token " in JSON`) keeps every frame; an
+  opening stays; no payload runs into a stack frame: a payload in a stack's
+  header ends with the header, so a lone quote or bracket in a message
+  (`Unexpected token " in JSON`) keeps every frame while a frame-like line
+  inside a quoted body stays part of the body, and a payload in a frame ends
+  with that frame; a message has no such bound; an
   unquoted member name with its colon, as Node inspects an object, opens a
   block like JSON; and a quote that follows a letter or digit, as in a
   contraction, opens nothing. Control and format characters are removed before

@@ -241,3 +241,25 @@ it('a lone quote or bracket in the message keeps every stack frame, and an inspe
   const split = filterExceptionText('said REGISTERED​-SECRET ok', 1024, {filter: text => ({text: text.replaceAll('REGISTERED-SECRET', REDACTED), replaced: 1})});
   assert.equal(split.text, `said ${REDACTED} ok`, 'a secret split by a format character is whole for the filter');
 });
+
+it('a frame-like line inside a payload is the payload\'s, in a message and in a stack\'s header', () => {
+  const body = `{"prompt":"remind me about the dentist","detail":"Error: inner\n    at inner (/opt/x.js:1:1)\n    at outer (/opt/y.js:2:2)","transcript":"my finances are private","password":"hunter2"}`;
+  const error = new Error(`bad body ${body}`);
+  const fields = exceptionFields(error);
+  assert.equal(fields['exception.message'], `bad body ${OMITTED}`, 'the message has no frame bound');
+  const stack = String(fields['exception.stacktrace']);
+  // The raw stack's frame lines include the body's two embedded ones; the filtered stack keeps the real frames only.
+  const frames = String(error.stack).split('\n').filter(line => line.startsWith('    at ')).length - 2;
+  assert.ok(stack.startsWith(`Error: bad body ${OMITTED}\n    at `), stack);
+  assert.equal(stack.split('\n').filter(line => line.startsWith('    at ')).length, frames, 'the real frames stay');
+  for (const canary of ['finances', 'dentist', 'hunter2', 'inner (/opt']) assert.equal(stack.includes(canary), false, canary);
+  const transcript = `bad [${['{"role":"user","content":"code:\n    at foo()\nmore about the dentist and my sister"}', '{"role":"user","content":"my finances are private and so is my sister"}'].join(',')}]`;
+  assert.equal(exceptionFields(new Error(transcript))['exception.message'], `bad ${OMITTED}`);
+  const inspected = `bad { prompt: 'remind me about the dentist and my sister for the week',\n  stack: 'Error: x\n    at f (/x.js:1:1)',\n  transcript: 'my finances are private and my sister' }`;
+  assert.equal(exceptionFields(new Error(inspected))['exception.message'], `bad ${OMITTED}`);
+  assert.equal(exceptionFields(new Error(`bad "\n    at ${'remind me about the dentist. '.repeat(8)}"`))['exception.message'], `bad ${OMITTED}`);
+  const custom = new Error('plain');
+  custom.stack = `Custom\n    at one (/a.js:1:1)\n    at two ("${'remind me about the dentist. '.repeat(6)}")\n    at three (/c.js:3:3)`;
+  const kept = String(exceptionFields(custom)['exception.stacktrace']);
+  assert.equal(kept, `Custom\n    at one (/a.js:1:1)\n    at two (${OMITTED})\n    at three (/c.js:3:3)`, 'a payload in a frame ends with that frame');
+});
