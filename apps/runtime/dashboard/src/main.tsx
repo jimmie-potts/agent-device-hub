@@ -125,7 +125,20 @@ function liveNotice(state: DashboardState): string | undefined {
   }
 }
 
-function ConnectionsPage({state, now}: {state: DashboardState; now: number}): React.JSX.Element {
+/**
+ * The Mac-local diagnostics viewer (Hub #813): Grafana over the runtime's logs and traces, reached only where the
+ * runtime's own links name it, as a Local place is, so a preview never links to an installed viewer. The link is the
+ * Mac's loopback and is never the private remote entry.
+ */
+function DiagnosticsCard({links}: {links: Readonly<Record<string, string>> | undefined}): React.JSX.Element {
+  const href = links === undefined ? undefined : loopbackLink(links.grafana);
+  return <div className="card" data-diagnostics={links === undefined ? 'loading' : href === undefined ? 'absent' : 'linked'}><h2>Diagnostics</h2>
+    {href !== undefined && <p><a href={href} target="_blank" rel="noopener noreferrer">Open Grafana <small>Local</small></a></p>}
+    {links !== undefined && href === undefined && <p>No diagnostics viewer is configured for this runtime.</p>}
+    <p className="hint">Logs and traces open in Grafana on this computer's loopback only. The viewer is not reachable through the private remote entry, and a missing record there is a gap, never proof that nothing happened.</p></div>;
+}
+
+function ConnectionsPage({state, now, links}: {state: DashboardState; now: number; links: Readonly<Record<string, string>> | undefined}): React.JSX.Element {
   const {sessions} = state;
   const sources = [...new Set(sessions.records.map(record => `${record.identity.provider} / ${record.identity.hostId} / ${record.identity.sourceId}`))];
   return <section aria-label="Connections"><header className="page"><h1>Connections</h1></header><div className="cards two">
@@ -141,6 +154,7 @@ function ConnectionsPage({state, now}: {state: DashboardState; now: number}): Re
     <div className="card"><h2>Observed sources</h2>{sources.map(source => <p key={source}>{source}</p>)}
       {sources.length === 0 && <p>No source evidence yet.</p>}
       <p className="hint">A connected feed does not prove a fresh session, successful task, read chat or physical device result.</p></div>
+    <DiagnosticsCard links={links}/>
   </div></section>;
 }
 
@@ -279,7 +293,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind === 'habitat' && <HabitatPage records={state.sessions.records} live={live}/>}
       {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
-      {route.kind === 'connections' && <ConnectionsPage state={state} now={now}/>}
+      {route.kind === 'connections' && <ConnectionsPage state={state} now={now} links={links}/>}
       {!known && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>

@@ -407,6 +407,18 @@ Hooks remain silent; receiving owners emit observations on a separate channel.
 Machine-readable stdout, domain journals and transport-proof receipts keep their
 existing contracts and retention.
 
+The B.U.N.N.Y. runtime exports this way (#813): its configuration file's
+`diagnostics.export.collector` names an owned Collector origin, numeric loopback
+or Docker Desktop's `host.docker.internal`, and the runtime's log writer feeds
+each record it lets through to the host adapter's OTLP log pipeline after the
+stderr journal, while the same adapter exports the spans it records. The
+adapter's own severity filter is set below every level, since the runtime's
+floors already apply. The export is never acknowledged to the work that wrote
+the record; its bounded queue counts drops and failures, the runtime writes a
+`telemetry.dropped` summary at most once a minute while the loss grows, and
+`runtime.stopped`, the journal's last word after the final flush, carries the
+totals; the export ends before it. The journal itself is not scraped.
+
 Map OTLP logs to Loki and traces to Tempo in the pilot. Loki stream labels are
 limited to namespace, service name and environment. Keep version, instance ID,
 trace/span IDs, tickets and request IDs as searchable structured metadata, not
@@ -480,8 +492,14 @@ happened (#950). Its answer, its limits and every gap it names are in
 [Follow one request](../apps/runtime/verify/README.md#follow-one-request). Profile 1.4 adds its gateway's route and
 credentials reload (#835), and profile 1.5 its core's costly saves (#976). The runtime and its journal intake are
 installed at the cutover
-([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)); OTLP
-export and viewing are [#813](https://github.com/jimmie-potts/agent-device-hub/issues/813).
+([#840](https://github.com/jimmie-potts/agent-device-hub/issues/840)). The
+runtime exports its records and spans over OTLP to an owned Collector when its
+configuration names one, and the Mac-local Grafana, Loki and Tempo stack that
+receives them is owned by
+[#813](https://github.com/jimmie-potts/agent-device-hub/issues/813) with its
+[operating procedure](bunny-container.md#diagnostics-stack); that issue records
+the installed evidence, and this document claims no ingestion a source test
+did not show.
 
 Generated static documentation/media artifacts emit no runtime diagnostics. Maintained
 helper processes may emit operational metadata on a separate channel; raw compiler,

@@ -595,6 +595,12 @@ found. No private file or installed-service fallback is used.
 Connections, reached through Settings or its retained bookmark, reads `/api/v2/build`: the serving process's frozen package version,
 source revision, build time and dirty flag, with unavailable identity shown as
 unknown. The build step creates that identity, not a Git command per request.
+Its Diagnostics card (Hub #813) shows **Open Grafana · Local** when the runtime's
+links name `grafana`, as the configuration file's `edge.placeLinks.grafana`
+does for the [Mac-local diagnostics stack](../../../docs/bunny-container.md#diagnostics-stack);
+without that link the card says no viewer is configured. The dashboard builds
+no log table, trace view or query of its own: the link is the whole viewer
+integration, and it is Mac-local, never routed through the remote dashboard.
 
 Use the existing disposable adapter after a build:
 

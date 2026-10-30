@@ -787,14 +787,18 @@ export class NanoleafRuntime {
     if(!commandSupported(capabilities(this.#db,device),{family:'moment-play',data:command.data}) || mode==='quiet') return errorBody('unsupported-capability',{requestId});
     let freeBase:FreeBase|undefined;
     if(mode==='free') {
+      // The read of the current effect and brightness is the moment's first device call: its span is the command's child, and
+      // the device never sees the context (Hub #813). The effect list and the state are two requests of one call.
+      const call=this.#context.trace.start('bunny.device.call',{parent:command,kind:'client',attributes:{'bunny.device.id':device,'bunny.operation':'snapshot','bunny.request.id':requestId}});
       try {
         const listing=await link.request({ip:'',token:''},'GET','/effects');
         const state=await link.request({ip:'',token:''},'GET','/state');
         if(!isObject(listing) || typeof listing.select!=='string' || listing.select.startsWith('*') || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(listing.select) ||
             !isObject(state) || !isObject(state.brightness) || typeof state.brightness.value!=='number' || !Number.isInteger(state.brightness.value) ||
-            state.brightness.value<0 || state.brightness.value>100) return errorBody('unsupported-capability',{requestId});
+            state.brightness.value<0 || state.brightness.value>100) { call.end(); return errorBody('unsupported-capability',{requestId}); }
         freeBase={name:listing.select,brightness:state.brightness.value};
-      } catch { return errorBody('unavailable',{requestId}); }
+        call.end();
+      } catch { call.end('error'); return errorBody('unavailable',{requestId}); }
     }
     return this.#admit(command,()=>{
       if(momentRevision(this.#db,device)!==revision || controlState(this.#db,device).mode!==mode) throw new CommandRefused('revision-conflict','the device choice changed during the read');

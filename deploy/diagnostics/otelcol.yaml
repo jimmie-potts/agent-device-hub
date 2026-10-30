@@ -1,0 +1,67 @@
+# One ingestion path per signal (docs/observability-contract.md "Ingestion and queries"): the runtime's OTLP/HTTP logs go
+# to Loki and its spans to Tempo. The pilot's mapping is kept: Loki's native OTLP importer drops LogRecord.EventName, so
+# the event name is copied to the queryable `event_name` attribute. Bounded memory; a short queue so a backend outage is
+# absorbed for seconds, then dropped and counted here rather than spooled.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: /ready
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 160
+    spike_limit_mib: 48
+  batch:
+    timeout: 1s
+    send_batch_size: 256
+    send_batch_max_size: 512
+  transform/event_name:
+    error_mode: propagate
+    log_statements:
+      - set(log.attributes["event_name"], log.event_name)
+exporters:
+  otlp_http/logs:
+    endpoint: http://loki:3100/otlp
+    timeout: 5s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 5s
+      max_elapsed_time: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 1
+      queue_size: 512
+  otlp_http/traces:
+    endpoint: http://tempo:4318
+    timeout: 5s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 5s
+      max_elapsed_time: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 1
+      queue_size: 512
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: warn
+    metrics:
+      level: none
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, transform/event_name, batch]
+      exporters: [otlp_http/logs]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/traces]

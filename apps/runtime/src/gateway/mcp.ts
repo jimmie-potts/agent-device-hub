@@ -10,7 +10,7 @@ import {
   type McpHandler, type ServiceExtension,
 } from '@jimmie-potts/device-mcp';
 import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import type {ModuleTool} from '@jimmie-potts/sdk';
+import {noSpans, startSpan, type ModuleTool, type SpanRecorder} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import type {ActionAnswer} from '../core/tracker.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
@@ -47,6 +47,8 @@ export type McpHost = {
   dispatch: (credentialId: string, input: {family: string; target: string; data: Record<string, unknown>; requestId?: string}) => Promise<ActionAnswer>;
   access: Access;
   scheduler: {after: (delayMs: number, callback: () => void) => () => void};
+  /** Records a module read tool's call as a `bunny.feed.read` span, as the gateway's content reads are (Hub #813). */
+  trace?: SpanRecorder;
   /** Whether text holds a secret a module read, which no result may carry. */
   holdsSecret: (text: string) => boolean;
 };
@@ -78,14 +80,22 @@ function readTool(host: McpHost, module: string, tool: ModuleTool, check: Valida
     description: tool.description, annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true},
     async invoke(args, context) {
       if (host.access.current(context.principalId) === undefined) return failure(errorBody('unauthenticated', {detail: 'the credential was revoked'}));
+      // One read span per call, as a dashboard content read gets: its duration and whether the call was refused. The
+      // tool's arguments and answer never reach the span.
+      const span = startSpan(host.trace ?? noSpans, 'bunny.feed.read', {kind: 'server', attributes: {'http.route': '/mcp', 'http.request.method': 'POST', 'bunny.module': module}});
+      const refused = (body: ErrorBody): {data: Record<string, unknown>; isError: true} => {
+        span.end('error');
+        return failure(body);
+      };
       const answered = await bounded(host, module, () => tool.read(args));
-      if ('refused' in answered) return failure(answered.refused);
+      if ('refused' in answered) return refused(answered.refused);
       const value: unknown = answered.value;
       // Nothing the module answers is served before the secret check, a refusal's detail included.
-      if (host.holdsSecret(JSON.stringify(value) ?? '')) return failure(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
+      if (host.holdsSecret(JSON.stringify(value) ?? '')) return refused(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
       const refusal = refusedBody(value);
-      if (refusal !== undefined) return failure(refusal);
-      if (!check(value)) return failure(errorBody('internal', {detail: 'the module answered outside its tool\'s schema'}));
+      if (refusal !== undefined) return refused(refusal);
+      if (!check(value)) return refused(errorBody('internal', {detail: 'the module answered outside its tool\'s schema'}));
+      span.end();
       return {data: {result: value}};
     },
   };
