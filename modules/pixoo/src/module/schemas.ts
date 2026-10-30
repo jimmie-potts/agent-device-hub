@@ -87,7 +87,8 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
     id: uuid, revision: block('revision'), name, playlistRevision: revision, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'},
     items: {type: 'array', maxItems: 1000, items: closed({id: uuid, renditionId: hash, playback: policy})},
   }),
-  [schemaOf(FAMILIES.show)]: guarded({renditionId: hash, playback: policy}, ['playback']),
+  // `requireMode` (#1276): the mode the Pixoo must be in, or the show is refused at admission, as for the general media commands.
+  [schemaOf(FAMILIES.show)]: guarded({renditionId: hash, playback: policy, requireMode: {enum: ['monitor', 'media']}}, ['playback', 'requireMode']),
   [schemaOf(FAMILIES.monitor)]: guarded({filter, cadenceMs: integer(1000, 10000)}),
   [schemaOf(FAMILIES.nowPlaying)]: guarded({media: {enum: ['off', 'popup', 'whole']}}),
   [schemaOf(FAMILIES.playlistChange)]: guarded({change: {oneOf: [
@@ -140,7 +141,7 @@ export type PlaylistRecord = {
   id: string; revision: number; name: string; playlistRevision: number; repeat: boolean; shuffle: boolean;
   items: {id: string; renditionId: string; playback: Policy}[];
 };
-export type ShowRequest = Guards & {requestId: string; renditionId: string; playback?: Policy};
+export type ShowRequest = Guards & {requestId: string; renditionId: string; playback?: Policy; requireMode?: 'monitor' | 'media'};
 export type MonitorSetRequest = Guards & {requestId: string; filter: Filter; cadenceMs: number};
 export type NowPlayingSetRequest = Guards & {requestId: string; media: 'off' | 'popup' | 'whole'};
 export type PlaylistChangeRequest = Guards & {requestId: string; change:

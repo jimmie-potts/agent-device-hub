@@ -271,15 +271,31 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | Family | What it does | Its outcome |
 | --- | --- | --- |
 | `device-mode-set` | Monitor or Media | `observed` |
-| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed | Its first upload's |
-| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes` | `observed`; its upload's |
+| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed; optional `requireMode` | Its first upload's |
+| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes`; optional `requireMode` | `observed`; its upload's |
 | `brightness-set`, `power-set` | Brightness, screen on or off | The device write's |
-| `pixoo-media-show` | Shows one rendition, with an optional playback policy | Its upload's |
+| `pixoo-media-show` | Shows one rendition, with an optional playback policy and `requireMode` | Its upload's |
 | `pixoo-monitor-set` | Monitor's filter and cadence | `observed` |
 | `pixoo-now-playing-set` | Now Playing in Media: `off`, `popup` or `whole` | `observed` |
 | `pixoo-playlist-change` | Creates, renames, sets options, items or order, duplicates or deletes a playlist | `observed` |
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
+
+`media-start`, `media-control` and `pixoo-media-show` take an optional
+`requireMode`, `monitor` or `media`
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)). The
+module checks it in its admission queue, so the check and the admission cannot
+race: when the Pixoo is in the other mode, or a `device-mode-set` is accepted
+and not yet completed, the command is refused with `invalid-state` and a
+`command.rejected` record before any device write. A mode the Pixoo does not
+advertise is refused with `unsupported-capability`, as a `device-mode-set` for
+it would be; a view change (`pixoo-monitor-set`) keeps the mode and does not
+count as a pending change. Nothing is queued, deferred or retried. A command
+without `requireMode` is admitted as before, so a start, resume or restart
+still takes the display from Monitor; one that requires `monitor` is admitted
+in Monitor and then takes the display to Media as any start does. A routine
+(#1297) sends `requireMode: "media"` so a scheduled playlist never displaces
+agent status.
 
 A staged import reads `incoming/<sha256>` in the module's private folder and
 checks its size and hash. API 1.3's upload contribution prepares one input at a

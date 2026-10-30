@@ -80,6 +80,7 @@ The module SHALL answer, on `bunny.cmd.<family>.<device id>` only, `device-mode-
 - a `requestId` it accepted before for other content, with `duplicate-conflict`;
 - what the device's capabilities do not offer, with `unsupported-capability`, a playlist to start being offered when the library holds it, beyond the 256 the device record lists;
 - a resume with nothing selected, with `invalid-state`;
+- a `media-start`, `media-control` or `pixoo-media-show` whose optional `requireMode` (#1276) names a mode the Pixoo does not advertise, with `unsupported-capability`; one whose `requireMode` differs from the presentation's current mode, or arrives while a `device-mode-set` is accepted and not completed, with `invalid-state`, checked in the admission queue so the check and the admission cannot race; a command without `requireMode` SHALL be admitted as before;
 - an unknown rendition or notice, with `not-found`.
 
 Otherwise it SHALL store its record of the work in the transaction that publishes the device's new pending count, reply `accepted`, run the work outside the responder, and report the outcome through its outbox, committed with the device's new pending count, last outcome and last transmission; a change while a command runs SHALL wait up to 1 s for that commit. A catalog command's outcome SHALL NOT wait on the read of the catalog after it: when that read fails, the outcome SHALL still go out, and the change SHALL go out once a later read succeeds. The outbox's `outcome.published` record SHALL be the outcome's only log record. What the module serves and its last transmission SHALL change only once a transaction commits, so a rollback leaves sync and live followers at the same records:
@@ -97,6 +98,10 @@ A repeated `(source, requestId)` with the same family, subject and data SHALL be
 #### Scenario: A media start accepted, then completed
 - **WHEN** media is imported, put in a playlist and the playlist started
 - **THEN** the start is accepted at once, completes `succeeded` with `transmitted` once the media reached the Pixoo, the Pixoo shows it, and the device record names the start as its last transmission with nothing pending
+
+#### Scenario: A media start that requires Media while Monitor shows
+- **WHEN** Monitor is selected and a `media-start` arrives with `requireMode: "media"`, or one arrives while a `device-mode-set` is accepted and not completed
+- **THEN** it is refused with `invalid-state` and a `command.rejected` record, nothing reaches the device, the mode does not change, and the same start without `requireMode`, or with it once Media is selected, is accepted with the unchanged reply
 
 #### Scenario: Pause changes only the module's playback
 - **WHEN** a playing playlist is paused
