@@ -587,7 +587,7 @@ Read on 2026-10-06 from divoom-app-upgrade:
 - **Open issues, disposed at retirement ([#936](https://github.com/jimmie-potts/agent-device-hub/issues/936)):**
   - transfer to this repository: #13, #15, #16, #18, #52, #76, #83, #91, #92, #93, #94, #107, #108, #119 and #122;
   - close as superseded: #14 (by Hub #751), #112, #115 and #126;
-  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decided at #936.
+  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decided at #936: all four transferred, as #1274, #1279, #1281 and #1282.
 
 ### Edits to the snapshot
 
