@@ -332,6 +332,28 @@ profile when isolation checks fail. State/config/secrets remain distinct ordinar
 local volumes with their existing read/write directions. Maintenance workers
 still use network none and never activate devices.
 
+### Required network paths
+
+The container reaches the home network through its dedicated bridge and Docker
+Desktop's address translation. Outbound TCP and unicast UDP connections work and
+their replies return to the same connection or socket; only published ports
+accept inbound connections. Broadcast and multicast discovery are unavailable on
+this profile and unneeded for these explicit targets. Each module needs only the
+paths below, to the targets its private section names. Addresses stay private,
+and reaching a physical device remains #568's exact-target check.
+
+| Module | Path |
+| --- | --- |
+| Playback | Outbound HTTP to each configured Sonos control URL and Sony Audio Control endpoint at their configured ports (typically TCP 1400 and TCP 10000), and to the same Sony receiver at TCP 58080 for artwork. Sonos artwork stays on the configured origin. |
+| LIFX | Outbound unicast UDP 56700 to each configured bulb address; replies return to the module's socket. |
+| Tidbyt | Outbound HTTPS to `api.tidbyt.com`. |
+| Pixoo | Outbound HTTP (TCP 80) to the configured device. With the hosted-GIF profile, inbound HTTP from the device to the published private IPv4 at TCP 41240. |
+| Nanoleaf | Outbound HTTP (TCP 16021) to each configured controller address. |
+| ONN | ADB through the configured private server socket, executable and key directory, which reach the television's ADB serial address. The image supplies none of them and the operator mounts no host dependency. A configured section starts `running` and reports every operation `unavailable` until a bounded owning change supplies them; an empty or invalid section refuses with `invalid-request`. Admission and health are not ONN qualification. |
+| Wemo | Outbound HTTP (SOAP) to each configured plug at its configured port, which must be in 49151 to 49159. |
+| Roborock | Outbound TCP 58867 to the selected device address for the local protocol and MQTT over TLS (TCP 8883) to the session's broker. The regional `roborock.com` HTTPS API serves only the interactive session setup tool, not the container. Read-only, with the existing private target and session files. |
+| Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |
+
 ## Diagnostics stack
 
 The Mac-local log and trace viewer for the personal runtime
@@ -707,6 +729,38 @@ It uses the production selector with the existing simulated factories and fresh
 synthetic state for household modules, companions and remote Desktop. It also
 checks honest missing-dependency refusals. There is no production simulation
 flag. Ordinary source runs report this explicit exercise skipped.
+
+The same file's second exercise, `production modules qualify on this host`,
+records what a Mac release can establish without a device before #568 activates
+a module (#565). It records the image's architecture, kernel, Node and SQLite
+versions, the compiled packages the image carries, and that `sharp`, the compiled
+dependency Pixoo, playback and Tidbyt share, renders. Then, for each
+selected module on fresh synthetic state with simulated transports, it records
+startup, owner-only store and folder modes with the log present, the lease and
+second-start refusals that separate child processes observe while the runtime
+runs, with the competing runtime's per-module states, a port-conflict refusal
+that creates no store, a clean stop that checkpoints every log and leaves the
+lease free for another process, a reopen on the same stores, and the real
+build's honest outcome for an empty section. The in-process stop releases the
+lease because the exercise owns its runtime; the container entrypoint holds its
+ownership until its process exits. It prints one
+`production-module-qualification/1.0` JSON record naming module and platform
+facts only. Compare its `arch` with `docker version --format '{{.Server.Arch}}'`
+to establish native rather than emulated execution. Keep the run's log with the
+release's private evidence. Simulated transports establish no physical result.
+
+Run both exercises against the exact image in a disposable container of it,
+with no network, host mount, published port or credential:
+
+```text
+docker run --rm --pull never --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 --memory 4g -e BUNNY_CONTAINER_ACCEPTANCE=1 --entrypoint node IMAGE_ID --test deploy/container/tests/production-acceptance.test.mjs
+```
+
+The container's own writable layer supplies the fresh `/run/secrets/bunny` and
+temporary directories, and nothing persists after it exits. An image built before
+an exercise existed can still be recorded: create the container stopped, copy the
+exercise file into it with `docker cp`, then start it. Attribute that record to
+both the image revision and the exercise's revision.
 
 Actual
 operator acceptance is separate from those source tests. At code revision
