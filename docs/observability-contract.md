@@ -319,8 +319,11 @@ only a diagnostic record changes, and only on the private path.
   inside a quoted body stays part of the body, and a payload in a frame ends
   with that frame; a message has no such bound, and neither has a stack whose
   header cannot be matched to its message (a module-written stack without its
-  message or with another, or an error name over 128 characters), so a payload
-  such a header leaves open takes its frames with it; an
+  message or with another, a message that is only a prefix of the header, or an
+  error name over 128 characters), so a payload such a header leaves open takes
+  its frames with it, while a module-written message that is a prefix of its
+  header ending exactly where a frame-like line begins bounds the header there;
+  an
   unquoted member name with its colon, as Node inspects an object, opens a
   block like JSON; and a quote that follows a letter or digit, as in a
   contraction, opens nothing. Control and format characters are removed before

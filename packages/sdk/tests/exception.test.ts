@@ -275,4 +275,9 @@ it('a stack whose header cannot be matched to its message is bounded as one text
   }
   const matched = filterExceptionText(stack, 4096, {stackOf: body});
   assert.ok(matched.text.endsWith(frames) && !matched.text.includes('finances'), `a matched header keeps the frames: ${matched.text}`);
+  // A message that is only a prefix of the header matches nothing, unless it ends exactly where a frame-like line begins.
+  for (const prefix of ['Custom', 'Custom failure: {"detail"', 'Custom failure: {"detail":"Error: inner (/opt']) {
+    const partial = filterExceptionText(stack, 4096, {stackOf: prefix});
+    assert.equal(partial.text.includes('finances') || partial.text.includes('hunter2'), false, `a message that is only a prefix of the header matches nothing: ${prefix}`);
+  }
 });

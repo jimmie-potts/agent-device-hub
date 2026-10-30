@@ -156,7 +156,10 @@ function opensLikeJson(text: string, start: number): boolean {
 function headerEnd(text: string, message: string | undefined): number {
   if (message === undefined || message === '') return text.length;
   const at = text.indexOf(message);
-  return at !== -1 && at <= MAX_NAME ? at + message.length : text.length;
+  const end = at + message.length;
+  // The header must end where the frames begin, or with the text: a message that is only a prefix of it, or that occurs
+  // in it by chance, matches nothing.
+  return at !== -1 && at <= MAX_NAME && (end === text.length || text.startsWith(FRAME, end)) ? end : text.length;
 }
 // The longest error name, with its colon and space, a stack's header may start with before its message.
 const MAX_NAME = 128;
