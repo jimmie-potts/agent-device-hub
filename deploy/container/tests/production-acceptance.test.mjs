@@ -1,10 +1,10 @@
 // Explicit disposable-container exercise. It never accepts a production target or host credential.
 import assert from 'node:assert/strict';
-import {lstat, mkdtemp, readdir, readFile, realpath, rm} from 'node:fs/promises';
+import {spawn} from 'node:child_process';
+import {lstat, mkdtemp, readdir, readFile, realpath, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
-import os from 'node:os';
+import os, {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {tmpdir} from 'node:os';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
@@ -89,6 +89,49 @@ async function storeInventory(stateDir, names) {
 /** The outcome of a start that must not succeed: the refusal's code, or `started` after stopping what did start. */
 const outcomeOf = (starting, stop) => starting.then(runtime => stop(runtime).then(() => 'started'), error => `refused:${error.code ?? error.name}`);
 
+const built = relative => new URL(relative, import.meta.url).href;
+/** Runs an ES module source in a child Node process with `args` and returns its last stdout line, or how it ended. */
+function childLine(source, args, timeoutMs = 30_000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', source, '--', ...args], {stdio: ['ignore', 'pipe', 'pipe']});
+    let output = '';
+    child.stdout.on('data', bytes => {output += bytes;});
+    child.stderr.on('data', () => {});
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.once('error', reject);
+    child.once('close', (code, signal) => {
+      clearTimeout(timer);
+      const lines = output.trim().split('\n');
+      resolve(code === 0 ? lines[lines.length - 1] : `exited:${signal ?? code}`);
+    });
+  });
+}
+/** Another process takes the runtime's lease on argv[1] and prints `taken` or `refused:<code>`. */
+const LEASE_PROBE = `import {holdRuntimeLease} from ${JSON.stringify(built('../../../apps/runtime/dist/src/lease.js'))};
+try {const lease = await holdRuntimeLease(process.argv[1]); lease.release(); console.log('taken');}
+catch (error) {console.log('refused:' + (error.code ?? error.name));}`;
+/** Another process starts the same production selection, simulated, on argv[1] from the configuration file argv[2] and the
+ * module names argv[3], then prints its outcome and each module's state as JSON. */
+const SECOND_RUNTIME_PROBE = `import {readFile} from 'node:fs/promises';
+import {checkConfiguration} from ${JSON.stringify(built('../../../packages/sdk/dist/src/index.js'))};
+import * as runtimeModules from ${JSON.stringify(built('../../../apps/runtime/dist/src/modules.js'))};
+import {startRuntime} from ${JSON.stringify(built('../../../apps/runtime/dist/src/runtime.js'))};
+import {containerOptions, productionModules} from ${JSON.stringify(built('../entrypoint.mjs'))};
+const [stateDir, configFile, namesJson] = process.argv.slice(1);
+const config = JSON.parse(await readFile(configFile, 'utf8'));
+const names = JSON.parse(namesJson);
+const selected = runtimeModules.shippedModules.filter(({name}) => name === 'core' || names.includes(name));
+const factories = selected.map(factory => ({...factory, create: () => factory.simulate()}));
+const modules = productionModules(config, {...runtimeModules, shippedModules: factories}, checkConfiguration,
+  containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'})).modules;
+let coreFailed = false;
+try {
+  const runtime = await startRuntime({modules, stateDir, port: 0, config, simulate: true, startTimeoutMs: 5000, log: () => {}, onCoreFailure: () => {coreFailed = true;}});
+  const states = Object.fromEntries(runtime.health().modules.map(({name, state, reason}) => [name, reason === undefined ? state : state + ':' + reason.code]));
+  await runtime.stop();
+  console.log(JSON.stringify({outcome: states.core === 'running' ? 'started' : 'core-' + states.core, modules: states, coreFailed}));
+} catch (error) {console.log(JSON.stringify({outcome: 'refused:' + (error.code ?? error.name), modules: {}, coreFailed}));}`;
+
 // The per-module qualification record a Mac release needs before #568 activates a module (#565): the platform the image
 // runs on, its compiled dependencies, and each selected module's fresh-state startup, private store, exclusive startup,
 // port-conflict refusal, graceful stop and reopen on the same stores, all with simulated transports and no host input.
@@ -138,8 +181,9 @@ test('production modules qualify on this host: platform, native dependencies, pr
   const platform = {arch: process.arch, machine: os.machine(), kernel: os.release(), node: process.versions.node, sqlite: process.versions.sqlite, v8: process.versions.v8};
   assert.match(platform.sqlite ?? '', /^\d+\.\d+\.\d+$/, 'node:sqlite reports its library version');
 
-  // Pixoo's sharp is the one compiled dependency a selected module needs. It must load and render here, from the package
-  // built for this platform. Every other compiled package in the image is listed, so a consumer sees nothing is hidden.
+  // sharp, which Pixoo, playback and Tidbyt depend on, is the one compiled dependency a selected module needs. It must load
+  // and render here, from the package built for this platform. Every other compiled package in the image is listed, so a
+  // consumer sees nothing is hidden.
   const {default: sharp} = await import('sharp');
   const png = await sharp({create: {width: 2, height: 2, channels: 3, background: {r: 1, g: 2, b: 3}}}).png().toBuffer();
   assert.deepEqual([...png.subarray(0, 8)], PNG_SIGNATURE);
@@ -168,25 +212,28 @@ test('production modules qualify on this host: platform, native dependencies, pr
   assert.equal(octal(modulesDir), '700');
   assert.equal(modulesDir.uid, uid);
   const stores = await storeInventory(stateDir, everyName);
-  for (const [name, {store, shm, folder}] of Object.entries(stores)) {
+  // Codex Desktop serves remote evidence and keeps no store; every other selected module opens one, in WAL mode.
+  assert.deepEqual(Object.keys(stores).filter(name => stores[name].store !== undefined), everyName.filter(name => name !== 'codex-desktop'), 'each selected module keeps its store');
+  for (const [name, {store, wal, shm, folder}] of Object.entries(stores)) {
     if (store !== undefined) {
-      assert.deepEqual({mode: store.mode, uid: store.uid, regular: store.regular, links: store.links, shm}, {mode: '600', uid, regular: true, links: 1, shm: false}, `${name}'s store is private`);
+      assert.deepEqual({mode: store.mode, uid: store.uid, regular: store.regular, links: store.links, wal, shm}, {mode: '600', uid, regular: true, links: 1, wal: true, shm: false}, `${name}'s store is private and in WAL mode`);
     }
     if (folder !== undefined) assert.deepEqual({mode: folder.mode, uid: folder.uid, directory: folder.directory}, {mode: '700', uid, directory: true}, `${name}'s folder is private`);
   }
   const owned = entry => everyName.some(name => entry === name || entry.startsWith(`${name}.sqlite`));
   assert.deepEqual((await readdir(join(stateDir, 'modules'))).filter(entry => !owned(entry)), [], 'modules/ holds only the selected modules\' files');
 
-  // Exclusive startup: while the first runtime runs, an offline tool cannot take the lease, and a second runtime on the
-  // same directory does not get a running core. The first runtime and its stores are unaffected.
+  // Exclusive startup, from other processes as an offline tool or a second start would be: while the first runtime runs,
+  // a child process cannot take the lease, and a child process starting the same selection on the same directory does not
+  // get a running core; the record keeps each of its modules' observed states. The first runtime and its stores are
+  // unaffected. (The container entrypoint ends its process on a core failure; the probe reads the states instead.)
+  const configFile = join(root, 'qualification-config.json');
+  await writeFile(configFile, JSON.stringify(config), {mode: 0o600});
   await assert.rejects(holdRuntimeLease(stateDir), error => error.code === 'runtime-running');
-  let competingCoreFailed = false;
-  const competing = await start(stateDir, {startTimeoutMs: 5_000, onCoreFailure: () => {competingCoreFailed = true;}}).then(async runtime => {
-    const core = states(runtime).core;
-    await stop(runtime);
-    return core === 'running' ? 'started' : `core-${core}`;
-  }, error => `refused:${error.code ?? error.name}`);
-  assert.notEqual(competing, 'started', 'a second runtime must not own the same state directory');
+  const leaseWhileRunning = await childLine(LEASE_PROBE, [stateDir]);
+  assert.equal(leaseWhileRunning, 'refused:runtime-running', 'another process cannot take the lease while the runtime runs');
+  const competing = JSON.parse(await childLine(SECOND_RUNTIME_PROBE, [stateDir, configFile, JSON.stringify(names)]));
+  assert.notEqual(competing.outcome, 'started', 'a second process must not own the same state directory');
   assert.equal(first.health().status, 'ok', 'the first runtime keeps running');
   assert.deepEqual(await storeInventory(stateDir, everyName), stores, 'the refused start left the stores as they were');
 
@@ -207,6 +254,8 @@ test('production modules qualify on this host: platform, native dependencies, pr
   await stop(first);
   const stopMs = Date.now() - stopping;
   (await holdRuntimeLease(stateDir)).release();
+  const leaseAfterStop = await childLine(LEASE_PROBE, [stateDir]);
+  assert.equal(leaseAfterStop, 'taken', 'another process can take the lease once the runtime stopped');
   const afterStop = await storeInventory(stateDir, everyName);
   for (const [name, {store, wal}] of Object.entries(afterStop)) if (store !== undefined) assert.equal(wal, false, `${name}'s log is checkpointed at a clean stop`);
 
@@ -236,12 +285,14 @@ test('production modules qualify on this host: platform, native dependencies, pr
     platform, native,
     modules: Object.fromEntries(everyName.map(name => [name, {
       startup: startup[name], reopen: reopen[name], ...(name === 'core' ? {} : {emptySection: emptySection[name]}),
-      store: stores[name].store === undefined ? 'none' : {mode: stores[name].store.mode, logAfterStop: afterStop[name].wal, sameAfterReopen: reopened[name].store?.ino === stores[name].store.ino},
+      store: stores[name].store === undefined ? 'none' : {mode: stores[name].store.mode, logWhileRunning: stores[name].wal, logAfterStop: afterStop[name].wal, sameAfterReopen: reopened[name].store?.ino === stores[name].store.ino},
       folder: stores[name].folder === undefined ? 'none' : {mode: stores[name].folder.mode},
     }])),
-    exclusiveStartup: {lease: 'runtime-running', secondRuntime: competing, competingCoreFailed},
+    // The lease outcomes are what a separate process observed. A stop here releases the lease because the test owns the
+    // runtime in-process; the container entrypoint holds its ownership until its process exits.
+    exclusiveStartup: {probes: 'child-process', leaseWhileRunning, secondRuntime: competing.outcome, secondRuntimeModules: competing.modules, competingCoreFailed: competing.coreFailed},
     portConflict: {outcome: conflict, storesCreated: false},
-    gracefulStop: {ms: stopMs, leaseReleased: true},
+    gracefulStop: {ms: stopMs, leaseAfterStop},
   };
   console.log(JSON.stringify(record));
 });
