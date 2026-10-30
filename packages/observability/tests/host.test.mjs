@@ -198,3 +198,15 @@ test('each profile registers only its own span names, so an earlier host records
  assert.equal(projectSpan(span,{...record,schema_version:'1.1'},'bunny.outcome.publish'),undefined);
  assert.ok(projectSpan(span,{...record,schema_version:'1.1'},'bunny.helper.run'));
 });
+
+test('a Collector origin is an owned host only: numeric loopback or Docker Desktop\'s host alias, never a name or a LAN address (Hub #813)',async()=>{
+ const {createOwnedOrigins,OWNED_ORIGIN_HOSTS}=await import('../runtime/propagation.mjs');
+ assert.deepEqual(OWNED_ORIGIN_HOSTS,['127.0.0.1','[::1]','host.docker.internal']);
+ for(const origin of ['http://127.0.0.1:4318','http://[::1]:4318','http://host.docker.internal:4318'])assert.equal(createOwnedOrigins([origin]).has(origin),true,origin);
+ for(const origin of ['https://host.docker.internal:4318','http://host.docker.internal:4318/','http://localhost:4318','http://192.168.1.20:4318','http://collector:4318','http://user:pw@host.docker.internal:4318','http://host.docker.internal.example:4318'])
+  assert.throws(()=>createOwnedOrigins([origin]),/owned loopback origin/,origin);
+ // The host adapter takes the alias as it takes a numeric origin, and starts no network work by constructing.
+ const host=await createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://host.docker.internal:4318',localSink:()=>{}});
+ await host.shutdown();
+ await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://localhost:4318',localSink:()=>{}}),/owned loopback origin/);
+});

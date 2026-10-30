@@ -121,7 +121,7 @@ with `capture_context()` and restore inside `with host.run_context(captured)` at
 an owned thread/queue handoff. A persisted process without context begins a new
 trace and may carry its allowlisted ticket; it must not invent a parent. Call
 `close()` at quiescence. Detached workers supply an owned `local_sink` or use the
-explicit loopback Collector sink; this package installs no service or log store.
+explicit owned Collector origin, a numeric loopback address or Docker Desktop's `host.docker.internal` (Hub #813); this package installs no service or log store.
 
 Both runtimes keep the original queue/record limits, use one log ingestion path,
 and expose safe counts. Local sinks must return promptly (Node may return a

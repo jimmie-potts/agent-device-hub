@@ -15,7 +15,8 @@ import {labelJourney} from './label-journey.ts';
 
 const DESKTOP = {...OTHER, provider: 'codex', client: 'desktop', sourceId: 'codex-desktop'} as const;
 const PAIRED = 'http://127.0.0.1:47123/';
-const world = await startWorld({placeLinks: {wall: PAIRED}});
+const GRAFANA = 'http://127.0.0.1:3000/';
+const world = await startWorld({placeLinks: {wall: PAIRED, grafana: GRAFANA}});
 const browser = await chromium.launch({headless: true});
 const output = process.env.DASHBOARD_RECEIPTS;
 if (output !== undefined) await mkdir(output, {recursive: true});
@@ -173,9 +174,13 @@ try {
   await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
   assert.equal(new URL(page.url()).hash, '#/connections');
   assert.deepEqual(await page.locator('nav a[aria-current=page]').allTextContents(), ['Settings']);
-  assert.deepEqual(await page.locator('.cards.two>.card>h2').allTextContents(), ['Connection', 'Running build', 'Operator tools', 'Observed sources']);
+  assert.deepEqual(await page.locator('.cards.two>.card>h2').allTextContents(), ['Connection', 'Running build', 'Operator tools', 'Observed sources', 'Diagnostics']);
+  // The diagnostics viewer link (Hub #813) comes from the runtime's own links, like a Local place, and names the Mac's loopback.
+  await page.locator('[data-diagnostics=linked]').waitFor();
+  assert.equal(await page.getByRole('link', {name: 'Open Grafana Local'}).getAttribute('href'), GRAFANA);
+  checks.push('Connections links the Mac-local Grafana viewer the runtime names');
   const cards = await page.locator('.cards.two>.card').evaluateAll(all => all.map(card => card.getBoundingClientRect().toJSON() as DOMRect));
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 5);
   assert.ok((cards[1]?.left ?? 0) > (cards[0]?.right ?? 0), 'connection cards sit side by side at 1440');
   for (const [index, card] of cards.entries()) {
     for (const other of cards.slice(index + 1)) {

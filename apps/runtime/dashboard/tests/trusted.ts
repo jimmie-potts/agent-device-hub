@@ -81,6 +81,9 @@ try {
     const second = await open(context, `${world.url}/#/connections`);
     await signedIn(second);
     await second.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
+    // A run names no viewer, so the Diagnostics card offers no link: a preview never leads to an installed Grafana (Hub #813).
+    await second.locator('[data-diagnostics=absent]').waitFor();
+    assert.equal(await second.getByRole('link', {name: 'Open Grafana Local'}).count(), 0);
     assert.equal(new URL(second.url()).hash, '#/connections', 'a bookmarked page keeps its address');
     assert.equal(world.browserSessions(), 1, 'a reload and a second tab use the live session');
     const localhost = await open(await fresh(), world.url.replace('127.0.0.1', 'localhost'));

@@ -147,6 +147,15 @@ class HostTests(unittest.TestCase):
             release.set()
             host.close()
 
+    def test_collector_origin_is_an_owned_host_only(self):
+        from bunny_observability.host import _Transport
+        for origin in ('http://127.0.0.1:4318', 'http://[::1]:4318', 'http://host.docker.internal:4318'):
+            self.assertEqual(_Transport(origin, 'logs')._path, '/v1/logs', origin)
+        for origin in ('https://host.docker.internal:4318', 'http://host.docker.internal:4318/', 'http://localhost:4318',
+                       'http://192.168.1.20:4318', 'http://collector:4318', 'http://user:pw@host.docker.internal:4318'):
+            with self.assertRaises(ValueError, msg=origin):
+                _Transport(origin, 'logs')
+
     def test_absent_collector_does_not_change_domain_outcome(self):
         import socket
         with socket.socket() as selected:

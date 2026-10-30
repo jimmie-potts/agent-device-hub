@@ -1,0 +1,273 @@
+{
+  "uid": "bunny-diagnostics",
+  "title": "B.U.N.N.Y. diagnostics",
+  "tags": [
+    "bunny"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "",
+  "description": "Starter queries over the runtime's diagnostic records (Hub #813). Pick a module, severity, event or outcome, or paste a trace ID; open a record's `trace_id` to reach its trace in Tempo, and a span's logs to come back.",
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "bunny-loki"
+        },
+        "query": "label_values({service_namespace=\"bunny\"}, deployment_environment_name)",
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "bunny-loki"
+        },
+        "query": "label_values({service_namespace=\"bunny\"}, service_name)",
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "module",
+        "label": "Module",
+        "type": "custom",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": null,
+        "query": "core,companions,codex-desktop,lifx,pixoo,nanoleaf,onn,wemo,tidbyt,playback,roborock,wispr",
+        "options": []
+      },
+      {
+        "name": "severity",
+        "label": "Severity",
+        "type": "custom",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": null,
+        "query": "DEBUG,INFO,WARN,ERROR,FATAL",
+        "options": []
+      },
+      {
+        "name": "event",
+        "label": "Event",
+        "type": "custom",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": null,
+        "query": "runtime.module.failed,runtime.handler.failed,operation.failed,command.completed,command.rejected,device.unavailable,device.available,message.received,runtime.started,runtime.stopped,telemetry.dropped",
+        "options": []
+      },
+      {
+        "name": "outcome",
+        "label": "Outcome",
+        "type": "custom",
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".*",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": null,
+        "query": "succeeded,failed,uncertain,rejected,accepted,queued,cancelled",
+        "options": []
+      },
+      {
+        "name": "trace",
+        "label": "Trace ID",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Records (newest first)",
+      "datasource": {
+        "type": "loki",
+        "uid": "bunny-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 14
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false,
+        "showLabels": false
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "bunny-loki"
+          },
+          "expr": "{service_namespace=\"bunny\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"} | bunny_module=~\"$module\" | severity_text=~\"$severity\" | event_name=~\"$event\" | bunny_outcome=~\"$outcome\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Failures and warnings",
+      "datasource": {
+        "type": "loki",
+        "uid": "bunny-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false,
+        "showLabels": false
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "bunny-loki"
+          },
+          "expr": "{service_namespace=\"bunny\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"} | severity_number >= 13 | bunny_module=~\"$module\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "One trace's records",
+      "datasource": {
+        "type": "loki",
+        "uid": "bunny-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false,
+        "showLabels": false
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "bunny-loki"
+          },
+          "expr": "{service_namespace=\"bunny\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"} | trace_id=\"$trace\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "type": "traces",
+      "title": "One trace's spans (Tempo)",
+      "datasource": {
+        "type": "tempo",
+        "uid": "bunny-tempo"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "bunny-tempo"
+          },
+          "queryType": "traceql",
+          "query": "$trace",
+          "limit": 20
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "How to read this",
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Records are the runtime's diagnostic-contract records; labels are `service_namespace`, `service_name` and `deployment_environment_name`, everything else is structured metadata (`bunny_module`, `event_name`, `severity_text`, `bunny_outcome`, `trace_id`, `span_id`). Open a record's details and follow **Open trace** on `trace_id`; in a trace, a span's **Logs for this span** runs the Loki query for that trace. Explore (Loki or Tempo) runs any query. Retention is seven days, and the collector drops what the backend refuses; missing history is a gap, never proof that nothing happened."
+      }
+    }
+  ]
+}

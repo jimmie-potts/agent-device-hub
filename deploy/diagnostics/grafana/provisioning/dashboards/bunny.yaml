@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: bunny
+    folder: B.U.N.N.Y.
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/bunny
+      foldersFromFilesStructure: false
