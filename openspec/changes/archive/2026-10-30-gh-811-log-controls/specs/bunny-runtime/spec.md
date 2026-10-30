@@ -41,8 +41,8 @@ Before it starts the modules, the runtime SHALL admit each module whose manifest
 - **THEN** the recorded span keeps the device ID, and no span holds the token
 
 #### Scenario: A secret in an error that escapes every module
-- **WHEN** an error whose code is a module's token escapes every module's flow and ends the process
-- **THEN** `runtime.failed` is written with the error's type and without the code, and no record holds the token
+- **WHEN** in the shipped process a module reads its token and a listener it added to an emitter outside every module's flow throws an error whose code is that token
+- **THEN** the process exits 1 with a `runtime.failed` record carrying the error's type without its code, and no record or stdout holds the token
 
 #### Scenario: The shipped process with a configuration file
 - **WHEN** the shipped entry point runs with `--config` naming a relative path, a missing file, a file with mode 644, a file that is not JSON, a link, and a valid file

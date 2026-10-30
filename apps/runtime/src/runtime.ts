@@ -222,8 +222,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   await admitBoundCoreOwnership(modules, options.stateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
-  const stateDir = await prepareStateDirectory(options.stateDir);
+  // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
+  const stateDir = await prepareStateDirectory(options.stateDir);
   // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
   // level applies to that module's records only, and may name only a module this runtime hosts.
   const levels = config?.diagnostics?.modules ?? {};

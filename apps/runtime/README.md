@@ -1111,9 +1111,10 @@ process's `--log-level` applies, `info` by default. `modules` gives one module
 its own floor by name, so `"sign": "debug"` writes the sign module's DEBUG
 records and no other module's. The file may name only modules this runtime
 hosts; another name, another member, a level outside those four (`fatal`
-included) or more than 32 entries refuses the file with `config-invalid`, a
-malformed section before any state effect and an unhosted name at startup,
-before any module starts. On the container profiles a hosted module is the core
+included) or more than 32 entries refuses the file with `config-invalid`: a
+malformed section before any state effect, since the runtime reads the file
+before it prepares its state directory, and an unhosted name at startup, before
+any module starts. On the container profiles a hosted module is the core
 or a module with a section of its own. The floors filter log records only: the
 same floor feeds every log sink the runtime writes to, so the journal and an
 export agree, while spans are recorded whatever the floor, and the runtime's own
