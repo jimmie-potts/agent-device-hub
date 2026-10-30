@@ -5,6 +5,66 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
 import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
+import * as entrypoint from '../entrypoint.mjs';
+
+const productionEdge = () => ({credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback',
+  launcher: false, mcp: false, privateProxy: {origin: 'https://synthetic.ts.net', tokenDigest: '1'.repeat(64)}});
+
+test('production selection defaults disabled, admits explicit control and bounds the optional Pixoo address', () => {
+  assert.equal(containerOptions({BUNNY_ACCESS: 'production'}).control, 'disabled');
+  assert.equal(containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}).port, 18788);
+  assert.equal(containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled', BUNNY_PIXOO_BIND: '192.168.1.10'}).pixooBind, '192.168.1.10');
+  for (const env of [
+    {BUNNY_ACCESS: 'production', BUNNY_PORT: '8788'}, {BUNNY_ACCESS: 'production', BUNNY_CONFIG: '/other'},
+    {BUNNY_ACCESS: 'production', BUNNY_PIXOO_BIND: '192.168.1.10'},
+    ...['', '0.0.0.0', '127.0.0.1', '::', '8.8.8.8', '192.168.1.10\n'].map(BUNNY_PIXOO_BIND => ({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled', BUNNY_PIXOO_BIND})),
+    {BUNNY_ACCESS: 'private-proxy', BUNNY_PIXOO_BIND: '192.168.1.10'},
+  ]) assert.throws(() => containerOptions(env), {message: 'container-options-refused'});
+});
+
+test('production admits only configured shipped modules in dependency order and keeps disabled control safe', () => {
+  const factory = (name, devices = [], after = []) => ({name, after, create: () => ({manifest: {name,
+    configure: () => ({config: {}, devices})}})});
+  const core = factory('core'), playback = factory('playback', ['speaker']), tidbyt = factory('tidbyt', ['display'], ['playback']);
+  const quiet = factory('quiet'), unused = factory('unused', ['unused']);
+  const runtime = {coreFactory: core, shippedModules: [core, playback, tidbyt, quiet, unused],
+    buildModules: factories => factories.map(each => each.create())};
+  const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'});
+  const config = {modules: {tidbyt: {}, quiet: {}, playback: {secrets: {token: '/run/secrets/bunny/token'}}}, edge: productionEdge()};
+  assert.deepEqual(entrypoint.productionModules(config, runtime, checkConfiguration, options).factories.map(({name}) => name),
+    ['core', 'playback', 'tidbyt', 'quiet']);
+  assert.deepEqual(entrypoint.productionModules({modules: {quiet: {}}, edge: productionEdge()}, runtime, checkConfiguration,
+    containerOptions({BUNNY_ACCESS: 'production'})).factories.map(({name}) => name), ['core', 'quiet']);
+  for (const mutate of [
+    c => {c.modules.unknown = {};}, c => {delete c.modules.playback;},
+    c => {c.modules.playback.secrets.token = '/etc/passwd';},
+    c => {c.modules.playback.secrets.token = '/run/secrets/bunny/../outside';},
+    c => {c.modules.playback.secrets.token = '/run/secrets/bunny//token';},
+    c => {delete c.edge.privateProxy;}, c => {c.edge.mcp = true;},
+  ]) {
+    const changed = structuredClone(config); mutate(changed);
+    assert.throws(() => entrypoint.productionModules(changed, runtime, checkConfiguration, options), {message: 'container-browser-config-refused'});
+  }
+  assert.throws(() => entrypoint.productionModules(config, runtime, checkConfiguration,
+    containerOptions({BUNNY_ACCESS: 'production'})), {message: 'container-browser-config-refused'});
+});
+
+test('production hosted-GIF selection must match the configured Pixoo listener without widening the gateway', () => {
+  const core = {name: 'core', create: () => ({manifest: {name: 'core'}})};
+  const pixoo = {name: 'pixoo', create: () => ({manifest: {name: 'pixoo', configure: () => ({config: {}, devices: ['pixoo']})}})};
+  const runtime = {coreFactory: core, shippedModules: [core, pixoo], buildModules: factories => factories.map(each => each.create())};
+  const config = {modules: {pixoo: {hostedGif: {bind: '0.0.0.0', port: 41240, origin: 'http://192.168.1.10:41240'}}}, edge: productionEdge()};
+  const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled', BUNNY_PIXOO_BIND: '192.168.1.10'});
+  assert.equal(entrypoint.productionModules(config, runtime, checkConfiguration, options).modules.length, 2);
+  assert.throws(() => entrypoint.productionModules(config, runtime, checkConfiguration,
+    containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'})), {message: 'container-browser-config-refused'});
+  for (const change of [{bind: '127.0.0.1'}, {port: 41241}, {origin: 'http://192.168.1.11:41240'}]) {
+    const changed = structuredClone(config); Object.assign(changed.modules.pixoo.hostedGif, change);
+    assert.throws(() => entrypoint.productionModules(changed, runtime, checkConfiguration, options), {message: 'container-browser-config-refused'});
+  }
+  assert.throws(() => entrypoint.productionModules({modules: {}, edge: productionEdge()}, runtime, checkConfiguration, options),
+    {message: 'container-browser-config-refused'});
+});
 
 test('device control defaults off while the core remains selected', () => {
   assert.equal(containerOptions({}).control, 'disabled');

@@ -25,8 +25,8 @@ scripts and image at the same source revision.
 self-sufficient hub host. The PC is optional to its normal operation. This guide
 operates the delivered container profiles; their qualification limits still apply.
 The local browser profile below is loopback-only and runs the core plus only the
-modules that reach no device. Production
-remote-client and device operation require their own qualified profile and inputs;
+modules that reach no device. The [production profile](#production-device-profile)
+adds explicit device admission with separately qualified dependencies and targets;
 do not enable them by weakening the local profile's admission rules.
 
 Keep one selected release outside active development and preview checkouts: the
@@ -252,6 +252,76 @@ again, import credentials or replace configuration. This profile change does not
 change the runtime storage format. Start only after source review, then verify
 actual `NetworkSettings.Ports`, browser access, core health and strict local
 admission. Preserve the data and stop the new profile if verification fails.
+
+## Production device profile
+
+Use this explicit profile after the selected source writer has stopped and its
+restart actors are excluded under the owning cutover. A local state lease cannot
+exclude another computer's writer. #568 owns the fresh-state device handoff.
+
+Prepare an owner-only Compose file outside Git from the local and production
+definitions, then pin its reviewed immutable image as for the local profile:
+
+```text
+docker compose -f deploy/container/compose.local.yaml -f deploy/container/compose.production.yaml config > PRIVATE_PRODUCTION_COMPOSE
+```
+
+The override selects `BUNNY_ACCESS=production`. Control defaults to `disabled`.
+Set `BUNNY_CONTROL=enabled` explicitly when rendering the selected cutover
+configuration after its writer handoff. An image replacement alone changes
+neither profile nor control mode. Use the same private Compose file and project
+for every operator command.
+
+The gateway stays on host `127.0.0.1:18788` through the existing private HTTPS
+forwarder. Keep the existing `edge.privateProxy`, credential path
+`/run/secrets/bunny/edge.json`, `browserAccess: "trusted-loopback"`,
+`launcher: false`, `mcp: false` and no Wi-Fi proxy. Private-profile credential
+scope rules and the optional local producer's ingest-only grant remain enforced.
+Host-local and private-proxy profiles still refuse device control and named devices.
+
+Add only wanted shipped module sections to the private runtime configuration.
+They start in shipped order, with a section for every declared prerequisite.
+Unknown names refuse before state effects. Unconfigured modules stay inactive.
+Existing non-device modules and remote-only Codex Desktop can remain configured.
+With control disabled, only the existing non-device admission path is available.
+
+Use each module's existing supported-model and configuration contracts. Secret
+references must be canonical absolute paths beneath `/run/secrets/bunny/`,
+backed by owner-only files in the read-only secrets volume. Unsafe references
+refuse before state effects. Invalid module input or unavailable dependencies
+retain their normal refused, failed or unavailable result.
+
+No host dependency mount is supplied. The operator refuses extra mounts,
+device passthrough, added capabilities, a writable root and privileged mode.
+ONN's qualified ADB server/socket/executable/key setup and Roborock's selected
+private target/session remain #565/#568 inputs. Admission or health does not
+qualify those dependencies or physical behavior.
+
+### Optional Pixoo hosted-GIF listener
+
+The selected hosted-GIF profile needs a separate device-facing HTTP listener.
+Select the Mac's actual private IPv4 in `BUNNY_PIXOO_BIND` and append
+`deploy/container/compose.pixoo.yaml` when rendering enabled production Compose.
+This adds only `PRIVATE_MAC_IPV4:41240:41240/tcp`. Never guess the address or
+select a wildcard, loopback, IPv6 or public host address.
+
+The private Pixoo section must match:
+
+```json
+"hostedGif": {"bind": "0.0.0.0", "port": 41240, "origin": "http://PRIVATE_MAC_IPV4:41240"}
+```
+
+Replace the placeholder privately. The container-side listener binds within
+its namespace; its published host address remains the selected private IPv4.
+Missing/mismatched selection refuses startup. Other Pixoo profiles need no
+override. The gateway remains loopback-only. Device fetch reachability and
+authorization need their separate physical check.
+
+The operator checks configured and effective publication and the dedicated
+ordinary project bridge before and after start. It stops its selected running
+profile when isolation checks fail. State/config/secrets remain distinct ordinary
+local volumes with their existing read/write directions. Maintenance workers
+still use network none and never activate devices.
 
 ## Replace an image
 
@@ -500,12 +570,27 @@ Build with Node 24, then run:
 npm run build
 npm run lint:js
 npm run typecheck
-node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs
+node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs
 ```
 
 Linux tests exercise real lease contention, committed WAL records, retained
 assets, database/key pairing, unsafe files, corrupt archives and interruption
-with a pending marker. The host wrapper tests exact Docker selections. Actual
+with a pending marker. The host wrapper tests exact Docker selections.
+
+Run the production acceptance test with `BUNNY_CONTAINER_ACCEPTANCE=1` only
+inside an owned disposable Linux container with networking disabled, no host
+ports/files/credentials and a fresh writable `/run/secrets/bunny` directory:
+
+```text
+node --test deploy/container/tests/production-acceptance.test.mjs
+```
+
+It uses the production selector with the existing simulated factories and fresh
+synthetic state for household modules, companions and remote Desktop. It also
+checks honest missing-dependency refusals. There is no production simulation
+flag. Ordinary source runs report this explicit exercise skipped.
+
+Actual
 operator acceptance is separate from those source tests. At code revision
 `b7d7e488f1c4c9087a6455cfd1030dd78f437e33`, Windows-hosted Linux AMD64 and
 Mac-hosted Linux ARM64 each passed 47 focused Linux tests and an independent

@@ -12,6 +12,12 @@ Bearer credentials reach the gateway unchanged for its normal scope checks.
 Tailscale membership and identity headers grant no browser control. Health,
 launcher exchange, MCP, administrative and device-role credentials stay local.
 
+The explicit [production profile](../../docs/bunny-container.md#production-device-profile)
+reuses this same private entry while admitting configured shipped device modules
+after explicit control enablement. The existing private-proxy profile continues
+to refuse devices. Neither profile changes the proxy's authentication or origin
+policy, and image replacement alone activates no device.
+
 ## Prepare the selected installation
 
 Follow [UPGRADE.md](UPGRADE.md) and the

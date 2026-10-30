@@ -1,5 +1,24 @@
 # ADR 0008: Make the Mac Mini the primary B.U.N.N.Y. host
 
+## Explicit production profile, 2026-10-30
+
+[Hub #1233](https://github.com/jimmie-potts/agent-device-hub/issues/1233) adds an
+explicit production profile for configured shipped modules using the existing
+private ingress, loopback gateway, private volumes and manual operator. Existing
+host-local/private-proxy profiles retain disabled control and named-device
+refusals. Production defaults disabled too; device admission requires explicit
+enablement and valid module configuration. Its bounded optional Pixoo hosted-GIF
+binding is separate from the gateway.
+
+The owner selected fresh device-module state and accepted downtime and old-module
+data loss under #568. Keep the existing Mac core and retained WSL files intact.
+One stopped/disabled PC device runtime precedes incremental qualified Mac
+activation. PC hooks and the selected Desktop collector remain independent
+producers. This supersedes the old-store transfer requirement below for that
+cutover, while retaining general backup/restore and device-safety rules.
+Source admission, ARM64 dependency qualification, installed readback and physical
+acceptance remain separate. Follow the [production guide](../bunny-container.md#production-device-profile).
+
 ## Personal installation scope — 2026-10-28
 
 The owner narrowed [#1167](https://github.com/jimmie-potts/agent-device-hub/issues/1167)

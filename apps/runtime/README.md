@@ -71,7 +71,11 @@ Use the [container operator guide](../../docs/bunny-container.md) for its manual
 lifecycle. The limited Mac-local browser profile runs the core and only the modules
 that reach no device, publishes loopback only and does not qualify remote clients
 or selected production devices. Shipped module availability is not installed
-acceptance. [SETUP.md](SETUP.md) and
+acceptance. The explicit [production profile](../../docs/bunny-container.md#production-device-profile)
+admits configured shipped modules after control is explicitly enabled, using the
+same private ingress and loopback gateway. It preserves both restricted browser
+profiles. Dependency qualification and physical handoff remain separate.
+[SETUP.md](SETUP.md) and
 [UPGRADE.md](UPGRADE.md) retain the established WSL installation's procedures;
 they do not install the Mac container or qualify cross-host state transfer.
 

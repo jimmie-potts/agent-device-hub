@@ -841,12 +841,17 @@ built-in or a file read in its module graph fails the suite (Hub #922).
 ## Runtime checks
 
 For the manual container profile, build first and run
-`node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs`
+`node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs`
 with Node 24 on Linux. These cover the real owner lease, unsafe state and pending
 restore refusal, archive integrity, WAL/assets/key pairing and separate empty
 restore. Run root build/type/lint and the runtime ownership tests as well.
 Use only disposable synthetic volumes for actual image/operator acceptance;
-see [the operator guide](bunny-container.md). Source tests, each architecture's
+see [the operator guide](bunny-container.md). Its explicit production exercise
+requires `BUNNY_CONTAINER_ACCEPTANCE=1` inside a network-disabled disposable
+Linux container with synthetic private secrets; ordinary source runs skip it.
+It covers configured household modules, preserved non-device modules and honest
+missing-dependency refusals through the production selector and simulated transports.
+Source tests, each architecture's
 container rehearsal, cross-architecture archive transfer and live installation
 are separate evidence.
 

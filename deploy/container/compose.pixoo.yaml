@@ -1,0 +1,7 @@
+# Optional production-only hosted-GIF listener. Select the Mac's actual private IPv4.
+services:
+  core:
+    environment:
+      BUNNY_PIXOO_BIND: ${BUNNY_PIXOO_BIND:?select the private Mac IPv4 for the Pixoo listener}
+    ports:
+      - "${BUNNY_PIXOO_BIND}:41240:41240/tcp"

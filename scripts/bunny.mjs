@@ -6,6 +6,7 @@ import {parseArgs} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve, isAbsolute} from 'node:path';
 import {lstat, realpath} from 'node:fs/promises';
+import {containerOptions} from '../deploy/container/entrypoint.mjs';
 
 const execute = promisify(execFile);
 const composeDefault = fileURLToPath(new URL('../deploy/container/compose.yaml', import.meta.url));
@@ -51,11 +52,14 @@ function container(info, project) {
       || m.RW !== (m.Destination === '/var/lib/bunny'))) refuse();
   return mounts;
 }
-function localBinding(ports) {
+function localBinding(ports, pixooBind) {
   const bindings = ports?.['18788/tcp'];
-  return ports !== undefined && ports !== null && Object.keys(ports).length === 1
+  const pixoo = ports?.['41240/tcp'];
+  return ports !== undefined && ports !== null && Object.keys(ports).length === (pixooBind === undefined ? 1 : 2)
     && Array.isArray(bindings) && bindings.length === 1
-    && bindings[0].HostIp === '127.0.0.1' && bindings[0].HostPort === '18788';
+    && bindings[0].HostIp === '127.0.0.1' && bindings[0].HostPort === '18788'
+    && (pixooBind === undefined || (Array.isArray(pixoo) && pixoo.length === 1
+      && pixoo[0].HostIp === pixooBind && pixoo[0].HostPort === '41240'));
 }
 async function access(info, project, run) {
   const ports = info.HostConfig?.PortBindings ?? {};
@@ -66,6 +70,8 @@ async function access(info, project, run) {
   };
   const profile = value('BUNNY_ACCESS') ?? 'isolated';
   const ingestSource = value('BUNNY_INGEST_SOURCE');
+  const pixooBind = value('BUNNY_PIXOO_BIND');
+  if (pixooBind !== undefined && profile !== 'production') refuse();
   // A Docker network-mode identifier, not an evidence outcome.
   const isolatedNetwork = 'none';
   if (profile === 'isolated') {
@@ -76,13 +82,25 @@ async function access(info, project, run) {
   }
   const name = project + '_local';
   const networks = info.NetworkSettings?.Networks;
-  if (!['host-local', 'private-proxy'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
+  if (profile === 'production') {
+    containerOptions(Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
+      'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]])));
+    if (info.HostConfig?.Privileged === true || info.HostConfig?.ReadonlyRootfs !== true
+      || JSON.stringify(info.HostConfig?.CapDrop) !== JSON.stringify(['ALL'])
+      || JSON.stringify(info.HostConfig?.SecurityOpt) !== JSON.stringify(['no-new-privileges:true'])
+      || (info.HostConfig?.CapAdd ?? []).length !== 0
+      || (info.HostConfig?.Devices ?? []).length !== 0
+      || info.Mounts.some(m => !['/var/lib/bunny', '/etc/bunny', '/run/secrets/bunny', '/tmp'].includes(m.Destination)
+        || (m.Destination === '/tmp' && m.Type !== 'tmpfs'))) refuse();
+    for (const mount of info.Mounts.filter(m => m.Type === 'volume')) await ordinaryVolume(mount.Name, run);
+  }
+  if (!['host-local', 'private-proxy', 'production'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
     || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
-    || value('BUNNY_CONTROL') !== 'disabled' || value('BUNNY_PORT') !== '18788'
+    || (profile !== 'production' && value('BUNNY_CONTROL') !== 'disabled') || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
-    || !localBinding(ports)
-    || (info.State?.Running && !localBinding(info.NetworkSettings?.Ports))
+    || !localBinding(ports, pixooBind)
+    || (info.State?.Running && !localBinding(info.NetworkSettings?.Ports, pixooBind))
     || info.HostConfig?.NetworkMode !== name || !networks || Object.keys(networks).length !== 1 || !networks[name]) refuse();
   const selected = JSON.parse(await run(['network', 'inspect', name]));
   const network = selected[0];
@@ -137,7 +155,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
     }
     try {await access(info, plan.project, run);}
     catch (error) {
-      if (info.State.Running && ['host-local', 'private-proxy'].includes(info.Config.Labels['io.bunny.access'])) await run(['stop', '--timeout', '30', info.Id]);
+      if (info.State.Running && ['host-local', 'private-proxy', 'production'].includes(info.Config.Labels['io.bunny.access'])) await run(['stop', '--timeout', '30', info.Id]);
       throw error;
     }
     if (info.State.Status === 'running') return {operation: 'start', status: 'running', health: 'not-checked'};

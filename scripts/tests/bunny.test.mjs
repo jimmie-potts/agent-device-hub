@@ -31,6 +31,7 @@ function localFixture(profile = 'host-local') {
   Object.assign(f.info.Config.Labels,{'io.bunny.access':profile});
   f.info.Config.Env=['BUNNY_ACCESS='+profile,'BUNNY_CONTROL=disabled','BUNNY_PORT=18788'];
   f.info.HostConfig.NetworkMode='synthetic_local';
+  Object.assign(f.info.HostConfig, {ReadonlyRootfs: true, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true']});
   f.info.HostConfig.PortBindings={'18788/tcp':[{HostIp:'127.0.0.1',HostPort:'18788'}]};
   f.info.NetworkSettings.Networks={synthetic_local:{NetworkID:networkId}};
   const network={Id:networkId,Name:'synthetic_local',Driver:'bridge',Scope:'local',Internal:false,Attachable:false,EnableIPv6:false,
@@ -43,6 +44,63 @@ function localFixture(profile = 'host-local') {
   };
   return {...f,network,run};
 }
+
+test('production operator accepts explicit control and refuses unsafe mounts and extra listeners before start', async () => {
+  const allowed = localFixture('production');
+  allowed.info.Config.Env[1] = 'BUNNY_CONTROL=enabled';
+  assert.equal((await operate(plan('start'), allowed.run)).status, 'running');
+  const disabled = localFixture('production');
+  assert.equal((await operate(plan('start'), disabled.run)).status, 'running');
+  for (const mutate of [
+    f => {f.info.Config.Env[1] = 'BUNNY_CONTROL=yes';},
+    f => {f.info.Mounts.push({Type: 'bind', Source: '/private/host', Destination: '/host', RW: true});},
+    f => {f.info.HostConfig.Privileged = true;},
+    f => {f.info.HostConfig.ReadonlyRootfs = false;},
+    f => {f.info.HostConfig.CapAdd = ['NET_ADMIN'];},
+    f => {f.info.HostConfig.CapDrop = [];},
+    f => {f.info.HostConfig.SecurityOpt = [];},
+    f => {f.info.HostConfig.Devices = [{PathOnHost: '/dev/synthetic'}];},
+    f => {f.info.HostConfig.PortBindings['1234/tcp'] = [{HostIp: '0.0.0.0', HostPort: '1234'}];},
+  ]) {
+    const f = localFixture('production'); mutate(f);
+    await assert.rejects(operate(plan('start'), f.run));
+    assert.ok(!f.calls.some(args => args[0] === 'start'));
+  }
+});
+
+test('production operator bounds the optional Pixoo binding and checks its effective publication', async () => {
+  const create = () => {
+    const f = localFixture('production');
+    f.info.Config.Env[1] = 'BUNNY_CONTROL=enabled';
+    f.info.Config.Env.push('BUNNY_PIXOO_BIND=192.168.1.10');
+    f.info.HostConfig.PortBindings['41240/tcp'] = [{HostIp: '192.168.1.10', HostPort: '41240'}];
+    const run = async args => {
+      const result = await f.run(args);
+      if (args[0] === 'start') f.info.NetworkSettings.Ports['41240/tcp'] = [{HostIp: '192.168.1.10', HostPort: '41240'}];
+      return result;
+    };
+    return {...f, run};
+  };
+  const allowed = create();
+  assert.equal((await operate(plan('start'), allowed.run)).status, 'running');
+  for (const mutate of [
+    f => {f.info.HostConfig.PortBindings['41240/tcp'][0].HostIp = '0.0.0.0';},
+    f => {f.info.HostConfig.PortBindings['41240/tcp'][0].HostPort = '41241';},
+    f => {f.info.Config.Env[1] = 'BUNNY_CONTROL=disabled';},
+    f => {f.info.Config.Env.push('BUNNY_PIXOO_BIND=192.168.1.10');},
+  ]) {
+    const f = create(); mutate(f);
+    await assert.rejects(operate(plan('start'), f.run));
+    assert.ok(!f.calls.some(args => args[0] === 'start'));
+  }
+  const widened = create();
+  await assert.rejects(operate(plan('start'), async args => {
+    const result = await widened.run(args);
+    if (args[0] === 'start') widened.info.NetworkSettings.Ports['41240/tcp'][0].HostIp = '0.0.0.0';
+    return result;
+  }));
+  assert.ok(widened.calls.some(args => args[0] === 'stop'));
+});
 
 test('private proxy operations keep loopback publication, selected networks and matching profile labels',async()=>{
   const allowed=localFixture('private-proxy');
