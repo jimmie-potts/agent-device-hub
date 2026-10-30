@@ -431,7 +431,7 @@ export function checkDiagnosticsSection(value: unknown): DiagnosticsConfig {
 function ownedOrigin(value: string): boolean {
   try {
     createOwnedOrigins([value]);
-    return true;
+    return new URL(value).port !== '';
   } catch {
     return false;
   }

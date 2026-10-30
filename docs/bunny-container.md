@@ -360,8 +360,9 @@ limits that bound a week's worst case (Loki 1 MiB/s with a 4 MiB burst and
 refusing backend for 30 seconds and then drops; a runtime whose bounded queue
 drops what the Collector will not take within a second and counts it
 (`telemetry.dropped`, `runtime.stopped`). Memory limits are 256 MiB for the
-Collector, 768 MiB each for Loki and Tempo and 512 MiB for Grafana, about
-2.3 GiB at most beside the runtime's 4 GiB, within the Linux engine's 8 GiB.
+Collector and 768 MiB each for Loki, Tempo and Grafana, about 2.5 GiB at most
+beside the runtime's 4 GiB, within the Linux engine's 8 GiB (Grafana idles near
+400 MiB).
 Nothing here backs up, restores, spools or replays; an outage is a gap in the
 viewer, never a change to an application result, and a missing record is never
 proof that nothing happened. This retention and deletion applies to the three
@@ -423,8 +424,13 @@ labels are the contract's three (`service_namespace`, `service_name`,
 included, is structured metadata. A record's details offer **Open trace** on
 `trace_id`; a span in **Explore → Tempo** offers **Logs for this span**, which
 runs the Loki query for that trace. Grafana itself is reached without a
-password, as the dashboard's trusted loopback sign-in is: another program
-trusted on this Mac may open it, so keep the port on loopback.
+password, as the dashboard's trusted loopback sign-in is, as an anonymous
+Editor: that role keeps Explore (a Viewer has no `datasources:explore` in
+Grafana 12) and may save dashboards, which are diagnostic data too, but cannot
+add a data source, so no program on this Mac can turn Grafana's proxy into a
+relay. Grafana 12 warns that a later release will support only Viewer for
+anonymous access; a future image pin may then need a signed-in Editor. Another
+program trusted on this Mac may open Grafana, so keep the port on loopback.
 
 To discard every diagnostic record and start again, which the owner accepts:
 

@@ -28,12 +28,13 @@ export function streamSink(stream) {
  * span's projected OTLP document through the span pipeline's bounded queue, so tracing works without a Collector.
  * `globalContext: false` installs no process context manager: spans then take explicit parents, and `run` parents an
  * operation only through its explicit `traceparent`. `schemaVersion` names the profile of the host's records and of its
- * spans' metadata; it defaults to the contract's producer default.
+ * spans' metadata; it defaults to the contract's producer default. `associateRecords: false` keeps `emit` from attaching a
+ * record to the active span its trace names, for a host whose spans carry their own attributes.
  */
 export async function createHostDiagnostics({enabled=false,resource,tracing=false,samplingRatio=0.1,
-  collectorOrigin,localSink,localSpanSink,globalContext=true,schemaVersion,queueOptions} = {}) {
+  collectorOrigin,localSink,localSpanSink,globalContext=true,schemaVersion,queueOptions,associateRecords=true} = {}) {
   if(enabled===false)return noHost;
-  if(enabled!==true || typeof tracing!=='boolean' || typeof globalContext!=='boolean' || !Number.isFinite(samplingRatio) || samplingRatio<0 ||
+  if(enabled!==true || typeof tracing!=='boolean' || typeof globalContext!=='boolean' || typeof associateRecords!=='boolean' || !Number.isFinite(samplingRatio) || samplingRatio<0 ||
     samplingRatio>1 || (localSpanSink!==undefined && typeof localSpanSink!=='function') ||
     (schemaVersion!==undefined && !catalog.schema_versions.includes(schemaVersion)))
     throw new TypeError('Invalid host diagnostics configuration');
@@ -78,7 +79,9 @@ export async function createHostDiagnostics({enabled=false,resource,tracing=fals
   } catch(error){await Promise.allSettled([logs.close(),provider?.shutdown()]);for(const sender of transports)sender.close();if(manager){context.disable();manager.disable();}throw error;}
   const safe=action=>{try{return action();}catch{failures=increment(failures);return false;}};
   const host={
-    emit(record){if(closed)return false;return safe(()=>{spans?.observe(record);return logs.emit(record);});},
+    // `associateRecords: false` exports a record without attaching it to an active span of the same scope: a host whose
+    // spans already carry their own attributes, as the runtime's bus spans do, exports its journal through here unchanged.
+    emit(record){if(closed)return false;return safe(()=>{if(associateRecords)spans?.observe(record);return logs.emit(record);});},
     event(eventName,scope='bunny.host',attributes={},severity='INFO'){
       return safe(()=>{const item=createRecord({...profile,timestamp:new Date().toISOString(),event_name:eventName,severity_text:severity,
         resource:base.value.resource,scope:{name:scope,version:'1.0.0'},attributes:{'bunny.provenance':'source',...attributes}});

@@ -63,7 +63,9 @@ export async function startTracing(
       // The runtime writes its own records to stderr itself, so the adapter's local log sink stays empty; its log
       // pipeline carries them to the Collector, every level the writer let through, since the writer holds the floors.
       localSink: () => {}, localSpanSink: line => { sink(line); },
-      ...(collector === undefined ? {} : {collectorOrigin: collector, queueOptions: {minimumSeverity: 1}}),
+      // An exported record is the journal's copy: it is never attached to the span its trace names, since the bus's
+      // spans carry their own attributes and a record from another scope would only count as loss.
+      ...(collector === undefined ? {} : {collectorOrigin: collector, queueOptions: {minimumSeverity: 1}, associateRecords: false}),
     });
   } catch (error) {
     // Only the type: an error's code, such as a module loader's, is not part of this record.

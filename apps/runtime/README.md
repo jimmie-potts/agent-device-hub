@@ -1131,8 +1131,8 @@ records and spans also go to, beside the stderr journal: an exact owned origin,
 `http://host.docker.internal:<port>`, the name Docker Desktop gives a container
 for the Mac's own loopback, which is how the container profiles reach the
 [Mac-local diagnostics stack](../../docs/bunny-container.md#diagnostics-stack)
-without joining another network. Any other host, a DNS name, a path, a query or
-user information refuses the file with `config-invalid`. Without the member
+without joining another network. Any other host, a DNS name, a path, a query,
+user information or a missing port refuses the file with `config-invalid`. Without the member
 nothing leaves the process. See [Logs](#logs) for what the export carries and
 how its loss shows.
 
@@ -1592,9 +1592,14 @@ same backend. The export is never acknowledged to the work that wrote the
 record: a Collector that refuses, stalls or is absent changes no result, reply
 or retry, and the queue drops what the Collector will not take within a second
 and counts it. Once a minute, while that loss grows, the runtime writes one
-`telemetry.dropped` record at WARN with the export's totals so far
+`telemetry.dropped` record at WARN with the adapter's totals so far
 (`bunny.telemetry.dropped_count`, `bunny.telemetry.failure_count`), and no more
-than one a minute, so an outage cannot flood the journal. `runtime.stopped`
+than one a minute, so an outage cannot flood the journal; the summary itself
+goes to the export, so while the Collector is down each minute's summary is
+the next minute's growth and the journal keeps one WARN a minute for as long
+as the outage lasts, and stops once the Collector takes records again. The
+exported records are the journal's copy: the adapter attaches none of them to
+a span, so a span keeps the attributes its owner gave it. `runtime.stopped`
 carries the totals, written after the final flush so they are complete: it is
 the journal's last word, and the export ends before it.
 

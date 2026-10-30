@@ -27,8 +27,9 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
 
 - **Separate pinned images, not the pilot's bundle.** `grafana/loki:3.7.9`, `grafana/tempo:2.10.10`,
   `grafana/grafana:12.4.14` and `otel/opentelemetry-collector-contrib:0.164.0`, each a multi-architecture index
-  pinned by digest and pulled for `linux/arm64`. Each gets its own memory limit (256 MiB, 768 MiB, 768 MiB,
-  512 MiB; about 2.3 GiB in all) and configuration file in the repository, so retention and admission are explicit
+  pinned by digest and pulled for `linux/arm64`. Each gets its own memory limit (256 MiB for the Collector, 768 MiB
+  each for Loki, Tempo and Grafana, which idles near 400 MiB; about 2.5 GiB in all) and configuration file in the
+  repository, so retention and admission are explicit
   and reviewable. Rejected: `grafana/otel-lgtm`, whose amd64 digest the pilot pinned, whose 4 GiB budget is most of
   the engine's memory, and whose Loki, Tempo and Grafana settings would be overridden inside one image.
 - **The Collector stays.** The runtime's transport sends both signals to one origin (`/v1/logs`, `/v1/traces`), so one
@@ -49,7 +50,11 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
   never scraped. Rejected: a Collector `filelog` receiver over `docker logs` (two ingestion paths, duplicates).
 - **Loss summary.** Profile 1.7 admits `telemetry.dropped` under `bunny.runtime`; once a minute the runtime reads the
   adapter's export counts and writes one summary with the totals when they grew since the last one, so an outage
-  shows within a minute and never floods the journal (ADR 0012's repetition rule). `runtime.stopped` carries the
+  shows within a minute and never floods the journal (ADR 0012's repetition rule); the summary itself is exported, so
+  through an outage each minute's summary is the next minute's growth and the journal keeps one WARN a minute until
+  the Collector takes records again, which is the heartbeat the owner wanted of a loss that goes on. Exported records
+  are not attached to the active span their trace names (the adapter's `associateRecords: false`): the bus's spans
+  carry their own attributes, and a module's record from another scope would only count as loss. `runtime.stopped` carries the
   totals after the adapter's final flush, so an unfinished span and an in-flight failure are in them; it is the
   journal's last word, and the export ends before it. Rejected: writing `runtime.stopped` before the flush so the
   export carries it (its totals then miss what the flush counts, which the tracker's crashed-module scenario

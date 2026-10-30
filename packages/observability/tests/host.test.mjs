@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {record} from './sample.mjs';
-import {catalog} from '@jimmie-potts/bunny-observability';
+import {catalog, createRecord} from '@jimmie-potts/bunny-observability';
 import {createHostDiagnostics} from '../runtime/host.mjs';
 import {profileSpanNames, projectSpan} from '../runtime/span-projection.mjs';
 import {ROOT_CONTEXT, trace} from '@opentelemetry/api';
@@ -209,4 +209,35 @@ test('a Collector origin is an owned host only: numeric loopback or Docker Deskt
  const host=await createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://host.docker.internal:4318',localSink:()=>{}});
  await host.shutdown();
  await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://localhost:4318',localSink:()=>{}}),/owned loopback origin/);
+});
+
+test('a host that exports without association leaves an active span\'s attributes alone and counts no loss for the record',async()=>{
+  const outcomes=[];
+  for(const associateRecords of [true,false]){
+    const spans=[];
+    const host=await createHostDiagnostics({enabled:true,resource:runtimeResource,schemaVersion:'1.7',tracing:true,samplingRatio:1,globalContext:false,
+      localSink:()=>{},localSpanSink:line=>{spans.push(JSON.parse(line).resourceSpans[0].scopeSpans[0].spans[0]);},associateRecords});
+    const span=host.tracerFor({resource:runtimeResource,scope:'bunny.runtime'}).startSpan('bunny.command.request',{attributes:{'bunny.operation':'mode','bunny.provenance':'source'}},ROOT_CONTEXT);
+    const identity=span.spanContext();
+    // A module's record with the span's identity, as a module logs with its command's trace: associated, it is another
+    // scope's record and counts against the span; exported only, it is just a record.
+    const other=createRecord({schema_version:'1.7',timestamp:'2026-10-30T12:00:00.000Z',event_name:'command.completed',severity_text:'INFO',resource:runtimeResource,
+      scope:{name:'bunny.module',version:'1.0.0'},attributes:{'bunny.provenance':'source','bunny.module':'wall','bunny.outcome':'succeeded'},
+      trace_id:identity.traceId,span_id:identity.spanId,trace_flags:'01'});
+    assert.ok(other.ok,'a valid module record');
+    assert.equal(host.emit(other.value),true,'the record is queued either way');
+    span.end();
+    await host.shutdown();
+    const traces=host.counts().traces;
+    // With association on, the other scope's record makes the span invalid and the span is lost with it.
+    outcomes.push({associateRecords,invalid:traces.invalid,registered:traces.registered,span:spans[0]});
+  }
+  const [associated,exported]=outcomes;
+  assert.equal(exported.invalid,0,'nothing counted against the span');
+  assert.equal(exported.registered,1,'the span itself is the only registration');
+  assert.ok(exported.span,'the span reaches the sink');
+  assert.deepEqual(exported.span.attributes.map(item=>item.key).sort(),['bunny.operation','bunny.provenance'],'the span keeps its own attributes');
+  assert.equal(exported.span.attributes.some(item=>item.key==='bunny.module'||item.key==='bunny.outcome'),false,'none of the record\'s attributes');
+  assert.ok(associated.invalid>=1,'with association on, the other scope\'s record counts against the span');
+  await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,associateRecords:'no'}),/Invalid host/);
 });

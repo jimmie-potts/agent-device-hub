@@ -14,7 +14,7 @@ const KEY = 'bunny.cmd.mode.wall';
 const code = (expected: string) => (error: unknown): boolean => error instanceof RuntimeError && error.code === expected;
 
 type Exported = {event: string; traceId?: string; spanId?: string; severity: string; attributes: Record<string, unknown>};
-type Span = {name: string; traceId: string; spanId: string};
+type Span = {name: string; traceId: string; spanId: string; attributes: Attribute[]};
 type Received = {logs: Exported[]; spans: Span[]; requests: number};
 type Mode = 'accept' | 'refuse' | 'stall';
 type Attribute = {key: string; value: {stringValue?: string; intValue?: string; boolValue?: boolean}};
@@ -42,7 +42,7 @@ async function collector(context: TestContext, mode: () => Mode): Promise<{origi
           received.logs.push({event: log.eventName, severity: log.severityText, attributes: plain(log.attributes), ...(log.traceId === undefined ? {} : {traceId: log.traceId, spanId: log.spanId})});
         }
       } else if (request.url === '/v1/traces') {
-        for (const group of body.resourceSpans ?? []) for (const scoped of group.scopeSpans) for (const span of scoped.spans) received.spans.push({name: span.name, traceId: span.traceId, spanId: span.spanId});
+        for (const group of body.resourceSpans ?? []) for (const scoped of group.scopeSpans) for (const span of scoped.spans) received.spans.push({name: span.name, traceId: span.traceId, spanId: span.spanId, attributes: span.attributes});
       }
       response.writeHead(200, {'content-type': 'application/json'}).end(request.url === '/v1/logs' ? '{"partialSuccess":{}}' : '{}');
     });
@@ -56,13 +56,17 @@ async function collector(context: TestContext, mode: () => Mode): Promise<{origi
   return {origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, received};
 }
 
-/** A device module that answers the mode command inside a device-call span, so a request leaves a trace of four spans. */
+/**
+ * A device module that answers the mode command inside a device-call span and writes one record with the command's
+ * trace, as the core and companions do, so a request leaves a trace of four spans and a traced record.
+ */
 function wall(): ReturnType<typeof fixture> {
-  return fixture('wall', async ({sdk, trace}) => {
+  return fixture('wall', async ({sdk, trace, log}) => {
     await sdk.respond<{mode: string}>(KEY, async (command: Command<{mode: string}>): Promise<Reply> => {
       const call = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: {'bunny.device.id': 'wall-1', 'bunny.operation': 'mode'}});
       await Promise.resolve();
       call.end();
+      log.info('command.completed', {'bunny.outcome': 'succeeded'}, command);
       return {status: 'accepted'};
     });
   });
@@ -102,6 +106,7 @@ it('the export section names an exact owned Collector origin and refuses anythin
     [{export: {collector: 'http://127.0.0.1:4318/v1/logs'}}, 'an origin, no path'], [{export: {collector: 'http://127.0.0.1:4318/'}}, 'the exact origin'],
     [{export: {collector: 'http://collector:4318'}}, 'an owned host only'], [{export: {collector: 'http://localhost:4318'}}, 'numeric loopback, not a name'],
     [{export: {collector: 'http://10.0.0.5:4318'}}, 'no LAN address'], [{export: {collector: 'http://user@127.0.0.1:4318'}}, 'no user information'],
+    [{export: {collector: 'http://127.0.0.1'}}, 'an explicit port'],
   ] as const) {
     assert.throws(() => checkDiagnosticsSection(section), code('config-invalid'), why);
   }
@@ -123,6 +128,11 @@ it('every written record and every span reach the Collector once, with their tra
   assert.deepEqual(received.spans.map(span => span.name).sort(), ['bunny.command.execute', 'bunny.command.queue', 'bunny.command.request', 'bunny.device.call']);
   const traced = received.logs.filter(log => log.traceId !== undefined);
   assert.ok(traced.length > 0 && traced.every(log => received.spans.some(span => span.traceId === log.traceId)), 'a traced record\'s trace has spans');
+  // The exported journal is a copy: a record with the command's trace is never attached to the bus's request span, so the
+  // span keeps its own attributes and nothing counts as loss (the adapter's association is off for the export).
+  const request = received.spans.find(span => span.name === 'bunny.command.request');
+  assert.ok(request !== undefined && !request.attributes.some(item => ['bunny.outcome', 'bunny.module'].includes(item.key)), `the request span carries the bus's attributes only: ${JSON.stringify(request?.attributes)}`);
+  assert.ok(received.logs.some(log => log.event === 'command.completed' && log.attributes['bunny.module'] === 'wall' && log.traceId === request.traceId), 'the module\'s traced record arrived as itself');
   assert.ok(received.logs.every(log => typeof log.attributes['bunny.schema.version'] === 'string'), 'the profile travels with each record');
   const stopped = logs.at(-1);
   assert.equal(stopped?.event_name, 'runtime.stopped');
@@ -149,13 +159,19 @@ it('a Collector that refuses, stalls or is absent changes no result; the loss is
   assert.equal(first?.severity_text, 'WARN');
   // The Collector has seen four attempts, but the last refusal may still be in flight when the summary is written.
   assert.ok(Number(first?.attributes['bunny.telemetry.failure_count']) >= 3, `the refused records and spans count as failures: ${JSON.stringify(first?.attributes)}`);
+  // The summary itself goes to the Collector; while the Collector refuses, that failure is growth too, so an outage keeps
+  // one summary a minute. Once the Collector takes records again, a minute without new loss writes none.
+  mode = 'accept';
+  await waitFor(() => received.logs.some(log => log.event === 'telemetry.dropped'), 3000, 'the summary reached the Collector once it accepted');
   timers.fire();
   await new Promise(resolve => { setTimeout(resolve, 50); });
   assert.equal(summaries(logs).length, 1, 'no growth since the last summary, no second one');
   mode = 'stall';
   assert.equal((await contextOf(caller).sdk.request(KEY, setMode, {timeoutMs: 1000})).status, 'accepted', 'a stalling Collector changes no reply');
   assert.equal((await health(runtime.url)).body.status, 'ok', 'health does not wait for the Collector');
+  const stopping = performance.now();
   await runtime.stop();
+  assert.ok(performance.now() - stopping < 5000, `stop completes within its bound while the Collector holds requests: ${(performance.now() - stopping).toFixed(0)} ms`);
   const stopped = logs.at(-1);
   assert.equal(stopped?.event_name, 'runtime.stopped', 'stop completes within its bound while the Collector holds requests, and the totals are the last word');
   const total = (record: LogRecord | undefined): number => Number(record?.attributes['bunny.telemetry.failure_count']) + Number(record?.attributes['bunny.telemetry.dropped_count']);
