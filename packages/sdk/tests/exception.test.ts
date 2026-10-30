@@ -199,3 +199,25 @@ it('is idempotent: filtering a filtered text again changes nothing and counts no
   assert.equal(again.replaced, 0);
   assert.equal(again.truncated, false);
 });
+
+it('replaces a value that follows an earlier marker, and omits an unclosed payload to the end of the text', () => {
+  const marker = String(exceptionFields(new Error(`password=${REDACTED}hunter2 wrong; Authorization: Bearer ${REDACTED}abcdefgh12345678; token: ${OMITTED}quoted-secret-9`))['exception.message']);
+  for (const canary of ['hunter2', 'abcdefgh12345678', 'quoted-secret-9']) assert.equal(marker.includes(canary), false, canary);
+  const prompt = `bad prompt "${'remind me about the dentist and my sister. '.repeat(120)}`;
+  const quoted = String(exceptionFields(new Error(prompt))['exception.message']);
+  assert.equal(quoted.includes('dentist'), false, 'an unclosed quoted prompt beyond the window is omitted to the end');
+  assert.ok(quoted.startsWith(`bad prompt ${OMITTED}`), quoted);
+  const transcript = `bad body [${Array.from({length: 60}, (_, index) => `{"role":"user","content":"turn ${index}: the dentist and my sister and my finances"}`).join(',')}]`;
+  const list = String(exceptionFields(new Error(transcript))['exception.message']);
+  assert.equal(list.includes('finances'), false, 'a transcript longer than the window is omitted whole');
+  assert.equal(exceptionFields(new Error('an unexpected token { was found in "value" near [0]'))['exception.message'], 'an unexpected token { was found in "value" near [0]', 'short unclosed shapes stay');
+});
+
+it('keeps library prose that names a key, response or signature, and a contraction opens no string', () => {
+  const kept = String(exceptionFields(new Error(`unexpected server response: 502; invalid key: brightness; auth: failed; signature: mismatch for frame 3; couldn't reach the panel at 10.0.0.5 after 3 attempts, ${'so the operation stops here and the controller keeps its last state; '.repeat(3)}key=AbCdEf123456 sig="a1b2c3d4e5f6" response="abc123def456"`))['exception.message']);
+  for (const text of ['response: 502', 'key: brightness', 'auth: failed', 'signature: mismatch', 'couldn\'t reach', 'last state']) assert.ok(kept.includes(text), text);
+  for (const canary of ['AbCdEf123456', 'a1b2c3d4e5f6', 'abc123def456']) assert.equal(kept.includes(canary), false, canary);
+  const scrubbed = filterExceptionText(`${'x'.repeat(4090)}REGISTERED-SECRET-VALUE tail`, 1024, {filter: text => ({text: text.replaceAll('REGISTERED-SECRET-VALUE', REDACTED), replaced: 1})});
+  assert.equal(scrubbed.replaced, 1, 'a secret that straddles the prefix is replaced before the prefix is read');
+  assert.equal(scrubbed.truncated, true);
+});

@@ -63,7 +63,10 @@ const CREDENTIAL_RULES: readonly Rule[] = [
   // A URL's user information.
   [/(\/\/)[^/\s@]{1,256}@/g, `$1${REDACTED}@`],
   // A parameter, field or YAML-style member that names a credential, as `name=value`, `name: value` or `name="value"`.
-  [/\b((?:access_?token|refresh_?token|id_?token|token|secret|client_?secret|password|passwd|pwd|api_?key|apikey|key|auth|signature|sig|private_?key|response)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^&\s"';,]+)/gi, `$1${REDACTED}`],
+  [/\b((?:access_?token|refresh_?token|id_?token|token|secret|client_?secret|password|passwd|pwd|api_?key|apikey|private_?key)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^&\s"';,]+)/gi, `$1${REDACTED}`],
+  // A name a library's prose also uses (`unexpected server response: 502`, `invalid key: brightness`) is a credential
+  // only as a parameter, `name=value`, or with a quoted value.
+  [/\b((?:key|auth|signature|sig|response)\s*(?:=\s*|:\s*(?=["'])))(?:"[^"\n]*"|'[^'\n]*'|[^&\s"';,]+)/gi, `$1${REDACTED}`],
   // A JSON member that names a credential, in double or single quotes.
   [/((["'])(?:accessToken|refreshToken|idToken|token|secret|clientSecret|client_secret|password|passwd|authorization|apiKey|api_key|key|privateKey|private_key)\2\s*:\s*)(?:"[^"\n]*"|'[^'\n]*')/gi, `$1"${REDACTED}"`],
   // Well-known credential shapes: API keys, personal access tokens, cloud keys, JWTs and this repository's `tok_` tokens.
@@ -102,6 +105,7 @@ function ownText(error: Error, name: 'message' | 'stack'): string | undefined {
 }
 
 const QUOTES = new Set(['"', '\'', '`']);
+const WORD = /[\p{L}\p{N}_]/u;
 
 /**
  * The index of the bracket that closes the one at `start`, counting brackets only, or -1 within `MAX_SEGMENT`. A bracket
@@ -141,9 +145,12 @@ function omitPayloads(text: string): {text: string; replaced: number} {
   let index = 0;
   while (index < text.length) {
     const character = text[index] ?? '';
+    const bracket = (character === '{' || character === '[') && opensLikeJson(text, index + 1);
+    // A quote opens a string when nothing of a word precedes it; the apostrophe of a contraction opens nothing.
+    const quote = QUOTES.has(character) && (index === 0 || !WORD.test(text[index - 1] ?? ''));
     let end = -1;
-    if ((character === '{' || character === '[') && opensLikeJson(text, index + 1)) end = closingBracket(text, index);
-    else if (QUOTES.has(character)) {
+    if (bracket) end = closingBracket(text, index);
+    else if (quote) {
       const close = text.indexOf(character, index + 1);
       end = close === -1 || close - index > MAX_SEGMENT ? -1 : close;
     }
@@ -153,20 +160,28 @@ function omitPayloads(text: string): {text: string; replaced: number} {
       index = end + 1;
       continue;
     }
+    // A JSON-shaped start or a quote with no closer in the window, followed by a payload's worth of text, is a payload
+    // the pre-cut or the window has already shortened: the rest of it goes too, since an unclosed body is still a body.
+    if (end === -1 && (bracket || quote) && text.length - index >= PAYLOAD_LENGTH) {
+      out += OMITTED;
+      replaced += 1;
+      break;
+    }
+    if (end !== -1 && quote) {
+      // A short quoted string is kept whole, so its closing quote opens nothing.
+      out += text.slice(index, end + 1);
+      index = end + 1;
+      continue;
+    }
     out += character;
     index += 1;
   }
   return {text: out, replaced};
 }
 
-function filtered(text: string, filter: ExceptionFilter | undefined): {text: string; replaced: number} {
+function filtered(text: string): {text: string; replaced: number} {
   let out = text.replace(CONTROL, '');
   let replaced = 0;
-  if (filter !== undefined) {
-    const own = filter(out);
-    out = own.text;
-    replaced += own.replaced;
-  }
   // Payload-like segments go first and whole, so a credential inside one counts once; then each credential rule.
   const omitted = omitPayloads(out);
   out = omitted.text;
@@ -177,16 +192,13 @@ function filtered(text: string, filter: ExceptionFilter | undefined): {text: str
         const value = match[position];
         return typeof value === 'string' ? value : '';
       };
-      // A segment already replaced, by this filter on an earlier pass, stays as it is and is not counted again.
-      if (part(0).includes(REDACTED) || part(0).includes(OMITTED)) return part(0);
-      if (typeof replacement === 'function') {
-        const result = replacement(part(0));
-        if (result !== part(0)) replaced += 1;
-        return result;
-      }
-      replaced += 1;
-      // The replacement template's `$1`, `$2` and `$&` are the match's groups and text; this applies them as String#replace would.
-      return replacement.replace(/\$(\d|&)/g, (_token, index: string) => (index === '&' ? part(0) : part(Number(index))));
+      // The replacement template's `$1`, `$2` and `$&` are the match's groups and text; this applies them as String#replace
+      // would. A match the rule leaves as it is, such as a value already replaced on an earlier pass, is not counted, so
+      // the filter is idempotent on its own output while a marker followed by more text is still replaced whole.
+      const result = typeof replacement === 'function' ? replacement(part(0))
+        : replacement.replace(/\$(\d|&)/g, (_token, index: string) => (index === '&' ? part(0) : part(Number(index))));
+      if (result !== part(0)) replaced += 1;
+      return result;
     });
   }
   return {text: out, replaced: Math.min(Number.MAX_SAFE_INTEGER, replaced)};
@@ -216,9 +228,12 @@ function bounded(text: string, limit: number): {text: string; truncated: boolean
  * this to an exception field a module wrote itself, so the module path and `exceptionFields` meet the same rules.
  */
 export function filterExceptionText(raw: string, limit: number, options: ExceptionOptions = {}): FilteredText {
-  const clean = filtered(raw.slice(0, limit * PRECUT), options.filter);
+  // The caller's filter sees the whole text, so a registered secret that straddles the pre-cut leaves no fragment.
+  const own = options.filter?.(raw) ?? {text: raw, replaced: 0};
+  const clean = filtered(own.text.slice(0, limit * PRECUT));
   const cut = bounded(clean.text, limit);
-  return {text: cut.text, replaced: clean.replaced, truncated: cut.truncated};
+  // A text the pre-cut shortened is cut, whatever the filter then left of it.
+  return {text: cut.text, replaced: own.replaced + clean.replaced, truncated: cut.truncated || own.text.length > limit * PRECUT};
 }
 
 /**

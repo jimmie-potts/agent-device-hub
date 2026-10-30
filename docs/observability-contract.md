@@ -306,9 +306,15 @@ only a diagnostic record changes, and only on the private path.
   times each limit of the raw text and every step is linear in that prefix, so a
   message of any size costs a bounded amount of time. Detection has limits: a
   credential in a shape no rule knows, such as a short opaque token or a
-  digits-only secret, survives unless a module registered it, and a credential
-  that spans the four-kilobyte segment the payload scanner reads is cut rather
-  than omitted. Useful context can go too: a quoted path of 128 characters or
+  digits-only secret, survives unless a module registered it, and the names a
+  library's prose also uses (`key`, `auth`, `signature`, `sig`, `response`) are
+  replaced only as `name=value` or with a quoted value, so `unexpected server
+  response: 502` keeps its status. A registered secret is replaced in the whole
+  raw text before the prefix is read. A payload whose closing bracket or quote
+  lies beyond the scanner's four-kilobyte window, or that never closes, is
+  omitted from its opening to the end of the text, so a member before the
+  opening stays; a quote that follows a letter or digit, as in a contraction,
+  opens nothing. Useful context can go too: a quoted path of 128 characters or
   more and a 40-hexadecimal commit hash outside a path become `[omitted]` and
   `[redacted]`. A text that still holds a registered secret is left out of the
   record whole, with its counts; the record keeps its type and code. A module
