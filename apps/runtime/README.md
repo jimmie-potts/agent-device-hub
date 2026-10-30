@@ -683,7 +683,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
 | `--config` | The private [configuration file](#configuration), with each module's own section. Without it, a module that takes a configuration is refused. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
-| `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
+| `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. The configuration file's `diagnostics.level` takes precedence when present; see [Configuration](#configuration). |
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [gateway](#gateway) on the health listener, for the client credentials that the configuration file's `edge` section names. It needs `--config`. |
@@ -1096,9 +1096,33 @@ edge's section (#835):
     "mcp": true,
     "editorLinks": {"sign-1": "http://127.0.0.1:9100/editor"},
     "placeLinks": {"kitchen": "http://127.0.0.1:9200/"}
+  },
+  "diagnostics": {
+    "level": "info",
+    "modules": {"sign": "debug"}
   }
 }
 ```
+
+The optional `diagnostics` section (Hub #811) sets the log's floor. `level`,
+one of `debug`, `info`, `warn` or `error`, is the floor of the runtime's own
+records and of every module without an entry of its own; without it the
+process's `--log-level` applies, `info` by default. `modules` gives one module
+its own floor by name, so `"sign": "debug"` writes the sign module's DEBUG
+records and no other module's. The file may name only modules this runtime
+hosts; another name, another member, a level outside those four (`fatal`
+included) or more than 32 entries refuses the file with `config-invalid`: a
+malformed section before any state effect, since the runtime reads the file
+before it prepares its state directory, and an unhosted name at startup, before
+any module starts. On the container profiles a hosted module is the core
+or a module with a section of its own. The floors filter log records only: the
+same floor feeds every log sink the runtime writes to, so the journal and an
+export agree, while spans are recorded whatever the floor, and the runtime's own
+records about a module (`runtime.module.starting` at DEBUG, the bus's
+`runtime.sync.restarted`) follow `level`, not the module's entry. Lowering a
+floor affects the records written after the runtime reads the file; nothing
+recovers a record an earlier floor kept out, and a record below the floor is not
+counted as dropped.
 
 The `edge` section names the [credentials file](#credentials) by its absolute
 path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),
@@ -1546,7 +1570,10 @@ listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
 (`bunny.telemetry.failure_count`), with the spans lost.
 
-The runtime's own records have scope `bunny.runtime`. A module's records have
+The log keeps INFO and above by default. The configuration file's
+[`diagnostics` section](#configuration) moves that floor and gives one module
+its own, so a module's DEBUG records can be read without widening the others
+(Hub #811). The runtime's own records have scope `bunny.runtime`. A module's records have
 the one scope `bunny.module` and the attribute `bunny.module`, which names the
 module and which the module's own fields cannot replace. A module may log only
 the events the catalog registers for modules, with registered attributes: the

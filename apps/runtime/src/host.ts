@@ -15,7 +15,7 @@ import {recordLog, InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkCo
   type WorkerCallOptions,
 } from '@jimmie-potts/sdk';
 import {diagnosticWriter} from './diagnostics.js';
-import {faultFields, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
+import {faultFields, type LogLevel, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
 import {
   MAX_SECRET_BYTES, PrivateFileError, openModuleDatabase, openModuleFolder, readPrivateFile, sectionOf, type FileProblem, type RuntimeConfig,
@@ -52,6 +52,8 @@ export type HostOptions = {
   tracing?: Pick<RuntimeTracing, 'recorder'>;
   /** The configuration file's sections, from `readRuntimeConfig`, or undefined when the runtime has no file. */
   config?: RuntimeConfig;
+  /** Each module's own log floor, by name, from the configuration's diagnostics section (Hub #811); the writer's floor otherwise. */
+  levels?: Readonly<Record<string, LogLevel>>;
 };
 
 /**
@@ -271,7 +273,7 @@ export class ModuleHost {
       const controller = new AbortController();
       const workers = new Set<Worker>();
       const slot: Slot = {
-        module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}),
+        module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}, options.levels !== undefined && Object.hasOwn(options.levels, name) ? options.levels[name] : undefined),
         flow: {fail: (failure, error) => { this.#fail(slot, failure, error); }},
         controller, timers: new Set(), workers,
         calls: new WorkerCalls({scheduler: options.scheduler, signal: controller.signal, track: worker => {

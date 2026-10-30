@@ -666,7 +666,7 @@ The core SHALL take parts, the extension point for #923's inbox and later core s
 
 ### Requirement: Module configuration
 
-With `--config <file>` (`RuntimeOptions.configFile`), the runtime SHALL read one private configuration file, as "Private runtime state" requires, before it serves health: `{"schema": "runtime-config/1.0", "modules": {<module name>: <section>}, "edge"?: <edge section>}` (see "Edge credentials and their reload" for the edge section). It SHALL refuse to start, with a `RuntimeError` whose `error.code` the `runtime.failed` record carries, a file that is not private (`config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`) or that is not JSON, names another schema, lacks an object `modules`, has a member other than `schema`, `modules` and `edge`, or has a malformed `edge` section (`config-invalid`), and no refusal SHALL quote the file. A section for a module the runtime does not host SHALL be ignored, and a lookup SHALL find only the file's own members.
+With `--config <file>` (`RuntimeOptions.configFile`), the runtime SHALL read one private configuration file, as "Private runtime state" requires, before it serves health: `{"schema": "runtime-config/1.0", "modules": {<module name>: <section>}, "edge"?: <edge section>, "diagnostics"?: <diagnostics section>}` (see "Edge credentials and their reload" for the edge section and "Log floors" for the diagnostics section). It SHALL refuse to start, with a `RuntimeError` whose `error.code` the `runtime.failed` record carries, a file that is not private (`config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`, `config-not-file`, `config-not-private`, `config-too-large`) or that is not JSON, names another schema, lacks an object `modules`, has a member other than `schema`, `modules`, `edge` and `diagnostics`, or has a malformed `edge` or `diagnostics` section (`config-invalid`), and no refusal SHALL quote the file. A section for a module the runtime does not host SHALL be ignored, and a lookup SHALL find only the file's own members.
 
 Before it starts the modules, the runtime SHALL admit each module whose manifest it accepted, in list order, with `checkConfiguration` against that module's own section only. It SHALL refuse a module, give it no participant and never start it, while the others start, when the module declares `configure` and has no section (`not-found`); when its section is not a JSON object or its `secrets` member is malformed (`invalid-request`); when its `configure` refuses, with the refusal's code and detail, or throws (`internal`); when it names a device that is not a routing ID or that a module before it already named (`invalid-request`); or when a secret file its section names is missing (`not-found`), is not private (`forbidden`), or is over 64 KiB or not UTF-8 text (`invalid-request`). Health SHALL show it `refused` with that code and a fixed detail, and its `runtime.module.refused` record SHALL carry `bunny.code`, `bunny.phase` `manifest` and, for a `configure` that threw, the error's type, never the detail or what it threw. Without a configuration file, a module that declares `configure` SHALL be refused with `not-found`. A refused core SHALL end the runtime as a failed core does (Hub #831).
 
@@ -711,6 +711,10 @@ Before it starts the modules, the runtime SHALL admit each module whose manifest
 #### Scenario: The shipped process with a configuration file
 - **WHEN** the shipped entry point runs with `--config` naming a relative path, a missing file, a file with mode 644, a file that is not JSON, a link, and a valid file
 - **THEN** each of the first five exits 1 with no ready line and a `runtime.failed` record carrying `RuntimeError` and `config-relative`, `config-missing`, `config-not-private`, `config-invalid` or `config-link`, and the last serves health `ok` and exits 0 on SIGTERM
+
+#### Scenario: A malformed diagnostics section
+- **WHEN** the file's diagnostics section has `fatal` as its level, a member other than `level` and `modules`, a level for a module this runtime does not host, or a synthetic secret as its level or as a module's level
+- **THEN** the runtime refuses to start with `config-invalid`, before any module starts, and no refusal quotes the secret
 
 ### Requirement: Following one request in a disposable run
 
@@ -1451,3 +1455,23 @@ intake SHALL retain its existing message-trace correlation.
 #### Scenario: Refusal correlation boundary
 - **WHEN** private-entry identity admission refuses an authenticated publication
 - **THEN** the server records forbidden with its authenticated source and publish route without claiming a message trace, the publisher error retains its prepared trace ID, and a subsequent accepted observation retains the core's normal trace
+
+### Requirement: Log floors
+
+The log SHALL keep INFO and above by default. The configuration file's optional `diagnostics` section, `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>}}`, SHALL set the floors: `level` SHALL be the floor of the runtime's own records and of every module without an entry of its own, taking precedence over `--log-level`, which SHALL remain the process's default; a module's entry SHALL raise or lower the floor of that module's records only. A record below its floor SHALL not be written and SHALL not be counted as dropped. The floors SHALL filter log records only: every log sink the runtime writes to, the journal and any export, SHALL see the same floor, spans SHALL be recorded whatever the floor, and the runtime's own records about a module SHALL follow `level`. The section SHALL be refused with `config-invalid` for a member other than `level` and `modules`, a level outside the four, a name that is not a module name or more than 32 module entries, before any state effect, and for a module this runtime does not host, at startup before any module starts; no refusal SHALL quote a value. A floor SHALL change no result, outcome, retry, queue or permission, and lowering a floor SHALL affect only the records written after the runtime reads the file.
+
+#### Scenario: INFO and above by default
+- **WHEN** two modules each write a DEBUG, an INFO and a WARN record and the file has no diagnostics section
+- **THEN** each module's INFO and WARN records are written and neither DEBUG record is, and the writer counts no dropped record
+
+#### Scenario: DEBUG for one module
+- **WHEN** the section gives one module `debug` and the other module nothing
+- **THEN** the first module's DEBUG, INFO and WARN records are written, the second module's INFO and WARN records only, and no DEBUG record of the runtime's own scope
+
+#### Scenario: A raised floor with one module below it
+- **WHEN** the section sets `level` to `warn` and gives one module `debug`, and the process was started with `--log-level info`
+- **THEN** the runtime's INFO records, `runtime.module.started` and `runtime.stopped` among them, are not written, the other module writes WARN only, the named module writes DEBUG, INFO and WARN, and health is `ok`
+
+#### Scenario: The file's level over the command line
+- **WHEN** the process was started with `--log-level warn` and the section sets `level` to `debug`
+- **THEN** a module's DEBUG records are written
