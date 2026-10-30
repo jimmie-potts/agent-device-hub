@@ -67,7 +67,7 @@ Host, measured 2026-10-30: Docker Desktop 29.9.1, Linux ARM64, 12 CPUs and 8 GiB
   `docker system df -v` and recorded at installation. The accepted consequence: under a flood the Collector drops and
   the runtime's queue drops, visibly. Rejected: a size-capped `tmpfs` volume (memory, lost on every engine restart)
   and a janitor that deletes the oldest blocks (machinery the owner does not need).
-- **Grafana access.** Anonymous, as organization admin, with sign-up, the login form, basic authentication, analytics
+- **Grafana access.** Anonymous, as organization editor (Explore works, no data source can be added), with sign-up, the login form, basic authentication, analytics
   and plugin fetches off, on `127.0.0.1:3000` only: the same trust the dashboard's loopback sign-in extends. Loki is
   the default source with a `trace_id` derived field to Tempo; Tempo has a traces-to-logs query by trace ID; a
   provisioned, read-only "B.U.N.N.Y. diagnostics" dashboard carries the starter queries by module, severity, event,
