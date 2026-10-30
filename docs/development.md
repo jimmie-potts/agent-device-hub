@@ -623,9 +623,8 @@ Use the reviewed [agent-skills catalog](https://github.com/jimmie-potts/agent-sk
 outside this checkout. Available workflow aids include code-review,
 grill-with-docs, grilling, domain-modeling, writing-for-agents and the
 OpenSpec propose/explore/apply/update/sync/archive skills. The tdd and unslop
-skills come from the installed
-[pstack plugin](https://github.com/cursor/plugins/tree/main/pstack), which the
-catalog composes but no longer vendors.
+skills come from the installed [pstack plugin](https://github.com/cursor/plugins/tree/main/pstack),
+which the catalog composes but no longer vendors.
 
 Missing workflow aids do not block delivery; follow the direct review, design,
 regression-test and editorial checks in [docs/sdlc.md](sdlc.md). Missing runtime
