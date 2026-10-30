@@ -148,6 +148,8 @@ const EVENT_LEVELS = {
   // A storage cost condition: WARN as it starts, INFO as it ends.
   'storage.cost.high': 'warn',
   'storage.cost.normal': 'info',
+  // The runtime's summary of diagnostic records and spans its export lost: lost capacity is WARN (Hub #813).
+  'telemetry.dropped': 'warn',
 } as const satisfies Record<string, DiagnosticLevel>;
 
 /** An event whose level the table owns when its record carries no registry code. */

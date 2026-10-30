@@ -4,7 +4,7 @@
 import type {TraceContext} from './sdk.js';
 import {childOf, traceFields} from './trace.js';
 
-/** The diagnostic contract's registered span names (profile 1.6). Names never hold IDs or content. */
+/** The diagnostic contract's registered span names (profile 1.7). Names never hold IDs or content. */
 export type SpanName =
   | 'bunny.command.request' | 'bunny.command.queue' | 'bunny.command.execute' | 'bunny.outcome.publish' | 'bunny.device.call'
   | 'bunny.assistant.run' | 'bunny.assistant.model' | 'bunny.assistant.tool'

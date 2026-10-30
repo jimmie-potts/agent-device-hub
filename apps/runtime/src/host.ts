@@ -15,7 +15,7 @@ import {recordLog, InProcessBus, SdkError, WorkerCalls, checkApiVersion, checkCo
   type WorkerCallOptions,
 } from '@jimmie-potts/sdk';
 import {diagnosticWriter} from './diagnostics.js';
-import {errorFields, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
+import {faultFields, type LogWriter, type Redactions, type RuntimeLogger} from './log.js';
 import {MODULE_SCOPE, RUNTIME_SCOPE} from './record.js';
 import {
   MAX_SECRET_BYTES, PrivateFileError, openModuleDatabase, openModuleFolder, readPrivateFile, sectionOf, type FileProblem, type RuntimeConfig,
@@ -386,10 +386,12 @@ export class ModuleHost {
 
   /**
    * An error's type and code for a record, leaving out one that holds a secret a module read, such as a code a device
-   * library copied from its credential. The record itself survives, as `runtime.failed` does (Hub #919).
+   * library copied from its credential, or a filtered text the filter still missed. The record itself survives with its
+   * type, as `runtime.failed` does (Hub #919).
    */
-  #errorFields(error: unknown): Record<string, string> {
-    return this.#options.logs.redactions.without(errorFields(error));
+  #errorFields(error: unknown): Record<string, string | number | boolean> {
+    // A fault record carries the filtered exception text (profile 1.7); `faultFields` leaves out an attribute that still holds a secret.
+    return faultFields(error, this.#options.logs.redactions);
   }
 
   /** The text of a secret file the module's own section names. Each read is checked anew and redacted from the log. */

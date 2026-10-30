@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.6.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.7.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5 and 1.6 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 and 1.7 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -24,9 +24,11 @@ see [The gateway's records](#the-gateways-records-profile-14). Profile 1.5
 registers a store's costly saves
 ([#976](https://github.com/jimmie-potts/agent-device-hub/issues/976)); see
 [Costly saves](#costly-saves-profile-15). Profile 1.6 adds
-[assistant execution](#assistant-execution-profile-16). The default producer profile stays
-1.1: existing producers keep it, and a producer selects 1.2, 1.3, 1.4, 1.5 or 1.6
-explicitly.
+[assistant execution](#assistant-execution-profile-16). Profile 1.7 adds the
+runtime's [private exception context](#private-exception-context-profile-17)
+([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). The default
+producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
+to 1.7 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -45,7 +47,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5` or `1.6` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6` or `1.7` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -119,6 +121,9 @@ alphabet. Syntax does not prove privacy: producers must select approved machine
 identities, never sanitize private text into an apparently valid ID. Exclude
 credentials, tokens, headers, bodies, payloads, prompts, transcripts, agent output,
 media, session/project names, raw paths/URLs and raw exception messages/stacks.
+The one exception is the filtered, bounded exception text that profile 1.7 admits
+on the runtime's fault records, on the private diagnostic path only (see
+[Private exception context](#private-exception-context-profile-17)).
 Do not capture arbitrary objects, console output, DOM/text or browser replay.
 Map errors to registered reason codes. Unknown values are not stringified.
 No private data in baggage; baggage and tracestate propagation are disabled.
@@ -259,6 +264,96 @@ and `assistant.call.settled`, and spans `bunny.assistant.run`,
 are fixed catalog strings. Existing outcome/error fields describe partial,
 succeeded, cancelled, failed or uncertain work; no conversation text or raw
 exception is admitted. Earlier profiles refuse this added vocabulary.
+
+## Private exception context (profile 1.7)
+
+Profile 1.7 is profile 1.6 plus the filtered exception text of the runtime's
+fault records and the runtime's telemetry-loss summary
+([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777),
+[#813](https://github.com/jimmie-potts/agent-device-hub/issues/813)). The owner
+selected this change to the private-diagnostics boundary on 2026-10-30
+([ADR 0012](decisions/0012-bunny-event-platform.md#amendments)). Error bodies,
+health, history, proof and span names keep their registry codes and fixed text;
+only a diagnostic record changes, and only on the private path.
+
+- **Attributes:** `exception.message` (1 to 1,024 characters),
+  `exception.stacktrace` (1 to 4,096 characters), `bunny.exception.redacted_count`
+  (a nonnegative safe integer) and `bunny.exception.truncated` (a boolean). They
+  are admitted only under `bunny.runtime` and `bunny.module`, on any event of
+  those scopes (the producer decides which records carry them), and only
+  together: a text needs both counts, and the counts need at least one text. The
+  producer also bounds each text to the same number of serialized (JSON-escaped)
+  UTF-8 bytes, so a fault record stays within 8 KiB, and writes the record
+  without the four fields if the contract still refuses it. Every earlier profile
+  refuses each of them, and the raw `error.stack` field stays refused.
+- **Source:** one serializer, the SDK's `exceptionFields`
+  (`packages/sdk/src/exception.ts`), reads an `Error`'s own `message` and the
+  stack V8 itself formats, through their property descriptors. An accessor is
+  read only when it is V8's own shared stack accessor, compared by identity: a
+  getter a value or its class supplies, bound or not, never runs; a cause, an
+  `errors` list or another member is never read; a value that is not an `Error`
+  yields nothing. A process-wide `Error.prepareStackTrace` still shapes what V8
+  returns. It removes control characters; replaces each secret the runtime's
+  modules have read, authorization and API-key values, a URL's user information,
+  credential-named parameters, fields and members (`name=value`, `name: value`,
+  quoted values, JSON members), well-known key shapes (API keys, personal access
+  tokens, cloud keys, JWTs, this repository's `tok_` tokens) and long opaque
+  tokens with `[redacted]`; replaces a JSON-shaped block or quoted string longer
+  than 128 characters, on one line or across lines, which may be a request body,
+  a prompt or a transcript, with `[omitted]`; counts the replacements in
+  `bunny.exception.redacted_count`; and cuts each text to its limit, a stack
+  between its frames, setting `bunny.exception.truncated`. It reads at most four
+  times each limit of the raw text and every step is linear in that prefix, so a
+  message of any size costs a bounded amount of time. Detection has limits: a
+  credential in a shape no rule knows, such as a short opaque token or a
+  digits-only secret, survives unless a module registered it, and the names a
+  library's prose also uses (`key`, `auth`, `signature`, `sig`, `response`) are
+  replaced only as `name=value` or with a quoted value, so `unexpected server
+  response: 502` keeps its status. A registered secret is replaced in the whole
+  raw text before the prefix is read. A payload whose closing bracket or quote
+  lies beyond the scanner's four-kilobyte window, or that never closes, is
+  omitted from its opening to the end of the message, so a member before the
+  opening stays; no payload runs into a stack frame: a payload in a stack's
+  header ends with the header, so a lone quote or bracket in a message
+  (`Unexpected token " in JSON`) keeps every frame while a frame-like line
+  inside a quoted body stays part of the body, and a payload in a frame ends
+  with that frame; a message has no such bound, and neither has a stack whose
+  header cannot be matched to its message (a module-written stack without its
+  message or with another, a message that is only a prefix of the header, or an
+  error name over 128 characters), so a payload such a header leaves open takes
+  its frames with it, while a module-written message that is a prefix of its
+  header ending exactly where a frame-like line begins bounds the header there;
+  an
+  unquoted member name with its colon, as Node inspects an object, opens a
+  block like JSON; and a quote that follows a letter or digit, as in a
+  contraction, opens nothing. Control and format characters are removed before
+  a module's registered secrets are replaced. Useful context can go too: a quoted path of 128 characters or
+  more and a 40-hexadecimal commit hash outside a path become `[omitted]` and
+  `[redacted]`. A text that still holds a registered secret is left out of the
+  record whole, with its counts; the record keeps its type and code. A module
+  that writes `exception.message` or `exception.stacktrace` into its own record
+  goes through the same filters, bounds and secret replacement in the runtime's
+  log writer, so neither path admits raw text.
+- **Where the runtime writes them:** its fault records, `runtime.module.failed`,
+  `runtime.module.refused` with an error, `runtime.handler.failed`,
+  `runtime.module.stop-failed`, `runtime.module.error-after-stop` and
+  `runtime.failed`, through `faultFields` in `apps/runtime/src/log.ts`, with
+  `error.type` and `error.code` as before. A module may add `exceptionFields` to
+  its own `operation.failed`. Decision and refusal records carry the type and
+  code only, as before.
+- **Destination:** the private diagnostic path only: the runtime's stderr journal
+  and the OTLP export to the Mac-local collector (#813). Projecting a 1.7 record
+  to an earlier profile removes the four fields and keeps the rest, so an older
+  consumer sees the fault with its type, code and correlation and none of the
+  text. Publication uses synthetic fixtures; the maintenance intake's findings
+  carry catalog enums only.
+- **Telemetry loss:** profile 1.7 admits `telemetry.dropped` under
+  `bunny.runtime`, with `bunny.telemetry.dropped_count` and
+  `bunny.telemetry.failure_count`, for the runtime's bounded summary of the
+  records and spans its export lost (#813). A hub host's `telemetry.dropped`
+  under its own scopes is unchanged.
+
+Profile 1.7 adds no span name.
 
 The companions producer ends run spans at human waits and shutdown and links
 later activations to the prior run. Calls are children of the active run. It

@@ -24,7 +24,7 @@
   "dependencies": {
     "@jimmie-potts/agent-lifecycle-contracts": "1.2.0",
     "@jimmie-potts/agent-state": "3.6.0",
-    "@jimmie-potts/bunny-observability": "1.6.0",
+    "@jimmie-potts/bunny-observability": "1.7.0",
     "@jimmie-potts/codex-desktop": "0.1.0",
     "@jimmie-potts/device-mcp": "1.0.1",
     "@jimmie-potts/event-contracts": "1.0.0",

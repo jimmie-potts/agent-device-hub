@@ -1527,7 +1527,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.5, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -1553,8 +1553,19 @@ that logs either, and a new event goes through a catalog change. A dropped
 record is counted, never truncated.
 
 A failure record names the error's type (`error.type`) and, when it is an
-identifier, its code (`error.code`). As the contract requires, it never holds
-the raw message or stack, which may quote a URL with a token in it. A module's
+identifier, its code (`error.code`). A record of a decision or a refusal carries
+only these. A fault record (`runtime.module.failed`, `runtime.module.refused`
+with an error, `runtime.handler.failed`, `runtime.module.stop-failed`,
+`runtime.module.error-after-stop` and `runtime.failed`) also carries the
+exception's filtered, bounded message and stack as the contract's
+[profile 1.7](../../docs/observability-contract.md#private-exception-context-profile-17)
+admits them (Hub #777): `exception.message`, `exception.stacktrace`,
+`bunny.exception.redacted_count` and `bunny.exception.truncated`. The SDK's
+`exceptionFields` reads only the error's own message and V8's own stack and
+replaces registered module secrets, credential-like segments and payload-like
+segments before the record is built; `faultFields` in `src/log.ts` adds the
+error's type and code. The text stays on the private diagnostic path, the
+journal and the export; an error body, health or history never carries it. A module's
 refusal or failure carries its 2.0 registry code in `bunny.code` and where it
 arose in `bunny.phase`: `manifest`, `start`, `handler`, `timer`, `worker` or
 `async` (its own async flow). A problem in its stop carries `bunny.phase` and no
