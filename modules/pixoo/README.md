@@ -566,8 +566,8 @@ acknowledgment.
 - Source commit: `0777479c2fd7fbaca12d93e724ce8a2c15129b92`, "Add revision-bound
   Pixoo runtime upgrades and recovery (#138)", committed 2026-10-04 and still the
   head of main when read on 2026-10-06
-- Full history stays in that repository, which is archived at retirement
-  ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
+- Full history stays in that repository, which was archived under
+  [#936](https://github.com/jimmie-potts/agent-device-hub/issues/936) on 2026-10-30.
 
 Paths in the edit list are relative to this folder unless they say "the
 source's". Paths in the not-moved list are relative to the source repository.
@@ -584,10 +584,10 @@ Read on 2026-10-06 from divoom-app-upgrade:
   - the 11 local worktrees have no uncommitted changes, and each is on a merged PR's branch or at an ancestor of the source commit;
   - one local-only branch, `claude/pr-116-status-307d29`, points at `9467f90`, which is already on main.
 - **In-progress label:** #115 (runtime upgrade) still has it, but its branch merged as #138. Its installer is what #840 replaces.
-- **Open issues, disposed at retirement ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)):**
+- **Open issues, disposed at retirement ([#936](https://github.com/jimmie-potts/agent-device-hub/issues/936)):**
   - transfer to this repository: #13, #15, #16, #18, #52, #76, #83, #91, #92, #93, #94, #107, #108, #119 and #122;
   - close as superseded: #14 (by Hub #751), #112, #115 and #126;
-  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decides at #839.
+  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decided at #936.
 
 ### Edits to the snapshot
 

@@ -1200,12 +1200,11 @@ does:
 A clean stop checkpoints the log into the file and removes it. After a crash
 the file alone may lack commits that are still in the log, so copy a stopped
 store with its `-wal` file, or use SQLite's backup API; a copy of the file
-alone can lose them. For a copy of the whole installation, use the container
-operator guide's
-[stopped-instance backup](../../docs/bunny-container.md#back-up-a-stopped-instance),
-or on a systemd installation the upgrade procedure's
-[stopped-writer backup](UPGRADE.md#stop-back-up-select-and-verify); both
-include each module's private folder. Beside the file, the module's
+alone can lose them. For a copy of the whole installation, use the
+[stopped-instance backup](../../docs/bunny-container.md#back-up-a-stopped-instance)
+in the container operator guide, or on a systemd installation the upgrade
+procedure's [stopped-writer backup](UPGRADE.md#stop-back-up-select-and-verify);
+both include each module's private folder. Beside the file, the module's
 private folder `modules/<name>/` is created with mode 700 when the module first
 calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
