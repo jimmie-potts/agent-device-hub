@@ -24,8 +24,9 @@ const entries=async(h:Harness):Promise<LogEntry[]>=>{
 };
 const pendantOn:Action={target:'pendant-1',family:'power-set',data:{on:true}};
 const definition=(h:Harness)=>({name:'Reading light',days:[(new Date(h.now()).getDay()+1)%7],time:'17:00',actions:[pendantOn]});
-const commands=(h:Harness,key='bunny.cmd.power-set.pendant-1')=>h.logs().filter(({record})=>record.event_name==='runtime.command.admitted' &&
-  record.attributes['bunny.routing.key']===key && record.attributes['bunny.participant']==='bunny/core').length;
+/** Every command of any family the core admitted for the pendant. */
+const commands=(h:Harness)=>h.logs().filter(({record})=>record.event_name==='runtime.command.admitted' && record.attributes['bunny.participant']==='bunny/core' &&
+  typeof record.attributes['bunny.routing.key']==='string' && /^bunny\.cmd\.[a-z-]+\.pendant-1$/.test(record.attributes['bunny.routing.key'])).length;
 
 /** Shared management of routines: disabled creation, read-only refusal, edits that keep the enabled state, no catch-up after a restart. */
 const weeklyRoutines:Scenario={
@@ -59,7 +60,8 @@ const weeklyRoutines:Scenario={
     expect('the restarted core retains the enabled definition and schedules only a future occurrence',async h=>{
       const ready=await running(h,['core','lifx']);if(ready!==true) return ready;
       const current=await control(h,'GET',`/${savedOf(h).id}`);
-      return current.enabled && current.time==='21:00' && current.next!==undefined && current.next.atMs>h.now() || 'saved definition or future occurrence missing';
+      const next=current.next===undefined?undefined:new Date(current.next.atMs);
+      return current.enabled && current.time==='21:00' && next!==undefined && next.getTime()>h.now() && next.getHours()===21 && next.getMinutes()===0 || 'saved definition or recomputed 21:00 occurrence missing';
     },10000),
     holds('restart and SDK resync dispatch no catch-up command',h=>commands(h)===0 || 'restart replayed a command',300),
     act('the owner disables and removes the routine',async h=>{
@@ -76,9 +78,9 @@ const pendantColor=(h:Harness):Outcome=>{
   const color=deviceState<LifxDeviceState>(h,'lifx').bulbs[PENDANT_AT]?.color;
   return (color!==undefined && color.saturation===65535 && Math.abs(color.hue-21845)<=2) || `pendant color ${JSON.stringify(color)}`;
 };
-/** The next local minute at least five seconds away, as the routine's day and time. */
+/** The next local minute at least ten seconds away, as the routine's day and time; chosen right before enabling, so earlier steps cannot outrun it. */
 const nextMinute=(h:Harness):{days:number[];time:string;atMs:number}=>{
-  const at=new Date(h.now()+5000);at.setSeconds(0,0);at.setMinutes(at.getMinutes()+1);
+  const at=new Date(h.now()+10000);at.setSeconds(0,0);at.setMinutes(at.getMinutes()+1);
   return {days:[at.getDay()],time:`${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}`,atMs:at.getTime()};
 };
 const rowsOf=(found:LogEntry[],kind:string)=>found.filter(entry=>entry.event.kind===kind).map(entry=>`${entry.index ?? '-'} ${entry.target} ${entry.outcome}${entry.reason===undefined?'':` ${entry.reason}`}`);
@@ -104,11 +106,10 @@ const routineActions:Scenario={
     expect('Monitor shows',h=>completedAs(h,'routine-monitor-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='monitor' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),
     act('the owner saves a disabled routine: start the playlist on the Pixoo, then paint the pendant green',async h=>{
       const [list]=h.reader.states<PlaylistRecord>(PIXOO.playlist);if(list===undefined) throw new StepFailure('no playlist');
-      const when=nextMinute(h);
-      const value=await control(h,'POST','',{name:'Evening',days:when.days,time:when.time,actions:[
+      const value=await control(h,'POST','',{name:'Evening',days:[(new Date(h.now()).getDay()+1)%7],time:'17:00',actions:[
         {target:PIXOO_ID,family:'media-start',data:{playlistId:list.data.id}},{target:'pendant-1',family:'lifx-color-set',data:{hue:120,saturation:100}}]},201);
       if(value.enabled || value.actions[0]?.requireMode!=='media' || value.actions[1]?.requireMode!==undefined) throw new StepFailure('the content action did not default to Media');
-      saved.set(h,{...value,plannedAtMs:when.atMs});
+      saved.set(h,value);
     }),
     act('the owner runs the routine now while Monitor shows',async h=>{
       const answer=await h.gateway({as:'operator',method:'POST',path:`/api/v2/automation/routines/${savedOf(h).id}/run`,headers:{'bunny-request':'1'},body:{}});
@@ -117,7 +118,8 @@ const routineActions:Scenario={
     expect('the log shows the playlist action skipped for the mode and the color action accepted, in order',async h=>{
       const rows=rowsOf(await entries(h),'routine-run');
       const first=rows[0]??'';
-      return (rows.length===2 && (first==='0 pixoo-1 blocked mode' || first==='0 pixoo-1 not-sent invalid-state') && rows[1]==='1 pendant-1 receipt') || `rows ${JSON.stringify(rows)}`;
+      // The core's own precondition skips the start; the Pixoo's admission check (#1276) is the second line and is not reached.
+      return (rows.length===2 && first==='0 pixoo-1 blocked mode' && rows[1]==='1 pendant-1 receipt') || `rows ${JSON.stringify(rows)}`;
     }),
     // Monitor paints its own dashboard, so the Pixoo's send counts cannot tell a start apart; the module's own player state can.
     expect('the Pixoo selected no playlist and stays in Monitor; the pendant shows green',h=>
@@ -135,10 +137,12 @@ const routineActions:Scenario={
       const done=completedAs(h,latest.requestId,'succeeded','transmitted');
       return done===true?shownFrames(h,1):done;
     },8000),
-    act('the owner enables the routine for its minute',async h=>{
-      const value=savedOf(h);
-      const enabled=await control(h,'POST',`/${value.id}/enable`,{});
-      if(enabled.next?.atMs!==value.plannedAtMs) throw new StepFailure('the next occurrence is not the saved minute');
+    act('the owner moves the routine to the next minute and enables it',async h=>{
+      const value=savedOf(h),when=nextMinute(h);
+      const moved=await control(h,'PUT',`/${value.id}`,{name:value.name,days:when.days,time:when.time,actions:value.actions});
+      const enabled=await control(h,'POST',`/${moved.id}/enable`,{});
+      if(enabled.next?.atMs!==when.atMs) throw new StepFailure('the next occurrence is not the chosen minute');
+      saved.set(h,{...enabled,plannedAtMs:when.atMs});
     }),
     expect('at its minute the routine runs both actions once, in order',async h=>{
       const rows=rowsOf(await entries(h),'routine-scheduled');

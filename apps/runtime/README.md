@@ -440,13 +440,18 @@ The core also owns weekly routines for configured devices
 generalizes the one on/off power window of #483). A routine selects weekdays
 and one time on the Hub host's local clock and holds an ordered list of typed
 actions, each naming a configured target and one of the tracked command
-families its module declares: `power-set`, `brightness-set`, `media-start`,
-`media-control`, `device-mode-set`, `pixoo-media-show` or `lifx-color-set`,
-with that family's own payload. A content action (`media-start`,
-`media-control`, `pixoo-media-show`) always carries `requireMode`, by default
-`media` for a Pixoo and `free` for a Nanoleaf. New routines default to
-disabled; edits preserve the enabled state. This registry is separate from
-Nanoleaf/Pixoo mode participation.
+families its module declares: `power-set`, `brightness-set`,
+`scene-activate`, `media-start`, `media-control`, `device-mode-set`,
+`pixoo-media-show` or `lifx-color-set`, with that family's own payload. A
+content action (`scene-activate`, `media-start`, `media-control`,
+`pixoo-media-show`) always carries `requireMode`, and only its device kind's
+content mode: `media` for a Pixoo, `free` for a Nanoleaf. It takes that mode
+when the field is omitted, and a kind without a content mode cannot hold a
+content action. So no routine action except an explicit `device-mode-set` can
+take a device out of its status presentation. Any other action may name a mode
+to require, or none. New routines default to disabled; edits preserve the
+enabled state. This registry is separate from Nanoleaf/Pixoo mode
+participation.
 
 At its minute, or on an explicit Run now, the core runs the actions in order:
 each reads the current device record, checks the same configuration and
@@ -456,18 +461,27 @@ pending mode changes, and submits one tracked, guarded command through the
 dispatcher with fresh request identity; the mode-checked families carry
 `requireMode` so the Pixoo checks it again at admission (#1276). A refused,
 failed, uncertain or skipped action does not stop the next; a skipped content
-action is logged `blocked` with reason `mode`. One occurrence per routine runs
-at a time; an overlapping occurrence or Run now is logged `blocked` with reason
-`busy` and dropped. Nothing is retried, rolled back or caught up, and the core
-never calls a transport.
+action is logged `blocked` with reason `mode`, and a scheduled action whose
+turn comes more than 60 seconds after the minute is logged `blocked` with
+reason `expired`. Nothing waits for an earlier action's outcome: a
+`device-mode-set` followed by a content action usually skips that content
+action, because the mode change is still pending when its turn comes; put the
+content action in a later routine or run it separately. One occurrence per
+routine runs at a time; an overlapping occurrence or Run now is logged
+`blocked` with reason `busy` and dropped. Nothing is retried, rolled back or
+caught up, and the core never calls a transport.
 
 The core stores definitions as `rules.kind = routine` rows with
 `trigger.schema = routine/1.0` and a bounded per-rule occurrence watermark under
 its existing lease. At its first open after the upgrade it migrates each
-retained `power-window/1.0` row once, in one transaction, into an on routine
-(the row's id, definition identity and watermark, with a `power-set on` action)
-and an off routine (a new id, the watermark copied, `power-set off`); a row it
-cannot read refuses the open and leaves every row unchanged. Restart,
+retained `power-window/1.0` row once into an on routine (the row's id,
+definition identity and watermark, with a `power-set on` action) and an off
+routine (a new id, the watermark copied, `power-set off`). Every replacement
+row is read back through the routine reader first, and all splits commit in
+one transaction, so a row it cannot read, or a replacement the reader would
+refuse, refuses the open and leaves every row unchanged. The added off rows
+bypass the 64-rule limit; a store holding more than 32 windows then refuses new
+rules and routines with `capacity` until rows are removed. Restart,
 reconnect, editing and enabling select future occurrences only. Callbacks more
 than 60 seconds late are discarded, and duplicate intent is never replayed. The
 Hub must remain running with a reachable device; this is separate from any

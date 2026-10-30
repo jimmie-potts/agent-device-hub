@@ -42,11 +42,15 @@ dispatch, never a pending command to replay. Definitions and guards remain in
 the private core database under its existing lease.
 
 Releases before #1297 stored one on/off power window per row as
-`trigger.schema = power-window/1.0`. The #1297 release migrates each such row
-once, in one transaction, at its first open: the row keeps its id, definition
-identity and guard and becomes the on routine with a `power-set on` action; a
-new row with a copy of the guard becomes the off routine. A row the migration
-cannot read refuses the open and leaves every row unchanged. An older release
+`trigger.schema = power-window/1.0`. The #1297 release migrates every such row
+at its first open: the row keeps its id, definition identity and guard and
+becomes the on routine with a `power-set on` action; a new row with a copy of
+the guard becomes the off routine. The migration reads each replacement back
+through the routine reader before writing and commits all splits in one
+transaction, so a row it cannot read, or a replacement the reader would refuse,
+refuses the open and leaves every row unchanged. The added rows bypass the
+64-rule limit; more than 32 windows leave a store that refuses new rules with
+`capacity` until rows are removed. An older release
 cannot read `routine/1.0` rows, so recovery to it is unknown unless separately
 qualified; prefer fixing forward.
 

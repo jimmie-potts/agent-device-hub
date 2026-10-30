@@ -74,10 +74,12 @@ void test('routine replies, including Run now, pass only with their declared sha
   const replies: Record<string, unknown>[] = [];
   context.mock.method(globalThis, 'fetch', () => Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...replies.shift()}), {status: 200})));
   const saved = {...routine, id: 'morning', enabled: false, definitionId: 'definition-1', createdAtMs: 1, updatedAtMs: 1};
-  replies.push(saved, {id: 'morning', atMs: 5, ran: true}, saved);
+  replies.push(saved, {id: 'morning', atMs: 5, ran: true, outcome: 'ran'}, {id: 'morning', atMs: 6, ran: false, outcome: 'busy'}, saved, {id: 'morning', atMs: 7, ran: true});
   assert.equal((await page.automationRequest('routines', 'POST', page.routineInput(routine, true))).id, 'morning');
   assert.equal((await page.automationRequest('routines/morning/run', 'POST', {})).ran, true);
+  assert.equal((await page.automationRequest('routines/morning/run', 'POST', {})).outcome, 'busy', 'a dropped Run now is a declared answer, not a lost reply');
   await assert.rejects(page.automationRequest('routines/morning/run', 'POST', {}), /Refresh.*before another attempt/);
+  await assert.rejects(page.automationRequest('routines/morning/run', 'POST', {}), /Refresh.*before another attempt/, 'a run reply without its outcome is not trusted');
 });
 
 void test('every explicit mutation sends once with same-origin credentials and the write header, DELETE included', async context => {

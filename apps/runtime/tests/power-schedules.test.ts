@@ -16,14 +16,16 @@ const monday=(hour:number,minute=0)=>new Date(2026,9,12,hour,minute).getTime();
 type Sent={action:RoutineAction;requestId:string};
 function world(db=new DatabaseSync(':memory:'),clock=manualClock(monday(16))) {
   const store=new AutomationStore(db,()=>{}, {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
-  const records=new Map(['lamp-a','lamp-b','pixoo-1'].map(id=>{
-    const record=deviceRecord(id,1,id==='pixoo-1'?'pixoo':'test-power','available');record.capabilities.power={supported:true};
+  const kinds:Record<string,string>={'pixoo-1':'pixoo','wall-1':'nanoleaf'};
+  const records=new Map(['lamp-a','lamp-b','pixoo-1','wall-1'].map(id=>{
+    const record=deviceRecord(id,1,kinds[id]??'test-power','available');record.capabilities.power={supported:true};
     if(id==='pixoo-1') {record.capabilities.media={supported:true,actions:['pause','resume','stop','next','previous','restart-with-changes','clear'],playlistIds:['list-1'],renditionIds:[]};record.capabilities.modes={supported:true,values:['monitor','media']};record.desired.mode={status:'known',value:'media'};}
+    if(id==='wall-1') {record.capabilities.scenes={supported:true,sceneIds:['relax']};record.capabilities.modes={supported:true,values:['status','free']};record.desired.mode={status:'known',value:'free'};}
     return [id,record] as const;
   }));
   const sent:Sent[]=[];
   const options:RoutineOptions={store,clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets:()=>[...records.keys()],
-    owner:id=>id==='pixoo-1'?'bunny/modules/pixoo':id==='lamp-b'?'bunny/modules/lifx':'bunny/modules/test-power',
+    owner:id=>id==='pixoo-1'?'bunny/modules/pixoo':id==='wall-1'?'bunny/modules/nanoleaf':id==='lamp-b'?'bunny/modules/lifx':'bunny/modules/test-power',
     read:id=>Promise.resolve(records.get(id)),current:id=>records.get(id),
     send:(action,_record,requestId)=>{sent.push({action,requestId});return Promise.resolve({outcome:'receipt',requestId});}};
   const routines=createRoutines(options);
@@ -59,7 +61,9 @@ void test('unknown fields, unconfigured targets, foreign module families, bad pa
       {actions:[{target:'lamp-a',family:'power-set',data:{on:'yes'}}]},{actions:[{target:'lamp-a',family:'power-set',data:{on:true,extra:1}}]},
       {actions:[{target:'lamp-a',family:'brightness-set',data:{percent:101}}]},{actions:[{target:'lamp-a',family:'pixoo-media-show',data:{renditionId:'f'.repeat(64)}}]},
       {actions:[{target:'pixoo-1',family:'lifx-color-set',data:{hue:1,saturation:1}}]},{actions:[{target:'lamp-a',family:'media-start',data:{playlistId:'list-1'}}]},
-      {actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},requireMode:'Media'}]},{actions:Array.from({length:17},()=>on)}]) {
+      {actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},requireMode:'Media'}]},{actions:[{target:'pixoo-1',family:'media-control',data:{action:'pause'},requireMode:'monitor'}]},
+      {actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'},requireMode:'status'}]},{actions:[{target:'pixoo-1',family:'device-mode-set',data:{mode:'1media'}}]},
+      {actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax/x'}}]},{actions:Array.from({length:17},()=>on)}]) {
       assert.throws(()=>w.routines.create({...input,...patch}),AutomationError,JSON.stringify(patch));
     }
     assert.equal(w.routines.list().length,0);
@@ -91,8 +95,9 @@ void test('the mode precondition passes through to a mode-checked family, a pend
   const w=world();
   try {
     const pixoo=w.records.get('pixoo-1');assert.ok(pixoo);
-    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'pixoo-1',family:'media-control',data:{action:'pause'},requireMode:'monitor'},on]});
-    await w.routines.run(saved.id);
+    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'pixoo-1',family:'device-mode-set',data:{mode:'media'},requireMode:'monitor'},on]});
+    const first=await w.routines.run(saved.id);
+    assert.equal(first.outcome,'ran');
     assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.requireMode??'-'}`),['media-start media','power-set -']);
     assert.deepEqual(log(w),['pixoo-1 receipt','pixoo-1 blocked mode','lamp-a receipt']);
     pixoo.pendingKinds=['device-mode-set'];pixoo.pending=1;
@@ -112,9 +117,10 @@ void test('run now submits one occurrence, enabled or not, and an overlapping oc
     const first=routines.run(saved.id);
     await new Promise(resolve=>{setTimeout(resolve,0);});
     const second=routines.run(saved.id);
-    await second;
+    assert.equal((await second).outcome,'busy');
     assert.deepEqual(log(w),['lamp-a blocked busy']);
-    release();await new Promise(resolve=>{setTimeout(resolve,0);});release();await first;
+    assert.equal((JSON.parse(w.store.readLog(1)[0]?.detail??'{}') as {family:string}).family,'power-set','the busy row names the first action\'s family');
+    release();await new Promise(resolve=>{setTimeout(resolve,0);});release();assert.equal((await first).outcome,'ran');
     assert.deepEqual(log(w),['lamp-a blocked busy','lamp-a receipt','lamp-a receipt']);
     assert.equal(w.store.readLog(10).find(row=>row.reason==='busy')?.eventKind,'routine-run');
     assert.equal(w.store.powerBoundary(saved.id),undefined,'run now claims no scheduled occurrence');
@@ -259,13 +265,69 @@ void test('a window whose row cannot be read refuses to migrate and leaves every
     assert.equal(store.insertRule(broken,64),true);
     assert.throws(()=>migratePowerWindows(store,0),/invalid-state/);
     assert.deepEqual(store.rules().map(row=>row.trigger),[broken.trigger]);
+    const fine={...broken,id:'power-fine',name:'Fine',trigger:JSON.stringify({schema:'power-window/1.0',days:[1],onTime:'17:00',offTime:'20:00'})};
+    assert.equal(store.insertRule(fine,64),true);
+    assert.throws(()=>migratePowerWindows(store,0),/invalid-state/,'one unreadable row refuses the whole migration');
+    assert.deepEqual(store.rules().map(row=>[row.id,row.trigger]),[['power-broken',broken.trigger],['power-fine',fine.trigger]],'the readable row is not split on its own');
+    const malformed={...broken,id:'power-json',action:'{not json'};
+    store.deleteRule('power-broken');assert.equal(store.insertRule(malformed,64),true);
+    assert.throws(()=>migratePowerWindows(store,0),/invalid-state/,'malformed JSON is the same refusal');
   }finally {db.close();}
+});
+void test('migrated names stay valid display text: code-point truncation only when needed, and a neutral name when the suffix would be refused',async()=>{
+  const db=new DatabaseSync(':memory:');
+  const store=new AutomationStore(db,()=>{}, {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+  const window=(id:string,name:string)=>({id,name,kind:'routine',enabled:false,createdAtMs:1,updatedAtMs:1,
+    trigger:JSON.stringify({schema:'power-window/1.0',days:[1],onTime:'17:00',offTime:'20:00'}),action:JSON.stringify({target:'lamp-a',definitionId:`d-${id}`})});
+  const lamps='💡'.repeat(39),long=`${'a'.repeat(76)}💡bc`;
+  try {
+    assert.equal(store.insertRule(window('w-emoji',lamps),64),true);
+    assert.equal(store.insertRule(window('w-long',long),64),true);
+    assert.equal(store.insertRule(window('w-token',`ghp_${'A'.repeat(36)}`),64),true);
+    assert.equal(migratePowerWindows(store,0),3);
+    const names=new Map(store.rules().map(row=>[row.id,row.name]));
+    assert.equal(names.get('w-emoji'),`${lamps} on`,'a valid name is not cut');
+    assert.equal(names.get('w-long'),`${'a'.repeat(76)}💡 on`,'cut by code points, never through a surrogate pair');
+    assert.equal(names.get('w-token'),'Power window on','a name the reader refuses takes the neutral one');
+    for(const row of store.rules()) assert.ok([...row.name].length<=80 && !row.name.includes('\uFFFD'),row.name);
+    const w=world(db);
+    try {assert.equal(w.routines.list().length,6,'every migrated row reads back');} finally {await w.routines.close();}
+  }finally {db.close();}
+});
+void test('a scene action on a Nanoleaf runs in Free, and a scene the device no longer offers is blocked before dispatch',async()=>{
+  const w=world();
+  try {
+    const wall=w.records.get('wall-1');assert.ok(wall);
+    const saved=w.routines.create({...input,actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'}},{target:'wall-1',family:'power-set',data:{on:true},requireMode:'status'}]});
+    assert.equal(saved.actions[0]?.requireMode,'free');
+    await w.routines.run(saved.id);
+    assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.requireMode??'-'}`),['scene-activate free']);
+    assert.deepEqual(log(w),['wall-1 receipt','wall-1 blocked mode']);
+    wall.capabilities.scenes={supported:true,sceneIds:['focus']};
+    await w.routines.run(saved.id);
+    assert.deepEqual(log(w).slice(2),['wall-1 blocked unavailable','wall-1 blocked mode']);
+    assert.equal(w.sent.length,1);
+  }finally {await w.routines.close();w.db.close();}
+});
+void test('a scheduled action whose turn comes after the minute\'s tolerance is logged expired, not dropped',async()=>{
+  const w=world();await w.routines.close();
+  w.options.send=(action,_record,requestId)=>{w.sent.push({action,requestId});w.clock.advance(61*1000);return Promise.resolve({outcome:'receipt',requestId});};
+  const routines=createRoutines(w.options);
+  try {
+    routines.create({...input,enabled:true,actions:[on,off]});
+    w.clock.advance(60*60*1000);await routines.settled();
+    assert.deepEqual(log(w),['lamp-a receipt','lamp-a blocked expired']);
+    assert.equal(w.sent.length,1);
+    const row=w.store.readLog(1)[0];assert.equal(row?.eventKind,'routine-scheduled');
+    assert.equal((JSON.parse(row?.detail??'{}') as {index:number}).index,1);
+  }finally {await routines.close();w.db.close();}
 });
 void test('next occurrence and parsing follow the host clock and the shared shapes',()=>{
   assert.deepEqual(nextOccurrence({days:[1],time:'17:00'},monday(17)),{atMs:monday(17)+7*24*60*60*1000},'the minute itself is not a future occurrence');
   assert.deepEqual(nextOccurrence({days:[0,6],time:'09:30'},monday(17)),{atMs:new Date(2026,9,17,9,30).getTime()});
-  const parsed=parseRoutine({name:'Evening',days:[5,1],time:'17:00',actions:[{target:'wall',family:'media-start',data:{playlistId:'p-1'}}]},['wall'],true,()=>'nanoleaf');
-  assert.deepEqual(parsed.days,[1,5]);assert.equal(parsed.actions[0]?.requireMode,'free');
+  const parsed=parseRoutine({name:'Evening',days:[5,1],time:'17:00',actions:[{target:'wall',family:'scene-activate',data:{sceneId:'relax'}}]},['wall'],true,()=>'nanoleaf');
+  assert.deepEqual(parsed.days,[1,5]);assert.equal(parsed.actions[0]?.requireMode,'free','a Nanoleaf scene defaults to Free');
+  assert.equal(parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'wall',family:'scene-activate',data:{sceneId:'relax'},requireMode:'free'}]},['wall'],true,()=>'nanoleaf').actions[0]?.requireMode,'free');
   assert.throws(()=>parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'plug',family:'media-start',data:{playlistId:'p-1'}}]},['plug'],true,()=>'wemo'),AutomationError,'a content action on a kind without a content mode');
 });
 
@@ -333,21 +395,24 @@ for(const table of ['automation_power_guard','automation_log'] as const) void te
     dispatch:action=>{actions.push(action);return Promise.resolve({requestId:action.requestId??'missing',status:'accepted'});}});
   part.open(db);part.setDevices([{id:'lamp-a',owner:owner.source}]);await flush();
   try {
-    const routines=part.controls.routines;assert.ok(routines);routines.create({...input,enabled:true});
+    const routines=part.controls.routines;assert.ok(routines);routines.create({...input,enabled:true,actions:[on,off]});
     db.exec(`CREATE TRIGGER refuse_write BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic storage refusal'); END`);
     clock.advance(60*60*1000);await routines.settled();
-    assert.equal(actions.length,table==='automation_power_guard'?0:1);
-    assert.equal(errors.length,1);const failure=errors[0];assert.ok(failure);
-    assert.equal(failure.event,'operation.failed');assert.equal(failure.fields?.['bunny.code'],'internal');
-    assert.equal(typeof failure.fields?.['bunny.request.id'],'string');
-    assert.equal(failure.fields?.['bunny.routing.key'],'bunny.cmd.power-set.lamp-a');
-    assert.ok(failure.trace,'storage failure retains its existing attempt context');
-    const trace=traceFields(failure.trace);assert.ok(trace,'storage failure retains its existing attempt trace');
-    if(table==='automation_log') {
-      const action=actions[0];assert.ok(action?.parent);
-      assert.equal(trace.traceId,traceFields(action.parent)?.traceId);
+    // A failed claim dispatches nothing; a failed log row after a dispatch is reported per action and does not stop the next action.
+    const expected=table==='automation_power_guard'?0:2;
+    assert.equal(actions.length,expected);assert.equal(errors.length,Math.max(1,expected));
+    for(const [index,failure] of errors.entries()) {
+      assert.equal(failure.event,'operation.failed');assert.equal(failure.fields?.['bunny.code'],'internal');
+      assert.equal(failure.fields?.['bunny.routing.key'],'bunny.cmd.power-set.lamp-a');
+      assert.ok(failure.trace,'storage failure retains its existing attempt context');
+      const trace=traceFields(failure.trace);assert.ok(trace,'storage failure retains its existing attempt trace');
+      if(table==='automation_log') {
+        const action=actions[index];assert.ok(action?.parent);
+        assert.equal(failure.fields?.['bunny.request.id'],action.requestId,'the diagnostic names the action\'s own request');
+        assert.equal(trace.traceId,traceFields(action.parent)?.traceId);
+      } else assert.match(String(failure.fields?.['bunny.request.id']),/^routine-/);
     }
-    clock.advance(1000);await routines.settled();assert.equal(actions.length,table==='automation_power_guard'?0:1);
+    clock.advance(1000);await routines.settled();assert.equal(actions.length,expected);
   }finally {await part.close();await sdk.close();await owner.close();db.close();}
 });
 

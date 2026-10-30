@@ -51,7 +51,7 @@ function mutationReply(path: string, method: string, answer: Record<string, unkn
   if (path === 'settings') return typeof answer.noFlourishes === 'boolean' && object(answer.quietHours) && object(answer.budgets);
   if (method === 'DELETE') return answer.deleted === true && typeof answer.id === 'string';
   if(path.startsWith('power-limits/')) return answer.id===path.slice('power-limits/'.length)&&typeof answer.settingsRevision==='number'&&typeof answer.enabled==='boolean'&&typeof answer.durationMs==='number';
-  if (path.startsWith('routines/') && path.endsWith('/run')) return typeof answer.id === 'string' && typeof answer.atMs === 'number' && answer.ran === true;
+  if (path.startsWith('routines/') && path.endsWith('/run')) return typeof answer.id === 'string' && typeof answer.atMs === 'number' && typeof answer.ran === 'boolean' && (answer.outcome === 'ran' || answer.outcome === 'busy');
   if (path === 'routines' || path.startsWith('routines/')) return typeof answer.id === 'string' && typeof answer.name === 'string' && typeof answer.enabled === 'boolean' &&
     Array.isArray(answer.days) && typeof answer.time === 'string' && Array.isArray(answer.actions);
   return typeof answer.id === 'string' && typeof answer.name === 'string' && typeof answer.enabled === 'boolean' && object(answer.trigger) && object(answer.action);

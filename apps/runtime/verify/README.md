@@ -89,8 +89,9 @@ before a future occurrence. `routine-actions` adds the playback, Pixoo and LIFX
 modules: it imports a picture into a Pixoo playlist, saves a routine that starts
 the playlist and paints the pendant green, runs it now in Monitor (the start is
 skipped for the mode, the color runs) and in Media (the start completes once the
-media reached the simulated Pixoo), then enables it for the next minute and
-observes both actions once, in order, with nothing replayed after a restart.
+media reached the simulated Pixoo), then moves it to the next minute, enables
+it and observes both actions once, in order, with nothing replayed after a
+restart.
 
 `wemo-power-limit` uses the actual core, Wemo module and authenticated controls
 with two supervisor-owned synthetic plugs. It checks read-only refusal, explicit

@@ -60,7 +60,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
         if(method!=='POST') return undefined;
         const input=await request.body(16);
         if(typeof input!=='object' || input===null || Array.isArray(input) || Object.keys(input).length>0) invalid();
-        if(action==='run') {request.authorize();return answer(200,{...await routines.run(id,request.parent),ran:true});}
+        if(action==='run') {request.authorize();const result=await routines.run(id,request.parent);return answer(200,{...result,ran:result.outcome==='ran'});}
         return write(()=>answer(200,routines.setEnabled(id,action==='enable')));
       }
       if(method==='GET') return answer(200,routines.get(id));

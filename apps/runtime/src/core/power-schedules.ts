@@ -4,17 +4,17 @@
 import {randomUUID} from 'node:crypto';
 import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {commandSupported, type DeviceCommand, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {childOf,type TraceContext,type Cancel,type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
 import {AutomationError, RULE_LIMIT} from './automation.js';
 import type {AutomationStore, NewLogRow, RuleRow} from './automation-store.js';
 
 /** The tracked command families a routine action may use: the general device families, and the module families a target's module declares. */
-export const ROUTINE_FAMILIES = ['power-set','brightness-set','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
+export const ROUTINE_FAMILIES = ['power-set','brightness-set','scene-activate','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
 export type RoutineFamily = (typeof ROUTINE_FAMILIES)[number];
-/** Content actions run only while the device is in a content mode: they always carry `requireMode`. */
-export const CONTENT_FAMILIES: readonly RoutineFamily[] = ['media-start','media-control','pixoo-media-show'];
-/** The content mode each participating device kind defaults to (owner direction, 2026-09-25): Media for Pixoo, Free for Nanoleaf. */
+/** Content actions run only while the device is in its content mode: they always carry `requireMode`, and only that mode. */
+export const CONTENT_FAMILIES: readonly RoutineFamily[] = ['scene-activate','media-start','media-control','pixoo-media-show'];
+/** The content mode of each participating device kind (owner direction, 2026-09-25): Media for Pixoo, Free for Nanoleaf. */
 export const DEFAULT_CONTENT_MODE: Readonly<Record<string,string>> = Object.freeze({pixoo:'media',nanoleaf:'free'});
 /** The families whose 2.0 schemas take `requireMode`, so the owning module checks it again at admission (#1276). */
 export const MODE_FAMILIES: readonly RoutineFamily[] = ['media-start','media-control','pixoo-media-show'];
@@ -39,7 +39,8 @@ export type PowerDispatchOptions = {
   read:(target:string)=>Promise<DeviceRecord|undefined>;
   current:(target:string)=>DeviceRecord|undefined;
   refused?:(requestId:string,parent:TraceContext)=>void;
-  failed?:(requestId:string,parent:TraceContext,target:string)=>void;
+  /** A storage failure around one request: its real request ID, trace, target and, for a routine action, its family. */
+  failed?:(requestId:string,parent:TraceContext,target:string,family?:string)=>void;
   send:(target:string,on:boolean,record:DeviceRecord,requestId:string,parent:TraceContext)=>Promise<PowerSendResult>;
 };
 /** Kept for the maximum-on limits, which took the power schedules' options. */
@@ -55,7 +56,9 @@ const invalid = (code='invalid-routine',status=400):never=>{throw new Automation
 const object=(v:unknown):v is Record<string,unknown>=>v!==null && typeof v==='object' && !Array.isArray(v);
 const time=(v:unknown):v is string=>typeof v==='string' && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(v);
 const routingId=(v:unknown):v is string=>typeof v==='string' && v.length<=128 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v);
-const kebab=(v:unknown):v is string=>typeof v==='string' && v.length<=64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v);
+/** The contract's enum value, as a native mode is spelled: lowercase, starting with a letter. */
+const enumValue=(v:unknown):v is string=>typeof v==='string' && v.length<=64 && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(v);
+const blockId=(v:unknown):v is string=>typeof v==='string' && /^[A-Za-z0-9_.-]{1,128}$/.test(v);
 const exact=(value:Record<string,unknown>,keys:readonly string[])=>Object.keys(value).length===keys.length && keys.every(key=>Object.hasOwn(value,key));
 const integer=(v:unknown,minimum:number,maximum:number):v is number=>Number.isInteger(v) && (v as number)>=minimum && (v as number)<=maximum;
 export const isRoutineFamily=(v:unknown):v is RoutineFamily=>typeof v==='string' && (ROUTINE_FAMILIES as readonly string[]).includes(v);
@@ -68,29 +71,34 @@ function parseActionData(family:RoutineFamily,value:unknown):Record<string,unkno
   switch(family) {
     case 'power-set': return exact(value,['on']) && typeof value.on==='boolean'?{on:value.on}:invalid();
     case 'brightness-set': return exact(value,['percent']) && integer(value.percent,0,100)?{percent:value.percent}:invalid();
-    case 'media-start': return exact(value,['playlistId']) && typeof value.playlistId==='string' && /^[A-Za-z0-9_.-]{1,128}$/.test(value.playlistId)?{playlistId:value.playlistId}:invalid();
+    case 'scene-activate': return exact(value,['sceneId']) && blockId(value.sceneId)?{sceneId:value.sceneId}:invalid();
+    case 'media-start': return exact(value,['playlistId']) && blockId(value.playlistId)?{playlistId:value.playlistId}:invalid();
     case 'media-control': return exact(value,['action']) && typeof value.action==='string' && MEDIA_ACTIONS.includes(value.action)?{action:value.action}:invalid();
-    case 'device-mode-set': return exact(value,['mode']) && kebab(value.mode)?{mode:value.mode}:invalid();
+    case 'device-mode-set': return exact(value,['mode']) && enumValue(value.mode)?{mode:value.mode}:invalid();
     case 'pixoo-media-show': return exact(value,['renditionId']) && typeof value.renditionId==='string' && /^[a-f0-9]{64}$/.test(value.renditionId)?{renditionId:value.renditionId}:invalid();
     case 'lifx-color-set': return exact(value,['hue','saturation']) && integer(value.hue,0,360) && integer(value.saturation,0,100)?{hue:value.hue,saturation:value.saturation}:invalid();
   }
 }
 /**
  * One action: a configured target, a family the target's module declares, the family's payload and the mode precondition.
- * A content action without `requireMode` takes its target kind's default content mode; a kind without one is refused.
+ * A content action requires its target kind's content mode, and only that mode, so no routine action other than an explicit
+ * `device-mode-set` can take a device out of its status presentation; it takes that mode when `requireMode` is omitted, and
+ * a kind without a content mode is refused. Any other action may name a mode to require, or none.
  */
 function parseAction(value:unknown,targets:readonly string[]|null,kindOf:(target:string)=>string|undefined):RoutineAction {
   if(!object(value) || !['target','family','data'].every(key=>Object.hasOwn(value,key)) ||
       Object.keys(value).some(key=>!['target','family','data','requireMode'].includes(key)) ||
-      !routingId(value.target) || !isRoutineFamily(value.family) || (Object.hasOwn(value,'requireMode') && !kebab(value.requireMode))) return invalid();
+      !routingId(value.target) || !isRoutineFamily(value.family) || (Object.hasOwn(value,'requireMode') && !enumValue(value.requireMode))) return invalid();
   if(targets!==null && !targets.includes(value.target)) return invalid('unknown-target');
   const kind=kindOf(value.target),moduleKind=MODULE_FAMILIES[value.family];
   if(moduleKind!==undefined && kind!==undefined && kind!==moduleKind) return invalid('unknown-target');
   const data=parseActionData(value.family,value.data);
   let requireMode=Object.hasOwn(value,'requireMode')?value.requireMode as string:undefined;
-  if(requireMode===undefined && CONTENT_FAMILIES.includes(value.family)) {
-    requireMode=kind===undefined?undefined:DEFAULT_CONTENT_MODE[kind];
-    if(requireMode===undefined && targets!==null) return invalid('invalid-routine');
+  if(CONTENT_FAMILIES.includes(value.family)) {
+    const content=kind===undefined?undefined:DEFAULT_CONTENT_MODE[kind];
+    if(content!==undefined && requireMode!==undefined && requireMode!==content) return invalid();
+    if(content===undefined && targets!==null) return invalid();
+    requireMode=requireMode??content;
   }
   return {target:value.target,family:value.family,data,...(requireMode===undefined?{}:{requireMode})};
 }
@@ -115,18 +123,14 @@ export function parseRoutine(value:unknown,targets:readonly string[]|null,allowE
 export function routineCommand(action:RoutineAction):{key:string;type:string;dataschema:string} {
   return {key:`bunny.cmd.${action.family}.${action.target}`,type:`org.bunny.${action.family.replace(/-([a-z]+)$/,'.$1')}.requested`,dataschema:`${SCHEMA_BASE}${action.family}/2.0`};
 }
-/** Whether the current record offers the action, by the capability rule the modules apply at admission; module families need their kind's owner. */
+/**
+ * Whether the current record offers the action: the shared capability rule the modules apply at admission for the general
+ * families, and the declaring module's kind for a module family (the module still refuses what its device cannot do).
+ */
 export function actionSupported(record:DeviceRecord,action:RoutineAction,kind:string|undefined):boolean {
-  const {power,brightness,media,modes}=record.capabilities;
-  switch(action.family) {
-    case 'power-set': return power.supported;
-    case 'brightness-set': return brightness.supported;
-    case 'media-start': return media.supported;
-    case 'media-control': return media.supported && media.actions.includes(action.data.action as (typeof media.actions)[number]);
-    case 'device-mode-set': return modes.supported && modes.values.includes(action.data.mode as string);
-    case 'pixoo-media-show': return media.supported && kind==='pixoo';
-    case 'lifx-color-set': return kind==='lifx';
-  }
+  if(action.family==='pixoo-media-show') return record.capabilities.media.supported && kind==='pixoo';
+  if(action.family==='lifx-color-set') return kind==='lifx';
+  return commandSupported(record.capabilities,{family:action.family,data:{requestId:'routine',...action.data}} as DeviceCommand);
 }
 
 const ROUTINE_SCHEMA='routine/1.0',LEGACY_SCHEMA='power-window/1.0';
@@ -145,26 +149,39 @@ function row(routine:Routine):RuleRow {
     trigger:JSON.stringify({schema:ROUTINE_SCHEMA,days:routine.days,time:routine.time}),
     action:JSON.stringify({definitionId:routine.definitionId,actions:routine.actions})};
 }
-/** A migrated window's names fit the display bound. */
-const suffixed=(name:string,suffix:string)=>`${name.slice(0,80-suffix.length-1).trimEnd()} ${suffix}`;
+/**
+ * A migrated window's name with its suffix, within the display bound and cut by code points only when it must be. A name the
+ * routine reader would refuse once suffixed (the display text's credential pattern) takes a neutral one instead.
+ */
+function suffixed(name:string,suffix:string):string {
+  const limit=80-suffix.length-1,points=[...name.trim()];
+  const candidate=`${(points.length>limit?points.slice(0,limit).join(''):name.trim()).trimEnd()} ${suffix}`;
+  return validDisplayText(candidate,80)?candidate:`Power window ${suffix}`;
+}
 /**
  * The one forward migration of `power-window/1.0` rows (#483) into routines (#1297): the on boundary keeps the row's id,
  * definition identity and occurrence watermark with a `power-set on` action; the off boundary becomes a second routine
- * with its own id and a copy of the watermark. One transaction: a failure leaves every old row as it was.
+ * with its own id and a copy of the watermark. Every replacement is read back through the routine reader before anything
+ * is written, and every split commits in one transaction, so a legacy row the migration cannot read, or a replacement
+ * the reader would refuse, leaves every row as it was.
  */
 export function migratePowerWindows(store:AutomationStore,nowMs:number):number {
-  let migrated=0;
+  const pairs:{replacement:RuleRow;added:RuleRow}[]=[];
   for(const saved of store.rules().filter(item=>item.kind==='routine')) {
-    const trigger:unknown=JSON.parse(saved.trigger),action:unknown=JSON.parse(saved.action);
+    let trigger:unknown,action:unknown;
+    try {trigger=JSON.parse(saved.trigger);action=JSON.parse(saved.action);} catch {throw new Error('invalid-state');}
     if(!object(trigger) || trigger.schema!==LEGACY_SCHEMA) continue;
-    if(!object(action) || typeof action.target!=='string' || typeof action.definitionId!=='string' || !Array.isArray(trigger.days) || !time(trigger.onTime) || !time(trigger.offTime)) throw new Error('invalid-state');
-    const days=[...trigger.days as number[]].sort(),power=(on:boolean):RoutineAction=>({target:action.target as string,family:'power-set',data:{on}});
+    if(!object(action) || !routingId(action.target) || typeof action.definitionId!=='string' || !Array.isArray(trigger.days) || !time(trigger.onTime) || !time(trigger.offTime)) throw new Error('invalid-state');
+    const target=action.target,days=[...trigger.days as number[]].sort(),power=(on:boolean):RoutineAction=>({target,family:'power-set',data:{on}});
     const onRoutine:Routine={id:saved.id,name:suffixed(saved.name,'on'),days,time:trigger.onTime,actions:[power(true)],enabled:saved.enabled,definitionId:action.definitionId,createdAtMs:saved.createdAtMs,updatedAtMs:nowMs};
     const offRoutine:Routine={...onRoutine,id:`routine-${randomUUID()}`,name:suffixed(saved.name,'off'),time:trigger.offTime,actions:[power(false)],definitionId:randomUUID()};
-    store.splitRule(row(onRoutine),row(offRoutine));
-    migrated+=1;
+    const pair={replacement:row(onRoutine),added:row(offRoutine)};
+    // The reader this release opens with must accept both rows, or nothing is written.
+    fromRow(pair.replacement);fromRow(pair.added);
+    pairs.push(pair);
   }
-  return migrated;
+  if(pairs.length>0) store.splitRules(pairs);
+  return pairs.length;
 }
 /** Native host-local clock behavior; strict future selection, including after restart or enabling right at the minute. */
 export function nextOccurrence(routine:Pick<Routine,'days'|'time'>,afterMs:number):RoutineOccurrence {
@@ -178,6 +195,8 @@ export function nextOccurrence(routine:Pick<Routine,'days'|'time'>,afterMs:numbe
 }
 
 type Fire='scheduled'|'run';
+/** How a Run now ended: its occurrence ran (each action answered, was skipped or failed), or an occurrence was already in flight. */
+export type RunResult={id:string;atMs:number;outcome:'ran'|'busy'};
 export function createRoutines(options:RoutineOptions) {
   const {store}=options;
   migratePowerWindows(store,options.clock());
@@ -193,6 +212,7 @@ export function createRoutines(options:RoutineOptions) {
   /** The saved definition still stands: the same routine and definition, enabled for a scheduled fire. */
   const current=(saved:Routine,fire:Fire)=>!stopped() && routines.some(item=>item.id===saved.id && (fire==='run' || item.enabled) && item.definitionId===saved.definitionId);
   const inWindow=(occurrence:RoutineOccurrence)=>options.clock()>=occurrence.atMs && options.clock()<occurrence.atMs+60000;
+  const report=(requestId:string,parent:TraceContext,action:RoutineAction)=>{try {options.failed?.(requestId,parent,action.target,action.family);} catch {/* Diagnostics fail open; nothing is retried. */}};
   const logRow=(saved:Routine,occurrence:RoutineOccurrence,fire:Fire,target:string,moment:string,outcome:NewLogRow['outcome'],reason:string|null,detail:object):NewLogRow=>({
     atMs:options.clock(),ruleId:saved.id,eventSource:'core',eventId:`${saved.id}-${occurrence.atMs}`,eventKind:fire==='run'?'routine-run':'routine-scheduled',
     eventAlias:null,agent:null,task:null,momentId:moment,priorityClass:'routine',coversStatus:false,target,outcome,reason,detail:JSON.stringify(detail)});
@@ -203,56 +223,65 @@ export function createRoutines(options:RoutineOptions) {
       {family:action.family,index,...(action.requireMode===undefined?{}:{requireMode:action.requireMode}),...(requestId===undefined?{}:{requestId}),
         ...(result.outcome==='receipt'?{receipt:{status:'accepted',requestId}}:{})})]);
   };
-  /** One action: fresh evidence, the same configuration and generation after the read, the capability and the mode, then one tracked dispatch. */
+  /**
+   * One action: fresh evidence, the same configuration and generation after the read, the capability and the mode, then one
+   * tracked dispatch. A storage failure around it is reported once under the action's own request identity, never retried.
+   */
   async function step(saved:Routine,occurrence:RoutineOccurrence,fire:Fire,action:RoutineAction,index:number,parent:TraceContext):Promise<void> {
     const requestId=`routine-${randomUUID()}`,trace=childOf(parent);
-    const owner=options.owner(action.target);
-    let device:DeviceRecord|undefined;
-    try {device=await options.read(action.target);} catch {/* A read failure is unavailable evidence. */}
-    // Evidence arriving after the occurrence's tolerance authorizes nothing; an explicit run has no window.
-    if(!current(saved,fire) || (fire==='scheduled' && !inWindow(occurrence))) return;
-    const latest=options.current(action.target);
-    // Evidence must still belong to the same configuration/generation after the asynchronous read.
-    const valid=owner!==undefined && owner===options.owner(action.target) && device!==undefined && latest!==undefined && device.id===action.target && latest.id===action.target &&
-      device.configurationRevision===latest.configurationRevision && device.generation.epoch===latest.generation.epoch &&
-      device.generation.sequence===latest.generation.sequence;
-    if(!options.targets().includes(action.target) || !valid || latest.availability!=='available' || latest.held!==undefined ||
-        !actionSupported(latest,action,kindOf(action.target)) || (latest.externalControl.status==='known' && latest.externalControl.owner==='external')) {
-      try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
-      record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'unavailable',requestId});return;
+    try {
+      const owner=options.owner(action.target);
+      let device:DeviceRecord|undefined;
+      try {device=await options.read(action.target);} catch {/* A read failure is unavailable evidence. */}
+      if(!current(saved,fire)) return;
+      // Evidence arriving after the occurrence's tolerance authorizes nothing, and the skip is on record; an explicit run has no window.
+      if(fire==='scheduled' && !inWindow(occurrence)) {record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'expired',requestId});return;}
+      const latest=options.current(action.target);
+      // Evidence must still belong to the same configuration/generation after the asynchronous read.
+      const valid=owner!==undefined && owner===options.owner(action.target) && device!==undefined && latest!==undefined && device.id===action.target && latest.id===action.target &&
+        device.configurationRevision===latest.configurationRevision && device.generation.epoch===latest.generation.epoch &&
+        device.generation.sequence===latest.generation.sequence;
+      if(!options.targets().includes(action.target) || !valid || latest.availability!=='available' || latest.held!==undefined ||
+          !actionSupported(latest,action,kindOf(action.target)) || (latest.externalControl.status==='known' && latest.externalControl.owner==='external')) {
+        try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
+        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'unavailable',requestId});return;
+      }
+      // The content-mode precondition, on the record immediately before the send; the Pixoo checks it again at admission (#1276).
+      if(action.requireMode!==undefined && (latest.desired.mode.status!=='known' || latest.desired.mode.value!==action.requireMode || latest.pendingKinds.includes('device-mode-set'))) {
+        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'mode',requestId});return;
+      }
+      let result:RoutineSendResult;
+      try {result=await options.send(action,structuredClone(latest),requestId,trace);}
+      catch {record(saved,occurrence,fire,action,index,{outcome:Outcome.uncertain,reason:'uncertain-result',requestId});return;}
+      record(saved,occurrence,fire,action,index,result);
+    } catch {
+      report(requestId,trace,action);
     }
-    // The content-mode precondition, on the record immediately before the send; the Pixoo checks it again at admission (#1276).
-    if(action.requireMode!==undefined && (latest.desired.mode.status!=='known' || latest.desired.mode.value!==action.requireMode || latest.pendingKinds.includes('device-mode-set'))) {
-      record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'mode',requestId});return;
-    }
-    let result:RoutineSendResult;
-    try {result=await options.send(action,structuredClone(latest),requestId,trace);}
-    catch {record(saved,occurrence,fire,action,index,{outcome:Outcome.uncertain,reason:'uncertain-result',requestId});return;}
-    record(saved,occurrence,fire,action,index,result);
   }
-  /** One occurrence: the actions in order, each with fresh identity; a refused, failed or uncertain action does not stop the next. */
-  async function fire(saved:Routine,occurrence:RoutineOccurrence,kind:Fire,parent:TraceContext):Promise<void> {
-    if(kind==='scheduled') {
-      if(!current(saved,kind) || !inWindow(occurrence)) return;
-      if(!store.claimPowerBoundary(saved.id,saved.definitionId,occurrence.atMs)) return;
-    }
+  /**
+   * One occurrence: the actions in order, each with fresh identity; a refused, failed, skipped or uncertain action does not
+   * stop the next. One occurrence of a routine runs at a time: an overlap is recorded once and dropped.
+   */
+  async function fire(saved:Routine,occurrence:RoutineOccurrence,kind:Fire,parent:TraceContext):Promise<RunResult['outcome']> {
     const first=saved.actions[0];
-    if(first===undefined) return;
+    if(first===undefined) return 'busy';
+    if(kind==='scheduled') {
+      if(!current(saved,kind) || !inWindow(occurrence)) return 'busy';
+      if(!store.claimPowerBoundary(saved.id,saved.definitionId,occurrence.atMs)) return 'busy';
+    }
     if(inFlight.has(saved.id)) {
-      if(!stopped()) store.appendLog([logRow(saved,occurrence,kind,first.target,`${saved.id}-${occurrence.atMs}-busy`,'blocked','busy',{family:'routine'})]);
-      return;
+      try {if(!stopped()) store.appendLog([logRow(saved,occurrence,kind,first.target,`${saved.id}-${occurrence.atMs}-busy`,'blocked','busy',{family:first.family})]);}
+      catch {report(`routine-${saved.id}-${occurrence.atMs}`,parent,first);}
+      return 'busy';
     }
     inFlight.add(saved.id);
     try {
       for(const [index,action] of saved.actions.entries()) {
-        if(!current(saved,kind)) return;
-        try {await step(saved,occurrence,kind,action,index,parent);}
-        catch {
-          // Storage refused the record or the claim: report once, never retry, go on to the next action.
-          try {options.failed?.(`routine-${saved.id}-${index}`,parent,action.target);} catch {/* Diagnostics fail open. */}
-        }
+        if(!current(saved,kind)) break;
+        await step(saved,occurrence,kind,action,index,parent);
       }
     } finally {inFlight.delete(saved.id);}
+    return 'ran';
   }
   const rearm=():void=>{
     cancel?.();cancel=undefined;const identity=++timerIdentity;
@@ -273,8 +302,9 @@ export function createRoutines(options:RoutineOptions) {
       for(const {saved} of due) planned.delete(saved.id);
       rearm();
       for(const {saved,occurrence} of due) {
-        const parent=childOf(undefined);
-        const task=fire(saved,occurrence,'scheduled',parent).catch(()=>{try {options.failed?.(`routine-${saved.id}-${occurrence.atMs}`,parent,saved.actions[0]?.target??saved.id);} catch {/* Diagnostics fail open; the callback is never retried. */}});
+        const parent=childOf(undefined),first=saved.actions[0];
+        // Storage can refuse the claim itself: report it once under the occurrence's identity; the callback is never retried.
+        const task=fire(saved,occurrence,'scheduled',parent).then(()=>undefined,()=>{if(first!==undefined) report(`routine-${saved.id}-${occurrence.atMs}`,parent,first);});
         pending.add(task);void task.finally(()=>{pending.delete(task);});
       }
     });
@@ -300,12 +330,13 @@ export function createRoutines(options:RoutineOptions) {
     setEnabled(id:string,enabled:boolean) {return save({...find(id),enabled,definitionId:randomUUID(),updatedAtMs:options.clock()});},
     remove(id:string) {find(id);store.deleteRule(id);routines=routines.filter(saved=>saved.id!==id);rearm();},
     /** Runs one occurrence now, enabled or not, and settles once each action's dispatch has answered. Nothing is claimed or scheduled. */
-    async run(id:string,parent?:TraceContext):Promise<{id:string;atMs:number}> {
+    async run(id:string,parent?:TraceContext):Promise<RunResult> {
       const saved=find(id),atMs=options.clock();
-      const task=fire(saved,{atMs},'run',childOf(parent));
+      let outcome:RunResult['outcome']='busy';
+      const task=fire(saved,{atMs},'run',childOf(parent)).then(result=>{outcome=result;});
       pending.add(task);
       try {await task;} finally {pending.delete(task);}
-      return {id,atMs};
+      return {id,atMs,outcome};
     },
     async settled(){await Promise.all(pending);},
     async close(){

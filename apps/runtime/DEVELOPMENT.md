@@ -41,10 +41,12 @@ runtime/core and dashboard test discovery. After the root build, run
 `node --test apps/runtime/dist/tests/power-schedules.test.js apps/runtime/dist/tests/automation*.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
 The fake clock covers disabled creation, action order and fresh identities, a
 refused action that does not stop the next, the mode precondition and its
-pass-through, a pending mode change, the `busy` guard, Run now, independent
-targets, obsolete callbacks during reads, configuration/owner drift, duplicates,
-late callbacks, restart without catch-up, the one forward migration of
-`power-window/1.0` rows and storage refusal before dispatch. A generic synthetic
+pass-through, a pending mode change, a Nanoleaf scene in Free, expired actions,
+the `busy` guard and Run now outcomes, independent targets, obsolete callbacks
+during reads, configuration/owner drift, duplicates, late callbacks, restart
+without catch-up, the one forward migration of `power-window/1.0` rows (one
+transaction, names read back as display text) and storage refusal before or
+after dispatch with per-action diagnostics. A generic synthetic
 owner exercises actual SDK sync and tracked guarded commands. The upgrade
 inventory test includes the routine/store inputs; restart tests establish
 persistence, not compatibility between historical releases.

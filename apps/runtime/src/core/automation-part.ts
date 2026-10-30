@@ -106,8 +106,8 @@ export class AutomationPart implements CorePart {
       read:id=>Promise.resolve(structuredClone(this.#device(id))),current:id=>this.#device(id),
       refused:(requestId,parent)=>recordLog(handle.log, 'command.rejected',{'bunny.participant':'bunny/core',
         'bunny.request.id':requestId,'bunny.outcome':Outcome.rejected,'bunny.code':'unavailable','bunny.reason':'unavailable'},parent),
-      failed:(requestId,parent,target)=>recordLog(handle.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal',
-        'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.power-set.${target}`},parent),
+      failed:(requestId,parent,target,family='power-set')=>recordLog(handle.log, 'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal',
+        'bunny.request.id':requestId,'bunny.routing.key':`bunny.cmd.${family}.${target}`},parent),
       send:async(target:string,on:boolean,record:DeviceRecord,requestId:string,parent:import('@jimmie-potts/sdk').TraceContext)=>{
         const answer=await handle.dispatch({requestId,key:`bunny.cmd.power-set.${target}`,requestedBy:'bunny/core',parent,
           draft:{type:'org.bunny.power.set.requested',subject:target,dataschema:'https://bunny.invalid/events/power-set/2.0',

@@ -5,7 +5,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {Badge,Facts} from './ui.tsx';
 
 // The core's route shapes (`apps/runtime/src/core/power-schedules.ts`), kept browser-safe.
-export const ROUTINE_FAMILIES=['power-set','brightness-set','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
+export const ROUTINE_FAMILIES=['power-set','brightness-set','scene-activate','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
 export type RoutineFamily=(typeof ROUTINE_FAMILIES)[number];
 export type RoutineAction={target:string;family:RoutineFamily;data:Record<string,unknown>;requireMode?:string};
 export type RoutineInput={name:string;days:number[];time:string;actions:RoutineAction[];enabled?:boolean};
@@ -16,17 +16,22 @@ type RoutineDraft={name:string;days:number[];time:string;actions:ActionDraft[]};
 
 const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const ACTION_LIMIT=16;
-/** Content actions always run with a mode precondition; the core fills these kind defaults when one is omitted. */
-const CONTENT_FAMILIES:readonly RoutineFamily[]=['media-start','media-control','pixoo-media-show'];
+/** Content actions always require their device kind's content mode, and only that mode; the core fills it when omitted. */
+const CONTENT_FAMILIES:readonly RoutineFamily[]=['scene-activate','media-start','media-control','pixoo-media-show'];
 const DEFAULT_CONTENT_MODE:Readonly<Record<string,string>>={pixoo:'media',nanoleaf:'free'};
 /** The exact payload keys each family's schema takes. */
-const FIELDS:Readonly<Record<RoutineFamily,readonly string[]>>={'power-set':['on'],'brightness-set':['percent'],'media-start':['playlistId'],
+const FIELDS:Readonly<Record<RoutineFamily,readonly string[]>>={'power-set':['on'],'brightness-set':['percent'],'scene-activate':['sceneId'],'media-start':['playlistId'],
   'media-control':['action'],'device-mode-set':['mode'],'pixoo-media-show':['renditionId'],'lifx-color-set':['hue','saturation']};
-const FAMILY_LABELS:Readonly<Record<RoutineFamily,string>>={'power-set':'Power','brightness-set':'Brightness','media-start':'Start playlist',
+const FAMILY_LABELS:Readonly<Record<RoutineFamily,string>>={'power-set':'Power','brightness-set':'Brightness','scene-activate':'Scene','media-start':'Start playlist',
   'media-control':'Media control','device-mode-set':'Device mode','pixoo-media-show':'Show rendition','lifx-color-set':'Color'};
 const title=(value:string):string=>value.charAt(0).toUpperCase()+value.slice(1);
 const short=(id:string):string=>id.length>12?`${id.slice(0,8)}…`:id;
 const content=(family:RoutineFamily|''):boolean=>family!=='' && CONTENT_FAMILIES.includes(family);
+/** The one mode a content action on this device may require, when the device offers it. */
+const contentMode=(record:DeviceRecord|undefined):string|undefined=>{
+  const mode=record===undefined?undefined:DEFAULT_CONTENT_MODE[record.kind];
+  return mode!==undefined && modesOf(record).includes(mode)?mode:undefined;
+};
 const integer=(value:unknown,minimum:number,maximum:number):boolean=>typeof value==='number' && Number.isInteger(value) && value>=minimum && value<=maximum;
 const numeric=(value:string):number|string=>value===''?'':Number(value);
 const text=(value:unknown):string=>typeof value==='string' || typeof value==='number'?String(value):'';
@@ -41,16 +46,17 @@ export function routineInput(draft:Omit<RoutineInput,'enabled'>,creating:boolean
     ...(creating?{enabled:false}:{})};
 }
 
-/** The families a current record offers, by the capability rule the modules admit. Content families need a device mode to require. */
+/** The families a current record offers, by the capability rule the modules admit. Content families need the kind's content mode. */
 export function routineFamilies(record:DeviceRecord):RoutineFamily[] {
-  const {power,brightness,media,modes}=record.capabilities;
+  const {power,brightness,scenes,media,modes}=record.capabilities,mode=contentMode(record);
   return ROUTINE_FAMILIES.filter(family=>{
     switch(family) {
       case 'power-set': return power.supported;
       case 'brightness-set': return brightness.supported;
       case 'device-mode-set': return modes.supported;
-      case 'media-start': case 'media-control': return media.supported && modes.supported;
-      case 'pixoo-media-show': return media.supported && modes.supported && record.kind==='pixoo';
+      case 'scene-activate': return scenes.supported && mode!==undefined;
+      case 'media-start': case 'media-control': return media.supported && mode!==undefined;
+      case 'pixoo-media-show': return media.supported && mode!==undefined && record.kind==='pixoo';
       case 'lifx-color-set': return record.kind==='lifx';
     }
   });
@@ -58,13 +64,15 @@ export function routineFamilies(record:DeviceRecord):RoutineFamily[] {
 const modesOf=(record:DeviceRecord|undefined):readonly string[]=>record?.capabilities.modes.supported===true?record.capabilities.modes.values:[];
 type Media={actions:readonly string[];playlistIds:readonly string[];renditionIds:readonly string[]};
 const mediaOf=(record:DeviceRecord|undefined):Media=>record?.capabilities.media.supported===true?record.capabilities.media:{actions:[],playlistIds:[],renditionIds:[]};
+const scenesOf=(record:DeviceRecord|undefined):readonly string[]=>record?.capabilities.scenes.supported===true?record.capabilities.scenes.sceneIds:[];
 function defaults(record:DeviceRecord,family:RoutineFamily):Pick<ActionDraft,'data'|'requireMode'> {
   const media=mediaOf(record),modes=modesOf(record);
-  const fallback=DEFAULT_CONTENT_MODE[record.kind],requireMode=content(family) && fallback!==undefined && modes.includes(fallback)?fallback:undefined;
+  const mode=contentMode(record),requireMode=content(family)?mode:undefined;
   const data=((): Record<string,unknown>=>{
     switch(family) {
       case 'power-set': return {on:true};
       case 'brightness-set': return {percent:50};
+      case 'scene-activate': return {sceneId:scenesOf(record)[0]??''};
       case 'media-start': return {playlistId:media.playlistIds[0]??''};
       case 'media-control': return {action:media.actions[0]??''};
       case 'device-mode-set': return {mode:modes[0]??''};
@@ -83,6 +91,7 @@ function complete(action:ActionDraft,devices:readonly RoutineDevice[]):RoutineAc
     switch(family) {
       case 'power-set': return typeof data.on==='boolean';
       case 'brightness-set': return integer(data.percent,0,100);
+      case 'scene-activate': return typeof data.sceneId==='string' && scenesOf(device.record).includes(data.sceneId);
       case 'media-start': return typeof data.playlistId==='string' && media.playlistIds.includes(data.playlistId);
       case 'media-control': return media.actions.some(value=>value===data.action);
       case 'device-mode-set': return typeof data.mode==='string' && modes.includes(data.mode);
@@ -91,7 +100,8 @@ function complete(action:ActionDraft,devices:readonly RoutineDevice[]):RoutineAc
     }
   })();
   if(!valid) return undefined;
-  if(action.requireMode===undefined ? content(family) : !modes.includes(action.requireMode)) return undefined;
+  // A content action requires exactly its kind's content mode; any other action may require any mode the device offers, or none.
+  if(content(family) ? action.requireMode!==contentMode(device.record) : action.requireMode!==undefined && !modes.includes(action.requireMode)) return undefined;
   return {...action,family};
 }
 /** One saved action in words, such as "start playlist 3f2a… (requires media)". */
@@ -101,6 +111,7 @@ export function actionSummary(action:RoutineAction):string {
     switch(action.family) {
       case 'power-set': return data.on===true?'power on':'power off';
       case 'brightness-set': return `brightness ${text(data.percent)}%`;
+      case 'scene-activate': return `scene ${short(text(data.sceneId))}`;
       case 'media-start': return `start playlist ${short(text(data.playlistId))}`;
       case 'media-control': return `media ${text(data.action)}`;
       case 'device-mode-set': return `mode ${text(data.mode)}`;
@@ -123,6 +134,8 @@ function ActionFields({action,record,change}:{action:ActionDraft;record:DeviceRe
       <option value="on">On</option><option value="off">Off</option></select></label>;
     case 'brightness-set': return <label>Brightness percent<input type="number" required min={0} max={100} step={1} value={text(data.percent)}
       onChange={event=>{change({percent:numeric(event.target.value)});}}/></label>;
+    case 'scene-activate': return <label>Scene<select aria-label="Scene" required value={text(data.sceneId)} onChange={event=>{change({sceneId:event.target.value});}}>
+      <option value="">Choose a scene</option>{choices(scenesOf(record),text(data.sceneId),short)}</select></label>;
     case 'media-start': return <label>Playlist<select aria-label="Playlist" required value={text(data.playlistId)} onChange={event=>{change({playlistId:event.target.value});}}>
       <option value="">Choose a playlist</option>{choices(media.playlistIds,text(data.playlistId),short)}</select></label>;
     case 'media-control': return <label>Media action<select aria-label="Media action" required value={text(data.action)} onChange={event=>{change({action:event.target.value});}}>
@@ -210,10 +223,11 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
             }}>{action.family==='' && <option value="">Choose an action</option>}
               {familyChoices.map(family=><option key={family} value={family}>{FAMILY_LABELS[family]}</option>)}</select></label>
             <ActionFields action={action} record={record} change={data=>{setAction(index,current=>({...current,data}));}}/>
-            {action.family!=='' && <label>Required mode<select aria-label="Required mode" value={action.requireMode??''} onChange={event=>{
+            {content(action.family) && <p className="routine-mode">Runs only in {action.requireMode??contentMode(record)??'its content mode'}; the device's status presentation is never displaced.</p>}
+            {action.family!=='' && !content(action.family) && <label>Required mode<select aria-label="Required mode" value={action.requireMode??''} onChange={event=>{
               const mode=event.target.value;
               setAction(index,current=>{const {requireMode:_previous,...rest}=current;return mode===''?rest:{...rest,requireMode:mode};});
-            }}>{content(action.family)?action.requireMode===undefined && <option value="">Choose a mode</option>:<option value="">No precondition</option>}
+            }}><option value="">No precondition</option>
               {choices(modes,action.requireMode??'')}</select></label>}
             {completed[index]===undefined && <p>Choose a current device and complete this action.</p>}
             <div className="actions">
