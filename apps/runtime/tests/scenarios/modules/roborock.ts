@@ -79,10 +79,22 @@ export const scenarios: readonly Scenario[] = [{
             expect('another origin cannot read through a browser session', answers({ as: 'browser', method: 'GET', path: ROOT + 'status', origin: 'other' }, answer => refusedWith(answer, 403, 'forbidden'))),
             expect('reader cannot send device commands', answers({ as: 'reader', method: 'POST', path: '/api/v2/commands/power-set', body: { target: 'vacuum', data: { on: true } } }, answer => refusedWith(answer, 403, 'forbidden'))),
             act('vendor temporarily becomes unavailable', h => { h.simulate({ device: 'roborock', action: 'offline' }); }),
+            // A status read has a nine-second transport budget and ten-second collector fence. Wait for that
+            // transition separately so a pending read is not reported as erased history by the default three-second check.
+            expect('the reader observes the unavailable status', h => status(h)?.availability === 'unavailable'
+                || 'unavailable observation did not arrive', 10_000),
             expect('unavailable input preserves retained history and original observation time', h => {
                 const value = status(h);
+                // A successful read already in flight may publish after the offline action. The preserved time is
+                // the last available observation before this unavailable revision, not an earlier reader snapshot.
+                const previous = h.published()
+                    .filter(({message}) => message.source === OWNER && message.type === 'org.bunny.roborock-vacuum.updated')
+                    .map(({message}) => message.data as VacuumStatus)
+                    .filter(candidate => candidate.availability === 'available' && candidate.revision < (value?.revision ?? 0))
+                    .sort((left, right) => right.revision - left.revision)[0]?.observedAtMs;
                 return value?.availability === 'unavailable' && value.collection.retainedRuns === 30
-                    && value.observedAtMs.status === 'known' && value.collection.gaps > 0 || 'unavailable state erased evidence';
+                    && value.observedAtMs.status === 'known' && previous?.status === 'known'
+                    && value.observedAtMs.value === previous.value && value.collection.gaps > 0 || 'unavailable state erased evidence';
             }),
             act('vendor recovers with an empty history summary', async (h) => {
                 h.simulate({ device: 'roborock', action: 'empty-history' });
