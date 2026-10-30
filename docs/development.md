@@ -853,6 +853,10 @@ requires `BUNNY_CONTAINER_ACCEPTANCE=1` inside a network-disabled disposable
 Linux container with synthetic private secrets; ordinary source runs skip it.
 It covers configured household modules, preserved non-device modules and honest
 missing-dependency refusals through the production selector and simulated transports.
+Its second exercise prints the per-module qualification record described in
+[the operator guide's source validation](bunny-container.md#source-validation):
+platform and compiled dependencies, private stores, exclusive startup,
+port-conflict refusal, clean stop and reopen.
 Source tests, each architecture's
 container rehearsal, cross-architecture archive transfer and live installation
 are separate evidence.
