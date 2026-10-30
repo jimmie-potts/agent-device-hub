@@ -890,13 +890,14 @@ class PixooRuntime {
       if (this.#control === undefined) throw new Error('the Pixoo has no control');
       return this.#control;
     };
-    await sdk.respond<{playlistId: string}>(key('media-start'), command =>
-      this.#admit(command, 'media-start', {family: 'media-start', data: command.data}, () => control().start(command.data.playlistId)));
-    await sdk.respond<{action: MediaAction}>(key('media-control'), command =>
+    await sdk.respond<{playlistId: string; requireMode?: string}>(key('media-start'), command =>
+      this.#admit(command, 'media-start', {family: 'media-start', data: command.data}, () => control().start(command.data.playlistId),
+        () => this.#modeRequired(command.data.requireMode)));
+    await sdk.respond<{action: MediaAction; requireMode?: string}>(key('media-control'), command =>
       this.#admit(command, 'media-control', {family: 'media-control', data: command.data}, () => control().control(command.data.action), () => {
         const {action} = command.data;
         if ((action === 'resume' || action === 'restart-with-changes') && this.#player?.getSession() === null) return errorBody('invalid-state', {detail: 'nothing is selected to resume'});
-        return undefined;
+        return this.#modeRequired(command.data.requireMode);
       }));
     await sdk.respond<{mode: string}>(key('device-mode-set'), command =>
       this.#admit(command, 'device-mode-set', {family: 'device-mode-set', data: command.data},
@@ -907,7 +908,7 @@ class PixooRuntime {
       this.#admit(command, 'power-set', {family: 'power-set', data: command.data}, () => control().power(command.data.on)));
     await sdk.respond<ShowRequest>(key(FAMILIES.show), command =>
       this.#admit(command, FAMILIES.show, undefined, () => control().show(command.data.renditionId, command.data.playback), () =>
-        this.#library?.renditionExists(command.data.renditionId) === true ? undefined : errorBody('not-found', {detail: 'no such rendition'})));
+        this.#library?.renditionExists(command.data.renditionId) === true ? this.#modeRequired(command.data.requireMode) : errorBody('not-found', {detail: 'no such rendition'})));
     await sdk.respond<MonitorSetRequest>(key(FAMILIES.monitor), command =>
       this.#admit(command, FAMILIES.monitor, undefined, () => control().present({operation: 'view', filter: command.data.filter, cadenceMs: command.data.cadenceMs})));
     await sdk.respond<NowPlayingSetRequest>(key(FAMILIES.nowPlaying), command =>
@@ -921,6 +922,23 @@ class PixooRuntime {
         const session = this.#sessions.records.get(command.data.session);
         return session?.notices.some(notice => notice.id === command.data.noticeId) === true ? undefined : errorBody('not-found', {detail: 'no such notice'});
       }));
+  }
+
+  /**
+   * A media command's `requireMode` precondition (Hub #1276), checked in the admission queue so the check and the
+   * admission cannot race: the Pixoo must already be in that mode, with no mode change applying or accepted and not
+   * completed. Otherwise the command is refused with `invalid-state` before any device write; nothing is queued or
+   * deferred. A command without the precondition is admitted as before. A refused resume while nothing is selected keeps
+   * its own detail, so this check runs after it.
+   */
+  #modeRequired(requireMode: string | undefined): ErrorBody | undefined {
+    if (requireMode === undefined) return undefined;
+    const status = this.#monitor?.status();
+    if (status === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation to require a mode of'});
+    const changing = status.pendingMode !== null || (this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set');
+    if (changing) return errorBody('invalid-state', {detail: 'a mode change is pending'});
+    const {mode} = status.configuration;
+    return mode === requireMode ? undefined : errorBody('invalid-state', {detail: `the Pixoo is in ${mode}, not ${requireMode === 'monitor' ? 'monitor' : 'media'}`});
   }
 
   /**

@@ -417,8 +417,8 @@ and refuses an operation the device does not offer with `unsupported-capability`
 | `brightness.set`, `percent` | `brightness-set /percent` | `org.bunny.brightness.set.requested`. 0 to 100. |
 | `scene.activate`, `sceneId` | `scene-activate /sceneId` | `org.bunny.scene.activate.requested`. |
 | `zone.power.set`, `zoneId`, `on` | `zone-power-set /zoneId`, `/on` | `org.bunny.zone-power.set.requested`. |
-| `media.start`, `playlistId` | `media-start /playlistId` | `org.bunny.media.start.requested`. |
-| `media.control`, `action` | `media-control /action` | `org.bunny.media.control.requested`. The seven 1.x actions. |
+| `media.start`, `playlistId` | `media-start /playlistId` | `org.bunny.media.start.requested`. The optional `/requireMode` (Hub #1276) has no 1.x equivalent: a native mode the module refuses with `invalid-state` at admission when the device's mode differs or a mode change is pending. |
+| `media.control`, `action` | `media-control /action` | `org.bunny.media.control.requested`. The seven 1.x actions. The same optional `/requireMode`. |
 | `mode.set`, `mode` | `device-mode-set /mode` | `org.bunny.device-mode.set.requested`. A native mode in kebab-case that the device advertises, never the Hub's mode. |
 
 API 1.1's `moment` command maps to `moment-play` as

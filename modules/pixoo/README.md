@@ -281,6 +281,18 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
 
+`media-start`, `media-control` and `pixoo-media-show` take an optional
+`requireMode`, `monitor` or `media`
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)). The
+module checks it in its admission queue, so the check and the admission cannot
+race: when the Pixoo is in the other mode, or a mode change is applying or
+accepted and not yet completed, the command is refused with `invalid-state` and
+a `command.rejected` record before any device write. Nothing is queued, deferred
+or retried. A command without `requireMode` is admitted as before, so a start,
+resume or restart still takes the display from Monitor. A routine (#1297)
+sends `requireMode: "media"` so a scheduled playlist never displaces agent
+status.
+
 A staged import reads `incoming/<sha256>` in the module's private folder and
 checks its size and hash. API 1.3's upload contribution prepares one input at a
 time, up to 10 MiB, with exclusive file creation. It validates the module's

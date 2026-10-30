@@ -270,3 +270,16 @@ test('a held record names the operation whose uncertain write holds it, and is n
     assert.equal(v.validate(patched('device-nanoleaf-held', {'/data/availability': availability})).ok, true, availability);
   }
 });
+
+test('a media command may require a native mode, which the device must be in at admission (Hub #1276)', () => {
+  const v = validator();
+  for (const base of ['media-start', 'media-control']) {
+    assert.equal(v.validate(patched(base, {'/data/requireMode': 'media'})).ok, true, `${base} with a required mode`);
+    assert.equal(v.validate(patched(base, {'/data/requireMode': 'free'})).ok, true, `${base} with another native mode`);
+    assert.equal(v.validate(patched(base, {'/data/requireMode': null})).ok, true, `${base} without one, as before`);
+    assert.equal(v.validate(patched(base, {'/data/requireMode': 'Media Mode'})).error.code, 'invalid-message', `${base} with a mode that is not a native mode name`);
+  }
+  // The required mode is admission's concern, not the capability rule's: a supported command stays supported with it.
+  const pixoo = device('pixoo-desk');
+  assert.equal(commandSupported(pixoo.capabilities, {family: 'media-start', data: {requestId: 'req-1', playlistId: 'playlist-1', requireMode: 'media'}}), true);
+});

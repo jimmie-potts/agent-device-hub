@@ -341,6 +341,14 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 | state | `device` (2.0, and 2.1 with `held`) | `org.bunny.device.updated` |
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
+`media-start` and `media-control` take an optional `requireMode`
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)): a
+native mode the device must be in. The module refuses the command with
+`invalid-state` at admission, before any device write, when the device's
+current mode differs or a mode change is pending, so a scheduled playlist never
+displaces a status display. The field is optional in the unchanged 2.0 schemas;
+a command without it behaves as before.
+
 A `device` record is the full record of one device, published by the module
 that controls it, with the device `id` as its `subject`. The `id` is a routing
 ID, because it is also the last token of the device's routing keys, and it must

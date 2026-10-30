@@ -63,8 +63,13 @@ export type PowerSetRequest = CommandGuards & {on: boolean};
 export type BrightnessSetRequest = CommandGuards & {percent: number};
 export type SceneActivateRequest = CommandGuards & {sceneId: string};
 export type ZonePowerSetRequest = CommandGuards & {zoneId: string; on: boolean};
-export type MediaStartRequest = CommandGuards & {playlistId: string};
-export type MediaControlRequest = CommandGuards & {action: MediaAction};
+/**
+ * The native mode a media command requires the device to be in (Hub #1276), optional. The module refuses the command
+ * with `invalid-state` at admission, before any device write, when its current mode differs or a mode change is pending.
+ */
+export type RequiredMode = {requireMode?: string};
+export type MediaStartRequest = CommandGuards & RequiredMode & {playlistId: string};
+export type MediaControlRequest = CommandGuards & RequiredMode & {action: MediaAction};
 /** A native mode the device advertises, never the Hub's mode: map that through `nativeMode` first. */
 export type DeviceModeSetRequest = CommandGuards & {mode: string};
 /** A command a device answers, named by its family. */
