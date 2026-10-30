@@ -56,6 +56,20 @@ try {
   await page.locator('.agent-status-card[data-attention=true]').waitFor();
   await page.locator('.onn-card[data-state=unavailable]').waitFor();
   const sent = changes(page), metrics: unknown[] = [];
+  const lamp = page.locator('[data-light-card="lamp-a"]').first();
+  await lamp.getByRole('slider').waitFor();
+  const brightnessNames = await lamp.getByRole('slider', {name: /^Brightness · (observed|requested)$/}).count();
+  assert.match(await lamp.locator('output').innerText(), /%$/);
+  await lamp.getByRole('tab', {name: 'Color', exact: true}).click();
+  await lamp.getByRole('slider', {name: 'Saturation', exact: true}).waitFor();
+  const temperatureNames = await lamp.getByRole('slider', {name: 'Temperature', exact: true}).count();
+  assert.match(await lamp.locator('.light-slider').last().locator('output').innerText(), / K$/);
+  assert.deepEqual({brightnessNames, temperatureNames}, {brightnessNames: 1, temperatureNames: 1}, 'shared sliders have meaningful names without their changing values');
+  await lamp.getByRole('tab', {name: 'Power', exact: true}).click();
+  const emptyRoom = page.locator('[data-home-card="light:room:studio"] .light-card');
+  assert.equal(await emptyRoom.getByRole('slider', {name: 'Brightness · requested', exact: true}).isDisabled(), true, 'unknown and disabled values keep their label');
+  assert.equal(await emptyRoom.locator('output').innerText(), 'Mixed / unknown');
+  assert.deepEqual(sent, [], 'inspecting slider names and tabs sends no command');
   for (const width of [1440, 680, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
     await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
     await settle(page);
