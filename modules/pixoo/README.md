@@ -13,8 +13,11 @@ The runtime ships it through `src/module/registration.ts`, which wraps
 `pixooFactory` and declares its place after playback. Installation and
 representative physical evidence belong to the accepted
 [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840).
-The old divoom-app-upgrade service is stopped and retained for manual return;
-its repository retains its bug-fix boundary until separately authorized retirement. Mirror each fix here and name its source commit in the commit message.
+The old divoom-app-upgrade service is stopped and retained for manual return.
+Its repository was archived under
+[#936](https://github.com/jimmie-potts/agent-device-hub/issues/936) on
+2026-10-30, so no further fixes originate there; removing the retained service
+remains [#839](https://github.com/jimmie-potts/agent-device-hub/issues/839).
 The Pixoo pages are #932. The optional library [migration](#library-migration)
 (#931) remains available, but the selected fresh setup starts an empty library.
 
@@ -484,7 +487,12 @@ the Pixoo service's library into this module's store
 runtime README's [Pixoo library migration](../../apps/runtime/README.md#pixoo-library-migration)
 gives its commands, exit codes and refusals; this section says what it carries.
 The selected [fresh setup](../../apps/runtime/SETUP.md) for #935/#840 runs none
-of these commands and requires no migration verification.
+of these commands and requires no migration verification. To copy or move this
+module's current library, with its originals, renditions and playlists, use the
+container operator guide's
+[stopped-instance backup](../../docs/bunny-container.md#back-up-a-stopped-instance)
+and [restore](../../docs/bunny-container.md#restore-into-a-separate-empty-instance);
+the migration tool reads only the old service's library.
 
 - **Source.** The service's `<PIXOO_DATA_DIR>/library` at the installed
   release's schema version 3 (divoom-app-upgrade `1b4115c`), and no other
