@@ -12,4 +12,4 @@
 
 - [x] 3.1 Document the section in the runtime README's "Configuration" and "Logs", the `--log-level` row and the container guide's configuration edit.
 - [x] 3.2 Record the noise evidence: the installed hour's counts and a simulated shipped run's counts by event and level, with no demotion.
-- [ ] 3.3 Run build, typecheck, lint, the runtime, scenario, container and workflow checks and OpenSpec validation; synchronize the specification and archive the change on the delivery branch before final review.
+- [x] 3.3 Run build, typecheck, lint, the runtime, scenario, container and workflow checks and OpenSpec validation; synchronize the specification and archive the change on the delivery branch before final review.
