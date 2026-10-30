@@ -286,19 +286,26 @@ only a diagnostic record changes, and only on the private path.
   `error.stack` field stays refused.
 - **Source:** one serializer, the SDK's `exceptionFields`
   (`packages/sdk/src/exception.ts`), reads an `Error`'s own `message` and the
-  stack V8 itself formats, through their property descriptors. It never invokes
-  a getter a value or its class supplies, never reads a cause, an `errors` list
-  or another member, and reads nothing from a value that is not an `Error`. It
-  removes control characters; replaces each secret the runtime's modules have
-  read, authorization and API-key values, a URL's user information,
-  credential-named parameters and JSON members, well-known key shapes (API keys,
-  personal access tokens, cloud keys, JWTs, this repository's `tok_` tokens) and
-  long opaque tokens with `[redacted]`; replaces a JSON-shaped block or quoted
-  string longer than 128 characters, which may be a request body, a prompt or a
-  transcript, with `[omitted]`; counts the replacements in
+  stack V8 itself formats, through their property descriptors. An accessor is
+  read only when it is V8's own shared stack accessor, compared by identity: a
+  getter a value or its class supplies, bound or not, never runs; a cause, an
+  `errors` list or another member is never read; a value that is not an `Error`
+  yields nothing. A process-wide `Error.prepareStackTrace` still shapes what V8
+  returns. It removes control characters; replaces each secret the runtime's
+  modules have read, authorization and API-key values, a URL's user information,
+  credential-named parameters, fields and members (`name=value`, `name: value`,
+  quoted values, JSON members), well-known key shapes (API keys, personal access
+  tokens, cloud keys, JWTs, this repository's `tok_` tokens) and long opaque
+  tokens with `[redacted]`; replaces a JSON-shaped block or quoted string longer
+  than 128 characters, on one line or across lines, which may be a request body,
+  a prompt or a transcript, with `[omitted]`; counts the replacements in
   `bunny.exception.redacted_count`; and cuts each text to its limit, a stack
   between its frames, setting `bunny.exception.truncated`. Detection has limits:
-  a credential in a shape no rule knows survives unless a module registered it.
+  a credential in a shape no rule knows, such as a short opaque token, a
+  digits-only secret or a token broken by a zero-width character, survives
+  unless a module registered it. A text that still holds a registered secret is
+  left out of the record whole, with its counts; the record keeps its type and
+  code.
 - **Where the runtime writes them:** its fault records, `runtime.module.failed`,
   `runtime.module.refused` with an error, `runtime.handler.failed`,
   `runtime.module.stop-failed`, `runtime.module.error-after-stop` and

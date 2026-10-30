@@ -107,7 +107,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
   const resource = runtimeResource(options.environment, INSTANCE_ID);
   const log = new LogWriter(stderrSink, options.logLevel, {now: () => Date.now()}, resource, redactions).logger(RUNTIME_SCOPE);
   const fail = (error: unknown): never => {
-    log.fatal('runtime.failed', redactions.without(faultFields(error, redactions)));
+    log.fatal('runtime.failed', faultFields(error, redactions));
     process.exit(1);
   };
   const escaped = (error: unknown): void => { if (!contain(error)) fail(error); };

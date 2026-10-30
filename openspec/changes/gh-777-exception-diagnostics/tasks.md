@@ -7,9 +7,9 @@
 ## 2. The serializer and the runtime
 
 - [x] 2.1 Add `exceptionFields` to the SDK, reading only an `Error`'s own message and V8's own stack, with the caller's filter, the credential and content rules, counts and byte-bounded truncation; export it and give `telemetry.dropped` its level.
-- [x] 2.2 Test it with allowed synthetic context, credential canaries in every rule's shape, a caller-named secret, a long prompt and body, truncation in characters and bytes and between frames, hostile getters, a cause, an `errors` list, a non-string message and a non-Error, and a profile 1.7 record it produces.
+- [x] 2.2 Test it with allowed synthetic context, credential canaries in every rule's shape (`=`, `:` and quoted forms, JSON members), a caller-named secret, a long prompt and body on one line and across lines, truncation in characters and bytes and between frames, hostile, bound and caller-installed getters, a cause, an `errors` list, a non-string message and a non-Error, and a profile 1.7 record it produces.
 - [x] 2.3 Add `Redactions.scrub` and `faultFields` to the runtime's log writer, write the runtime's fault records through it, and write every record at profile 1.7, with the kit's record check at 1.7.
-- [ ] 2.4 Extend the runtime's isolation, configuration, diagnostics and process tests so a fault record carries the filtered text and never the synthetic secret, and the maintenance intake's finding carries none of it.
+- [x] 2.4 Extend the runtime's isolation, configuration, diagnostics and process tests so a fault record carries the filtered text and never the synthetic secret, and the maintenance intake's finding carries none of it.
 
 ## 3. Documentation and qualification
 

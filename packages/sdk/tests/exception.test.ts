@@ -127,3 +127,35 @@ it('produces attributes a profile 1.7 record admits, under the runtime\'s scopes
   assert.equal(JSON.stringify(checked).includes(SECRET), false);
   assert.equal(validateRecord({...record, schema_version: '1.6'}).ok, false, 'an earlier profile refuses the text');
 });
+
+it('a bound or caller-installed stack accessor is not V8\'s and never runs, while V8\'s own is read', () => {
+  let ran = 0;
+  const bound = new Error('bound');
+  const getter = (): string => { ran += 1; return SECRET; };
+  Object.defineProperty(bound, 'stack', {get: getter.bind(null)});
+  assert.equal(exceptionFields(bound)['exception.stacktrace'], undefined, 'a bound function prints as native code but is not V8\'s accessor');
+  assert.equal(ran, 0);
+  const captured = {name: 'Captured'} as {name: string; stack?: string};
+  Error.captureStackTrace(captured);
+  const typed = new TypeError('typed');
+  const accessor = (error: Error): unknown => (Object.getOwnPropertyDescriptor(error, 'stack') as {readonly get?: unknown} | undefined)?.get;
+  assert.equal(accessor(typed), accessor(new RangeError('other')), 'V8 shares one accessor');
+  assert.match(String(exceptionFields(typed)['exception.stacktrace']), /^TypeError: typed\n/);
+});
+
+it('credential-named members in colon, quoted and single-quoted forms are replaced, and a multi-line body or prompt is omitted', () => {
+  const message = ['token: s3cr3tValue99 expired', 'secret: yaml-secret-value-1', 'token="quoted-secret-9"', "{'password':'hunter3'}",
+    'Authorization: Digest username="alice", realm="x", response="abc123def456abc"'].join('; ');
+  const kept = String(exceptionFields(new Error(message))['exception.message']);
+  for (const canary of ['s3cr3tValue99', 'yaml-secret-value-1', 'quoted-secret-9', 'hunter3', 'abc123def456abc']) assert.equal(kept.includes(canary), false, canary);
+  assert.ok(kept.includes('realm="x"'), 'a non-credential member stays');
+  const body = JSON.stringify({prompt: 'remind me about the dentist and what I said about my sister yesterday'.repeat(2), password: 'hunter2', transcript: 'we talked about health and finances'}, null, 2);
+  const multi = String(exceptionFields(new SyntaxError(`bad body ${body} at line 3`))['exception.message']);
+  assert.equal(multi.includes('dentist'), false, 'a pretty-printed body is omitted whole');
+  assert.equal(multi.includes('finances'), false);
+  assert.ok(multi.startsWith(`bad body ${OMITTED} at line 3`), multi);
+  const quoted = String(exceptionFields(new Error(`bad prompt "${'line one of a long prompt about the dentist\n'.repeat(4)}" refused`))['exception.message']);
+  assert.equal(quoted.includes('dentist'), false, 'a quoted prompt across lines is omitted');
+  const stack = String(exceptionFields(new Error('frames stay'))['exception.stacktrace']);
+  assert.ok(stack.split('\n').length > 3 && !stack.includes(OMITTED), 'a stack of frames is never a block');
+});

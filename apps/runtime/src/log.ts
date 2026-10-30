@@ -39,7 +39,16 @@ export function errorFields(error: unknown): Record<string, string> {
  * the journal and the export; never an error body, health or history.
  */
 export function faultFields(error: unknown, redactions?: Redactions): Record<string, string | number | boolean> {
-  return {...errorFields(error), ...exceptionFields(error, redactions === undefined ? {} : {filter: text => redactions.scrub(text)})};
+  const fields: Record<string, string | number | boolean> = {...errorFields(error), ...exceptionFields(error, redactions === undefined ? {} : {filter: text => redactions.scrub(text)})};
+  if (redactions === undefined) return fields;
+  // A text that still holds a secret, in a shape the filter missed, is left out whole; the counts go with the texts, so
+  // the record keeps its type and code and still validates (a text needs its counts, and the counts a text).
+  const kept = redactions.without(fields);
+  if (kept['exception.message'] === undefined && kept['exception.stacktrace'] === undefined) {
+    delete kept['bunny.exception.redacted_count'];
+    delete kept['bunny.exception.truncated'];
+  }
+  return kept;
 }
 
 let stderrGuarded = false;
@@ -87,11 +96,11 @@ export class Redactions {
     return [...this.#secrets].some(secret => view.includes(Buffer.from(secret, 'utf8')));
   }
 
-  /** `text` with each secret it holds replaced by the SDK's `[redacted]` marker, and how many it replaced. */
+  /** `text` with each secret it holds replaced by the SDK's `[redacted]` marker, longest first, and how many it replaced. */
   scrub(text: string): {text: string; replaced: number} {
     let out = text;
     let replaced = 0;
-    for (const secret of this.#secrets) {
+    for (const secret of [...this.#secrets].sort((a, b) => b.length - a.length)) {
       if (!out.includes(secret)) continue;
       const parts = out.split(secret);
       replaced += parts.length - 1;

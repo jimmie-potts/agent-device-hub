@@ -48,28 +48,29 @@ const CREDENTIAL_RULES: readonly Rule[] = [
   [/\b(bearer|basic|digest)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${REDACTED}`],
   // A URL's user information.
   [/(\/\/)[^/\s@]{1,256}@/g, `$1${REDACTED}@`],
-  // A query or body parameter that names a credential.
-  [/\b((?:access_?token|refresh_?token|id_?token|token|secret|client_?secret|password|passwd|pwd|api_?key|apikey|auth|signature|sig|private_?key)\s*=\s*)[^&\s"';]+/gi, `$1${REDACTED}`],
-  // A JSON member that names a credential.
-  [/("(?:accessToken|refreshToken|idToken|token|secret|clientSecret|client_secret|password|passwd|authorization|apiKey|api_key|privateKey|private_key)"\s*:\s*)"[^"\n]*"/gi, `$1"${REDACTED}"`],
+  // A parameter, field or YAML-style member that names a credential, as `name=value`, `name: value` or `name="value"`.
+  [/\b((?:access_?token|refresh_?token|id_?token|token|secret|client_?secret|password|passwd|pwd|api_?key|apikey|auth|signature|sig|private_?key|response)\s*[=:]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^&\s"';,]+)/gi, `$1${REDACTED}`],
+  // A JSON member that names a credential, in double or single quotes.
+  [/((["'])(?:accessToken|refreshToken|idToken|token|secret|clientSecret|client_secret|password|passwd|authorization|apiKey|api_key|privateKey|private_key)\2\s*:\s*)(?:"[^"\n]*"|'[^'\n]*')/gi, `$1"${REDACTED}"`],
   // Well-known credential shapes: API keys, personal access tokens, cloud keys, JWTs and this repository's `tok_` tokens.
   [/\b(?:sk-[A-Za-z0-9_-]{16,}|gh[opsu]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|tok_[A-Za-z0-9_-]{6,})\b/g, REDACTED],
   // A long opaque run of token characters with both letters and digits, not inside a path: a key, a hash or a signature.
   [/(?<![\w/.-])(?=[A-Za-z0-9_+/=-]*[A-Za-z])(?=[A-Za-z0-9_+/=-]*\d)[A-Za-z0-9_+/=-]{40,}(?![\w/.-])/g, REDACTED],
 ];
-// A long JSON-shaped block or quoted string on one line may be a request body, a prompt or a transcript. The block
-// goes first, whole, so its member names go with its values; it starts as JSON does, so a `[redacted]` marker never does.
+// A long JSON-shaped block or quoted string, on one line or across several, may be a request body, a prompt or a
+// transcript. The block goes first, whole, so its member names go with its values; it starts as JSON does, so a
+// `[redacted]` marker never does. Each spans at most 16 KiB, so a stack full of frames is never one block.
 const CONTENT_RULES: readonly Rule[] = [
-  [/[[{](?=\s*["[{])[^\n]{128,}[\]}]/g, OMITTED],
-  [/(["'`])(?:(?!\1)[^\n]){129,}\1/g, OMITTED],
+  [/[[{](?=\s*["[{])[\s\S]{128,16384}?[\]}](?![\s\S]{0,2}[\]}])/g, OMITTED],
+  [/(["'`])(?:(?!\1)[\s\S]){129,16384}?\1/g, OMITTED],
 ];
 // Control characters other than tab and newline never help a reader and may hide a replacement.
 const CONTROL = /(?![\t\n])\p{Cc}/gu;
-const NATIVE = /^function\s*\(\)\s*\{\s*\[native code\]\s*\}$/;
-// `Function.prototype.toString`, taken as a value so that it is applied to a getter rather than asked of it.
-const sourceOf: unknown = Object.getOwnPropertyDescriptor(Function.prototype, 'toString')?.value;
-const isNative = (candidate: () => unknown): boolean =>
-  typeof sourceOf === 'function' && NATIVE.test(String(Reflect.apply(sourceOf, candidate, [])));
+// V8 installs one shared accessor for `stack` on every error it captures; it is taken here, once, from an error of this
+// module's own, and an accessor is read only when it is that very function. A bound function or a getter a caller
+// installed prints as native code too, so a text comparison would admit it; an identity comparison does not.
+const stackAccessor: unknown = (Object.getOwnPropertyDescriptor(new Error('probe'), 'stack') as {readonly get?: unknown} | undefined)?.get;
+const isNative = (candidate: unknown): boolean => typeof stackAccessor === 'function' && candidate === stackAccessor;
 
 /**
  * An error's own `message` or `stack` as a string, or undefined. A data property is read as it is. An accessor is read
@@ -82,7 +83,7 @@ function ownText(error: Error, name: 'message' | 'stack'): string | undefined {
   if ('value' in descriptor) return typeof descriptor.value === 'string' ? descriptor.value : undefined;
   // The accessor is read as a plain value, not as a method of its descriptor, so it is checked before anything runs it.
   const getter: unknown = (descriptor as {readonly get?: unknown}).get;
-  if (typeof getter !== 'function' || !isNative(getter as () => unknown)) return undefined;
+  if (typeof getter !== 'function' || !isNative(getter)) return undefined;
   try {
     const value: unknown = Reflect.apply(getter, error, []);
     return typeof value === 'string' ? value : undefined;
