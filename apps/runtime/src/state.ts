@@ -322,8 +322,23 @@ export type EdgeConfig = {
   readonly placeLinks: Readonly<Record<string, string>>;
 };
 
-/** The runtime's configuration file (`--config`): each module's own section, by module name, and the edge's section. */
-export type RuntimeConfig = {readonly modules: Readonly<Record<string, unknown>>; readonly edge?: EdgeConfig};
+/** A log level the configuration file may select: the writer's levels but `fatal`, which only the process's own failure uses. */
+export type ConfiguredLogLevel = 'debug' | 'info' | 'warn' | 'error';
+/**
+ * The configuration file's `diagnostics` section (Hub #811): the floor of the runtime's log, `level`, `info` unless
+ * set, and a floor per module, `modules`, by module name, which raises or lowers only that module's records. Enabling
+ * `debug` affects the records written after the runtime reads it; nothing recovers records an earlier floor dropped.
+ */
+export type DiagnosticsConfig = {
+  readonly level?: ConfiguredLogLevel;
+  readonly modules?: Readonly<Record<string, ConfiguredLogLevel>>;
+};
+
+/**
+ * The runtime's configuration file (`--config`): each module's own section, by module name, the edge's section and the
+ * diagnostics section.
+ */
+export type RuntimeConfig = {readonly modules: Readonly<Record<string, unknown>>; readonly edge?: EdgeConfig; readonly diagnostics?: DiagnosticsConfig};
 
 /** A module's own section of the configuration, or undefined when the file has none for it. */
 export function sectionOf(config: RuntimeConfig | undefined, name: string): unknown {
@@ -343,8 +358,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
  * when it admits that module, so a bad section refuses only its module. Refuses the whole file with a `RuntimeError`
  * whose code names why: `config-relative`, `config-mount`, `config-missing`, `config-link`, `config-checkout`,
  * `config-not-file`, `config-not-private`, `config-too-large`, or `config-invalid` for a file that is not JSON, names
- * another schema, lacks `modules`, has a `modules` that is not an object or has any other member. No refusal quotes
- * what the file holds.
+ * another schema, lacks `modules`, has a `modules` that is not an object, has a malformed `edge` or `diagnostics`
+ * section or has any other member. No refusal quotes what the file holds.
  */
 export async function readRuntimeConfig(file: string): Promise<RuntimeConfig> {
   let bytes: Buffer;
@@ -363,10 +378,41 @@ export async function readRuntimeConfig(file: string): Promise<RuntimeConfig> {
   if (!isRecord(parsed) || parsed.schema !== CONFIG_SCHEMA) throw new RuntimeError('config-invalid', `the configuration file is not ${CONFIG_SCHEMA}`);
   const {modules} = parsed;
   if (!isRecord(modules)) throw new RuntimeError('config-invalid', 'the configuration file\'s modules must be an object of sections by module name');
-  if (Object.keys(parsed).some(key => key !== 'schema' && key !== 'modules' && key !== 'edge')) {
-    throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema, modules and edge');
+  if (Object.keys(parsed).some(key => !['schema', 'modules', 'edge', 'diagnostics'].includes(key))) {
+    throw new RuntimeError('config-invalid', 'the configuration file has a member other than schema, modules, edge and diagnostics');
   }
-  return {modules, ...(Object.hasOwn(parsed, 'edge') ? {edge: checkEdgeSection(parsed.edge)} : {})};
+  return {
+    modules, ...(Object.hasOwn(parsed, 'edge') ? {edge: checkEdgeSection(parsed.edge)} : {}),
+    ...(Object.hasOwn(parsed, 'diagnostics') ? {diagnostics: checkDiagnosticsSection(parsed.diagnostics)} : {}),
+  };
+}
+
+const CONFIGURED_LEVELS: readonly ConfiguredLogLevel[] = ['debug', 'info', 'warn', 'error'];
+const MODULE_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** At most this many per-module floors; the shipped list is far shorter. */
+const MAX_MODULE_LEVELS = 32;
+const invalidDiagnostics = (detail: string): RuntimeError => new RuntimeError('config-invalid', `the configuration file's diagnostics section ${detail}`);
+
+/**
+ * The diagnostics section (Hub #811): `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>}}`.
+ * Refuses, with `config-invalid`, any other member, a level outside those four (`fatal` included, since only the
+ * process's own failure uses it), a name that is not a module name, or more than 32 module entries; no refusal quotes a
+ * value. Whether each named module is one this runtime hosts is checked at startup, against the shipped list.
+ */
+export function checkDiagnosticsSection(value: unknown): DiagnosticsConfig {
+  if (!isRecord(value)) throw invalidDiagnostics('must be an object');
+  if (Object.keys(value).some(key => key !== 'level' && key !== 'modules')) throw invalidDiagnostics('has a member other than level and modules');
+  const isLevel = (candidate: unknown): candidate is ConfiguredLogLevel => typeof candidate === 'string' && (CONFIGURED_LEVELS as readonly string[]).includes(candidate);
+  const {level, modules = {}} = value;
+  if (level !== undefined && !isLevel(level)) throw invalidDiagnostics('must have a level of debug, info, warn or error');
+  if (!isRecord(modules) || Object.keys(modules).length > MAX_MODULE_LEVELS) throw invalidDiagnostics('must give modules as an object of at most 32 levels by module name');
+  const checked: Record<string, ConfiguredLogLevel> = {};
+  for (const [name, candidate] of Object.entries(modules)) {
+    if (!MODULE_NAME.test(name) || name.length > 64) throw invalidDiagnostics('names a module by something other than a module name');
+    if (!isLevel(candidate)) throw invalidDiagnostics('gives a module a level other than debug, info, warn or error');
+    checked[name] = candidate;
+  }
+  return {...(level === undefined ? {} : {level}), modules: checked};
 }
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

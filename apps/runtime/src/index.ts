@@ -19,7 +19,10 @@ export {
 export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type EdgeInputs, type ProcessInputs, type ProcessOptions} from './process.js';
 export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './record.js';
 export {SEGMENT_BYTES, SEGMENT_SPANS, SPANS_FILE, SPANS_PREVIOUS_FILE, readSpanFile, type SpanFileRead} from './span-file.js';
-export {CONFIG_SCHEMA, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, readRuntimeConfig, type EdgeConfig, type RuntimeConfig} from './state.js';
+export {
+  CONFIG_SCHEMA, MAX_CONFIG_BYTES, MAX_SECRET_BYTES, RuntimeError, checkDiagnosticsSection, readRuntimeConfig, type ConfiguredLogLevel, type DiagnosticsConfig, type EdgeConfig,
+  type RuntimeConfig,
+} from './state.js';
 export {
   CREDENTIALS_SCHEMA, DASHBOARD_SOURCE, MAX_CREDENTIALS, SCOPES, credentialsDocument, grantCredential, parseCredentials, readEdgeCredentials, revokeCredential,
   tokenDigest, writeEdgeCredentials, type CredentialWriteOptions, type EdgeCredential, type Scope,
