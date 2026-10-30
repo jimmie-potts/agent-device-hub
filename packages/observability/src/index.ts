@@ -2,8 +2,8 @@ import check from './validator.js';
 import catalogData from './catalog.json' with {type:'json'};
 import schema from './record.schema.json' with {type:'json'};
 
-export const ARTIFACT_VERSION = '1.6.0';
-/** The default producer profile. Profiles 1.2 to 1.6 add the runtime's vocabulary; its producers select them explicitly. */
+export const ARTIFACT_VERSION = '1.7.0';
+/** The default producer profile. Profiles 1.2 to 1.7 add the runtime's vocabulary; its producers select them explicitly. */
 export const SCHEMA_VERSION = '1.1';
 export const SEMANTIC_CONVENTIONS_VERSION = '1.44.0';
 export const MAX_RECORD_BYTES = 8192;
@@ -11,7 +11,7 @@ export const MAX_QUEUE_RECORDS = 1024;
 export const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 export const MAX_FLUSH_MS = 1000;
 export type Primitive = string | number | boolean;
-export type SchemaVersion = '1.0'|'1.1'|'1.2'|'1.3'|'1.4'|'1.5'|'1.6';
+export type SchemaVersion = '1.0'|'1.1'|'1.2'|'1.3'|'1.4'|'1.5'|'1.6'|'1.7';
 export type TraceContext = Readonly<{trace_id:string; span_id:string; trace_flags:string}>;
 export type DiagnosticRecord = {
   schema_version:SchemaVersion; timestamp?:string; observed_timestamp?:string;
@@ -105,12 +105,18 @@ export function createRecord(input:unknown):Result<DiagnosticRecord> {
     return validateRecord(value);
   } catch {return failure();}
 }
-// A later profile's vocabulary fails the target profile's validation, so a projection never forwards it.
+/** Profile 1.7's private exception fields: a projection to an earlier profile removes them, as 1.0 removes queue depth. */
+export const EXCEPTION_ATTRIBUTES:readonly string[]=Object.freeze([...additions['1.7']?.attributes??[]]);
+// A later profile's vocabulary fails the target profile's validation, so a projection never forwards it. The two
+// removals, queue depth for 1.0 and the private exception fields for every profile before 1.7, keep the record's
+// identity and correlation for an older consumer without its private text.
 export function projectRecord(input:unknown,version:SchemaVersion):Result<DiagnosticRecord> {
   const result=validateRecord(input);
-  if(!result.ok || !catalogData.schema_versions.includes(version))return failure();
+  const versions:string[]=catalogData.schema_versions;
+  if(!result.ok || !versions.includes(version))return failure();
   result.value.schema_version=version;
   if(version==='1.0')delete result.value.attributes['bunny.queue.depth'];
+  if(versions.indexOf(version)<versions.indexOf('1.7'))for(const name of EXCEPTION_ATTRIBUTES)delete result.value.attributes[name];
   return validateRecord(result.value);
 }
 const anyValue=(value:Primitive):Record<string,unknown> => typeof value==='string'?{stringValue:value}:

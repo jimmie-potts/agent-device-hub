@@ -18,6 +18,14 @@ const stateOf = (runtime: Runtime, name: string): string => entry(runtime.health
 const failed = (runtime: Runtime, name: string): Promise<void> => waitFor(() => stateOf(runtime, name) === 'failed', 5000, `${name} to fail`);
 const failure = (logs: LogRecord[], name: string): LogRecord | undefined =>
   logs.find(record => record.event_name === 'runtime.module.failed' && record.attributes['bunny.module'] === name);
+/** A fault record's attributes with its filtered exception text (profile 1.7) set apart, so the decision's fields are compared alone. */
+function exceptionText(record: LogRecord | undefined): Record<string, unknown> & {text: {message: unknown; stack: unknown; redacted: unknown; truncated: unknown}} {
+  const {
+    ['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ['bunny.exception.truncated']: truncated, ...rest
+  } = record?.attributes ?? {};
+  assert.ok(typeof stack === 'string' && stack.length > 0 && typeof redacted === 'number' && typeof truncated === 'boolean', 'a fault record carries the filtered stack with its counts');
+  return {...rest, text: {message, stack, redacted, truncated}};
+}
 
 /** A module that answers its own command key, to show it keeps working. */
 const steady = (name = 'steady'): Fixture => fixture(name, async ({sdk}) => { await sdk.respond(`bunny.cmd.mode.${name}`, () => ({status: 'accepted'})); });
@@ -47,9 +55,11 @@ it('a module whose handler throws is stopped and shown unhealthy, while another 
   });
   assert.equal(runtime.health().status, 'degraded');
   await waitFor(() => failing.stops === 1, 5000, 'the failed module\'s stop');
-  assert.deepEqual(failure(logs, 'failing')?.attributes, {
+  const {text, ...decision} = exceptionText(failure(logs, 'failing'));
+  assert.deepEqual(decision, {
     'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source',
   });
+  assert.deepEqual([text.message, text.redacted, text.truncated], ['the device driver crashed', 0, false]);
 
   await sdk.publish('bunny.state.session.s1', session(2));
   await flush();
@@ -72,11 +82,16 @@ it('a module whose responder throws leaves that request uncertain and is stopped
   assert.equal(result.error.error.code, 'uncertain-result');
   assert.equal(JSON.stringify(result).includes('secret-token'), false, 'the result carries no exception message');
   await failed(runtime, 'failing');
-  assert.deepEqual(failure(logs, 'failing')?.attributes, {
+  const {text, ...decision} = exceptionText(failure(logs, 'failing'));
+  assert.deepEqual(decision, {
     'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'error.code': 'ECONNREFUSED',
     'bunny.provenance': 'source',
   });
-  assert.equal(JSON.stringify(logs).includes('secret-token'), false, 'the diagnostic contract keeps raw exception messages out');
+  // The fault record carries the filtered message and stack (profile 1.7, Hub #777): the token is replaced in both.
+  assert.equal(text.message, 'GET http://192.0.2.7/api?token=[redacted] refused');
+  assert.match(String(text.stack), /^Error: GET http:\/\/192\.0\.2\.7\/api\?token=\[redacted\] refused\n {4}at /);
+  assert.deepEqual([text.redacted, text.truncated], [2, false]);
+  assert.equal(JSON.stringify(logs).includes('secret-token'), false, 'the diagnostic contract keeps the token out of the filtered text');
   await stillWorks(probe);
 });
 
@@ -164,9 +179,11 @@ it('a later error from a module that has already failed is logged as runtime.mod
   await failed(runtime, 'twice');
   await waitFor(() => logs.some(record => record.event_name === 'runtime.module.error-after-stop'), 5000, 'the later error');
   assert.equal(logs.filter(record => record.event_name === 'runtime.module.failed').length, 1, 'the module fails once');
-  assert.deepEqual(logs.find(record => record.event_name === 'runtime.module.error-after-stop')?.attributes, {
+  const {text, ...later} = exceptionText(logs.find(record => record.event_name === 'runtime.module.error-after-stop'));
+  assert.deepEqual(later, {
     'bunny.module': 'twice', 'bunny.phase': 'async', 'error.type': 'TypeError', 'bunny.provenance': 'source',
   }, 'a stop problem names where it arose, with no registry code');
+  assert.equal(text.message, 'the second escaped');
 });
 
 it('a handler outside every module that throws is logged as runtime.handler.failed, naming its participant and pattern', async context => {
@@ -183,9 +200,11 @@ it('a handler outside every module that throws is logged as runtime.handler.fail
   await part.subscribe('bunny.event.session.*', () => { throw new Error('the part failed'); });
   await publisher.publish('bunny.event.session.s1', turnEnded);
   await waitFor(() => logs.some(record => record.event_name === 'runtime.handler.failed'), 5000, 'the handler failure');
-  assert.deepEqual(logs.find(record => record.event_name === 'runtime.handler.failed')?.attributes, {
+  const {text, ...handler} = exceptionText(logs.find(record => record.event_name === 'runtime.handler.failed'));
+  assert.deepEqual(handler, {
     'bunny.participant': 'bunny/parts/probe', 'bunny.pattern': 'bunny.event.session.*', 'error.type': 'Error', 'bunny.provenance': 'source',
   });
+  assert.equal(text.message, 'the part failed');
   assertContractRecords(logs);
   assert.deepEqual(writer.counts(), {written: logs.length, dropped: 0, failed: 0}, 'no record was refused');
 });

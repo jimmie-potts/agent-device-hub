@@ -35,7 +35,7 @@ it('a module\'s logger writes contract records under the module scope, naming th
   ], 'debug is below the default level');
   const [applied, slow] = records;
   assert.ok(applied && slow);
-  assert.equal(applied.schema_version, '1.6');
+  assert.equal(applied.schema_version, '1.7');
   assert.deepEqual(applied.scope, {name: 'bunny.module', version: '1.0.0'});
   assert.deepEqual(applied.resource, {
     'service.namespace': 'bunny', 'service.name': 'runtime', 'service.version': RUNTIME_PACKAGE_VERSION,

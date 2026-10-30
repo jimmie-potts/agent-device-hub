@@ -1,7 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08 and 2026-10-17 (see
-[Amendments](#amendments)).
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17 and
+2026-10-30 (see [Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -329,6 +329,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
   and fixed text from the code that raised the error. For an error, a log record
   carries only its code, its type and the registered static body. None carries
   an exception's message, stack or cause; the original cause stays in memory.
+  One exception, since the [2026-10-30 amendment](#amendments): a fault record
+  on the private diagnostic path may carry the exception's filtered, bounded
+  message and stack under the diagnostic contract's profile 1.7.
 
 ### Observability
 
@@ -660,3 +663,23 @@ record's severity on its own. This amendment changes no message format, error
 code, domain outcome or module API, and needs no module API version bump.
 [#1143](https://github.com/jimmie-potts/agent-device-hub/issues/1143) owns
 moving the existing calls onto the table and the lint that enforces it.
+
+**2026-10-30, private exception context.** The owner accepted private exception
+messages and stack traces in diagnostic records for
+[epic #810](https://github.com/jimmie-potts/agent-device-hub/issues/810), so
+that a failure can be diagnosed from the Mac-local log and trace viewer. "Safe
+errors" keeps its rule for every outward surface: error bodies, health, history,
+proof and span names carry registry codes and fixed text, and a decision or
+refusal record carries an exception's type and code only. The one change is the
+runtime's fault records on the private diagnostic path, which may carry the
+exception's message and stack as the diagnostic contract's
+[profile 1.7](../observability-contract.md#private-exception-context-profile-17)
+bounds and filters them, through one serializer that reads only an `Error`'s own
+message and V8's own stack, replaces registered secrets, credential-like segments
+and payload-like segments, and counts what it replaced
+([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). Request
+bodies, prompts, responses and transcripts stay excluded, including when an
+exception quotes them. Projection to an earlier profile removes the text. The
+trade-off is a private record that may hold a credential in a shape no rule
+knows; detection limits are documented, and publication keeps using synthetic
+fixtures. `no-raw-error-text` still covers every other file.
