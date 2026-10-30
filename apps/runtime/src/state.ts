@@ -404,8 +404,8 @@ export function checkDiagnosticsSection(value: unknown): DiagnosticsConfig {
   if (Object.keys(value).some(key => key !== 'level' && key !== 'modules')) throw invalidDiagnostics('has a member other than level and modules');
   const isLevel = (candidate: unknown): candidate is ConfiguredLogLevel => typeof candidate === 'string' && (CONFIGURED_LEVELS as readonly string[]).includes(candidate);
   const {level, modules = {}} = value;
-  if (level !== undefined && !isLevel(level)) throw invalidDiagnostics('\'s level must be debug, info, warn or error');
-  if (!isRecord(modules) || Object.keys(modules).length > MAX_MODULE_LEVELS) throw invalidDiagnostics('\'s modules must be an object of at most 32 levels by module name');
+  if (level !== undefined && !isLevel(level)) throw invalidDiagnostics('must have a level of debug, info, warn or error');
+  if (!isRecord(modules) || Object.keys(modules).length > MAX_MODULE_LEVELS) throw invalidDiagnostics('must give modules as an object of at most 32 levels by module name');
   const checked: Record<string, ConfiguredLogLevel> = {};
   for (const [name, candidate] of Object.entries(modules)) {
     if (!MODULE_NAME.test(name) || name.length > 64) throw invalidDiagnostics('names a module by something other than a module name');

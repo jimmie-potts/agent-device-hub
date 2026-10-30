@@ -1111,11 +1111,17 @@ process's `--log-level` applies, `info` by default. `modules` gives one module
 its own floor by name, so `"sign": "debug"` writes the sign module's DEBUG
 records and no other module's. The file may name only modules this runtime
 hosts; another name, another member, a level outside those four (`fatal`
-included) or more than 32 entries refuses the file with `config-invalid`. The
-same floor feeds every sink the runtime writes to, so the journal and an export
-agree. Lowering a floor affects the records written after the runtime reads the
-file; nothing recovers a record an earlier floor kept out, and a record below
-the floor is not counted as dropped.
+included) or more than 32 entries refuses the file with `config-invalid`, a
+malformed section before any state effect and an unhosted name at startup,
+before any module starts. On the container profiles a hosted module is the core
+or a module with a section of its own. The floors filter log records only: the
+same floor feeds every log sink the runtime writes to, so the journal and an
+export agree, while spans are recorded whatever the floor, and the runtime's own
+records about a module (`runtime.module.starting` at DEBUG, the bus's
+`runtime.sync.restarted`) follow `level`, not the module's entry. Lowering a
+floor affects the records written after the runtime reads the file; nothing
+recovers a record an earlier floor kept out, and a record below the floor is not
+counted as dropped.
 
 The `edge` section names the [credentials file](#credentials) by its absolute
 path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),

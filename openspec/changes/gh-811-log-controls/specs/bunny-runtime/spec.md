@@ -49,14 +49,14 @@ Before it starts the modules, the runtime SHALL admit each module whose manifest
 - **THEN** each of the first five exits 1 with no ready line and a `runtime.failed` record carrying `RuntimeError` and `config-relative`, `config-missing`, `config-not-private`, `config-invalid` or `config-link`, and the last serves health `ok` and exits 0 on SIGTERM
 
 #### Scenario: A malformed diagnostics section
-- **WHEN** the file's diagnostics section has `fatal` as its level, a member other than `level` and `modules`, or a level for a module this runtime does not host
-- **THEN** the runtime refuses to start with `config-invalid`, before any module starts, and the refusal quotes nothing
+- **WHEN** the file's diagnostics section has `fatal` as its level, a member other than `level` and `modules`, a level for a module this runtime does not host, or a synthetic secret as its level or as a module's level
+- **THEN** the runtime refuses to start with `config-invalid`, before any module starts, and no refusal quotes the secret
 
 ## ADDED Requirements
 
 ### Requirement: Log floors
 
-The log SHALL keep INFO and above by default. The configuration file's optional `diagnostics` section, `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>}}`, SHALL set the floors: `level` SHALL be the floor of the runtime's own records and of every module without an entry of its own, taking precedence over `--log-level`, which SHALL remain the process's default; a module's entry SHALL raise or lower the floor of that module's records only. A record below its floor SHALL not be written and SHALL not be counted as dropped. Every sink the runtime writes to, the journal and any export, SHALL see the same floor. The section SHALL be refused with `config-invalid` for a member other than `level` and `modules`, a level outside the four, a name that is not a module name, more than 32 module entries, or a module this runtime does not host. A floor SHALL change no result, outcome, retry, queue or permission, and lowering a floor SHALL affect only the records written after the runtime reads the file.
+The log SHALL keep INFO and above by default. The configuration file's optional `diagnostics` section, `{"level"?: "debug"|"info"|"warn"|"error", "modules"?: {<module name>: <level>}}`, SHALL set the floors: `level` SHALL be the floor of the runtime's own records and of every module without an entry of its own, taking precedence over `--log-level`, which SHALL remain the process's default; a module's entry SHALL raise or lower the floor of that module's records only. A record below its floor SHALL not be written and SHALL not be counted as dropped. The floors SHALL filter log records only: every log sink the runtime writes to, the journal and any export, SHALL see the same floor, spans SHALL be recorded whatever the floor, and the runtime's own records about a module SHALL follow `level`. The section SHALL be refused with `config-invalid` for a member other than `level` and `modules`, a level outside the four, a name that is not a module name or more than 32 module entries, before any state effect, and for a module this runtime does not host, at startup before any module starts; no refusal SHALL quote a value. A floor SHALL change no result, outcome, retry, queue or permission, and lowering a floor SHALL affect only the records written after the runtime reads the file.
 
 #### Scenario: INFO and above by default
 - **WHEN** two modules each write a DEBUG, an INFO and a WARN record and the file has no diagnostics section

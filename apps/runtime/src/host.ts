@@ -273,7 +273,7 @@ export class ModuleHost {
       const controller = new AbortController();
       const workers = new Set<Worker>();
       const slot: Slot = {
-        module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}, options.levels?.[name]),
+        module, name, apiVersion, log: options.logs.logger(MODULE_SCOPE, {'bunny.module': name}, options.levels !== undefined && Object.hasOwn(options.levels, name) ? options.levels[name] : undefined),
         flow: {fail: (failure, error) => { this.#fail(slot, failure, error); }},
         controller, timers: new Set(), workers,
         calls: new WorkerCalls({scheduler: options.scheduler, signal: controller.signal, track: worker => {

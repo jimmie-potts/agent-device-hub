@@ -221,6 +221,8 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   await privateFile(join(root, 'level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: 'fatal'}}));
   await privateFile(join(root, 'floor.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {floor: 'info'}}));
   await privateFile(join(root, 'unhosted.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {modules: {retired: 'debug'}}}));
+  await privateFile(join(root, 'secret-level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: SECRET}}));
+  await privateFile(join(root, 'secret-module-level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {modules: {started: SECRET}}}));
   const cases: readonly (readonly [string, string])[] = [
     ['relative/config.json', 'config-relative'],
     ['/mnt/bunny-runtime-test/config.json', 'config-mount'],
@@ -241,6 +243,8 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     [join(root, 'level.json'), 'config-invalid'],
     [join(root, 'floor.json'), 'config-invalid'],
     [join(root, 'unhosted.json'), 'config-invalid'],
+    [join(root, 'secret-level.json'), 'config-invalid'],
+    [join(root, 'secret-module-level.json'), 'config-invalid'],
   ];
   for (const [file, expected] of cases) {
     const started = fixture('started');

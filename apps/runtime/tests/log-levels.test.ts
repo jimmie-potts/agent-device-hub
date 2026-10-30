@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {RuntimeError, checkDiagnosticsSection, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter} from '../src/log.js';
-import {contextOf, fixture, it, run, stateDir} from './support.js';
+import {assertContractRecords, contextOf, fixture, it, run, stateDir} from './support.js';
 
 const clock = {now: () => Date.parse('2026-10-30T12:00:00.000Z')};
 const code = (expected: string) => (error: unknown): boolean => error instanceof RuntimeError && error.code === expected;
@@ -69,6 +69,7 @@ it('INFO and above is the default; DEBUG for one module affects that module only
     config: {modules: {}, diagnostics: {level: 'warn', modules: {beta: 'debug'}}}}), logs: raisedLogs};
   assert.equal(raised.runtime.health().status, 'ok', 'a level changes no result');
   await raised.runtime.stop();
+  assertContractRecords(raisedLogs);
   assert.deepEqual(named(raised.logs, 'alpha'), ['WARN'], 'the configured floor');
   assert.deepEqual(named(raised.logs, 'beta'), ['DEBUG', 'INFO', 'WARN'], 'a module\'s own floor still wins');
   assert.equal(raised.logs.some(record => record.event_name === 'runtime.module.started'), false, 'the runtime\'s INFO records are below the floor');

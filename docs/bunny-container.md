@@ -203,10 +203,12 @@ Do not configure it on this profile until a source mapping is qualified.
 
 The file may also carry the runtime's optional `diagnostics` section (Hub #811),
 `{"level": "info", "modules": {"companions": "debug"}}`, which sets the log's
-floor and one module's own; the profiles admit it unchanged, and the runtime
-refuses a level outside `debug`, `info`, `warn` and `error` or a module it does
-not host with `config-invalid`, before any state effect. Lowering a module's
-floor affects the records written after the restart that reads the file.
+floor and one module's own; the profiles admit it unchanged. The runtime refuses
+a level outside `debug`, `info`, `warn` and `error`, or another member, with
+`config-invalid` before any state effect, and a module it does not host, which
+on these profiles is any module without a section of its own, at startup before
+any module starts. Lowering a module's floor affects the records written after
+the restart that reads the file.
 
 Adding a section is the owner's manual private edit; the provisioning helper still
 writes `modules: {}`. Keep the complete new `runtime.json` outside every checkout
