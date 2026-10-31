@@ -1,5 +1,6 @@
 // Real core storage and existing reusable cards; synthetic devices only.
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
 import {AxeBuilder} from '@axe-core/playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -11,6 +12,7 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage();page.setDefaultTimeout(12_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
+  let streams = 0;page.on('request', request => {if (new URL(request.url()).pathname === '/api/sdk/v1/stream') streams += 1;});
   const sent = changes(page), grid = page.locator('.home-layout-grid');
   const order = async (): Promise<string[]> => grid.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
   const edit = async (): Promise<void> => {await page.getByRole('button', {name: 'Edit Home', exact: true}).click();};
@@ -23,6 +25,46 @@ try {
   assert.equal(await page.getByText('YOUR SPACE', {exact: true}).count(), 0);assert.equal(await page.getByText('Desktop layout', {exact: true}).count(), 0);
   const original = await order();
   const dragTarget = original[1];assert.ok(dragTarget !== undefined);
+  await edit();
+  const picker = () => page.getByRole('region', {name: 'Add a card', exact: true});
+  const search = () => picker().getByRole('searchbox', {name: 'Search cards', exact: true});
+  const category = (name: string) => picker().getByRole('group', {name: 'Card categories', exact: true}).getByRole('button', {name, exact: true});
+  const priorStreams = streams;
+  await page.getByRole('button', {name: 'Add card', exact: true}).click();
+  await expect(search()).toBeVisible();await expect(search()).toBeFocused();
+  const allCards = await picker().getByRole('listitem').count();assert.ok(allCards > 5);
+  await expect(picker().locator('svg.home-card-icon')).toHaveCount(allCards);
+  assert.ok((await picker().locator('svg').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-hidden') === 'true' && node.getAttribute('focusable') === 'false' && !node.hasAttribute('tabindex')))).every(Boolean));
+  await expect(picker().locator('img,video,audio,canvas,iframe')).toHaveCount(0);
+  await search().press('Tab');await expect(category('All')).toBeFocused();await category('All').press('Enter');
+  await search().fill('  sTuDiO  ');await expect(picker().getByRole('listitem')).toHaveCount(1);
+  await expect(picker().getByText('Studio', {exact: true})).toBeVisible();
+  await category('Hub').press('Enter');await expect(picker().getByRole('listitem')).toHaveCount(0);
+  assert.notEqual(await category('Hub').evaluate(node => getComputedStyle(node).backgroundColor), await category('All').evaluate(node => getComputedStyle(node).backgroundColor), 'the selected category is visually distinct');
+  await expect(picker().getByRole('status')).toHaveText('No cards found.');
+  await picker().getByRole('button', {name: 'Reset filters', exact: true}).press('Enter');
+  await expect(search()).toBeFocused();await expect(search()).toHaveValue('');await expect(category('All')).toHaveAttribute('aria-pressed', 'true');
+  await expect(picker().getByRole('listitem')).toHaveCount(allCards);
+  await search().fill('Rooms');await expect(picker().getByText('Studio', {exact: true})).toBeVisible();
+  await category('Rooms').click();await search().fill('Studio');await expect(picker().getByRole('listitem')).toHaveCount(1);
+  await category('Data').click();await search().fill('wIsPr');await expect(picker().getByRole('listitem')).toHaveCount(1);
+  await expect(picker().getByText('Wispr browser exposure is not available.', {exact: true})).toBeVisible();
+  await expect(picker().getByRole('button', {name: 'Add Wispr', exact: true})).toBeDisabled();
+  assert.equal(streams, priorStreams, 'picker filtering acquires no second SDK stream');assert.equal(world.browserSessions(), 1);
+  assert.equal(sent.length, 0, 'search, categories, reset and identifiers send no command');
+  await category('Hub').click();await search().fill('Timeline');
+  await picker().getByRole('button', {name: 'Add Timeline', exact: true}).press('Enter');
+  await expect(picker().getByRole('button', {name: 'Added Timeline', exact: true})).toBeDisabled();
+  await expect(grid.locator('[data-home-card="timeline"]')).toHaveCount(1);
+  await page.getByRole('button', {name: 'Phone', exact: true}).click();
+  await expect(picker().getByRole('button', {name: 'Added Timeline', exact: true})).toBeDisabled();
+  await page.getByRole('button', {name: 'Desktop', exact: true}).click();
+  await search().fill('');await category('All').click();
+  await picker().getByRole('button', {name: 'Close', exact: true}).press('Enter');
+  await expect(page.getByRole('button', {name: 'Add card', exact: true})).toBeFocused();
+  await page.getByRole('button', {name: 'Cancel', exact: true}).press('Enter');
+  await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeFocused();
+  assert.deepEqual(await order(), original);assert.equal(sent.length, 0, 'search and Add affect only the canceled draft');
   await edit();
   await page.locator('[data-home-move="hub-mode"]').dragTo(page.locator(`[data-home-card="${dragTarget}"]`), {targetPosition: {x: 20, y: 20}});
   await expect(grid.locator('[data-home-card]').nth(1)).toHaveAttribute('data-home-card', 'hub-mode');
@@ -58,6 +100,14 @@ try {
   await edit();assert.equal(await page.getByRole('button', {name: 'Hide Agent status', exact: true}).isDisabled(), true);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();await world.observe(approvalResolved('layout-attention'));
   await expect(page.locator('[data-home-card="sessions"]')).toHaveCount(0);
+  const beforeShow = sent.length;
+  await edit();await page.getByRole('button', {name: 'Add card', exact: true}).click();
+  await category('All').click();await search().fill('Agent status');
+  await picker().getByRole('button', {name: 'Show Agent status', exact: true}).press('Enter');
+  await expect(picker().getByRole('button', {name: 'Added Agent status', exact: true})).toBeDisabled();
+  await expect(grid.locator('[data-home-card="sessions"]')).toHaveCount(1);
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  await expect(grid.locator('[data-home-card="sessions"]')).toHaveCount(0);assert.equal(sent.length, beforeShow, 'Show changes only the draft');
   await edit();const retained = await order();await page.getByRole('button', {name: 'Reset', exact: true}).click();
   assert.notDeepEqual(await order(), retained);await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   assert.deepEqual(await order(), retained);
@@ -100,11 +150,20 @@ try {
     await faultPage.unroute('**/api/sdk/v1/stream');await faultPage.reload();await feed(faultPage, 'connected');
     await expect(faultPage.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();assert.equal(faultSends.length, 1, 'reconnect and reload never replay the committed save');
   } finally {await faultContext.close();}
+  const output = process.env.DASHBOARD_RECEIPTS;if (output !== undefined) await mkdir(output, {recursive: true});
   for (const theme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
-    await page.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});await page.setViewportSize({width, height: 1000});
+    await page.emulateMedia({colorScheme: theme, reducedMotion: width === 390 ? 'no-preference' : 'reduce'});await page.setViewportSize({width, height: 1000});
     await edit();await page.getByRole('button', {name: 'Add card', exact: true}).click();
+    await search().fill('');await category('All').click();
+    assert.notEqual(await category('All').evaluate(node => getComputedStyle(node).backgroundColor), await category('Rooms').evaluate(node => getComputedStyle(node).backgroundColor), 'selected filter stays visible in each theme and viewport');
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (output !== undefined) await picker().screenshot({path: `${output}/home-picker-${theme}-${String(width)}.png`});
+    const labels = await new AxeBuilder({page}).withRules(['label-content-name-mismatch']).analyze();assert.deepEqual(labels.violations.map(item => item.id), []);
     const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();assert.deepEqual(axe.violations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await search().fill('no-such-card-1316');await expect(picker().getByRole('status')).toHaveText('No cards found.');
+    if (output !== undefined) await picker().screenshot({path: `${output}/home-picker-empty-${theme}-${String(width)}.png`});
+    await picker().getByRole('button', {name: 'Reset filters', exact: true}).press('Enter');await expect(search()).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   }
   // Protected attention can reappear without a saved placement or enabled move handle.
@@ -124,7 +183,7 @@ try {
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await world.observe(approvalResolved('layout-forced-focus'));
   assert.ok(sent.every(path => path.endsWith('/home-layout-set')), 'layout editing sent no device or lighting command');assert.deepEqual(errors, []);
-  assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, accessibility: 'light/dark 1440/390/320', physical: false}));
+  assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', pickerSearch: 'name/category combined, case/space normalization, empty/reset', identifiers: 'neutral inline with no source acquisition', pickerDraftAndFocus: true, restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, accessibility: 'light/dark 1440/390/320', physical: false}));
   await context.close();
 } finally {await browser.close();await world.close();}
 

@@ -106,7 +106,11 @@ without qualified evidence. See the [module guide](../../../modules/companions/R
 
 ### Customizable Home
 
-Choose **Edit Home**, then **Add card** to browse by category. Move cards with the
+Choose **Edit Home**, then **Add card** to search by name or category and combine
+that search with the category buttons. Empty results offer **Reset filters**.
+Neutral icons identify cards without loading private media or mounting control
+adapters in the picker. Unavailable sources keep their reason; Add/Show changes
+only the draft. Closing the picker returns focus to Add card. Move cards with the
 handle or the earlier/later buttons; arrow keys on the handle provide the same
 ordering. Choose a supported Small, Standard or Wide size, Hide or Remove. Hidden
 cards remain in the saved arrangement and can be shown again; removal affects
