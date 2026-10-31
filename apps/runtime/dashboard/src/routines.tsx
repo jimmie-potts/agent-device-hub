@@ -1,6 +1,6 @@
 // Hub #483, #1297: the weekly routines editor. A routine is an ordered list of typed device actions at one Hub-clock
 // time on chosen weekdays. The page only reads and writes definitions through the Automation page's explicit mutations.
-import React,{useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {Badge,Facts} from './ui.tsx';
 
@@ -156,7 +156,20 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
   mutate:(path:string,method:string,value?:object,after?:()=>void)=>Promise<void>;
 }):React.JSX.Element {
   const [draft,setDraft]=useState(fresh),[editing,setEditing]=useState<string>();
-  const reset=():void=>{setEditing(undefined);setDraft(fresh());};
+  const [open,setOpen]=useState(false);
+  const nameInput=useRef<HTMLInputElement>(null),newButton=useRef<HTMLButtonElement>(null),opener=useRef<HTMLButtonElement|null>(null);
+  const returnFocus=useRef(false);
+  const reset=():void=>{
+    setEditing(undefined);setDraft(fresh());setOpen(false);
+    returnFocus.current=true;
+  };
+  useEffect(()=>{
+    if(!returnFocus.current||open||!available) return;
+    returnFocus.current=false;
+    const target=opener.current?.isConnected===true?opener.current:newButton.current;
+    if(target!==null&&target.closest('[hidden]')===null) target.focus();
+  },[open,available]);
+  useEffect(()=>{if(open) nameInput.current?.focus();},[open,editing]);
   const recordOf=(target:string):RoutineDevice|undefined=>devices.find(item=>item.record.id===target);
   const labelOf=(target:string):string=>recordOf(target)?.record.label??target;
   const targets=[...new Set([...devices.map(item=>item.record.id),...draft.actions.map(action=>action.target).filter(target=>target!=='')])];
@@ -170,36 +183,39 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
     if(moved===undefined || other===undefined) return list;
     next[index]=other;next[index+offset]=moved;return next;
   });};
-  return <section aria-label="Weekly routines"><h2>Weekly routines</h2>
-    <p>Times use the Hub clock ({timeZone}). The Hub must be running and each device reachable. Missed runs are skipped.
-      Actions run in order; an action whose device is not in its required mode is skipped and logged.</p>
-    <div className="cards two"><article className="card"><h3>Saved routines</h3>
+  return <section aria-label="Weekly routines">
+    <div className="cards two automation-collection"><article className="card"><header className="automation-section-heading"><h2>Routines</h2>
+      <button type="button" ref={newButton} disabled={!available} onClick={event=>{
+        opener.current=event.currentTarget;setEditing(undefined);setDraft(fresh());setOpen(true);nameInput.current?.focus();
+      }}>New routine</button></header>
+      <p className="hint">Hub time · {timeZone}</p>
       {routines.length===0 && <p>No routines yet.</p>}
       {routines.map(saved=><article className="session" key={saved.id}><h4>{saved.name} <Badge>{saved.enabled?'Enabled':'Disabled'}</Badge></h4>
         <p>{saved.days.map(day=>DAYS[day]).join(', ')} · {saved.time}</p>
         <ol className="routine-summary">{saved.actions.map((action,index)=><li key={index}>{labelOf(action.target)}: {actionSummary(action)}</li>)}</ol>
-        <Facts items={[
+        <details className="automation-evidence"><summary>Timing and device status</summary><Facts items={[
           ['Next run at last refresh',!saved.enabled?'None while disabled':saved.next===undefined?'None'
             :`${new Date(saved.next.atMs).toLocaleString(undefined,{timeZone})} (${timeZone})`],
           ...saved.actions.map((action,index)=>{
             const device=recordOf(action.target);
             return [`Action ${String(index+1)} device path`,device?.current===true?device.record.availability:'Unknown or stale'] as const;
           }),
-        ]}/>
-        <div className="actions"><button type="button" className="secondary" disabled={!available} onClick={()=>{
-          setEditing(saved.id);setDraft({name:saved.name,days:[...saved.days],time:saved.time,actions:routineInput(saved,false).actions});
-        }}>Edit routine {saved.name}</button>
-          <button type="button" disabled={!available} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/${saved.enabled?'disable':'enable'}`,'POST',{});}}>{saved.enabled?'Disable':'Enable'} routine {saved.name}</button>
-          <button type="button" className="secondary" disabled={!available} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run routine {saved.name} now</button>
-          <button type="button" className="secondary" disabled={!available} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}`,'DELETE',undefined,()=>{if(editing===saved.id) reset();});}}>Delete routine {saved.name}</button></div>
+        ]}/></details>
+        <div className="actions"><button type="button" className="secondary" disabled={!available} aria-label={`Edit routine ${saved.name}`} onClick={event=>{
+          opener.current=event.currentTarget;setEditing(saved.id);setDraft({name:saved.name,days:[...saved.days],time:saved.time,actions:routineInput(saved,false).actions});setOpen(true);nameInput.current?.focus();
+        }}>Edit</button>
+          <button type="button" disabled={!available} aria-label={`${saved.enabled?'Disable':'Enable'} routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/${saved.enabled?'disable':'enable'}`,'POST',{});}}>{saved.enabled?'Disable':'Enable'}</button>
+          <button type="button" className="secondary" disabled={!available} aria-label={`Run routine ${saved.name} now`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run now</button>
+          <button type="button" className="secondary" disabled={!available} aria-label={`Delete routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}`,'DELETE',undefined,()=>{if(editing===saved.id){opener.current=newButton.current;reset();}});}}>Delete</button></div>
       </article>)}
-    </article><article className="card"><h3>{editing===undefined?'Create routine':'Edit routine'}</h3>
+      <details className="automation-help"><summary>How routines work</summary><p>The Hub must be running and each device reachable. Missed runs are skipped. Actions run in order; a device outside its required mode is skipped and logged. Saving or enabling runs nothing; Run now runs one occurrence.</p></details>
+    </article><article className="card automation-editor" hidden={!open}><h3>{editing===undefined?'Create routine':'Edit routine'}</h3>
       <form className="edit wide routine-form" onSubmit={event=>{
         event.preventDefault();if(!valid) return;
         void mutate(editing===undefined?'routines':`routines/${encodeURIComponent(editing)}`,editing===undefined?'POST':'PUT',
           routineInput({name:draft.name,days:draft.days,time:draft.time,actions},editing===undefined),reset);
       }}><fieldset disabled={!available}><legend className="vh">Routine definition</legend>
-        <label>Routine name<input required maxLength={80} value={draft.name} onChange={event=>{setDraft({...draft,name:event.target.value});}}/></label>
+        <label>Routine name<input ref={nameInput} required maxLength={80} value={draft.name} onChange={event=>{setDraft({...draft,name:event.target.value});}}/></label>
         <fieldset className="routine-days"><legend>Days</legend>{DAYS.map((day,index)=><label className="check" key={day}><input type="checkbox" checked={draft.days.includes(index)}
           onChange={event=>{setDraft({...draft,days:event.target.checked?[...draft.days,index].sort((a,b)=>a-b):draft.days.filter(value=>value!==index)});}}/>{day}</label>)}</fieldset>
         <label>Time<input type="time" required value={draft.time} onChange={event=>{setDraft({...draft,time:event.target.value});}}/></label>
@@ -231,17 +247,16 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
               {choices(modes,action.requireMode??'')}</select></label>}
             {completed[index]===undefined && <p>Choose a current device and complete this action.</p>}
             <div className="actions">
-              <button type="button" className="secondary" disabled={index===0} onClick={()=>{move(index,-1);}}>Move action {position} up</button>
-              <button type="button" className="secondary" disabled={index===draft.actions.length-1} onClick={()=>{move(index,1);}}>Move action {position} down</button>
-              <button type="button" className="secondary" onClick={()=>{setActions(list=>list.filter((_action,item)=>item!==index));}}>Remove action {position}</button></div>
+              <button type="button" className="secondary" aria-label={`Move action ${position} up`} disabled={index===0} onClick={()=>{move(index,-1);}}>↑</button>
+              <button type="button" className="secondary" aria-label={`Move action ${position} down`} disabled={index===draft.actions.length-1} onClick={()=>{move(index,1);}}>↓</button>
+              <button type="button" className="secondary" aria-label={`Remove action ${position}`} onClick={()=>{setActions(list=>list.filter((_action,item)=>item!==index));}}>Remove</button></div>
           </fieldset></li>;
         })}</ol>
         {draft.actions.length===0 && <p>Add at least one action.</p>}
         <div className="actions"><button type="button" className="secondary" disabled={draft.actions.length>=ACTION_LIMIT}
           onClick={()=>{setActions(list=>[...list,blank()]);}}>Add action</button></div>
-        <p>New routines are disabled. Saving or enabling runs nothing; Run now runs one occurrence.</p>
         <div className="actions"><button disabled={!valid}>{editing===undefined?'Create disabled routine':'Save routine'}</button>
-          {editing!==undefined && <button type="button" className="secondary" onClick={reset}>Cancel routine edit</button>}</div>
+          <button type="button" className="secondary" aria-label="Cancel routine edit" onClick={reset}>Cancel</button></div>
       </fieldset></form>
     </article></div>
   </section>;

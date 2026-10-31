@@ -6,6 +6,7 @@ import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
 import type {DashboardConnection} from './connection.ts';
 import {Badge, Facts} from './ui.tsx';
 import {RoutinesEditor,type Routine} from './routines.tsx';
+import './automation.css';
 
 export type AutomationPageProps = {connection: DashboardConnection; live: boolean; control: boolean};
 // The existing core route shapes, kept browser-safe. Importing the Node core's source types pulls in its SQLite graph.
@@ -100,6 +101,10 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
   const state = useSyncExternalStore(connection.subscribe, connection.getState, connection.getState);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [draft, setDraft] = useState(newRule), [editing, setEditing] = useState<string>();
+  const [tab, setTab] = useState(0), [ruleOpen, setRuleOpen] = useState(false);
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]), ruleName = useRef<HTMLInputElement>(null);
+  const newRuleButton = useRef<HTMLButtonElement>(null), ruleOpener = useRef<HTMLButtonElement | null>(null);
+  const returnRuleFocus = useRef(false);
   const [paletteText, setPaletteText] = useState('');
   const [settings, setSettings] = useState<AutomationSettings>(), [kinds, setKinds] = useState('');
   const [status, setStatus] = useState('Loading automation…'), [reading, setReading] = useState(false);
@@ -121,7 +126,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
       if (resetDrafts || !initialized.current) { setSettings(value.settings); setKinds(value.kinds.join(', ')); }
       initialized.current = true;
       if (resolveUncertainty) { locked.current = false; setUncertain(false); }
-      setStatus('Current rules and settings loaded. Rules run while this page is closed.');
+      setStatus('Up to date.');
     } catch (error) {
       if (mounted.current && generation === latestRead.current) setStatus(error instanceof AutomationFailure ? error.message : 'Automation is unavailable.');
     } finally {
@@ -157,39 +162,63 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
   const operationLive = live && operationCopy?.synced === true;
   const updateAction = (change: Partial<RuleInput['action']>): void => { setDraft(value => ({...value, action: {...value.action, ...change}})); };
   const quiet = (change: Partial<AutomationSettings['quietHours']>): void => { setSettings(value => value === undefined ? undefined : {...value, quietHours: {...value.quietHours, ...change}}); };
-  return <section aria-label="Automation"><header className="page"><h1>Automation</h1></header>
-    <p>Live events can start bounded moments. Quiet, active alerts and your interrupt set still take precedence.</p>
+  const closeRule = (): void => {
+    setEditing(undefined); setDraft(newRule()); setPaletteText(''); setRuleOpen(false);
+    returnRuleFocus.current = true;
+  };
+  useEffect(() => {
+    if (!returnRuleFocus.current || ruleOpen || busy || reading) return;
+    returnRuleFocus.current = false;
+    const target = ruleOpener.current?.isConnected === true ? ruleOpener.current : newRuleButton.current;
+    if (target !== null && target.closest('[hidden]') === null) target.focus();
+  }, [ruleOpen, busy, reading]);
+  useEffect(() => {if (ruleOpen) ruleName.current?.focus();}, [ruleOpen, editing]);
+  return <section aria-label="Automation" className="automation-workspace"><header className="page automation-heading"><h1>Automation</h1>
+      <button type="button" className="secondary" aria-label="Refresh rules and logs" disabled={!live || reading || busy}
+        onClick={() => { void refresh(true, true); }}>Refresh</button></header>
     {!control && <p>Your session is read-only.</p>}
     {!live && <p role="status">The connection is unavailable. Saved evidence may be stale.</p>}
     {uncertain && <p role="alert">The last change has no reliable reply. Refresh current rules before another attempt.</p>}
-    <div className="actions"><button type="button" className="secondary" disabled={!live || reading || busy}
-      onClick={() => { void refresh(true, true); }}>Refresh rules and logs</button></div>
-    <p role="status">{status}</p>
+    <p role="status" className="automation-feedback">{status}</p>
+    <div className="automation-tabs" role="tablist" aria-label="Automation views">{['Routines', 'Rules', 'Settings'].map((name, index) =>
+      <button type="button" role="tab" key={name} id={`automation-tab-${String(index)}`} aria-controls={`automation-panel-${String(index)}`}
+        aria-selected={tab === index} tabIndex={tab === index ? 0 : -1} ref={node => {tabs.current[index] = node;}}
+        onClick={() => {setTab(index);}} onKeyDown={event => {
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : undefined;
+          if (next === undefined) return;event.preventDefault();setTab(next);tabs.current[next]?.focus();
+        }}>{name}</button>)}</div>
+    <div role="tabpanel" id="automation-panel-0" aria-labelledby="automation-tab-0" hidden={tab !== 0}>
     <RoutinesEditor routines={snapshot?.routines ?? []} timeZone={snapshot?.timeZone ?? 'loading'} available={available} mutate={mutate}
       devices={deviceCopies.flatMap(copy => (copy.records as DeviceRecord[]).filter(record => copy.owner === `bunny/modules/${record.kind}`)
         .map(record => ({record, current: live && copy.synced})))}/>
-    <div className="cards two"><article className="card"><h2>Rules</h2>
-      {snapshot?.rules.length === 0 && <p>No rules yet. Create a rule, then enable it explicitly.</p>}
+    </div>
+    <div role="tabpanel" id="automation-panel-1" aria-labelledby="automation-tab-1" hidden={tab !== 1}>
+    <div className="cards two automation-collection"><article className="card"><header className="automation-section-heading"><h2>Rules</h2>
+      <button type="button" ref={newRuleButton} disabled={!available} onClick={event => {
+        ruleOpener.current = event.currentTarget;setEditing(undefined);setDraft(newRule());setPaletteText('');setRuleOpen(true);ruleName.current?.focus();
+      }}>New rule</button></header>
+      {snapshot?.rules.length === 0 && <p>No rules yet.</p>}
       {snapshot?.rules.map(rule => <article key={rule.id} className="session"><h3>{rule.name} <Badge>{rule.enabled ? 'Enabled' : 'Disabled'}</Badge></h3>
         <p>{rule.trigger.kind} · {rule.action.mood} · {rule.action.targets.join(', ')}</p>
-        <div className="actions"><button type="button" className="secondary" disabled={!available} onClick={() => {
-          setEditing(rule.id); setDraft(automationRuleInput(rule, false)); setPaletteText(rule.action.palette?.join(', ') ?? '');
-        }}>Edit {rule.name}</button>
-          <button type="button" disabled={!available} onClick={() => { void mutate(`rules/${encodeURIComponent(rule.id)}/${rule.enabled ? 'disable' : 'enable'}`, 'POST', {}); }}>{rule.enabled ? 'Disable' : 'Enable'} {rule.name}</button>
-          <button type="button" className="secondary" disabled={!available} onClick={() => { void mutate(`rules/${encodeURIComponent(rule.id)}`, 'DELETE', undefined, () => {
-            if (editing === rule.id) { setEditing(undefined); setDraft(newRule()); setPaletteText(''); }
-          }); }}>Delete {rule.name}</button></div>
+        <div className="actions"><button type="button" className="secondary" disabled={!available} aria-label={`Edit ${rule.name}`} onClick={event => {
+          ruleOpener.current = event.currentTarget;setEditing(rule.id);setDraft(automationRuleInput(rule, false));setPaletteText(rule.action.palette?.join(', ') ?? '');setRuleOpen(true);ruleName.current?.focus();
+        }}>Edit</button>
+          <button type="button" disabled={!available} aria-label={`${rule.enabled ? 'Disable' : 'Enable'} ${rule.name}`} onClick={() => { void mutate(`rules/${encodeURIComponent(rule.id)}/${rule.enabled ? 'disable' : 'enable'}`, 'POST', {}); }}>{rule.enabled ? 'Disable' : 'Enable'}</button>
+          <button type="button" className="secondary" disabled={!available} aria-label={`Delete ${rule.name}`} onClick={() => { void mutate(`rules/${encodeURIComponent(rule.id)}`, 'DELETE', undefined, () => {
+            if (editing === rule.id) {ruleOpener.current = newRuleButton.current;closeRule();}
+          }); }}>Delete</button></div>
       </article>)}
-    </article><article className="card"><h2>{editing === undefined ? 'Create rule' : 'Edit rule'}</h2>
+      <details className="automation-help"><summary>How rules work</summary><p>Live events can start bounded moments while the page is closed. Quiet, active alerts and the interrupt set take precedence. New rules remain disabled until explicitly enabled.</p></details>
+    </article><article className="card automation-editor" hidden={!ruleOpen}><h2>{editing === undefined ? 'Create rule' : 'Edit rule'}</h2>
       <form className="edit wide" onSubmit={event => {
         event.preventDefault(); const palette = paletteText.split(',').map(color => color.trim()).filter(Boolean);
         const {palette: _palette, ...action} = draft.action;
         const definition = {...draft, action: {...action, ...(palette.length === 0 ? {} : {palette})}};
         void mutate(editing === undefined ? 'rules' : `rules/${encodeURIComponent(editing)}`, editing === undefined ? 'POST' : 'PUT',
-          automationRuleInput(definition, editing === undefined), () => { setEditing(undefined); setDraft(newRule()); setPaletteText(''); });
+          automationRuleInput(definition, editing === undefined), closeRule);
       }}>
         <fieldset disabled={!available}><legend className="vh">Rule definition</legend>
-          <label>Rule name<input required maxLength={80} value={draft.name} onChange={event => { setDraft({...draft, name: event.target.value}); }}/></label>
+          <label>Rule name<input ref={ruleName} required maxLength={80} value={draft.name} onChange={event => { setDraft({...draft, name: event.target.value}); }}/></label>
           <label>Source<input required value={draft.trigger.source} onChange={event => { setDraft({...draft, trigger: {...draft.trigger, source: event.target.value}}); }}/></label>
           <label>Occurrence<select value={draft.trigger.kind} onChange={event => { setDraft({...draft, trigger: {...draft.trigger, kind: event.target.value}}); }}>
             {!KINDS.includes(draft.trigger.kind) && <option>{draft.trigger.kind}</option>}{KINDS.map(kind => <option key={kind}>{kind}</option>)}</select></label>
@@ -209,12 +238,13 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
             onChange={event => { updateAction({targets: event.target.checked ? [...draft.action.targets, id] : draft.action.targets.filter(target => target !== id)}); }}/>
             {devices.find(({record}) => record.id === id)?.record.label ?? id}{devices.some(item => item.record.id === id && item.current) ? '' : ' (unavailable)'}</label>)}
             {targets.length === 0 && <p>No device currently advertises moments.</p>}</div>
-          <p>New rules are disabled. Enable a saved rule when you want it to run.</p>
           <div className="actions"><button disabled={draft.action.targets.length === 0}>{editing === undefined ? 'Create disabled rule' : 'Save rule'}</button>
-            {editing !== undefined && <button type="button" className="secondary" onClick={() => { setEditing(undefined); setDraft(newRule()); setPaletteText(''); }}>Cancel edit</button>}</div>
+            <button type="button" className="secondary" aria-label="Cancel edit" onClick={closeRule}>Cancel</button></div>
         </fieldset>
       </form>
     </article></div>
+    </div>
+    <div role="tabpanel" id="automation-panel-2" aria-labelledby="automation-tab-2" hidden={tab !== 2}>
     <div className="cards two"><article className="card"><h2>Interrupt set</h2><p>Work moments can cover status only for event kinds in this set.</p>
       <form className="edit" onSubmit={event => { event.preventDefault(); void mutate('interrupt-set', 'PUT', {kinds: kinds.split(/[\s,]+/).filter(Boolean)}); }}>
         <fieldset disabled={!available}><legend className="vh">Interrupt set</legend><label>Interrupt kinds<input value={kinds} onChange={event => { setKinds(event.target.value); }}/></label>
@@ -232,7 +262,8 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
           <button>Save settings</button>
         </fieldset></form>
     </article></div>
-    <article className="card"><h2>Recent automation attempts</h2><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
+    </div>
+    <article className="card automation-history" aria-label="Recent automation attempts"><details><summary>Recent attempts</summary><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
       {snapshot?.entries.length === 0 && <p>No automation evaluations yet.</p>}
       <ol>{snapshot?.entries.map(entry => <li key={entry.seq}><Facts items={[
         ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? snapshot.routines.find(saved => saved.id === entry.ruleId)?.name ?? entry.ruleId],
@@ -240,6 +271,6 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
         ['Target', entry.target], ...(entry.requireMode === undefined ? [] : [['Required mode', entry.requireMode] as const]), ['Admission', entry.receipt?.status ?? entry.outcome], ['Policy', entry.reason ?? '—'],
         ['Operation', automationOutcome(entry, operations, operationLive)],
       ]}/></li>)}</ol>
-    </article>
+    </details></article>
   </section>;
 }

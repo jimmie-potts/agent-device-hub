@@ -408,3 +408,24 @@ Connections SHALL show a Diagnostics card that links **Open Grafana · Local** o
 #### Scenario: A run that names none
 - **WHEN** a disposable run's links name no viewer
 - **THEN** the card offers no link and says no diagnostics viewer is configured, so a preview never leads to an installed viewer
+
+### Requirement: Quiet Automation workspace
+Automation SHALL open on Routines and offer accessible Routines, Rules and
+Settings tabs using arrow, Home and End keys. Saved lists SHALL offer explicit
+New/Edit actions, with editors hidden until requested. Switching tabs SHALL
+preserve unsaved drafts without commands. Cancel SHALL reset only that editor
+and return focus to its opener; a confirmed save SHALL close it and return
+focus. Failed or uncertain writes SHALL retain the draft and existing guards.
+Global status and errors SHALL remain outside the tabs. Recent attempts SHALL
+use a disclosure retaining the existing admission, completion and effect evidence.
+All existing routine, rule, interrupt, quiet-hour and budget fields and explicit
+actions SHALL remain available under their existing authority and freshness
+guards; presentation changes SHALL neither run nor replay a command.
+
+#### Scenario: Browse and cancel a draft
+- **WHEN** the operator opens New routine or New rule, changes its draft, switches tabs and returns
+- **THEN** the draft remains intact, no command is sent, and Cancel closes and clears that editor with focus returned to its opener
+
+#### Scenario: Explicit mutation and uncertain reply
+- **WHEN** a routine or rule is saved, or its reply becomes uncertain
+- **THEN** confirmed save closes the editor while uncertainty keeps the draft, global warning and existing write lock; creation remains disabled until explicit enable, and no automatic retry or run occurs

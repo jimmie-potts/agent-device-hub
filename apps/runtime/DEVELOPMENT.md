@@ -513,6 +513,15 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Automation tabs (#1315) extend the existing
+`node apps/runtime/dashboard/tests/automation.browser.ts` journey, now included
+in hosted smoke as well as the full local browser suite. It checks keyboard tab
+navigation, on-demand editors, cross-tab drafts, Cancel/save focus, guarded
+mutations, global uncertain feedback, recent-attempt evidence and light/dark
+accessibility at 320, 390 and 1440 px. Run it after the root build with an
+outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
+These synthetic checks change no installed routines or devices.
+
 Home row balance (#1311) extends the existing Home editor browser journey,
 already included in hosted smoke and the full browser suite. After the root
 build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
@@ -628,7 +637,7 @@ BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
-node apps/runtime/dashboard/tests/automation.browser.ts # weekly power schedules, event rules, lost replies and accessibility
+node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion

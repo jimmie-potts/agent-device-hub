@@ -158,9 +158,9 @@ void test('read-only server markup has a labelled Automation page and disabled f
   assert.match(html, /aria-label="Automation"/); assert.match(html, /<h1>Automation<\/h1>/);
   assert.match(html, /read-only/); assert.match(html, /fieldset disabled/);
   for (const label of ['Rule name', 'Occurrence', 'Quiet hours start', 'Per agent task', 'Interrupt kinds']) assert.ok(html.includes(label), label);
-  const routines = /<section aria-label="Weekly routines"><h2>Weekly routines<\/h2>.*?<\/section>/s.exec(html)?.[0] ?? '';
+  const routines = /<section aria-label="Weekly routines">.*?<\/section>/s.exec(html)?.[0] ?? '';
   assert.match(routines, /<fieldset disabled=""><legend class="vh">Routine definition<\/legend>/);
   for (const label of ['Routine name', 'Days', 'Time', 'Action 1', 'Device', 'Add action', 'Create disabled routine', 'No routines yet.',
-    'New routines are disabled. Saving or enabling runs nothing; Run now runs one occurrence.']) assert.ok(routines.includes(label), label);
+    'Saving or enabling runs nothing; Run now runs one occurrence.']) assert.ok(routines.includes(label), label);
   assert.equal(calls, 0);
 });
