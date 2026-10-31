@@ -41,7 +41,7 @@ The picker SHALL include the registered reusable core, device, light, room, musi
 
 ### Requirement: Searchable neutral card picker
 The Add card picker SHALL filter the current catalog locally by card name or
-category, combined with its selected category. Empty results SHALL offer a
+category, combined with its visually distinguishable selected category. Empty results SHALL offer a
 concise message and a reset of both filters. Opening the picker SHALL focus its
 labelled search field; closing SHALL return focus to Add card. Identifiers SHALL
 use existing public artwork or neutral inline icons without mounting control

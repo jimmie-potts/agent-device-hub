@@ -40,6 +40,7 @@ try {
   await search().fill('  sTuDiO  ');await expect(picker().getByRole('listitem')).toHaveCount(1);
   await expect(picker().getByText('Studio', {exact: true})).toBeVisible();
   await category('Hub').press('Enter');await expect(picker().getByRole('listitem')).toHaveCount(0);
+  assert.notEqual(await category('Hub').evaluate(node => getComputedStyle(node).backgroundColor), await category('All').evaluate(node => getComputedStyle(node).backgroundColor), 'the selected category is visually distinct');
   await expect(picker().getByRole('status')).toHaveText('No cards found.');
   await picker().getByRole('button', {name: 'Reset filters', exact: true}).press('Enter');
   await expect(search()).toBeFocused();await expect(search()).toHaveValue('');await expect(category('All')).toHaveAttribute('aria-pressed', 'true');
@@ -154,6 +155,7 @@ try {
     await page.emulateMedia({colorScheme: theme, reducedMotion: width === 390 ? 'no-preference' : 'reduce'});await page.setViewportSize({width, height: 1000});
     await edit();await page.getByRole('button', {name: 'Add card', exact: true}).click();
     await search().fill('');await category('All').click();
+    assert.notEqual(await category('All').evaluate(node => getComputedStyle(node).backgroundColor), await category('Rooms').evaluate(node => getComputedStyle(node).backgroundColor), 'selected filter stays visible in each theme and viewport');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (output !== undefined) await picker().screenshot({path: `${output}/home-picker-${theme}-${String(width)}.png`});
     const labels = await new AxeBuilder({page}).withRules(['label-content-name-mismatch']).analyze();assert.deepEqual(labels.violations.map(item => item.id), []);

@@ -15,6 +15,7 @@
 .home-edit-toolbar,.home-card-picker>header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .home-card-picker>header h2{margin:0}
 .home-card-picker>.actions{margin:12px 0}
+.home-card-picker>.actions button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .home-picker-search{display:block;margin-top:16px}
 .home-picker-search input{width:100%;min-width:0;font-size:16px}
 .home-picker-empty{margin:12px 0}
