@@ -114,6 +114,11 @@ Adding a card appends it to the other arrangement if absent. **Cancel** discards
 the draft, **Reset** restores that breakpoint's built-in defaults, and **Done**
 saves both through the core's revision-guarded `home-layout-set` command.
 
+Visible cards wrap in saved order and share each row's remaining width. Small
+keeps a compact preferred width, Standard has more room, and Wide occupies its
+own row. Incomplete rows fill the available space without empty grid slots;
+phone layouts and the Phone editor preview stack cards in one column.
+
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
 sizes and flags only. Reload, another browser and restart read the same state;
 no layout is stored in localStorage. A concurrent change requires loading and

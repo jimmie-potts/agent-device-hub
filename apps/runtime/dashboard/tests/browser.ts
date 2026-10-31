@@ -41,7 +41,8 @@ try {
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
   assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions', 'inbox']);
-  assert.equal(await page.locator('.home-layout-grid').evaluate(node => getComputedStyle(node).display), 'grid');
+  const homeRows = await page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().top));
+  assert.ok(homeRows.every(top => Math.abs(top - (homeRows[0] ?? 0)) <= 1), 'the three core cards share a balanced desktop row');
   assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
   assert.equal(await page.locator('[data-widget=attention]').count(), 0);
   checks.push('Home composes reusable agent cards without a duplicate attention panel');

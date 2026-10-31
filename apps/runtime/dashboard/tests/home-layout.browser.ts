@@ -127,3 +127,5 @@ try {
   assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, accessibility: 'light/dark 1440/390/320', physical: false}));
   await context.close();
 } finally {await browser.close();await world.close();}
+
+await import('./home-balance.browser.ts');

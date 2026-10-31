@@ -513,6 +513,15 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Home row balance (#1311) extends the existing Home editor browser journey,
+already included in hosted smoke and the full browser suite. After the root
+build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
+two, three, five and eight real cards at desktop, tablet and phone widths,
+mixed sizes, hidden cards, independent phone order, editor preview and axe.
+It uses synthetic saved-layout metadata only; no device command or installed
+state is selected. Use an outside-checkout `TMPDIR` and optional private
+`DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
+
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
 root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks
