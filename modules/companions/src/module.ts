@@ -112,9 +112,11 @@ class Companions {
       return speechRefusal(card, this.#policy(card.opportunity)) === undefined;
     }, () => this.#qualification !== undefined);
     await this.speech.start();
-    this.assistant = new AssistantEngine(context, this.#outbox, await this.#assistantOptions(context));
-    await this.assistant.start();
+    // The preference store opens first so the engine can read the owner's active entries at each model call (Hub #507).
     this.preferences = new Preferences(context, this.#outbox);
+    const preferences = this.preferences;
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries});
+    await this.assistant.start();
     await this.preferences.start();
     this.knowledge = new Knowledge(context, this.#outbox, this.assistant, this.preferences.store);
     await this.knowledge.start();

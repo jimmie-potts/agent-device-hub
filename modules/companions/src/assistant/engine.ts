@@ -7,7 +7,9 @@ import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type Mo
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Proposal, type Question, type StagedInput, type Task} from './store.js';
-import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type TurnReply} from './provider.js';
+import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnReply} from './provider.js';
+import {PROFILES} from '../knowledge/model.js';
+import type {ActivePreference} from '../preferences/model.js';
 import {SyntheticProvider} from './synthetic.js';
 import {ASK_OWNER, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, SET_MODE, summarizeSessions, type CoreCopy} from './tools.js';
 
@@ -15,8 +17,9 @@ export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provid
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
 export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
 /**
- * What the module gives the engine (Hub #46): the `bunny` profile's provider (synthetic without one), the allowlisted
- * tool names, the synced copy of the core for reads and proposals, and the dispatch path for approved commands.
+ * What the module gives the engine (Hub #46, #507): the `bunny` profile's provider (synthetic without one), the
+ * allowlisted tool names, the synced copy of the core for reads and proposals, the dispatch path for approved commands,
+ * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
   provider?: ModelProvider;
@@ -24,6 +27,7 @@ export type AssistantOptions = {
   core?: () => CoreCopy;
   dispatch?: Dispatch;
   available?: () => boolean;
+  preferences?: () => readonly ActivePreference[];
 };
 class Fault extends Error {constructor(readonly code: ErrorCode) {super(code);}}
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -34,6 +38,7 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-state/2.0', data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
+export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
 type Next = 'ask' | 'tool' | 'approve' | 'end';
@@ -323,11 +328,22 @@ export class AssistantEngine {
     }, parent);
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
+  /** The prompt context at this call: the profile's curated persona and the owner's active preferences as they are now. */
+  #context(profile: AssistantProfile): PromptContext {
+    const persona = PROFILES.find(value => value.id === profile) ?? fail('internal');
+    return {persona: {name: persona.name, character: persona.character}, preferences: (this.options.preferences?.() ?? []).map(entry => ({title: entry.title, text: entry.text}))};
+  }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic'), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
-    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn({instructions: INSTRUCTIONS, transcript: task.transcript, tools,
+    const context = this.#context(task.profile);
+    // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
+    if (contextBytes(context) > LIMITS.contextBytes) {
+      await this.#change(state.taskId, current => {this.store.message(current, `${id}-context`, 'assistant', CONTEXT_TOO_LARGE, this.context.clock.now());}, active.span.context);
+      fail('capacity');
+    }
+    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn({instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
       mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}}, signal).then(reply => ({text: JSON.stringify(reply), units: reply.units})));
     const reply = parseReply(text), call = reply.calls[0];
     let next: Next = 'end', result = '';

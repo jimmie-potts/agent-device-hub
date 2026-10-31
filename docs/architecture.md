@@ -309,8 +309,11 @@ separate tables on that connection. Authenticated content reads expose current
 active entries or the private management/export view; a metadata-only revision
 signal invalidates dashboard reads. Existing staged controls manage entries and
 additive imports preserve current records, adding missing IDs inactive. Manual
-copy is explicit; no preference text enters shared state or automatic model
-context. The [preference guide](../modules/companions/README.md#explicit-preferences)
+copy is explicit, and no preference text enters shared state. The B.U.N.N.Y.
+conversation reads the currently active entries and the profile's curated
+persona into its bounded model prompt at each model call (#507, under the
+amended #46 decision 5); inactive entries, history and knowledge entries stay
+out. The [preference guide](../modules/companions/README.md#explicit-preferences)
 owns the private document contract and bounds.
 
 Explicit knowledge uses that same lifecycle with separate records. Curated persona

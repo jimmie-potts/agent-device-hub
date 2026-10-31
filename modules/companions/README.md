@@ -238,9 +238,19 @@ as for every configured module; an empty section keeps every default:
   which the API requires for the turn whose tool call awaits its result. One
   tool call per turn is acted on; a further call in one answer is dropped with
   its block.
-- The prompt holds only the owner's typed text, the tool definitions and
-  results, the fixed instructions and the current Hub mode. No preference,
-  knowledge entry, other task or household record enters it.
+- The prompt holds the owner's typed text, the tool definitions and results,
+  the fixed instructions, the current Hub mode and the prompt context: the
+  profile's curated persona (name and character) and the owner's currently
+  active explicit preferences by title and text, read from the module's own
+  records at each model call, so an edit or **Stop using** applies to the next
+  turn (Hub #507, decision 5 on #46 as amended on 2026-10-31). Preferences are
+  framed as the owner's data that grants no tool, permission or device
+  authority; permission is the allowlist and the core's dispatcher, never
+  prompt text. No knowledge entry, conversation history, other task, inactive
+  or historical preference or household record enters the prompt. The rendered
+  context is bounded at 16 KiB; over it the call is refused before anything is
+  sent, the task ends `capacity` and the conversation shows which bound was hit
+  rather than truncating silently.
 
 ### Turns, tools and approval
 
@@ -374,8 +384,11 @@ Reachy and synthetic-task switches. Add a short title and text, inspect its
 history, edit it, choose **Stop using**, or explicitly **Reactivate** it. New
 owner-created entries are active; editing an inactive entry keeps it inactive.
 IDs and full change snapshots survive restart in the same SDK-owned database.
-No background learning, provider, transcript source or automatic context insertion
-is added. Preference text is data and never grants permissions or device authority.
+No background learning, provider or transcript source is added. The only
+automatic use is the B.U.N.N.Y. conversation's model prompt, which reads the
+currently active entries at each model call (see [Conversation and assistant
+tasks](#conversation-and-assistant-tasks)); inactive entries and history never
+reach it. Preference text is data and never grants permissions or device authority.
 
 Select active entries and choose **Copy selected active preferences** for plain
 text (`title`, newline, current text; blank lines between entries). The click
@@ -468,8 +481,10 @@ Choose a persona, optionally choose a conversation and up to 16 messages, then
 active knowledge/preferences and the selected permitted messages. Other personas'
 private conversations, inactive entries and historical knowledge snapshots are
 excluded. Corrections and removals affect the next read. A large context is
-refused rather than silently truncated. Nothing enters the synthetic assistant
-graph automatically; copied data grants no permission or current location evidence.
+refused rather than silently truncated. No knowledge entry or conversation
+message enters the assistant graph automatically; the curated persona and
+active preferences reach the model prompt only as the conversation section
+describes. Copied data grants no permission or current location evidence.
 
 ### Conversation records
 
