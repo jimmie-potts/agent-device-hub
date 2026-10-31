@@ -30,12 +30,12 @@ type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['f
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
+import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime} from './world-runtime.ts';
+export {INSTALLED_PORTS} from './world-runtime.ts';
 
 /** The synthetic marker of the hook's token: no record, answer or page may carry it (Hub #835). */
 export const TOKEN_MARKER = 'tok_SYNTHETIC835';
 const HOOK_SOURCE = 'bunny/parts/hook';
-/** The ports of the installed services, which a run must never touch. */
-export const INSTALLED_PORTS = [8765, 8787, 8788, 8791, 41231];
 
 export type WorldOptions = {
   /** The real read-only Tidbyt module over its synthetic cloud. */
@@ -235,7 +235,13 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
     port, stateDir, configFile: config, edge: {schemas: {...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
-  let runtime = await start(0);
+  let runtime: Runtime;
+  try {
+    runtime = await startWorldRuntime(() => start(0));
+  } catch (error) {
+    if (error instanceof PortAllocationError) await rm(root, {recursive: true, force: true});
+    throw error;
+  }
   const port = Number(new URL(runtime.url).port);
   assert.equal(INSTALLED_PORTS.includes(port), false, 'never an installed service\'s port');
   let hook: RemoteParticipant | undefined;
