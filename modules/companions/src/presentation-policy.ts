@@ -1,4 +1,4 @@
-import type {CompanionCard, CompanionCategory, CompanionOpportunity, CompanionSettings} from '@jimmie-potts/event-contracts/v2/companions';
+import type {CompanionCard, CompanionCategory, CompanionOpportunity, CompanionSettings, SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import type {Mode, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 /** Shared module-local guards for fixed-text output and deliberate browser previews. */
 export function presentationRefusal(settings: CompanionSettings, category: CompanionCategory, available: boolean): string | undefined {
@@ -39,6 +39,18 @@ export function currentRefusal(event: CompanionOpportunity, policy: CurrentPolic
     if (event.media) return 'media';
     if (nowMs < settings.snoozedUntilMs) return 'snoozed';
   }
+  return undefined;
+}
+
+/** What one utterance says: a newly admitted live Reachy card, or a saved assistant reply the owner typed for or asked to hear again (Hub #500). */
+export type SpeechSource = {kind: 'card'; card: CompanionCard} | {kind: 'reply'; reply: SpokenReply};
+export const speechDeadline = (source: SpeechSource): number => source.kind === 'reply' ? source.reply.validUntilMs : source.card.opportunity.validUntilMs;
+export const speechText = (source: SpeechSource): string => source.kind === 'reply' ? source.reply.text : source.card.text;
+
+/** A spoken reply answers the owner's own request: it honors Quiet and needs the synced Hub mode; Reachy's text enablement and category mutes do not govern it. */
+export function replyRefusal(policy: Pick<CurrentPolicy, 'mode' | 'synced'>): string | undefined {
+  if (!policy.synced || policy.mode === undefined) return 'core-unavailable';
+  if (policy.mode === 'quiet') return 'restrictive-mode';
   return undefined;
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test, type TestContext} from 'node:test';
-import type {CompanionCard, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
+import type {CompanionCard, SpeechOutput, SpeechPlayback, SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendApi, FrontendSpeechEndpoint} from '@jimmie-potts/sdk/frontend';
 import type {RemoteEndpointOptions} from '@jimmie-potts/sdk/remote';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
@@ -17,9 +17,9 @@ function setup(t: TestContext) {
   t.mock.timers.enable({apis: ['Date', 'setTimeout'], now: 100_000});
   let options: Omit<RemoteEndpointOptions<SpeechOutput>, 'family'> | undefined, usable = true, eligible = true, opened = 0, closed = 0, spoken = 0, cancels = 0;
   let callbacks: SpeechCallbacks | undefined;
-  const receipts: SpeechPlayback[] = [], controls: string[] = [];
+  const receipts: SpeechPlayback[] = [], controls: string[] = [], texts: string[] = [], kinds: string[] = [];
   const port: Omit<SpeechPort, 'speaking' | 'pending'> & {speaking: boolean; pending: boolean} = {speaking: false, pending: false, getVoices: () => [voice], voicesChanged: () => () => {},
-    speak: (_input, handlers) => {spoken++; callbacks = handlers; port.pending = true;},
+    speak: (input, handlers) => {spoken++; texts.push(input.text); callbacks = handlers; port.pending = true;},
     cancel: () => {cancels++; port.speaking = false; port.pending = false; callbacks?.error('interrupted');},
   };
   const handle: FrontendSpeechEndpoint = {id: 'endpoint-test', close: () => {closed++; options?.onClosed?.(); return Promise.resolve();},
@@ -31,20 +31,21 @@ function setup(t: TestContext) {
     }, observe: playback => {receipts.push(playback); return Promise.resolve();},
   };
   const api: NonNullable<FrontendApi['speech']> = {open: given => {opened++; options = given; return Promise.resolve(handle);}};
-  const session = new SpeechSession({api, createDriver: () => new SpeechDriver({port, voice}), usable: () => usable, eligible: () => eligible, changed: () => {}});
+  const session = new SpeechSession({api, createDriver: () => new SpeechDriver({port, voice}), usable: () => usable, eligible: source => {kinds.push(source.kind); return eligible;}, changed: () => {}});
   const card: CompanionCard = {opportunity: {origin: {id: 'question-test', source: 'bunny/core', type: 'org.bunny.attention.raised'}, sourceKind: 'coding', context: 'live',
     category: 'coding-attention', cue: 'question', revision: 1, generation: 1, session: 'session-test', identity: null, turn: {status: 'unknown'},
     attention: {id: {status: 'unknown'}, kind: 'question', turn: {status: 'unknown'}}, noticeId: null, evidence: 'lifecycle-metadata', occurredAtMs: Date.now(), observedAtMs: Date.now(),
     validUntilMs: Date.now() + 30_000, busy: null, media: null, visitor: null, location: null}, text: 'Synthetic question.', phrase: 0, presentedAtMs: Date.now(), history: false, content: 'unavailable'};
-  const output = (action: 'speak' | 'stop', operationId = 'operation-test') => {
+  const output = (action: 'speak' | 'stop', operationId = 'operation-test', reply?: SpokenReply) => {
     assert.ok(options);
-    const data: SpeechOutput = action === 'speak' ? {requestId: 'request-test', operationId, action, card} : {requestId: 'request-test', operationId, action};
+    const data: SpeechOutput = action === 'speak' ? reply === undefined ? {requestId: 'request-test', operationId, action, card} : {requestId: 'request-test', operationId, action, reply}
+      : {requestId: 'request-test', operationId, action};
     return options.respond(buildMessage<SpeechOutput>('bunny/modules/companions', 'command', {
       type: 'org.bunny.companion-speech.output.requested', subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/companion-speech-output/2.0',
       data,
     }, trace, Date.now(), Date.now() + 5000));
   };
-  return {session, receipts, controls, api, handle, output, port,
+  return {session, receipts, controls, api, handle, output, port, texts, kinds,
     counts: () => ({opened, closed, spoken, cancels}), usable: (value: boolean) => {usable = value;}, eligible: (value: boolean) => {eligible = value;},
     lost: () => {options?.onClosed?.();}, start: () => {port.pending = false; port.speaking = true; callbacks?.start();},
     end: () => {port.pending = false; port.speaking = false; callbacks?.end();},
@@ -132,4 +133,20 @@ void test('loss of live state cancels immediately and never restores availabilit
   const w = setup(t); await w.session.enable(); await w.output('speak'); await flush(); w.start();
   w.usable(false); w.session.update(); assert.equal(w.counts().cancels, 1); await flush();
   w.usable(true); w.session.update(); assert.equal(w.session.inspect().availability, 'unavailable'); assert.equal(w.counts().opened, 1);
+});
+
+void test('a saved assistant reply is spoken as its own text under the reply policy and its own deadline', async t => {
+  const w = setup(t); await w.session.enable();
+  const reply = {taskId: 'task-1', messageId: 'task-1-result', text: 'Two coding sessions are active.', validUntilMs: Date.now() + 60_000};
+  assert.deepEqual(await w.output('speak', 'operation-reply', reply), {status: 'accepted'}); await flush();
+  assert.deepEqual(w.texts, ['Two coding sessions are active.']); assert.ok(w.kinds.includes('reply'));
+  w.start(); w.end(); await flush();
+  assert.deepEqual(w.receipts.map(value => value.status), ['started', 'completed']);
+  w.eligible(false);
+  const refused = await w.output('speak', 'operation-two', {...reply, messageId: 'task-1-q1', text: 'Which session?'});
+  assert.ok('error' in refused); assert.equal(w.counts().spoken, 1);
+  w.eligible(true);
+  const expired = await w.output('speak', 'operation-three', {...reply, validUntilMs: Date.now() - 1}); assert.deepEqual(expired, {status: 'accepted'}); await flush();
+  assert.equal(w.counts().spoken, 1); assert.equal(w.receipts.at(-1)?.status, 'not-started');
+  await w.session.close();
 });

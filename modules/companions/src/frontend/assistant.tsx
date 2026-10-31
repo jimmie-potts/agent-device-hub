@@ -2,9 +2,10 @@ import React, {useEffect, useState} from 'react';
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
+import {SpeechControls, useCompanionSpeechCopy} from './speech.js';
 
 // Browser-local wire types: importing the database-backed store would include Node code.
-type Message = {seq: number; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
+type Message = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
 type Proposal = {family: string; target: string; data: {mode: string}; expectedRevision: number};
 type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; proposal: Proposal | null};
 type CurrentTask = {taskId: string; question: Question | null};
@@ -36,7 +37,7 @@ function pageValue(value: unknown, after: number): Page {
   const currentTask = current === null || taskId === null ? null : {taskId, question: questionValue(current.question)};
   let previous = after;
   for (const message of value.messages) {
-    if (!record(message) || !integer(message.seq) || message.seq <= previous || typeof message.taskId !== 'string' ||
+    if (!record(message) || !integer(message.seq) || message.seq <= previous || typeof message.id !== 'string' || typeof message.taskId !== 'string' ||
       !['owner', 'assistant', 'tool'].includes(String(message.role)) || typeof message.text !== 'string' || !integer(message.atMs)) throw new Error('Invalid conversation message');
     previous = message.seq;
   }
@@ -116,6 +117,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [pages, setPages] = useState(1);
   const [history, setHistory] = useState<{profile: AssistantProfile; messages: Message[]; next: number | null; currentTask: CurrentTask | null}>();
   const [historyStatus, setHistoryStatus] = useState('Loading saved conversation.');
+  const speech = useCompanionSpeechCopy(context);
   useEffect(() => {
     if (!connected) return;
     let active = true;
@@ -203,18 +205,28 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     {state !== undefined && <Command context={context} target="assistant">{command =>
       <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}/>
     }</Command>}
+    <SpeechControls context={context} companion={speech.copy} compact purpose="replies"/>
+    <p>With spoken replies enabled, the reply, question or refusal that ends a turn is spoken once through the same qualified voice as Reachy’s alerts, whatever model answered. Replies longer than {LIMITS.spokenChars} characters stay written only. Quiet mode keeps replies silent. Stop speaking stops audio only; it does not cancel the task.</p>
     <h3>Saved conversation — {profiles[profile]}</h3>
     <Badge>Private saved history</Badge>
     <p role="status">{historyStatus}</p>
     {visibleHistory === undefined || visibleHistory.messages.length === 0 ? <p>No conversation text loaded for this profile.</p> :
-      <ol aria-label="Saved conversation messages">
-        {visibleHistory.messages.map(message => <li key={message.seq}>
-          <article aria-label={`${message.role} message`}>
-            <strong>{message.role === 'owner' ? 'You' : message.role === 'tool' ? 'Tool result' : profiles[profile]}</strong>
-            <p style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{message.text}</p>
-          </article>
-        </li>)}
-      </ol>}
+      <Command context={context} target="assistant">{command => <>
+        <ol aria-label="Saved conversation messages">
+          {visibleHistory.messages.map(message => <li key={message.seq}>
+            <article aria-label={`${message.role} message`}>
+              <strong>{message.role === 'owner' ? 'You' : message.role === 'tool' ? 'Tool result' : profiles[profile]}</strong>
+              <p style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{message.text}</p>
+              {message.role === 'assistant' && state !== undefined && <button type="button" aria-label={`Speak message ${message.seq}`}
+                disabled={command.locked || !live || !context.control || !context.operationsLive || message.text.length > LIMITS.spokenChars}
+                onClick={() => {void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
+                  data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});}}>Speak</button>}
+            </article>
+          </li>)}
+        </ol>
+        <p role="status">Speak receipt: {command.text}</p>
+        <p>Speak offers that saved message to the tab with spoken replies enabled; an accepted receipt means the request was saved, and the playback report above says whether the browser spoke.</p>
+      </>}</Command>}
     {visibleHistory?.next !== null && visibleHistory?.next !== undefined && <button type="button" disabled={!connected || historyStatus === 'Loading saved conversation.'}
       onClick={() => {setPages(value => value + 1);}}>Load more saved messages</button>}
   </section>;

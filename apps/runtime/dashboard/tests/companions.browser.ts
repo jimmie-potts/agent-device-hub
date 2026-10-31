@@ -1,4 +1,4 @@
-import {homeSpeechLifetimeJourney, speechJourney} from './speech.browser.ts';
+import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
 import {companionCardsCheck} from './companion-cards-journey.ts';
 import {speechReadinessJourney} from './speech-readiness.ts';
 import {suggestionsJourney} from './suggestions.browser.ts';
@@ -19,6 +19,7 @@ const browser = await chromium.launch({headless: true});
 try {
   await companionCardsCheck(browser);
   await speechJourney(browser);
+  await spokenRepliesJourney(browser);
   await homeSpeechLifetimeJourney(browser);
   await speechReadinessJourney(browser);
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});

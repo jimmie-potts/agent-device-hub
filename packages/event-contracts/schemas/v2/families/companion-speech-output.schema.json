@@ -32,6 +32,59 @@
       "required": [
         "requestId",
         "operationId",
+        "action",
+        "reply"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "speak"
+        },
+        "reply": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "taskId",
+            "messageId",
+            "text",
+            "validUntilMs"
+          ],
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9-]+$"
+            },
+            "messageId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160,
+              "pattern": "^[a-zA-Z0-9-]+$"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "validUntilMs": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "operationId",
         "action"
       ],
       "properties": {

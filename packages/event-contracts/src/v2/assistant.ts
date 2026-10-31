@@ -13,7 +13,7 @@ export type AssistantState = {id: 'assistant'; revision: number; enabled: boolea
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
   provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[]};
 export type AssistantInput = {requestId: string; inputRef: string};
-export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel'; taskId?: string};
+export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak'; taskId?: string; messageId?: string};
 /**
  * `org.bunny.assistant.dispatch.requested`: the companions module asks the core to send one approved, allowlisted command
  * through its tracked dispatcher (Hub #46). The first slice allows `mode-set` for the Hub; the core refuses anything else.
