@@ -513,6 +513,15 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Home picker search and visual identifiers (#1316) extend the existing
+`node apps/runtime/dashboard/tests/home-layout.browser.ts` journey, included
+in hosted smoke and the full local browser suite. After the root build it checks
+combined name/category filtering, empty/reset, keyboard focus, neutral inline
+identifiers, draft-only add/show and the existing save, conflict and attention
+guards. It checks light/dark desktop and 320/390px accessibility with normal and
+reduced motion. Use an outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS`
+keeps screenshots private. No installed source or physical device is used.
+
 Automation tabs (#1315) extend the existing
 `node apps/runtime/dashboard/tests/automation.browser.ts` journey, now included
 in hosted smoke as well as the full local browser suite. It checks keyboard tab
