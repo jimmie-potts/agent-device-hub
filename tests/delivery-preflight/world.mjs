@@ -203,6 +203,8 @@ export function cleanWorld() {
     checkRuns: { [HEAD]: EXPECTED_JOBS.map(name => checkRun(name, HEAD, prSuite)) },
     checkSuites: { [HEAD]: [suite(prSuite, HEAD, 'claude/gh-700-example')] },
     annotations: {},
+    workflowRuns: {},
+    workflowJobs: {},
     branchRules: [],
     comments: [comment(reviewReport())],
     reviews: [],
@@ -246,6 +248,30 @@ export function mergeWorld(world) {
   world.checkRuns[MERGE] = EXPECTED_JOBS.map(name => checkRun(name, MERGE, mainSuite));
   world.checkSuites[MERGE] = [suite(mainSuite, MERGE, 'main')];
   return publishSelection(world, MERGE);
+}
+
+/** GitHub retains a successful selector's execution in a later workflow attempt, without its annotations. */
+export function copiedSelection(world, sha = HEAD) {
+  const original = world.checkRuns[sha].find(run => run.name === 'Select affected checks');
+  const retained = checkRun(original.name, sha, original.check_suite.id);
+  const runId = id();
+  for (const check of [original, retained]) check.details_url = `https://github.com/${REPO}/actions/runs/${runId}/job/${check.id}`;
+  world.checkRuns[sha].push(retained);
+  const run = {
+    id: runId, head_sha: sha, head_branch: sha === HEAD ? world.pr.head.ref : 'main',
+    event: sha === HEAD ? 'pull_request' : 'push', path: '.github/workflows/checks.yml',
+    check_suite_id: original.check_suite.id, run_attempt: 2, repository: { full_name: REPO },
+  };
+  const jobs = [original, retained].map((check, index) => ({
+    id: check.id, name: check.name, run_id: runId, head_sha: sha, run_attempt: index + 1,
+    check_run_url: `https://api.github.com/repos/${REPO}/check-runs/${check.id}`,
+    status: 'completed', conclusion: 'success', started_at: check.started_at, completed_at: check.completed_at,
+    steps: [{ name: 'Publish affected checks', number: 1, status: 'completed', conclusion: 'success',
+      started_at: check.started_at, completed_at: check.completed_at }],
+  }));
+  world.workflowRuns[runId] = run;
+  world.workflowJobs[runId] = jobs;
+  return { world, original, retained, run, originalJob: jobs[0], retainedJob: jobs[1] };
 }
 
 // ---- Fake transport ----
@@ -330,6 +356,10 @@ export function fakeTransport(world) {
       return list(world.checkSuites[m[1]] || [], 'check_suites');
     }
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/check-runs\/(\d+)\/annotations$/))) return list(world.annotations[m[1]] || []);
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\/jobs$/))) return list(world.workflowJobs[m[1]] || [], 'jobs');
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/actions\/runs\/(\d+)$/))) {
+      return world.workflowRuns[m[1]] ? { status: 200, json: world.workflowRuns[m[1]] } : { status: 404, json: { message: 'Not Found' } };
+    }
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]{40})$/))) {
       const commit = world.commits[m[1]];
       return commit ? { status: 200, json: commit } : { status: 404, json: { message: 'Not Found' } };

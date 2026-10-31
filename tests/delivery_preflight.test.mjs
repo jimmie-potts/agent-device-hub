@@ -19,7 +19,7 @@ import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-
 import { selectChecks } from '../scripts/ci-selection/selection.mjs';
 import {
   ACTIONS, BASE, DEPOT, EXPECTED_JOBS, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
-  checkRun, cleanWorld, comment, declaration, fakeTransport, job, mergeWorld, publishSelection, reviewReport, suite,
+  checkRun, cleanWorld, comment, copiedSelection, declaration, fakeTransport, job, mergeWorld, publishSelection, reviewReport, suite,
   writeProof,
 } from './delivery-preflight/world.mjs';
 
@@ -352,6 +352,140 @@ function narrowWorld(files = ['apps/maintenance/src/planner.ts']) {
   return publishSelection(world, HEAD, selectChecks({ event: 'pull_request', paths: files, complete: true }));
 }
 const runNamed = (world, pattern) => world.checkRuns[HEAD].find(run => pattern.test(run.name));
+
+for (const [stage, worldFor, sha, gateId] of [
+  ['narrowed PR', () => narrowWorld(), HEAD, 'ci-pr'],
+  ['full main', () => mergeWorld(cleanWorld()), MERGE, 'ci-main'],
+]) {
+  test(`CI: retained selector recovers the original selection for ${stage}`, async () => {
+    const { world, original, retained, run } = copiedSelection(worldFor(), sha);
+    const ci = gate(await preflight(world), gateId);
+    assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+    assert.deepEqual(ci.evidence.hostedSelection.groups, stage === 'narrowed PR' ? ['maintenance'] : selectChecks({ event: 'push', paths: [], complete: true }).groups);
+    const selector = ci.evidence.jobs.find(item => item.name === retained.name);
+    assert.equal(selector.checkRunId, retained.id);
+    assert.equal(selector.selectionSource.checkRunId, original.id);
+    assert.equal(selector.selectionSource.workflowRunId, run.id);
+    assert.equal(selector.selectionSource.attempt, 1);
+    assert.deepEqual(selector.superseded, [{ checkRunId: original.id, result: 'success' }]);
+    assert.ok(world.requests.filter(item => item.url.includes('/actions/')).every(item => item.method === 'GET'));
+  });
+}
+
+test('CI: retained selector reads every job and original annotation page', async () => {
+  const { world, original } = copiedSelection(narrowWorld());
+  world.pageSize = 1;
+  world.workflowJobs = Object.fromEntries(Object.entries(world.workflowJobs).map(([key, jobs]) => [key, jobs.toReversed()]));
+  world.annotations[original.id].unshift({ annotation_level: 'notice', title: 'Other', message: 'Synthetic notice' });
+  const ci = gate(await preflight(world), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  assert.ok(world.requests.some(item => /\/jobs\?.*page=2/.test(item.url)));
+  assert.ok(world.requests.some(item => new URL(item.url).pathname.endsWith(`/${original.id}/annotations`) && item.url.includes('page=2')));
+});
+
+function nextSelectorCopy(fixture) {
+  const { world, original, run, retainedJob } = fixture;
+  const retained = checkRun(original.name, HEAD, original.check_suite.id);
+  retained.details_url = `https://github.com/${REPO}/actions/runs/${run.id}/job/${retained.id}`;
+  const next = { ...structuredClone(retainedJob), id: retained.id, run_attempt: retainedJob.run_attempt + 1,
+    check_run_url: `https://api.github.com/repos/${REPO}/check-runs/${retained.id}` };
+  world.checkRuns[HEAD].push(retained);
+  world.workflowJobs[run.id].push(next);
+  run.run_attempt = next.run_attempt;
+  return { ...fixture, retained, retainedJob: next };
+}
+
+test('CI: retained selector can follow multiple annotation-free copies of the same execution', async () => {
+  const fixture = nextSelectorCopy(copiedSelection(narrowWorld()));
+  const ci = gate(await preflight(fixture.world), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  assert.equal(ci.evidence.jobs.find(item => item.name === fixture.retained.name).selectionSource.checkRunId, fixture.original.id);
+});
+
+const retainedSelectionCases = [
+  ['another repository', f => { f.run.repository.full_name = 'elsewhere/repo'; }],
+  ['another revision', f => { f.run.head_sha = OLD_HEAD; }],
+  ['another event', f => { f.run.event = 'workflow_dispatch'; }],
+  ['another branch', f => { f.run.head_branch = 'another'; }],
+  ['another workflow', f => { f.run.path = '.github/workflows/other.yml'; }],
+  ['another run', f => { f.run.id++; }],
+  ['another suite', f => { f.run.check_suite_id++; }],
+  ['a suite for another revision', f => { f.world.checkSuites[HEAD][0].head_sha = OLD_HEAD; }],
+  ['a suite for another provider', f => { f.world.checkSuites[HEAD][0].app.slug = DEPOT.app; }],
+  ['a non-retry run', f => { f.run.run_attempt = 1; }],
+  ['a missing current run attempt', f => { delete f.run.run_attempt; }],
+  ['a later run without its copied selector', f => { f.run.run_attempt = 3; }],
+  ['an untrusted job URL', f => { f.retained.details_url = 'https://elsewhere.test/actions/runs/1/job/2'; }],
+  ['a job URL for another repository', f => { f.retained.details_url = f.retained.details_url.replace(REPO, 'elsewhere/repo'); }],
+  ['a job URL with credentials', f => { f.retained.details_url = f.retained.details_url.replace('https://', 'https://someone@'); }],
+  ['a missing job URL', f => { delete f.retained.details_url; }],
+  ['missing annotation-count evidence', f => { delete f.retained.output.annotations_count; }],
+  ['a malformed annotation count', f => { f.retained.output.annotations_count = '0'; }],
+  ['a claimed annotation that cannot be read', f => { f.retained.output.annotations_count = 1; }],
+  ['a current job for another run', f => { f.retainedJob.run_id++; }],
+  ['a current job for another revision', f => { f.retainedJob.head_sha = OLD_HEAD; }],
+  ['a current job with another name', f => { f.retainedJob.name = 'Other'; }],
+  ['a current job for another check', f => { f.retainedJob.check_run_url += '0'; }],
+  ['a missing current job', f => { f.world.workflowJobs[f.run.id] = [f.originalJob]; }],
+  ['duplicate current job provenance', f => { f.world.workflowJobs[f.run.id].push(structuredClone(f.retainedJob)); }],
+  ['a non-retry current job', f => { f.retainedJob.run_attempt = 1; }],
+  ['a current job without recorded steps', f => { delete f.retainedJob.steps; }],
+  ['empty execution steps', f => { f.retainedJob.steps = []; f.originalJob.steps = []; }],
+  ['incomplete step evidence', f => { delete f.retainedJob.steps[0].completed_at; }],
+  ['another original job run', f => { f.originalJob.run_id++; }],
+  ['another original job revision', f => { f.originalJob.head_sha = OLD_HEAD; }],
+  ['a non-earlier original attempt', f => { f.originalJob.run_attempt = 2; }],
+  ['a missing original job', f => { f.world.workflowJobs[f.run.id] = [f.retainedJob]; }],
+  ['different original execution steps', f => { f.originalJob.steps[0].name = 'A new execution'; }],
+  ['a failed original check', f => { f.original.conclusion = 'failure'; }],
+  ['an original check from another provider', f => { f.original.app.slug = DEPOT.app; }],
+  ['an original check from another revision', f => { f.original.head_sha = OLD_HEAD; }],
+  ['an original check from another suite', f => { f.original.check_suite.id++; }],
+  ['an original check linked to another run', f => { f.original.details_url = f.original.details_url.replace(`/runs/${f.run.id}/`, '/runs/999/'); }],
+  ['a real new execution with different timestamps', f => {
+    f.retained.started_at = f.retainedJob.started_at = '2026-09-27T07:10:00Z';
+    f.retained.completed_at = f.retainedJob.completed_at = '2026-09-27T07:15:00Z';
+  }],
+  ['a missing original notice', f => { f.world.annotations[f.original.id] = []; }],
+  ['a malformed original notice', f => { f.world.annotations[f.original.id][0].message = '{invalid'; }],
+  ['multiple original selection notices', f => { f.world.annotations[f.original.id].push(f.world.annotations[f.original.id][0]); }],
+  ['an original failure annotation', f => { f.world.annotations[f.original.id].push({ annotation_level: 'failure', title: 'Synthetic failure' }); }],
+  ['original selection missing a required group', f => { f.world.annotations[f.original.id][0].message = '{"mode":"selected","groups":[]}'; }],
+  ['a malformed current notice', f => { f.world.annotations[f.retained.id] = [{ ...f.world.annotations[f.original.id][0], message: '{invalid' }]; }],
+];
+
+for (const [reason, change] of retainedSelectionCases) {
+  test(`CI: retained selector refuses ${reason}`, async () => {
+    const fixture = copiedSelection(narrowWorld());
+    change(fixture);
+    assertUnresolved(await preflight(fixture.world), 'ci-pr', /selection/);
+  });
+}
+
+test('CI: retained selector refuses conflicting notices from the same recorded execution', async () => {
+  const first = copiedSelection(narrowWorld());
+  first.world.annotations[first.retained.id] = [{ ...first.world.annotations[first.original.id][0],
+    message: '{"mode":"selected","groups":["runtime","maintenance"]}' }];
+  const { world } = nextSelectorCopy(first);
+  world.pageSize = 1;
+  assertUnresolved(await preflight(world), 'ci-pr', /original notices conflict/);
+});
+
+test('CI: retained selector does not hide a different required job failure', async () => {
+  const { world } = copiedSelection(narrowWorld());
+  runNamed(world, /^Build, lint/).conclusion = 'failure';
+  const report = await preflight(world);
+  assertUnresolved(report, 'ci-pr', /Build, lint.*failure/);
+  assert.deepEqual(gate(report, 'ci-pr').evidence.hostedSelection.groups, ['maintenance']);
+});
+
+test('CI: retained selector inaccessible provenance is a read failure', async () => {
+  const { world } = copiedSelection(narrowWorld());
+  world.failures.push({ match: /\/actions\/runs\/\d+\/jobs/, status: 403 });
+  const report = await preflight(world);
+  assert.equal(gate(report, 'ci-pr').status, 'read-failure');
+  assert.equal(report.exitCode, 2);
+});
 
 test('CI: a narrow change accepts deliberately unselected jobs as skipped and never reports them as run', async () => {
   const ci = gate(await preflight(narrowWorld()), 'ci-pr');
