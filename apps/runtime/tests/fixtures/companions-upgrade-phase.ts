@@ -20,7 +20,7 @@ const sync = await core.serveSync(['session', 'mode'], () => ({revision: 0, stat
 const outcomes: string[] = [];
 await operator.subscribe('bunny.event.*.*', message => {if (message.kind === 'outcome') outcomes.push(message.id);});
 const module = createCompanionsModule();
-const host = new ModuleHarness(module, {bus, stateDir: directory, clock: {now: () => now}, scheduler});
+const host = new ModuleHarness(module, {bus, stateDir: directory, section: {}, clock: {now: () => now}, scheduler});
 const turns = async () => {for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));};
 try {
   await host.start();

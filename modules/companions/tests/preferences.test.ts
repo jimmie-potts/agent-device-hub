@@ -13,11 +13,11 @@ async function world(t: TestContext) {
   let now = Date.now(); const clock = {now: () => now};
   const dir = await mkdtemp(join(tmpdir(), 'preferences-')), bus = new InProcessBus({now: clock.now}), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
-  let module = createCompanionsModule(), host = new ModuleHarness(module, {bus, stateDir: dir, clock});
+  let module = createCompanionsModule(), host = new ModuleHarness(module, {bus, stateDir: dir, clock, section: {}});
   await host.start();
   t.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
   return {core, bus, advance: (ms: number) => {now += ms;}, module: () => module, host: () => host, restart: async () => {
-    await host.stop(); module = createCompanionsModule(); host = new ModuleHarness(module, {bus, stateDir: dir, clock}); await host.start();
+    await host.stop(); module = createCompanionsModule(); host = new ModuleHarness(module, {bus, stateDir: dir, clock, section: {}}); await host.start();
   }};
 }
 

@@ -41,7 +41,9 @@ A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
 reads no secret, such as the playback, LIFX, Pixoo and Codex Desktop modules, omits `secrets`; the Tidbyt module
-names `token`, its API key's file, and the Nanoleaf module names `token`. One helper,
+names `token`, its API key's file, and the Nanoleaf module names `token`. The
+companions module's simulated section is empty: it names `anthropic-api-key`
+only when a private section selects the Anthropic provider. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -405,13 +407,18 @@ require separate per-tab enablement and a qualified local voice. Stop and mute d
 not change coding tasks; lost availability never replays missed alerts.
 Source acceptance and separately selected installation remain distinct.
 
-The same module contributes a default-off **Synthetic tasks** page: private text,
-a saved clarification and explicit continuation through a bounded fake-model
-graph. It reuses the gateway, tracked dispatcher, SDK SQLite owner and outbox.
-Task mechanics are separate from Reachy cards and core session lifecycle.
-See [Synthetic assistant tasks](../../modules/companions/README.md#synthetic-assistant-tasks)
-for restart, cancellation, privacy and limits. React contributions retain their
-last loaded content during reconnect while the host disables commands.
+The same module contributes a default-off **Conversation** page: the B.U.N.N.Y.
+conversation with the provider its private section selects (the labelled
+synthetic script by default, or the Anthropic Messages API with a section
+secret), a read tool over the core's sessions and a proposed `mode-set` that
+waits for the owner's approval before the core's tracked dispatcher sends it
+as one operation the module requested. It reuses the gateway, tracked
+dispatcher, SDK SQLite owner and outbox. Task mechanics are separate from
+Reachy cards and core session lifecycle. See
+[Conversation and assistant tasks](../../modules/companions/README.md#conversation-and-assistant-tasks)
+for the section, tools, approval, restart, cancellation, privacy and limits.
+React contributions retain their last loaded content during reconnect while
+the host disables commands.
 
 The **Preferences** page keeps explicit titled preferences in the same private
 store, independently of both switches. It supports edit/history, Stop using,

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.0",
+  "description": "Command from the companions module to the core (Hub #46): send one owner-approved command through the core's tracked dispatcher. Only `mode-set` for the Hub is allowed; the core refuses any other family, target or source. The reply and the outcome use the profile's reply and outcome payloads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "family", "target", "data"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "family": {"enum": ["mode-set"]},
+    "target": {"enum": ["hub"]},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"$ref": "https://bunny.invalid/events/mode/2.0#/$defs/mode"},
+        "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+      }
+    }
+  }
+}

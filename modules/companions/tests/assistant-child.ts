@@ -4,20 +4,22 @@ import {randomUUID} from 'node:crypto';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule} from '../src/module.js';
+import {SyntheticProvider} from '../src/assistant/synthetic.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 const [stateDir, mode] = process.argv.slice(2); assert.ok(stateDir !== undefined);
 let calls = 0;
 const bus = new InProcessBus(), core = bus.connect('bunny/core');
 await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
-const module = createCompanionsModule({model: (_step, text) => {
+const synthetic = new SyntheticProvider();
+const module = createCompanionsModule({provider: {name: 'synthetic', model: 'synthetic', turn: input => {
   calls += 1;
   if (mode === 'lost-call') process.exit(19);
-  return Promise.resolve({text: `Synthetic ${text}`, units: 10});
-}});
+  return synthetic.turn(input);
+}}});
 const host = new ModuleHarness({...module, start: context => module.start({...context, sdk: {...context.sdk, publishMessage: (key, message) => {
   if (mode === 'answer-crash' && key === 'bunny.state.assistant-state.assistant' && (message.data as AssistantState).tasks.some(task => task.hasAnswer && task.status === 'running')) process.exit(18);
   return context.sdk.publishMessage(key, message);
-}}})}, {bus, stateDir});
+}}})}, {bus, stateDir, section: {}});
 await host.start();
 const state = () => module.inspectAssistant() ?? assert.fail('assistant state');
 const control = async (action: string, taskId?: string) => {
