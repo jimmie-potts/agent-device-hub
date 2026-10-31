@@ -6,6 +6,7 @@ import {chromium, expect} from 'playwright/test';
 import {AxeBuilder} from '@axe-core/playwright';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, startWorld} from './harness.ts';
+import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
 
 const world = await startWorld({lighting: true, wemo: true, roborock: true});
 const browser = await chromium.launch({headless: true});
@@ -59,6 +60,17 @@ try {
   await place(three);await screenshot('home-three-desktop');
   await balanced();
   const first = await geometry();assert.ok(first.cards.every(card => Math.abs(card.top - (first.cards[0]?.top ?? 0)) <= 1), 'three Standard cards fit together on desktop');
+  await world.observe({kind: 'session-started'});await world.observe(approvalPrompt('home-row-attention'));
+  const attention = page.locator('.agent-status-card[data-attention=true]');await expect(attention).toBeVisible();
+  await screenshot('home-three-attention');
+  const clipped = await attention.evaluate(host => {
+    const boundary = host.getBoundingClientRect();
+    return [...host.querySelectorAll('summary, .chip, .agent-caret')].filter(node => {
+      const rect = node.getBoundingClientRect();return rect.width > 0 && rect.height > 0 && (rect.left < boundary.left - 1 || rect.right > boundary.right + 1);
+    }).map(node => node.className);
+  });
+  assert.deepEqual(clipped, [], 'approval text and disclosure controls fit inside the agent tile');
+  await world.observe(approvalResolved('home-row-attention'));await expect(attention).toHaveCount(0);
   for (const count of [1, 2, 3, 5, 8]) {
     const placements = ids.slice(0, count).map(widget => ({widget, size: 'medium' as const, hidden: false}));
     await place(placements);

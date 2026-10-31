@@ -9,6 +9,8 @@
 .home-card-content .lighting-grid,.home-card-content .music-grid{display:block}
 .home-card-content .lighting-workspace,.home-card-content .music-workspace{margin:0;padding:0}
 .home-card-content .music-card,.home-card-content .light-card{width:100%;min-width:0}
+/* Agent tiles must respond to their Home card's width, not only the viewport. */
+.home-card-content .agent-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 .home-edit-toolbar,.home-card-picker{padding:var(--space-m,16px);margin-bottom:var(--space-m,16px);background:var(--panel);border:1px solid var(--edge-dense);border-radius:var(--radius)}
 .home-edit-toolbar,.home-card-picker>header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .home-card-picker>header h2{margin:0}
