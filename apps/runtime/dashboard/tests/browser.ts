@@ -300,3 +300,4 @@ await import('./tidbyt-card.browser.ts');
 await import('./shell.browser.ts');
 
 await import('./home-layout.browser.ts');
+await import('./card-consistency.browser.ts');
