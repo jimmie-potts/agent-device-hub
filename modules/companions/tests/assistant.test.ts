@@ -117,7 +117,7 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   assert.equal(dispatched.length, 1); assert.deepEqual(dispatched[0]?.data, {mode: 'free', expectedRevision: 7});
   assert.equal(dispatched[0]?.requestId, `${task(w)?.taskId ?? ''}-step-1`);
   const final = (await page(w)).messages.at(-1); assert.ok(final);
-  assert.match(final.text, /applied: accepted/); assert.equal(task(w)?.toolCalls, 1); assert.equal(task(w)?.modelCalls, 2);
+  assert.match(final.text, /accepted by the core, outcome tracked separately: accepted/); assert.equal(task(w)?.toolCalls, 1); assert.equal(task(w)?.modelCalls, 2);
   await w.restart(); assert.equal(dispatched.length, 1);
 });
 
@@ -134,12 +134,62 @@ void test('a declined proposal sends nothing and a stale approval is reported as
   assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.equal(sends, 1); assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict/);
-  answer = {status: 'uncertain', requestId: 'r', error: errorBody('uncertain-result')};
+  // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`, the shape the SDK delivers for a responder's error body.
+  answer = {status: 'rejected', requestId: 'r', error: errorBody('uncertain-result')};
   await input(w.core, w.module(), 'free mode'); await until(() => status(w) === 'waiting');
   await input(w.core, w.module(), 'approve', true); await until(() => status(w) === 'uncertain');
   assert.equal(task(w)?.code, 'uncertain-result');
   const id = task(w)?.taskId; assert.ok(id !== undefined);
   assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected'); assert.equal(sends, 2);
+  assert.equal(JSON.stringify(await page(w)).includes('refused: uncertain-result'), false);
+  await control(w.core, w.module(), 'cancel', id); await until(() => status(w) === 'cancelled');
+  answer = {status: 'uncertain', requestId: 'r', error: errorBody('uncertain-result')};
+  await input(w.core, w.module(), 'quiet mode'); await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true); await until(() => status(w) === 'uncertain'); assert.equal(sends, 3);
+});
+
+void test('a proposal needs a synced Hub-mode revision and a real mode, otherwise the call is refused to the model without a question', async context => {
+  let sends = 0; const script = (_input: TurnInput, turn: number): TurnReply => turn === 1 ? call('set_mode', {mode: 'quiet'}) : reply('Done');
+  const unsynced = await world(context, {provider: counted(script), tools: ['set_mode'], core: () => ({sessions: [], mode: undefined, synced: false}), dispatch: () => {sends += 1; return Promise.resolve(accepted('x'));}});
+  await control(unsynced.core, unsynced.module(), 'enable'); await input(unsynced.core, unsynced.module(), 'quiet mode');
+  await until(() => status(unsynced) === 'succeeded');
+  assert.equal(sends, 0); assert.equal(task(unsynced)?.questions, 0); assert.equal(task(unsynced)?.toolCalls, 0);
+  assert.match((await page(unsynced)).messages.find(message => message.role === 'tool')?.text ?? '', /not synced/);
+  const party = await world(context, {provider: counted((_input, turn) => turn === 1 ? call('set_mode', {mode: 'party'}) : reply('Done')), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(1), synced: true}), dispatch: () => {sends += 1; return Promise.resolve(accepted('x'));}});
+  await control(party.core, party.module(), 'enable'); await input(party.core, party.module(), 'party mode');
+  await until(() => status(party) === 'succeeded');
+  assert.equal(sends, 0); assert.equal(task(party)?.questions, 0);
+  assert.match((await page(party)).messages.find(message => message.role === 'tool')?.text ?? '', /not work, free or quiet/);
+});
+
+void test('a lost provider answer leaves the call uncertain, and the model\'s own blocks are replayed with the first call only', async context => {
+  const provider = counted(() => {throw new ProviderFault('unavailable', true);});
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic lost answer');
+  await until(() => status(w) === 'uncertain');
+  assert.equal(task(w)?.code, 'uncertain-result'); assert.equal(task(w)?.usageUnits, null);
+  const id = task(w)?.taskId; assert.ok(id !== undefined);
+  assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected');
+  const blocks = [{type: 'thinking', thinking: '', signature: 'sig-1'}, {type: 'text', text: 'Checking.'}, {type: 'tool_use', id: 'toolu_1', name: 'read_sessions', input: {}}];
+  const scripted = counted((input, turn) => turn === 1 ? {text: 'Checking.', calls: [{id: 'toolu_1', name: 'read_sessions', input: {}}], stop: 'tool', units: 3, blocks} : reply(`Replayed ${String(input.transcript.filter(item => item.role === 'assistant' && item.blocks !== undefined).length)}`));
+  const replay = await world(context, {provider: scripted, tools: ['read_sessions'], core: () => ({sessions: [], mode: hub(1), synced: true})});
+  await control(replay.core, replay.module(), 'enable'); await input(replay.core, replay.module(), 'status');
+  await until(() => status(replay) === 'succeeded');
+  assert.deepEqual(scripted.inputs[1]?.transcript[1], {role: 'assistant', text: 'Checking.', calls: [{id: 'toolu_1', name: 'read_sessions', input: {}}], blocks, effect: `${task(replay)?.taskId ?? ''}-step-0`});
+  assert.match((await page(replay)).messages.at(-1)?.text ?? '', /Replayed 1/);
+});
+
+void test('expected cancellation before call admission uses info severity', async context => {
+  const stopped = new AbortController();
+  const w = await world(context, {}, context => ({...context, signal: stopped.signal, log: {...context.log, info: (event, fields, trace) => {
+    context.log.info(event, fields, trace); if (event === 'assistant.run.started') stopped.abort();
+  }}}));
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Synthetic cancelled activation');
+  await until(() => w.host().logs.some(record => record.event === 'assistant.run.settled'));
+  assert.equal(status(w), 'paused');
+  const log = w.host().logs.find(record => record.event === 'assistant.run.settled'); assert.ok(log);
+  assert.equal(log.fields['bunny.code'], 'cancelled'); assert.equal(log.level, 'info');
+  assert.equal(task(w)?.modelCalls, 0);
 });
 
 void test('a command the section does not allow is refused to the model without an effect, and reads need no approval', async context => {

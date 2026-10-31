@@ -10,11 +10,10 @@ import type {TranscriptItem} from './provider.js';
 
 /** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
 export const GRAPH_VERSION = 'conversation-1';
-/** A usage unit is one token a configured provider reports, or one fake unit of the synthetic provider. */
-export const LIMITS = Object.freeze({modelCalls: 6, toolCalls: 4, questions: 2, activeMs: 300_000, modelMs: 60_000,
-  toolMs: 8000, controlMs: 5000, inputBytes: 4096, toolBytes: 8192, stateBytes: 32768, pageBytes: 65536, units: 65_536, callUnits: 16_384});
-/** A proposed command awaiting the owner's approval: the exact family, target and value, and the Hub-mode revision seen when proposed. */
-export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number | null};
+import {LIMITS} from './limits.js';
+export {LIMITS} from './limits.js';
+/** A proposed command awaiting the owner's approval: the exact family, target and value, and the synced Hub-mode revision seen when proposed. */
+export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number};
 export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; call: string; proposal: Proposal | null};
 export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;

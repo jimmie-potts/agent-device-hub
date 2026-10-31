@@ -24,7 +24,7 @@ The system SHALL preserve inspectable, versioned conversations, messages, tasks,
 
 ### Requirement: Bounded single execution
 
-The system SHALL admit at most one unfinished task across profiles and one invocation, with no execution queue. Each task SHALL retain limits of six model calls, four tool calls, two questions, 300 seconds active time and 65,536 usage units, with 16,384 units reserved before each model call; a usage unit is one token reported by a configured provider or one fake unit of the synthetic provider. Model/tool deadlines SHALL be 60/5 seconds and control admission five seconds. Inputs, tool results and serialized working state SHALL be bounded at 4/8/32 KiB. Reservations SHALL precede dispatch and survive restart; unreported usage SHALL remain unknown. Paid calls SHALL occur only through a configured provider; the synthetic provider SHALL make none.
+The system SHALL admit at most one unfinished task across profiles and one invocation, with no execution queue. Each task SHALL retain limits of six model calls, four tool calls, two questions, 300 seconds active time and 65,536 usage units, with 16,384 units reserved before each model call; a usage unit is one token reported by a configured provider or one fake unit of the synthetic provider. Model/tool deadlines SHALL be 60/8 seconds and control admission five seconds. Inputs, tool results, a model reply with its provider blocks, and serialized working state SHALL be bounded at 4/8/16/32 KiB. Reservations SHALL precede dispatch and survive restart; unreported usage SHALL remain unknown. Paid calls SHALL occur only through a configured provider; the synthetic provider SHALL make none.
 
 #### Scenario: A limit is exhausted
 - **WHEN** another operation would exceed a persisted limit
@@ -52,10 +52,10 @@ Inputs SHALL use bounded authenticated upload staging with references bound to r
 
 ### Requirement: Configured model provider
 
-The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions and the current Hub mode, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. Without a companions section the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret or with an unsupported provider. The `bunny` profile alone SHALL use the configured provider; other profiles SHALL keep the synthetic provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results and fixed instructions. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Public state SHALL carry the provider, model and allowed tool names.
+The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions and the current Hub mode, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret or with an unsupported provider. The `bunny` profile alone SHALL use the configured provider; other profiles SHALL keep the synthetic provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results and fixed instructions. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Public state SHALL carry the provider, model and allowed tool names.
 
 #### Scenario: Synthetic default
-- **WHEN** the module starts without a companions section or with one that names no provider
+- **WHEN** the module starts with an empty companions section or with one that names no provider
 - **THEN** public state shows the synthetic provider, no outbound request is made, and a task completes through the same question, tool and approval path
 
 #### Scenario: Configured hosted provider
@@ -80,7 +80,7 @@ The module SHALL expose to the model only tools derived from the runtime's modul
 
 ### Requirement: Owner approval of proposed commands
 
-A tool call that would change state SHALL pause the task with an approval question that names the exact family, target and requested value, and SHALL record the Hub-mode revision current at the proposal. Only an explicit approve answer bound to that question SHALL send the command, with the recorded revision as its expected revision; a decline answer SHALL return a declined result to the model. A command the core refuses, including `revision-conflict` after the mode changed, SHALL be reported to the model and the owner as refused; an uncertain answer SHALL leave the effect uncertain without retry. Reads SHALL need no approval.
+A tool call that would change state SHALL pause the task with an approval question that names the exact family, target and requested value, and SHALL record the synced Hub-mode revision current at the proposal; when no synced revision is known, or the requested value is not a mode, the call SHALL be refused to the model and nothing proposed. Only an explicit approve answer bound to that question SHALL send the command, with the recorded revision as its expected revision; a decline answer SHALL return a declined result to the model. A command the core refuses, including `revision-conflict` after the mode changed, SHALL be reported to the model and the owner as refused; an uncertain answer SHALL leave the effect uncertain without retry. Reads SHALL need no approval.
 
 #### Scenario: Approved mode change
 - **WHEN** the owner approves a proposed `set_mode` and the Hub mode has not changed since the proposal
@@ -104,7 +104,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 #### Scenario: Refused dispatch
 - **WHEN** another source sends `assistant-dispatch`, or the module names a family or target outside the core's allowlist
-- **THEN** the core refuses with `forbidden` or `invalid-request`, records no operation and sends nothing
+- **THEN** the core refuses with `forbidden` for another source, or `invalid-message` for a family, target or value its closed schema rejects, records no operation and sends nothing
 
 ### Requirement: Accessible conversation panel
 

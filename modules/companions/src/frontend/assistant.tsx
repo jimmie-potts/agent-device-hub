@@ -1,16 +1,17 @@
 import React, {useEffect, useState} from 'react';
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {LIMITS} from '../assistant/limits.js';
 
 // Browser-local wire types: importing the database-backed store would include Node code.
 type Message = {seq: number; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
-type Proposal = {family: string; target: string; data: {mode: string}; expectedRevision: number | null};
+type Proposal = {family: string; target: string; data: {mode: string}; expectedRevision: number};
 type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; proposal: Proposal | null};
 type CurrentTask = {taskId: string; question: Question | null};
 type Page = {version: 1; conversationId: string | null; messages: Message[]; next: number | null; currentTask: CurrentTask | null};
 const profiles: Readonly<Record<AssistantProfile, string>> = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'};
-/** The engine's per-task bounds, shown beside each counter; the module's store owns the numbers. */
-const BOUNDS = {modelCalls: 6, toolCalls: 4, questions: 2, activeSeconds: 300, units: 65_536};
+/** The engine's per-task bounds, shown beside each counter, from the module's shared constants. */
+const BOUNDS = {modelCalls: LIMITS.modelCalls, toolCalls: LIMITS.toolCalls, questions: LIMITS.questions, activeSeconds: LIMITS.activeMs / 1000, units: LIMITS.units};
 /** Every tool the section may allow; a name missing from the state's `tools` is shown as unavailable. */
 const CATALOG = ['read_sessions', 'set_mode'];
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
@@ -22,7 +23,7 @@ function questionValue(value: unknown): Question | null {
     !['clarification', 'approval'].includes(String(value.kind))) throw new Error('Invalid question');
   const proposal = value.proposal ?? null;
   if (proposal !== null && !(record(proposal) && typeof proposal.family === 'string' && typeof proposal.target === 'string' && record(proposal.data) &&
-    typeof proposal.data.mode === 'string' && (proposal.expectedRevision === null || integer(proposal.expectedRevision)))) throw new Error('Invalid proposal');
+    typeof proposal.data.mode === 'string' && integer(proposal.expectedRevision))) throw new Error('Invalid proposal');
   return {id: value.id, text: value.text, answer: value.answer, kind: value.kind as Question['kind'], proposal: proposal as Proposal | null};
 }
 function pageValue(value: unknown, after: number): Page {
@@ -81,8 +82,8 @@ function TaskControls({context, command, state, profile, live, question}: {
       {approval && question?.proposal !== null && question?.proposal !== undefined ? <article aria-label="Proposed command">
         <p>{question.text}</p>
         <p>Command: <code>{question.proposal.family}</code> on <code>{question.proposal.target}</code>, mode <strong>{question.proposal.data.mode}</strong>.
-          {' '}Bound to Hub-mode revision {question.proposal.expectedRevision === null ? 'unknown' : String(question.proposal.expectedRevision)}; a changed mode refuses it.</p>
-        <button type="button" disabled={!state.enabled} onClick={() => {send('approve', true);}}>Approve proposal</button>
+          {' '}Bound to Hub-mode revision {String(question.proposal.expectedRevision)}; a mode changed since then refuses it.</p>
+        <button type="button" disabled={!state.enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
         <button type="button" disabled={!state.enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
       </article> : <form onSubmit={event => {event.preventDefault(); submit();}}>

@@ -100,7 +100,7 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     expect('one tracked mode-set requested by the module completes and the Hub is quiet', h => {
       const operations = modeOperations(h); return operations.length === 1 && operations[0]?.status === 'completed' && operations[0].result === 'succeeded' && hubMode(h)?.mode === 'quiet' || `operations ${String(operations.length)}, mode ${hubMode(h)?.mode ?? 'unknown'}`;
     }, 10_000),
-    expect('the task reports the accepted command without claiming a device effect', answers(CONVERSATION, response => response.status === 200 && JSON.stringify(bodyOf(response)).includes('applied: accepted') || 'result text differs')),
+    expect('the task reports the accepted command without claiming a device effect', answers(CONVERSATION, response => response.status === 200 && JSON.stringify(bodyOf(response)).includes('accepted by the core, outcome tracked separately: accepted') && !JSON.stringify(bodyOf(response)).includes('applied: accepted') || 'result text differs')),
     expect('public state, operations and logs contain no conversation text', h => !JSON.stringify([h.published(), h.logs()]).includes('SYNTHETIC_ASSISTANT_') || 'private text escaped'),
     act('operator asks for work mode, then changes the mode by hand before deciding', async h => {
       for (let n = 0; n < 300 && assistant(h)?.tasks[0]?.status !== 'succeeded'; n += 1) await new Promise(resolve => setTimeout(resolve, 10));
@@ -108,7 +108,7 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
       for (let n = 0; n < 300 && assistant(h)?.tasks[0]?.status !== 'waiting'; n += 1) await new Promise(resolve => setTimeout(resolve, 10));
       await dispatchOnce(h, 'operator', 'stale-manual', modeSet('work'), 'stale-manual');
     }),
-    expect('the manual selection was accepted and the Hub is Work', async h => await answered(h, 'stale-manual', 'accepted') === true && hubMode(h)?.mode === 'work' || `mode ${hubMode(h)?.mode ?? 'unknown'}`),
+    expect('the manual selection was accepted and the Hub is Work', h => answered(h, 'stale-manual', 'accepted') === true && hubMode(h)?.mode === 'work' || `mode ${hubMode(h)?.mode ?? 'unknown'}`),
     act('operator approves the stale proposal', h => assistantInput(h, 'stale-yes', true, 'approve')),
     expect('the stale approval is refused by the core and reported, with no second command', h => {
       const task = assistant(h)?.tasks[0], operations = modeOperations(h);

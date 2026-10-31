@@ -331,6 +331,8 @@ export class AssistantEngine {
       mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}}, signal).then(reply => ({text: JSON.stringify(reply), units: reply.units})));
     const reply = parseReply(text), call = reply.calls[0];
     let next: Next = 'end', result = '';
+    // The final text is what the owner reads; it keeps the result bound even though a reply with the model's own blocks may be larger.
+    if (reply.text !== null && textBytes(reply.text) > LIMITS.toolBytes) fail('capacity');
     if (reply.stop === 'refusal') {
       await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: [], effect: id}, active.span.context,
         current => {this.store.message(current, `${id}-refusal`, 'assistant', REFUSED, this.context.clock.now());});
@@ -345,8 +347,11 @@ export class AssistantEngine {
       const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
       next = tool === undefined || !permitted ? 'tool' : tool.effect === 'question' ? 'ask' : tool.effect === 'command' ? 'approve' : 'tool';
     }
-    const question = next === 'ask' || next === 'approve' ? this.#question(state.taskId, call ?? fail('internal'), copy) : undefined;
-    await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: reply.calls, effect: id}, active.span.context, current => {
+    const question = (next === 'ask' || next === 'approve') && call !== undefined ? this.#question(state.taskId, call, copy) : undefined;
+    // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
+    if (next === 'approve' && question === undefined) next = 'tool';
+    const item: Appended = {role: 'assistant', text: reply.text, calls: call === undefined ? [] : [call], effect: id, ...(reply.blocks === undefined ? {} : {blocks: reply.blocks})};
+    await this.#append(state.taskId, item, active.span.context, current => {
       if (question === undefined) return;
       if (current.questions >= LIMITS.questions) fail('capacity');
       current.questions += 1; current.question = question;
@@ -354,15 +359,24 @@ export class AssistantEngine {
     });
     return {step: state.step + 1, next, result};
   }
-  #question(taskId: string, call: ToolCall, copy: CoreCopy): Question {
+  /** The question a call asks, or undefined for a command that cannot be proposed: an unknown mode value or no synced Hub-mode revision to bind it to. */
+  #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
     const id = `${taskId}-q${String(this.#task(taskId).questions + 1)}`;
     if (call.name === ASK_OWNER) {
       const text = typeof call.input.text === 'string' && call.input.text.trim() !== '' ? call.input.text : 'What should the assistant do next?';
       return {id, text: text.slice(0, 1024), answer: null, kind: 'clarification', call: call.id, proposal: null};
     }
     const mode = MODES.find(value => value === call.input.mode);
-    const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode: mode ?? 'free'}, expectedRevision: copy.mode?.revision ?? null};
+    if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
+    const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
     return {id, text: `Set the Hub mode to ${proposal.data.mode}?`, answer: null, kind: 'approval', call: call.id, proposal};
+  }
+  /** Why a command call was refused instead of proposed. */
+  #proposalRefusal(call: ToolCall): string {
+    const copy = this.#core();
+    if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
+    if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
+    return 'This tool is not permitted.';
   }
   #ask(state: GraphState): Partial<GraphState> {
     const task = this.#task(state.taskId), question = task.question ?? fail('invalid-state');
@@ -387,10 +401,13 @@ export class AssistantEngine {
     const call = last?.role === 'assistant' ? last.calls[0] : undefined;
     if (call === undefined) fail('invalid-state');
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic');
-    const tool = definition(call.name);
+    const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
-    if (tool === undefined || tool.effect !== 'read' || !tools.some(permittedTool => permittedTool.name === call.name)) {
-      await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: 'This tool is not permitted.', ok: false, effect: `${id}-refused`}, active.span.context);
+    if (tool === undefined || !permitted || tool.effect !== 'read') {
+      const reason = tool !== undefined && permitted && tool.effect === 'command' ? this.#proposalRefusal(call) : 'This tool is not permitted.';
+      // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
+      await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: reason, ok: false, effect: `${id}-refused`}, active.span.context,
+        current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
     const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : fail('invalid-state'), units: 0}));
@@ -402,17 +419,20 @@ export class AssistantEngine {
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (state.decision !== 'approve') {
-      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: DECLINED, ok: false, effect: `${id}-declined`}, active.span.context);
+      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: DECLINED, ok: false, effect: `${id}-declined`}, active.span.context,
+        current => {this.store.message(current, `${id}-declined`, 'tool', DECLINED, this.context.clock.now());});
       return {step: state.step};
     }
     const permitted = this.#allowed.includes(SET_MODE), dispatch = this.options.dispatch;
     if (!permitted || dispatch === undefined) {
-      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: 'This tool is not permitted.', ok: false, effect: `${id}-refused`}, active.span.context);
+      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: 'This tool is not permitted.', ok: false, effect: `${id}-refused`}, active.span.context,
+        current => {this.store.message(current, `${id}-refused`, 'tool', 'This tool is not permitted.', this.context.clock.now());});
       return {step: state.step};
     }
     const result = await this.#call(state.taskId, state.step, 'tool', signal => dispatch({requestId: id, family: proposal.family, target: proposal.target,
-      data: {mode: proposal.data.mode, ...(proposal.expectedRevision === null ? {} : {expectedRevision: proposal.expectedRevision})}}, active.span.context, signal).then(answer => {
-      if (answer.status === 'uncertain') throw new Fault('uncertain-result');
+      data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}, active.span.context, signal).then(answer => {
+      // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
+      if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
       const text = answer.status === 'accepted' ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
         : `refused: ${answer.error.error.code}`;
       return {text, units: 0};
@@ -429,6 +449,8 @@ export class AssistantEngine {
       this.#fence(active); return saved.result;
     }
     const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs, units = kind === 'model' ? LIMITS.callUnits : 0;
+    // A model reply carries the provider's own blocks for replay, so it may be larger than a tool result.
+    const bound = kind === 'model' ? LIMITS.replyBytes : LIMITS.toolBytes;
     const span = startSpan(this.context.trace, kind === 'model' ? 'bunny.assistant.model' : 'bunny.assistant.tool', {parent: active.span.context,
       attributes: {'bunny.assistant.task_id': taskId, 'bunny.assistant.run_id': active.runId, 'bunny.assistant.effect_id': id}});
     const call: Call = {version: 1, id, taskId, runId: active.runId, ordinal, kind, status: 'admitted', result: null, units: null,
@@ -444,9 +466,9 @@ export class AssistantEngine {
         task.activeMs += timeout; task.reservedUnits += units; this.store.saveCall(call);
       }, span.context);
       this.#fence(active);
-      const reply = await this.#wait(active, timeout, () => Promise.resolve().then(() => operation(active.controller.signal)), call);
+      const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal)), call);
       replied = true; this.#fence(active);
-      if (typeof reply.text !== 'string' || textBytes(reply.text) > LIMITS.toolBytes || (reply.units !== null && (!Number.isSafeInteger(reply.units) || reply.units < 0 || reply.units > units))) fail('capacity');
+      if (typeof reply.text !== 'string' || textBytes(reply.text) > bound || (reply.units !== null && (!Number.isSafeInteger(reply.units) || reply.units < 0 || reply.units > units))) fail('capacity');
       const elapsed = Math.min(timeout, Math.max(0, this.context.clock.now() - started)); active.accountedAt = this.context.clock.now();
       await this.#change(taskId, task => {
         this.#fence(active); call.status = 'succeeded'; call.result = reply.text; call.units = reply.units; call.elapsedMs = elapsed;
@@ -468,7 +490,7 @@ export class AssistantEngine {
       throw error;
     } finally {this.#log('assistant.call.settled', active, id); const receipt = this.store.call(id); span.end(receipt !== undefined && receipt.status !== 'succeeded' ? 'error' : 'unset');}
   }
-  async #wait(active: Active, timeout: number, operation: () => Promise<{text: string; units: number | null}>, call: Call): Promise<{text: string; units: number | null}> {
+  async #wait(active: Active, timeout: number, bound: number, operation: () => Promise<{text: string; units: number | null}>, call: Call): Promise<{text: string; units: number | null}> {
     let cancel: Cancel | undefined, stopped: (() => void) | undefined, settled = false;
     const deadline = new Promise<{text: string; units: number | null}>((_resolve, reject) => {
       stopped = () => {settled = true; reject(new Fault('cancelled'));};
@@ -478,7 +500,7 @@ export class AssistantEngine {
     try {
       this.#fence(active);
       const pending = operation().then(reply => {
-        if (settled && !this.#closed && !this.context.signal.aborted && this.context.database().isOpen && typeof reply.text === 'string' && textBytes(reply.text) <= LIMITS.toolBytes &&
+        if (settled && !this.#closed && !this.context.signal.aborted && this.context.database().isOpen && typeof reply.text === 'string' && textBytes(reply.text) <= bound &&
           (reply.units === null || Number.isSafeInteger(reply.units) && reply.units >= 0 && reply.units <= call.reservedUnits)) {
           // Evidence only: no budget refund, task transition or graph continuation after the wait ended.
           void this.outbox.transaction(() => {const saved = this.store.call(call.id); if (saved !== undefined) {saved.result = reply.text; saved.units = reply.units; saved.status = 'succeeded'; this.store.saveCall(saved);}}).catch(() => {});

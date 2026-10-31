@@ -228,8 +228,16 @@ as for every configured module; an empty section keeps every default:
   `not-found`, `capacity` (a rate limit), `invalid-request`, `too-large` or
   `unavailable`, an unreadable answer to `invalid-message`, and output cut at the
   provider's limit to `capacity`. A lost answer or a transport error leaves the
-  call uncertain. Usage is the provider's input and output tokens; unreported
-  usage stays unknown.
+  call uncertain. Usage is the sum of the tokens the provider reports (input,
+  output and cache tokens); unreported usage stays unknown. The owner's
+  allowance for live use is a monthly spend limit on the dedicated Console
+  workspace, a precondition of installation rather than something the module
+  enforces.
+- The model's own content blocks, thinking blocks included, are kept with the
+  assistant item in the private transcript and replayed exactly as received,
+  which the API requires for the turn whose tool call awaits its result. One
+  tool call per turn is acted on; a further call in one answer is dropped with
+  its block.
 - The prompt holds only the owner's typed text, the tool definitions and
   results, the fixed instructions and the current Hub mode. No preference,
   knowledge entry, other task or household record enters it.
@@ -243,15 +251,20 @@ records (provider, client, label or title, activity, attention, freshness and
 evidence age; at most 16 sessions and 4 KiB) and needs no approval; an unsynced
 copy says so instead of pretending the list is current. `set_mode` is a
 proposal: the task pauses with an approval question naming the family
-(`mode-set`), the target (`hub`) and the mode, and records the Hub-mode revision
-seen when proposed. Only the literal answers `approve` and `decline` are
-accepted for it. Approval sends one `assistant-dispatch` command to the core,
+(`mode-set`), the target (`hub`) and the mode, and records the synced Hub-mode
+revision seen when proposed; while the module's copy of the core is not synced,
+or when the model names a value that is not a mode, the call is refused to the
+model and nothing is proposed. Only the literal answers `approve` and `decline`
+are accepted for it. Approval sends one `assistant-dispatch` command to the core,
 which forwards an allowlisted `mode-set` through its tracked dispatcher as an
 operation requested by this module, with the recorded revision as
 `expectedRevision`. The dispatcher's answer becomes the tool result,
 `accepted: …` or `refused: <code>` such as `revision-conflict` after the mode
 changed by hand; the operation's outcome, inbox item and history belong to the
-core, and the conversation never claims a device effect. A decline sends
+core, and the conversation never claims a device effect. The dispatcher's own
+uncertainty, a reply deadline that passed while the mode owner held the
+command, reaches the module as `uncertain-result` and leaves the call
+uncertain like a lost answer. A decline sends
 nothing. A tool the section does not list, or that the model names wrongly,
 returns a refusal to the model and has no effect. An uncertain dispatch answer
 leaves the call uncertain and the task refuses resume, as any uncertain call
@@ -308,7 +321,7 @@ readable history and refuse resume. There is no execution queue.
 | Calls and questions | 6 model calls, 4 tool calls, 2 questions |
 | Active time | 300 seconds; human waits and downtime excluded |
 | Deadlines | Model 60 seconds, tool 8 seconds, control admission 5 seconds |
-| Text and working state | Input 4 KiB, result 8 KiB, transcript and serialized graph/pending writes 32 KiB |
+| Text and working state | Input 4 KiB, result 8 KiB, a model reply with its blocks 16 KiB, transcript and serialized graph/pending writes 32 KiB |
 | Usage | 16,384 units reserved before each model call, 65,536 per task; a unit is one provider token or one fake synthetic unit |
 | Private read | At most 16 messages and 64 KiB per page, advancing cursor |
 

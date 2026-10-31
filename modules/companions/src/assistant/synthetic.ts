@@ -32,7 +32,8 @@ export class SyntheticProvider implements ModelProvider {
       reply = {text: null, calls: [call(read, {}, ordinal)], stop: 'tool', units: units(text)};
     } else {
       const answer = tools.find(item => item.name === ASK_OWNER)?.result;
-      const evidence = last?.name === SET_MODE ? `${last.ok ? 'applied' : 'not applied'}: ${last.result}` : last?.result ?? '';
+      // The module knows only what the dispatcher answered; whether the mode took effect is the core's outcome, reported separately.
+      const evidence = last?.name === SET_MODE ? `${last.ok ? 'accepted by the core, outcome tracked separately' : 'not applied'}: ${last.result}` : last?.result ?? '';
       reply = {text: `Synthetic result: ${answer === undefined ? '' : `${answer}\n`}${evidence}`, calls: [], stop: 'end', units: units(text)};
     }
     return Promise.resolve(reply);

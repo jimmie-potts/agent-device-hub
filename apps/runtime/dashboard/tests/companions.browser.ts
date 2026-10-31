@@ -92,14 +92,14 @@ try {
   await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
   const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true}); await approve.focus(); await approve.press('Enter');
   await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
-  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText(/applied: accepted/).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText(/accepted by the core, outcome tracked separately/).waitFor();
   await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
   // A declined proposal sends nothing and the conversation says so.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER free mode');
   await startTask.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
   const decline = proposal.getByRole('button', {name: 'Decline proposal', exact: true}); await decline.focus(); await decline.press('Enter');
   await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
-  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText(/declined the proposal/).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByRole('article', {name: 'tool message'}).getByText(/declined the proposal/).waitFor();
   // A clarification: the synthetic provider asks, the owner answers, the read tool runs without approval.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
   await startTask.focus(); await startTask.press('Enter');

@@ -12,10 +12,14 @@ export type ToolInputSchema = {type: 'object'; properties: Readonly<Record<strin
 export type ToolEffect = 'question' | 'read' | 'command';
 export type ToolDefinition = {readonly name: string; readonly description: string; readonly input: ToolInputSchema; readonly effect: ToolEffect};
 export type ToolCall = {id: string; name: string; input: Readonly<Record<string, unknown>>};
-/** One item of a task's transcript, kept in the task record so a turn can be replayed after restart. */
+/**
+ * One item of a task's transcript, kept in the task record so a turn can be replayed after restart. An assistant item
+ * may keep the provider's own content blocks (`blocks`), which the provider replays unchanged: a hosted model's thinking
+ * blocks must go back exactly as received with the turn whose tool call awaits its result.
+ */
 export type TranscriptItem =
   | {role: 'owner'; text: string}
-  | {role: 'assistant'; text: string | null; calls: ToolCall[]}
+  | {role: 'assistant'; text: string | null; calls: ToolCall[]; blocks?: unknown[]}
   | {role: 'tool'; call: string; name: string; result: string; ok: boolean};
 export type TurnInput = {
   readonly instructions: string;
@@ -26,7 +30,7 @@ export type TurnInput = {
 };
 /** How a turn ended: a final answer, tool calls to act on, the provider's own refusal, or output cut at the provider's limit. */
 export type TurnStop = 'end' | 'tool' | 'refusal' | 'truncated';
-export type TurnReply = {text: string | null; calls: ToolCall[]; stop: TurnStop; units: number | null};
+export type TurnReply = {text: string | null; calls: ToolCall[]; stop: TurnStop; units: number | null; blocks?: unknown[]};
 export type ModelProvider = {
   readonly name: AssistantProvider;
   readonly model: string;
