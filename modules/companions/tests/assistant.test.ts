@@ -14,6 +14,7 @@ import {CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
+import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {FIXTURE_TEXT} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -48,9 +49,9 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
     await host.stop(); ({module, host} = make()); await host.start();
   }};
 }
-async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID()) {
+async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId})}}, {requestId, timeoutMs: 5000});
+    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -556,4 +557,57 @@ void test('internal projection faults use error severity without exception conte
   const log = w.host().logs.find(record => record.event === 'assistant.run.settled'); assert.ok(log);
   assert.equal(log.fields['bunny.code'], 'internal'); assert.equal(log.level, 'error');
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC-FAULT'), false);
+});
+
+void test('the question and result that end a turn are offered to speech once each, and Speak replays a saved assistant message', async context => {
+  const offers: {reply: SpokenReply; key: string}[] = [];
+  const w = await world(context, {provider: counted(), speak: (reply, key) => {offers.push({reply, key});}});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-SPOKEN-PROMPT')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  const id = task(w)?.taskId ?? assert.fail('task'), questionId = task(w)?.questionId ?? assert.fail('question');
+  assert.equal(offers.length, 1);
+  assert.deepEqual(offers[0], {reply: {taskId: id, messageId: questionId, text: SYNTHETIC_QUESTION, validUntilMs: offers[0]?.reply.validUntilMs ?? 0}, key: questionId});
+  assert.ok((offers[0]?.reply.validUntilMs ?? 0) > Date.now() + 50_000);
+  await w.restart(); assert.equal(offers.length, 1, 'startup reconciliation speaks nothing');
+  assert.equal((await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-SPOKEN-ANSWER', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(offers.length, 2); assert.equal(offers[1]?.key, `${id}-result`);
+  assert.match(offers[1]?.reply.text ?? '', /^Synthetic result: PRIVATE-SYNTHETIC-SPOKEN-ANSWER/);
+  const saved = (await page(w)).messages as {id: string; role: string; text: string}[];
+  assert.ok(saved.every(message => typeof message.id === 'string' && message.id !== ''));
+  const result = saved.find(message => message.id === `${id}-result`); assert.ok(result); assert.equal(result.text, offers[1]?.reply.text);
+  // Speak reads the saved message again under a key that carries the request, so the coordinator admits the replay as its own utterance.
+  const requestId = randomUUID(), revision = w.module().inspectAssistant()?.revision;
+  const spoken = await control(w.core, w.module(), 'speak', id, requestId, {messageId: `${id}-result`}); assert.equal(spoken.status, 'accepted', JSON.stringify(spoken));
+  assert.equal(offers.length, 3); assert.equal(offers[2]?.key, `${id}-result:${requestId}`); assert.equal(offers[2]?.reply.text, result.text);
+  // The page retries with the same request and data; the saved receipt answers it without a second utterance.
+  assert.equal((await control(w.core, w.module(), 'speak', id, requestId, {messageId: `${id}-result`, expectedRevision: revision})).status, 'accepted');
+  assert.equal(offers.length, 3, 'a duplicate request does not speak again');
+  const owner = await control(w.core, w.module(), 'speak', id, randomUUID(), {messageId: `${id}-prompt`});
+  assert.equal(owner.status, 'rejected'); if (owner.status === 'rejected') assert.equal(owner.error.error.code, 'invalid-request');
+  const missing = await control(w.core, w.module(), 'speak', id, randomUUID(), {messageId: `${id}-nothing`});
+  assert.equal(missing.status, 'rejected'); if (missing.status === 'rejected') assert.equal(missing.error.error.code, 'not-found');
+  const mixed = await control(w.core, w.module(), 'cancel', id, randomUUID(), {messageId: `${id}-result`});
+  assert.equal(mixed.status, 'rejected'); if (mixed.status === 'rejected') assert.equal(mixed.error.error.code, 'invalid-request');
+  assert.equal(offers.length, 3);
+  assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
+  assert.equal(JSON.stringify(w.module().inspectAssistant()).includes('PRIVATE-SYNTHETIC'), false);
+});
+
+void test('a refusal is offered to speech, a result over the spoken bound stays written only, and a failed offer never fails the task', async context => {
+  const offers: SpokenReply[] = [];
+  let turn = 0;
+  const provider = counted(() => {
+    turn += 1;
+    if (turn === 1) return {text: null, calls: [], stop: 'refusal', units: 1};
+    return reply(`Long answer ${'x'.repeat(600)}`);
+  });
+  const w = await world(context, {provider, speak: offer => {offers.push(offer); throw new Error('PRIVATE-SYNTHETIC-SPEECH-FAULT');}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic refusal'); await until(() => status(w) === 'failed');
+  assert.equal(offers.length, 1); assert.equal(offers[0]?.text, REFUSED);
+  await input(w.core, w.module(), 'Synthetic long answer'); await until(() => status(w) === 'succeeded');
+  assert.equal(offers.length, 1, 'a result over 512 characters is not offered');
+  assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });

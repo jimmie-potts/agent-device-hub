@@ -3,6 +3,7 @@ import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langch
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantControl, AssistantDispatch, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
@@ -28,6 +29,8 @@ export type AssistantOptions = {
   dispatch?: Dispatch;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
+  /** Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay the owner asked for (Hub #500). */
+  speak?: (reply: SpokenReply, key: string, parent: TraceContext) => void;
 };
 class Fault extends Error {constructor(readonly code: ErrorCode) {super(code);}}
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -128,6 +131,15 @@ export class AssistantEngine {
     return result.ok ? undefined : result.error.code;
   }
   #revision(revision: number): void {if (revision !== this.store.meta().revision) fail('revision-conflict');}
+  /**
+   * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
+   * bound stays on the page unspoken rather than cut; the coordinator decides availability, Quiet and one-at-a-time.
+   */
+  #speak(taskId: string, messageId: string, text: string, parent: TraceContext, key = messageId): void {
+    if (this.options.speak === undefined || this.#closed || this.context.signal.aborted || text.trim() === '' || text.length > LIMITS.spokenChars) return;
+    try {this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent);}
+    catch { /* Speech is an output of the saved message, never a condition of it. */ }
+  }
   #ready(): void {if (!this.store.meta().enabled || !this.available()) fail('unavailable');}
   #activate(task: Task, parent: TraceContext): void {
     this.#ready();
@@ -158,13 +170,21 @@ export class AssistantEngine {
     } catch (error) {return errorBody(codeOf(error), {detail: 'The assistant control was not saved.'});}
   }
   #control(command: Command<AssistantControl>): Promise<Reply> {
+    let spoken: {id: string; text: string} | undefined;
     return this.#admit(command, digest(command.data), () => {
       const data = command.data; this.#revision(data.expectedRevision);
+      if (data.action !== 'speak' && data.messageId !== undefined) fail('invalid-request');
       if (data.action === 'enable' || data.action === 'disable') {
         if (data.taskId !== undefined) fail('invalid-request');
         if (data.action === 'enable' && !this.available()) fail('unavailable');
         if (data.action === 'disable' && this.store.unfinished() !== undefined) fail('invalid-state');
         this.store.enable(data.action === 'enable'); return undefined;
+      }
+      if (data.action === 'speak') {
+        // A replay reads the saved message; finished tasks qualify, so an old answer can be heard again, and only assistant text is spoken.
+        const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
+        if (message.role !== 'assistant') fail('invalid-request');
+        spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));
       if (terminal(task.status)) fail('invalid-state');
@@ -177,6 +197,7 @@ export class AssistantEngine {
     }).then(reply => {
       const active = this.#active;
       if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined && active.taskId === command.data.taskId) active.controller.abort();
+      if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
     });
   }
@@ -248,11 +269,12 @@ export class AssistantEngine {
     const snapshot = await this.#graph.getState(this.#config(taskId));
     const values = snapshot.values as Partial<GraphState>;
     const traceparent = this.#task(taskId).traceparent;
+    let result: string | undefined;
     const publication = this.#change(taskId, task => {
       if (terminal(task.status)) return;
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (snapshot.next.length === 0 && typeof values.result === 'string') {
-        task.status = 'succeeded'; task.code = null; this.store.message(task, `${task.id}-result`, 'assistant', values.result, this.context.clock.now());
+        task.status = 'succeeded'; task.code = null; this.store.message(task, `${task.id}-result`, 'assistant', values.result, this.context.clock.now()); result = values.result;
       } else if (snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
         if (task.question === null) {task.status = 'uncertain'; task.code = 'uncertain-result';}
@@ -263,6 +285,8 @@ export class AssistantEngine {
     }, active?.span.context ?? (traceparent === null ? undefined : {traceparent}));
     if (active !== undefined && this.#task(taskId).status !== 'running' && this.#active === active) this.#active = undefined;
     await publication;
+    // Only a result this run just produced is offered; startup reconciliation never speaks an answer the owner did not just ask for.
+    if (active !== undefined && result !== undefined) this.#speak(taskId, `${taskId}-result`, result, active.span.context);
   }
   #settle(task: Task, active: Active): void {
     task.activeMs += Math.max(0, this.context.clock.now() - active.accountedAt); active.accountedAt = this.context.clock.now();
@@ -341,6 +365,7 @@ export class AssistantEngine {
     // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
     if (contextBytes(context) > LIMITS.contextBytes) {
       await this.#change(state.taskId, current => {this.store.message(current, `${id}-context`, 'assistant', CONTEXT_TOO_LARGE, this.context.clock.now());}, active.span.context);
+      this.#speak(state.taskId, `${id}-context`, CONTEXT_TOO_LARGE, active.span.context);
       fail('capacity');
     }
     const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn({instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
@@ -350,8 +375,10 @@ export class AssistantEngine {
     // The final text is what the owner reads; it keeps the result bound even though a reply with the model's own blocks may be larger.
     if (reply.text !== null && textBytes(reply.text) > LIMITS.toolBytes) fail('capacity');
     if (reply.stop === 'refusal') {
+      let refused = false;
       await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: [], effect: id}, active.span.context,
-        current => {this.store.message(current, `${id}-refusal`, 'assistant', REFUSED, this.context.clock.now());});
+        current => {this.store.message(current, `${id}-refusal`, 'assistant', REFUSED, this.context.clock.now()); refused = true;});
+      if (refused) this.#speak(state.taskId, `${id}-refusal`, REFUSED, active.span.context);
       fail('forbidden');
     }
     if (reply.stop === 'truncated') {
@@ -367,12 +394,14 @@ export class AssistantEngine {
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
     const item: Appended = {role: 'assistant', text: reply.text, calls: call === undefined ? [] : [call], effect: id, ...(reply.blocks === undefined ? {} : {blocks: reply.blocks})};
+    let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
       if (question === undefined) return;
       if (current.questions >= LIMITS.questions) fail('capacity');
       current.questions += 1; current.question = question;
-      this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now());
+      this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now()); asked = true;
     });
+    if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
     return {step: state.step + 1, next, result};
   }
   /** The question a call asks, or undefined for a command that cannot be proposed: an unknown mode value or no synced Hub-mode revision to bind it to. */

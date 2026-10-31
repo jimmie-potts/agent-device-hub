@@ -22,7 +22,10 @@ export type CompanionFixtureRun = {requestId: string; scenario: 'arrival' | 'vis
 
 export type SpeechEndpointControl = {requestId: string} & ({action: 'enable'; available: true} | {action: 'mute' | 'stop'});
 export type SpeechDispatch = {requestId: string; candidateId: string; endpointId: string};
-export type SpeechOutput = {requestId: string; operationId: string} & ({action: 'speak'; card: CompanionCard} | {action: 'stop'});
+/** One saved assistant message the owner asked to hear, or that ended a turn: its text and the deadline after which it is stale (Hub #500). */
+export type SpokenReply = {taskId: string; messageId: string; text: string; validUntilMs: number};
+export const SPOKEN_REPLY_TTL_MS = 60_000;
+export type SpeechOutput = {requestId: string; operationId: string} & ({action: 'speak'; card: CompanionCard} | {action: 'speak'; reply: SpokenReply} | {action: 'stop'});
 export type SpeechPlayback = {operationId: string} & (
   | {status: 'started' | 'completed'; started: true}
   | {status: 'stopped' | 'uncertain'; started: boolean}
@@ -55,6 +58,12 @@ function checkSpeechOutput(message: Message): string | undefined {
   if (routed !== undefined) return routed;
   const data = message.data as SpeechOutput;
   if (data.action === 'stop') return undefined;
+  if ('reply' in data) {
+    const {reply} = data;
+    if (reply.text.trim() === '') return 'payload speech text must not be blank';
+    if (Date.parse(message.expiresat ?? '') > reply.validUntilMs) return 'payload speech must stay within the reply deadline';
+    return undefined;
+  }
   const {card} = data;
   const checked = checkOpportunity({...message, data: card.opportunity});
   if (checked !== undefined) return checked;

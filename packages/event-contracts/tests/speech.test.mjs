@@ -60,6 +60,19 @@ test('speech output admits a current live card and Stop, and refuses history, fi
   invalid(message(family, {...source, action: 'stop'}));
 });
 
+test('speech output admits one saved assistant reply within its deadline and refuses a blank, oversized or mixed payload', () => {
+  const family = 'companion-speech-output', time = Date.parse(examples[family].time ?? fixtures.valid['companion-settings-set'].time);
+  const reply = {taskId: 'task-1', messageId: 'task-1-result', text: 'Two coding sessions are active.', validUntilMs: time + 60_000};
+  const spoken = {requestId: 'output-request', operationId: 'speech-request', action: 'speak', reply};
+  valid(message(family, spoken));
+  for (const changed of [{...reply, text: ' '}, {...reply, text: 'x'.repeat(513)}, {...reply, messageId: 'task 1 result'}, {...reply, voice: 'unrequested'}]) {
+    invalid(message(family, {...spoken, reply: changed}));
+  }
+  invalid(message(family, {...spoken, card}));
+  invalid(message(family, {requestId: 'output-request', operationId: 'speech-request', action: 'speak'}));
+  invalid({...message(family, spoken), expiresat: new Date(reply.validUntilMs + 1).toISOString()});
+});
+
 test('playback observations distinguish started, completed, stopped, refused and uncertain output', () => {
   const family = 'companion-speech-playback';
   for (const status of ['started', 'completed']) {

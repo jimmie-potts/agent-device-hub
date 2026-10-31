@@ -128,6 +128,23 @@ Outcomes use the shared outbox, preserving their identity during republication.
 Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
+The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
+(Hub #500, first slice). The **Conversation** page carries the same controls
+under **Spoken replies**: enabling there makes that tab the one speaker for
+replies and any enabled Reachy alerts. When a turn ends with a result, a
+question for the owner or a refusal, the engine offers that saved message once;
+**Speak** beside a saved assistant message offers it again under a key that
+carries the request, so a replay is its own utterance. A reply ranks with coding
+attention: it interrupts a notice or social card after confirmed cancellation,
+waits for an active equal, and a newer pending reply replaces an older one, so a
+stale answer never precedes the current one. Replies honor Quiet and need the
+synced Hub mode; Reachy's text enablement and category mutes do not govern
+them. A message over 512 characters, the driver's bound, stays written only.
+A reply is stale sixty seconds after it was saved. Nothing is spoken for a task
+that fails without a saved message, and startup reconciliation speaks nothing.
+Stop speaking stops the audio of a question without answering or cancelling the
+task; cancellation stays the separate **Cancel task** control.
+
 The browser driver requires an exactly qualified local English voice, discovers
 it within five seconds and sets it explicitly without changing the browser default.
 Its playback deadline is fifteen seconds and cancellation confirmation has a
@@ -251,6 +268,13 @@ as for every configured module; an empty section keeps every default:
   context is bounded at 16 KiB; over it the call is refused before anything is
   sent, the task ends `capacity` and the conversation shows which bound was hit
   rather than truncating silently.
+
+- With spoken replies enabled in a tab (see [Browser speech](#browser-speech)),
+  the result, question or refusal that ends a turn is spoken once through the
+  qualified local voice, whatever model answered; the voice never depends on
+  the provider. **Speak** beside a saved assistant message asks to hear it
+  again through the `speak` control, whose accepted receipt means the request
+  was saved, while the playback report says whether the browser spoke.
 
 ### Turns, tools and approval
 

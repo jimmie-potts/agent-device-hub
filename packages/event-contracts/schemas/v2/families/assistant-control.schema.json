@@ -20,13 +20,20 @@
         "enable",
         "disable",
         "resume",
-        "cancel"
+        "cancel",
+        "speak"
       ]
     },
     "taskId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9-]+$"
+    },
+    "messageId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
       "pattern": "^[a-zA-Z0-9-]+$"
     }
   }

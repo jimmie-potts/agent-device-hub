@@ -1,6 +1,6 @@
 import {readSpeechQualification} from './speech/qualification.js';
 import type {SpeechQualification} from './speech-qualification.js';
-import {speechRefusal} from './presentation-policy.js';
+import {replyRefusal, speechRefusal} from './presentation-policy.js';
 import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
@@ -108,14 +108,16 @@ class Companions {
     const database = context.database();
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
-    this.speech = new SpeechCoordinator(context, this.#outbox, card => {
-      return speechRefusal(card, this.#policy(card.opportunity)) === undefined;
+    this.speech = new SpeechCoordinator(context, this.#outbox, source => {
+      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined : replyRefusal(this.#replyPolicy()) === undefined;
     }, () => this.#qualification !== undefined);
     await this.speech.start();
     // The preference store opens first so the engine can read the owner's active entries at each model call (Hub #507).
     this.preferences = new Preferences(context, this.#outbox);
     const preferences = this.preferences;
-    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries});
+    // A reply that ends a turn, or one the owner asks to hear again, goes to the same coordinator and endpoint as Reachy's spoken alerts (Hub #500).
+    const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent) => {this.speech?.offerReply(reply, key, parent, this.speech.mark());});
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries, speak});
     await this.assistant.start();
     await this.preferences.start();
     this.knowledge = new Knowledge(context, this.#outbox, this.assistant, this.preferences.store);
@@ -172,6 +174,10 @@ class Companions {
       {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.0', data},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
     return {...(provider === undefined ? {} : {provider}), tools, core, dispatch, ...(options.available === undefined ? {} : {available: options.available})};
+  }
+  #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {
+    const records = this.#copy?.states().map(message => message.data) ?? [];
+    return {mode: records.find((record): record is ModeState => 'mode' in record)?.mode, synced: this.#synced};
   }
   #policy(event: CompanionOpportunity): Policy {
     const saved = this.#store?.read(), context = this.#context;

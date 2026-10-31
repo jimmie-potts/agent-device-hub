@@ -1,13 +1,14 @@
 import {errorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import type {CompanionCard, SpeechOutput, SpeechPlayback, SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
+import type {SpeechOutput, SpeechPlayback, SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
+import {speechDeadline, speechText, type SpeechSource} from '../presentation-policy.js';
 import type {FrontendApi, FrontendSpeechEndpoint} from '@jimmie-potts/sdk/frontend';
 import type {Command, Reply, TraceContext} from '@jimmie-potts/sdk';
 import type {SpeechDriver, SpeechResult} from './speech-driver.js';
 
 export type SpeechSessionState = {availability: 'off' | 'enabling' | 'available' | 'unavailable'; playback: SpeechState['playback']; busy: boolean};
 export type SpeechSessionOptions = {api: NonNullable<FrontendApi['speech']>; createDriver(): SpeechDriver | undefined; usable(): boolean;
-  eligible(card: CompanionCard): boolean; changed(state: SpeechSessionState): void};
-type Attempt = {operationId: string; card: CompanionCard; started: boolean};
+  eligible(source: SpeechSource): boolean; changed(state: SpeechSessionState): void};
+type Attempt = {operationId: string; source: SpeechSource; started: boolean};
 type Receipt = {playback: SpeechPlayback; parent: TraceContext};
 function receipt(operationId: string, result: SpeechResult): SpeechPlayback {
   switch (result.kind) {
@@ -79,7 +80,7 @@ export class SpeechSession {
   update(): void {
     if (this.#closed) return;
     if (!this.options.usable()) {if (this.#driver !== undefined) void this.#release('unavailable'); return;}
-    if (this.#attempt !== undefined && !this.options.eligible(this.#attempt.card)) void this.#driver?.stop();
+    if (this.#attempt !== undefined && !this.options.eligible(this.#attempt.source)) void this.#driver?.stop();
   }
   close(): Promise<void> {this.#closed = true; return this.#release('off');}
   #release(availability: 'off' | 'unavailable'): Promise<void> {
@@ -101,14 +102,15 @@ export class SpeechSession {
       return errorBody('not-found');
     }
     if (this.#attempt?.operationId === command.data.operationId || this.#last?.playback.operationId === command.data.operationId) return {status: 'accepted'};
-    if (this.#state.availability !== 'available' || this.#state.busy || !this.options.usable() || !this.options.eligible(command.data.card)
+    const source: SpeechSource = 'card' in command.data ? {kind: 'card', card: command.data.card} : {kind: 'reply', reply: command.data.reply};
+    if (this.#state.availability !== 'available' || this.#state.busy || !this.options.usable() || !this.options.eligible(source)
       || Date.parse(command.expiresat ?? '') <= Date.now()) return errorBody('unavailable');
     if (this.#attempt !== undefined) return errorBody('invalid-state');
-    const attempt: Attempt = {operationId: command.data.operationId, card: command.data.card, started: false};
+    const attempt: Attempt = {operationId: command.data.operationId, source, started: false};
     this.#attempt = attempt; this.#state.playback = {operationId: attempt.operationId, status: 'dispatching', started: false}; this.#changed();
     const driver = this.#driver;
-    const done = driver.play({text: attempt.card.text, expiresAtMs: attempt.card.opportunity.validUntilMs,
-      eligible: () => generation === this.#generation && this.#state.availability === 'available' && !this.#state.busy && this.options.usable() && this.options.eligible(attempt.card),
+    const done = driver.play({text: speechText(source), expiresAtMs: speechDeadline(source),
+      eligible: () => generation === this.#generation && this.#state.availability === 'available' && !this.#state.busy && this.options.usable() && this.options.eligible(source),
       onStarted: () => {
         if (generation !== this.#generation || this.#attempt !== attempt) return;
         attempt.started = true; this.#state.playback = {operationId: attempt.operationId, status: 'started', started: true}; this.#changed();

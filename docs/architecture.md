@@ -264,7 +264,11 @@ allowances. Optional speech reserves one explicit browser endpoint on the shell'
 existing authenticated SDK connection. Companions owns admission and durable
 responsibility; the core tracks each attempt; the selected browser alone owns
 local synthesis. Availability and candidates are never restored after disconnect
-or restart. The [module guide](../modules/companions/README.md#browser-speech)
+or restart. The same endpoint speaks the assistant's saved replies to the owner's
+typed requests (Hub #500), offered by the assistant engine after each turn-ending
+message is durable and admitted by the same coordinator under its own Quiet and
+deadline policy; the voice never depends on the model provider. The
+[module guide](../modules/companions/README.md#browser-speech)
 describes final policy checks, cancellation and uncertain receipts. This adds no
 service or transport. The architecture diagram retains its dated physical-device
 view; companion cards and speech use its existing core/bus/module-store/frontend
