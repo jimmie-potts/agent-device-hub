@@ -10,7 +10,8 @@ import {fullDisk, InProcessBus, type Participant, type ModuleContext, type Reque
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
-import {DECLINED, REFUSED} from '../src/assistant/engine.js';
+import {CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
+import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import {FIXTURE_TEXT} from '../src/assistant/tools.js';
@@ -223,6 +224,39 @@ void test('provider refusal, truncation, faults and oversized text end the task 
     if (text !== undefined) assert.equal((await page(w)).messages.at(-1)?.text, text);
     await w.restart(); assert.equal(status(w), 'failed'); assert.equal(provider.calls(), 1);
   }
+});
+
+void test('each model call carries the bunny persona and the owner\'s active preferences as they are now, and nothing else about the owner', async context => {
+  const provider = counted((_input, turn) => turn === 1 ? call('ask_owner', {text: 'Which detail?'}) : reply('Done'));
+  const w = await world(context, {provider});
+  const database = w.host().moduleDatabase() ?? assert.fail('open database');
+  const preferences = new PreferenceStore(database), knowledge = new PreferenceStore(database, 'knowledge');
+  const change = (store: PreferenceStore, action: Record<string, unknown>) => {store.apply({expectedRevision: store.revision(), ...action} as never, Date.now()); store.bump();};
+  change(preferences, {action: 'create', title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA'});
+  change(preferences, {action: 'create', title: 'Lights', text: 'PRIVATE-PREFERENCE-LIGHTS'});
+  change(preferences, {action: 'create', title: 'Old', text: 'PRIVATE-PREFERENCE-OLD'});
+  change(preferences, {action: 'set-active', id: preferences.entries()[2]?.id, active: false});
+  change(knowledge, {action: 'create', title: 'Neighbour', text: 'PRIVATE-KNOWLEDGE-NEIGHBOUR'});
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-PROMPT');
+  await until(() => task(w)?.status === 'waiting');
+  // Between the two calls the owner edits one preference and stops using another: the next call reads the current records.
+  change(preferences, {action: 'edit', id: preferences.entries()[0]?.id, title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA-EDITED'});
+  change(preferences, {action: 'set-active', id: preferences.entries()[1]?.id, active: false});
+  await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-ANSWER', true);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(provider.calls(), 2);
+  assert.deepEqual(provider.inputs[0]?.context, {persona: {name: 'B.U.N.N.Y.', character: 'Helpful generalist. Be clear about what is known and unknown.'},
+    preferences: [{title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA'}, {title: 'Lights', text: 'PRIVATE-PREFERENCE-LIGHTS'}]});
+  assert.deepEqual(provider.inputs[1]?.context.preferences, [{title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA-EDITED'}]);
+  const seen = JSON.stringify(provider.inputs.map(turn => turn.context));
+  assert.equal(seen.includes('PRIVATE-PREFERENCE-OLD'), false); assert.equal(seen.includes('PRIVATE-KNOWLEDGE'), false); assert.equal(seen.includes('PRIVATE-SYNTHETIC'), false);
+  for (const record of [w.module().inspectAssistant(), w.host().logs, w.spans.spans, w.store().task(task(w)?.taskId ?? '')]) assert.equal(JSON.stringify(record).includes('PRIVATE-PREFERENCE'), false);
+  // Over the bound the call is refused before it leaves, the task ends with the capacity code and the owner reads why.
+  for (let i = 0; i < 5; i += 1) change(preferences, {action: 'create', title: `Long ${String(i)}`, text: 'p'.repeat(4000)});
+  await input(w.core, w.module(), 'Again');
+  await until(() => status(w) === 'failed');
+  assert.equal(task(w)?.code, 'capacity'); assert.equal(provider.calls(), 2);
+  assert.equal((await page(w)).messages.at(-1)?.text, CONTEXT_TOO_LARGE);
 });
 
 void test('Reachy and MicroDuck keep the synthetic provider while bunny uses the configured one', async context => {
