@@ -520,6 +520,16 @@ issue state. It writes no file. Besides the changed-file lint below, the only
 process it starts is `gh auth token`, and only when neither `GH_TOKEN` nor
 `GITHUB_TOKEN` is set.
 
+Policy freshness first checks that the recorded policy revision is an ancestor
+of the candidate's base. It then reads `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md`
+through GitHub's contents API at those exact commit SHAs and compares each
+file's blob SHA. Unrelated changes do not affect this check, including
+comparisons at or beyond GitHub's 300-file response limit. A changed policy
+file leaves review unresolved. A missing or inaccessible file, or a response
+without the expected file type, path and valid blob SHA, is a read failure.
+Neither outcome can satisfy review. Comparison-limit protections for source
+identity, diff reassessment and CI selection still apply.
+
 When using this optional tool, run it from a checkout of the PR head: the changed-file
 lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
 TypeScript files there (#1139). A checkout at another revision, or with local
