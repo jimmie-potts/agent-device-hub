@@ -5,16 +5,22 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
-export const GRAPH_VERSION = 'synthetic-1';
-export const LIMITS = Object.freeze({modelCalls: 4, toolCalls: 2, questions: 2, activeMs: 120_000, modelMs: 30_000,
-  toolMs: 5000, controlMs: 5000, inputBytes: 4096, toolBytes: 8192, stateBytes: 32768, pageBytes: 65536, units: 8192, callUnits: 2048});
-export type Question = {id: string; text: string; answer: string | null};
+import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
+import type {TranscriptItem} from './provider.js';
+
+/** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
+export const GRAPH_VERSION = 'conversation-1';
+import {LIMITS} from './limits.js';
+export {LIMITS} from './limits.js';
+/** A proposed command awaiting the owner's approval: the exact family, target and value, and the synced Hub-mode revision seen when proposed. */
+export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number};
+export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; call: string; proposal: Proposal | null};
 export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null};
+  traceparent: string | null; transcript: TranscriptItem[]};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool';
-  status: 'admitted' | 'succeeded' | 'uncertain'; result: string | null; units: number | null; reservedUnits: number;
+  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
@@ -22,9 +28,13 @@ export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
 export type ConversationMessage = {seq: number; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
+/** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
+export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
 const parsed = <T>(row: RecordRow | undefined): T | undefined => row === undefined ? undefined : JSON.parse(row.record) as T;
 export const terminal = (status: AssistantStatus): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
+/** Whether a call's fate is unknown: admitted with no answer, or answered after its wait ended. A failed call is settled. */
+export const unresolved = (calls: readonly Call[]): boolean => calls.some(call => call.status === 'admitted' || call.status === 'uncertain');
 
 /** All writes are synchronous and are called inside the owning outbox's transaction when they change task state. */
 export class AssistantStore {
@@ -59,7 +69,8 @@ export class AssistantStore {
     const conversationId = this.conversation(profile) ?? randomUUID();
     this.database.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES (?,?)').run(profile, conversationId);
     return {version: 1, graphVersion: GRAPH_VERSION, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
-      generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null};
+      generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
+      transcript: [{role: 'owner', text: prompt}]};
   }
   message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number): void {
     if (this.messages.removal(id) !== undefined) return;

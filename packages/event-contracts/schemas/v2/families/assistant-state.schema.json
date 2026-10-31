@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/assistant-state/2.0",
+  "description": "State: the companions module's public assistant summary (Hub #499, #46): activation, availability, the configured provider, model and allowed tool names, and bounded task summaries. It never carries a key, prompt, answer or transcript text.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -8,6 +9,9 @@
     "revision",
     "enabled",
     "available",
+    "provider",
+    "model",
+    "tools",
     "tasks"
   ],
   "properties": {
@@ -22,6 +26,25 @@
     },
     "available": {
       "type": "boolean"
+    },
+    "provider": {
+      "enum": [
+        "synthetic",
+        "anthropic"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      }
     },
     "tasks": {
       "type": "array",

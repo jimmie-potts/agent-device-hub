@@ -1,7 +1,8 @@
 # Companions
 
-One optional, statically shipped module owns fixed-text Reachy cards, synthetic
-assistant tasks, explicit private preferences and companion knowledge. Reachy consumes
+One optional, statically shipped module owns fixed-text Reachy cards, the
+B.U.N.N.Y. conversation and its assistant tasks, explicit private preferences
+and companion knowledge. Reachy consumes
 qualified first-live coding opportunities from the authoritative core and defaults
 to disabled. Enable it on its Reachy page in the existing React dashboard; category mute and a one-hour
 social snooze use the existing tracked command path. Settings completion means
@@ -173,69 +174,155 @@ Run the fixed-corpus `suggestions.test.js` after build and the existing
 connection failure, keyboard, narrow layout and axe. Source evidence establishes
 neither installed-client usefulness nor physical acceptance.
 
-## Synthetic assistant tasks
+## Conversation and assistant tasks
 
-The **Synthetic tasks** page adds one default-off text workflow beside Reachy.
-It uses a fake model and an immutable read fixture. No provider account, paid
-call, worker dispatch, speech or physical device is involved. B.U.N.N.Y., Reachy
-and MicroDuck keep separate conversation histories, with one unfinished task
-across all three profiles and one graph invocation at a time.
+The **Conversation** page (`assistant`) is B.U.N.N.Y.'s text conversation beside
+Reachy (Hub #46). The `bunny` profile talks to the provider the private section
+selects; Reachy and MicroDuck keep the labelled synthetic provider, which makes
+no network call and no paid usage. Activation defaults to off. The three
+profiles keep separate conversation histories, with one unfinished task across
+all of them and one graph invocation at a time.
 
 ```mermaid
 flowchart LR
   Page[Authenticated React page] -->|bounded private upload| Gateway[Existing gateway]
   Gateway -->|opaque input reference| Core[Core tracked dispatcher]
   Core -->|assistant-input / assistant-control| Module[Companions task owner]
-  Module --> Graph[Interpret → clarification → read fixture → compose]
+  Module --> Graph[Turn → question | read tool | proposal → approval → act → turn]
+  Graph -->|one request per model call| Provider[Synthetic script or Anthropic Messages API]
+  Graph -->|approved mode-set| Dispatch[assistant-dispatch → core dispatcher → mode owner]
   Graph --> DB[SDK-owned SQLite connection]
-  Module --> DB
   Module --> Outbox[Shared SDK outbox]
   Outbox -->|small assistant-state / control outcome| Core
   Page -->|authenticated conversation pages| Module
 ```
 
+### Section, provider and permitted tools
+
+The module's section of the private `runtime.json` is required for it to start,
+as for every configured module; an empty section keeps every default:
+
+```json
+{"companions": {"assistant": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium",
+  "tools": ["read_sessions", "set_mode"]}, "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
+```
+
+- `assistant.provider` is `synthetic` (the default) or `anthropic`. The Anthropic
+  provider needs `secrets.anthropic-api-key`, the owner-only file holding the
+  API key. The module reads it once at start, holds it only in the provider,
+  sends it only as the request header and never stores, publishes or logs it;
+  the runtime redacts it from its own records. `model` defaults to
+  `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
+  synthetic provider takes neither.
+- `assistant.tools` lists the permitted tools by name, each once:
+  `read_sessions` and `set_mode`. The engine builds the model's tool
+  definitions from the list at start and checks membership again when a call
+  executes, so a changed section cannot widen an effect. The built-in
+  `ask_owner` is always available; the synthetic fixture read is never listed.
+- Requests go to `https://api.anthropic.com/v1/messages` through the module's
+  own fetch with API version `2026-10-21`, carrying the fixed instructions, the
+  current Hub mode, the task's transcript, the tool definitions marked strict,
+  `output_config.effort`, one tool call per turn and the model's default
+  thinking. There is no retry and no fallback model: a refusal ends the task
+  `forbidden`, an error status maps once to `unauthenticated`, `forbidden`,
+  `not-found`, `capacity` (a rate limit), `invalid-request`, `too-large` or
+  `unavailable`, an unreadable answer to `invalid-message`, and output cut at the
+  provider's limit to `capacity`. A lost answer or a transport error leaves the
+  call uncertain. Usage is the sum of the tokens the provider reports (input,
+  output and cache tokens); unreported usage stays unknown. The owner's
+  allowance for live use is a monthly spend limit on the dedicated Console
+  workspace, a precondition of installation rather than something the module
+  enforces.
+- The model's own content blocks, thinking blocks included, are kept with the
+  assistant item in the private transcript and replayed exactly as received,
+  which the API requires for the turn whose tool call awaits its result. One
+  tool call per turn is acted on; a further call in one answer is dropped with
+  its block.
+- The prompt holds only the owner's typed text, the tool definitions and
+  results, the fixed instructions and the current Hub mode. No preference,
+  knowledge entry, other task or household record enters it.
+
+### Turns, tools and approval
+
+A task runs turn → (question | read tool | proposal → approval → act) → turn
+until the model answers without a tool call. `ask_owner` pauses the task with a
+clarification question. `read_sessions` summarizes the core's synced session
+records (provider, client, label or title, activity, attention, freshness and
+evidence age; at most 16 sessions and 4 KiB) and needs no approval; an unsynced
+copy says so instead of pretending the list is current. `set_mode` is a
+proposal: the task pauses with an approval question naming the family
+(`mode-set`), the target (`hub`) and the mode, and records the synced Hub-mode
+revision seen when proposed; while the module's copy of the core is not synced,
+or when the model names a value that is not a mode, the call is refused to the
+model and nothing is proposed. Only the literal answers `approve` and `decline`
+are accepted for it. Approval sends one `assistant-dispatch` command to the core,
+which forwards an allowlisted `mode-set` through its tracked dispatcher as an
+operation requested by this module, with the recorded revision as
+`expectedRevision`. The dispatcher's answer becomes the tool result,
+`accepted: …` or `refused: <code>` such as `revision-conflict` after the mode
+changed by hand; the operation's outcome, inbox item and history belong to the
+core, and the conversation never claims a device effect. The dispatcher's own
+uncertainty, a reply deadline that passed while the mode owner held the
+command, reaches the module as `uncertain-result` and leaves the call
+uncertain like a lost answer. A decline sends
+nothing. A tool the section does not list, or that the model names wrongly,
+returns a refusal to the model and has no effect. An uncertain dispatch answer
+leaves the call uncertain and the task refuses resume, as any uncertain call
+does.
+
+The synthetic provider is a fixed script behind the same contract: it proposes
+the mode the message names when `set_mode` is allowed, otherwise asks its fixed
+clarification question; after the answer it reads `read_sessions` when allowed
+or its immutable fixture; then it composes a result from the evidence it was
+given. The `assistant-task` and `assistant-mode-approval` catalog scenarios and
+the companions browser journey walk those paths.
+
+### Identities, staging and bounds
+
 `assistant-input/2.0` carries only a request ID and opaque input reference.
 Private staging binds the text to that request, profile, expected state revision
 and, for an answer, the task and question. Admission checks the binding again.
 A five-second staging deadline and eight-input bound apply before admission;
-admitted text and execution evidence are retained privately. Public state and
-core operation records contain identifiers, status and counters, never text.
-Existing read-scoped clients can read the private conversation route; it does
-not grant control or add a conversation MCP tool.
+admitted text and execution evidence are retained privately. Public state carries
+`provider`, `model` and the allowed tool names, plus task summaries with
+identifiers, status and counters, never a key, prompt or transcript. Existing
+read-scoped clients can read the private conversation route; it does not grant
+control or add a conversation MCP tool.
 
 A conversation ID is stable per profile; each task has its own ID. LangGraph's
 `thread_id` is the task ID. The saved question ID survives restart, while each
-explicit activation creates a new run ID. Call receipts use the task ID and
-logical step ordinal, so a new run cannot repeat a saved effect. Future workspace
-records can reference `{owner: "companions", conversationId, taskId, questionId?}`.
-The model seam is one text function. Coding-worker dispatch has a separate owner
-and is not a model adapter here.
+explicit activation creates a new run ID. Call receipts use the task ID and the
+graph's logical step, so a new run cannot repeat a saved effect, and the
+transcript item a call produced is found again by that effect id. Future
+workspace records can reference `{owner: "companions", conversationId, taskId,
+questionId?}`. Coding-worker dispatch has a separate owner and is not a model
+provider here.
 
 The SDK owns the only SQLite connection. Domain records, private messages,
 questions/answers, runs and call receipts are inspectable in `assistant_*`
-tables beside the existing Reachy records. One revision sequence covers all companion
-state families; one SDK sync owner serves their combined or separate snapshots.
-Domain changes and their outcomes commit in the shared outbox transaction.
-The module-local saver pins LangGraph 1.5.0 and checkpoint 1.2.0, serializes
-checkpoints and pending writes, and uses synchronous graph durability. Checkpoint
-and application projections are separate commits: startup reads the checkpoint
-to repair that gap without invoking the graph.
-
-A task runs `interpret → clarify → read → compose`. The clarification node does
-no external work before interrupting. A saved answer can be explicitly resumed
-after a crash between answer admission and continuation. Startup and outbox
-republication never activate work. A running task is recovered as paused, waiting,
-completed or uncertain from its durable evidence. A receipt without a result
-keeps its reservation and cannot be retried automatically. Unsupported graph
-versions retain readable history and refuse resume. There is no execution queue.
+tables beside the existing Reachy records. One revision sequence covers all
+companion state families; one SDK sync owner serves their combined or separate
+snapshots. Domain changes and their outcomes commit in the shared outbox
+transaction. The module-local saver pins LangGraph 1.5.0 and checkpoint 1.2.0,
+serializes checkpoints and pending writes, and uses synchronous graph
+durability. Checkpoint and application projections are separate commits:
+startup reads the checkpoint to repair that gap without invoking the graph.
+Interrupt nodes do no external work before interrupting. A saved answer or
+decision can be explicitly resumed after a crash between its admission and
+continuation. Startup and outbox republication never activate work. A running
+task is recovered as paused, waiting, completed, failed or uncertain from its
+durable evidence. A receipt without a result keeps its reservation and cannot
+be retried automatically; a call the provider answered definitively is failed
+with its code. Tasks saved by the earlier fixed graph (`synthetic-1`) retain
+readable history and refuse resume. There is no execution queue.
 
 | Bound | Per task or request |
 | --- | --- |
-| Calls and questions | 4 model calls, 2 read calls, 2 questions |
-| Active time | 120 seconds; human waits and downtime excluded |
-| Deadlines | Model 30 seconds, read 5 seconds, control admission 5 seconds |
-| Text and working state | Input 4 KiB, result 8 KiB, serialized graph/pending writes 32 KiB |
-| Usage | 8,192 fake units reserved before dispatch; paid cost 0 |
+| Calls and questions | 6 model calls, 4 tool calls, 2 questions |
+| Active time | 300 seconds; human waits and downtime excluded |
+| Deadlines | Model 60 seconds, tool 8 seconds, control admission 5 seconds |
+| Text and working state | Input 4 KiB, result 8 KiB, a model reply with its blocks 16 KiB, transcript and serialized graph/pending writes 32 KiB |
+| Usage | 16,384 units reserved before each model call, 65,536 per task; a unit is one provider token or one fake synthetic unit |
 | Private read | At most 16 messages and 64 KiB per page, advancing cursor |
 
 Unknown usage stays unknown. A crash or timeout keeps the call's reserved time
@@ -248,26 +335,37 @@ that local control was saved; task completion is reported separately.
 The private content route is
 `/modules/companions/content/conversation?profile=bunny&after=0`; profiles are
 `bunny`, `reachy` and `microduck`. The first page includes `currentTask` with its
-saved question and answer, subsequent pages use `currentTask: null`. Text is
-retained through reload and private history remains visible during a dashboard
-reconnect. Unsubmitted drafts remain in page memory only.
+saved question, its kind (`clarification` or `approval`), its proposal and its
+answer; subsequent pages use `currentTask: null`. Text is retained through
+reload and private history remains visible during a dashboard reconnect.
+Unsubmitted drafts remain in page memory only.
 
 Diagnostics use the SDK's log, trace, clock, scheduler and abort signal and the
 runtime's host adapter. Profile 1.6 registers assistant run/model/tool spans and
 task/run/effect identifiers. Runs end at human waits or shutdown; a later run
-links the previous run. No prompt, answer, tool body or raw exception is logged.
-No LangSmith exporter is configured. Global LangChain/LangSmith tracing or
-verbose flags make this synthetic executor unavailable, preventing implicit
-content export. Reachy's fixed-text policy remains independent.
+links the previous run. No prompt, answer, tool body, key or raw exception is
+logged. No LangSmith exporter is configured. Global LangChain/LangSmith tracing
+or verbose flags make the executor unavailable, preventing implicit content
+export. Reachy's fixed-text policy remains independent.
+
+### Checks
 
 Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
-outbox replay and private pagination. The `assistant-task` runtime catalog case
-runs over both transports and in a disposable runtime. The existing companions
-browser check exercises the real authenticated page with reload/restart,
-keyboard, axe, disconnection and reader refusals while preserving Reachy.
-These are synthetic source checks. They establish neither live-model usefulness
-nor installed or physical acceptance.
+outbox replay and private pagination, plus `assistant.test.js` (approval,
+decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
+truncation and fault codes, profile isolation), `anthropic.test.js` (the request
+shape, tool-use parsing, usage, error mapping and abort against a fake
+transport) and `configure.test.js` (the section and a keyed provider through
+the harness's secret). `node --test apps/runtime/dist/tests/assistant-dispatch.test.js`
+checks the core's admission. The `assistant-task` and `assistant-mode-approval`
+runtime catalog cases run over both transports and in a disposable runtime. The
+existing companions browser check exercises the real authenticated page with
+approved and declined proposals across reload, a clarification with the read
+tool, cancellation, keyboard, axe, disconnection and reader refusals while
+preserving Reachy. These are synthetic source checks. They establish neither
+live-model usefulness nor installed or physical acceptance; live provider use is
+the installed acceptance of #508 under the owner's allowance.
 
 ## Explicit preferences
 

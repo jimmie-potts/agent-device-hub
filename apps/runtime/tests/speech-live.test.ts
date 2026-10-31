@@ -19,7 +19,7 @@ it('live companion admissions use one real gateway endpoint and preserve visual 
   let handle: CoreHandle | undefined;
   const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
   const producer = fixture('speech-lifecycle');
-  const config = await edgeConfig(t, [], {browserAccess: 'trusted-loopback'});
+  const config = await edgeConfig(t, [], {browserAccess: 'trusted-loopback', modules: {companions: {}}});
   const {runtime} = await run(t, {modules: [core, companions, producer], configFile: config.config,
     edge: {schemas: {}}, clock: {now: clock.now}, scheduler: clock.scheduler});
   const signin = await fetch(`${runtime.url}/api/v2/browser/session`, {method: 'POST', headers: {origin: runtime.url, 'bunny-request': '1', 'content-type': 'application/json'}, body: '{}'});

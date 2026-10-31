@@ -26,7 +26,7 @@ void test('the module refuses speech without its private qualification receipt w
   const bus = new InProcessBus(), core = bus.connect('bunny/core'), browser = bus.connect('bunny/parts/dashboard');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   let module = createCompanionsModule(), privateFolder = '';
-  const makeHost = () => {const current = module; return new ModuleHarness({...current, start: context => {privateFolder = context.files(); return current.start(context);}}, {bus, stateDir: directory});};
+  const makeHost = () => {const current = module; return new ModuleHarness({...current, start: context => {privateFolder = context.files(); return current.start(context);}}, {bus, stateDir: directory, section: {}});};
   let host = makeHost();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), browser.close()]); await rm(directory, {recursive: true, force: true});});
   await host.start();

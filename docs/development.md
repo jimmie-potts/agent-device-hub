@@ -1933,12 +1933,32 @@ dashboard browser suite. Existing companion/runtime/dashboard test discovery and
 App verification CI cover these paths; no new CI job is required. Use private
 disposable synthetic state, never installed voices, conversations or robot output.
 
+The B.U.N.N.Y. conversation (#46) adds `assistant.test.js`, `anthropic.test.js`
+and `configure.test.js` to the companions suite: the turn loop with approval,
+decline, stale approval, uncertain dispatch, allowlist refusal and provider
+refusal/truncation/fault codes; the Anthropic adapter's request shape,
+tool-use parsing, usage, error mapping and abort against a fake transport; and
+the section with a keyed provider through the harness's secret. After the root
+build run `node --test modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/anthropic.test.js modules/companions/dist/tests/configure.test.js`,
+`node --test apps/runtime/dist/tests/assistant-dispatch.test.js` for the core's
+admission of the module's `assistant-dispatch` command, `node --test packages/event-contracts/tests/assistant.test.mjs`
+for the dispatch family and the state's provider, model and tool fields, the
+`assistant-task` and `assistant-mode-approval` catalog scenarios over both
+transports and in a disposable runtime, and `npm run test:companions:browser`
+for the conversation page's approved and declined proposals across reload,
+clarification with the read tool, cancellation, keyboard, narrow viewport and
+axe. The companions module now takes a section (an empty one keeps the synthetic
+default), so harnesses that start it pass one. Existing core, runtime and App
+verification CI discover these checks; no new job is needed. They use the
+synthetic provider and fake transports only: no live provider, key, installed
+client or device is exercised.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text`, `assistant-task`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
+Run the `reachy-text`, `assistant-task`, `assistant-mode-approval`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 
