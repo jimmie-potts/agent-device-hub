@@ -1,13 +1,16 @@
 .home-layout-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-.home-layout-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:var(--space-m,16px);align-items:start}
-.home-layout-card{min-width:0;grid-column:span 3}
-.home-layout-card.home-size-small{grid-column:span 2}
-.home-layout-card.home-size-large{grid-column:span 6}
+/* Wrap in saved order and share each row's spare width instead of reserving empty grid slots. */
+.home-layout-grid{display:flex;flex-wrap:wrap;gap:var(--space-m,16px);align-items:flex-start}
+.home-layout-card{min-width:0;flex:2 1 340px}
+.home-layout-card.home-size-small{flex:1 1 260px}
+.home-layout-card.home-size-large{flex:1 0 100%}
 .home-card-content{min-width:0}
 .home-card-content>.widget,.home-card-content>article{margin:0}
 .home-card-content .lighting-grid,.home-card-content .music-grid{display:block}
 .home-card-content .lighting-workspace,.home-card-content .music-workspace{margin:0;padding:0}
-.home-card-content .music-card,.home-card-content .light-card{width:100%;min-width:0}
+.home-card-content .music-card,.home-card-content .light-card{width:100%;min-width:0;max-width:none}
+/* Agent tiles must respond to their Home card's width, not only the viewport. */
+.home-card-content .agent-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
 .home-edit-toolbar,.home-card-picker{padding:var(--space-m,16px);margin-bottom:var(--space-m,16px);background:var(--panel);border:1px solid var(--edge-dense);border-radius:var(--radius)}
 .home-edit-toolbar,.home-card-picker>header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .home-card-picker>header h2{margin:0}
@@ -26,7 +29,6 @@
 .home-hidden{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:16px}
 .home-layout-feedback:empty{display:none}
 .home-layout-feedback{margin-top:12px}
-.home-phone .home-layout-grid{grid-template-columns:minmax(0,1fr);max-width:390px;margin-inline:auto}
-.home-phone .home-layout-card{grid-column:span 1}
-@media(max-width:900px){.home-layout-card.home-size-small{grid-column:span 3}}
-@media(max-width:600px){.home-layout-grid,.home-catalog{grid-template-columns:minmax(0,1fr)}.home-layout-card,.home-layout-card.home-size-small,.home-layout-card.home-size-large{grid-column:span 1}.home-card-editor button{min-height:44px}.home-card-editor select{font-size:16px}}
+.home-phone .home-layout-grid{max-width:390px;margin-inline:auto}
+.home-phone .home-layout-card{flex-basis:100%}
+@media(max-width:600px){.home-catalog{grid-template-columns:minmax(0,1fr)}.home-layout-card,.home-layout-card.home-size-small,.home-layout-card.home-size-large{flex-basis:100%}.home-card-editor button{min-height:44px}.home-card-editor select{font-size:16px}}
