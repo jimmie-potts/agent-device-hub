@@ -193,7 +193,7 @@ try {
     await save('Save routine');
     await routines().getByRole('heading', {name: 'Weekday desk Enabled', exact: true}).waitFor();
     await routines().getByText(/color hue 120 \/ saturation 50$/).waitFor();
-    await save('Run routine Weekday desk now');
+    await save('Run now: Weekday desk');
     const ran = attempts().getByRole('listitem').filter({hasText: 'Weekday desk'}).filter({hasText: 'Action 1'}).first();
     await ran.waitFor();
     assert.match(await ran.innerText(), /Action 1 · power-set/);
@@ -201,6 +201,8 @@ try {
     const routineWrites = writes.length;
     world.dropDashboardStreams(); await feed(page, 'connected'); await pause(300);
     assert.equal(writes.length, routineWrites, 'routines are not resent or run after reconnect');
+    const labelViolations = (await new AxeBuilder({page}).include('main').withRules(['label-content-name-mismatch']).analyze()).violations;
+    assert.deepEqual(labelViolations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
     const routineViolations = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
     assert.deepEqual(routineViolations.map(item => item.id), []);
     await save('Disable routine Weekday desk');

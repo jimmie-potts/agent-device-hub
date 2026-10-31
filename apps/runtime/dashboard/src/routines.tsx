@@ -205,7 +205,7 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
           opener.current=event.currentTarget;setEditing(saved.id);setDraft({name:saved.name,days:[...saved.days],time:saved.time,actions:routineInput(saved,false).actions});setOpen(true);nameInput.current?.focus();
         }}>Edit</button>
           <button type="button" disabled={!available} aria-label={`${saved.enabled?'Disable':'Enable'} routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/${saved.enabled?'disable':'enable'}`,'POST',{});}}>{saved.enabled?'Disable':'Enable'}</button>
-          <button type="button" className="secondary" disabled={!available} aria-label={`Run routine ${saved.name} now`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run now</button>
+          <button type="button" className="secondary" disabled={!available} aria-label={`Run now: ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run now</button>
           <button type="button" className="secondary" disabled={!available} aria-label={`Delete routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}`,'DELETE',undefined,()=>{if(editing===saved.id){opener.current=newButton.current;reset();}});}}>Delete</button></div>
       </article>)}
       <details className="automation-help"><summary>How routines work</summary><p>The Hub must be running and each device reachable. Missed runs are skipped. Actions run in order; a device outside its required mode is skipped and logged. Saving or enabling runs nothing; Run now runs one occurrence.</p></details>
