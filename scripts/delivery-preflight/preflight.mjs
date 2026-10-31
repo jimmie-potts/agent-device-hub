@@ -363,12 +363,22 @@ async function checkPolicy(ctx, gate, value) {
       gate.unresolved(`policy revision ${short(component.revision)} is not an ancestor of the base ${short(ctx.base)}`);
       continue;
     }
-    const changed = (compare.value.files || []).map(file => file.filename);
-    if (changed.length >= COMPARE_FILE_LIMIT) {
-      gate.unresolved(`cannot confirm policy freshness: at least ${COMPARE_FILE_LIMIT} files changed since ${short(component.revision)}`);
-      continue;
+    const policy = [];
+    for (const file of POLICY_PATHS) {
+      const identities = [];
+      for (const revision of [component.revision, ctx.base]) {
+        const identity = await ctx.read(gate, async () => {
+          const request = `/repos/${ctx.repo}/contents/${file}?ref=${revision}`;
+          const data = await ctx.github.get(request);
+          if (!data || data.type !== 'file' || data.path !== file || typeof data.sha !== 'string' || !/^[0-9a-f]{40}$/.test(data.sha)) {
+            throw new ReadFailure(`GET ${request}`, 'invalid policy file identity');
+          }
+          return data.sha;
+        });
+        if (identity.ok) identities.push(identity.value);
+      }
+      if (identities.length === 2 && identities[0] !== identities[1]) policy.push(file);
     }
-    const policy = changed.filter(file => POLICY_PATHS.includes(file));
     if (policy.length) gate.unresolved(`policy changed after review: ${policy.join(', ')} changed since ${short(component.revision)}`);
   }
 }

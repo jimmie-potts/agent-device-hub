@@ -224,6 +224,11 @@ export function cleanWorld() {
   };
   world.compares[`${BASE}...${HEAD}`] = { status: 'ahead', merge_base_commit: { sha: BASE }, files: world.files };
   world.compares[`${POLICY}...${BASE}`] = { status: 'ahead', merge_base_commit: { sha: POLICY }, files: [{ filename: 'README.md', status: 'modified' }] };
+  for (const revision of [POLICY, BASE, NEWER_MAIN]) {
+    for (const file of ['AGENTS.md', 'CLAUDE.md', 'docs/sdlc.md']) {
+      world.blobs[`${revision}:${file}`] = Buffer.from(`Synthetic policy for ${file}\n`);
+    }
+  }
   return publishSelection(world, HEAD);
 }
 
@@ -312,7 +317,7 @@ export function fakeTransport(world) {
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/contents\/(.+)$/))) {
       const blob = world.blobs[`${params.get('ref')}:${m[1]}`];
       if (!blob) return { status: 404, json: { message: 'Not Found' } };
-      return { status: 200, json: { type: 'file', sha: sha256(blob).slice(0, 40), size: blob.length, encoding: 'none', content: '' } };
+      return { status: 200, json: { type: 'file', path: m[1], sha: sha256(blob).slice(0, 40), size: blob.length, encoding: 'none', content: '' } };
     }
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/git\/blobs\/([0-9a-f]+)$/))) {
       const blob = Object.values(world.blobs).find(data => sha256(data).slice(0, 40) === m[1]);

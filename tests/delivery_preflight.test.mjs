@@ -505,6 +505,92 @@ test('identity catches drafts, closed PRs, conflicts and closing keywords', asyn
 
 // ---- Independent review (agent-skills#54 retained returns) ----
 
+for (const count of [299, 300, 306]) {
+  test(`policy freshness: unchanged files satisfy review with ${count} unrelated changed paths`, async () => {
+    const world = cleanWorld();
+    world.files = world.files.slice(0, 1);
+    world.compares[`${BASE}...${HEAD}`].files = world.files;
+    // GitHub returns at most 300 paths, even when the real comparison is larger.
+    world.compares[`${POLICY}...${BASE}`].files = Array.from(
+      { length: Math.min(count, 300) }, (_, i) => ({ filename: `unrelated/${i}.mjs`, status: 'modified' }),
+    );
+    const report = await preflight(world);
+    assert.equal(gate(report, 'review').status, 'satisfied', JSON.stringify(gate(report, 'review').reasons));
+    assert.equal(report.result, 'satisfied');
+    assert.equal(report.exitCode, 0);
+    const policyReads = world.requests.filter(request => /\/contents\/(AGENTS\.md|CLAUDE\.md|docs\/sdlc\.md)\?/.test(request.url));
+    assert.equal(policyReads.length, 6);
+    assert.deepEqual(new Set(policyReads.map(request => new URL(request.url).searchParams.get('ref'))), new Set([POLICY, BASE]));
+    assert.ok(policyReads.every(request => request.method === 'GET' && request.body === undefined));
+  });
+}
+
+for (const file of ['AGENTS.md', 'CLAUDE.md', 'docs/sdlc.md']) {
+  test(`policy freshness: changed ${file} is unresolved even outside the comparison file list`, async () => {
+    const world = cleanWorld();
+    world.compares[`${POLICY}...${BASE}`].files = Array.from(
+      { length: 300 }, (_, i) => ({ filename: `unrelated/${i}.mjs`, status: 'modified' }),
+    );
+    world.blobs[`${BASE}:${file}`] = Buffer.from('Changed synthetic policy\n');
+    const report = await preflight(world);
+    assertUnresolved(report, 'review', /policy changed after review/);
+    assert.ok(gate(report, 'review').reasons.some(reason => reason.includes(file)));
+  });
+
+  for (const [label, revision] of [['added', POLICY], ['removed', BASE]]) {
+    test(`policy freshness: ${label} ${file} is a read failure`, async () => {
+      const world = cleanWorld();
+      delete world.blobs[`${revision}:${file}`];
+      const report = await preflight(world);
+      assert.equal(gate(report, 'review').status, 'read-failure');
+      assert.equal(report.exitCode, 2);
+      assert.ok(report.readFailures.some(failure => failure.what.includes(`${file}?ref=${revision}`) && /HTTP 404/.test(failure.detail)));
+    });
+  }
+}
+
+test('policy freshness: inaccessible file evidence fails without satisfying unrelated gates', async () => {
+  const world = cleanWorld();
+  world.failures = [{ match: /\/contents\/CLAUDE\.md\?/, status: 403 }];
+  world.reviews = [{ state: 'CHANGES_REQUESTED', user: { login: OWNER }, html_url: 'https://example.invalid/review' }];
+  const report = await preflight(world);
+  assert.equal(gate(report, 'review').status, 'read-failure');
+  assert.equal(gate(report, 'feedback').status, 'unresolved');
+  assert.equal(report.exitCode, 2);
+});
+
+for (const [label, evidence] of [
+  ['missing identity', { type: 'file', path: 'AGENTS.md' }],
+  ['invalid identity', { type: 'file', path: 'AGENTS.md', sha: 'main' }],
+  ['non-string identity', { type: 'file', path: 'AGENTS.md', sha: Array(40).fill('a') }],
+  ['wrong path', { type: 'file', path: 'README.md', sha: 'a'.repeat(40) }],
+  ['directory', { type: 'dir', path: 'AGENTS.md', sha: 'a'.repeat(40) }],
+  ['empty response', null],
+  ['directory listing', []],
+]) {
+  test(`policy freshness: ${label} cannot satisfy review`, async () => {
+    const world = cleanWorld();
+    const transport = fakeTransport(world);
+    const report = await runPreflight({
+      github: createReadOnlyClient(async request => {
+        const response = await transport(request);
+        if (request.url.endsWith(`/contents/AGENTS.md?ref=${POLICY}`)) response.json = evidence;
+        return response;
+      }),
+      declaration: declaration(), now: () => READ_AT, lint: cleanLint,
+    });
+    assert.equal(gate(report, 'review').status, 'read-failure');
+    assert.equal(report.exitCode, 2);
+    assert.ok(report.readFailures.some(failure => /invalid policy file identity/.test(failure.detail)));
+  });
+}
+
+test('policy freshness: a satisfied policy check keeps other review requirements unresolved', async () => {
+  const world = cleanWorld();
+  world.issues[`${REPO}#${ISSUE}`].lastEditedAt = '2026-09-27T07:30:00Z';
+  assertUnresolved(await preflight(world), 'review', /requirements changed after review/);
+});
+
 const reviewCases = [
   ['a stale review of an earlier head', world => { world.comments = [comment(reviewReport({ head: OLD_HEAD }))]; }, /stale: final 1 reviewed head [0-9a-f]{12}/],
   ['a partial specification return', world => {
@@ -553,6 +639,7 @@ const reviewCases = [
   ['requirements edited after the review', world => { world.issues[`${REPO}#${ISSUE}`].lastEditedAt = '2026-09-27T07:30:00Z'; }, /requirements changed after review/],
   ['policy sources changed after the reviewed policy', world => {
     world.compares[`${POLICY}...${BASE}`].files = [{ filename: 'docs/sdlc.md', status: 'modified' }];
+    world.blobs[`${BASE}:docs/sdlc.md`] = Buffer.from('Changed synthetic policy\n');
   }, /policy changed after review: docs\/sdlc\.md/],
   ['a policy revision that is not an ancestor of the base', world => { world.compares[`${POLICY}...${BASE}`].status = 'diverged'; }, /policy revision [0-9a-f]{12} is not an ancestor of the base/],
   ['a review for another work item', world => { world.comments = [comment(reviewReport({ work: `${REPO}#1` }))]; }, /names work/],
