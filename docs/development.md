@@ -620,9 +620,11 @@ configuration-isolation behavior. This temporary bootstrap copy is recorded;
 ## Agent setup
 
 Use the reviewed [agent-skills catalog](https://github.com/jimmie-potts/agent-skills)
-outside this checkout. Available workflow aids include code-review, tdd,
-grill-with-docs, grilling, domain-modeling, writing-for-agents, unslop and the
-OpenSpec propose/explore/apply/update/sync/archive skills.
+outside this checkout. Available workflow aids include code-review,
+grill-with-docs, grilling, domain-modeling, writing-for-agents and the
+OpenSpec propose/explore/apply/update/sync/archive skills. The tdd and unslop
+skills come from the installed [pstack plugin](https://github.com/cursor/plugins/tree/main/pstack),
+which the catalog composes but no longer vendors.
 
 Missing workflow aids do not block delivery; follow the direct review, design,
 regression-test and editorial checks in [docs/sdlc.md](sdlc.md). Missing runtime
@@ -851,11 +853,26 @@ requires `BUNNY_CONTAINER_ACCEPTANCE=1` inside a network-disabled disposable
 Linux container with synthetic private secrets; ordinary source runs skip it.
 It covers configured household modules, preserved non-device modules and honest
 missing-dependency refusals through the production selector and simulated transports.
+Its second exercise prints the per-module qualification record described in
+[the operator guide's source validation](bunny-container.md#source-validation):
+platform and compiled dependencies, private stores, exclusive startup,
+port-conflict refusal, clean stop and reopen.
 Source tests, each architecture's
 container rehearsal, cross-architecture archive transfer and live installation
 are separate evidence.
 
 See [Runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) for the authoritative procedure.
+
+For the Collector export and the Mac-local diagnostics stack (Hub #813), build
+first and run `node --test apps/runtime/dist/tests/export.test.js` with Node 24:
+it drives a loopback fake Collector through accepting, refusing, stalling and
+absent cases and checks the configuration's owned-origin refusals, so it needs
+no Docker. The stack's own files are checked only by a disposable boot on
+alternate ports, as [the operator guide](bunny-container.md#diagnostics-stack)
+describes: `docker compose -p <disposable name> -f deploy/diagnostics/compose.yaml -f <ports override> up -d`,
+post one profile 1.7 record and one span to the Collector, read them back
+through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
+export test with the runtime suites; it does not boot the stack.
 
 ### Runtime test layers
 
@@ -1916,12 +1933,32 @@ dashboard browser suite. Existing companion/runtime/dashboard test discovery and
 App verification CI cover these paths; no new CI job is required. Use private
 disposable synthetic state, never installed voices, conversations or robot output.
 
+The B.U.N.N.Y. conversation (#46) adds `assistant.test.js`, `anthropic.test.js`
+and `configure.test.js` to the companions suite: the turn loop with approval,
+decline, stale approval, uncertain dispatch, allowlist refusal and provider
+refusal/truncation/fault codes; the Anthropic adapter's request shape,
+tool-use parsing, usage, error mapping and abort against a fake transport; and
+the section with a keyed provider through the harness's secret. After the root
+build run `node --test modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/anthropic.test.js modules/companions/dist/tests/configure.test.js`,
+`node --test apps/runtime/dist/tests/assistant-dispatch.test.js` for the core's
+admission of the module's `assistant-dispatch` command, `node --test packages/event-contracts/tests/assistant.test.mjs`
+for the dispatch family and the state's provider, model and tool fields, the
+`assistant-task` and `assistant-mode-approval` catalog scenarios over both
+transports and in a disposable runtime, and `npm run test:companions:browser`
+for the conversation page's approved and declined proposals across reload,
+clarification with the read tool, cancellation, keyboard, narrow viewport and
+axe. The companions module now takes a section (an empty one keeps the synthetic
+default), so harnesses that start it pass one. Existing core, runtime and App
+verification CI discover these checks; no new job is needed. They use the
+synthetic provider and fake transports only: no live provider, key, installed
+client or device is exercised.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text`, `assistant-task`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
+Run the `reachy-text`, `assistant-task`, `assistant-mode-approval`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 

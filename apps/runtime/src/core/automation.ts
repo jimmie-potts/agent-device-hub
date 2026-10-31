@@ -165,12 +165,13 @@ export function inQuietHours(settings:AutomationSettings['quietHours'], atMs:num
 const momentId = (rule:Rule, event:HubEvent) => 'm-' + createHash('sha256').update(`${rule.id}\0${event.source}\0${event.id}`).digest('hex').slice(0,40);
 
 /** Acceptance is a 2.0 dispatch receipt, never an execution outcome. */
-export type LogEntry = {family?:'moment-play'|'power-set';seq:number; atMs:number; ruleId:string; event:EventText & {source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
+/** `family` is the dispatched command family: `moment-play` (absent), `power-set`, or a routine action's family (#1297). */
+export type LogEntry = {family?:string;index?:number;requireMode?:string;seq:number; atMs:number; ruleId:string; event:EventText & {source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
   momentId:string; priorityClass:string; coversStatus:boolean; target:string; outcome:LogRow['outcome']; reason?:string;
   requestId?:string; receipt?:{status:'accepted';requestId:string}};
 function entry(row:LogRow): LogEntry {
-  const detail = row.detail===null ? {} : JSON.parse(row.detail) as {family?:unknown;event?:EventText;requestId?:string;receipt?:LogEntry['receipt']};
-  return {...(detail.family==='power-set'?{family:'power-set' as const}:{}),seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
+  const detail = row.detail===null ? {} : JSON.parse(row.detail) as {family?:unknown;index?:unknown;requireMode?:unknown;event?:EventText;requestId?:string;receipt?:LogEntry['receipt']};
+  return {...(typeof detail.family==='string' && detail.family!=='moment-play'?{family:detail.family}:{}),...(Number.isInteger(detail.index)?{index:detail.index as number}:{}),...(typeof detail.requireMode==='string'?{requireMode:detail.requireMode}:{}),seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
     ...(row.eventAlias===null?{}:{alias:row.eventAlias}),...(row.agent===null?{}:{agent:row.agent}),...(row.task===null?{}:{task:row.task}),
     ...(eventText(detail.event??{})??{})},momentId:row.momentId,priorityClass:row.priorityClass,coversStatus:row.coversStatus,target:row.target,outcome:row.outcome,
     ...(row.reason===null?{}:{reason:row.reason}),...(detail.requestId!==undefined?{requestId:detail.requestId}:{}),...(detail.receipt?{receipt:detail.receipt}:{})};

@@ -107,6 +107,10 @@ details.help p{margin:var(--space-xs) 0 0}
 .edit fieldset{border:0;padding:0;margin:0;display:grid;gap:var(--space-s)}
 .edit.wide fieldset{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))}
 .edit.wide fieldset>p{grid-column:1/-1}
+.edit.wide fieldset>.routine-actions{grid-column:1/-1;display:grid;gap:var(--space-s);margin:0;padding-left:var(--space-m)}
+.routine-actions>li>fieldset{border-top:1px solid var(--edge-faint);padding-top:var(--space-s)}
+.routine-form fieldset>label{align-self:start}
+.routine-form .routine-days,.routine-actions .actions{grid-column:1/-1}
 .edit p{margin:0}
 .actions{display:flex;gap:var(--space-s);flex-wrap:wrap;margin:0}
 .actions button{font-size:var(--type-small)}

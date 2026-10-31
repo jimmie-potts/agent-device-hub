@@ -24,6 +24,10 @@ Home SHALL offer Edit Home, a source-aware card picker, supported sizes, pointer
 - **WHEN** the owner rearranges cards, opens the picker, switches breakpoints and cancels
 - **THEN** the saved arrangements remain unchanged and no command was sent
 
+#### Scenario: Balanced visible rows
+- **WHEN** the number of visible cards, their supported sizes or the available page width changes
+- **THEN** cards wrap in saved order and share each row's available width without empty trailing slots, Small retains a compact width relative to Standard, Wide occupies a full row and phone arrangements and their editor preview use one column
+
 #### Scenario: Alert visibility without a notices section
 - **WHEN** a hidden or removed Inbox or session placement has unresolved items or attention
 - **THEN** its ordinary card stays visible until that evidence clears, with no separate notices section, Your space caption or layout caption

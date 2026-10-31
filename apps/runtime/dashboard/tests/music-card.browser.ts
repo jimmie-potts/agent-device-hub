@@ -1,7 +1,7 @@
 import {openAudio} from './navigation-helpers.ts';
 // Shared Music card journey through a real disposable runtime; all media and receivers are synthetic.
 import assert from 'node:assert/strict';
-import {chromium} from 'playwright';
+import {chromium, type Route} from 'playwright';
 import {expect} from 'playwright/test';
 import {AxeBuilder} from '@axe-core/playwright';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
@@ -71,20 +71,44 @@ try {
   await page.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
   let releaseSave = (): void => {};
   const saveReplyGate = new Promise<void>(resolve => {releaseSave = resolve;});
-  let markSavePending = (): void => {};
-  const savePending = new Promise<void>(resolve => {markSavePending = resolve;});
+  let competingSaved = false;
+  let releaseRefresh = (): void => {};
+  const refreshReplyGate = new Promise<void>(resolve => {releaseRefresh = resolve;});
+  const fetchedRefreshFamilies = new Set<string>();
+  const holdPlacementRefresh = async (route: Route): Promise<void> => {
+    const call = route.request().postDataJSON() as {owner?: string; request?: {data?: {families?: string[]}}};
+    const families = call.request?.data?.families ?? [];
+    const family = families.length === 1 ? families[0] : undefined;
+    if (call.owner !== 'bunny/core' || family !== 'lighting-layout' && family !== 'playback-layout') {await route.continue(); return;}
+    const response = await route.fetch(); assert.equal(response.status(), 200);
+    fetchedRefreshFamilies.add(family);
+    await refreshReplyGate; await route.fulfill({response});
+  };
   await page.route('**/api/v2/commands/playback-layout-set', async route => {
     const original = route.request().postDataJSON() as {data: {expectedRevision: number}};
     const competing = await page.request.post(world.url + '/api/v2/commands/playback-layout-set', {headers: {origin: world.url, 'bunny-request': '1'},
       data: {target: 'playback', requestId: 'competing-placement', data: {expectedRevision: original.data.expectedRevision, assignments: [{playback: 'living-room', rooms: ['studio']}]}}});
-    assert.equal(competing.status(), 200); markSavePending(); await saveReplyGate; await route.continue();
+    assert.equal(competing.status(), 200); competingSaved = true; await saveReplyGate; await route.continue();
   }, {times: 1});
-  await page.getByRole('button', {name: 'Save room placement', exact: true}).click();
-  await savePending;
-  await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
-  releaseSave();
-  await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
-  assert.equal(await studio.isDisabled(), true, 'a conflicting save requires explicit refresh');
+  try {
+    await page.getByRole('button', {name: 'Save room placement', exact: true}).click();
+    await expect.poll(() => competingSaved, {timeout: 10_000}).toBe(true);
+    await page.route('**/api/sdk/v1/sync', holdPlacementRefresh);
+    await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
+    await expect.poll(() => [...fetchedRefreshFamilies].sort()).toEqual(['lighting-layout', 'playback-layout']);
+    const conflictReply = page.waitForResponse(response => response.url().endsWith('/api/v2/commands/playback-layout-set'));
+    releaseSave();
+    const conflict = await (await conflictReply).json() as {error: {code: string}};
+    assert.equal(conflict.error.code, 'revision-conflict');
+    // A stale placement copy masks the saved refusal until this explicit refresh settles.
+    await page.getByText('Placement records are unavailable or stale. Editing is read-only.', {exact: true}).waitFor();
+    assert.equal(await studio.isDisabled(), true);
+    releaseRefresh();
+    await page.getByRole('status').filter({hasText: /revision-conflict/}).waitFor();
+    assert.equal(await studio.isDisabled(), true, 'refresh started before refusal cannot acknowledge that conflict');
+  } finally {
+    releaseSave(); releaseRefresh(); await page.unroute('**/api/sdk/v1/sync', holdPlacementRefresh);
+  }
   const failedRefreshFamilies = new Set<string>();
   await page.route('**/api/sdk/v1/sync', async route => {
     const call = route.request().postDataJSON() as {owner?: string; request?: {data?: {families?: string[]}}};

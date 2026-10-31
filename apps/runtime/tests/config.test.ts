@@ -99,10 +99,15 @@ it('a module whose section is missing or invalid is refused alone, and health na
   });
   for (const module of [lacking, malformed, secretless, refusing, throwing]) assert.equal(module.context, undefined, `${module.manifest.name} never started`);
   assert.deepEqual(refusedRecord(logs, 'lacking')?.attributes, {'bunny.module': 'lacking', 'bunny.code': 'not-found', 'bunny.phase': 'manifest', 'bunny.provenance': 'source'});
-  assert.deepEqual(refusedRecord(logs, 'throwing')?.attributes, {
-    'bunny.module': 'throwing', 'bunny.code': 'internal', 'bunny.phase': 'manifest', 'error.type': 'TypeError', 'bunny.provenance': 'source',
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...refusal} = refusedRecord(logs, 'throwing')?.attributes ?? {};
+  assert.deepEqual(refusal, {
+    'bunny.module': 'throwing', 'bunny.code': 'internal', 'bunny.phase': 'manifest', 'error.type': 'TypeError', 'bunny.provenance': 'source', 'bunny.exception.truncated': false,
   });
-  assert.equal(JSON.stringify(logs).includes(SECRET), false, 'the record never quotes what configure threw');
+  // The refusal's fault record carries configure's message and stack with the secret replaced (profile 1.7).
+  assert.equal(message, 'a configure bug quoting [redacted]');
+  assert.match(String(stack), /^TypeError: a configure bug quoting \[redacted\]\n/);
+  assert.equal(redacted, 2);
+  assert.equal(JSON.stringify(logs).includes(SECRET), false, 'the record never quotes the secret configure threw');
 });
 
 it('without a configuration file, a module that takes none starts and one that needs a section is refused', async context => {
@@ -212,6 +217,12 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   await privateFile(join(root, 'unreadable.json'), valid, 0o000);
   await privateFile(join(root, 'list.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: []}));
   await privateFile(join(root, 'none.json'), JSON.stringify({schema: CONFIG_SCHEMA}));
+  // The diagnostics section (Hub #811) is refused as the edge section is: a bad level, another member, or a name that is no module's.
+  await privateFile(join(root, 'level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: 'fatal'}}));
+  await privateFile(join(root, 'floor.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {floor: 'info'}}));
+  await privateFile(join(root, 'unhosted.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {modules: {retired: 'debug'}}}));
+  await privateFile(join(root, 'secret-level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: SECRET}}));
+  await privateFile(join(root, 'secret-module-level.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {modules: {started: SECRET}}}));
   const cases: readonly (readonly [string, string])[] = [
     ['relative/config.json', 'config-relative'],
     ['/mnt/bunny-runtime-test/config.json', 'config-mount'],
@@ -229,6 +240,11 @@ it('a configuration file that the runtime cannot trust is refused before it serv
     [join(root, 'extra.json'), 'config-invalid'],
     [join(root, 'list.json'), 'config-invalid'],
     [join(root, 'none.json'), 'config-invalid'],
+    [join(root, 'level.json'), 'config-invalid'],
+    [join(root, 'floor.json'), 'config-invalid'],
+    [join(root, 'unhosted.json'), 'config-invalid'],
+    [join(root, 'secret-level.json'), 'config-invalid'],
+    [join(root, 'secret-module-level.json'), 'config-invalid'],
   ];
   for (const [file, expected] of cases) {
     const started = fixture('started');
@@ -240,6 +256,12 @@ it('a configuration file that the runtime cannot trust is refused before it serv
   }
   const fine = await startRuntime({port: 0, stateDir: await stateDir(context), modules: [], configFile: good, log: () => {}});
   await fine.stop();
+  const leveled = await privateFile(join(root, 'leveled.json'), JSON.stringify({schema: CONFIG_SCHEMA, modules: {}, diagnostics: {level: 'warn', modules: {started: 'debug'}}}));
+  const records: LogRecord[] = [];
+  const started = fixture('started', ({log}) => { log.debug('command.completed', {'bunny.outcome': 'succeeded'}); });
+  const quiet = await startRuntime({port: 0, stateDir: await stateDir(context), modules: [started], configFile: leveled, log: record => { records.push(record); }});
+  await quiet.stop();
+  assert.deepEqual(records.map(record => [record.event_name, record.severity_text]), [['command.completed', 'DEBUG']], 'the file\'s floors apply: WARN for the runtime, DEBUG for the named module');
 });
 
 it('a module\'s private folder sits beside its database, is mode 700, keeps its files across restarts, and is never a link', async context => {
@@ -433,9 +455,14 @@ it('a module failure whose error code holds the module\'s secret is still record
   });
   await waitFor(() => entry(runtime.health(), 'failing').state === 'failed', 5000, 'the module to fail');
   const failed = logs.find(record => record.event_name === 'runtime.module.failed' && record.attributes['bunny.module'] === 'failing');
-  assert.deepEqual(failed?.attributes, {
-    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source',
+  const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} = failed?.attributes ?? {};
+  assert.deepEqual(decision, {
+    'bunny.module': 'failing', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'Error', 'bunny.provenance': 'source', 'bunny.exception.truncated': false,
   }, 'the decision record survives, without the error code that holds the secret');
+  // The secret the module read is replaced in the filtered message and stack before the record is built (profile 1.7).
+  assert.equal(message, 'the device refused [redacted]');
+  assert.match(String(stack), /^Error: the device refused \[redacted\]\n/);
+  assert.equal(redacted, 2);
   assert.equal(JSON.stringify(logs).includes(SECRET), false);
 });
 

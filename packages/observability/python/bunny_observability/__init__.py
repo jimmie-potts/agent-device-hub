@@ -16,7 +16,7 @@ class TraceContext(TypedDict):
 
 
 class DiagnosticRecord(TypedDict):
-    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6']
+    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']
     timestamp: NotRequired[str]
     observed_timestamp: NotRequired[str]
     severity_number: int
@@ -30,7 +30,7 @@ class DiagnosticRecord(TypedDict):
     span_id: NotRequired[str]
     trace_flags: NotRequired[str]
 
-ARTIFACT_VERSION = '1.6.0'
+ARTIFACT_VERSION = '1.7.0'
 SCHEMA_VERSION = '1.1'
 SEMANTIC_CONVENTIONS_VERSION = '1.44.0'
 MAX_RECORD_BYTES = 8192
@@ -167,12 +167,19 @@ def create_record(value):
 
 
 def project_record(value, version):
+    """The record at `version`, as the TypeScript helper projects it: 1.0 loses queue depth, and every profile before
+    1.7 loses the private exception fields; any other later-profile vocabulary fails the target's validation."""
     result = validate_record(value)
-    if not result['ok'] or version not in ('1.0', '1.1'):
+    catalog = _definitions()[0]
+    versions = catalog['schema_versions']
+    if not result['ok'] or version not in versions:
         return _failure()
     result['value']['schema_version'] = version
     if version == '1.0':
         result['value']['attributes'].pop('bunny.queue.depth', None)
+    if versions.index(version) < versions.index('1.7'):
+        for name in catalog['additions']['1.7']['attributes']:
+            result['value']['attributes'].pop(name, None)
     return validate_record(result['value'])
 
 

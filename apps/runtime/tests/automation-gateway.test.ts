@@ -1,6 +1,6 @@
 import {createPowerLimits,PowerLimitStore} from '../src/core/power-limits.js';
 import {deviceRecord} from './fixtures/device.js';
-import {createPowerSchedules} from '../src/core/power-schedules.js';
+import {createRoutines} from '../src/core/power-schedules.js';
 // The Automation HTTP boundary with the real gateway and rule store, without a listener or device.
 import assert from 'node:assert/strict';
 import type {IncomingMessage, ServerResponse} from 'node:http';
@@ -30,13 +30,13 @@ async function boundary(context: TestContext) {
   const store = new AutomationStore(database, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
   const automation = createAutomation({store, clock: clock.now, monotonic: clock.now, active: () => true, routed: () => ['lines'],
     targets: () => Promise.resolve({presentation: 'quiet', alert: 'none'})});
-  const power=createPowerSchedules({store,clock:clock.now,scheduler,active:()=>true,targets:()=>['lines'],owner:()=> 'bunny/modules/test-power',
+  const routines=createRoutines({store,clock:clock.now,scheduler,active:()=>true,targets:()=>['lines'],owner:()=> 'bunny/modules/test-power',
     read:()=>Promise.resolve(undefined),current:()=>undefined,send:()=>Promise.reject(new Error('unexpected dispatch'))});
   const published:TraceContext[]=[],record=deviceRecord('desk-lamp',1,'wemo','available');record.capabilities.power={supported:true};
   let revision=0;
   const limits=createPowerLimits({store:new PowerLimitStore(database,work=>Promise.resolve(work({database,atMs:clock.now(),revision:()=>++revision,take:()=>{},record:()=>{},step:()=>{},add:(_key,draft,options)=>{if(options?.parent!==undefined)published.push(options.parent);return {...draft,specversion:'1.0',bunnyprofile:'2.0',id:'synthetic-publication',source:'bunny/core',time:new Date(clock.now()).toISOString(),datacontenttype:'application/json',...parent};}}))),
     clock:clock.now,scheduler,active:()=>true,targets:()=>['desk-lamp'],owner:()=> 'bunny/modules/wemo',current:()=>record,read:()=>Promise.resolve(record),send:()=>Promise.reject(new Error('unexpected dispatch'))});
-  const controls={...automation,power,limits};
+  const controls={...automation,routines,limits};
   const logs: LogRecord[] = [], writer = new LogWriter(record => { logs.push(record); }, 'debug', clock), spans = new RecordedSpans();
   let ownerFailures = 0;
   const host = {modules: () => [], invoke: async <T>(_name: string, work: () => T | Promise<T>): Promise<T> => {
@@ -48,7 +48,7 @@ async function boundary(context: TestContext) {
     edge: {credentials: 'unused', launcher: false, mcp: false, editorLinks: {}, placeLinks: {}}};
   const gateway = new Gateway(options);
   await gateway.start('http://127.0.0.1:0', ['127.0.0.1:0']);
-  context.after(async () => {await gateway.close(); await automation.close(); await power.close(); await limits.close(); database.close();});
+  context.after(async () => {await gateway.close(); await automation.close(); await routines.close(); await limits.close(); database.close();});
   const call = (method: string, path: string, input?: object | AsyncIterable<Buffer>, token: string | undefined = controlToken,
     header: string | undefined = '1'): Promise<Answer> => {
     const chunks = input === undefined ? [] : Symbol.asyncIterator in input ? input : [Buffer.from(JSON.stringify(input))];
@@ -121,36 +121,42 @@ void test('invalid and oversized Automation input returns registry errors withou
   assert.equal(JSON.stringify(w.logs).includes('secret-user-id'), false);
 });
 
-void test('weekly power routes preserve shared scope/header guards, bounded bodies and independent disabled definitions',async context=>{
-  const w=await boundary(context),input={name:'Desk light',target:'lines',days:[1,2,3,4,5],onTime:'17:00',offTime:'20:00'};
-  assert.equal((await w.call('GET','power-schedules',undefined,readToken)).status,200);
+void test('weekly routine routes preserve shared scope/header guards, bounded bodies, independent disabled definitions and an explicit run',async context=>{
+  const w=await boundary(context),input={name:'Evening lights',days:[1,2,3,4,5],time:'17:00',actions:[{target:'lines',family:'power-set',data:{on:true}}]};
+  assert.equal((await w.call('GET','routines',undefined,readToken)).status,200);
   for(const [token,header,status] of [[readToken,'1',403],[controlToken,'0',403],['unknown','1',401]] as const)
-    assert.equal((await w.call('POST','power-schedules',input,token,header)).status,status);
-  assert.deepEqual(w.automation.power.list(),[]);
-  const created=await w.call('POST','power-schedules',input);assert.equal(created.status,201);assert.equal(created.body.enabled,false);
+    assert.equal((await w.call('POST','routines',input,token,header)).status,status);
+  assert.deepEqual(w.automation.routines.list(),[]);
+  const created=await w.call('POST','routines',input);assert.equal(created.status,201);assert.equal(created.body.enabled,false);
   const id=String(created.body.id);
-  assert.equal((await w.call('POST',`power-schedules/${id}/enable`,{})).body.enabled,true);
-  assert.equal((await w.call('PUT',`power-schedules/${id}`,{...input,onTime:'18:00'})).body.enabled,true);
-  assert.equal((await w.call('POST',`power-schedules/${id}/disable`,{})).body.enabled,false);
-  assert.equal((await w.call('POST','power-schedules',{...input,extra:'synthetic-private'})).status,400);
-  assert.equal((await w.call('POST','power-schedules',{...input,name:'x'.repeat(2000)})).status,413);
-  assert.equal((await w.call('GET','power-schedules/missing')).status,404);
-  assert.equal((await w.call('DELETE',`power-schedules/${id}`,undefined,controlToken,'0')).status,403);
-  assert.equal(w.automation.power.list().length,1);
-  assert.equal((await w.call('DELETE',`power-schedules/${id}`)).body.deleted,true);
+  assert.equal((await w.call('POST',`routines/${id}/enable`,{})).body.enabled,true);
+  assert.equal((await w.call('PUT',`routines/${id}`,{...input,time:'18:00'})).body.enabled,true);
+  assert.equal((await w.call('POST',`routines/${id}/disable`,{})).body.enabled,false);
+  assert.equal((await w.call('POST','routines',{...input,extra:'synthetic-private'})).status,400);
+  assert.equal((await w.call('POST','routines',{...input,name:'x'.repeat(9000)})).status,413);
+  assert.equal((await w.call('GET','routines/missing')).status,404);
+  assert.equal((await w.call('POST',`routines/${id}/run`,{},readToken)).status,403);
+  assert.equal((await w.call('POST',`routines/${id}/run`,{},controlToken,'0')).status,403);
+  // Run now needs no enabled state; the unavailable target is logged, never dispatched, and the reply names the run.
+  const ran=await w.call('POST',`routines/${id}/run`,{});assert.equal(ran.status,200);assert.equal(ran.body.ran,true);assert.equal(ran.body.id,id);
+  assert.deepEqual(w.automation.log(5).map(entry=>[entry.ruleId,entry.outcome,entry.reason]),[[id,'blocked','unavailable']]);
+  assert.equal((await w.call('POST',`routines/${id}/run`,{extra:true})).status,400);
+  assert.equal((await w.call('DELETE',`routines/${id}`,undefined,controlToken,'0')).status,403);
+  assert.equal(w.automation.routines.list().length,1);
+  assert.equal((await w.call('DELETE',`routines/${id}`)).body.deleted,true);
   assert.equal(w.ownerFailures(),0);
 });
-void test('weekly power mutation loses authority during its body read without changing saved state',async context=>{
+void test('weekly routine mutation loses authority during its body read without changing saved state',async context=>{
   const w=await boundary(context);let started!:()=>void,release!:()=>void;
   const reading=new Promise<void>(resolve=>{started=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
   context.after(()=>{release();});
-  async function* body(){yield Buffer.from('{');started();await held;yield Buffer.from('"name":"Desk light","target":"lines","days":[1],"onTime":"17:00","offTime":"20:00"}');}
-  const pending=w.call('POST','power-schedules',body());
+  async function* body(){yield Buffer.from('{');started();await held;yield Buffer.from('"name":"Evening lights","days":[1],"time":"17:00","actions":[{"target":"lines","family":"power-set","data":{"on":true}}]}');}
+  const pending=w.call('POST','routines',body());
   assert.equal(await Promise.race([reading.then(()=>'reading'),pending.then(answer=>answer.status)]),'reading');
   w.gateway.access.replace([{...control,digest:tokenDigest('synthetic-power-rotated')},reader]);release();
-  assert.equal((await pending).status,401);assert.deepEqual(w.automation.power.list(),[]);
-  assert.equal(JSON.stringify(w.logs).includes('Desk light'),false);
-  assert.equal(w.logs.some(record=>record.attributes['http.route']==='/api/v2/automation/power-schedules'),true);
+  assert.equal((await pending).status,401);assert.deepEqual(w.automation.routines.list(),[]);
+  assert.equal(JSON.stringify(w.logs).includes('Evening lights'),false);
+  assert.equal(w.logs.some(record=>record.attributes['http.route']==='/api/v2/automation/routines'),true);
 });
 
 void test('saving a maximum-on definition keeps the authenticated request trace through publication',async context=>{

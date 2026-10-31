@@ -76,22 +76,44 @@ try {
   // The same module contributes private, default-off task controls beside Reachy's existing page.
   await page.setViewportSize({width: 1280, height: 1000});
   await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
-  const assistant = page.getByRole('region', {name: 'Synthetic tasks', exact: true});
-  const enableAssistant = assistant.getByRole('button', {name: 'Enable synthetic tasks', exact: true});
+  const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+  await assistant.getByText('Synthetic (no paid calls)', {exact: true}).waitFor();
+  await assistant.getByText('read_sessions, set_mode', {exact: true}).waitFor();
+  const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true});
   await enableAssistant.focus(); await enableAssistant.press('Enter');
-  await assistant.getByRole('button', {name: 'Disable synthetic tasks', exact: true}).waitFor();
-  await assistant.getByRole('textbox', {name: 'Task text', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
-  const startTask = assistant.getByRole('button', {name: 'Start synthetic task', exact: true}); await startTask.focus(); await startTask.press('Enter');
+  await assistant.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+  // An approved proposal: the synthetic provider proposes the named mode, the owner decides by keyboard after a reload.
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER quiet mode');
+  const startTask = assistant.getByRole('button', {name: 'Send message', exact: true}); await startTask.focus(); await startTask.press('Enter');
   await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
-  await assistant.getByRole('article', {name: 'Saved clarification'}).getByText('Which detail should the synthetic result emphasize?', {exact: true}).waitFor();
+  const proposal = assistant.getByRole('article', {name: 'Proposed command', exact: true});
+  await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+  await page.reload(); await feed(page, 'connected');
+  await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+  const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true}); await approve.focus(); await approve.press('Enter');
+  await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText(/accepted by the core, outcome tracked separately/).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+  // A declined proposal sends nothing and the conversation says so.
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER free mode');
+  await startTask.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+  const decline = proposal.getByRole('button', {name: 'Decline proposal', exact: true}); await decline.focus(); await decline.press('Enter');
+  await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByRole('article', {name: 'tool message'}).getByText(/declined the proposal/).waitFor();
+  // A clarification: the synthetic provider asks, the owner answers, the read tool runs without approval.
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
+  await startTask.focus(); await startTask.press('Enter');
+  await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+  await assistant.getByRole('article', {name: 'Saved question'}).getByText('Which detail should the synthetic result emphasize?', {exact: true}).waitFor();
   await page.reload(); await feed(page, 'connected');
   await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByText('PRIVATE-SYNTHETIC-BROWSER-PROMPT', {exact: true}).waitFor();
   await world.restart(); await page.reload(); await feed(page, 'connected');
   await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
-  await assistant.getByRole('textbox', {name: 'Clarification answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
+  await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
   const answer = assistant.getByRole('button', {name: 'Save answer and continue', exact: true}); await answer.focus(); await answer.press('Enter');
   await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
-  await assistant.getByRole('article', {name: 'Saved clarification'}).getByText('Saved answer: PRIVATE-SYNTHETIC-BROWSER-ANSWER', {exact: true}).waitFor();
+  await assistant.getByRole('article', {name: 'Saved question'}).getByText('Saved answer: PRIVATE-SYNTHETIC-BROWSER-ANSWER', {exact: true}).waitFor();
+  await assistant.getByRole('list', {name: 'Saved conversation messages'}).getByRole('article', {name: 'tool message'}).getByText(/coding agent session/).waitFor();
   const read = await world.assistantRead(); assert.equal(read.status, 200); assert.match(read.text, /PRIVATE-SYNTHETIC-BROWSER-ANSWER/);
   assert.equal(await world.readonlyAssistantUpload(), 403, 'the real gateway refuses reader input before staging');
   assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no transcript');
@@ -99,11 +121,11 @@ try {
   if (output !== undefined) await page.screenshot({path: `${output}/assistant-browser.png`, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
-  await assistant.getByRole('textbox', {name: 'Task text', exact: true}).fill('SYNTHETIC-CANCELLATION-CHECK');
+  await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('SYNTHETIC-CANCELLATION-CHECK');
   await startTask.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
   const cancel = assistant.getByRole('button', {name: 'Cancel task', exact: true}); await cancel.focus(); await cancel.press('Enter');
   await assistant.getByText('Task status: cancelled', {exact: true}).waitFor();
-  const draft = assistant.getByRole('textbox', {name: 'Task text', exact: true}); await draft.fill('UNSENT-DISCONNECTION-DRAFT');
+  const draft = assistant.getByRole('textbox', {name: 'Message', exact: true}); await draft.fill('UNSENT-DISCONNECTION-DRAFT');
   await context.setOffline(true); world.dropDashboardStreams();
   await assistant.getByText('Disconnected.', {exact: false}).waitFor(); assert.equal(await startTask.isDisabled(), true);
   assert.equal(await draft.inputValue(), 'UNSENT-DISCONNECTION-DRAFT');
@@ -118,5 +140,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; private task start, reload, restart, answer, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; conversation start, approved and declined proposals by keyboard across reload, clarification with a read tool, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
 } finally {await browser.close(); await world.close();}

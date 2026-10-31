@@ -13,8 +13,11 @@ The runtime ships it through `src/module/registration.ts`, which wraps
 `pixooFactory` and declares its place after playback. Installation and
 representative physical evidence belong to the accepted
 [#840 cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840).
-The old divoom-app-upgrade service is stopped and retained for manual return;
-its repository retains its bug-fix boundary until separately authorized retirement. Mirror each fix here and name its source commit in the commit message.
+The old divoom-app-upgrade service is stopped and retained for manual return.
+Its repository was archived under
+[#936](https://github.com/jimmie-potts/agent-device-hub/issues/936) on
+2026-10-30, so no further fixes originate there; removing the retained service
+remains [#839](https://github.com/jimmie-potts/agent-device-hub/issues/839).
 The Pixoo pages are #932. The optional library [migration](#library-migration)
 (#931) remains available, but the selected fresh setup starts an empty library.
 
@@ -271,15 +274,31 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | Family | What it does | Its outcome |
 | --- | --- | --- |
 | `device-mode-set` | Monitor or Media | `observed` |
-| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed | Its first upload's |
-| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes` | `observed`; its upload's |
+| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed; optional `requireMode` | Its first upload's |
+| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes`; optional `requireMode` | `observed`; its upload's |
 | `brightness-set`, `power-set` | Brightness, screen on or off | The device write's |
-| `pixoo-media-show` | Shows one rendition, with an optional playback policy | Its upload's |
+| `pixoo-media-show` | Shows one rendition, with an optional playback policy and `requireMode` | Its upload's |
 | `pixoo-monitor-set` | Monitor's filter and cadence | `observed` |
 | `pixoo-now-playing-set` | Now Playing in Media: `off`, `popup` or `whole` | `observed` |
 | `pixoo-playlist-change` | Creates, renames, sets options, items or order, duplicates or deletes a playlist | `observed` |
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
+
+`media-start`, `media-control` and `pixoo-media-show` take an optional
+`requireMode`, `monitor` or `media`
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)). The
+module checks it in its admission queue, so the check and the admission cannot
+race: when the Pixoo is in the other mode, or a `device-mode-set` is accepted
+and not yet completed, the command is refused with `invalid-state` and a
+`command.rejected` record before any device write. A mode the Pixoo does not
+advertise is refused with `unsupported-capability`, as a `device-mode-set` for
+it would be; a view change (`pixoo-monitor-set`) keeps the mode and does not
+count as a pending change. Nothing is queued, deferred or retried. A command
+without `requireMode` is admitted as before, so a start, resume or restart
+still takes the display from Monitor; one that requires `monitor` is admitted
+in Monitor and then takes the display to Media as any start does. A routine
+(#1297) sends `requireMode: "media"` so a scheduled playlist never displaces
+agent status.
 
 A staged import reads `incoming/<sha256>` in the module's private folder and
 checks its size and hash. API 1.3's upload contribution prepares one input at a
@@ -484,7 +503,12 @@ the Pixoo service's library into this module's store
 runtime README's [Pixoo library migration](../../apps/runtime/README.md#pixoo-library-migration)
 gives its commands, exit codes and refusals; this section says what it carries.
 The selected [fresh setup](../../apps/runtime/SETUP.md) for #935/#840 runs none
-of these commands and requires no migration verification.
+of these commands and requires no migration verification. To copy or move this
+module's current library, with its originals, renditions and playlists, use the
+container operator guide's
+[stopped-instance backup](../../docs/bunny-container.md#back-up-a-stopped-instance)
+and [restore](../../docs/bunny-container.md#restore-into-a-separate-empty-instance);
+the migration tool reads only the old service's library.
 
 - **Source.** The service's `<PIXOO_DATA_DIR>/library` at the installed
   release's schema version 3 (divoom-app-upgrade `1b4115c`), and no other
@@ -558,8 +582,8 @@ acknowledgment.
 - Source commit: `0777479c2fd7fbaca12d93e724ce8a2c15129b92`, "Add revision-bound
   Pixoo runtime upgrades and recovery (#138)", committed 2026-10-04 and still the
   head of main when read on 2026-10-06
-- Full history stays in that repository, which is archived at retirement
-  ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)).
+- Full history stays in that repository, which was archived under
+  [#936](https://github.com/jimmie-potts/agent-device-hub/issues/936) on 2026-10-30.
 
 Paths in the edit list are relative to this folder unless they say "the
 source's". Paths in the not-moved list are relative to the source repository.
@@ -576,10 +600,10 @@ Read on 2026-10-06 from divoom-app-upgrade:
   - the 11 local worktrees have no uncommitted changes, and each is on a merged PR's branch or at an ancestor of the source commit;
   - one local-only branch, `claude/pr-116-status-307d29`, points at `9467f90`, which is already on main.
 - **In-progress label:** #115 (runtime upgrade) still has it, but its branch merged as #138. Its installer is what #840 replaces.
-- **Open issues, disposed at retirement ([#839](https://github.com/jimmie-potts/agent-device-hub/issues/839)):**
+- **Open issues, disposed at retirement ([#936](https://github.com/jimmie-potts/agent-device-hub/issues/936)):**
   - transfer to this repository: #13, #15, #16, #18, #52, #76, #83, #91, #92, #93, #94, #107, #108, #119 and #122;
   - close as superseded: #14 (by Hub #751), #112, #115 and #126;
-  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decides at #839.
+  - remote access (#11, #17, #43 and #44): close as superseded, or move to the Hub if remote access is still wanted. The owner decided at #936: all four transferred, as #1274, #1279, #1281 and #1282.
 
 ### Edits to the snapshot
 

@@ -341,6 +341,22 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 | state | `device` (2.0, and 2.1 with `held`) | `org.bunny.device.updated` |
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
+`media-start` and `media-control` take an optional `requireMode`
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)): a
+native mode the device must be in. The module refuses the command with
+`invalid-state` at admission, before any device write, when the device's
+current mode differs or a mode change is pending, so a scheduled playlist never
+displaces a status display. The field is added in place to the two 2.0
+schemas, as #1185 widened `session/2.0`, rather than as a new minor version
+beside them: an optional command field changes no consumer's reading of an
+existing message, so every valid 2.0 command stays valid and one without
+`requireMode` behaves as before. A module that answers these families owes the
+field its check: it refuses a mode the device does not advertise with
+`unsupported-capability`, and a current mode that differs, or a pending
+`device-mode-set`, with `invalid-state`, before any device write. Today only the
+Pixoo answers them for a device that supports media; Nanoleaf and Tidbyt refuse
+both families as unsupported before the field matters.
+
 A `device` record is the full record of one device, published by the module
 that controls it, with the device `id` as its `subject`. The `id` is a routing
 ID, because it is also the last token of the device's routing keys, and it must

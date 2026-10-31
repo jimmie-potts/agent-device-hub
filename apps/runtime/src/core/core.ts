@@ -211,8 +211,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
   };
-  const power=()=>{
-    const controls=automation().power;
+  const routines=()=>{
+    const controls=automation().routines;
     if(controls===undefined) throw new AutomationError('unavailable',503);
     return controls;
   };
@@ -238,9 +238,9 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
-      power:{list:()=>power().list(),get:id=>power().get(id),create:(value,owner)=>power().create(value,owner),
-        update:(id,value)=>power().update(id,value),setEnabled:(id,enabled)=>power().setEnabled(id,enabled),
-        remove:id=>power().remove(id),settled:()=>power().settled()},
+      routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
+        update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),
+        remove:id=>routines().remove(id),run:(id,parent)=>routines().run(id,parent),settled:()=>routines().settled()},
       rules: () => automation().rules(), rule: id => automation().rule(id),
       create: (value, owner, authorize) => automation().create(value, owner, authorize),
       update: (id, value, authorize) => automation().update(id, value, authorize),

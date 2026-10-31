@@ -277,18 +277,32 @@ Copy changes only the clipboard. This adds no evidence store, wire family,
 provider or execution path. The [module guide](../modules/companions/README.md#coding-suggestions)
 owns input bounds, attribution and invalidation. The dated topology is unchanged.
 
-The same module also owns a default-off synthetic assistant workflow. Its single
-sequential graph and inspectable conversation/task/run/call records use the
-SDK-owned SQLite connection beside Reachy. A module-local, pinned LangGraph
+The same module also owns the default-off B.U.N.N.Y. conversation (Hub #46).
+One looping graph (turn, question, read tool, proposal, approval, act) and
+inspectable conversation/task/run/call records use the SDK-owned SQLite
+connection beside Reachy. The `bunny` profile's turns go to the provider the
+module's private section selects: the labelled synthetic script by default, or
+the Anthropic Messages API through the module's own fetch with a key the
+section names as a secret; Reachy and MicroDuck keep the synthetic provider.
+The prompt holds only the owner's text, the fixed instructions, the current Hub
+mode and the permitted tools' definitions and results. Tools are allowlisted in
+that section and rechecked at execution: `read_sessions` summarizes the
+module's synced session copy, and `set_mode` is a proposal the owner approves
+or declines on the page, bound to the Hub-mode revision seen when proposed. An
+approved proposal is one `assistant-dispatch` command that the core accepts
+only from this module and forwards, for `mode-set` on the Hub alone, through
+its tracked dispatcher as an operation the module requested, so the mode owner,
+outcomes, inbox and history stay the core's. A module-local, pinned LangGraph
 saver supplies durable interrupts and pending writes; startup reconciles their
 application projection without invoking work. Existing authenticated upload
 staging keeps text out of tracked command payloads, while authenticated module
 content reads serve bounded private pages. All companion state families share one owner
 revision sequence, sync provider and outbox. One unfinished task, explicit
 continuation, persisted call reservations and cancellation fences bound execution.
-The [companions guide](../modules/companions/README.md#synthetic-assistant-tasks)
-owns the flow, limits and future workspace reference. This source slice has fake
-adapters only and adds no installed service or physical writer.
+The [companions guide](../modules/companions/README.md#conversation-and-assistant-tasks)
+owns the section, flow, limits and future workspace reference. Source checks use
+the synthetic provider and fake transports; live provider use and installation
+are separately selected.
 
 The same owner retains explicit titled preferences and their private history in
 separate tables on that connection. Authenticated content reads expose current

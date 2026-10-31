@@ -23,7 +23,9 @@ fixtures cover the runtime's records and their negative controls, profile 1.3
 fixtures its decision, outbox and device records and theirs (#949), profile 1.4
 fixtures the gateway's route, method and credentials reload and theirs (#835),
 profile 1.5 fixtures the core's costly-save records and theirs (#976),
-profile 1.6 fixtures assistant execution identifiers and text exclusion, and
+profile 1.6 fixtures assistant execution identifiers and text exclusion,
+profile 1.7 fixtures the runtime's filtered exception fields, their scope,
+combination and length rules and the runtime's telemetry-loss summary (#777), and
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
 earlier profile rejects each profile's additions, and the runtime scopes'
 rules. `tests/host.test.mjs` checks that a host records only its profile's span
