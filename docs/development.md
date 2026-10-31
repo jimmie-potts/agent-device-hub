@@ -894,6 +894,16 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ## Runtime dashboard checks
 
+The disposable browser world selects an ephemeral loopback port. If the port is
+in its installed-service denylist, the harness stops that candidate before
+trying another, for at most ten allocations. Exhaustion removes the private
+world directory and fails explicitly. Startup or stop errors propagate without
+retrying. The final port refusal, restart port and browser assertions remain.
+After the build, run `node --test apps/runtime/dashboard/tests/world-runtime.test.ts`
+for deterministic disallowed-port, cleanup, exhaustion and error cases. Existing
+dashboard test discovery includes these checks. Run
+`npm run test:runtime-dashboard:smoke` for the affected browser consumers.
+
 Individual Hub-mode overrides (#695) extend the existing event-contract, runtime
 and dashboard suites. After the root build, run
 `node --test apps/runtime/dist/tests/mode*.test.js`,
