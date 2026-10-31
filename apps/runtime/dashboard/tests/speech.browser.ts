@@ -191,7 +191,8 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
     const result = messages.getByRole('article', {name: 'assistant message', exact: true}).filter({hasText: 'Synthetic result:'}).last();
     const speak = result.getByRole('button', {name: /^Speak message /}); await speak.focus(); await speak.press('Enter');
-    await assistant.getByText(/^Speak receipt: /).waitFor();
+    // The receipt must leave its idle text; the accepted control is the saved request, the playback report is the speech.
+    await assistant.getByText(/^Speak receipt: (?!No command sent)/).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 3);
     await page.evaluate(() => window.speechFixture.finish());
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
