@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {LIMITS} from '../src/assistant/store.js';
 
 void test('abrupt process exit preserves question and committed answer; restart never invokes work', () => {
   const dir = mkdtempSync(join(tmpdir(), 'assistant-process-'));
@@ -18,9 +19,9 @@ void test('abrupt process exit preserves question and committed answer; restart 
     const restarted = child('inspect'); assert.equal(restarted?.calls, 0); assert.equal(restarted?.state.tasks[0]?.questionId, first.questionId);
     child('answer-crash', 18);
     const saved = child('inspect'); assert.equal(saved?.calls, 0); assert.equal(saved?.state.tasks[0]?.hasAnswer, true); assert.equal(saved?.state.tasks[0]?.status, 'paused');
-    const done = child('resume'); assert.equal(done?.calls, 1); assert.equal(done?.state.tasks[0]?.taskId, first.taskId);
+    const done = child('resume'); assert.equal(done?.calls, 2); assert.equal(done?.state.tasks[0]?.taskId, first.taskId);
     assert.equal(done?.state.tasks[0]?.conversationId, first.conversationId); assert.notEqual(done?.state.tasks[0]?.runId, first.runId);
-    assert.equal(done?.state.tasks[0]?.modelCalls, 2); assert.equal(done?.state.tasks[0]?.toolCalls, 1);
+    assert.equal(done?.state.tasks[0]?.modelCalls, 3); assert.equal(done?.state.tasks[0]?.toolCalls, 1);
   } finally {rmSync(dir, {recursive: true, force: true});}
 });
 
@@ -33,6 +34,6 @@ void test('process loss after call admission preserves unknown usage and refuses
     const value = JSON.parse(inspected.stdout) as {state: AssistantState; calls: number; refused: string};
     assert.equal(value.calls, 0); assert.equal(value.refused, 'rejected');
     assert.equal(value.state.tasks[0]?.status, 'uncertain'); assert.equal(value.state.tasks[0]?.usageUnits, null);
-    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= 30_000); assert.ok((value.state.tasks[0]?.activeMs ?? 120_000) < 120_000); assert.equal(value.state.tasks[0]?.reservedUnits, 2048);
+    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= LIMITS.modelMs); assert.ok((value.state.tasks[0]?.activeMs ?? LIMITS.activeMs) < LIMITS.activeMs); assert.equal(value.state.tasks[0]?.reservedUnits, LIMITS.callUnits);
   } finally {rmSync(dir, {recursive: true, force: true});}
 });

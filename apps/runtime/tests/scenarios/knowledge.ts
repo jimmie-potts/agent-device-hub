@@ -32,7 +32,7 @@ async function change(h: Harness, requestId: string, input: object): Promise<voi
   if (response.status !== 200) throw new StepFailure('companion change refused');
 }
 export const knowledgeScenarios: readonly Scenario[] = [{id: 'companion-knowledge', title: 'explicit companion context and attributed history survive public client substitution and recovery',
-  seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/companions', families: ['assistant-state', 'preference-state']}]},
+  seed: {modules: ['core', 'companions'], sections: {companions: {}}, follows: [{owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/companions', families: ['assistant-state', 'preference-state']}]},
   steps: [
     expect('core and companions running', h => running(h, ['core', 'companions'])),
     ...['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive', 'duck-widget'].map(ref => expect(`anonymous ${ref} denied`, answers({as: 'anonymous', method: 'GET', path: `${endpoint}${ref}`}, response => refusedWith(response, 401, 'unauthenticated')))),

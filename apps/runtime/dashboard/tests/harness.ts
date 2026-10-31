@@ -183,6 +183,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const moduleConfig = {
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
+    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode']}}} : {}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),

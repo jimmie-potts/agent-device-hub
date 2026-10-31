@@ -74,7 +74,8 @@ and one fictional Reachy–Duck exchange. Authenticated public reads exercise tw
 fake model adapters and a replacement test client, current context, private
 conversation refusal, corrections/removals and old import after restart. No real
 model, audio or device output runs. Pair it with `preferences`, `assistant-task`,
-`reachy-text` and the companions browser journey for source compatibility.
+`assistant-mode-approval`, `reachy-text` and the companions browser journey for
+source compatibility.
 
 The same scenario checks explicit Duck Home selection, anonymous read refusal,
 one latest Duck message versus separate history, and retained selection with

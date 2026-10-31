@@ -1,7 +1,10 @@
 // The core alone mints coding opportunities from the first publication of a committed live reduction (Hub #1096).
+// It also forwards the companions module's approved assistant commands to its tracked dispatcher (Hub #46): only the
+// allowlisted family and target below, only from that module, as one operation the module requested.
 import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
+import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import {registerCoreFamilies, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
@@ -32,6 +35,19 @@ export class CompanionPart implements CorePart {
         requestId: command.data.requestId, parent: command,
         draft: {type: 'org.bunny.companion-speech.play.requested', subject: 'reachy',
           dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
+      return 'error' in answer ? answer : {status: 'accepted'};
+    });
+    await core.sdk.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', async command => {
+      if (this.#closed) return errorBody('unavailable');
+      if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
+      const checked = validator.validate(command, {nowMs: core.clock.now()});
+      if (!checked.ok) return {error: checked.error};
+      const {family, target, data} = command.data;
+      // The schema closes family and target; this check keeps the allowlist explicit where the dispatch happens.
+      if (family !== 'mode-set' || target !== 'hub') return errorBody('invalid-request', {detail: 'the assistant may dispatch only mode-set for the Hub'});
+      const answer = await core.dispatch({key: 'bunny.cmd.mode-set.hub', requestedBy: command.source, requestId: command.data.requestId, parent: command,
+        draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0',
+          data: {mode: data.mode, ...(data.expectedRevision === undefined ? {} : {expectedRevision: data.expectedRevision})}}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
     await Promise.all(['attention-raised', 'turn-ended'].map(family => core.sdk.subscribe<AgentOccurrence>(`bunny.event.${family}.*`, async message => {
