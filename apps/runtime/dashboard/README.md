@@ -39,17 +39,18 @@ analytics event family. Home uses the module's reusable Quiet line card: capture
 words/speaking minutes, seven selectable reporting dates with missing-date gaps,
 compact stale/unavailable evidence and explicit Refresh/Open Wispr. The full
 analytics page remains available; adding the card does not activate collection.
- The Automation page manages event rules and shared weekly power schedules.
-Weekly schedules select a configured power-capable device, weekdays and same-day
-on/off times on the Hub clock. New schedules are disabled; enable/disable is
-separate from editing. Next-switch evidence is labelled as of the last explicit
-refresh, while SDK copies supply current tracked outcomes and timestamped device
-observations. An accepted command never establishes an observed lamp state. A lost mutation
-reply locks further edits until explicit refresh, without retry. The Hub runs the
-schedule with the page closed, skips missed boundaries and never restores an
-on window after an early manual or device-limit off. Schedules require a running
-Hub and reachable target; device maximum-on protection is a separate feature. Device-specific
-feature pages remain their own module stories.
+
+Automation opens on **Routines**, with **Rules** and **Settings** beside it.
+New/Edit opens a form; switching tabs keeps its draft, and Cancel discards it.
+Confirmed saves close the editor. Weekly routines select weekdays, a Hub-clock
+time and ordered device actions. New routines and event rules remain disabled
+until explicitly enabled; **Run now** is a separate action. The Hub runs enabled
+routines while the page is closed and skips missed times. It must be running
+and able to reach the target. **Recent attempts** expands admission, completion
+and effect evidence; accepted commands never establish observed device state.
+Reads and tab changes send no device command. A lost mutation reply keeps the
+draft and locks further changes until explicit refresh, without retry.
+Device maximum-on protection remains a separate feature.
 
 The same dashboard can use the optional [home-Wi-Fi HTTPS entry](../WIFI.md).
 It keeps the existing controls and browser sessions; its HTTPS cookie is Secure.

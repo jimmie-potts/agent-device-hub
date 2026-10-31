@@ -76,3 +76,5 @@ await import('./home-layout.browser.ts');
 await import('./wispr.browser.ts');
 
 await import('./card-consistency.browser.ts');
+
+await import('./automation.browser.ts');
