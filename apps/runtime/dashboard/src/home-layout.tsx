@@ -4,6 +4,7 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
 import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
+import {HomeCardIcon} from './home-card-icon.tsx';
 import './home-layout.css';
 
 const sizes = {small: 'Small', medium: 'Standard', large: 'Wide'};
@@ -22,6 +23,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const [natural, setNatural] = useState<'desktop' | 'phone'>(() => window.matchMedia('(max-width: 600px)').matches ? 'phone' : 'desktop');
   const [selected, setSelected] = useState(natural), [draft, setDraft] = useState<Draft>();
   const [picker, setPicker] = useState(false), [category, setCategory] = useState('All'), [message, setMessage] = useState('');
+  const [search, setSearch] = useState(''), searchInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<{id: string; base: number; layouts: HomeArrangements}>();
   const drag = useRef<string | undefined>(undefined), host = useRef<HTMLDivElement>(null), editButton = useRef<HTMLButtonElement>(null);
   const [focusId, setFocusId] = useState<string>();
@@ -40,6 +42,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     if (editing && (!previousEditing.current || previousPicker.current && !picker)) host.current?.querySelector<HTMLButtonElement>('[data-home-add]')?.focus();
     previousEditing.current = editing;previousPicker.current = picker;
   }, [editing, picker, editable]);
+  useEffect(() => {if (picker) searchInput.current?.focus();}, [picker]);
   useEffect(() => {
     if (focusId === undefined) return;
     const target = [...(host.current?.querySelectorAll<HTMLButtonElement>('[data-home-move]:not(:disabled)') ?? [])].find(button => button.dataset.homeMove === focusId) ?? host.current?.querySelector<HTMLButtonElement>('[data-home-add]:not(:disabled)');
@@ -77,6 +80,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   };
   const locked = !editable || conflict || pending !== undefined;
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
+  const query = search.trim().toLocaleLowerCase();
+  const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host}>
     <header className="page home-layout-heading"><h1>Home</h1><div className="actions"><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
       if (record === undefined) return;setSelected(natural);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
@@ -89,10 +94,13 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     </div>}
     {conflict && <p role="alert">Home changed in another browser. <button type="button" className="secondary" disabled={!editable} onClick={reload}>Load saved layout</button></p>}
     {editing && picker && <section className="home-card-picker" aria-label="Add a card"><header><h2>Add a card</h2><button type="button" className="secondary" onClick={() => {setPicker(false);}}>Close</button></header>
+      <label className="home-picker-search"><span className="vh">Search cards</span><input ref={searchInput} type="search" placeholder="Search cards" value={search} onChange={event => {setSearch(event.target.value);}}/></label>
       <div className="actions" role="group" aria-label="Card categories">{categories.map(value => <button type="button" key={value} className="secondary" aria-pressed={category === value} onClick={() => {setCategory(value);}}>{value}</button>)}</div>
-      <div className="home-catalog">{catalog.filter(card => category === 'All' || card.category === category).map(card => {
+      <p role="status" aria-atomic="true" className={matches.length === 0 ? 'home-picker-empty' : 'vh'}>{matches.length === 0 ? 'No cards found.' : `${String(matches.length)} cards`}</p>
+      {matches.length === 0 && <button type="button" className="secondary" onClick={() => {setSearch('');setCategory('All');searchInput.current?.focus();}}>Reset filters</button>}
+      <div className="home-catalog" role="list">{matches.map(card => {
         const existing = entries.find(entry => entry.widget === card.id);
-        return <div key={card.id}><span><strong>{card.name}</strong><small>{card.reason ?? card.category}</small></span><button type="button" className="secondary" aria-label={`${existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'} ${card.name}`} disabled={locked || card.reason !== undefined || existing?.hidden === false || (['desktop', 'phone'] as const).some(key => layouts[key].length >= 128 && !layouts[key].some(entry => entry.widget === card.id))} onClick={() => {change(addHomeCard(layouts, breakpoint, card));setMessage(`${card.name} added.`);}}>{existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'}</button></div>;
+        return <div key={card.id} role="listitem"><HomeCardIcon card={card}/><span><strong>{card.name}</strong><small>{card.reason ?? card.category}</small></span><button type="button" className="secondary" aria-label={`${existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'} ${card.name}`} disabled={locked || card.reason !== undefined || existing?.hidden === false || (['desktop', 'phone'] as const).some(key => layouts[key].length >= 128 && !layouts[key].some(entry => entry.widget === card.id))} onClick={() => {change(addHomeCard(layouts, breakpoint, card));setMessage(`${card.name} added.`);}}>{existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'}</button></div>;
       })}</div></section>}
     <div className="home-layout-grid">{shown.map((entry, index) => {
       const definition = savedHomeCard(entry.widget, catalog);if (definition === undefined) return null;

@@ -15,9 +15,15 @@
 .home-edit-toolbar,.home-card-picker>header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .home-card-picker>header h2{margin:0}
 .home-card-picker>.actions{margin:12px 0}
+.home-card-picker>.actions button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.home-picker-search{display:block;margin-top:16px}
+.home-picker-search input{width:100%;min-width:0;font-size:16px}
+.home-picker-empty{margin:12px 0}
+.home-card-icon{flex:0 0 44px;width:44px;height:44px;padding:8px;box-sizing:border-box;border-radius:12px;background:var(--inset);color:var(--muted-dense)}
 .home-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
 .home-catalog>div{display:flex;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:12px 0;border-top:1px solid var(--edge-dense)}
-.home-catalog>div>span{min-width:0;overflow-wrap:anywhere}
+.home-catalog>div>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.home-catalog>div>button{flex-shrink:0;min-height:44px}
 .home-catalog strong{font-weight:500}
 .home-catalog small{display:block;color:var(--muted-dense);margin-top:4px}
 .home-card-editor{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:8px;background:var(--inset);border:1px solid var(--edge-dense);border-radius:var(--radius) var(--radius) 0 0}
