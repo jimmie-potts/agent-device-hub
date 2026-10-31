@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Page} from 'playwright';
+import {expect} from 'playwright/test';
 import type {CompanionArchive} from '@jimmie-potts/companions';
 import {feed, type World} from './harness.ts';
 
@@ -18,10 +19,14 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   await choose.focus(); await choose.press('Enter');
   await selected.getByText(`Selected conversation: Reachy + MicroDuck · ${conversationId}`, {exact: true}).waitFor();
   await page.goto(`${world.url}/#/`); await feed(page, 'connected');
-  await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
+  const editHome = page.getByRole('button', {name: 'Edit Home', exact: true});
+  await editHome.click();
   await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Add MicroDuck', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();
+  // The draft card is visible but inert until the save completes and returns focus.
+  await expect(editHome).toBeEnabled();
+  await expect(editHome).toBeFocused();
   const widget = page.getByRole('article', {name: 'MicroDuck latest meaning', exact: true});
   const legacy = 'SYNTHETIC_LEGACY_'.repeat(64);
   const text = 'Quack: captain of the imaginary pond.';
