@@ -6,6 +6,14 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Automation device following (#1330) uses the existing runtime CI test discovery.
+After the root build, run `node --test apps/runtime/dist/tests/automation-device-follow.test.js`
+and the automation, power schedule and power limit suites. The disposable runtime
+admits two device owners and a playback-only owner, checks independent initial
+copies and live following without recurring refusals, and recovers a genuine
+owner refusal with the existing bounded retry. It sends no device commands.
+Keep installed Mac log observation separate from these synthetic checks.
+
 Private Tailscale access (#1117) uses the existing runtime core CI discovery.
 After the root build, run `node --test apps/runtime/dist/tests/private-proxy.test.js apps/runtime/dist/tests/wifi-proxy.test.js`
 and the existing gateway suite. These check origin/proxy proof, browser and machine
