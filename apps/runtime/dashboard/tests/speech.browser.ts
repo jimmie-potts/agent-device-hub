@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
-import type {Browser, Page} from 'playwright';
+import type {Browser, Page, Request} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
+
+function isStopCall(request: Request, kind: 'control' | 'receipt'): boolean {
+  const call = kind === 'control' ? 'request' : 'publish';
+  if (request.method() !== 'POST' || new URL(request.url()).pathname !== `/api/sdk/v1/${call}`) return false;
+  const body: unknown = request.postDataJSON();
+  if (typeof body !== 'object' || body === null) return false;
+  const message = kind === 'control' ? ('command' in body ? body.command : undefined) : ('message' in body ? body.message : undefined);
+  const type = kind === 'control' ? 'org.bunny.companion-speech.endpoint.requested' : 'org.bunny.companion-speech.playback.observed';
+  if (typeof message !== 'object' || message === null || !('type' in message) || message.type !== type || !('data' in message)) return false;
+  const data = message.data;
+  return typeof data === 'object' && data !== null && (kind === 'control' ? 'action' in data && data.action === 'stop' : 'status' in data && data.status === 'stopped');
+}
 
 /** Real runtime and page, with only browser identity and the audio device replaced by explicit synthetic fixtures. */
 export async function speechJourney(browser: Browser): Promise<void> {
@@ -44,9 +56,22 @@ export async function speechJourney(browser: Browser): Promise<void> {
     await controls(page).getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     await controls(page).getByText('Tracked operation: succeeded.', {exact: true}).waitFor();
     await question('speech-stop'); await page.waitForFunction(() => window.speechFixture.calls === 2);
+    let delayedReceipt = false;
+    await page.route('**/api/sdk/v1/publish', async route => {
+      if (!delayedReceipt && isStopCall(route.request(), 'receipt')) {
+        delayedReceipt = true;
+        await new Promise(resolve => {setTimeout(resolve, 2000);});
+      }
+      await route.continue();
+    });
+    const stoppedControl = page.waitForEvent('requestfinished', {predicate: request => isStopCall(request, 'control')});
+    const stoppedReceipt = page.waitForEvent('requestfinished', {predicate: request => isStopCall(request, 'receipt')});
     const stop = controls(page).getByRole('button', {name: 'Stop speaking', exact: true}); await stop.focus(); await stop.press('Enter');
     await controls(page).getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
+    // Local cancellation is immediate; the next scenario needs the completed control and receipt writes.
+    for (const request of await Promise.all([stoppedControl, stoppedReceipt])) assert.equal((await request.response())?.status(), 200);
     await question('speech-mute'); await page.waitForFunction(() => window.speechFixture.calls === 3);
+    await page.unroute('**/api/sdk/v1/publish');
     await controls(page).getByRole('button', {name: 'Mute spoken alerts', exact: true}).click();
     await controls(page).getByText('Spoken alerts are off in this tab.', {exact: true}).waitFor();
     await question('speech-muted'); assert.equal(await count(), 3); assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 2);
