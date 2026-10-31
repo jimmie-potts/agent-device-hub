@@ -93,7 +93,13 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     expect('the task waits for the owner with a proposal bound to the current mode revision', answers(CONVERSATION, response =>
       response.status === 200 && JSON.stringify(bodyOf(response)).includes('"kind":"approval"') && JSON.stringify(bodyOf(response)).includes('"mode":"quiet"') || 'proposal missing')),
     expect('no command was sent while the proposal waits', h => modeOperations(h).length === 0 && hubMode(h)?.mode === 'free' || 'a command was sent before approval'),
-    act('runtime restarts while the proposal waits', h => h.restart()),
+    act('runtime restarts while the proposal waits', async h => {
+      assistantSyncsBeforeRestart.set(h, h.reader.syncs('assistant-state', 'bunny/modules/companions'));
+      await h.restart();
+    }),
+    // The approval names the public revision; it waits for the reader's copy to resync so a restart cannot leave it stale.
+    expect('the reader resyncs assistant state after restart', h =>
+      h.reader.syncs('assistant-state', 'bunny/modules/companions') > (assistantSyncsBeforeRestart.get(h) ?? Number.MAX_SAFE_INTEGER) || 'the reader has not resynced'),
     holds('restart keeps the proposal and sends nothing', h => assistant(h)?.tasks[0]?.status === 'waiting' && modeOperations(h).length === 0 || 'restart changed the proposal', 100),
     expect('reader cannot approve', answers({as: 'reader', method: 'POST', path: '/api/v2/modules/companions/upload?family=assistant-input&target=assistant&requestId=approval-reader&name=input.json', headers: {'content-type': 'application/octet-stream'}, body: {}}, response => refusedWith(response, 403, 'forbidden'))),
     act('operator explicitly approves', h => assistantInput(h, 'approval-yes', true, 'approve')),
