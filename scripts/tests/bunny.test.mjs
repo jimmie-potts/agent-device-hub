@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {operate, parse, privateHostDirectory} from '../bunny.mjs';
+import {operate, maintain, parse, privateHostDirectory} from '../bunny.mjs';
 
 const id='1'.repeat(64), image='sha256:'+'2'.repeat(64), revision='3'.repeat(40);
 function fixture() {
@@ -398,4 +398,48 @@ test('qualification request is limited to explicit backup and restore operator r
   assert.equal(parse(['backup','snapshot','--project','synthetic','--archive-volume','archives','--qualification-request','/private/request.json']).qualificationRequest,'/private/request.json');
   assert.throws(()=>parse(['start','--project','synthetic','--qualification-request','/private/request.json']));
   assert.throws(()=>parse(['worker-backup','--revision',revision,'--destination','/backup/snapshot','--qualification-request','/private/request.json']));
+});
+
+async function withoutUidOn(platform, work) {
+  const platformDescriptor=Object.getOwnPropertyDescriptor(process,'platform');
+  const uidDescriptor=Object.getOwnPropertyDescriptor(process,'getuid');
+  Object.defineProperty(process,'platform',{...platformDescriptor,value:platform});
+  Object.defineProperty(process,'getuid',{configurable:true,writable:true,value:undefined});
+  try{return await work();}
+  finally {
+    Object.defineProperty(process,'platform',platformDescriptor);
+    if(uidDescriptor)Object.defineProperty(process,'getuid',uidDescriptor);else delete process.getuid;
+  }
+}
+
+test('native Windows manual commands preserve existing Docker paths without POSIX coordination',async t=>{
+  const {mkdtemp,realpath,rm,lstat}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os'),{join}=await import('node:path');
+  const directory=await mkdtemp(join(await realpath(tmpdir()),'bunny-windows-manual-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const coordination=join(directory,'must-stay-absent');
+  await withoutUidOn('win32',async()=>{
+    for(const command of ['start','stop','backup','restore']) {
+      const f=fixture();
+      if(command==='stop')Object.assign(f.info.State,{Status:'running',Running:true,Pid:101});
+      const selected=parse([command,...(['backup','restore'].includes(command)?['snapshot-1','--archive-volume','archives']:[]),'--project','synthetic']);
+      const result=await maintain(selected,f.run,async()=>assert.fail('native Windows host-directory export is unqualified'),coordination);
+      assert.equal(result.status,command==='start'?'running':command==='stop'?'stopped':'complete');
+      assert.ok(f.calls.some(args=>args[0]===({start:'start',stop:'stop',backup:'run',restore:'run'})[command]));
+      assert.ok(!f.calls.some(args=>args.some(value=>value.includes('type=bind'))));
+    }
+  });
+  await assert.rejects(lstat(coordination),{code:'ENOENT'});
+});
+
+test('missing POSIX UID support never bypasses Mac operation exclusion',async t=>{
+  const {mkdtemp,realpath,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os'),{join}=await import('node:path');
+  const root=await mkdtemp(join(await realpath(tmpdir()),'bunny-posix-guard-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const f=fixture();
+  await withoutUidOn('darwin',async()=>{
+    await assert.rejects(maintain(plan('start'),f.run,undefined,root),/operator-refused/);
+    assert.equal(f.calls.length,0);
+  });
 });

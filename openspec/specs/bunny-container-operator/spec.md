@@ -147,7 +147,7 @@ The repository SHALL define one owned Compose project, `bunny-diagnostics` (`dep
 
 ### Requirement: Qualified bounded batch deployment
 
-The host operator SHALL consume only matching successful hosted qualification for an exact committed revision and immutable Linux ARM64 production image. It SHALL bind the selected project, previous and target identities, included issues, designated owner, focused storage assessment, required client checks and recovery decision to one private deployment record. It SHALL serialize deployment and manual maintenance, verify stopped writer exit, take and verify a consistent backup, preserve private volumes/configuration/network, select the image once and verify exact running identity, health and the selected read-only client path before success. The verified writer release SHALL be reusable without another conversational acknowledgment.
+The selected Mac host operator SHALL consume only matching successful hosted qualification for an exact committed revision and immutable Linux ARM64 production image. It SHALL bind the selected project, previous and target identities, included issues, designated owner, focused storage assessment, required client checks and recovery decision to one private deployment record. It SHALL serialize deployment and manual maintenance, verify stopped writer exit, take and verify a consistent backup, preserve private volumes/configuration/network, select the image once and verify exact running identity, health and the selected read-only client path before success. The verified writer release SHALL be reusable without another conversational acknowledgment.
 
 #### Scenario: Verified batch
 - **WHEN** a matching qualified artifact is selected for the established owned target and its bounded checks pass
@@ -156,6 +156,10 @@ The host operator SHALL consume only matching successful hosted qualification fo
 #### Scenario: Ineligible artifact or overlapping operation
 - **WHEN** qualification is absent, failed, incomplete, wrong-revision or wrong-image, or another operation holds the selected project
 - **THEN** promotion refuses before stopping or changing the selected runtime and preserves existing evidence
+
+#### Scenario: Retained native Windows manual operation
+- **WHEN** an operator invokes existing native Windows manual start, stop, named-volume backup or restore
+- **THEN** the existing Docker operator checks remain available without POSIX host coordination or a new qualified-batch claim
 
 ### Requirement: Inspectable failed and interrupted deployment
 

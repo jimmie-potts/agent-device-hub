@@ -2171,6 +2171,12 @@ checks neither install the feature nor qualify a live model or physical device.
 
 ## Qualified Mac batch operator checks
 
+The existing operator suite includes a synthetic native Windows boundary check:
+with `process.platform` set to `win32` and no `getuid`, manual start and stop,
+and named-volume backup and restore, retain their Docker paths without POSIX
+coordination files. A separate Mac boundary check refuses missing UID support
+before Docker work. These are source regressions, not new Windows qualification.
+
 Use Node 24 and `npm ci`, then `npm run build`, `npm run typecheck`,
 `npm run lint:js`, `npm run test:deployment`, `npm run check:workflow` and
 `npm run test:workflow`. The runtime CI group runs the operation/deployment tests

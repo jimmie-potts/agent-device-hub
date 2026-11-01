@@ -148,6 +148,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
     const {backup, restore} = await import('./bunny-backup.mjs');
     return plan.command === 'worker-backup' ? backup({...plan,helper:{revision:process.env.BUNNY_MAINTENANCE_REVISION,image:process.env.BUNNY_MAINTENANCE_IMAGE}}) : restore(plan);
   }
+  if(plan.maintenanceHelper!==undefined&&(process.platform==='win32'||process.getuid===undefined))refuse('qualification');
   const helper=plan.maintenanceHelper===undefined?undefined:maintenanceHelperDetails(plan.maintenanceHelper);
   let info = await selected(plan, run);
   if (plan.command === 'status') return {operation: 'status', status: info?.State?.Status ?? 'not-created', health: 'not-checked'};
@@ -222,7 +223,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
 }
 export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory,root) {
   if(plan.qualificationRequest!==undefined&&(process.platform==='win32'||process.getuid===undefined))refuse('qualification');
-  if(plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
+  if(process.platform==='win32'||plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
   const {withOperation,operationRoot}=await import('./bunny-operations.mjs');
   return withOperation({project:plan.project,root},async()=>{
     if(plan.qualificationRequest===undefined)return operate(plan,run,checkPrivate);
