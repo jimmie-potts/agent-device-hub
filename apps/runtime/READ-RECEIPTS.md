@@ -1,6 +1,6 @@
 # Explicit read receipts
 
-The qualified producer is Claude Code **2.1.292 in a terminal**. After a reply
+The Claude producer supports Code **2.1.292 in a terminal**. After a reply
 finishes, `/bunny-read` opens a panel for that reply. Only pressing **I read this
 reply** requests a read transition. The panel reports success after the core's
 session stream confirms the commit. Opening, rendering, model completion and
@@ -109,9 +109,88 @@ stays in the extension and carries no model prompt or permission decision.
 
 The receipt credential cannot publish activity, Desktop metadata or another
 feed's receipts. Ordinary hook credentials cannot publish qualified receipts.
-Codex and Claude Desktop read-receipt production remain disabled. Codex
-protocol experiments do not establish an actual Desktop view; that needs a
-permitted actual-client test and its own qualification before admission changes.
+Claude Desktop remains unqualified. The separately enrolled Codex Desktop
+path is described below; it does not change this Claude plugin or its checks.
+
+## Codex Desktop
+
+The selected version is Desktop **26.1027.30824**, build **22943**, with bundled
+`codex-cli 0.166.0-alpha.5.1` on macOS. An operator-run disposable test established
+that opening a completed thread caused Desktop's own successful read request,
+while an unopened control remained unread. It did not establish comprehension.
+Installed acceptance must still verify the selected runtime and launcher.
+
+`bin/codex-with-read.mjs` starts that application with a passive stdio observer
+for its bundled app-server. The observer forwards native bytes unchanged,
+including stderr, and injects no requests. It recognizes the qualified Desktop
+initialization and its native request sequence. It requires an unread snapshot,
+a subsequent latest completed-turn selection and a read request with the same
+revision. Before forwarding the request, it freezes the already-synchronized
+B.U.N.N.Y. identity, turn, generation and finished notice. Only the matching
+successful response with cleared unread state and a changed native revision
+can produce a `provider-client` receipt.
+
+The producer follows the core through SDK sync and the live stream. It never
+polls the Hub. A gap, newer turn, explicit unread, stale revision, failed request
+or missing target discards the candidate. A later sync enables future actions
+only. Shared read notifications and snapshots alone cannot assert readership;
+another client can produce those same notifications. This producer does not
+add native title, archive or explicit-unread synchronization for `codex/local`.
+
+The core rechecks the exact generation, turn and notice in its existing
+transaction. A stable action ID and retained receipt provenance prevent replay
+from making another transition, including after restart. This branch uses the
+native seen/accepted revisions. Claude continues to require its displayed
+record's `viewRevision`. Neither branch changes attention, acknowledgment or
+observation freshness.
+
+Create a separate private producer as above, using the existing Codex lifecycle
+feed's `provider: codex`, `client: local`, `hostId` and `sourceId`. Do not relabel
+it `desktop`. Set `source.feed` to
+`codex-desktop-read-26.1027.30824-22943-0.166.0-alpha.5.1` and omit
+`lifecycleVersion`. Derive its source with `codexReceiptSource(feed)` from
+`apps/runtime/dist/src/read-receipts/qualification.js` in the reviewed release.
+Grant that `bunny/parts/codex-read-<digest>` source precisely `read` and `ingest`
+with a new token. The ordinary hooks and Claude credential cannot publish its
+receipts. Keep the file private and verify both credential scopes under the
+owning installation procedure before selecting the launcher.
+
+Use Node 24 and the built reviewed host release:
+
+```sh
+node /reviewed/release/apps/runtime/bin/codex-with-read.mjs --check /Applications/ChatGPT.app /private/codex-read/producer.json
+node /reviewed/release/apps/runtime/bin/codex-with-read.mjs /Applications/ChatGPT.app /private/codex-read/producer.json
+```
+
+Replace the release and producer paths. `--check` inspects versions only; it
+does not open the UI, enroll credentials or prove installed acceptance. The
+normal command is an explicit operator launch. Quit the existing application
+through its normal UI first, preserving ongoing work. An existing singleton
+instance can keep its original connection, so launching another process alone
+does not establish enrollment. No personal settings, lifecycle hooks or app
+files are edited. An unsupported version starts normally without this
+collection selection. The observer reads its producer file once at startup.
+Editing or disabling that file does not stop an existing observer. To stop
+collection, save ongoing work, quit the selected Desktop normally and verify
+that its observer and native app-server have ended. Start Desktop through its
+normal launcher. Set `enabled: false` in the private producer before using the
+receipt launcher again to leave future connections disabled. Retain the release
+while any observer uses it.
+
+Correlation expires after 30 seconds. Per connection, collection stops on an
+invalid frame, reused request ID, a frame above 1 MiB, more than 128 pending
+requests, 256 selected threads or 65,536 distinct request IDs. A chunk with
+more than 256 frames also stops collection. These limits preserve native
+forwarding and require a new controlled connection before collection resumes.
+Publication has at most four calls in flight and a 2.4-second deadline, with no
+queue or retry. A refused or uncertain publication records no local claim of
+success. Collection failures never request agent permissions or wait for a
+device. After native output is forwarded and the child exits, the observer
+allows pending native filesystem or DNS work 250 ms to finish. If that work
+remains blocked or its state cannot be checked, the observer ends itself with
+`SIGKILL`; otherwise it preserves the native exit code. This prevents a stalled
+collector read from keeping an exited app-server connection open. Raw native
+content and credentials are never logged or published by the observer.
 
 ## Verify and disable
 
@@ -122,8 +201,18 @@ Reopen and confirm the newer reply. Also test missing credentials, unavailable
 runtime and session clear. Inspect only declared metadata, privately; keep
 native identifiers, tokens and diagnostic originals out of Git and GitHub.
 
+For Codex, start with two completed synthetic threads and matching lifecycle
+records. Open one through the controlled Desktop instance and leave the other
+unopened. Independently verify the committed identity, current turn, finished
+notice and native revisions in the runtime, and the untouched control. A
+protocol client sending a read request is a native integration test, not UI
+acceptance. Where computer-use access is restricted, use an operator action
+and independent metadata readback without bypassing that restriction.
+
 Installed acceptance repeats the selected supported path after the runtime and
-host artifacts are deployed. Removing the plugin selection or disabling its
-private producer file stops future observations without erasing committed
-evidence. Do not infer backward storage compatibility merely from unchanged
-table names; assess the exact previous release under the owning upgrade guide.
+host artifacts are deployed. For Claude, disable its private producer file to
+refuse later helper calls, or relaunch without the plugin selection. For Codex,
+use the stop/relaunch procedure above; changing its file alone does not stop
+the active collector. Neither procedure erases committed evidence. Do not infer
+backward storage compatibility merely from unchanged table names; assess the
+exact previous release under the owning upgrade guide.

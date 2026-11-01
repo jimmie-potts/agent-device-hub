@@ -5,11 +5,25 @@ import {producerSource} from '../hook/producer.js';
 
 export const CLAUDE_TERMINAL_VERSION = '2.1.292';
 export const CLAUDE_RECEIPT_FEED = `claude-terminal-read-${CLAUDE_TERMINAL_VERSION}`;
+export const CODEX_DESKTOP_VERSION = '26.1027.30824';
+export const CODEX_DESKTOP_BUILD = '22943';
+export const CODEX_APP_SERVER_VERSION = '0.166.0-alpha.5.1';
+export const CODEX_RECEIPT_FEED = `codex-desktop-read-${CODEX_DESKTOP_VERSION}-${CODEX_DESKTOP_BUILD}-${CODEX_APP_SERVER_VERSION}`;
+export const qualifiedCodexVersions = (desktop: string, build: string, native: string): boolean =>
+  desktop === CODEX_DESKTOP_VERSION && build === CODEX_DESKTOP_BUILD && native === `codex-cli ${CODEX_APP_SERVER_VERSION}`;
+/** Desktop puts global configuration flags before the stdio subcommand. Other transports remain unobserved. */
+export function isCodexStdioServer(args: readonly string[]): boolean {
+  let index = 0;
+  while ((args[index] === '-c' || args[index] === '--config') && args[index + 1] !== undefined) index += 2;
+  return args[index] === 'app-server' && !args.slice(index + 1).some(arg => arg === 'daemon' || arg.startsWith('--listen'));
+}
 export type ReceiptFeed = Pick<Identity, 'provider' | 'client' | 'hostId' | 'sourceId'>;
 
 /** The distinct credential grant opts this exact qualified producer into receipt intake. */
 export const receiptSource = ({provider, client, hostId, sourceId}: ReceiptFeed): string =>
   producerSource({provider, client, hostId, sourceId, feed: CLAUDE_RECEIPT_FEED}).replace('/hub-', '/claude-read-');
+export const codexReceiptSource = ({provider, client, hostId, sourceId}: ReceiptFeed): string =>
+  producerSource({provider, client, hostId, sourceId, feed: CODEX_RECEIPT_FEED}).replace('/hub-', '/codex-read-');
 /** Equality with this token binds a pane to one owner record; it is never parsed or ordered. */
 export const viewRevision = (record: Pick<SessionRecord, 'revision'>): string => `session-${record.revision}`;
 
@@ -21,6 +35,12 @@ export function isReadReceipt(observation: Lifecycle21Observation): observation 
 export function receiptQualification(message: Message<ReadReceiptObservation>): ReadReceiptQualification | undefined {
   const {provider, client, hostId, sourceId} = message.data.identity;
   const feed = {provider, client, hostId, sourceId};
-  if (provider !== 'claude' || client !== 'code' || message.data.event.receipt.kind !== 'owned-ui' || message.source !== receiptSource(feed)) return undefined;
-  return {source: message.source, feed, kind: 'owned-ui'};
+  const kind = message.data.event.receipt.kind;
+  if (provider === 'claude' && client === 'code' && kind === 'owned-ui' && message.source === receiptSource(feed)) {
+    return {source: message.source, feed, kind};
+  }
+  if (provider === 'codex' && client === 'local' && kind === 'provider-client' && message.source === codexReceiptSource(feed)) {
+    return {source: message.source, feed, kind};
+  }
+  return undefined;
 }
