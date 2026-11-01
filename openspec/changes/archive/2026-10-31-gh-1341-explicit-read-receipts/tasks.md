@@ -13,10 +13,11 @@
 - [x] 3.1 Run the required build, type, lint, event/lifecycle/controller compatibility, SDK consumer and workflow checks; verify the focused tests detect omitted registration or a stale-target guard, and record the actual specification inventory before synchronization and archive.
 
 Validation: build, typecheck and lint passed on Node 24.22.0. Event tests passed
-203/203, controller tests 410/410 and lifecycle tests 140/140. Python 3.14
+204/204, controller tests 410/410 and lifecycle tests 140/140. Python 3.14
 event/controller/lifecycle checks and both retained package-consumer checks
 passed. Removing the generation guard made the delayed-receipt test fail;
-restoring it passed all eight receipt tests. Workflow validation reported 83
+restoring it passed the receipt suite. The native initial-revision test failed
+before the provider-token correction; all nine receipt tests then passed. Workflow validation reported 83
 valid specs and one valid active change, and all 241 workflow tests passed.
 
 The existing SDK oversized-request test failed with `EPIPE` on macOS, including

@@ -47,6 +47,12 @@ route. The pinned processor publishes to its own subscribed connection IDs.
 See [Codex's read-state processor](https://github.com/openai/codex/blob/f79b26ccbb3116b052544666a181012fb45dc49b/codex-rs/app-server/src/request_processors/thread_read_state.rs)
 for the version-bound implementation.
 
+Codex's [stored-state implementation](https://github.com/openai/codex/blob/f79b26ccbb3116b052544666a181012fb45dc49b/codex-rs/state/src/runtime/thread_read_state.rs#L73)
+uses `initial:<thread-id>` before a receipt row exists and a UUID after an update.
+The contract preserves both token forms. An initial state is not a read action;
+the reviewed Desktop class can skip that state. Admitting its token does not
+qualify stock Desktop behavior.
+
 The protocol permits a client to mark a thread read; that does not identify
 which UI was viewed. A production observer must observe the real client's
 successful action without issuing an update itself. Native snapshots, output

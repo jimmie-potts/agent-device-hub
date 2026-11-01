@@ -475,12 +475,19 @@ The shared contract SHALL register `playback/2.1` beside unchanged `playback/2.0
 
 The contract SHALL provide lifecycle/2.1 as an explicitly selected extension of lifecycle/2.0 within message profile 2.0. It SHALL accept the existing lifecycle observations and a closed `read-receipt-observed` event. The new event SHALL name the owner-assigned session generation and finished notice, a known turn, and receipt provenance. The session identity SHALL retain its provider, client, host, source and native session ID. A provider-client receipt SHALL identify the Desktop reader and the opaque revisions seen and accepted by that client. An application-owned UI receipt SHALL identify its opaque view revision. These revisions SHALL NOT imply chronology or human comprehension. Only an observed successful read action after a completed turn qualifies as a provider-client receipt; a snapshot, rendering callback, output event or missing unread marker does not qualify.
 
+Provider revisions SHALL preserve opaque tokens of 1–128 ASCII letters, digits, underscores, periods, hyphens or colons, including native `initial:<thread-id>` tokens. Whitespace, empty and oversized tokens SHALL be refused. Application-owned view revisions SHALL retain the shared identifier rule. Token shape alone SHALL NOT establish a read action.
+
 Receipt observations SHALL carry unknown parentage without changing known session parentage. They SHALL carry no prompt, reply, transcript content, title, archive metadata or credential field. Unknown fields and unknown turn identity SHALL be refused. Default core-family registration SHALL remain unchanged and SHALL reject lifecycle/2.1 with `unsupported-version`; explicit registration SHALL be required. Existing lifecycle/2.0, session/2.0 and retained 1.x behavior SHALL remain unchanged.
 
 #### Scenario: Qualified identity remains unchanged
 - **WHEN** an explicit validator receives a conforming receipt for `codex/local` or `claude/code`
 - **THEN** it accepts the metadata without relabeling the session as `codex/desktop`
 - **AND** the same payload is rejected under lifecycle/2.0
+
+#### Scenario: Native initial revision
+- **WHEN** a qualified explicit action has a native `initial:<thread-id>` seen revision, an accepted revision and a matching finished target
+- **THEN** the receipt validates and is eligible without altering the opaque token
+- **AND** an initial snapshot alone still supplies no qualified action
 
 #### Scenario: Existing observations remain compatible
 - **WHEN** an explicit lifecycle/2.1 validator receives an existing valid lifecycle/2.0 observation under the new schema URI

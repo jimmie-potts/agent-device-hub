@@ -336,8 +336,11 @@ Receipt provenance has two closed forms:
   action and has qualified its policy. A generic rendering callback is not a
   qualified view action.
 
-Revisions are opaque identifiers. Do not sort them or treat them as proof of
-human comprehension. The new observation admits no prompt, response, transcript,
+Provider revisions are opaque tokens of 1–128 ASCII letters, digits, underscores,
+periods, hyphens or colons. Preserve native tokens such as `initial:<thread-id>`;
+the application-owned view revision keeps the shared identifier rule. Do not
+sort revisions or treat them as proof of human comprehension. The new observation
+admits no prompt, response, transcript,
 title, archive metadata or credential field. A future adapter must select the
 declared fields before persistence, transmission and diagnostics; native API
 responses can contain content outside this contract.

@@ -2,6 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/lifecycle/2.1",
   "description": "Opt-in lifecycle extension for explicit client read receipts. Registration is not provider qualification or runtime adoption. Existing observations retain their 2.0 rules.",
+  "$defs": {
+    "providerRevision": {
+      "description": "Opaque provider token, including native initial:<thread-id> revisions. Never parse it as an ordering value.",
+      "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+    }
+  },
   "oneOf": [
     {"$ref": "https://bunny.invalid/events/lifecycle/2.0"},
     {
@@ -31,8 +37,8 @@
                   "required": ["kind", "client", "seenRevision", "acceptedRevision"],
                   "properties": {
                     "kind": {"const": "provider-client"}, "client": {"const": "desktop"},
-                    "seenRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
-                    "acceptedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+                    "seenRevision": {"$ref": "#/$defs/providerRevision"},
+                    "acceptedRevision": {"$ref": "#/$defs/providerRevision"}
                   }
                 },
                 {

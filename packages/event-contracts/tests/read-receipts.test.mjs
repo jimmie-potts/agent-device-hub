@@ -63,6 +63,20 @@ test('the extension preserves existing lifecycle observations and their semantic
   assert.equal(v.validate(message).ok, false, 'old marker privilege is not widened');
 });
 
+test('opaque native initial revisions survive a qualified explicit read action', () => {
+  for (const provider of ['codex', 'claude']) {
+    const {message, session, qualification} = example(provider);
+    message.data.event.receipt.seenRevision = 'initial:synthetic-session';
+    message.data.event.receipt.acceptedRevision = '00000000-0000-4000-8000-000000000001';
+    assert.equal(validator().validate(message).ok, true);
+    assert.deepEqual(decideReadReceipt(message, session, qualification), {status: 'eligible', noticeId: session.notices[0].id});
+    assert.equal(message.data.event.receipt.seenRevision, 'initial:synthetic-session');
+  }
+  const {message} = example('codex', 'owned-ui');
+  message.data.event.receipt.viewRevision = 'initial:synthetic-view';
+  assert.equal(validator().validate(message).ok, false, 'owned UI revisions keep the identifier contract');
+});
+
 test('closed receipts reject undeclared content, missing target and malformed provenance', () => {
   const v = validator();
   const changes = [
@@ -73,6 +87,10 @@ test('closed receipts reject undeclared content, missing target and malformed pr
     m => {m.data.event.receipt.client = 'cli';},
     m => {delete m.data.event.receipt.acceptedRevision;},
     m => {m.data.event.receipt.seenRevision = 'x'.repeat(129);},
+    m => {m.data.event.receipt.seenRevision = 'initial:has whitespace';},
+    m => {m.data.event.receipt.seenRevision = '';},
+    m => {m.data.event.receipt.acceptedRevision = 'x'.repeat(129);},
+    m => {m.data.event.receipt.acceptedRevision = 'has\nnewline';},
     m => {m.data.event.receipt.acceptedRevision = 'has whitespace';},
     m => {m.data.event.receipt.viewRevision = 'wrong-variant';},
     m => {m.data.event.generation = -1;},
