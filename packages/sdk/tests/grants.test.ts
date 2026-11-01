@@ -412,12 +412,13 @@ it('a stream that drains before its stall limit stays open and a later stall get
     const drained = once(writable, 'drain');
     writable.uncork();
     await drained;
-    clock.advance(5000);
     assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'a completed drain cancels its old stall deadline');
     writable.cork();
     await sender.publish('bunny.state.test-blob.b1', blob('b1', 2, 100_000));
     await until(() => writable?.writableNeedDrain === true, 'the next backpressured write');
-    clock.advance(4999);
+    clock.advance(1);
+    assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'the cancelled first deadline cannot end the later stall');
+    clock.advance(4998);
     assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'the later stall gets its own deadline');
     clock.advance(1);
     await until(() => edge.diagnostics.some(record => record.event === 'edge.disconnected'), 'the later stalled stream ended');
