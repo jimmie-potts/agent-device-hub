@@ -12,9 +12,9 @@
 ## 3. Worker and page
 
 - [x] 3.1 Add the host worker program and launcher: private configuration, endpoint declaration, worktree creation, headless harness invocation with bounds, git facts, progress reports and cancel; verify with a fake harness and a temporary repository.
-- [ ] 3.2 Show delegation proposals, the waiting state, the worker's availability and the result on the Conversation page; verify with the synthetic provider's delegation path in the browser journey.
+- [x] 3.2 Show delegation proposals, the waiting state, the worker's availability and the result on the Conversation page; verify with the synthetic provider's delegation path in the browser journey.
 
 ## 4. Specifications and guides
 
 - [x] 4.1 Write the worker guide, update the companions README and the architecture note; verify by instruction readback.
-- [ ] 4.2 Run root build, lint, typecheck, the companions suite, the runtime unit tests, contract tests and the browser journey on Linux, then synchronize the delta specs and archive this change before final review.
+- [x] 4.2 Run root build, lint, typecheck, the companions suite, the runtime unit tests, contract tests and the browser journey on Linux, then synchronize the delta specs and archive this change before final review.
