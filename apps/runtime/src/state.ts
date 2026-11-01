@@ -274,7 +274,8 @@ export async function readPrivateFile(file: string, maxBytes: number, {beforeOpe
   }
   try {
     // O_NOFOLLOW guards only the last part. A directory along the path swapped for a link after the checks above would
-    // lead the open elsewhere, so the file opened must still be the one at `path`. Without procfs it cannot be shown.
+    // lead the open elsewhere, so the file opened must still be the one at `path`: shown by procfs on Linux, and off
+    // Linux by the recheck below.
     await afterOpen?.();
     const info = await handle.stat();
     if (process.platform !== 'linux' || withoutProcfs) {

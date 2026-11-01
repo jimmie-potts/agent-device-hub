@@ -812,8 +812,9 @@ build, run these focused files, `test:runtime:built`,
 `test:sdk:built`, `test:runtime-dashboard:built` and the affected disposable core
 scenario. The tests cover authenticated source binding, exact owner revision,
 replay, later turns, restart and failed commit. Helper tests run its executable
-against the authenticated gateway and require Linux for private configuration
-checks through `/proc/self/fd`. Use a disposable container on macOS.
+against the authenticated gateway and are kept to Linux, where CI runs them
+(the private-file reader works off Linux too, Hub #1355). Use a disposable
+container on macOS.
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
 real helper's session/2.1 output clears the dashboard's unread row, survives a
 page reload and returns to unread on a new turn without a page command. The
