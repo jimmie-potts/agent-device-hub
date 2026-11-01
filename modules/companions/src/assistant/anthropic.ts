@@ -91,7 +91,10 @@ export class AnthropicProvider implements ModelProvider {
     return this.#reply(parsed);
   }
   #system(input: TurnInput): string {
-    const mode = input.mode === null ? 'The current Hub mode is unknown.' : `The current Hub mode is ${input.mode.mode}.`;
+    // The mode line is the mode now: in a turn after an approved command it already shows the applied value, and a model that
+    // read it as the earlier state told the owner "already in Work" after switching from Free (#504 readout, 2026-11-01).
+    const mode = input.mode === null ? 'The Hub mode is unknown now.'
+      : `The Hub mode is ${input.mode.mode} now. This is the state after any command already applied earlier in this task, not the mode before it.`;
     const {persona, preferences} = input.context;
     // The owner's preferences are data about the owner, framed as such: tool permission is the engine's allowlist and the
     // core's dispatcher, never prompt text, so an entry phrased as an instruction widens nothing.
