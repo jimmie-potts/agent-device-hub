@@ -12,5 +12,5 @@
 ## 3. Delivery evidence
 
 - [x] 3.1 Update operator instructions, CI and development checks and verify commands/readback, build/type/lint/workflow and focused tests.
-- [ ] 3.2 Obtain independent Standards/Specification and focused writer/storage-safety review on the committed candidate, plus disposable acceptance, and resolve findings.
-- [ ] 3.3 Synchronize/archive the change after current lookups and applicable source acceptance, then publish the PR with honest source/installation limits.
+- [x] 3.2 Obtain independent Standards/Specification and focused writer/storage-safety review on the committed candidate, plus disposable acceptance, and resolve findings.
+- [x] 3.3 Synchronize current container requirements after successful current lookups and publish the PR with honest source/installation limits; verify the synchronized requirements and public source evidence.
