@@ -36,7 +36,9 @@ export function containerOptions(env) {
 // Input has already passed the shared credential parser. This profile narrows its grants further.
 export function checkLocalBrowserCredentials(credentials, ingestSource, access = 'host-local') {
   if (access === 'private-proxy') {
-    if (credentials.some(credential => credential.role !== undefined || credential.robotId !== undefined
+    // The coding worker's own role is admitted (Hub #502) with no scopes, as the shared parser already binds it to its
+    // fixed source. Every other role, and any robot ID, stays refused here.
+    if (credentials.some(credential => (credential.role !== undefined && (credential.role !== 'coding-worker' || credential.scopes.length !== 0)) || credential.robotId !== undefined
       || credential.scopes.some(scope => !['read', 'control', 'ingest'].includes(scope)))) throw new Error('container-browser-config-refused');
     if (ingestSource !== undefined) checkLocalBrowserCredentials(credentials.filter(credential => credential.source === ingestSource), ingestSource);
     return;

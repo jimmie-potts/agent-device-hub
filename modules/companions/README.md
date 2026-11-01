@@ -232,7 +232,7 @@ as for every configured module; an empty section keeps every default:
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
 - `assistant.tools` lists the permitted tools by name, each once:
-  `read_sessions` and `set_mode`. The engine builds the model's tool
+  `read_sessions`, `set_mode` and `delegate_coding`. The engine builds the model's tool
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.

@@ -46,8 +46,15 @@ part of this slice.
    `bunny/parts/coding-worker` with no scopes; the digest is the SHA-256 of a
    token you generate and keep in an owner-only file. The runtime reads the
    credentials file at start and on reload. Any other source, a scope, or a
-   robot ID on that role refuses the file.
-2. Write the private configuration, mode 600, outside every checkout:
+   robot ID on that role refuses the file. The Mac container admits this role
+   on its private-proxy and production profiles; its host-local profile, and
+   images from before Hub #1350, refuse the whole file, so grant it only on an
+   image that admits it.
+2. List `delegate_coding` in the companions section's `assistant.tools` of the
+   private `runtime.json` (see the [module guide](../modules/companions/README.md)):
+   the model is offered only the listed tools, so without it nothing is ever
+   proposed. This is a configuration change the stopped-window procedure writes.
+3. Write the private configuration, mode 600, outside every checkout:
 
    ```json
    {"schema": "coding-worker/1.0", "edge": "http://127.0.0.1:18788", "tokenFile": "/absolute/private/coding-worker.token",
@@ -61,7 +68,7 @@ part of this slice.
    destructive tools refuses. `claude.model` and `claude.maxTurns` are
    optional. Repository names are lowercase words joined by hyphens, dots or
    underscores and must match what the owner says to B.U.N.N.Y.
-3. Start it after sign-in from the reviewed release:
+4. Start it after sign-in from the reviewed release:
 
    ```sh
    node /absolute/release/apps/runtime/bin/coding-worker.mjs /absolute/private/coding-worker.json

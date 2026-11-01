@@ -47,7 +47,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
   const tools = assistant.tools ?? [];
-  if (!Array.isArray(tools) || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools lists each permitted tool name once: read_sessions, set_mode');
+  if (!Array.isArray(tools) || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools lists each permitted tool name once: read_sessions, set_mode, delegate_coding');
   if (provider === 'synthetic') {
     if (assistant.model !== undefined || assistant.effort !== undefined) return refuse('the synthetic provider takes no model or effort');
     return {config: {assistant: {provider, tools: [...tools]}}};
