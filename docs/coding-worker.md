@@ -94,8 +94,9 @@ repository. The model proposes a delegation showing the repository, the brief
 and the coding worker revision it is bound to; approve it. The core tracks the
 hand-off as one operation that completes when the worker reports it started;
 the page then shows the delegated work waiting, with Cancel task asking the
-worker to stop. The worker's result arrives as the tool's result and the next
-reply reports it. Only one task runs at a time; a second proposal is refused
+worker to stop. The worker's result arrives as the tool's later word (the
+model reads it as text naming the call) and the next reply reports it. Only
+one task runs at a time; a second proposal is refused
 until the first ends.
 
 Source tests cover the worker over a fake harness and a fake edge; running it

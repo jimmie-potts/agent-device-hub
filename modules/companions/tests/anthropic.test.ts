@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, AnthropicProvider, MAX_TOKENS, toMessages, type Transport} from '../src/assistant/anthropic.js';
-import {ProviderFault, type TurnInput} from '../src/assistant/provider.js';
+import {ProviderFault, type TranscriptItem, type TurnInput} from '../src/assistant/provider.js';
 import {permittedTools} from '../src/assistant/tools.js';
 
 type Sent = {url: string; init: Parameters<Transport>[1]};
@@ -19,6 +19,37 @@ const context: TurnInput['context'] = {persona: {name: 'B.U.N.N.Y.', character: 
 const input: TurnInput = {instructions: 'Instructions', context, tools: permittedTools(['read_sessions', 'set_mode'], false), mode: {mode: 'work', revision: 4},
   transcript: [{role: 'owner', text: 'PRIVATE-OWNER-TEXT'}, {role: 'assistant', text: 'Checking.', calls: [{id: 'toolu_1', name: 'read_sessions', input: {}}]}, {role: 'tool', call: 'toolu_1', name: 'read_sessions', result: 'No session.', ok: true}]};
 const signal = () => new AbortController().signal;
+
+void test('a later word for a call already answered is a user text block, so no tool_use id gets two results and the turn stays valid', () => {
+  // The shape of a delegation (Hub #502): the hand-off acceptance answers the call; the worker's result arrives later for the same call.
+  const transcript: TranscriptItem[] = [{role: 'owner', text: 'Delegate it.'}, {role: 'assistant', text: null, calls: [{id: 'toolu_d', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a line.'}}]},
+    {role: 'tool', call: 'toolu_d', name: 'delegate_coding', result: 'accepted: the coding worker was handed the task as operation op-1', ok: true},
+    {role: 'tool', call: 'toolu_d', name: 'delegate_coding', result: 'completed (tested-candidate): Added the line.', ok: true}];
+  const messages: {role: 'user' | 'assistant'; content: Record<string, unknown>[]}[] = toMessages(transcript);
+  assert.deepEqual(messages, [
+    {role: 'user', content: [{type: 'text', text: 'Delegate it.'}]},
+    {role: 'assistant', content: [{type: 'tool_use', id: 'toolu_d', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a line.'}}]},
+    {role: 'user', content: [{type: 'tool_result', tool_use_id: 'toolu_d', content: 'accepted: the coding worker was handed the task as operation op-1'},
+      {type: 'text', text: 'Later result of delegate_coding (toolu_d): completed (tested-candidate): Added the line.'}]},
+  ]);
+  // A failed later word says so in its text; the earlier failed hand-off keeps is_error on the one tool_result.
+  const [first, second, third, fourth] = transcript;
+  assert.ok(first && second && third?.role === 'tool' && fourth?.role === 'tool');
+  const refused = toMessages([first, second, {...third, ok: false}, {...fourth, result: 'failed (timeout): no result', ok: false}]);
+  assert.deepEqual(refused[2]?.content, [{type: 'tool_result', tool_use_id: 'toolu_d', content: 'accepted: the coding worker was handed the task as operation op-1', is_error: true},
+    {type: 'text', text: 'Later failed result of delegate_coding (toolu_d): failed (timeout): no result'}]);
+  // Every tool_result follows the assistant turn that asked for it, and each tool_use id gets exactly one.
+  const seen = new Map<string, number>();
+  messages.forEach((message, index) => {
+    for (const block of message.content) {
+      if (block.type !== 'tool_result') continue;
+      const id = String(block.tool_use_id); seen.set(id, (seen.get(id) ?? 0) + 1);
+      const previous: {role: string; content: Record<string, unknown>[]} | undefined = messages[index - 1];
+      assert.equal(previous?.role, 'assistant'); assert.ok(previous?.content.some((b: Record<string, unknown>) => b.type === 'tool_use' && b.id === id), id);
+    }
+  });
+  assert.deepEqual([...seen.values()], [1]);
+});
 
 void test('a turn sends one versioned, keyed request with strict tools, medium effort and the transcript as API turns', async () => {
   const {transport, sent} = fake(() => json({content: [{type: 'text', text: 'All quiet.'}], stop_reason: 'end_turn', usage}));

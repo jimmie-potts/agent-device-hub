@@ -89,6 +89,7 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
     for (const denied of DENIED_TOOLS) assert.ok(args.indexOf(denied) > args.indexOf('--disallowedTools'), denied);
     assert.match(cwd, /\.local\/worktrees\/bunny-task-[12]-/);
     await writeFile(join(cwd, 'new-file.txt'), 'made by the harness\n');
+    await writeFile(join(cwd, 'README.md'), 'hello\nchanged by the harness\n');
     return {code: 0, signal: null, stdout: JSON.stringify({type: 'result', session_id: 'session-9', num_turns: 2, total_cost_usd: 0.05, duration_ms: 10,
       structured_output: {outcome: 'tested-candidate', summary: 'Wrote the file.', checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: []}}), truncated: false};
   }};
@@ -105,7 +106,8 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
   assert.equal(edge.progress[0]?.status, 'started');
   const done = edge.progress[1]; assert.ok(done?.status === 'completed');
   assert.equal(done.result.outcome, 'tested-candidate'); assert.equal(done.result.base, git(repo, 'rev-parse', 'origin/main')); assert.equal(done.result.head, done.result.base);
-  assert.deepEqual(done.result.changedFiles, ['new-file.txt']); assert.equal(done.result.sessionId, 'session-9'); assert.equal(done.result.usage?.turns, 2);
+  // A modified tracked file's porcelain line starts with a space; the name keeps its first character (Hub #1360).
+  assert.deepEqual(done.result.changedFiles, ['README.md', 'new-file.txt']); assert.equal(done.result.sessionId, 'session-9'); assert.equal(done.result.usage?.turns, 2);
   assert.deepEqual(edge.respond(command({...start, requestId: 'op-3', operationId: 'op-3', taskId: 'task-2'})), {status: 'accepted'});
   await until(() => edge.progress.length === 4);
   // A lost stream closes the endpoint; once the SDK reconnects, the worker declares a fresh endpoint and enables it again.
