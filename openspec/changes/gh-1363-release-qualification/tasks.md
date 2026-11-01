@@ -1,6 +1,6 @@
 ## 1. Evidence and refusal
 
-- [x] 1.1 Add closed receipt and authentic hosted-provenance validation; 35 focused tests reject failure, missing evidence, wrong revision/digest/attempt and unexpected skip. A removed failed-check guard makes its negative control fail.
+- [x] 1.1 Add closed receipt and authentic hosted-provenance validation; 36 focused tests reject failure, missing evidence, wrong revision/digest/attempt and unexpected skip. A removed failed-check guard makes its negative control fail.
 - [ ] 1.2 Build the immutable production image and exercise its packaged derivative; verify the actual disposable command and archive transport preserve source, image and architecture.
 
 ## 2. Qualification path

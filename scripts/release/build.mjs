@@ -57,7 +57,7 @@ export async function buildRelease(candidate, destination) {
   await command('docker', ['run', '--rm', '--init', '--name', `bunny-release-test-${identity}`, '--network', 'none', '--cap-drop', 'ALL',
     '--security-opt', 'no-new-privileges:true', '--env', 'TMPDIR=/tmp', '--env', 'XDG_RUNTIME_DIR=', '--env', 'DBUS_SESSION_BUS_ADDRESS=',
     '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '1800',
-    '/bin/sh', '-c', 'node --test apps/runtime/dist/tests/scenarios/*.test.js && node --test --test-concurrency=1 apps/runtime/dist/verify/tests/steps.test.js apps/runtime/dist/verify/tests/supervisor.test.js']);
+    '/usr/local/bin/node', 'scripts/release/packaged.mjs']);
   if (imageIdentity(await inspect(coreTag), candidate) !== core) throw new Error('release-image-refused');
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
     `### Packaged candidate passed\n\nProduction image: \`${core}\`\n\nTest derivative: \`${derivative}\`. Its immutable production layers match. No application rebuild runs in the derivative.\n`);
