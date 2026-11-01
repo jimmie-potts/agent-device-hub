@@ -358,7 +358,7 @@ void test('admitted generic devices use their SDK owner and the real tracked gua
   const harness=new ModuleHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
   context.after(async()=>{await harness.stop();await owner.close();});
   await harness.start();
-  core.setAutomationDevices(automationDevices([{name:'test-power',admitted:true,devices:['lamp-a']} ]));
+  core.setAutomationDevices(automationDevices([{name:'test-power',admitted:true,devices:['lamp-a']} ],bus.syncOwners('device')));
   await flush();
   const routines=core.automation.routines;assert.ok(routines);
   const saved=routines.create({...input,enabled:true,actions:[on,{target:'lamp-a',family:'brightness-set',data:{percent:40}}]});

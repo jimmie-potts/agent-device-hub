@@ -101,6 +101,9 @@ const routineActions:Scenario={
       const pendant=h.reader.states<DeviceRecord>('device','bunny/modules/lifx').find(state=>state.data.id==='pendant-1')?.data;
       return (pixoo?.availability==='available' && pendant?.availability==='available') || `pixoo ${String(pixoo?.availability)}, pendant ${String(pendant?.availability)}`;
     },10000),
+    expect('automation follows the device owners without a refused sync of the playback-only owner',h=>
+      !h.logs().some(({record})=>record.event_name==='runtime.sync.refused' && record.attributes['bunny.participant']==='bunny/core' &&
+        record.attributes['bunny.pattern']==='sync device') || 'the core tried a device sync that was refused'),
     ...pixooPlaylist(),
     act('the operator selects Monitor on the Pixoo',h=>dispatchOnce(h,'operator','routine-monitor',pixooMode('monitor'),'routine-monitor-1')),
     expect('Monitor shows',h=>completedAs(h,'routine-monitor-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='monitor' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),

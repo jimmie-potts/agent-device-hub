@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     for (const at of selected) {
       if (at === null) continue;
       const name = at.slice(proofDir.length + 1).replaceAll('\\', '/');
-      if (!['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm', 'capture/checks.json'].includes(name)) {
+      if (!['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm', 'capture/checks.json', 'capture/scenario-result.json'].includes(name)) {
         manifest.outcome = Outcome.failed; break;
       }
       const bytes = await readFile(at);

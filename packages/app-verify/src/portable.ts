@@ -13,7 +13,7 @@ const IMAGE = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}$/;
 const RUN = /^runtime-\d{8}T\d{6}Z-[a-f0-9]{6}$/;
 const ID = /^[a-f0-9]{64}$/;
-const FILES = new Set(['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm', 'capture/checks.json']);
+const FILES = new Set(['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm', 'capture/checks.json', 'capture/scenario-result.json']);
 const DRIVER = '/opt/bunny/apps/runtime/dist/verify/portable-driver.js';
 export const PORTABLE_RECEIPT_VERSION = 'app-verification-portable/1';
 
@@ -112,7 +112,8 @@ export function portableManifest(value: unknown, i: PortableIdentity): PortableM
     names.add(f.name);
   }
   if (m.outcome === 'passed' && (m.assertions < 2 || !['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm',
-    ...(i.step === 'mac-codex-local' ? ['capture/checks.json'] : [])].every(n => names.has(n)))) throw new Error('incomplete portable capture');
+    ...(i.step === 'mac-codex-local' ? ['capture/checks.json'] : []),
+    ...(i.step.startsWith('scenario-') ? ['capture/scenario-result.json'] : [])].every(n => names.has(n)))) throw new Error('incomplete portable capture');
   return m as PortableManifest;
 }
 async function inspect(id: string, run: DockerCommand): Promise<DockerContainer> {

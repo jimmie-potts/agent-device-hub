@@ -33,7 +33,9 @@ it, and the core refuses runtime state inside a checkout.
 The runtime also has an explicit [finite offline Acceptance route](../../apps/runtime/verify/PORTABLE.md)
 with a separate receipt. `tests/portable.test.mjs` checks effective isolation,
 foreign ownership refusal, candidate/manifest mismatches, finalized proof,
-content exclusion, interrupted captures and exact cleanup. These mocked command
+content exclusion, interrupted captures and exact cleanup. The catalog regression
+requires `capture/scenario-result.json`, retains its verified bytes through
+cleanup and refuses missing, oversized, unknown or secret-bearing proof. These mocked command
 tests do not establish Docker expiry, caller-loss or real browser qualification;
 those require the exact candidate's disposable container operation. Existing
 test discovery and the package-isolation test include the new module.

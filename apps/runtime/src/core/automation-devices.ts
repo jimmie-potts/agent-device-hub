@@ -9,6 +9,8 @@ export function checkAutomationDevices(devices:readonly AutomationDevice[]):read
     ids.add(id);return Object.freeze({id,owner});
   }));
 }
-export function automationDevices(modules:readonly QualifiedModeModule[]):readonly AutomationDevice[] {
-  return checkAutomationDevices(modules.flatMap(module=>module.admitted?module.devices.map(id=>({id,owner:`bunny/modules/${module.name}`})):[]));
+export function automationDevices(modules:readonly QualifiedModeModule[],deviceOwners:readonly string[]):readonly AutomationDevice[] {
+  const owners=new Set(deviceOwners);
+  return checkAutomationDevices(modules.flatMap(module=>module.admitted && owners.has(`bunny/modules/${module.name}`)
+    ?module.devices.map(id=>({id,owner:`bunny/modules/${module.name}`})):[]));
 }
