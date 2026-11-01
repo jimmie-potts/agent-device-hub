@@ -169,8 +169,13 @@ through its normal UI first, preserving ongoing work. An existing singleton
 instance can keep its original connection, so launching another process alone
 does not establish enrollment. No personal settings, lifecycle hooks or app
 files are edited. An unsupported version starts normally without this
-collection selection. Returning to the normal launcher or disabling the
-producer stops future collection; retain the release while any observer uses it.
+collection selection. The observer reads its producer file once at startup.
+Editing or disabling that file does not stop an existing observer. To stop
+collection, save ongoing work, quit the selected Desktop normally and verify
+that its observer and native app-server have ended. Start Desktop through its
+normal launcher. Set `enabled: false` in the private producer before using the
+receipt launcher again to leave future connections disabled. Retain the release
+while any observer uses it.
 
 Correlation expires after 30 seconds. Per connection, collection stops on an
 invalid frame, reused request ID, a frame above 1 MiB, more than 128 pending
@@ -180,8 +185,12 @@ forwarding and require a new controlled connection before collection resumes.
 Publication has at most four calls in flight and a 2.4-second deadline, with no
 queue or retry. A refused or uncertain publication records no local claim of
 success. Collection failures never request agent permissions or wait for a
-device. Raw native content and credentials are never logged or published by
-the observer.
+device. After native output is forwarded and the child exits, the observer
+allows pending native filesystem or DNS work 250 ms to finish. If that work
+remains blocked or its state cannot be checked, the observer ends itself with
+`SIGKILL`; otherwise it preserves the native exit code. This prevents a stalled
+collector read from keeping an exited app-server connection open. Raw native
+content and credentials are never logged or published by the observer.
 
 ## Verify and disable
 
@@ -201,7 +210,9 @@ acceptance. Where computer-use access is restricted, use an operator action
 and independent metadata readback without bypassing that restriction.
 
 Installed acceptance repeats the selected supported path after the runtime and
-host artifacts are deployed. Removing the plugin selection or disabling its
-private producer file stops future observations without erasing committed
-evidence. Do not infer backward storage compatibility merely from unchanged
-table names; assess the exact previous release under the owning upgrade guide.
+host artifacts are deployed. For Claude, disable its private producer file to
+refuse later helper calls, or relaunch without the plugin selection. For Codex,
+use the stop/relaunch procedure above; changing its file alone does not stop
+the active collector. Neither procedure erases committed evidence. Do not infer
+backward storage compatibility merely from unchanged table names; assess the
+exact previous release under the owning upgrade guide.

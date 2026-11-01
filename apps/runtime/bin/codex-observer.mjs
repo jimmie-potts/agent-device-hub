@@ -7,8 +7,18 @@ const args = process.argv.slice(2);
 if (!native || native === process.argv[1]) process.exit(2);
 
 const finish = (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 1);
+  if (signal) {process.kill(process.pid, signal); return;}
+  const deadline = performance.now() + 250;
+  const exit = () => {
+    let pending = true;
+    try {pending = process.getActiveResourcesInfo().some(name => name.startsWith('FSReq') || name === 'GetAddrInfoReqWrap');}
+    catch { /* An unknown native-work state cannot justify an unbounded shutdown. */ }
+    if (!pending) {process.exit(code ?? 1); return;}
+    // Node's process.exit waits for native filesystem/DNS workers. Native output is already forwarded.
+    if (performance.now() >= deadline) process.kill(process.pid, 'SIGKILL');
+    else setTimeout(exit, 10);
+  };
+  exit();
 };
 const delegate = () => {
   const child = spawn(native, args, {stdio: 'inherit'});

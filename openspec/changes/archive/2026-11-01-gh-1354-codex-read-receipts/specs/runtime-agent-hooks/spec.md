@@ -24,6 +24,11 @@ The observer SHALL NOT issue native read updates, infer a read from shared notif
 - **THEN** native input and output continue unchanged without waiting for B.U.N.N.Y. or a device
 - **AND** the observer makes no successful-read claim
 
+#### Scenario: Native exit while collection is stalled
+- **WHEN** the native app-server exits while a collector filesystem or DNS operation remains blocked
+- **THEN** the observer forwards the completed native output and ends within its bounded shutdown period without waiting for that operation
+- **AND** it uses `SIGKILL` if native work does not settle; an ordinary exit retains the native exit code
+
 #### Scenario: Explicit installation
 - **WHEN** the operator selects the qualified Desktop launcher and dedicated producer configuration
 - **THEN** observation belongs only to that controlled native connection and provider feed
