@@ -1,0 +1,44 @@
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {mkdir,readFile} from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {join} from 'node:path';
+import {docker,privateHostDirectory} from '../bunny.mjs';
+import {validateRequest} from './batch.mjs';
+import {attestMaintenanceHelper} from './maintenance-helper.mjs';
+import {operatorRefusal} from '../operator-refusal.mjs';
+import {validateMainAncestry} from './integration-proof.mjs';
+const execute=promisify(execFile);
+const githubPages=async path=>JSON.parse((await execute('gh',['api',path,'--hostname','github.com','--paginate','--slurp'],{encoding:'utf8',maxBuffer:16*1024*1024})).stdout);
+const downloadArtifact=({runId,repository,name,destination})=>execute('gh',['run','download',String(runId),'--repo','https://github.com/'+repository,'--name',name,'--dir',destination],{encoding:'utf8',maxBuffer:1024*1024});
+export async function hostedArtifact(request,root,run=docker,{api=githubPages,download=downloadArtifact}={}) {
+  const {REPOSITORY,WORKFLOW_PATH,qualificationArtifactNames,validateHostedQualification,validateQualification}=await import('../release/qualification.mjs');
+  validateRequest(request);
+  const read=async path=>{try{return await api(path);}catch{throw operatorRefusal('qualification','unavailable');}};
+  const main=await read(`repos/${REPOSITORY}/git/ref/heads/main`);
+  const mainSha=main?.[0]?.object?.sha;
+  if(main?.length!==1||!/^([a-f0-9]{40})$/.test(mainSha??''))validateMainAncestry(request.candidate,main,[]);
+  const comparisons=await read(`repos/${REPOSITORY}/compare/${request.candidate}...${mainSha}?per_page=100`);
+  validateMainAncestry(request.candidate,main,comparisons);
+  const base=`repos/${REPOSITORY}/actions/runs/${request.runId}`;
+  const [runs,jobPages,artifactPages]=await Promise.all([read(`${base}/attempts/${request.runAttempt}`),read(`${base}/attempts/${request.runAttempt}/jobs?per_page=100`),read(`${base}/artifacts?per_page=100`)]);
+  if(runs.length!==1||runs[0].repository?.full_name!==REPOSITORY||runs[0].path!==WORKFLOW_PATH||runs[0].head_sha!==request.candidate
+    ||runs[0].run_attempt!==request.runAttempt||runs[0].status!=='completed'||runs[0].conclusion!=='success')throw Error('qualification-refused');
+  const names=qualificationArtifactNames(request.candidate,request.runId,request.runAttempt);
+  await mkdir(root,{recursive:true,mode:0o700});await privateHostDirectory(root);
+  const destination=join(root,request.id+'.artifacts');
+  await mkdir(destination,{mode:0o700});await privateHostDirectory(destination);
+  const fetchArtifact=name=>download({runId:request.runId,repository:REPOSITORY,name,destination});
+  await fetchArtifact(names.evidence);
+  const receipt=JSON.parse(await readFile(join(destination,'qualification.json'),'utf8'));
+  const expected={repository:REPOSITORY,candidate:request.candidate};
+  const hosted={main,comparisons,run:runs[0],jobs:jobPages.flatMap(page=>page.jobs),artifacts:artifactPages.flatMap(page=>page.artifacts)};
+  validateHostedQualification(receipt,hosted,expected);
+  if(receipt.runId!==request.runId||receipt.runAttempt!==request.runAttempt)throw Error('qualification-refused');
+  await fetchArtifact(names.image);
+  const archive=join(destination,'production-image.tar.gz');
+  const digest=createHash('sha256');for await(const chunk of createReadStream(archive))digest.update(chunk);
+  validateQualification(receipt,{...expected,archiveSha256:digest.digest('hex')});
+  await run(['load','--input',archive]);attestMaintenanceHelper(receipt,hosted,request);return receipt;
+}

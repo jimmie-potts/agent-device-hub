@@ -1,19 +1,20 @@
 // Private directory archives for the manual container profile. No activation or migration.
 import {constants} from 'node:fs';
 import {lstat, realpath, open, readdir, mkdir, unlink, mkdtemp, rm} from 'node:fs/promises';
-import {join, dirname, resolve, isAbsolute} from 'node:path';
+import {join, dirname, resolve, isAbsolute, posix} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
+import {operatorRefusal} from './operator-refusal.mjs';
 
 export const STATE = '/var/lib/bunny';
 export const CONFIG = '/etc/bunny/runtime.json';
 export const SECRETS = '/run/secrets/bunny';
 export const PENDING = '.restore-pending';
 const OWNER = 'modules/core.sqlite-owner';
-const SCHEMA = 'bunny-container-backup/1';
-const fail = () => {throw new Error('backup-or-restore-refused');};
+const SCHEMA = 'bunny-container-backup/2',LEGACY_SCHEMA='bunny-container-backup/1';
+const fail = (stage='archive') => {throw operatorRefusal(stage);};
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 const absent = async path => {try {await lstat(path); return false;} catch (e) {if (e.code === 'ENOENT') return true; throw e;}};
@@ -92,26 +93,41 @@ async function refuseOwnerAlias(path, heldOwner) {
   const info = await lstat(path);
   if (info.dev === heldOwner.dev && info.ino === heldOwner.ino) fail();
 }
-async function configuration(config, secrets, heldOwner) {
+async function configuration(config, secrets, heldOwner, legacy=false) {
   await refuseOwnerAlias(config, heldOwner);
   const {readRuntimeConfig} = await import('../apps/runtime/dist/src/state.js');
-  await readRuntimeConfig(config);
-  const data = await bytes(config, 1024 * 1024), parsed = JSON.parse(data);
-  const paths = new Set();
-  function walk(value) {
+  let data,parsed;
+  try{await readRuntimeConfig(config);data=await bytes(config,1024*1024);parsed=JSON.parse(data);}catch{fail('configuration');}
+  const paths = new Set(),externalHostDependencies=[];
+  const fields=['adbSocket','hostExecutable','hostKeyDirectory'];
+  let declared=false;
+  if(!legacy&&parsed.modules?.onn!==undefined) {
+    const {configureOnn}=await import('../modules/onn/dist/src/configuration.js');
+    declared='config' in configureOnn(parsed.modules.onn);
+  }
+  function walk(value,location=[]) {
+    if(!legacy&&declared&&location.length===3&&location[0]==='modules'&&location[1]==='onn'&&fields.includes(location[2])) {
+      externalHostDependencies.push({field:location.join('.'),path:value});return;
+    }
     if (typeof value === 'string' && value.startsWith('/')) {
-      // No implicit source-folder export or host path translation in this profile.
-      if (!value.startsWith(secrets + '/')) fail(); paths.add(value);
-    } else if (Array.isArray(value)) value.forEach(walk);
-    else if (value !== null && typeof value === 'object') Object.values(value).forEach(walk);
+      if (!value.startsWith(secrets + '/')) fail('configuration'); paths.add(value);
+    } else if (Array.isArray(value)) value.forEach((entry,index)=>walk(entry,[...location,String(index)]));
+    else if (value !== null && typeof value === 'object') for(const [key,entry] of Object.entries(value))walk(entry,[...location,key]);
   }
   walk(parsed);
+  externalHostDependencies.sort((a,b)=>a.field.localeCompare(b.field));
+  // A declared dependency cannot acquire a second readable role through a secret reference.
+  // Normalization is lexical only. Never resolve or inspect an external host dependency.
+  for(const path of paths)for(const dependency of externalHostDependencies) {
+    const reference=posix.normalize(path),external=posix.normalize(dependency.path);
+    if(reference===external||reference.startsWith(external.endsWith('/')?external:external+'/')||external.startsWith(reference+'/'))fail('configuration');
+  }
   const references = [];
   for (const path of [...paths].sort()) {
     await refuseOwnerAlias(path, heldOwner);
-    references.push({path, ...await copyOrHash(path)});
+    try{references.push({path, ...await copyOrHash(path)});}catch{fail('credentials');}
   }
-  return {data, sha256: hash(data), references};
+  return {data, sha256: hash(data), references,externalHostDependencies};
 }
 async function makeDirectories(root, directories) {
   for (const relative of directories) await mkdir(join(root, relative), {mode: 0o700});
@@ -154,7 +170,8 @@ async function validateDatabases(state, files) {
 const validRevision = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
 function disjoint(a, b) {if (a === b || a.startsWith(b + '/') || b.startsWith(a + '/')) fail();}
 
-export async function backup({state = STATE, config = CONFIG, secrets = SECRETS, destination, revision}) {
+export async function backup({state = STATE, config = CONFIG, secrets = SECRETS, destination, revision,helper}) {
+  if(!helper||Object.keys(helper).length!==2||!validRevision(helper.revision)||!/^sha256:[a-f0-9]{64}$/.test(helper.image??''))fail('qualification');
   if (!validRevision(revision) || !isAbsolute(destination) || resolve(destination) !== destination) fail();
   disjoint(state, destination); disjoint(secrets, destination);
   const {checkStateDirectory} = await import('../apps/runtime/dist/src/state.js');
@@ -162,7 +179,7 @@ export async function backup({state = STATE, config = CONFIG, secrets = SECRETS,
   await privatePath(dirname(destination), true);
   if (!await absent(destination)) fail();
   const {acquireRuntimeOwnership, assertUnboundRuntimeOwnership} = await import('../apps/runtime/dist/src/runtime-ownership.js');
-  const lease = await acquireRuntimeOwnership(state);
+  let lease;try{lease=await acquireRuntimeOwnership(state);}catch{throw operatorRefusal('ownership','unavailable');}
   try {
     const heldOwner = await lstat(join(state, OWNER));
     const selected = await configuration(config, secrets, heldOwner), before = await tree(state, true);
@@ -177,29 +194,32 @@ export async function backup({state = STATE, config = CONFIG, secrets = SECRETS,
     if (!isDeepStrictEqual(before, await tree(state, true))) fail();
     for (const row of files) if (!isDeepStrictEqual({bytes: row.bytes, sha256: row.sha256}, await copyOrHash(join(state, row.path)))) fail();
     const again = await configuration(config, secrets, heldOwner);
-    if (selected.sha256 !== again.sha256 || !isDeepStrictEqual(selected.references, again.references)) fail();
+    if (selected.sha256 !== again.sha256 || !isDeepStrictEqual(selected.references, again.references)||!isDeepStrictEqual(selected.externalHostDependencies,again.externalHostDependencies)) fail('configuration');
     await assertUnboundRuntimeOwnership(lease, state);
     await syncTree(payload, before.directories);
     const manifest = {schema: SCHEMA, revision, architecture: process.arch, createdAt: new Date().toISOString(),
-      configSha256: selected.sha256, references: selected.references, directories: before.directories, files, excluded: before.excluded};
+      helper,externalHostDependencies:selected.externalHostDependencies,configSha256: selected.sha256, references: selected.references, directories: before.directories, files, excluded: before.excluded};
     await writeNew(join(destination, 'manifest.json'), JSON.stringify(manifest) + '\n');
     await syncDir(destination); await syncDir(dirname(destination));
     await verify({archive: destination, revision, config, secrets, heldOwner});
-    return {operation: 'backup', status: 'complete', files: files.length};
+    return {operation: 'backup', status: 'complete', files: files.length,manifestSchema:SCHEMA,sourceRevision:revision,helper};
   } finally {lease.releaseBeforeStartup();}
 }
 export async function verify({archive, revision, config = CONFIG, secrets = SECRETS, heldOwner}) {
   await privatePath(archive, true);
   if (!isDeepStrictEqual((await readdir(archive)).sort(), ['manifest.json', 'runtime.json', 'state'])) fail();
   const manifest = JSON.parse(await bytes(join(archive, 'manifest.json')));
-  if (manifest.schema !== SCHEMA || !validRevision(revision) || manifest.revision !== revision
+  if (![SCHEMA,LEGACY_SCHEMA].includes(manifest.schema) || !validRevision(revision) || manifest.revision !== revision
     || !Array.isArray(manifest.files) || !Array.isArray(manifest.directories) || !Array.isArray(manifest.excluded)
     || manifest.files.length > 100000 || manifest.directories.length > 100000
     || manifest.directories.some(p => !safeRelative(p)) || manifest.files.some(row => !safeRelative(row.path) || row.path === OWNER)
     || !manifest.files.some(row => row.path === 'modules/core.sqlite')) fail();
   const inventory = await tree(join(archive, 'state'));
   if (!isDeepStrictEqual(inventory.directories, manifest.directories) || !isDeepStrictEqual(inventory.files, manifest.files.map(row => row.path))) fail();
-  const selected = await configuration(config, secrets, heldOwner);
+  const legacy=manifest.schema===LEGACY_SCHEMA;
+  if(!legacy&&(!manifest.helper||Object.keys(manifest.helper).length!==2||!validRevision(manifest.helper.revision)||!/^sha256:[a-f0-9]{64}$/.test(manifest.helper.image??'')||!Array.isArray(manifest.externalHostDependencies)))fail();
+  const selected = await configuration(config, secrets, heldOwner,legacy);
+  if(!legacy&&!isDeepStrictEqual(selected.externalHostDependencies,manifest.externalHostDependencies))fail('configuration');
   if (hash(await bytes(join(archive, 'runtime.json'))) !== manifest.configSha256 || selected.sha256 !== manifest.configSha256
     || !isDeepStrictEqual(selected.references, manifest.references)) fail();
   for (const row of manifest.files) if (!isDeepStrictEqual({bytes: row.bytes, sha256: row.sha256}, await copyOrHash(join(archive, 'state', row.path)))) fail();
