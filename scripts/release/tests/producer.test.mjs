@@ -52,7 +52,7 @@ test('qualification reuses all current coverage and native concurrency without w
     assert.ok(child.on.push);
   }
   assert.notEqual(checks.concurrency.group, workflow.concurrency.group, 'called workflows cannot cancel each other');
-  assert.equal(checks.jobs.select.steps.at(-1).env.GITHUB_EVENT_NAME, "${{ inputs.qualification && 'release_qualification' || github.event_name }}");
+  assert.equal(checks.jobs.select.steps.at(-1).env.BUNNY_RELEASE_QUALIFICATION, '${{ inputs.qualification }}');
   const names = ['Pin candidate'];
   for (const [key, child] of [['checks', checks], ['workflow', workflow]]) {
     for (const job of Object.values(child.jobs)) names.push(`${release.jobs[key].name} / ${job.name.replace('${{ matrix.os }}', 'ubuntu-latest')}`);
@@ -62,4 +62,17 @@ test('qualification reuses all current coverage and native concurrency without w
   assert.equal(release.jobs.image['runs-on'], 'ubuntu-24.04-arm');
   assert.match(release.jobs.pin.steps.at(-1).run, /git merge-base --is-ancestor/);
   assert.equal(release.jobs.result.if, 'always()');
+});
+
+test('qualification expands a called PR context to full coverage without reading a PR comparison', async context => {
+  const {runSelect} = await import('../../ci-selection/cli.mjs');
+  const {mkdtemp, rm} = await import('node:fs/promises');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
+  const at = await mkdtemp(join(tmpdir(), 'release-selection-'));
+  context.after(() => rm(at, {recursive: true, force: true}));
+  const selection = await runSelect({env: {GITHUB_EVENT_NAME: 'pull_request', BUNNY_RELEASE_QUALIFICATION: 'true',
+    GITHUB_OUTPUT: join(at, 'outputs')}, fetch: async () => {throw new Error('a qualification never reads a PR comparison');}});
+  assert.equal(selection.mode, 'full');
+  assert.ok(Object.values(selection.jobs).every(Boolean));
 });

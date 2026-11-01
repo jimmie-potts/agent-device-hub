@@ -45,7 +45,7 @@ jobs:
       - id: select
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_EVENT_NAME: ${{ inputs.qualification && 'release_qualification' || github.event_name }}
+          BUNNY_RELEASE_QUALIFICATION: ${{ inputs.qualification }}
         run: node scripts/ci-selection/cli.mjs select
   core:
     name: Build, lint and core tests on ${{ matrix.os }}

@@ -59,6 +59,8 @@ export async function buildRelease(candidate, destination) {
     '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '1800',
     '/bin/sh', '-c', 'node --test apps/runtime/dist/tests/scenarios/*.test.js && node --test --test-concurrency=1 apps/runtime/dist/verify/tests/*.test.js']);
   if (imageIdentity(await inspect(coreTag), candidate) !== core) throw new Error('release-image-refused');
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
+    `### Packaged candidate passed\n\nProduction image: \`${core}\`\n\nTest derivative: \`${derivative}\`. Its immutable production layers match. No application rebuild runs in the derivative.\n`);
   const archive = join(destination, 'production-image.tar.gz');
   const save = spawn('docker', ['image', 'save', core], {stdio: ['ignore', 'pipe', 'inherit']});
   const saved = new Promise((resolve, reject) => {save.once('error', reject); save.once('exit', code => code === 0 ? resolve() : reject(new Error('release-archive-failed')));});

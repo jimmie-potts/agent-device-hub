@@ -394,7 +394,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);
   assert.deepEqual(select.outputs, Object.fromEntries(['mode', 'groups', ...Object.keys(JOBS)].map(name => [name, `\${{ steps.select.outputs.${name} }}`])));
-  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', GITHUB_EVENT_NAME: "${{ inputs.qualification && 'release_qualification' || github.event_name }}" }, run: 'node scripts/ci-selection/cli.mjs select' });
+  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', BUNNY_RELEASE_QUALIFICATION: '${{ inputs.qualification }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
   const gate = checks.jobs.gate;
   assert.equal(gate.name, 'Selected checks gate');
   assert.equal(gate.if, 'always()');
