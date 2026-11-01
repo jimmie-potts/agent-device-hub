@@ -578,8 +578,15 @@ command can still finish; no maintenance command replays it.
 
 ## Back up a stopped instance
 
-Use the same simple named-volume backup path on Mac and Windows. Choose a new
-archive volume name distinct from both projects' state, config and secrets.
+Use the same simple named-volume backup path on Mac and Windows.
+Native Windows manual `start`, `stop`, and named-volume `backup` and `restore`
+retain the existing Docker operator checks. They use manual writer coordination,
+not the POSIX batch lock on the selected Mac below, and cannot participate in a Mac batch
+operation. This preserves the existing route without adding Windows qualification.
+Native Windows host-directory export remains refused.
+
+Choose a new archive volume name distinct from both projects' state, config and
+secrets.
 First check that it does not already exist; an existing volume must be preserved
 and a different name selected. A connection/permission error is not evidence
 that the name is unused.
@@ -833,7 +840,7 @@ owner-only replacement Compose JSON beside it with only the qualified image
 changed. It pins its source hash and checks the actual selected container again
 before stopping. No arbitrary command or callback is accepted from the request.
 
-Every cooperating write uses one host-private directory,
+On the selected Mac host, every cooperating write uses one private POSIX directory,
 `~/.local/state/bunny-operations`, outside Git. Each project has one empty SQLite coordination file ending in
 `.operation-owner`, a pending marker and a records directory. Deployment, manual
 maintenance and reconciliation use the runtime core's same lease helper on that

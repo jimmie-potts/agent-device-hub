@@ -207,7 +207,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   return result;
 }
 export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory,root) {
-  if(plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
+  if(process.platform==='win32'||plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
   const {withOperation}=await import('./bunny-operations.mjs');
   return withOperation({project:plan.project,root},()=>operate(plan,run,checkPrivate));
 }
