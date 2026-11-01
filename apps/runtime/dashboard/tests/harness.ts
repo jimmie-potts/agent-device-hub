@@ -1,3 +1,4 @@
+import {createMicroDuckModule,SimulatedMicroDuck,MICRODUCK_SIMULATED_SECTION,microduckSchemas,type MicroDuckTransport} from '@jimmie-potts/microduck';
 import {createReachyModule,SimulatedReachy,REACHY_SIMULATED_SECTION,reachySchemas,type ReachyTransport} from '@jimmie-potts/reachy-mini';
 import {createWemoModule,SimulatedWemo,WEMO_SIMULATED_SECTION,wemoSchemas} from '@jimmie-potts/wemo';
 import {createCompanionsModule} from '@jimmie-potts/companions';
@@ -52,6 +53,10 @@ export type WorldOptions = {
   coding?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
   speech?: boolean;
+  microduck?:boolean;
+  microduckVendor?:boolean;
+  microduckTransport?:MicroDuckTransport;
+  microduckSection?:{id:string;fixtureRoot:string;configurationRevision:number};
   reachy?: boolean;
   reachyTransport?: ReachyTransport;
   onn?: boolean;
@@ -84,6 +89,8 @@ export type WorldOptions = {
 
 export type World = {
   readonly readProducer?: string;
+  microduck:SimulatedMicroDuck;
+  microduckAdopt(fixtureRoot:string):Promise<void>;
   reachy:SimulatedReachy;
   reachyLoseReply():void;
   reachyMcp(name:string,args:object):Promise<unknown>;
@@ -177,6 +184,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const roborock=new SimulatedRoborock();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
+  const microduck=new SimulatedMicroDuck();
   const reachy = new SimulatedReachy();let loseReachyReply=false;
   const reachyTransport:ReachyTransport=options.reachyTransport??{connect:(...a)=>reachy.connect(...a),cancel:(...a)=>reachy.cancel(...a),move:async(...a)=>{const id=await reachy.move(...a);if(loseReachyReply){loseReachyReply=false;throw new Error('synthetic missing UUID');}return id;}};
   const onn = new SimulatedOnn();
@@ -205,6 +213,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
     ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : [])]}}} : {}),
+    ...(options.microduck===true?{microduck:options.microduckSection??MICRODUCK_SIMULATED_SECTION}:{}),
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
@@ -218,7 +227,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const config = join(configDir, 'runtime-config.json');
   if (options.tidbyt === true) await writePrivate(join(configDir, 'tidbyt-token'), TIDBYT_KEY);
   await writePrivate(config, JSON.stringify({schema: CONFIG_SCHEMA, modules: moduleConfig, edge: {
-    credentials, mcp: options.reachy === true || options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
+    credentials, mcp: options.microduck===true || options.reachy === true || options.inbox === true || options.roborock===true || options.onn === true, launcher: options.launcher === true, ...(options.trusted === false ? {} : {browserAccess: 'trusted-loopback'}),
     ...(options.placeLinks === undefined ? {} : {placeLinks: options.placeLinks}),
     ...(options.wifiProxy === undefined ? {} : {wifiProxy: options.wifiProxy}),
     ...(options.privateProxy === undefined ? {} : {privateProxy: options.privateProxy}),
@@ -250,12 +259,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime: Runtime;
   try {
@@ -296,7 +305,15 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       try {const ready=await call({jsonrpc:'2.0',method:'notifications/initialized'});await ready.arrayBuffer();const answer=await call({jsonrpc:'2.0',id:2,method:'tools/call',params:{name,arguments:args}});const body:unknown=await answer.json();return body;}
       finally{const ended=await fetch(`${runtime.url}/mcp`,{method:'DELETE',headers});await ended.arrayBuffer();}
     },
-    reachy,reachyLoseReply:()=>{loseReachyReply=true;},wemo,wemoLoseReply:()=>{loseWemoReply=true;},onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
+    microduck,
+    microduckAdopt:async(fixtureRoot)=>{
+      assert.equal(options.microduckVendor,true);const current=moduleConfig.microduck;assert.ok(current);
+      await hook?.close();hook=undefined;await runtime.stop();
+      moduleConfig.microduck={...current,fixtureRoot,configurationRevision:current.configurationRevision+1};
+      const prior:unknown=JSON.parse(await (await import('node:fs/promises')).readFile(config,'utf8'));
+      assert.ok(typeof prior==='object'&&prior!==null);
+      await writePrivate(config,JSON.stringify({...prior,modules:moduleConfig}));runtime=await start(port);
+    },reachy,reachyLoseReply:()=>{loseReachyReply=true;},wemo,wemoLoseReply:()=>{loseWemoReply=true;},onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
     readonlyOnn: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/onn-key-press`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'onn', data: {key: 'right'}, requestId: 'readonly-onn'})}); await result.arrayBuffer(); return result.status;},
     assistantRead: async () => {const response = await fetch(`${runtime.url}/modules/companions/content/conversation?profile=bunny`, {headers: {authorization: `Bearer ${readerToken}`}}); return {status: response.status, text: await response.text()};},
     readonlyAssistantUpload: async () => {const query = new URLSearchParams({family: 'assistant-input', target: 'assistant', requestId: 'readonly-assistant', name: 'input.json'});

@@ -644,3 +644,10 @@ to the core. It forwards an eligible finite automatic reaction through tracked
 dispatch, preserving the candidate’s absolute `validUntilMs`. It grants no
 external motion access. Manual controls and module-owned state are described in
 [the Reachy guide](../../modules/reachy-mini/README.md).
+
+`microduck-dispatch/2.0` is the internal finite head-expression dispatch from
+`bunny/modules/microduck` to the core, with subject `microduck`. It carries a
+configured target, notice/attention, original opportunity/expiry and current
+configuration/generation guards. Only that module may request it; the core
+tracks one microduck-auto operation. Public HTTP/SDK grants and MCP cannot invoke
+internal dispatch. Robot-local schemas remain owned by the module.
