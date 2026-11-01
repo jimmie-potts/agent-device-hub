@@ -49,12 +49,12 @@ test('qualified batch backs up stopped writer, preserves private resources and r
   assert.ok(beforeBackup<f.calls.findIndex(a=>a[0]==='rm'));
   assert.ok(!f.calls.some(a=>a.includes('-v')||a[0]==='restore'));
   const record=JSON.parse(await readFile(join(f.root,'synthetic.records','batch-synthetic.json'),'utf8'));
-  assert.equal(record.outcome,'succeeded');assert.equal(record.targetImage,newImage);assert.ok(record.writerReleasedAt);
+  assert.equal(record.schema,'bunny-batch-record/1.0');assert.equal(record.outcome,'succeeded');assert.equal(record.targetImage,newImage);assert.ok(record.writerReleasedAt);
   assert.equal(await readPending({root:f.root,project:'synthetic'}),undefined);
   assert.equal(record.recovery.status,'unknown');
 });
 test('bad qualification and wrong image/target refuse before stopping',async t=>{
-  for(const mutate of [f=>f.target.outcome='failed',f=>f.target.candidate='9'.repeat(40),f=>f.target.architecture='linux/amd64',f=>f.request.containerId='a'.repeat(64)]) {
+  for(const mutate of [f=>f.target.outcome='failed',f=>f.target.candidate='9'.repeat(40),f=>f.target.architecture='linux/amd64',f=>f.request.containerId='a'.repeat(64),f=>f.request.unselectedCredential='synthetic-secret-must-not-be-retained']) {
     const f=await fixture(t);mutate(f);await assert.rejects(f.deploy());assert.ok(!f.calls.some(a=>a[0]==='stop'||a[0]==='rm'));
   }
 });

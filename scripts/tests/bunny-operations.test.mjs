@@ -22,7 +22,7 @@ test('pending effects survive failure and manual maintenance refuses until expli
   assert.equal((await readPending(p)).phase,'stopping');
   await assert.rejects(withOperation(p,()=>assert.fail('pending bypass')));
   const result=await reconcileOperation(p,async()=>({id:'a'.repeat(64),status:'exited',pid:0}));
-  assert.equal(result.outcome,'reconciled');
+  assert.equal(result.outcome,'reconciled');assert.equal(result.reconciledFrom.phase,'stopping');
   assert.equal((await readPending(p)),undefined);
   assert.equal(await withOperation(p,()=>7),7);
 });
@@ -44,7 +44,8 @@ test('a killed process leaves the last durable phase until explicit unfinished-o
   assert.equal((await readPending(p)).phase,'creating-replacement');
   await assert.rejects(withOperation(p,()=>assert.fail('dead owner was not reconciled')));
   const result=await reconcileOperation(p,async()=>({status:'created',pid:0}));
-  assert.ok(result.writerReleasedAt);assert.equal(result.observation.status,'created');
+  assert.ok(result.writerReleasedAt);assert.equal(result.observation.status,'created');assert.equal(result.reconciledFrom.phase,'creating-replacement');
+  assert.match(await readFile(join(p.root,'synthetic.records','batch-killed.json'),'utf8'),/creating-replacement/);
 });
 test('malformed persisted operation identity refuses reconciliation without an out-of-records write',async t=>{
   const p=await fixture(t);

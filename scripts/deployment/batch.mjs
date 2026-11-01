@@ -9,9 +9,12 @@ import {withOperation,privateJson,writeNewPrivateJson} from '../bunny-operations
 
 const SHA=/^[a-f0-9]{40}$/,IMAGE=/^sha256:[a-f0-9]{64}$/,ID=/^[a-f0-9]{64}$/;
 const refuse=()=>{throw new Error('deployment-refused');};
+const keys=(value,names)=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===names.length&&names.every(name=>Object.hasOwn(value,name));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 export function validateRequest(request) {
-  if(request?.schema!=='bunny-batch-deployment/1.0'||!['forward','return'].includes(request.operation)
+  if(!keys(request,['schema','operation','id','owner','project','compose','containerId','previousImage','previousRevision','candidate','runId','runAttempt','includedIssues','requiredModules','client','forward','recovery','backup'])
+    ||!keys(request.forward,['assessment','evidence'])||!keys(request.recovery,['status'])||!keys(request.backup,['volume','name'])
+    ||request?.schema!=='bunny-batch-deployment/1.0'||!['forward','return'].includes(request.operation)
     ||!/^batch-[a-zA-Z0-9_.-]{1,100}$/.test(request.id??'')||typeof request.owner!=='string'||request.owner.length<1||request.owner.length>200
     ||!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(request.project??'')||!ID.test(request.containerId??'')
     ||!IMAGE.test(request.previousImage??'')||!SHA.test(request.previousRevision??'')||!SHA.test(request.candidate??'')
@@ -19,10 +22,10 @@ export function validateRequest(request) {
     ||typeof request.compose!=='string'||!request.compose.startsWith('/')
     ||!Array.isArray(request.includedIssues)||request.includedIssues.length<1||request.includedIssues.length>100
     ||request.includedIssues.some(url=>!/^https:\/\/github.com\/jimmie-potts\/agent-device-hub\/issues\/[1-9][0-9]*$/.test(url))
-    ||!Array.isArray(request.requiredModules)||!request.requiredModules.includes('core')||request.requiredModules.some(name=>!/^[a-z][a-z0-9-]{0,62}$/.test(name))
+    ||!Array.isArray(request.requiredModules)||request.requiredModules.length>64||!request.requiredModules.includes('core')||request.requiredModules.some(name=>!/^[a-z][a-z0-9-]{0,62}$/.test(name))
     ||request.operation==='return'&&request.recovery?.status!=='qualified'
-    ||request.client!=='trusted-browser'||typeof request.forward?.assessment!=='string'||!request.forward.assessment.trim()
-    ||typeof request.forward?.evidence!=='string'||!request.forward.evidence.trim()
+    ||request.client!=='trusted-browser'||typeof request.forward?.assessment!=='string'||!request.forward.assessment.trim()||request.forward.assessment.length>8192
+    ||typeof request.forward?.evidence!=='string'||!request.forward.evidence.trim()||request.forward.evidence.length>8192
     ||!['unknown','qualified'].includes(request.recovery?.status)
     ||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/.test(request.backup?.volume??'')
     ||!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(request.backup?.name??''))refuse();
@@ -30,9 +33,9 @@ export function validateRequest(request) {
 }
 export function validateReturn(request,receipt,backup,target) {
   if(request.operation!=='return')return;
-  if(request.recovery.status!=='qualified'||receipt?.schema!=='bunny-image-return/1.0'||receipt.outcome!=='compatible'
+  if(!keys(receipt,['schema','outcome','image','revision','stateSha256','configSha256','evidence'])||request.recovery.status!=='qualified'||receipt?.schema!=='bunny-image-return/1.0'||receipt.outcome!=='compatible'
     ||receipt.image!==target.image.id||receipt.revision!==request.candidate||receipt.stateSha256!==backup.stateSha256
-    ||receipt.configSha256!==backup.configSha256||typeof receipt.evidence!=='string'||!receipt.evidence.trim())refuse();
+    ||receipt.configSha256!==backup.configSha256||typeof receipt.evidence!=='string'||!receipt.evidence.trim()||receipt.evidence.length>8192)refuse();
 }
 function identity(info,project) {
   return {mounts:container(info,project).map(({Destination,Name,RW,Type})=>({Destination,Name,RW,Type})).sort((a,b)=>a.Destination.localeCompare(b.Destination)),
@@ -107,7 +110,7 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
     await privateHostDirectory(dirname(request.compose));
     const replacementPath=request.compose+'.'+request.id+'.json';
 
-    let record={schema:'bunny-batch-record/1.0',...request,targetImage:target.image.id,qualification:{runId:target.runId,runAttempt:target.runAttempt},
+    let record={...request,schema:'bunny-batch-record/1.0',targetImage:target.image.id,qualification:{runId:target.runId,runAttempt:target.runAttempt},
       replacementCompose:replacementPath,previous:{image:before.Image,revision:request.previousRevision,container:before.Id},preserved,composeSha256:hash(composeBytes),phase:'prepared',outcome:Outcome.uncertain,startedAt:new Date().toISOString()};
     const phase=async name=>{record={...record,phase:name};await lease.record(record);};
     await phase('preparing-compose');

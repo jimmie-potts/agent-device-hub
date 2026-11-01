@@ -85,7 +85,7 @@ export async function reconcileOperation(plan,inspect) {
   try {
     const current=await pending(p);if(current===undefined)refuse();
     const observation=await inspect(current);
-    result={...current,outcome:'reconciled',phase:'reconciled',observation,reconciledAt:new Date().toISOString(),writerReleasedAt:null};
+    result={...current,reconciledFrom:{phase:current.phase,outcome:current.outcome},outcome:'reconciled',phase:'reconciled',observation,reconciledAt:new Date().toISOString(),writerReleasedAt:null};
     await directory(p.records);recordPath=join(p.records,current.id+'.json');
     await writePrivateJson(recordPath,result);await removePending(p,current);
   } finally {lock.release();}
