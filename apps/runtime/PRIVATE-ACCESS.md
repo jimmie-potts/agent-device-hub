@@ -172,10 +172,12 @@ they are. It needs no runtime image replacement or database migration.
    address. Update the previous manual startup entry to delegate to the stable
    script, so existing owner instructions still work. Never start both copies.
 5. Check the established HTTPS route: valid browser credentials work, absent or
-   wrong credentials fail, foreign origins are refused, and an existing scoped
-   machine client can make its permitted read without receiving a browser
-   password challenge. Check local access too. Keep addresses, credentials,
-   responses and installation evidence private. These checks send no device
+   wrong credentials fail and foreign origins are refused. Use a known-valid
+   machine credential for a read-only request and compare its scoped response
+   with the pre-move baseline, without a browser-password challenge. An
+   ingest-only credential should retain its scope refusal on a protected read;
+   this does not require granting read access. Check local access too. Keep
+   addresses, credentials, responses and installation evidence private. These checks send no device
    command and do not repeat the route's earlier phone/TV qualification.
 
 If the replacement cannot start or pass these checks, stop its owned process,
