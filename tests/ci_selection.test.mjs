@@ -325,6 +325,7 @@ test('local paths include both sides of renames, uncommitted and untracked files
 // A step belongs to the group whose changed paths can break it; `shared` runs only with full coverage.
 const STEP_GROUPS = {
   core: {
+    'node --test scripts/release/tests/*.test.mjs': 'shared',
     'actions/setup-python': 'shared',
     'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt': 'shared',
     'npm run test:maintenance:built': 'maintenance', 'npm run test:maintenance:package:built': 'maintenance',
@@ -393,7 +394,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);
   assert.deepEqual(select.outputs, Object.fromEntries(['mode', 'groups', ...Object.keys(JOBS)].map(name => [name, `\${{ steps.select.outputs.${name} }}`])));
-  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
+  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', BUNNY_RELEASE_QUALIFICATION: '${{ inputs.qualification }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
   const gate = checks.jobs.gate;
   assert.equal(gate.name, 'Selected checks gate');
   assert.equal(gate.if, 'always()');
