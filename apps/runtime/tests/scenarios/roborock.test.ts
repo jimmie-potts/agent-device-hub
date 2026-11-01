@@ -12,6 +12,82 @@ assert.ok(selected);
 const PRESERVATION = 'unavailable input preserves retained history and original observation time';
 
 for (const transport of TRANSPORTS) {
+  it(`Roborock scenario waits for a bounded recovery read over ${transport}`, async () => {
+    let delayedReads = 0;
+    const simulation = registration.simulation;
+    assert.ok(simulation);
+    const delayed = {...registration, simulation: {...simulation, memory: {...simulation.memory, create(options: SimulationOptions) {
+      const device = new SimulatedRoborock(options.now);
+      const action = device.action.bind(device), read = device.readStatus.bind(device);
+      let recovering = false, delayNext = false;
+      device.action = value => {
+        if (value === 'empty-history') recovering = true;
+        if (value === 'online' && recovering) {delayNext = true; recovering = false;}
+        return action(value);
+      };
+      device.readStatus = async readOptions => {
+        if (delayNext) {
+          delayNext = false;
+          delayedReads += 1;
+          await new Promise<void>(resolve => {
+            const finish = (): void => {cancel(); readOptions?.signal?.removeEventListener('abort', finish); resolve();};
+            const cancel = options.scheduler.after(4000, finish);
+            readOptions?.signal?.addEventListener('abort', finish, {once: true});
+            if (readOptions?.signal?.aborted === true) finish();
+          });
+        }
+        return read(readOptions);
+      };
+      return device;
+    }}}};
+    const h = await startMemoryHarness(selected.seed, transport, {
+      registrations: registrations.map(value => value.name === registration.name ? delayed : value),
+    });
+    try {
+      const result = await runScenario(selected, h);
+      assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+      assert.equal(delayedReads, 1);
+      assert.deepEqual(h.problems(), []);
+    } finally {await h.close();}
+  });
+
+  for (const fault of ['missing-recovery', 'lost-recovered-history'] as const) {
+    it(`Roborock scenario rejects ${fault} over ${transport}`, async () => {
+      const h = await startMemoryHarness(selected.seed, transport);
+      const states = h.reader.states.bind(h.reader), simulate = h.simulate.bind(h);
+      let recoveryAt: number | undefined, restarted = false;
+      const restart = h.restart.bind(h);
+      h.restart = async () => {restarted = true; await restart();};
+      h.simulate = value => {
+        if (value.device === 'roborock' && value.action === 'empty-history') recoveryAt = h.now();
+        simulate(value);
+      };
+      h.reader.states = <T>(family: string, owner?: string): Message<T>[] => {
+        const records = states<T>(family, owner);
+        if (family !== 'roborock-vacuum' || recoveryAt === undefined) return records;
+        return records.map(record => {
+          const data = record.data as VacuumStatus;
+          const changed: VacuumStatus = fault === 'missing-recovery' ? {...data, availability: 'unavailable'}
+            : {...data, collection: {...data.collection, retainedRuns: 0}};
+          return {...record, data: changed} as Message<T>;
+        });
+      };
+      try {
+        const result = await runScenario(selected, h);
+        assert.equal(result.outcome, 'failed', `${fault} must not pass the scenario`);
+        assert.equal(result.steps.at(-1)?.name, fault === 'missing-recovery'
+          ? 'the reader observes the recovered status' : 'recovered empty summary never deletes retained records');
+        assert.match(result.steps.at(-1)?.detail ?? '', fault === 'missing-recovery'
+          ? /^recovery is unavailable at revision \d+, retained 30\/30 records$/
+          : /^recovered status is available at revision \d+, retained 0\/30 records$/);
+        assert.ok(recoveryAt !== undefined);
+        assert.ok(h.now() - recoveryAt <= 13_010, 'the recovery and history checks remain finite');
+        assert.equal(restarted, false, 'restart cannot hide missing recovery or lost records');
+        assert.deepEqual(h.problems(), []);
+      } finally {await h.close();}
+    });
+  }
+
   it(`Roborock scenario waits for a bounded offline read over ${transport}`, async () => {
     let delayedReads = 0;
     const simulation = registration.simulation;
