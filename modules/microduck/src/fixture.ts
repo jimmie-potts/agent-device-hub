@@ -69,6 +69,8 @@ export async function startFixture(options:{enablePolicy:boolean;leaseMs?:number
     };
     const body=launch('body',[VENDOR.python,'-m','mjlab_microduck.sim.body_server','--host','127.0.0.1','--port','17801','--ducks','1','--headless','--keyframe','HOME']);
     await ready(pair,portReady);
+    if(body.pid===undefined||pair.ended)throw new Error('MicroDuck body ended during setup');
+    bodyListener(body.pid);
     const daemon=launch('robotd',[VENDOR.binary,'--sim','127.0.0.1:17801','--params',join(root,'robotd.toml'),'--socket',join(root,'robotd.sock')]);
     await ready(pair,()=>{try{return lstatSync(join(root,'robotd.sock')).isSocket();}catch{return false;}});
     if(options.enablePolicy)await enableSetup(join(root,'robotd.sock'));

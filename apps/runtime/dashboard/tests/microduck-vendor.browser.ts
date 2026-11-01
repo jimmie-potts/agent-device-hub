@@ -1,6 +1,6 @@
 // Explicit source qualification only. Runtime and the pinned vendor pair share one isolated Linux ARM64 container.
 import assert from 'node:assert/strict';
-import {writeFile} from 'node:fs/promises';
+import {access,readFile,readdir,writeFile} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 import {once} from 'node:events';
 import {chromium} from 'playwright';
@@ -15,6 +15,7 @@ let fixture=await startFixture({enablePolicy:true,leaseMs:180000});
 const world=await startWorld({microduck:true,microduckVendor:true,microduckSection:{id:'microduck-sim',fixtureRoot:fixture.root,configurationRevision:1},companions:true});
 const browser=await chromium.launch({headless:true});
 const observations:MicroDuckState[]=[],checks:{name:string;passed:true}[]=[],pairs:{session:string;body:number;daemon:number;reaped:boolean}[]=[];
+const overlaps:{root:string;bodyReaped:boolean;daemonStarted:false}[]=[];
 const check=(name:string,ok:boolean):void=>{assert.equal(ok,true,name);checks.push({name,passed:true});};
 function find(value:unknown):MicroDuckState|undefined {
   if(validState(value))return value;
@@ -31,6 +32,14 @@ try {
   const initial=await until(s=>s.connection==='available'&&s.observation?.policy==='walk'&&s.observation.healthy&&s.observation.zeroVelocity);
   check('startup is passive and reports a witnessed simulator',initial.lastTransmission.status==='unknown'&&initial.simulated&&initial.ownership==='fixture-exclusive');
   new FixtureWitness(fixture.root).guard();
+  const rootsBefore=new Set(await readdir('/tmp')),children=async():Promise<string[]> => (await readFile(`/proc/self/task/${process.pid}/children`,'utf8')).trim().split(/\s+/).filter(Boolean);
+  const childrenBefore=new Set(await children());
+  await assert.rejects(startFixture({enablePolicy:true,leaseMs:180000}),/listener is not owned by the body/);
+  const refusedRoots=(await readdir('/tmp')).filter(name=>/^bunny-md-[a-f0-9]{32}$/.test(name)&&!rootsBefore.has(name));assert.equal(refusedRoots.length,1);
+  await access(`/tmp/${refusedRoots[0]}/body.log`);await assert.rejects(access(`/tmp/${refusedRoots[0]}/robotd.log`),{code:'ENOENT'});
+  assert.ok((await children()).every(pid=>childrenBefore.has(pid)));assert.equal(new FixtureWitness(fixture.root).guard(),fixture.session);
+  overlaps.push({root:`/tmp/${refusedRoots[0]}`,bodyReaped:true,daemonStarted:false});
+  check('overlapping setup refuses before daemon launch or enable and reaps its new body',true);
   await panel.getByRole('button',{name:'Take over',exact:true}).click();await panel.getByText(/Manual takeover/).waitFor();
   const baseline=initial.observation?.joints[7];assert.ok(baseline!==undefined);
   await panel.getByRole('button',{name:'Notice gesture',exact:true}).click();
@@ -68,11 +77,11 @@ try {
   check('companions remain usable',(await world.assistantRead()).status===200);
   const valid=new FixtureWitness(fixture.root);valid.guard();await writeFile(fixture.root+'/robotd.toml','[policy]\nenabled=false\n');assert.throws(()=>valid.guard());check('changed pinned params revoke witness',true);
   await panel.screenshot({path:'/proof/microduck-vendor.png'});
-  await writeFile('/proof/microduck-vendor-result.json',JSON.stringify({simulationOnly:true,bunnyModule:true,checks,pairs,observations,clock:{nowNs:String(process.hrtime.bigint()),namespace:namespace('time')},fixtureRoots:[...pairs.map(p=>p.session),fixture.session]},null,2));
+  await writeFile('/proof/microduck-vendor-result.json',JSON.stringify({simulationOnly:true,bunnyModule:true,checks,pairs,overlaps,observations,clock:{nowNs:String(process.hrtime.bigint()),namespace:namespace('time')},fixtureRoots:[...pairs.map(p=>p.session),fixture.session]},null,2));
   console.log('Actual MicroDuck dashboard/core/module qualification passed, including 10 Hz observations, both-direction process loss and explicit passive adoption.');
 }finally{
-  await writeFile('/proof/microduck-vendor-observations.json',JSON.stringify({checks,pairs,observations},null,2));
+  await writeFile('/proof/microduck-vendor-observations.json',JSON.stringify({checks,pairs,overlaps,observations},null,2));
   await browser.close();await world.close();await fixture.stop();
   for(const child of [fixture.body,fixture.daemon]){assert.ok(child.exitCode!==null||child.signalCode!==null);assert.throws(()=>process.kill(child.pid??0,0));}
-  await writeFile('/proof/microduck-vendor-cleanup.json',JSON.stringify({reaped:true,priorPairs:pairs,current:{body:fixture.body.pid,daemon:fixture.daemon.pid},remainingVendorProcesses:false}));
+  await writeFile('/proof/microduck-vendor-cleanup.json',JSON.stringify({reaped:true,priorPairs:pairs,overlaps,current:{body:fixture.body.pid,daemon:fixture.daemon.pid},remainingVendorProcesses:false}));
 }

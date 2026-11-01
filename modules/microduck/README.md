@@ -108,6 +108,9 @@ headless MuJoCo body and may explicitly enable the vendor policy. Module startup
 reconnect and dashboard reads do not. Loss of either member invalidates the
 session and terminates/reaps the survivor; replacement requires explicit setup.
 This process cleanup is not a hardware stop method.
+Only one fixture can listen in a namespace. Setup proves the spawned body's
+listener ownership before launching robotd. A second startup is refused before
+daemon launch or policy enable and reaps its new body.
 
 Pinned vendor inputs are MicroDuck b2b0d213a402caeac492dd662ea891faa17f67c0,
 API 47/daemon 0.18.3, RL develop bae39f5900b318f7e87fc485c30a31213cfa14eb,
