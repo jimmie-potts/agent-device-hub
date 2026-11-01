@@ -13,11 +13,12 @@ const command = (extra: Record<string, object>, guarded=false): object => closed
 export const outcomeSchema = closed({requestId:id,result:{enum:['succeeded','failed','uncertain']},evidence:{enum:['none','transmitted','observed']},error:closed({code:{enum:Object.keys(RETRYABLE)},retryable:{type:'boolean'},requestId:id,traceId:{type:'string',pattern:'^[0-9a-f]{32}$'},detail:{type:'string',minLength:1,maxLength:1024}},['code','retryable'])},['requestId','result','evidence']);
 export const stateSchema = {
   type: 'object', additionalProperties: false,
-  required: ['id', 'revision', 'configurationRevision', 'generation', 'simulated', 'connection', 'enabled', 'takeover', 'observation', 'active', 'pending', 'held', 'lastOutcome', 'lastTransmission'],
+  required: ['id', 'revision', 'configurationRevision', 'generation', 'simulated', 'connection', 'enabled', 'takeover', 'observation', 'active', 'pending', 'held', 'lastOutcome', 'lastTransmission', 'lastRecovery'],
   properties: {
     id, revision: integer, configurationRevision: integer, generation: ticket, simulated: {const: true},
     connection: {enum: ['unknown', 'available', 'unavailable', 'stale', 'mismatch']}, enabled: {type: 'boolean'}, takeover: {type: 'boolean'},
     observation: nullable(closed({antennas: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number'}}, observedAtMs: integer})),
+    lastRecovery: nullable(closed({requestId:id,heldRequestId:id})),
     active: nullable(closed({requestId: id, gesture: {enum: gestures}, moveId: nullable(id), automatic: {type: 'boolean'}})),
     pending: {...integer, maximum: 128},
     held: nullable(closed({requestId: id, heldAtMs: integer, moveId: nullable(id)})),

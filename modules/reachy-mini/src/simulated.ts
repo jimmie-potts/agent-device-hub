@@ -7,8 +7,9 @@ export class SimulatedReachy implements ReachyTransport {
   effects: {kind: 'move' | 'cancel'; id: string; target?: readonly [number, number]}[] = [];
   observer: Observer | undefined;
   readonly events: MoveEvent[] = [];
-  #event(event:MoveEvent):void {this.events.push(event); if(this.events.length>128)this.events.shift();this.observer?.event(event);}
-  state() {return {online:this.online,mismatch:this.mismatch,antennas:[...this.antennas],effects:this.effects.length,moves:this.effects.filter(x=>x.kind==='move').length,events:[...this.events]};}
+  #eventCount=0;
+  #event(event:MoveEvent):void {this.#eventCount++;this.events.push(event); if(this.events.length>128)this.events.shift();this.observer?.event(event);}
+  state() {return {online:this.online,mismatch:this.mismatch,antennas:[...this.antennas],eventCount:this.#eventCount,effects:this.effects.length,moves:this.effects.filter(x=>x.kind==='move').length,events:[...this.events]};}
   readonly tasks = new Map<string, {target: readonly [number, number]; done: () => void}>();
   autoComplete = true;
   antennas: [number, number] = [0, 0];
@@ -29,9 +30,9 @@ export class SimulatedReachy implements ReachyTransport {
     if (this.autoComplete) queueMicrotask(done);
     return id;
   }
-  async cancel(id: string, signal: AbortSignal): Promise<void> {
+  async cancel(id: string, signal: AbortSignal, beforeEffect:()=>void=()=>{}): Promise<void> {
     await Promise.resolve();
-    signal.throwIfAborted(); this.effects.push({kind: 'cancel', id}); this.tasks.delete(id); this.#event({uuid: id, type: 'move_cancelled'});
+    signal.throwIfAborted();beforeEffect(); this.effects.push({kind: 'cancel', id}); this.tasks.delete(id); this.#event({uuid: id, type: 'move_cancelled'});
   }
   act(action: string): void {this.online = action !== 'offline'; if (!this.online) this.observer?.lost(); else this.observer?.state({antennas: [...this.antennas]});}
 }

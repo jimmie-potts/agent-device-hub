@@ -58,7 +58,7 @@ class Owner {
     const prior = this.#store.state();
     this.#state = {id: this.#config.id, revision: prior?.revision ?? 0, configurationRevision: this.#config.configurationRevision,
       generation: {epoch: randomUUID(), sequence: 0}, simulated: true, connection: 'unknown', enabled: prior?.enabled ?? false,
-      takeover: prior !== undefined, observation: null, active: null, pending: 0, held: prior?.held ?? null, lastOutcome: prior?.lastOutcome ?? null, lastTransmission: prior?.lastTransmission ?? unknown};
+      takeover: prior !== undefined, observation: null, active: null, pending: 0, held: prior?.held ?? null, lastRecovery:prior?.lastRecovery??null, lastOutcome: prior?.lastOutcome ?? null, lastTransmission: prior?.lastTransmission ?? unknown};
     this.#outbox = new Outbox({...context, database: context.database(), validator: this.#validator});
   }
   status(): ReachyState {return structuredClone(this.#state);}
@@ -187,6 +187,7 @@ class Owner {
       data.expectedGeneration !== undefined && JSON.stringify(data.expectedGeneration) !== JSON.stringify(this.#state.generation)) return 'revision-conflict';
     if (action.kind === 'control' && ['disable-auto', 'takeover'].includes(action.action)) return undefined;
     if (action.kind !== 'stop' && !this.#fresh()) return 'unavailable';
+    if (this.#state.held === null && data.recovered === true) return 'invalid-state';
     if (this.#state.held !== null && (data.recovered !== true || data.heldRequestId !== this.#state.held.requestId || data.expectedGeneration === undefined || data.expectedConfigurationRevision === undefined || action.kind === 'control')) return 'invalid-state';
     if (action.kind === 'stop' && this.#state.held !== null && this.#state.held.moveId === null) return 'invalid-state';
     if (action.kind === 'gesture') {
@@ -234,23 +235,22 @@ class Owner {
     return {status: 'accepted'};
   }
   async #control(work: Work): Promise<void> {
-    const {action, row, command} = work; if (action.kind === 'gesture') return;
-    const oldHold = this.#state.held;
+    const {action,row,command}=work;if(action.kind==='gesture')return;
+    let refusal:ErrorCode|undefined,cancellation:string|null=null,afterLatch:string|undefined;
     try {
-      const guard = this.#guard(command, action); if (guard !== undefined) {await this.#finish(row, {requestId:row.requestId,result:Outcome.failed,evidence:Outcome.none,error:errorBody(guard).error}); return;}
-      if (action.kind === 'stop' || action.action === 'takeover') {
-        this.#interrupt();
-        await this.#change(() => {this.#state.enabled = false; this.#state.takeover = true; this.#state.generation.sequence++;}, command);
-        const moveId = this.#state.active?.moveId ?? oldHold?.moveId;
-        if (moveId !== undefined && moveId !== null) {
-          await this.#change(() => {row.started = true; row.moveId = moveId; this.#store.save(row);}, command);
-          await this.#cancelOwned(moveId,row);
-          await this.#transmitted(row);
-        }
-      } else if (action.action === 'disable-auto') {this.#interruptAutomatic(); await this.#change(() => {this.#state.enabled = false;}, command);}
-      else await this.#change(() => {this.#state.enabled = true; this.#state.takeover = false;}, command);
-      await this.#finish(row, {requestId: row.requestId, result: Outcome.succeeded, evidence: row.started ? Outcome.transmitted : Outcome.observed});
-    } catch(error) {const uncertain=row.started&&!(error instanceof BeforeSendError);await this.#finish(row, {requestId: row.requestId, result: uncertain ? Outcome.uncertain : Outcome.failed, evidence: Outcome.none, error: errorBody(uncertain ? 'uncertain-result' : 'unavailable').error});}
+      await this.#change(()=>{
+        refusal=this.#guard(command,action);if(refusal!==undefined)return;
+        if(action.kind==='stop'||action.action==='takeover'){
+          const uuid=this.#state.active?.moveId??(action.kind==='stop'?this.#state.held?.moveId:undefined);
+          this.#interrupt();this.#state.enabled=false;this.#state.takeover=true;this.#state.generation.sequence++;afterLatch=JSON.stringify(this.#state.generation);
+          if(uuid!==undefined&&uuid!==null){cancellation=uuid;row.started=true;row.moveId=uuid;this.#store.save(row);}
+        }else if(action.action==='disable-auto'){this.#interruptAutomatic();this.#state.enabled=false;}
+        else {this.#state.enabled=true;this.#state.takeover=false;}
+      },command);
+      if(refusal!==undefined){await this.#finish(row,{requestId:row.requestId,result:Outcome.failed,evidence:Outcome.none,error:errorBody(refusal).error});return;}
+      if(cancellation!==null){await this.#cancelOwned(cancellation,row,()=>{if(this.#closed||this.#storageDown||Date.parse(command.expiresat??'')<=this.#context.clock.now()||JSON.stringify(this.#state.generation)!==afterLatch)throw new BeforeSendError('cancellation fenced');});await this.#transmitted(row);}
+      await this.#finish(row,{requestId:row.requestId,result:Outcome.succeeded,evidence:row.started?Outcome.transmitted:Outcome.observed});
+    }catch(error){const uncertain=row.started&&!(error instanceof BeforeSendError);await this.#finish(row,{requestId:row.requestId,result:uncertain?Outcome.uncertain:Outcome.failed,evidence:Outcome.none,error:errorBody(uncertain?'uncertain-result':'unavailable').error});}
   }
   #sleep(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -303,10 +303,10 @@ class Owner {
         error: errorBody(uncertain ? 'uncertain-result' : signal.aborted ? 'cancelled' : code).error});
     }
   }
-  async #cancelOwned(uuid: string,row:Row): Promise<void> {
+  async #cancelOwned(uuid: string,row:Row,beforeEffect?:()=>void): Promise<void> {
     const key=row.recoveryOf===undefined?uuid:uuid+'@'+row.requestId;
     let pending = this.#cancellations.get(key);
-    if (pending === undefined) {pending = this.#vendor(row,'moment',()=>this.#transport.cancel(uuid, AbortSignal.any([this.#abort.signal, AbortSignal.timeout(2000)]))); this.#cancellations.set(key,pending);if(this.#cancellations.size>64)this.#cancellations.delete(this.#cancellations.keys().next().value??'');}
+    if (pending === undefined) {pending = this.#vendor(row,'moment',()=>this.#transport.cancel(uuid, AbortSignal.any([this.#abort.signal, AbortSignal.timeout(2000)]),beforeEffect)); this.#cancellations.set(key,pending);if(this.#cancellations.size>64)this.#cancellations.delete(this.#cancellations.keys().next().value??'');}
     await pending;
   }
   async #transmitted(row: Row): Promise<void> {await this.#change(() => {this.#state.lastTransmission = {status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};},row);}
@@ -314,7 +314,7 @@ class Owner {
     try {await this.#change(add => {
       row.outcome = outcome; this.#store.save(row);
       if (outcome.result === Outcome.uncertain) {this.#state.held = {requestId: row.requestId, heldAtMs: this.#context.clock.now(), moveId: row.moveId}; this.#state.enabled = false; this.#state.takeover = true;}
-      else if (outcome.result === Outcome.succeeded && row.recoveryOf !== undefined && this.#state.held?.requestId === row.recoveryOf) this.#state.held = null;
+      else if (outcome.result === Outcome.succeeded && row.recoveryOf !== undefined && this.#state.held?.requestId === row.recoveryOf) {this.#state.held=null;this.#state.lastRecovery={requestId:row.requestId,heldRequestId:row.recoveryOf};this.#state.generation.sequence++;}
       if (this.#state.active?.requestId === row.requestId) {this.#state.active = null; this.#state.pending = 0;}
       this.#state.lastOutcome = outcome; this.#state.observation = this.#latest ?? null;
       add(`bunny.event.${row.family}.${this.#config.id}`, {kind: 'outcome', type: typeOf(row.family).replace('.requested', '.completed'), subject: this.#config.id, dataschema: schemaOf('outcome'), data: outcome}, {parent: row});

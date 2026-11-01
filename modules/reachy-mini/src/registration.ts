@@ -21,13 +21,14 @@ const simulation:DeviceSimulation<SimulatedReachy,SimulatedReachy>={
           const value=answer.value as ReturnType<SimulatedReachy['state']>;
           if(!value.online||value.mismatch){observer.lost(value.mismatch);return;}
           observer.state({antennas:[value.antennas[0]??0,value.antennas[1]??0]});
-          for(const event of value.events.slice(index))observer.event(event);index=value.events.length;
+          const offset=Math.max(0,index-(value.eventCount-value.events.length));
+          for(const event of value.events.slice(offset))observer.event(event);index=value.eventCount;
         };
         await poll();const timer=setInterval(()=>{void poll();},100);
         const close=():void=>{closed=true;clearInterval(timer);signal.removeEventListener('abort',close);};signal.addEventListener('abort',close,{once:true});return close;
       },
       async move(target,signal,beforeEffect){beforeEffect?.();const answer=await link.call('move',target,signal);if(answer.status!=='answered'||typeof answer.value!=='string')throw new Error('simulation task unanswered');return answer.value;},
-      async cancel(id,signal){const answer=await link.call('cancel',id,signal);if(answer.status!=='answered')throw new Error('simulation cancellation unanswered');},
+      async cancel(id,signal,beforeEffect){beforeEffect?.();const answer=await link.call('cancel',id,signal);if(answer.status!=='answered')throw new Error('simulation cancellation unanswered');},
     }}),
   },
 };

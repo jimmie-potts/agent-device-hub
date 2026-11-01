@@ -24,3 +24,5 @@ Preserve the existing core, SDK, diagnostic and companion owners. This source in
 ## Migration Plan
 Additive new module and shared family only; no existing stores change. Source validation uses synthetic private stores and isolated loopback vendor simulation. Installation requires the owning current-runtime procedure and separately qualified target; no automatic deployment or rollback is introduced.
 
+
+Control validation and its setting transition share one durable transaction, so an old Resume cannot overtake Stop. Takeover never selects a stored held UUID. Guarded recovery records the new command and prior held request, advances the ticket and starts a fresh frontend attempt scope without rewriting the original uncertain history.

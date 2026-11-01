@@ -27,6 +27,7 @@ void test('real HTTP/WS adapter verifies backend, finite wire values, redirects 
   let states=0;const close=await adapter.connect({state:()=>{states++;},event:()=>{},lost:()=>{}},abort.signal);await new Promise(resolve=>setTimeout(resolve,10));assert.equal(states,1);
   assert.equal(await adapter.move([.2,-.2],abort.signal),id);assert.deepEqual(writes,[{path:'/api/move/goto',body:{antennas:[.2,-.2],duration:.6}}]);
   await adapter.cancel(id,abort.signal);assert.deepEqual(writes[1],{path:'/api/move/stop',body:{uuid:id}});
+  await assert.rejects(adapter.cancel(id,abort.signal,()=>{throw new Error('deadline');}));assert.equal(writes.length,2);
   await assert.rejects(adapter.move([0,0],abort.signal,()=>{throw new Error('deadline');}));assert.equal(writes.length,2);
   simulated=false;await assert.rejects(adapter.move([0,0],abort.signal));assert.equal(writes.length,2);simulated=true;
   redirect=true;await assert.rejects(adapter.move([0,0],abort.signal));assert.equal(writes.length,2);redirect=false;

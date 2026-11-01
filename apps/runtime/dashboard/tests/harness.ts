@@ -85,6 +85,7 @@ export type WorldOptions = {
 export type World = {
   readonly readProducer?: string;
   reachy:SimulatedReachy;
+  reachyLoseReply():void;
   reachyMcp(name:string,args:object):Promise<unknown>;
   wemo:SimulatedWemo;
   wemoLoseReply():void;
@@ -176,7 +177,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const roborock=new SimulatedRoborock();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
-  const reachy = new SimulatedReachy();
+  const reachy = new SimulatedReachy();let loseReachyReply=false;
+  const reachyTransport:ReachyTransport=options.reachyTransport??{connect:(...a)=>reachy.connect(...a),cancel:(...a)=>reachy.cancel(...a),move:async(...a)=>{const id=await reachy.move(...a);if(loseReachyReply){loseReachyReply=false;throw new Error('synthetic missing UUID');}return id;}};
   const onn = new SimulatedOnn();
   const wemo=new SimulatedWemo();let loseWemoReply=false;
   const bulbs = new SimulatedLifx();
@@ -248,7 +250,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.reachy===true?[createReachyModule({transport:options.reachyTransport??reachy})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
@@ -294,7 +296,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       try {const ready=await call({jsonrpc:'2.0',method:'notifications/initialized'});await ready.arrayBuffer();const answer=await call({jsonrpc:'2.0',id:2,method:'tools/call',params:{name,arguments:args}});const body:unknown=await answer.json();return body;}
       finally{const ended=await fetch(`${runtime.url}/mcp`,{method:'DELETE',headers});await ended.arrayBuffer();}
     },
-    reachy,wemo,wemoLoseReply:()=>{loseWemoReply=true;},onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
+    reachy,reachyLoseReply:()=>{loseReachyReply=true;},wemo,wemoLoseReply:()=>{loseWemoReply=true;},onnState: () => onn.state(), onnOnline: value => {onn.online = value;},
     readonlyOnn: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/onn-key-press`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'onn', data: {key: 'right'}, requestId: 'readonly-onn'})}); await result.arrayBuffer(); return result.status;},
     assistantRead: async () => {const response = await fetch(`${runtime.url}/modules/companions/content/conversation?profile=bunny`, {headers: {authorization: `Bearer ${readerToken}`}}); return {status: response.status, text: await response.text()};},
     readonlyAssistantUpload: async () => {const query = new URLSearchParams({family: 'assistant-input', target: 'assistant', requestId: 'readonly-assistant', name: 'input.json'});

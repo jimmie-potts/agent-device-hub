@@ -11,7 +11,7 @@ const identity:unknown=await (await fetch(endpoint+'/api/daemon/status')).json()
 assert.ok(typeof identity==='object'&&identity!==null&&'simulation_enabled'in identity&&identity.simulation_enabled===true&&'no_media'in identity&&identity.no_media===true);
 const transport:ReachyTransport={connect:(observer,signal)=>vendor.connect({...observer,state:value=>{observations.push(value);observer.state(value);}},signal),
  move:async(target,signal,beforeEffect)=>{const id=await vendor.move(target,signal,()=>{beforeEffect?.();effects.push({kind:'move',target});});const last=effects.at(-1);if(last!==undefined)last.id=id;return id;},
- cancel:async(id,signal)=>{effects.push({kind:'cancel',id});await vendor.cancel(id,signal);}};
+ cancel:async(id,signal,beforeEffect)=>{effects.push({kind:'cancel',id});await vendor.cancel(id,signal,beforeEffect);}};
 const world=await startWorld({reachy:true,reachyTransport:transport}),browser=await chromium.launch({headless:true});
 try{
  const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(30000);await page.goto(world.url+'/#/module/reachy-mini/controls');await feed(page,'connected');

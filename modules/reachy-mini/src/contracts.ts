@@ -16,7 +16,7 @@ export type ReachyState = {
   id: string; revision: number; configurationRevision: number; generation: Ticket;
   simulated: true; connection: 'unknown' | 'available' | 'unavailable' | 'stale' | 'mismatch';
   enabled: boolean; takeover: boolean; observation: null | (Observation & {observedAtMs: number});
-  active: Active | null; pending: number; held: Hold | null; lastOutcome: CompletedOutcome | null; lastTransmission: DeviceRecord['lastTransmission'];
+  lastRecovery: {requestId:string;heldRequestId:string} | null; active: Active | null; pending: number; held: Hold | null; lastOutcome: CompletedOutcome | null; lastTransmission: DeviceRecord['lastTransmission'];
 };
 export const stages = (gesture: Gesture): readonly [number, number][] =>
   gesture === 'neutral' ? [[0, 0]] : [gesture === 'notice' ? [.2, -.2] : [.2, .2], [0, 0]];

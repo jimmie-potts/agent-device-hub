@@ -26,7 +26,10 @@ target active and is never labelled physical stopping.
 Uncertain writes retain a hold. An unknown UUID cannot be cancelled by
 guessing or cancelling every vendor task. Restore vendor/manual ownership,
 then submit a guarded new command from the owner with explicit recovery acknowledgment.
-Refused recovery preserves the original hold; uncertain recovery replaces it.
+Refused recovery preserves the original hold; uncertain recovery replaces it
+and requires a new acknowledgment. Definitive guarded recovery records the new
+command and prior hold, permitting fresh controls while retaining the original
+uncertain outcome in history. Takeover alone sends no stored held UUID.
 Restart reports unfinished responsibility without resending movement.
 
 From the worktree root with Node 24, build, then run

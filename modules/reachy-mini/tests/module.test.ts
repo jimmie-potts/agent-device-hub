@@ -22,7 +22,7 @@ async function fixture(t: TestContext, transport: ReachyTransport = new Simulate
   const command=(family:Family,data:object={},requestId:string=crypto.randomUUID(),timeoutMs=3000)=>operator.request(`bunny.cmd.${family}.${section.id}`,{type:typeOf(family),subject:section.id,dataschema:schemaOf(family),data:{expectedConfigurationRevision:state().configurationRevision,expectedGeneration:state().generation,...data}},{requestId,timeoutMs});
   const outcome=(id:string):CompletedOutcome|undefined=>{const value=host.moduleDatabase()?.prepare('SELECT record FROM reachy_requests WHERE id=?').get(id);if(!value||typeof value.record!=='string')return undefined;return (JSON.parse(value.record) as {outcome?:CompletedOutcome}).outcome;};
   const takeover=async()=>{const id=crypto.randomUUID();assert.equal((await command('reachy-control',{action:'takeover'},id)).status,'accepted');await until(()=>outcome(id)!==undefined);};
-  return {command,state,outcome,takeover,get host(){return host;},async restart(){await host.stop();host=new ModuleHarness(createReachyModule({transport}),{bus,stateDir:dir,section,...(clock===undefined?{}:{clock})});await host.start();}};
+  return {bus,command,state,outcome,takeover,get host(){return host;},async restart(){await host.stop();host=new ModuleHarness(createReachyModule({transport}),{bus,stateDir:dir,section,...(clock===undefined?{}:{clock})});await host.start();}};
 }
 void test('startup is passive; takeover gates finite gestures and duplicates never resend',{timeout:10000},async t=>{
   const robot=new SimulatedReachy(),f=await fixture(t,robot);await until(()=>f.state().connection==='available');assert.equal(robot.effects.length,0);assert.equal(f.state().enabled,false);
@@ -45,7 +45,7 @@ void test('ambiguous UUID is held; unrelated controls preserve it and guarded re
   assert.equal('error'in await f.command('reachy-stop',{recovered:true,heldRequestId:id,expectedConfigurationRevision:1,expectedGeneration:f.state().generation}),true);
   assert.equal('error'in await f.command('reachy-gesture',{gesture:'neutral',recovered:true,heldRequestId:id,expectedConfigurationRevision:0,expectedGeneration:f.state().generation}),true);assert.equal(f.state().held?.requestId,id);
   lose=false;const recovery=crypto.randomUUID();await f.command('reachy-gesture',{gesture:'neutral',recovered:true,heldRequestId:id,expectedConfigurationRevision:1,expectedGeneration:f.state().generation},recovery);await until(()=>f.outcome(recovery)!==undefined);
-  assert.equal(f.outcome(recovery)?.result,'succeeded');assert.equal(f.state().held,null);assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(robot.effects.filter(x=>x.kind==='move').length,2);
+  assert.equal(f.outcome(recovery)?.result,'succeeded');assert.equal(f.state().held,null);assert.deepEqual(f.state().lastRecovery,{requestId:recovery,heldRequestId:id});assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(robot.effects.filter(x=>x.kind==='move').length,2);
 });
 void test('concurrent gestures admit one responsibility and restart never replays it',{timeout:10000},async t=>{
   const robot=new SimulatedReachy();robot.autoComplete=false;const f=await fixture(t,robot);await until(()=>f.state().connection==='available');await f.takeover();
@@ -84,4 +84,17 @@ void test('unfinished durable write is classified uncertain on restart without r
 
 for(const gesture of ['attention','neutral'] as const)void test(`manual ${gesture} uses only its accepted catalog stages`,{timeout:10000},async t=>{
  const robot=new SimulatedReachy(),f=await fixture(t,robot);await until(()=>f.state().connection==='available');await f.takeover();const id=crypto.randomUUID();await f.command('reachy-gesture',{gesture},id);await until(()=>f.outcome(id)!==undefined);assert.equal(f.outcome(id)?.result,'succeeded');assert.deepEqual(robot.effects.map(x=>x.target),gesture==='attention'?[[.2,.2],[0,0]]:[[0,0]]);
+});
+
+void test('Stop and Resume with one old generation cannot clear the Stop latch',{timeout:10000},async t=>{
+ const robot=new SimulatedReachy(),f=await fixture(t,robot),core=f.bus.connect('bunny/core');t.after(()=>core.close());
+ await core.serveSync(['session','mode'],()=>({revision:1,states:[{type:'org.bunny.mode.updated',subject:'hub',dataschema:'https://bunny.invalid/events/mode/2.0',data:{id:'hub',revision:1,mode:'work',selectedAtMs:Date.now()}}]}));
+ await until(()=>f.state().connection==='available');await pause(30);const generation=structuredClone(f.state().generation),stop='racing-stop',resume='racing-resume';
+ const answers=await Promise.all([f.command('reachy-stop',{expectedGeneration:generation},stop),f.command('reachy-control',{action:'resume-auto',expectedGeneration:generation},resume)]);
+ await until(()=>f.outcome(stop)!==undefined&&(answers[1]?.status!=='accepted'||f.outcome(resume)!==undefined));assert.equal(f.state().enabled,false);assert.equal(f.state().takeover,true);
+});
+void test('ordinary Takeover never sends to a stored held UUID without guarded recovery',{timeout:10000},async t=>{
+ const robot=new SimulatedReachy(),f=await fixture(t,robot);await until(()=>f.state().connection==='available');const db=f.host.moduleDatabase();assert.ok(db);
+ const saved=structuredClone(f.state());saved.held={requestId:'held-original',heldAtMs:Date.now(),moveId:'12345678-1234-1234-1234-123456789abc'};saved.takeover=true;saved.enabled=false;db.prepare('UPDATE reachy_state SET record=? WHERE id=1').run(JSON.stringify(saved));
+ await f.restart();await until(()=>f.state().connection==='available'&&f.state().held?.requestId==='held-original');await f.takeover();assert.equal(robot.effects.length,0);assert.equal(f.state().held?.requestId,'held-original');
 });

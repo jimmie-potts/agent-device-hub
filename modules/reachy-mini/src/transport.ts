@@ -6,7 +6,7 @@ export type Observer = {state(value: Observation): void; event(value: MoveEvent)
 export interface ReachyTransport {
   connect(observer: Observer, signal: AbortSignal): Promise<() => void>;
   move(target: readonly [number, number], signal: AbortSignal, beforeEffect?: () => void): Promise<string>;
-  cancel(uuid: string, signal: AbortSignal): Promise<void>;
+  cancel(uuid: string, signal: AbortSignal, beforeEffect?:()=>void): Promise<void>;
 }
 const ajv = new Ajv2020({strict: false});
 const isStatus = ajv.compile<{state: string; simulation_enabled: boolean; mockup_sim_enabled: boolean; no_media: boolean; backend_status: null | {error: unknown;motor_control_mode:string}}>({
@@ -72,5 +72,5 @@ export class HttpReachy implements ReachyTransport {
     if (!isMove(value)) throw new Error('unknown vendor task identity');
     return value.uuid;
   }
-  async cancel(uuid: string, signal: AbortSignal): Promise<void> {await this.#identity(signal);const answer=await this.#json('/api/move/stop',signal,{uuid});if(typeof answer!=='object'||answer===null||!('message'in answer)||answer.message!==`Stopped move with UUID: ${uuid}`)throw new Error('unconfirmed task cancellation');}
+  async cancel(uuid: string, signal: AbortSignal, beforeEffect:()=>void=()=>{}): Promise<void> {await this.#identity(signal);signal.throwIfAborted();beforeEffect();const answer=await this.#json('/api/move/stop',signal,{uuid});if(typeof answer!=='object'||answer===null||!('message'in answer)||answer.message!==`Stopped move with UUID: ${uuid}`)throw new Error('unconfirmed task cancellation');}
 }

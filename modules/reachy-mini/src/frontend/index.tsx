@@ -42,19 +42,20 @@ function Page({context}: {context: FrontendContext}): React.JSX.Element {
     {state !== undefined && <>
       <p>{state.takeover ? 'Manual takeover' : 'Automatic expression ' + (state.enabled ? 'enabled' : 'disabled')}</p>
       <p>Simulated antennas: {state.observation === null ? 'Unknown' : state.observation.antennas.map(value => value.toFixed(2)).join(' / ') + ' rad'}</p>
+      <p>Last operation: {state.lastOutcome === null ? 'Unknown' : state.lastOutcome.result}</p>
       <p>{state.active === null ? 'No active task' : 'Active ' + state.active.gesture + ' task'}</p>
       {state.held !== null && <p>Movement result uncertain. Automatic expression is held.</p>}
       {state.held !== null && <label><input type="checkbox" checked={recovered} onChange={event => {setRecoveryFor(event.target.checked ? JSON.stringify([state.id,state.held?.requestId,state.generation]) : undefined);}}/>I restored vendor/manual ownership for this held operation</label>}
-      <Command context={context} target={state.id}>{command => <div className="reachy-actions">
+      <Command context={context} target={state.id} attemptKey={`module:reachy-mini:controls:${state.id}:${state.held?.requestId ?? state.lastRecovery?.requestId ?? 'initial'}`}>{command => <div className="reachy-actions">
         <button disabled={!context.control || !context.connected || !context.operationsLive || command.locked} onClick={() => {send(command, 'reachy-control', {action: 'takeover'});}}>Take over</button>
-        {(['notice', 'attention', 'neutral'] as const).map(gesture => <button key={gesture} disabled={disabled || !state.takeover || state.active !== null || command.locked || state.held !== null && !recovered}
+        {(['notice', 'attention', 'neutral'] as const).map(gesture => <button key={gesture} disabled={disabled || !state.takeover || state.pending > 0 || command.locked || state.held !== null && !recovered}
           onClick={() => {send(command, 'reachy-gesture', {gesture});}}>{gesture === 'neutral' ? 'Neutral pose' : gesture === 'notice' ? 'Notice gesture' : 'Attention gesture'}</button>)}
         <button disabled={disabled || state.takeover || command.locked || state.held !== null} onClick={() => {send(command, 'reachy-control', {action: 'enable-auto'});}}>Enable automatic expression</button>
         <button disabled={disabled || command.locked || state.held !== null} onClick={() => {send(command, 'reachy-control', {action: 'resume-auto'});}}>Resume automatic expression</button>
         <button disabled={!context.control || !context.connected || !context.operationsLive || command.locked} onClick={() => {send(command, 'reachy-control', {action: 'disable-auto'});}}>Disable automatic expression</button>
         <p className="reachy-feedback" role="status">{command.text}</p>
       </div>}</Command>
-      <Command context={context} target={state.id} attemptKey={`module:reachy-mini:stop:${state.id}`}>{command => <div className="reachy-actions">
+      <Command context={context} target={state.id} attemptKey={`module:reachy-mini:stop:${state.id}:${state.held?.requestId ?? state.lastRecovery?.requestId ?? 'initial'}`}>{command => <div className="reachy-actions">
         <button disabled={!context.control || !context.connected || !context.operationsLive || command.locked || state.held !== null && (!recovered || state.held.moveId === null)}
           onClick={() => {send(command, 'reachy-stop', {});}}>Stop task</button>
         <p className="reachy-feedback" role="status">{command.text}</p>
