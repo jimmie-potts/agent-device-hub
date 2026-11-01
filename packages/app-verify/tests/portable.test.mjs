@@ -16,10 +16,10 @@ test('image build manifest is closed, source-bound and requires a real digest', 
     {...valid, schema: 'other'}, {...valid, token: 'PRIVATE_CANARY'}]) assert.throws(() => portableArtifact(value, identity.revision));
   assert.doesNotThrow(() => portableCreateArgs({...identity, artifactDigest: null})); // honest pre-start pending identity
 });
-function container() {
-  const args = portableCreateArgs(identity);
-  return {Id: id, Image: identity.image, Config: {User: '1000:1000', Labels: {'org.bunny.verify.run': identity.runId,
-    'org.bunny.verify.revision': identity.revision}, Entrypoint: ['/usr/bin/timeout'], Cmd: args.slice(args.indexOf(identity.image) + 1)},
+function container(selected = identity) {
+  const args = portableCreateArgs(selected);
+  return {Id: id, Image: selected.image, Config: {User: '1000:1000', Labels: {'org.bunny.verify.run': selected.runId,
+    'org.bunny.verify.revision': selected.revision}, Entrypoint: ['/usr/bin/timeout'], Cmd: args.slice(args.indexOf(selected.image) + 1)},
   State: {Running: false, Restarting: false, Paused: false, Pid: 0, Status: 'exited', ExitCode: 0}, Mounts: [],
   HostConfig: {NetworkMode: 'none', RestartPolicy: {Name: 'no'}, AutoRemove: false, Init: true,
     Privileged: false, CapAdd: null, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], Devices: [], DeviceRequests: null,
@@ -59,6 +59,19 @@ test('manifest rejects changed candidate, paths, excessive size, missing capture
     {...good, files: [{...good.files[0], name: 'capture/extra.json'}]},
     {...good, files: [{...good.files[0], bytes: 1024 ** 3}]}]) assert.throws(() => portableManifest(bad, identity));
 });
+test('catalog manifests retain their fixed scenario result and require it for success', () => {
+  const selected = {...identity, step: 'scenario-routine-actions'};
+  const files = ['capture/assertions.json', 'capture/after.png', 'capture/interaction.webm', 'capture/scenario-result.json']
+    .map(name => ({name, bytes: 100, sha256: 'a'.repeat(64)}));
+  const manifest = {schema: 'portable-capture/1', runId: selected.runId, revision: selected.revision,
+    artifactDigest: selected.artifactDigest, step: selected.step, outcome: 'passed', assertions: 3, files};
+  assert.deepEqual(portableManifest(manifest, selected), manifest);
+  assert.throws(() => portableManifest({...manifest, files: files.slice(0, 3)}, selected), /incomplete portable capture/);
+  for (const name of ['capture/extra.json', '../scenario-result.json', 'capture/nested/scenario-result.json']) {
+    assert.throws(() => portableManifest({...manifest, files: [...files.slice(0, 3), {...files[3], name}]}, selected));
+  }
+  assert.throws(() => portableManifest({...manifest, files: [...files.slice(0, 3), {...files[3], bytes: 32 * 1024 * 1024 + 1}]}, selected));
+});
 test('cleanup never stops/removes a foreign container or deletes after an unknown/live stop', async () => {
   for (const kind of ['foreign', 'unknown', 'live']) {
     const calls = []; const c = container();
@@ -77,12 +90,13 @@ test('stopped exact ownership is authoritative; cleanup helper only proves stop 
 });
 
 async function proofWorld(t, mode = 'passed') {
+  const selected = {...identity, step: mode === 'catalog' || mode === 'private-catalog' ? 'scenario-routine-actions' : identity.step};
   const at = await mkdtemp(join(tmpdir(), 'portable-proof-'));
   t.after(() => rm(at, {recursive: true, force: true}));
-  const receipt = {receiptVersion: 'app-verification-portable/1', identity, backend: 'docker-foreground', containerId: id,
+  const receipt = {receiptVersion: 'app-verification-portable/1', identity: selected, backend: 'docker-foreground', containerId: id,
     architecture: 'synthetic', state: 'running', startedAt: '2026-10-22T21:41:00Z', finishedAt: null,
     realtimeExpiryAcrossSuspend: false, capture: null, cleanup: {stopped: false, container: 'pending'}, failure: null, secrets: 'none recorded'};
-  const log = {runId: identity.runId, step: identity.step, outcome: mode === 'failed' ? 'failed' : 'passed', finishedAt: '2026-10-22T21:42:00Z', assertions: [{outcome: 'passed'}, {outcome: 'passed'}]};
+  const log = {runId: selected.runId, step: selected.step, outcome: mode === 'failed' ? 'failed' : 'passed', finishedAt: '2026-10-22T21:42:00Z', assertions: [{outcome: 'passed'}, {outcome: 'passed'}]};
   const files = new Map([
     ['capture/assertions.json', Buffer.from(JSON.stringify(log))],
     ['capture/after.png', Buffer.from('89504e470d0a1a0a', 'hex')],
@@ -92,14 +106,16 @@ async function proofWorld(t, mode = 'passed') {
   if (mode === 'failed') {files.delete('capture/after.png'); files.delete('capture/interaction.webm');}
   if (mode === 'bad-video') files.set('capture/interaction.webm', Buffer.from('not finalized'));
   if (mode === 'private-json') files.set('capture/checks.json', Buffer.from('{"leak":"PRIVATE_CANARY"}'));
+  if (mode === 'catalog' || mode === 'private-catalog') files.set('capture/scenario-result.json',
+    Buffer.from(mode === 'private-catalog' ? '{"leak":"PRIVATE_CANARY"}' : '{"synthetic":true,"physical":false,"outcome":"passed"}'));
   if (mode === 'abandoned') files.set('capture/assertions.json', Buffer.from(JSON.stringify({...log, outcome: 'failed'})));
-  const manifest = {schema: 'portable-capture/1', runId: identity.runId, revision: identity.revision, artifactDigest: identity.artifactDigest,
-    step: identity.step, outcome: mode === 'failed' ? 'failed' : 'passed', assertions: 2,
+  const manifest = {schema: 'portable-capture/1', runId: selected.runId, revision: selected.revision, artifactDigest: selected.artifactDigest,
+    step: selected.step, outcome: mode === 'failed' ? 'failed' : 'passed', assertions: 2,
     files: [...files].map(([name, bytes]) => ({name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex')}))};
   const calls = [];
   const run = async args => {
     calls.push(args);
-    if (args[0] === 'inspect') return JSON.stringify([container()]);
+    if (args[0] === 'inspect') return JSON.stringify([container(selected)]);
     if (args[0] === 'cp') {
       const key = args[1].split('/proof/')[1];
       await writeFile(args[2], key === 'manifest.json' ? JSON.stringify(manifest) : files.get(key)); return '';
@@ -118,7 +134,14 @@ test('validated proof survives exact removal, with separate capture and cleanup 
   assert.equal(JSON.parse(await readFile(join(w.at, 'capture-manifest.json'), 'utf8')).runId, identity.runId);
   assert.ok(w.calls.findIndex(a => a[0] === 'rm') > w.calls.findLastIndex(a => a[0] === 'cp'));
 });
-for (const mode of ['bad-video', 'private-json', 'abandoned', 'removal-unknown']) test(`${mode} cannot pass or erase missing proof`, async t => {
+test('catalog result bytes survive verified copy and exact-container cleanup', async t => {
+  const w = await proofWorld(t, 'catalog');
+  await finishPortable(w.receipt, w.at, w.run, true);
+  assert.equal(w.receipt.state, 'passed');
+  assert.equal(w.receipt.cleanup.container, 'removed');
+  assert.equal(JSON.parse(await readFile(join(w.at, 'capture/scenario-result.json'), 'utf8')).outcome, 'passed');
+});
+for (const mode of ['bad-video', 'private-json', 'private-catalog', 'abandoned', 'removal-unknown']) test(`${mode} cannot pass or erase missing proof`, async t => {
   const w = await proofWorld(t, mode);
   await finishPortable(w.receipt, w.at, w.run, true);
   assert.notEqual(w.receipt.state, 'passed'); assert.equal(w.receipt.cleanup.container, 'left');

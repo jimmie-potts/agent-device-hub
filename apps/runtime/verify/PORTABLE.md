@@ -99,6 +99,10 @@ receipt's failed capture and cleanup evidence.
 Private proof is retained under the canonical checkout's ignored
 `.local/evidence/verify/<run-id>/`. `portable.json` uses the separate
 `app-verification-portable/1` receipt; it has no invented systemd unit or timer.
+Catalog captures retain the fixed `capture/scenario-result.json` attachment
+alongside their assertions, screenshot and finalized video. A successful catalog
+manifest requires that attachment. Both proof readers keep the existing byte,
+hash and content checks and reject filenames outside the fixed allowlist.
 The `portable-capture/1` manifest binds the source, artifact, step and run to
 allowlisted file sizes and SHA256 digests. Allowed exports are:
 
