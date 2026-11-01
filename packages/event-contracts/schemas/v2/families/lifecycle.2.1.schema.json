@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/lifecycle/2.1",
+  "description": "Opt-in lifecycle extension for explicit client read receipts. Registration is not provider qualification or runtime adoption. Existing observations retain their 2.0 rules.",
+  "oneOf": [
+    {"$ref": "https://bunny.invalid/events/lifecycle/2.0"},
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "turn", "parent", "event", "observedAtMs", "ordering"],
+      "properties": {
+        "identity": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity"},
+        "turn": {
+          "type": "object", "additionalProperties": false, "required": ["status", "id"],
+          "properties": {"status": {"const": "known"}, "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}
+        },
+        "parent": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+        "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+        "event": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "generation", "noticeId", "receipt"],
+          "properties": {
+            "kind": {"const": "read-receipt-observed"},
+            "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+            "noticeId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/hash"},
+            "receipt": {
+              "oneOf": [
+                {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["kind", "client", "seenRevision", "acceptedRevision"],
+                  "properties": {
+                    "kind": {"const": "provider-client"}, "client": {"const": "desktop"},
+                    "seenRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+                    "acceptedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+                  }
+                },
+                {
+                  "type": "object", "additionalProperties": false, "required": ["kind", "viewRevision"],
+                  "properties": {
+                    "kind": {"const": "owned-ui"},
+                    "viewRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
