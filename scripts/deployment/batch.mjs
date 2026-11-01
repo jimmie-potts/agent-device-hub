@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {refusalFields} from '../operator-refusal.mjs';
 import {maintenanceHelperFor,maintenanceHelperDetails} from './maintenance-helper.mjs';
 import {Outcome} from '../../packages/sdk/dist/src/evidence.js';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -163,7 +164,7 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
         try {const owned=await selected(request,run);if(owned?.Id!==replacementId)refuse();await operate({...request,command:'stop'},run);stop='verified-stopped';}
         catch {stop='uncertain';}
       }
-      record={...record,outcome:stop==='uncertain'||record.observation.status==='unknown'?Outcome.uncertain:Outcome.failed,failedPhase:record.phase,replacementStop:stop,failedAt:new Date().toISOString()};
+      record={...record,refusal:refusalFields(error),outcome:stop==='uncertain'||record.observation.status==='unknown'?Outcome.uncertain:Outcome.failed,failedPhase:record.phase,replacementStop:stop,failedAt:new Date().toISOString()};
       await lease.record(record);throw error;
     }
   });

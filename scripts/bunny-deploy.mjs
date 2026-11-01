@@ -8,6 +8,7 @@ import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {docker,selected,privateHostDirectory} from './bunny.mjs';
 import {operationRoot,reconcileOperation,privateJson} from './bunny-operations.mjs';
+import {refusalMessage} from './operator-refusal.mjs';
 import {attestMaintenanceHelper} from './deployment/maintenance-helper.mjs';
 import {deployBatch,readRequest} from './deployment/batch.mjs';
 const execute=promisify(execFile);
@@ -55,5 +56,5 @@ export async function main(argv) {
 }
 if(process.argv[1]!==undefined&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try{process.stdout.write(JSON.stringify(await main(process.argv.slice(2)))+'\n');}
-  catch{process.stderr.write('B.U.N.N.Y. deployment did not complete. Preserve latest state and the private operation record; inspect before an explicit reconciliation.\n');process.exitCode=1;}
+  catch(error){process.stderr.write(refusalMessage(error));process.exitCode=1;}
 }

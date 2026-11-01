@@ -96,8 +96,8 @@ async function refuseOwnerAlias(path, heldOwner) {
 async function configuration(config, secrets, heldOwner, legacy=false) {
   await refuseOwnerAlias(config, heldOwner);
   const {readRuntimeConfig} = await import('../apps/runtime/dist/src/state.js');
-  await readRuntimeConfig(config);
-  const data = await bytes(config, 1024 * 1024), parsed = JSON.parse(data);
+  let data,parsed;
+  try{await readRuntimeConfig(config);data=await bytes(config,1024*1024);parsed=JSON.parse(data);}catch{fail('configuration');}
   const paths = new Set(),externalHostDependencies=[];
   const fields=['adbSocket','hostExecutable','hostKeyDirectory'];
   let declared=false;
@@ -173,7 +173,7 @@ export async function backup({state = STATE, config = CONFIG, secrets = SECRETS,
   await privatePath(dirname(destination), true);
   if (!await absent(destination)) fail();
   const {acquireRuntimeOwnership, assertUnboundRuntimeOwnership} = await import('../apps/runtime/dist/src/runtime-ownership.js');
-  const lease = await acquireRuntimeOwnership(state);
+  let lease;try{lease=await acquireRuntimeOwnership(state);}catch{throw operatorRefusal('ownership','unavailable');}
   try {
     const heldOwner = await lstat(join(state, OWNER));
     const selected = await configuration(config, secrets, heldOwner), before = await tree(state, true);

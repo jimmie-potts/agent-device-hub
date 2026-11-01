@@ -443,3 +443,10 @@ test('missing POSIX UID support never bypasses Mac operation exclusion',async t=
     assert.equal(f.calls.length,0);
   });
 });
+
+test('native Windows refuses the new helper request before the retained legacy route',async()=>{
+  const f=fixture();await withoutUidOn('win32',async()=>{
+    const {maintain}=await import('../bunny.mjs');
+    await assert.rejects(maintain({...plan('backup'),qualificationRequest:'/private/request.json'},f.run));assert.equal(f.calls.length,0);
+  });
+});

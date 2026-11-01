@@ -632,8 +632,10 @@ remains refused pending ACL qualification; use the named-volume path above.
 
 The helper inspects the exact selected container: stopped, no remaining PID,
 no restart policy, expected private volume mounts and no published ports. A
-one-shot worker from that exact image takes the runtime's existing SQLite state
-lease. A competing runtime or maintenance worker refuses. Keep other operators,
+default one-shot worker from that exact image takes the runtime's existing SQLite
+state lease. The explicit qualified maintenance-helper route below can instead
+use its reviewed newer image while retaining the old source attribution and the
+same lease. A competing runtime or maintenance worker refuses. Keep other operators,
 Compose updates, legacy starts and restart actors out of this maintenance window.
 
 The resulting directory archive contains `manifest.json`, `runtime.json` and
@@ -646,16 +648,76 @@ would risk dropping its POSIX lock, so the backup never opens it.
 
 External credentials are not copied. The private manifest records their selected
 paths and hashes. Keep those exact private files separately available for restore.
-This first profile accepts external configuration paths only under the selected
-secrets root; host-local collectors, sockets and other external source mappings
-need their owning follow-up qualification. It never exports a source directory
-implicitly or rewrites configuration paths. Missing references refuse completion.
+Other absolute configuration paths remain refused, except the three declared
+fields in a valid `modules.onn` section: `adbSocket`, `hostExecutable` and
+`hostKeyDirectory`. The repaired worker records their exact configuration
+locations and original paths as external host dependencies. It never stats,
+opens, hashes, copies or activates those dependencies or `adbkey`. The declared
+executable fingerprint remains part of the original configuration; backup does
+not recalculate or qualify it. No directory is exported or path rewritten.
+Actual secret references keep their existing file/hash verification, even when
+a declared host dependency happens to name the same path in another role.
+Missing secret references still refuse completion.
+
+The repaired worker writes `bunny-container-backup/2`. Its manifest records the
+old runtime `revision`, separate maintenance `helper` image/revision, exact
+`externalHostDependencies`, original config hash, secret references and state
+inventory. Version 1 archives retain their legacy verification rules. Old readers
+refuse version 2; use the repaired reviewed helper to verify it. A declared
+external dependency is unverified, and a complete backup does not establish ADB
+availability, pairing, host compatibility or physical behavior. Existing archives
+are preserved unchanged. An earlier archive that omitted ONN is not retroactively
+qualified as a complete standalone recovery artifact.
 
 Files are copied with integrity checks and synchronized before success. Database
 checks run on disposable copies so SQLite recovery cannot alter the archive.
 An error leaves partial output for inspection and does not count as a backup.
 Keep archives, manifests, keys and raw evidence private and outside Git, GitHub,
 build contexts and shared artifacts. This local backup is not encrypted.
+
+## Select a qualified maintenance helper
+
+An older installed image may still contain the ONN backup refusal. A host-source
+update alone does not repair that image's embedded worker. Select a successfully
+qualified candidate containing the repair through the same private qualification
+request used by [qualified batch deployment](#deploy-a-qualified-batch):
+
+```text
+node scripts/bunny.mjs backup UNIQUE_SNAPSHOT --project SELECTED_PROJECT --compose PRIVATE_COMPOSE --archive-volume PRIVATE_ARCHIVES --qualification-request PRIVATE_REQUEST
+```
+
+The request identifies the observed old container/image/revision, candidate,
+qualification run/attempt and focused whole-change assessment. Use a new request
+ID and snapshot name. The operator reads authentic hosted qualification and
+artifact evidence, verifies the archive and loaded immutable ARM64 image, then
+admits a process-local helper bound to that exact old target. A raw image value,
+serialized capability or local receipt assertion cannot select it. Recheck the
+actual old target and helper source/platform before invoking the fixed worker.
+The private manifest and operation evidence distinguish old source from helper
+source. A helper without the new matching success receipt refuses completion.
+
+The worker keeps the existing private mounts, read-only configuration/secrets,
+no-network execution and actual state lease. It never starts the runtime or
+changes the full configuration. The qualified batch uses its already validated
+candidate for this helper automatically. All installed checks and the designated
+writer handoff still belong to the coordinating deployment operation.
+
+The same explicit helper selection is available to the existing separate
+empty-target `restore` command when its archive requires the repaired reader.
+It preserves exact old-source/config/reference checks, a stopped empty target,
+latest failed-state preservation and the explicit snapshot/data-gap decision.
+This source capability does not select or qualify an installed restore, data
+transfer or broader recoverability under #1168.
+
+The new helper route is qualified only on the selected Mac/POSIX ARM64 lane.
+Native Windows retains its existing manual same-image commands and refuses
+`--qualification-request` before any new helper work.
+
+A refusal prints one bounded line such as
+`BUNNY_OPERATOR_REFUSAL code=invalid-request stage=configuration` followed by
+fixed preservation guidance. Codes/stages are allowlisted. Raw exceptions,
+configured paths, credential bytes and subprocess stderr are never echoed.
+Preserve partial output and inspect it before an explicitly selected next step.
 
 ## Restore into a separate empty instance
 
@@ -834,7 +896,8 @@ with the selected target's observed value:
 The selected Compose directory must be owner-only, outside every checkout and
 without symlink traversal. Prepare the existing ordinary private archive volume
 using [stopped backup](#back-up-a-stopped-instance). Use a new request ID and
-snapshot name each time. The operator renders that exact Compose selection,
+snapshot name each time. The authenticated qualification intake also admits the candidate as the fixed
+maintenance helper for the observed old target. The operator renders that exact Compose selection,
 preserves its environment, private volumes, network and bindings, and writes an
 owner-only replacement Compose JSON beside it with only the qualified image
 changed. It pins its source hash and checks the actual selected container again

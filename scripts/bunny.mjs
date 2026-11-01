@@ -218,7 +218,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
     plan.command === 'backup' ? '--destination' : '--archive', target, '--revision', revision];
   const result = JSON.parse(await run(workerArgs));
   if (result.operation !== plan.command || result.status !== 'complete') refuse('worker');
-  if(helper!==undefined&&plan.command==='backup'&&(result.manifestSchema!=='bunny-container-backup/2'||result.sourceRevision!==revision||result.helper?.image!==workerImage||result.helper?.revision!==workerRevision))refuse('worker');
+  if(plan.command==='backup'&&(helper!==undefined||result.manifestSchema==='bunny-container-backup/2')&&(result.manifestSchema!=='bunny-container-backup/2'||result.sourceRevision!==revision||result.helper?.image!==workerImage||result.helper?.revision!==workerRevision))refuse('worker');
   return result;
 }
 export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory,root) {
