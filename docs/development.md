@@ -241,6 +241,9 @@ SHA-256, architecture, source/evaluation revision, evaluation input hashes and
 actual required job results. It distinguishes qualified, failed and incomplete work.
 Unavailable/cancelled work or an expired artifact cannot qualify a newer revision.
 Retries explicitly select the same candidate and keep their own attempt identity.
+The producer checks the actual unique unexpired image artifact before reporting
+qualified. Copied successful jobs without that current-attempt artifact remain
+incomplete; a result-only retry cannot invent its image artifact.
 
 Consumers must verify the authentic repository, workflow, run, attempt, source,
 completed job results and unique unexpired artifacts through GitHub, then verify

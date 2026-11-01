@@ -8,34 +8,47 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const inputs = {lockfile: 'package-lock.json', workflow: '.github/workflows/release-qualification.yml',
   checksWorkflow: '.github/workflows/checks.yml', workflowWorkflow: '.github/workflows/workflow.yml',
   dockerfile: 'deploy/container/Dockerfile', verifyDockerfile: 'deploy/container/Dockerfile.verify'};
-export async function fetchJobs({repository, runId, runAttempt, token, fetch = globalThis.fetch}) {
-  const jobs = [];
+async function fetchCollection({repository, runId, runAttempt, token, fetch = globalThis.fetch}, kind) {
+  const items = [];
   for (let page = 1; ; page += 1) {
-    const response = await fetch(`https://api.github.com/repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100&page=${page}`,
+    const path = kind === 'jobs' ? `${runId}/attempts/${runAttempt}/jobs` : `${runId}/artifacts`;
+    const response = await fetch(`https://api.github.com/repos/${repository}/actions/runs/${path}?per_page=100&page=${page}`,
       {headers: {authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28'}});
-    if (!response.ok) throw new Error('release-jobs-unavailable');
+    if (!response.ok) throw new Error(`release-${kind}-unavailable`);
     const data = await response.json();
-    if (!Array.isArray(data.jobs) || !Number.isSafeInteger(data.total_count)) throw new Error('release-jobs-unavailable');
-    jobs.push(...data.jobs);
-    if (jobs.length >= data.total_count) return jobs;
-    if (data.jobs.length === 0 || page >= 100) throw new Error('release-jobs-incomplete');
+    if (!Array.isArray(data[kind]) || !Number.isSafeInteger(data.total_count)) throw new Error(`release-${kind}-unavailable`);
+    items.push(...data[kind]);
+    if (items.length >= data.total_count) return items;
+    if (data[kind].length === 0 || page >= 100) throw new Error(`release-${kind}-incomplete`);
   }
 }
-export function resultOutcome(needs, checks, image) {
+export const fetchJobs = options => fetchCollection(options, 'jobs');
+export const fetchArtifacts = options => fetchCollection(options, 'artifacts');
+export function imageArtifactPresent(artifacts, {candidate, runId, runAttempt}) {
+  const name = qualificationArtifactNames(candidate, runId, runAttempt).image;
+  const matches = artifacts.filter(artifact => artifact.name === name);
+  return matches.length === 1 && Number.isSafeInteger(matches[0].id) && matches[0].id > 0
+    && matches[0].expired === false && matches[0].workflow_run?.id === runId
+    && matches[0].workflow_run?.head_sha === candidate;
+}
+export function resultOutcome(needs, checks, image, artifactPresent = false) {
   const outcomes = ['pin', 'checks', 'workflow', 'image'].map(name => needs?.[name]?.result);
   if (outcomes.includes('failure') || checks.some(check => ['failure', 'timed_out', 'action_required'].includes(check.result))) return 'failed';
-  if (outcomes.some(result => result !== 'success') || !image || checks.length !== EXPECTED_JOB_NAMES.length
+  if (outcomes.some(result => result !== 'success') || !image || !artifactPresent || checks.length !== EXPECTED_JOB_NAMES.length
     || checks.some(check => check.result !== 'success')) return 'incomplete';
   return 'qualified';
 }
-export async function finalize(destination, env = process.env) {
+export async function finalize(destination, env = process.env, fetch = globalThis.fetch) {
   const candidate = env.GITHUB_SHA, runId = Number(env.GITHUB_RUN_ID), runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
   const names = qualificationArtifactNames(candidate, runId, runAttempt);
   if (env.GITHUB_REPOSITORY !== REPOSITORY || !destination) throw new Error('release-finalization-refused');
   const evaluationInputs = Object.fromEntries(await Promise.all(Object.entries(inputs).map(async ([key, path]) =>
     [key, createHash('sha256').update(await readFile(root + path)).digest('hex')])));
-  let actualJobs = [];
-  try {actualJobs = await fetchJobs({repository: REPOSITORY, runId, runAttempt, token: env.GITHUB_TOKEN});}
+  let actualJobs = [], artifacts = [];
+  try {
+    const options = {repository: REPOSITORY, runId, runAttempt, token: env.GITHUB_TOKEN, fetch};
+    [actualJobs, artifacts] = await Promise.all([fetchJobs(options), fetchArtifacts(options)]);
+  }
   catch { /* An unavailable authoritative read stays incomplete, never successful. */ }
   const checks = EXPECTED_JOB_NAMES.flatMap(name => actualJobs.filter(job => job.name === name).map(job =>
     ({id: job.id, name, result: job.status === 'completed' ? job.conclusion : 'incomplete', headSha: job.head_sha})));
@@ -43,7 +56,7 @@ export async function finalize(destination, env = process.env) {
   try {image = {...JSON.parse(env.RELEASE_IMAGE), artifactName: names.image};}
   catch { /* A failed image build has no promotable artifact. */ }
   const receipt = {schema: 'bunny-release-qualification/1.0', repository: REPOSITORY, candidate, evaluationRevision: candidate,
-    runId, runAttempt, outcome: resultOutcome(JSON.parse(env.RELEASE_NEEDS), checks, image), architecture: 'linux/arm64',
+    runId, runAttempt, outcome: resultOutcome(JSON.parse(env.RELEASE_NEEDS), checks, image, imageArtifactPresent(artifacts, {candidate, runId, runAttempt})), architecture: 'linux/arm64',
     evaluationInputs, image, checks, createdAt: new Date().toISOString()};
   if (receipt.outcome === 'qualified') {
     try {validateQualification(receipt, {repository: REPOSITORY, candidate});}
