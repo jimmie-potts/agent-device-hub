@@ -35,7 +35,9 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await proposal.getByText(/Bound to coding worker revision \d+/).waitFor();
     const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true}); await approve.focus(); await approve.press('Enter');
     await assistant.getByRole('article', {name: 'Delegated work', exact: true}).getByText(/Waiting for the coding worker/).waitFor();
-    await page.waitForFunction(() => true); assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');
+    // The page shows the wait as soon as the task records it; the worker's copy of the hand-off arrives by its own round trip.
+    for (let waited = 0; work.length === 0 && waited < 100; waited += 1) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');
     assert.equal(started.repository, 'agent-device-hub'); assert.match(started.brief, /^Please delegate: add a unit test/);
     assert.equal(await assistant.getByRole('textbox', {name: 'Answer', exact: true}).count(), 0, 'no answer box while the worker runs');
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});

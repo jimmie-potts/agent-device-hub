@@ -9,8 +9,8 @@ import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import type {Command, Reply} from '@jimmie-potts/sdk';
-import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant} from '@jimmie-potts/sdk/remote';
-import {CodingWorker, DEFAULT_ALLOWED_TOOLS, assembleResult, parseConfiguration, type Harness} from '../src/worker/coding-worker.js';
+import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
+import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parseConfiguration, type Harness} from '../src/worker/coding-worker.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
 const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: repository}],
@@ -34,13 +34,17 @@ async function repository(t: TestContext): Promise<string> {
 }
 function fakeEdge() {
   const requests: {family: string; data: unknown}[] = [], progress: CodingProgress[] = [];
-  let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0;
+  let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
   const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; return Promise.resolve();},
     publish: (family, draft) => {progress.push(draft.data as CodingProgress); return Promise.resolve({} as never);},
     request: (family, draft) => {requests.push({family, data: draft.data}); return Promise.resolve({status: 'accepted', requestId: 'r', reply: {} as never});}};
-  const participant = {openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => {responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; return Promise.resolve(endpoint);},
-    close: () => Promise.resolve()} as unknown as RemoteParticipant;
-  return {connect: () => Promise.resolve(participant), requests, progress, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed};
+  const participant = {openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => {
+    opened += 1; responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; onClosed = options.onClosed; return Promise.resolve({...endpoint, id: `worker-endpoint-${String(opened)}`});
+  }, close: () => Promise.resolve()} as unknown as RemoteParticipant;
+  const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
+  return {connect: connect as unknown as typeof connectRemote, requests, progress, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened,
+    // The stream is lost: the SDK closes the connection-bound endpoint, reconnects and reports it.
+    lose: () => {onClosed?.(); onDiagnostic?.({event: 'remote.disconnected'}); onDiagnostic?.({event: 'remote.reconnected'});}};
 }
 
 void test('the configuration names an origin, a token file, allowlisted repositories and a bounded harness', () => {
@@ -64,18 +68,26 @@ void test('a result is assembled from the harness envelope and the observed git 
   assert.equal(plain.result.outcome, 'incomplete'); assert.equal(plain.result.usage, null); assert.match(plain.result.limitations[0] ?? '', /No structured result/);
   const failed = assembleResult('agent-device-hub', null, null, [], JSON.stringify({result: 'x'}), 'timeout');
   assert.equal(failed.result.outcome, 'failed'); assert.equal(failed.reason, 'timeout'); assert.deepEqual(failed.result.usage, {turns: null, costUsd: null, durationMs: null});
+  const budget = assembleResult('agent-device-hub', null, null, [], JSON.stringify({type: 'result', subtype: 'error_max_budget_usd', result: 'stopped', num_turns: 9, total_cost_usd: 5, duration_ms: 100}));
+  assert.equal(budget.result.outcome, 'failed'); assert.equal(budget.reason, 'budget'); assert.equal(budget.result.usage?.costUsd, 5);
 });
 
 void test('the worker declares its endpoint, runs one task in a fresh worktree, reports started then completed with the observed changes, and refuses a second task meanwhile', async t => {
   const repo = await repository(t), edge = fakeEdge();
-  const harness: Harness = {start: async (args, cwd) => {
-    assert.equal(args[0], '-p'); assert.ok(args.includes('--output-format') && args.includes('--max-budget-usd') && args.includes('acceptEdits'));
+  const harness: Harness = {start: async (args, cwd, input) => {
+    // The brief is the harness's input, never an argument; the deny list, strict MCP and project-only settings always travel; the turn cap is the lower of the two.
+    assert.equal(args[0], '--print'); assert.ok(!args.includes('Write a file.')); assert.equal(input, 'Write a file.');
+    assert.ok(args.includes('--output-format') && args.includes('--max-budget-usd') && args.includes('acceptEdits') && args.includes('--strict-mcp-config'));
+    assert.deepEqual(args.slice(args.indexOf('--setting-sources'), args.indexOf('--setting-sources') + 2), ['--setting-sources', 'project']);
+    assert.deepEqual(args.slice(args.indexOf('--max-turns'), args.indexOf('--max-turns') + 2), ['--max-turns', '5']);
+    for (const denied of DENIED_TOOLS) assert.ok(args.indexOf(denied) > args.indexOf('--disallowedTools'), denied);
     assert.match(cwd, /\.local\/worktrees\/bunny-task-[12]-/);
     await writeFile(join(cwd, 'new-file.txt'), 'made by the harness\n');
     return {code: 0, signal: null, stdout: JSON.stringify({type: 'result', session_id: 'session-9', num_turns: 2, total_cost_usd: 0.05, duration_ms: 10,
       structured_output: {outcome: 'tested-candidate', summary: 'Wrote the file.', checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: []}}), truncated: false};
   }};
-  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
+  const config = configuration(repo);
+  const worker = new CodingWorker(parseConfiguration({...config, claude: {...config.claude, maxTurns: 200}}), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
   await worker.start();
   assert.deepEqual(edge.requests.map(request => request.family), ['coding-endpoint']);
   const start: CodingWork = {requestId: 'op-1', operationId: 'op-1', action: 'start', taskId: 'task-1', repository: 'agent-device-hub', brief: 'Write a file.', bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}};
@@ -90,13 +102,16 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
   assert.deepEqual(done.result.changedFiles, ['new-file.txt']); assert.equal(done.result.sessionId, 'session-9'); assert.equal(done.result.usage?.turns, 2);
   assert.deepEqual(edge.respond(command({...start, requestId: 'op-3', operationId: 'op-3', taskId: 'task-2'})), {status: 'accepted'});
   await until(() => edge.progress.length === 4);
+  // A lost stream closes the endpoint; once the SDK reconnects, the worker declares a fresh endpoint and enables it again.
+  edge.lose(); await until(() => edge.requests.length === 2);
+  assert.equal(edge.opened(), 2); assert.deepEqual(edge.requests.map(request => (request.data as {action: string}).action), ['enable', 'enable']);
   await worker.stop(); assert.equal(edge.closed(), 1);
 });
 
 void test('a cancel stops the running harness and the worker reports cancelled; an exit code reports failed with the facts it has', async t => {
   const repo = await repository(t), edge = fakeEdge();
   let release: ((value: {code: number | null; signal: string | null; stdout: string; truncated: boolean}) => void) | undefined, started = 0;
-  const harness: Harness = {start: (_args, _cwd, onChild) => new Promise(resolvePromise => {
+  const harness: Harness = {start: (_args, _cwd, _input, onChild) => new Promise(resolvePromise => {
     release = resolvePromise; started += 1;
     onChild({kill: () => {resolvePromise({code: null, signal: 'SIGTERM', stdout: '', truncated: false}); return true;}} as never);
   })};

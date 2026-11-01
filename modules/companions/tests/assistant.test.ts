@@ -674,3 +674,32 @@ void test('an approved delegation is handed to the worker once, the owner cannot
   assert.equal(status(w), 'cancelled');
   assert.equal(JSON.stringify(w.host().logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
 });
+
+void test('a worker result that comes back before the hand-off is recorded still answers the delegation', async context => {
+  const CODING = 'bunny/parts/coding-worker', endpointId = 'worker-endpoint-1';
+  let turn = 0;
+  const provider = counted(() => {turn += 1; return turn === 1 ? call('delegate_coding', {repository: 'agent-device-hub', brief: 'Add a unit test.'}) : reply('Summary of the refusal.');});
+  const w = await world(context, {provider, tools: ['delegate_coding']});
+  const bus = w.core;
+  await bus.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const answer = await bus.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data}, {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
+  });
+  const workerPart = w.bus.connect(CODING); context.after(() => workerPart.close());
+  const progress = (data: object) => workerPart.publish(`bunny.event.coding-progress.${endpointId}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data});
+  // The worker's word leaves before it even accepts the work, so the failure reaches the task while the hand-off is still being recorded.
+  await workerPart.respond<{operationId: string}>('bunny.cmd.coding-work.*', async command => {
+    await progress({operationId: command.data.operationId, status: 'started'});
+    await progress({operationId: command.data.operationId, status: 'failed', reason: 'refused', result: null});
+    return {status: 'accepted'};
+  });
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await workerPart.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
+  await until(() => w.module().inspectCoding()?.availability === 'available');
+  assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.match(JSON.stringify((await page(w)).messages), /failed \(refused\)/);
+  assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
+});

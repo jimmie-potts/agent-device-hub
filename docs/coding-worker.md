@@ -15,9 +15,19 @@ and declares `coding-endpoint`.
 The worker creates `.local/worktrees/bunny-<task>-<random>` under the
 repository from `origin/main` (after a best-effort `git fetch`), runs the
 harness there with `--permission-mode acceptEdits`, a tool allowlist of file,
-search, build and test tools, the dispatch's turn cap, dollar budget and wall
-clock, and an appended instruction never to push, open a PR, change settings
-or leave the worktree. The harness returns a structured result (outcome,
+search, build and test tools, the dispatch's turn cap (a private `maxTurns`
+can only lower it), dollar budget and wall clock, and an appended instruction
+never to push, open a PR, change settings or leave the worktree. The brief is
+the harness's standard input, never an argument. Every run also carries a
+fixed deny list the harness enforces over any allow, including the owner's
+own Claude Code settings: `git push`, `git remote`, `git worktree`,
+`git config`, `gh`, a nested `claude`, `curl`, `wget`, `ssh`, `scp`, `sudo`,
+edits under `.claude/` or `~/.claude/`, `WebFetch` and `WebSearch`. Only the
+repository's own settings load (`--setting-sources project`) and no MCP
+server (`--strict-mcp-config`). A refusal the harness makes is not seen by
+the worker; it surfaces only if the model lists it under findings, so the
+deny list is what makes those actions impossible rather than reported. The
+harness returns a structured result (outcome,
 summary, checks, findings, limitations); the worker adds the base and head
 revisions and changed files it reads from git itself, the harness session
 identity, and usage or unknown. A refused repository, a failed worktree, a
@@ -54,10 +64,12 @@ part of this slice.
    node /absolute/release/apps/runtime/bin/coding-worker.mjs /absolute/private/coding-worker.json
    ```
 
-   A launchd user agent may run that command after login; the worker exits
-   on SIGTERM and declares its endpoint off. It reconnects a lost stream on
-   its own, but a lost endpoint ends the running task uncertain and the task
-   says so; the worker never resends.
+   A launchd user agent may run that command after login, with `KeepAlive`
+   so a crash or a sign-out restarts it; the worker exits on SIGTERM and
+   declares its endpoint off. After a lost stream it reconnects on its own
+   and declares a fresh endpoint, which the core shows as the new worker; the
+   task that was running is ended uncertain and the task says so, and the
+   worker never resends.
 
 ## Use it
 

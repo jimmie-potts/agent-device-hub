@@ -12,7 +12,7 @@ import {promisify} from 'node:util';
 import {connectRemote, type RemoteEndpoint, type RemoteParticipant} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingProgress, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingProgress, type CodingProgressReason, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
 
@@ -25,6 +25,13 @@ const SHA = /^[0-9a-f]{40}$/;
 const TOKEN = /^[A-Za-z0-9_-]{20,256}$/;
 /** The tools Claude Code may use without asking in the worker's worktree: files, search, builds and tests; no push, no PR, no arbitrary shell. */
 export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm run *)', 'Bash(npm test*)', 'Bash(npx tsc*)', 'Bash(node --test*)', 'Bash(git status*)', 'Bash(git diff*)', 'Bash(git log*)'];
+/**
+ * The hard deny list every run carries, whatever the private allowlist or the owner's own Claude Code settings allow: a
+ * deny rule wins over any allow, so pushing, remotes, worktrees, GitHub, nested harnesses, network shells, privilege and
+ * settings edits are refused by the harness itself, not only by the appended instruction.
+ */
+export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
+  'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
 /** The JSON Schema the worker asks Claude Code to return as its structured output. */
 export const RESULT_SCHEMA = {type: 'object', additionalProperties: false, required: ['outcome', 'summary', 'checks', 'findings', 'limitations'], properties: {
   outcome: {type: 'string', enum: ['tested-candidate', 'incomplete', 'failed']},
@@ -68,12 +75,18 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 
 type Running = {operationId: string; child: ChildProcess | undefined; cancelled: boolean; timer: ReturnType<typeof setTimeout> | undefined};
 export type Harness = {
-  /** Runs the headless harness in `cwd` and resolves with its exit code and collected stdout; the worker kills it on cancel or deadline. */
-  start(args: string[], cwd: string, onChild: (child: ChildProcess) => void): Promise<{code: number | null; signal: string | null; stdout: string; truncated: boolean}>;
+  /**
+   * Runs the headless harness in `cwd` with the brief on its standard input and resolves with its exit code and collected
+   * stdout; the worker kills it on cancel or deadline. The brief never becomes an argument, so a brief that starts with a
+   * dash cannot be read as an option and it never shows in the process list.
+   */
+  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void): Promise<{code: number | null; signal: string | null; stdout: string; truncated: boolean}>;
 };
-const realHarness = (executable: string): Harness => ({start: (args, cwd, onChild) => new Promise(resolvePromise => {
-  const child = spawn(executable, args, {cwd, stdio: ['ignore', 'pipe', 'ignore'], env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BUNNY_')))});
+const realHarness = (executable: string): Harness => ({start: (args, cwd, input, onChild) => new Promise(resolvePromise => {
+  const child = spawn(executable, args, {cwd, stdio: ['pipe', 'pipe', 'ignore'], env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('BUNNY_')))});
   onChild(child);
+  child.stdin?.on('error', () => {});
+  child.stdin?.end(input);
   const chunks: Buffer[] = []; let size = 0, truncated = false;
   child.stdout?.on('data', (chunk: Buffer) => {if (size + chunk.length > MAX_OUTPUT_BYTES) {truncated = true; return;} chunks.push(chunk); size += chunk.length;});
   child.on('error', () => {resolvePromise({code: null, signal: null, stdout: '', truncated});});
@@ -82,8 +95,8 @@ const realHarness = (executable: string): Harness => ({start: (args, cwd, onChil
 
 const bounded = (value: unknown, max: number): string | undefined => typeof value === 'string' && value.trim() !== '' ? value.slice(0, max) : undefined;
 /** The result from Claude Code's `--output-format json` envelope and the git facts the worker observed itself. */
-export function assembleResult(repository: string, base: string | null, head: string | null, changedFiles: string[], output: string, reason?: string): {result: CodingResult; reason?: string} {
-  let envelope: Record<string, unknown> | undefined, structured: Record<string, unknown> | undefined;
+export function assembleResult(repository: string, base: string | null, head: string | null, changedFiles: string[], output: string, given?: CodingProgressReason): {result: CodingResult; reason?: CodingProgressReason} {
+  let envelope: Record<string, unknown> | undefined, structured: Record<string, unknown> | undefined, reason: CodingProgressReason | undefined = given;
   try {
     const parsed: unknown = JSON.parse(output);
     if (isRecord(parsed)) {
@@ -105,6 +118,8 @@ export function assembleResult(repository: string, base: string | null, head: st
     costUsd: typeof envelope.total_cost_usd === 'number' && envelope.total_cost_usd >= 0 ? envelope.total_cost_usd : null,
     durationMs: Number.isSafeInteger(envelope.duration_ms) && Number(envelope.duration_ms) >= 0 ? Number(envelope.duration_ms) : null};
   const sessionId = typeof envelope?.session_id === 'string' && /^[a-zA-Z0-9-]{1,128}$/.test(envelope.session_id) ? envelope.session_id : null;
+  // A run the harness ended for its dollar budget is a budget stop whatever its exit code says.
+  if (reason === undefined && envelope?.subtype === 'error_max_budget_usd') reason = 'budget';
   const summary = bounded(structured?.summary, 4096) ?? (envelope === undefined ? 'The harness produced no readable result envelope.' : bounded(envelope.result, 4096) ?? 'The harness ended without a summary.');
   const limitations = strings(structured?.limitations);
   if (structured === undefined) limitations.push('No structured result was returned; the summary is the harness text or absent.');
@@ -129,19 +144,34 @@ export class CodingWorker {
     this.#harness = harness ?? realHarness(configuration.claude.executable);
     this.#connect = connect;
   }
+  #stopping = false;
   async start(): Promise<void> {
     this.#participant = await this.#connect({url: this.configuration.edge, token: this.token, source: CODING_WORKER_SOURCE,
-      onDiagnostic: diagnostic => {this.log(`coding-worker ${diagnostic.event}`);}});
-    this.#endpoint = await this.#participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
+      onDiagnostic: diagnostic => {
+        this.log(`coding-worker ${diagnostic.event}`);
+        // A lost stream closed the connection-bound endpoint; the new stream needs a fresh declaration, which the core hears as a new endpoint.
+        if (diagnostic.event === 'remote.reconnected' && !this.#stopping) void this.#declare().catch(() => {this.log('coding-worker could not declare its endpoint again; the core keeps reporting it lost');});
+      }});
+    await this.#declare();
+  }
+  /** Opens the one endpoint on the current stream and declares it available; a failure is the caller's to report. */
+  async #declare(): Promise<void> {
+    const participant = this.#participant;
+    if (participant === undefined) throw new Error('coding-worker: not connected');
+    if (this.#endpoint !== undefined) return;
+    const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
+      if (this.#endpoint === endpoint) this.#endpoint = undefined;
       this.log('coding-worker endpoint closed; the running task, if any, is lost to the core and will be stopped');
       this.#stopChild();
     }});
-    const answer = await this.#endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
+    this.#endpoint = endpoint;
+    const answer = await endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
       data: {requestId: randomUUID(), action: 'enable'}}, {timeoutMs: 5000});
     if (answer.status !== 'accepted') throw new Error(`coding-worker-enable-refused: ${answer.status === 'rejected' ? answer.error.error.code : 'uncertain'}`);
-    this.log(`coding-worker available as endpoint ${this.#endpoint.id}`);
+    this.log(`coding-worker available as endpoint ${endpoint.id}`);
   }
   async stop(): Promise<void> {
+    this.#stopping = true;
     this.#stopChild();
     try {await this.#endpoint?.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
       data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});} catch { /* the gateway reports the lost endpoint either way */ }
@@ -190,13 +220,16 @@ export class CodingWorker {
     }
     if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
     const {claude} = this.configuration;
-    const args = ['-p', brief, '--output-format', 'json', '--json-schema', JSON.stringify(RESULT_SCHEMA), '--permission-mode', claude.permissionMode,
-      '--max-turns', String(claude.maxTurns ?? bounds.maxTurns), '--max-budget-usd', String(bounds.budgetUsd),
-      ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), ...(claude.model === undefined ? [] : ['--model', claude.model]),
+    // The brief travels on stdin, never as an argument. The private turn cap can only lower the dispatch's. Only the
+    // repository's own settings load, no MCP server, and the deny list applies whatever any setting allows.
+    const args = ['--print', '--output-format', 'json', '--json-schema', JSON.stringify(RESULT_SCHEMA), '--permission-mode', claude.permissionMode,
+      '--max-turns', String(Math.min(claude.maxTurns ?? bounds.maxTurns, bounds.maxTurns)), '--max-budget-usd', String(bounds.budgetUsd),
+      ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS, '--strict-mcp-config', '--setting-sources', 'project',
+      ...(claude.model === undefined ? [] : ['--model', claude.model]),
       '--append-system-prompt', 'You are a delegated coding worker in a fresh worktree. Make only the change the brief asks for, run the checks the repository documents for it, never push, open a PR, change settings or leave the worktree, and end with the structured result: outcome, summary, checks, findings, limitations.'];
     let timedOut = false;
     const started = Date.now();
-    const finished = await this.#harness.start(args, worktree, child => {
+    const finished = await this.#harness.start(args, worktree, brief, child => {
       running.child = child;
       running.timer = setTimeout(() => {timedOut = true; child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref();}, bounds.wallClockMs);
     });
@@ -213,7 +246,7 @@ export class CodingWorker {
     if (finished.truncated) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assembleResult(repository.name, base, head, changedFiles, '', 'invalid-output').result}); return;}
     const assembled = assembleResult(repository.name, base, head, changedFiles, finished.stdout);
     if (assembled.result.usage !== null && assembled.result.usage.durationMs === null) assembled.result.usage.durationMs = Date.now() - started;
-    if (finished.code !== 0) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'exit', result: {...assembled.result, outcome: Outcome.failed}}); return;}
+    if (finished.code !== 0 || assembled.reason !== undefined) {await this.#progress({operationId: running.operationId, status: 'failed', reason: assembled.reason ?? 'exit', result: {...assembled.result, outcome: Outcome.failed}}); return;}
     await this.#progress({operationId: running.operationId, status: 'completed', result: assembled.result});
   }
 }
