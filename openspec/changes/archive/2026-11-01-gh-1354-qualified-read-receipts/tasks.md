@@ -18,5 +18,5 @@
 ## 4. Delivery evidence
 
 - [x] 4.1 Update operator/contract documentation and the existing CI-discovered validation guide; verify commands and private configuration examples.
-- [ ] 4.2 Run required local checks and disposable acceptance, obtain independent Standards/Specification plus focused credential/storage review, and resolve blocking findings.
-- [ ] 4.3 Synchronize affected specifications and archive on the delivery branch after successful current lookups and source acceptance; verify the specification inventory.
+- [x] 4.2 Run required local checks and disposable acceptance, obtain independent Standards/Specification plus focused credential/storage review, and resolve blocking findings.
+- [x] 4.3 Synchronize affected specifications and archive on the delivery branch after successful current lookups and source acceptance; verify the specification inventory.

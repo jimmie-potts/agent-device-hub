@@ -21,7 +21,7 @@ const lifecycleCheck = coreFamilies.find(family => family.dataschema === `${SCHE
 if (lifecycleCheck === undefined) throw new Error('lifecycle/2.0 semantic check is required');
 const receiptFamily = defineFamily('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', lifecycleCheck, '2.1');
 
-/** Call after registerCoreFamilies. Default SDK/runtime registration deliberately excludes this extension. */
+/** Default core-family/SDK registration excludes this extension; the adopting runtime calls this explicitly afterward. */
 export function registerReadReceiptFamily(validator: MessageValidator): void {
   registerFamilies(validator, [receiptFamily]);
 }
