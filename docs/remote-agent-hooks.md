@@ -89,6 +89,44 @@ command and unrelated hooks, settings and credentials.
    or the metadata-only `apps/runtime/bin/mac-codex-hook.mjs` for its supported
    local Codex input. Keep the release and its package dependencies in place.
 
+## Install the Codex Desktop collector
+
+The [collector](../apps/runtime/README.md#codex-desktop-collector) runs on the
+computer that holds the Codex home: on the PC, in WSL beside the hooks. Its
+producer and receipt follow the steps above with two differences. Its `source`
+adds `"feed": "desktop-metadata"` to the Desktop feed's four fields, so its
+credential is distinct from that feed's hook credential. Its `client` is
+`desktop`. The core's module section names the same host and source with no
+`home` ([remote sources](../modules/codex-desktop/README.md#remote-sources-hub-567)).
+
+1. Choose an immutable release that contains `bin/codex-desktop-collector.mjs`,
+   and use the Node 24 executable the hooks use.
+2. Generate the token on the collector's computer. Send only its SHA-256 digest
+   (lowercase hex of the UTF-8 token) to the core's operator, so the token never
+   leaves that computer. The core's credentials file can be read-only inside its
+   container. In that case, grant the ingest-only credential with
+   `grantCredential` from a one-shot worker that runs the core's image with only
+   the secrets volume writable. Then send the core SIGHUP. Expect one
+   `runtime.edge.reloaded` record with outcome `succeeded`; the core doesn't
+   restart.
+3. Write `collector.json` with the producer path and the Codex home Desktop
+   actually uses. Enable the producer only after `GET /api/v2/authority?scope=ingest`
+   accepts its token.
+4. Run the collector as its own user service, for example
+   `bunny-codex-desktop-collector.service` with `Restart=on-failure`. It must not
+   depend on a local runtime unit; a stopped WSL runtime leaves it running.
+
+Check it in the core's committed history, not from a dashboard alone:
+
+- The source's `marker` reports `device.available`.
+- A finished turn left unopened in Desktop becomes `unread`, then `read` once
+  the thread is opened. A rename arrives as a `provider` title.
+- Archiving a thread ends the session through Desktop's own hook; the
+  collector's archive evidence only refuses a late hook.
+- A restart shorter than the 10 s freshness window shows nothing. A stop longer
+  than that shows `device.unavailable`, then `device.available`, and changes no
+  read state.
+
 ## Start and qualify the clients
 
 After host sign-in, start the existing VPN and the supported agent client.

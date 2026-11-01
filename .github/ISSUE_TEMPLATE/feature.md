@@ -16,8 +16,9 @@ labels: ["enhancement", "status:backlog"]
 Use this template for features, maintenance and investigations. Start with one operator, the selected Hub installation and its configured devices.
 Outcome and observable acceptance are required. The opening bullets and detailed
 sections are optional prompts; omit unused sections. Use recognized headings
-when supplying details consumed by existing tooling. A short work
-item needs no model choice or Execution recommendation. See docs/issue-conventions.md.
+when supplying details consumed by existing tooling. New stories do not add a
+model choice, Execution recommendation, host table, pasted prompt or fingerprint;
+one planned-start sentence is enough. See docs/issue-conventions.md.
 Use a short description or as many plain-language bullets as useful. Investigations promise findings, not a working feature. This opening
 applies only to new stories; do not retrofit existing issues.
 -->

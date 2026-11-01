@@ -347,7 +347,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const hosted = host.modules();
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
     core?.setModeParticipants(modeParticipants(hosted));
-    core?.setAutomationDevices(automationDevices(hosted));
+    core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
   }
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
