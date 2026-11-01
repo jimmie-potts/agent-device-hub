@@ -289,6 +289,10 @@ forwarder. Keep the existing `edge.privateProxy`, credential path
 `/run/secrets/bunny/edge.json`, `browserAccess: "trusted-loopback"`,
 `launcher: false`, `mcp: false` and no Wi-Fi proxy. Private-profile credential
 scope rules and the optional local producer's ingest-only grant remain enforced.
+The private-proxy and production profiles also admit one credential with the
+coding worker's own `coding-worker` role ([Hub #502](coding-worker.md)), which
+the runtime binds to its fixed source with no scopes; the BB-8 role and the
+host-local profile still refuse it.
 Host-local and private-proxy profiles still refuse device control and named devices.
 
 Add only wanted shipped module sections to the private runtime configuration.

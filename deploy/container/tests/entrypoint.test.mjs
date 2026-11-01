@@ -265,3 +265,18 @@ test('private clients keep scoped grants and the selected local producer remains
     assert.throws(() => checkLocalBrowserCredentials([{...client, ...change}], undefined, 'private-proxy'));
   }
 });
+
+test('private access admits the coding worker\'s own role and nothing else with a role', () => {
+  const worker = {id: 'coding-worker-mac', source: 'bunny/parts/coding-worker', digest: '4'.repeat(64), scopes: [], role: 'coding-worker'};
+  const client = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
+  const source = 'bunny/parts/hub-' + '1'.repeat(32);
+  const producer = {id: source.slice('bunny/parts/'.length), source, digest: '3'.repeat(64), scopes: ['ingest']};
+  checkLocalBrowserCredentials([worker], undefined, 'private-proxy');
+  checkLocalBrowserCredentials([client, worker, producer], source, 'private-proxy');
+  // The worker is a local loopback client; the host-local profile still admits only its selected producer.
+  assert.throws(() => checkLocalBrowserCredentials([worker]));
+  assert.throws(() => checkLocalBrowserCredentials([worker, producer], source));
+  for (const change of [{role: 'bb8-link'}, {robotId: 'r1'}, {scopes: ['read']}]) {
+    assert.throws(() => checkLocalBrowserCredentials([{...worker, ...change}], undefined, 'private-proxy'));
+  }
+});
