@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-endpoint/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "action"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "action": {
+      "enum": [
+        "enable",
+        "disable"
+      ]
+    }
+  }
+}

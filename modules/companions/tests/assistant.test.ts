@@ -45,7 +45,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async () => {
+  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async () => {
     await host.stop(); ({module, host} = make()); await host.start();
   }};
 }
@@ -610,4 +610,96 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   await input(w.core, w.module(), 'Synthetic long answer'); await until(() => status(w) === 'succeeded');
   assert.equal(offers.length, 1, 'a result over 512 characters is not offered');
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
+});
+
+void test('an approved delegation is handed to the worker once, the owner cannot answer it, the worker\'s result resumes the task and a cancel stops the worker', async context => {
+  const CODING = 'bunny/parts/coding-worker';
+  let turn = 0;
+  const provider = counted(() => {
+    turn += 1;
+    return turn === 1 ? call('delegate_coding', {repository: 'agent-device-hub', brief: 'Add a unit test for the readout generator.'}) : reply('Synthetic summary of the worker result.');
+  });
+  const w = await world(context, {provider, tools: ['delegate_coding']});
+  const bus = w.core; // the core participant doubles as the tracked dispatcher's fake
+  const work: Array<{action: string; taskId?: string; operationId: string}> = [];
+  const endpointId = 'worker-endpoint-1';
+  await bus.respond<{requestId: string; endpointId: string; taskId: string; repository: string; brief: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const answer = await bus.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data}, {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
+  });
+  const workerPart = w.bus.connect(CODING);
+  context.after(() => workerPart.close());
+  await workerPart.respond<{action: string; taskId?: string; operationId: string}>('bunny.cmd.coding-work.*', command => {work.push(command.data); return {status: 'accepted'};});
+  const progress = (data: object) => workerPart.publish(`bunny.event.coding-progress.${endpointId}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data});
+  await control(w.core, w.module(), 'enable');
+  // Without a connected worker the model's call is refused as a tool result, not proposed.
+  assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.match(JSON.stringify((await page(w)).messages), /No coding worker is connected right now/);
+  assert.equal((await workerPart.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
+  await until(() => w.module().inspectCoding()?.availability === 'available');
+  turn = 0;
+  const before = provider.calls();
+  assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  const proposal = (await page(w)).currentTask?.question;
+  assert.equal(proposal?.kind, 'approval');
+  assert.deepEqual(proposal?.proposal, {family: 'coding-dispatch', target: 'assistant', data: {repository: 'agent-device-hub', brief: 'Add a unit test for the readout generator.'}, expectedRevision: w.module().inspectCoding()?.revision});
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => work.length === 1 && status(w) === 'waiting');
+  assert.equal(work[0]?.action, 'start'); assert.equal(work[0]?.taskId, task(w)?.taskId);
+  const delegation = (await page(w)).currentTask?.question; assert.equal(delegation?.kind, 'delegation'); assert.equal(delegation?.answer, null);
+  const owner = await input(w.core, w.module(), 'done yet?', true); assert.equal(owner.status, 'rejected'); if (owner.status === 'rejected') assert.equal(owner.error.error.code, 'invalid-state');
+  assert.equal(provider.calls(), before + 1, 'the model is not called while the worker runs');
+  await progress({operationId: work[0]?.operationId, status: 'started'});
+  await until(() => w.module().inspectCoding()?.active?.status === 'started');
+  await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'],
+    checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the test; it passes.', sessionId: null, usage: null}});
+  await until(() => status(w) === 'succeeded');
+  assert.equal(provider.calls(), before + 2);
+  const saved = await page(w);
+  assert.ok(saved.messages.some(message => message.role === 'tool' && /^completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
+  assert.equal(saved.messages.at(-1)?.text, 'Synthetic summary of the worker result.');
+  assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
+  assert.equal(w.module().inspectCoding()?.active, null);
+  // A second delegation is cancelled by the owner while the worker runs: the worker is asked to stop and its report ends the task's wait.
+  turn = 0;
+  assert.equal((await input(w.core, w.module(), 'Please delegate: another test')).status, 'accepted'); await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted'); await until(() => work.length === 2 && status(w) === 'waiting');
+  const id = task(w)?.taskId ?? assert.fail('task');
+  assert.equal((await control(w.core, w.module(), 'cancel', id)).status, 'accepted'); await until(() => status(w) === 'cancelled');
+  await until(() => work.length === 3); assert.equal(work[2]?.action, 'cancel');
+  await progress({operationId: work[1]?.operationId, status: 'cancelled', reason: 'cancelled', result: null});
+  await until(() => w.module().inspectCoding()?.active === null);
+  assert.equal(status(w), 'cancelled');
+  assert.equal(JSON.stringify(w.host().logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
+});
+
+void test('a worker result that comes back before the hand-off is recorded still answers the delegation', async context => {
+  const CODING = 'bunny/parts/coding-worker', endpointId = 'worker-endpoint-1';
+  let turn = 0;
+  const provider = counted(() => {turn += 1; return turn === 1 ? call('delegate_coding', {repository: 'agent-device-hub', brief: 'Add a unit test.'}) : reply('Summary of the refusal.');});
+  const w = await world(context, {provider, tools: ['delegate_coding']});
+  const bus = w.core;
+  await bus.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const answer = await bus.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data}, {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
+  });
+  const workerPart = w.bus.connect(CODING); context.after(() => workerPart.close());
+  const progress = (data: object) => workerPart.publish(`bunny.event.coding-progress.${endpointId}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data});
+  // The worker's word leaves before it even accepts the work, so the failure reaches the task while the hand-off is still being recorded.
+  await workerPart.respond<{operationId: string}>('bunny.cmd.coding-work.*', async command => {
+    await progress({operationId: command.data.operationId, status: 'started'});
+    await progress({operationId: command.data.operationId, status: 'failed', reason: 'refused', result: null});
+    return {status: 'accepted'};
+  });
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await workerPart.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
+  await until(() => w.module().inspectCoding()?.availability === 'available');
+  assert.equal((await input(w.core, w.module(), 'Please delegate: add a test')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.match(JSON.stringify((await page(w)).messages), /failed \(refused\)/);
+  assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });

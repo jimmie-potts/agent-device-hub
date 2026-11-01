@@ -5,6 +5,7 @@ import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-con
 import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
 import {registerCoreFamilies, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
@@ -35,6 +36,17 @@ export class CompanionPart implements CorePart {
         requestId: command.data.requestId, parent: command,
         draft: {type: 'org.bunny.companion-speech.play.requested', subject: 'reachy',
           dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
+      return 'error' in answer ? answer : {status: 'accepted'};
+    });
+    // A delegation (Hub #502) is one tracked operation the module requested: the core forwards it to the module's own
+    // coding-run responder, which hands it to the worker endpoint; the tracked effect is "handed to the worker".
+    await core.sdk.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
+      if (this.#closed) return errorBody('unavailable');
+      if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
+      const checked = validator.validate(command, {nowMs: core.clock.now()});
+      if (!checked.ok) return {error: checked.error};
+      const answer = await core.dispatch({key: 'bunny.cmd.coding-run.assistant', requestedBy: command.source, requestId: command.data.requestId, parent: command,
+        draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
     await core.sdk.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', async command => {

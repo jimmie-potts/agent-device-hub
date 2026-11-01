@@ -1,7 +1,7 @@
 // The labelled synthetic provider (Hub #499, #46): a deterministic script behind the same turn contract as a hosted
 // provider, with no network call and no paid usage. It walks the question, read and approval paths so the catalog and
 // browser journeys exercise the engine without a model account.
-import {ASK_OWNER, MODES, READ_FIXTURE, READ_SESSIONS, SET_MODE} from './tools.js';
+import {ASK_OWNER, DELEGATE_CODING, MODES, READ_FIXTURE, READ_SESSIONS, SET_MODE} from './tools.js';
 import {textBytes, type ModelProvider, type TurnInput, type TurnReply} from './provider.js';
 
 export const SYNTHETIC_QUESTION = 'Which detail should the synthetic result emphasize?';
@@ -25,7 +25,10 @@ export class SyntheticProvider implements ModelProvider {
     let reply: TurnReply;
     if (tools.length === 0) {
       const mode = MODES.find(value => new RegExp(`\\b${value}\\b`, 'i').test(owner?.text ?? ''));
-      reply = mode !== undefined && allows(SET_MODE) ? {text: `Synthetic proposal: set the Hub mode to ${mode}.`, calls: [call(SET_MODE, {mode}, ordinal)], stop: 'tool', units: units(text)}
+      // "delegate" proposes a coding task for the allowlisted repository when the tool is allowed (Hub #502); the worker's word comes back as its result.
+      const delegate = /\bdelegate\b/i.test(owner?.text ?? '') && allows(DELEGATE_CODING);
+      reply = delegate ? {text: 'Synthetic proposal: delegate the brief to the coding worker.', calls: [call(DELEGATE_CODING, {repository: 'agent-device-hub', brief: (owner?.text ?? '').slice(0, 512)}, ordinal)], stop: 'tool', units: units(text)}
+        : mode !== undefined && allows(SET_MODE) ? {text: `Synthetic proposal: set the Hub mode to ${mode}.`, calls: [call(SET_MODE, {mode}, ordinal)], stop: 'tool', units: units(text)}
         : {text: null, calls: [call(ASK_OWNER, {text: SYNTHETIC_QUESTION}, ordinal)], stop: 'tool', units: units(text)};
     } else if (last?.name === ASK_OWNER) {
       const read = allows(READ_SESSIONS) ? READ_SESSIONS : READ_FIXTURE;
@@ -33,7 +36,8 @@ export class SyntheticProvider implements ModelProvider {
     } else {
       const answer = tools.find(item => item.name === ASK_OWNER)?.result;
       // The module knows only what the dispatcher answered; whether the mode took effect is the core's outcome, reported separately.
-      const evidence = last?.name === SET_MODE ? `${last.ok ? 'accepted by the core, outcome tracked separately' : 'not applied'}: ${last.result}` : last?.result ?? '';
+      const evidence = last?.name === SET_MODE ? `${last.ok ? 'accepted by the core, outcome tracked separately' : 'not applied'}: ${last.result}`
+        : last?.name === DELEGATE_CODING ? `coding worker: ${last.result}` : last?.result ?? '';
       reply = {text: `Synthetic result: ${answer === undefined ? '' : `${answer}\n`}${evidence}`, calls: [], stop: 'end', units: units(text)};
     }
     return Promise.resolve(reply);

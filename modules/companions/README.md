@@ -276,6 +276,30 @@ as for every configured module; an empty section keeps every default:
   again through the `speak` control, whose accepted receipt means the request
   was saved, while the playback report says whether the browser spoke.
 
+### Coding delegation
+
+`delegate_coding` (Hub #502) proposes handing one bounded coding task to the
+[coding worker](../../docs/coding-worker.md) on the owner's computer: the model
+names an allowlisted repository and writes a brief; without a connected worker,
+or with an unusable name or brief, the call is refused as a tool result and
+nothing is proposed. The proposal is bound to the coding state's revision, so
+a worker that connects, disconnects or starts other work between proposal and
+approval refuses the dispatch with `revision-conflict`. An approved delegation
+goes to the core as `coding-dispatch` and through its tracked dispatcher as one
+`coding-run` the module answers: the coding coordinator saves responsibility,
+sends one `coding-work` start to the worker's endpoint, reports the tracked
+outcome succeeded when the worker reports it started (observed), failed when
+the start is refused, and uncertain when no start arrives within twenty
+seconds. The task then waits on a delegation only the worker's word answers;
+the owner's input is refused for it, it counts no owner question, and **Cancel
+task** asks the worker to stop. The worker's completed, failed, cancelled or
+uncertain report settles the responsibility and resumes the task with the
+result as the tool's result, bounded text naming outcome, git facts, checks,
+findings, limitations and usage; nothing is resent, and a restart or a lost
+worker leaves the operation uncertain. One task runs at a time; the dispatch
+carries twenty minutes, sixty turns and five dollars as bounds. The page shows
+the worker's availability beside the provider.
+
 ### Turns, tools and approval
 
 A task runs turn → (question | read tool | proposal → approval → act) → turn

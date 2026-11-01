@@ -9,6 +9,7 @@ import type {IncomingMessage} from 'node:http';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS} from '../core/tracker.js';
+import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
 /** The source every browser session acts as: the dashboard's grant (Hub #835, #922), which no credential may take. */
@@ -34,7 +35,7 @@ export type Principal = {
   readonly kind: 'credential' | 'browser';
   readonly source: string;
   readonly scopes: ReadonlySet<Scope>;
-  readonly role?: 'bb8-link';
+  readonly role?: 'bb8-link' | 'coding-worker';
   readonly robotId?: string;
 };
 
@@ -61,6 +62,12 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
  * authority.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
+  // The coding worker (Hub #502) gets one connection-bound endpoint and nothing else: it answers the module's work
+  // commands, reports progress and declares its availability; it reads no state and requests no operator command.
+  if (principal.kind === 'credential' && principal.role === 'coding-worker' && principal.source === CODING_WORKER_SOURCE && principal.scopes.size === 0) {
+    return {id: principal.id, source: principal.source, calls: [], keys: [], publishes: [],
+      endpoint: {respond: ['coding-work'], publish: ['coding-progress'], request: ['coding-endpoint']}};
+  }
   if (principal.kind === 'credential' && principal.role === 'bb8-link' && principal.source === 'bunny/parts/bb8-windows' && principal.robotId !== undefined && principal.scopes.size === 0) {
     return {id: principal.id, source: principal.source, calls: ['respond', 'serve', 'publish', 'subscribe'], keys: [
       `bunny.cmd.bb8-link-execute.${principal.robotId}`, `bunny.cmd.bb8-link-recorded.${principal.robotId}`,
@@ -293,7 +300,8 @@ export class Access {
 
 /** A configured credential as a principal. */
 export function principalOf(credential: EdgeCredential): Principal {
-  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes), ...(credential.role === undefined ? {} : {role: credential.role, robotId: credential.robotId})};
+  return {id: credential.id, kind: 'credential', source: credential.source, scopes: new Set(credential.scopes),
+    ...(credential.role === undefined ? {} : {role: credential.role}), ...(credential.robotId === undefined ? {} : {robotId: credential.robotId})};
 }
 
 function sameGrant(a: Principal, b: Principal): boolean {

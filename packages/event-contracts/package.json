@@ -43,6 +43,10 @@
     "./v2/mode": {
       "types": "./dist/v2/mode.d.ts",
       "import": "./dist/v2/mode.js"
+    },
+    "./v2/coding": {
+      "types": "./dist/v2/coding.d.ts",
+      "import": "./dist/v2/coding.js"
     }
   },
   "dependencies": {

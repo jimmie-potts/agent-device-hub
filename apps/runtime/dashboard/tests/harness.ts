@@ -44,6 +44,8 @@ export type WorldOptions = {
   wifiProxy?: {origin: string; tokenDigest: string};
   privateProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
+  /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
+  coding?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
   speech?: boolean;
   onn?: boolean;
@@ -90,6 +92,8 @@ export type World = {
   roborockStatusViaMcp():Promise<unknown>;
   readonly url: string;
   readonly readerToken: string;
+  /** The coding-worker credential's token when the world was started with `coding`; never written anywhere else. */
+  readonly codingToken: string;
   readonly stateDir: string;
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
@@ -150,10 +154,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const token = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const codingToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const credentials = join(configDir, 'edge-credentials.json');
   await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']},
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
+    ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
   ]}));
   const roborock=new SimulatedRoborock();
   let roborockModule:RoborockModule|undefined;
@@ -183,7 +189,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const moduleConfig = {
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
-    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode']}}} : {}),
+    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : [])]}}} : {}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
@@ -247,7 +253,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
-    readerToken,
+    readerToken, codingToken,
     roborockRefresh:refreshRoborock,
     roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},
     roborockCalls:()=>[...roborock.calls],

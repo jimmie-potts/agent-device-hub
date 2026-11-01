@@ -1,30 +1,31 @@
 import React, {useEffect, useState} from 'react';
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
 import {SpeechControls, useCompanionSpeechCopy} from './speech.js';
 
 // Browser-local wire types: importing the database-backed store would include Node code.
 type Message = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
-type Proposal = {family: string; target: string; data: {mode: string}; expectedRevision: number};
-type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; proposal: Proposal | null};
+type Proposal = {family: 'mode-set'; target: string; data: {mode: string}; expectedRevision: number} | {family: 'coding-dispatch'; target: string; data: {repository: string; brief: string}; expectedRevision: number};
+type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; proposal: Proposal | null};
 type CurrentTask = {taskId: string; question: Question | null};
 type Page = {version: 1; conversationId: string | null; messages: Message[]; next: number | null; currentTask: CurrentTask | null};
 const profiles: Readonly<Record<AssistantProfile, string>> = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'};
 /** The engine's per-task bounds, shown beside each counter, from the module's shared constants. */
 const BOUNDS = {modelCalls: LIMITS.modelCalls, toolCalls: LIMITS.toolCalls, questions: LIMITS.questions, activeSeconds: LIMITS.activeMs / 1000, units: LIMITS.units};
 /** Every tool the section may allow; a name missing from the state's `tools` is shown as unavailable. */
-const CATALOG = ['read_sessions', 'set_mode'];
+const CATALOG = ['read_sessions', 'set_mode', 'delegate_coding'];
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 function questionValue(value: unknown): Question | null {
   if (value === null) return null;
   if (!record(value) || typeof value.id !== 'string' || typeof value.text !== 'string' || !(value.answer === null || typeof value.answer === 'string') ||
-    !['clarification', 'approval'].includes(String(value.kind))) throw new Error('Invalid question');
+    !['clarification', 'approval', 'delegation'].includes(String(value.kind))) throw new Error('Invalid question');
   const proposal = value.proposal ?? null;
-  if (proposal !== null && !(record(proposal) && typeof proposal.family === 'string' && typeof proposal.target === 'string' && record(proposal.data) &&
-    typeof proposal.data.mode === 'string' && integer(proposal.expectedRevision))) throw new Error('Invalid proposal');
+  if (proposal !== null && !(record(proposal) && typeof proposal.target === 'string' && record(proposal.data) && integer(proposal.expectedRevision) &&
+    ((proposal.family === 'mode-set' && typeof proposal.data.mode === 'string') || (proposal.family === 'coding-dispatch' && typeof proposal.data.repository === 'string' && typeof proposal.data.brief === 'string')))) throw new Error('Invalid proposal');
   return {id: value.id, text: value.text, answer: value.answer, kind: value.kind as Question['kind'], proposal: proposal as Proposal | null};
 }
 function pageValue(value: unknown, after: number): Page {
@@ -54,6 +55,7 @@ function TaskControls({context, command, state, profile, live, question}: {
   const unfinished = state.tasks.find(value => !finished(value.status));
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
+  const delegated = pending && question?.kind === 'delegation';
   const draftKey = `${profile}:${pending ? task.questionId ?? 'start' : 'start'}`;
   const draft = drafts[draftKey] ?? '';
   const bytes = new TextEncoder().encode(draft).byteLength;
@@ -80,10 +82,17 @@ function TaskControls({context, command, state, profile, live, question}: {
       <button type="button" aria-pressed={state.enabled} disabled={state.enabled && unfinished !== undefined}
         onClick={() => {control(state.enabled ? 'disable' : 'enable');}}>{state.enabled ? 'Disable' : 'Enable'} conversation</button>
       {unfinished !== undefined && <p>One task can remain unfinished across all profiles. Finish or cancel it before sending another message or disabling the conversation.</p>}
-      {approval && question?.proposal !== null && question?.proposal !== undefined ? <article aria-label="Proposed command">
+      {delegated ? <article aria-label="Delegated work">
+        <p>{question?.text}</p>
+        <p>Waiting for the coding worker on your computer. Its structured result ends this wait; Cancel task asks the worker to stop.</p>
+      </article> : approval && question?.proposal !== null && question?.proposal !== undefined ? <article aria-label="Proposed command">
         <p>{question.text}</p>
-        <p>Command: <code>{question.proposal.family}</code> on <code>{question.proposal.target}</code>, mode <strong>{question.proposal.data.mode}</strong>.
-          {' '}Bound to Hub-mode revision {String(question.proposal.expectedRevision)}; a mode changed since then refuses it.</p>
+        {question.proposal.family === 'mode-set'
+          ? <p>Command: <code>{question.proposal.family}</code> on <code>{question.proposal.target}</code>, mode <strong>{question.proposal.data.mode}</strong>.
+            {' '}Bound to Hub-mode revision {String(question.proposal.expectedRevision)}; a mode changed since then refuses it.</p>
+          : <p>Delegation to the coding worker in repository <strong>{question.proposal.data.repository}</strong>, in a fresh worktree with edits, builds and tests allowed and no push.
+            {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>.
+            {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.</p>}
         <button type="button" disabled={!state.enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
         <button type="button" disabled={!state.enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
@@ -117,7 +126,26 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [pages, setPages] = useState(1);
   const [history, setHistory] = useState<{profile: AssistantProfile; messages: Message[]; next: number | null; currentTask: CurrentTask | null}>();
   const [historyStatus, setHistoryStatus] = useState('Loading saved conversation.');
+  const [coding, setCoding] = useState<CodingState>();
   const speech = useCompanionSpeechCopy(context);
+  useEffect(() => {
+    setCoding(undefined);
+    if (!connected) return;
+    let active = true;
+    let close: (() => Promise<void>) | undefined;
+    void api.sync<CodingState>(['coding-state'], change => {
+      if (!active) return;
+      if (change.type === 'updated' && change.message.data.id === 'coding') setCoding(change.message.data);
+      else if (change.type === 'failed' || change.type === 'removed') setCoding(undefined);
+    }).then(result => {
+      if (result.status !== 'synced') return;
+      if (!active) {void result.copy.close(); return;}
+      close = () => result.copy.close();
+      const current = result.copy.states().find(message => message.data.id === 'coding');
+      if (current !== undefined) setCoding(current.data);
+    }, () => {if (active) setCoding(undefined);});
+    return () => {active = false; void close?.();};
+  }, [api, connected]);
   useEffect(() => {
     if (!connected) return;
     let active = true;
@@ -178,6 +206,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
       ['Provider', profile === 'bunny' ? providerLabel(state) : 'Synthetic (no paid calls)'],
       ['Allowed tools', allowed.length === 0 ? 'None' : allowed.join(', ')],
       ['Unavailable tools', unavailableTools === '' ? 'None' : unavailableTools],
+      ['Coding worker', coding === undefined ? 'Unknown' : coding.availability === 'available' ? (coding.active === null ? 'Connected and idle' : `Running task ${coding.active.taskId.slice(0, 8)} (${coding.active.status})`) : coding.availability === 'unavailable' ? 'Lost; start it again on your computer' : 'Not connected'],
     ]}/>}
     {!connected ? <p role="status">Disconnected. Saved history remains readable; task status may be stale and controls are unavailable.</p>
       : !live && <p role="status">The conversation is unavailable. Saved history remains readable.</p>}
