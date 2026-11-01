@@ -224,9 +224,11 @@ qualification for a newer arrival. Omitted revisions have no qualification resul
 The manual path leaves current PR/main gates in force until their separate activation.
 
 Qualification builds a native Linux ARM64 production image from the closed committed
-source exporter, then runs the existing full scenario and verification catalog,
-including browser assertions, accessibility and negative controls, in its test
-derivative. The derivative identifies its exact production parent and is never
+source exporter, then runs every scenario and the full capture catalog in its test derivative.
+The catalog retains browser assertions, accessibility and negative controls.
+Packaged supervisor tests also verify shutdown, restart and orphan reaping.
+Checkout-only source/build-watch tests run in the full source verification job;
+the sealed image contains no Git metadata. The derivative identifies its exact production parent and is never
 the installable artifact. Docker's init reaps orphaned test processes. Containers have synthetic state and
 no host mounts, ports, network or devices. This qualifies source and packaged bytes, not an installed client.
 

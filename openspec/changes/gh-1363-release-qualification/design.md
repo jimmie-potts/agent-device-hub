@@ -12,7 +12,7 @@ Qualification identifies one candidate and immutable artifact. It never changes 
 
 Reuse both workflows through a boolean qualification input, which can only expand Checks to all groups. The caller validates its full SHA against the requested candidate before starting children. Every checkout inherits that immutable caller revision.
 
-Use Actions artifacts for a compressed Docker image archive rather than introduce a registry. Record the immutable Docker image ID as image identity, plus the archive SHA-256 and Linux ARM64 architecture. A test derivative identifies the production base; its full runtime catalog exercises built packaged bytes and existing negative controls.
+Use Actions artifacts for a compressed Docker image archive rather than introduce a registry. Record the immutable Docker image ID as image identity, plus the archive SHA-256 and Linux ARM64 architecture. A test derivative identifies the production base; its full runtime capture catalog exercises built packaged bytes and existing negative controls. Packaged supervisor tests retain shutdown, restart and orphan-reaping coverage. Checkout-only build-watch assertions stay in the full source job because the sealed image has no Git metadata.
 
 A fixed concurrency group with cancel-in-progress false lets the active run finish and retains GitHub's newest pending candidate. No custom scheduler or automatic retry is added. A separate candidate remains unqualified until its own run succeeds.
 
