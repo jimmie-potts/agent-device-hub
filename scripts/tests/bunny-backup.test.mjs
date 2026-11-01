@@ -155,6 +155,18 @@ test('version 1 verification keeps its old credential-reference semantics',linux
   manifest.helper={unexpected:true};manifest.externalHostDependencies=[{untrusted:true}];await writeFile(path,JSON.stringify(manifest));
   assert.equal((await verify({...f,archive:f.destination})).schema,'bunny-container-backup/1');
 });
+test('overlapping ONN dependencies and secret references refuse before reference I/O',linux,async t=>{
+  for(const kind of ['exact','ancestor','descendant','lexical-alias']) {
+    const f=await fixture(t),path=join(f.secrets,'edge.json');
+    const external=kind==='exact'?path:kind==='ancestor'?f.secrets:kind==='descendant'?path+'/nested':f.secrets+'/./edge.json';
+    await writeFile(f.config,JSON.stringify({schema:'runtime-config/1.0',modules:{onn:{...onnSection,hostExecutable:external}},edge:{credentials:path}}));
+    const fs=(await import('node:fs/promises')).default,{syncBuiltinESMExports}=await import('node:module'),restores=[],calls=[];
+    for(const name of ['lstat','stat','open','readFile','realpath']){const original=fs[name];restores.push(()=>{fs[name]=original;});fs[name]=function(selected,...args){if(selected===path)calls.push(name);return original.call(this,selected,...args);};}
+    syncBuiltinESMExports();
+    try{await assert.rejects(backup(f));assert.deepEqual(calls,[],kind);assert.deepEqual(await readdir(join(f.root,'output')),[]);}
+    finally{for(const restore of restores)restore();syncBuiltinESMExports();}
+  }
+});
 test('declared dependency tampering or unsupported absolute fields never verify or restore',linux,async t=>{
   const f=await fixture(t);await writeFile(f.config,JSON.stringify({schema:'runtime-config/1.0',modules:{onn:onnSection},edge:{credentials:join(f.secrets,'edge.json')}}));
   await backup(f);const path=join(f.destination,'manifest.json'),manifest=JSON.parse(await readFile(path,'utf8'));

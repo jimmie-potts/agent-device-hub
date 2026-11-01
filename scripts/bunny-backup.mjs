@@ -1,7 +1,7 @@
 // Private directory archives for the manual container profile. No activation or migration.
 import {constants} from 'node:fs';
 import {lstat, realpath, open, readdir, mkdir, unlink, mkdtemp, rm} from 'node:fs/promises';
-import {join, dirname, resolve, isAbsolute} from 'node:path';
+import {join, dirname, resolve, isAbsolute, posix} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {tmpdir} from 'node:os';
@@ -116,6 +116,12 @@ async function configuration(config, secrets, heldOwner, legacy=false) {
   }
   walk(parsed);
   externalHostDependencies.sort((a,b)=>a.field.localeCompare(b.field));
+  // A declared dependency cannot acquire a second readable role through a secret reference.
+  // Normalization is lexical only. Never resolve or inspect an external host dependency.
+  for(const path of paths)for(const dependency of externalHostDependencies) {
+    const reference=posix.normalize(path),external=posix.normalize(dependency.path);
+    if(reference===external||reference.startsWith(external.endsWith('/')?external:external+'/')||external.startsWith(reference+'/'))fail('configuration');
+  }
   const references = [];
   for (const path of [...paths].sort()) {
     await refuseOwnerAlias(path, heldOwner);

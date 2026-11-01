@@ -655,9 +655,10 @@ locations and original paths as external host dependencies. It never stats,
 opens, hashes, copies or activates those dependencies or `adbkey`. The declared
 executable fingerprint remains part of the original configuration; backup does
 not recalculate or qualify it. No directory is exported or path rewritten.
-Actual secret references keep their existing file/hash verification, even when
-a declared host dependency happens to name the same path in another role.
-Missing secret references still refuse completion.
+Actual secret references keep their existing file/hash verification. A declared
+dependency that lexically overlaps a secret reference refuses before reference
+I/O, so that second role cannot cause dependency access. This comparison performs
+no filesystem resolution. Missing secret references still refuse completion.
 
 The repaired worker writes `bunny-container-backup/2`. Its manifest records the
 old runtime `revision`, separate maintenance `helper` image/revision, exact

@@ -12,6 +12,10 @@ Stopped backup SHALL preserve the full original runtime configuration bytes and 
 - **WHEN** configuration bytes, a secret reference, a declared dependency descriptor or an unsupported absolute path differs
 - **THEN** verification or backup refuses without claiming completeness or writing a restore target
 
+#### Scenario: Dependency overlaps a secret reference
+- **WHEN** a declared host dependency lexically equals, contains or falls beneath an explicit secret reference
+- **THEN** the worker refuses before reference I/O, without resolving or inspecting the dependency
+
 ### Requirement: Versioned maintenance helper attribution
 
 New backups SHALL use manifest version 2, retaining the old runtime source revision separately from the actual maintenance helper's immutable image and revision. Version 1 archives SHALL retain legacy verification semantics. A newer helper for an older stopped instance SHALL require matching successful authentic hosted qualification and actual image/source/platform verification, with the existing exact-target, stopped-writer, lease, private-volume and no-network protections. Before artifact download or image load, the trusted host SHALL independently prove the candidate is an ancestor of the exact authenticated pinned main revision, refusing unavailable or contradictory comparisons. Candidate workflow assertions, raw image values or local receipt assertions SHALL NOT admit a helper.

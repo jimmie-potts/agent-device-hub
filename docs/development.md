@@ -2234,7 +2234,8 @@ scripts/tests/bunny-operations.test.mjs`, `npm run check:workflow` and
 `npm run test:workflow`. Existing runtime CI test discovery includes these files.
 The worker suite requires Linux private-file semantics; Mac reports those cases
 skipped. It covers raw configuration, version 1/2 readers, zero filesystem access
-for declared ONN dependencies, secret and descriptor tampering, WAL/keys/assets,
+for declared ONN dependencies, refusal of dependency/secret-reference overlap
+before reference I/O, secret and descriptor tampering, WAL/keys/assets,
 real lease contention and interruption. Packaged ARM64 qualification runs that
 same worker suite, and a negative control proves helper failure blocks the
 qualification driver. Host tests cover the qualified helper's

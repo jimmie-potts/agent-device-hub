@@ -13,4 +13,4 @@
 
 - [x] 3.1 Update operator/spec/development instructions and validate build, type, lint, affected suites and workflow checks; preserve installed and broader #1168 acceptance boundaries.
 - [ ] 3.2 Obtain independent Standards/Specification, disposable acceptance and focused backup/storage review of committed source, and resolve findings with regressions.
-- [ ] 3.3 Synchronize the affected capability after current successful lookups and publish the PR with honest source and installation limits; verify spec and public evidence readback.
+- [ ] 3.3 Synchronize the affected capability after current successful lookups, verify spec readback and hand off the source with explicit publication, hosted-qualification and installation limits. Those owning-issue closeout gates remain separate from source archival.
