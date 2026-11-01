@@ -241,6 +241,9 @@ SHA-256, architecture, source/evaluation revision, evaluation input hashes and
 actual required job results. It distinguishes qualified, failed and incomplete work.
 Unavailable/cancelled work or an expired artifact cannot qualify a newer revision.
 Retries explicitly select the same candidate and keep their own attempt identity.
+The producer checks the actual unique unexpired image artifact before reporting
+qualified. Copied successful jobs without that current-attempt artifact remain
+incomplete; a result-only retry cannot invent its image artifact.
 
 Consumers must verify the authentic repository, workflow, run, attempt, source,
 completed job results and unique unexpired artifacts through GitHub, then verify
@@ -987,6 +990,31 @@ export test with the runtime suites; it does not boot the stack.
 See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) for the authoritative procedure.
 
 ### Runtime verification runs
+
+On macOS with Docker Desktop, run `npm run test:runtime:container`. It snapshots
+current tracked and nonignored new source, prepares a reusable image using the
+pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=dev`,
+`npm run build`, `npm run test:runtime:scenarios:built` and
+`npm run test:runtime:verify:built` inside disposable Linux. A build or suite
+failure exits nonzero. The container has its own copied source, dependencies and
+synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
+no published ports. Docker's init process reaps exited descendants. It never attaches to the installed runtime or its volumes.
+The temporary Git commit identifies a working-tree snapshot, not a reviewed
+release or independent Acceptance result. Dependency preparation needs network
+access; the checks install from the image's offline npm cache.
+
+Use `-- --suite scenarios` or `-- --suite verify` for a focused suite, and
+`-- --suite browser` for the runtime dashboard browser smoke check. Separate
+invocations may run concurrently, including from independent worktrees. Each
+owns a unique container; cleanup removes only that container. The source copy
+excludes ignored files, private paths and build output and refuses symlinks.
+Keep private work outside tracked/nonignored source. Host interruption may leave
+that invocation's container; inspect and remove only its `bunny-runtime-check-`
+identity. No broad prune or installed-service action is needed.
+
+The wrapper's fixed-suite, source-isolation and failure-propagation checks are
+`node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
+Hosted runtime suites remain unchanged.
 
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 

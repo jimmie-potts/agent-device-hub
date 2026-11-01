@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import YAML from 'yaml';
 import {imageIdentity} from '../build.mjs';
-import {fetchJobs, resultOutcome} from '../finalize.mjs';
+import {fetchJobs, resultOutcome, finalize, imageArtifactPresent} from '../finalize.mjs';
 import {EXPECTED_JOB_NAMES} from '../qualification.mjs';
 
 const sha = 'a'.repeat(40), digest = 'sha256:' + 'b'.repeat(64);
@@ -21,11 +21,11 @@ test('packaged artifact refuses wrong source, architecture, user and derivative 
 test('coverage failure and unavailable evidence cannot report qualification', () => {
   const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'image'].map(name => [name, {result: 'success'}]));
   const checks = EXPECTED_JOB_NAMES.map(name => ({name, result: 'success'}));
-  assert.equal(resultOutcome(needs, checks, {}), 'qualified');
-  assert.equal(resultOutcome(needs, checks.slice(1), {}), 'incomplete');
-  assert.equal(resultOutcome(needs, checks, null), 'incomplete');
-  needs.image.result = 'failure'; assert.equal(resultOutcome(needs, checks, null), 'failed');
-  needs.image.result = 'cancelled'; assert.equal(resultOutcome(needs, checks, null), 'incomplete');
+  assert.equal(resultOutcome(needs, checks, {}, true), 'qualified');
+  assert.equal(resultOutcome(needs, checks.slice(1), {}, true), 'incomplete');
+  assert.equal(resultOutcome(needs, checks, null, true), 'incomplete');
+  needs.image.result = 'failure'; assert.equal(resultOutcome(needs, checks, null, true), 'failed');
+  needs.image.result = 'cancelled'; assert.equal(resultOutcome(needs, checks, null, true), 'incomplete');
 });
 test('job readback fully paginates the exact attempt and refuses a truncated read', async () => {
   const calls = [];
@@ -75,4 +75,34 @@ test('qualification expands a called PR context to full coverage without reading
     GITHUB_OUTPUT: join(at, 'outputs')}, fetch: async () => {throw new Error('a qualification never reads a PR comparison');}});
   assert.equal(selection.mode, 'full');
   assert.ok(Object.values(selection.jobs).every(Boolean));
+});
+
+test('copied successful jobs cannot qualify a rerun with no matching current-attempt image artifact', async context => {
+  const {mkdtemp, readFile, rm} = await import('node:fs/promises');
+  const {tmpdir} = await import('node:os'); const {join} = await import('node:path');
+  const {qualificationArtifactNames, REPOSITORY} = await import('../qualification.mjs');
+  const at = await mkdtemp(join(tmpdir(), 'release-artifact-'));
+  context.after(() => rm(at, {recursive: true, force: true}));
+  const runId = 10, runAttempt = 2;
+  const jobs = EXPECTED_JOB_NAMES.map((name, i) => ({id: i + 1, name, status: 'completed', conclusion: 'success', head_sha: sha, run_id: runId, run_attempt: runAttempt}));
+  const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'image'].map(name => [name, {result: 'success'}]));
+  const env = {GITHUB_SHA: sha, GITHUB_RUN_ID: String(runId), GITHUB_RUN_ATTEMPT: String(runAttempt), GITHUB_REPOSITORY: REPOSITORY,
+    RELEASE_NEEDS: JSON.stringify(needs), RELEASE_IMAGE: JSON.stringify({id: digest, revision: sha, archive: 'production-image.tar.gz', archiveSha256: 'c'.repeat(64)})};
+  const old = {id: 20, name: qualificationArtifactNames(sha, runId, 1).image, expired: false, workflow_run: {id: runId, head_sha: sha}};
+  const fetch = async url => ({ok: true, json: async () => url.includes('/jobs?') ? {total_count: jobs.length, jobs} : {total_count: 1, artifacts: [old]}});
+  const receipt = await finalize(join(at, 'qualification.json'), env, fetch);
+  assert.equal(receipt.outcome, 'incomplete');
+  assert.equal(JSON.parse(await readFile(join(at, 'qualification.json'), 'utf8')).outcome, 'incomplete');
+  const current = {...old, name: qualificationArtifactNames(sha, runId, runAttempt).image};
+  assert.equal(imageArtifactPresent([current], {candidate: sha, runId, runAttempt}), true);
+  const completeFetch = async url => ({ok: true, json: async () => url.includes('/jobs?')
+    ? {total_count: jobs.length, jobs} : {total_count: 1, artifacts: [current]}});
+  assert.equal((await finalize(join(at, 'complete.json'), env, completeFetch)).outcome, 'qualified');
+  jobs[0].run_attempt = 1;
+  assert.equal((await finalize(join(at, 'stale-job.json'), env, completeFetch)).outcome, 'incomplete');
+  jobs[0].run_attempt = runAttempt;
+  for (const artifacts of [[], [old], [current, current], [{...current, expired: true}],
+    [{...current, workflow_run: {id: 11, head_sha: sha}}], [{...current, workflow_run: {id: runId, head_sha: '0'.repeat(40)}}]]) {
+    assert.equal(imageArtifactPresent(artifacts, {candidate: sha, runId, runAttempt}), false);
+  }
 });
