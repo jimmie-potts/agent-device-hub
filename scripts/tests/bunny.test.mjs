@@ -388,11 +388,17 @@ test('failed authentic qualification metadata cannot mint a helper and serialize
 test('operational stderr forwards only a fixed worker refusal and never raw private errors',async()=>{
   const {operatorRefusal,refusalMessage}=await import('../operator-refusal.mjs');
   const configuration=refusalMessage(operatorRefusal('configuration'));
-  assert.match(configuration,/code=invalid-request stage=configuration/);
+  assert.deepEqual(JSON.parse(configuration),{error:{code:'invalid-request',retryable:false,detail:'Maintenance stage configuration refused. Preserve partial output and inspect the selected instance.'}});
   assert.equal(refusalMessage({stderr:configuration}),configuration);
   const raw=refusalMessage({stderr:'SYNTHETIC_SECRET /private/selected/config runtime stack',message:'SYNTHETIC_SECRET'});
-  assert.match(raw,/code=unavailable stage=worker/);assert.doesNotMatch(raw,/SYNTHETIC_SECRET|\/private|stack/);
-  assert.match(refusalMessage({stderr:configuration+'SYNTHETIC_SECRET'}),/code=unavailable stage=worker/);
+  assert.deepEqual(JSON.parse(raw),{error:{code:'unavailable',retryable:true,detail:'Maintenance stage worker refused. Preserve partial output and inspect the selected instance.'}});assert.doesNotMatch(raw,/SYNTHETIC_SECRET|\/private|stack/);
+  assert.equal(refusalMessage({stderr:configuration+'SYNTHETIC_SECRET'}),raw);
+  const forged=JSON.parse(configuration);forged.error.retryable=true;
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
+  forged.error.retryable=false;forged.error.detail+=' SYNTHETIC_SECRET';
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
+  forged.error.detail=JSON.parse(configuration).error.detail;forged.error.path='/private/selected';
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
 });
 test('qualification request is limited to explicit backup and restore operator routes',()=>{
   assert.equal(parse(['backup','snapshot','--project','synthetic','--archive-volume','archives','--qualification-request','/private/request.json']).qualificationRequest,'/private/request.json');

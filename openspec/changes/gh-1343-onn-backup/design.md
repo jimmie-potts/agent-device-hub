@@ -18,7 +18,7 @@ The qualified batch's existing authentic hosted API/artifact validation then adm
 
 Use inspected helper identity in worker environment metadata, keeping the existing worker argv compatible with older images. A helper selected through qualification must return the new manifest/source/helper identities; an old or mismatched worker cannot claim the repaired guarantee. Ordinary same-image operations retain their existing route.
 
-Emit only allowlisted existing refusal codes with fixed operational stages. Worker and host catches preserve machine-readable success stdout and map unknown subprocess failures to a fixed unavailable/worker result. Never repeat raw error text, input paths or subprocess stderr.
+Emit the shared canonical error body with an allowlisted existing code, its registry retryability and a fixed bounded detail identifying the operational stage. Worker and host catches preserve machine-readable success stdout and map unknown subprocess failures to a fixed unavailable/worker error body. The host accepts only exact known canonical worker bodies, refusing altered flags, extra fields or private details. Never repeat raw error text, input paths or other subprocess stderr.
 
 ## Risks / Trade-offs
 

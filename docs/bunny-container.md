@@ -717,10 +717,11 @@ The new helper route is qualified only on the selected Mac/POSIX ARM64 lane.
 Native Windows retains its existing manual same-image commands and refuses
 `--qualification-request` before any new helper work.
 
-A refusal prints one bounded line such as
-`BUNNY_OPERATOR_REFUSAL code=invalid-request stage=configuration` followed by
-fixed preservation guidance. Codes/stages are allowlisted. Raw exceptions,
-configured paths, credential bytes and subprocess stderr are never echoed.
+A refusal prints one canonical JSON error body, for example
+`{"error":{"code":"invalid-request","retryable":false,"detail":"Maintenance stage configuration refused. Preserve partial output and inspect the selected instance."}}`.
+The shared registry supplies `retryable`; the detail contains only an allowlisted
+stage and fixed guidance. The host accepts only exact known worker bodies.
+Raw exceptions, configured paths, credential bytes and other subprocess stderr are never echoed.
 Preserve partial output and inspect it before an explicitly selected next step.
 
 ## Restore into a separate empty instance

@@ -30,7 +30,7 @@ New backups SHALL use manifest version 2, retaining the old runtime source revis
 
 ### Requirement: Bounded operational refusal reporting
 
-Backup and restore refusals SHALL report an allowlisted existing error code and fixed operational stage on stderr. Success stdout SHALL retain its machine-readable role. Unknown worker/subprocess failures SHALL use a fixed fallback, without exposing exception messages, configured values, private paths, credentials or raw subprocess output.
+Backup and restore refusals SHALL report the shared canonical error body on stderr, with an allowlisted existing error code, its registry retryability and a fixed bounded detail identifying the operational stage. The host SHALL accept only exact known canonical worker bodies. Success stdout SHALL retain its machine-readable role. Unknown worker/subprocess failures SHALL use a fixed fallback, without exposing exception messages, configured values, private paths, credentials or raw subprocess output.
 
 #### Scenario: Configuration and worker failures remain distinguishable
 - **WHEN** configuration-reference validation refuses or a worker fails unexpectedly
