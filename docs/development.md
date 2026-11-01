@@ -227,8 +227,8 @@ Qualification builds a native Linux ARM64 production image from the closed commi
 source exporter, then runs the existing full scenario and verification catalog,
 including browser assertions, accessibility and negative controls, in its test
 derivative. The derivative identifies its exact production parent and is never
-the installable artifact. Containers have synthetic state and no host mounts, ports,
-network or devices. This qualifies source and packaged bytes, not an installed client.
+the installable artifact. Docker's init reaps orphaned test processes. Containers have synthetic state and
+no host mounts, ports, network or devices. This qualifies source and packaged bytes, not an installed client.
 
 Each run attempt retains two 14-day Actions artifacts.
 `release-image-<SHA>-<run-ID>-<attempt>` holds `production-image.tar.gz`.

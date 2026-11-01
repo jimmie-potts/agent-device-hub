@@ -54,7 +54,7 @@ export async function buildRelease(candidate, destination) {
   if (!Array.isArray(coreInfo.RootFS?.Layers) || !Array.isArray(testInfo.RootFS?.Layers)
     || coreInfo.RootFS.Layers.some((layer, index) => testInfo.RootFS.Layers[index] !== layer)) throw new Error('release-parent-refused');
   // Test derivative reuses the exact immutable production parent. No host ports, mounts, credentials or devices.
-  await command('docker', ['run', '--rm', '--name', `bunny-release-test-${identity}`, '--network', 'none', '--cap-drop', 'ALL',
+  await command('docker', ['run', '--rm', '--init', '--name', `bunny-release-test-${identity}`, '--network', 'none', '--cap-drop', 'ALL',
     '--security-opt', 'no-new-privileges:true', '--env', 'TMPDIR=/tmp', '--env', 'XDG_RUNTIME_DIR=', '--env', 'DBUS_SESSION_BUS_ADDRESS=',
     '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '1800',
     '/bin/sh', '-c', 'node --test apps/runtime/dist/tests/scenarios/*.test.js && node --test --test-concurrency=1 apps/runtime/dist/verify/tests/*.test.js']);
