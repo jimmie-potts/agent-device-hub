@@ -799,6 +799,15 @@ identity, module schema registration and the error code registry. Profile 2.0
 has no Python mirror; `test:events:python` checks profile 1.0 only. Its
 sources follow the [strict profile](#strict-profile-for-new-code).
 
+The same command discovers `read-receipts.test.mjs` for opt-in lifecycle/2.1.
+It checks Codex and Claude identity preservation, closed receipt metadata,
+source qualification, generation/turn/notice binding, immutable decisions and
+unchanged default registration. Run `npm run test:sdk:built` after the shared
+build for default-consumer compatibility. The retained lifecycle/controller
+TypeScript, Python and package checks above still apply. No Python 2.1 mirror
+or runtime adoption is introduced. Disposable provider experiments and actual
+client qualification are separate from these source checks.
+
 The same event test command discovers `speech.test.mjs`. It checks explicit
 endpoint availability, live-card expiry, scenario and history refusal, closed
 playback receipts, candidate references and endpoint-loss identity. The core

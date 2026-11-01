@@ -289,7 +289,7 @@ for rules a schema cannot state. The core families use it to refuse:
 - an acknowledgment whose `subject` is not a session ID, and a moment or
   playback request whose `subject` is not a routing ID.
 
-The schemas keep the 1.x per-record rules:
+The default schemas keep the 1.x per-record rules:
 - read evidence only from Codex Desktop;
 - no host session ID below a known parent;
 - `restartUncertain` forces `uncertain` freshness;
@@ -309,6 +309,63 @@ its scenarios show that removal, expiry and a sync that drops a held entity leav
 a consumer with exactly the owner's entities. `tests/families.test.mjs` runs them.
 `tests/mapping.test.mjs` converts the 1.x corpora and a real agent-state owner's
 expiry and retirement through MAPPING.md's rules.
+
+### Explicit client read receipts (`lifecycle/2.1`, opt-in)
+
+`@jimmie-potts/event-contracts/v2/read-receipts` exports
+`registerReadReceiptFamily`, `ReadReceiptObservation`, `ReadReceiptQualification`
+and `decideReadReceipt`. Call the registration function after
+`registerCoreFamilies`. Default core, SDK and runtime registration excludes this
+version and rejects it with `unsupported-version`. This is an unused contract
+extension, not an installed collector or a runtime state transition.
+
+The version accepts existing lifecycle/2.0 observations with their existing
+rules and adds `read-receipt-observed`. A receipt carries the full native session
+identity, a known turn, unknown parentage, observation time and ordering. Its
+event names the owner's session `generation` and 64-character finished
+`noticeId`. Bind these at the observed action; never look up a newer target to
+replace missing or delayed evidence. Shared Mac Codex remains `codex/local` and
+Claude remains `claude/code`.
+
+Receipt provenance has two closed forms:
+
+- `provider-client` carries `client: desktop`, `seenRevision` and
+  `acceptedRevision`. It means an observed successful client read request and
+  response after a completed turn, not a snapshot or a missing unread marker.
+- `owned-ui` carries `viewRevision`. It means the application owns the view
+  action and has qualified its policy. A generic rendering callback is not a
+  qualified view action.
+
+Provider revisions are opaque tokens of 1–128 ASCII letters, digits, underscores,
+periods, hyphens or colons. Preserve native tokens such as `initial:<thread-id>`;
+the application-owned view revision keeps the shared identifier rule. Do not
+sort revisions or treat them as proof of human comprehension. The new observation
+admits no prompt, response, transcript,
+title, archive metadata or credential field. A future adapter must select the
+declared fields before persistence, transmission and diagnostics; native API
+responses can contain content outside this contract.
+
+`decideReadReceipt(input, session, qualification)` validates untrusted input and
+returns eligibility without changing anything. Qualification comes from the
+trusted caller and must match the authenticated message source, complete feed
+and receipt kind. The current session must match the full identity, generation,
+known turn and named turn-ended notice. Only idle or interrupted sessions without
+known parents qualify. Lifecycle freshness, attention and other consumers'
+acknowledgments stay independent. The helper can accept an old finished result
+without declaring the agent fresh or connected.
+
+A future owner must recheck eligibility inside its serialized operation and
+handle delivery ordering, replay and any later unread action. This helper does
+not implement those state transitions. Adoption must update the lifecycle
+consumer and versioned session output together; session/2.0 and the retained
+1.x reducer still restrict positive read evidence to Codex Desktop. Schema
+acceptance does not qualify either Codex or Claude's actual client. See the
+[qualification findings](../../docs/research/explicit-read-receipts.md).
+
+`tests/read-receipts.test.mjs` covers both provider identities, both receipt
+forms, malformed and stale evidence, unchanged default registration, old
+observation compatibility and immutable reference decisions. Existing event CI
+discovers this suite.
 
 ### Playback card placement (`playback-layout/2.0`)
 
