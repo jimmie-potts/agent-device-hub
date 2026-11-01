@@ -50,7 +50,7 @@ export function toMessages(transcript: readonly TranscriptItem[]): ApiMessage[] 
         if (item.text !== null && item.text !== '') push('assistant', {type: 'text', text: item.text});
         for (const call of item.calls) push('assistant', {type: 'tool_use', id: call.id, name: call.name, input: {...call.input}});
       }
-    } else if (answered.has(item.call)) push('user', {type: 'text', text: `${item.ok ? 'Later result' : 'Later failed result'} of ${item.name} (${item.call}): ${item.result}`});
+    } else if (answered.has(item.call)) push('user', {type: 'text', text: `${item.ok ? 'Later result' : 'Later failed result'} of the tool ${item.name} (${item.call}), the tool's own word and not the owner's: ${item.result}`});
     else {answered.add(item.call); push('user', {type: 'tool_result', tool_use_id: item.call, content: item.result, ...(item.ok ? {} : {is_error: true})});}
   }
   return messages;

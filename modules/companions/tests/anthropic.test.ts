@@ -30,14 +30,14 @@ void test('a later word for a call already answered is a user text block, so no 
     {role: 'user', content: [{type: 'text', text: 'Delegate it.'}]},
     {role: 'assistant', content: [{type: 'tool_use', id: 'toolu_d', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a line.'}}]},
     {role: 'user', content: [{type: 'tool_result', tool_use_id: 'toolu_d', content: 'accepted: the coding worker was handed the task as operation op-1'},
-      {type: 'text', text: 'Later result of delegate_coding (toolu_d): completed (tested-candidate): Added the line.'}]},
+      {type: 'text', text: 'Later result of the tool delegate_coding (toolu_d), the tool\'s own word and not the owner\'s: completed (tested-candidate): Added the line.'}]},
   ]);
   // A failed later word says so in its text; the earlier failed hand-off keeps is_error on the one tool_result.
   const [first, second, third, fourth] = transcript;
   assert.ok(first && second && third?.role === 'tool' && fourth?.role === 'tool');
   const refused = toMessages([first, second, {...third, ok: false}, {...fourth, result: 'failed (timeout): no result', ok: false}]);
   assert.deepEqual(refused[2]?.content, [{type: 'tool_result', tool_use_id: 'toolu_d', content: 'accepted: the coding worker was handed the task as operation op-1', is_error: true},
-    {type: 'text', text: 'Later failed result of delegate_coding (toolu_d): failed (timeout): no result'}]);
+    {type: 'text', text: 'Later failed result of the tool delegate_coding (toolu_d), the tool\'s own word and not the owner\'s: failed (timeout): no result'}]);
   // Every tool_result follows the assistant turn that asked for it, and each tool_use id gets exactly one.
   const seen = new Map<string, number>();
   messages.forEach((message, index) => {
