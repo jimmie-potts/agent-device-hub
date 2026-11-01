@@ -461,7 +461,7 @@ class Memory implements MemoryHarness {
     const wispr = modules.find(isWisprModule);
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
-      core?.setModeParticipants(modeParticipants(hosted));core?.setAutomationDevices(automationDevices(hosted));
+      core?.setModeParticipants(modeParticipants(hosted));core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
     }
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({
