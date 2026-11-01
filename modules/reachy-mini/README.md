@@ -19,6 +19,8 @@ candidates and establish no physical safety or settling tolerance.
 
 Manual gestures require Take over. Automatic expression defaults off, honors
 Quiet and current source evidence, and never catches up after reconnect.
+Validated source identities are durably fenced before policy suppression, so
+redelivery after enablement, resume or restart cannot replay a discarded event.
 Stop cancels only a known owned vendor task and latches automatic expression
 off until Resume automatic expression. Task cancellation leaves the last
 target active and is never labelled physical stopping.

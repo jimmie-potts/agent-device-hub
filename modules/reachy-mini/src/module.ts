@@ -94,7 +94,7 @@ class Owner {
     for (const row of this.#store.unfinished()) await this.#finish(row, {requestId: row.requestId, result: row.started ? Outcome.uncertain : Outcome.failed, evidence: Outcome.none, error: errorBody(row.started ? 'uncertain-result' : 'cancelled').error});
     await this.#change(() => {}); await this.#outbox.republish();
     this.#context.scheduler.after(0, () => {void this.#connect(); void this.#follow();});
-    await this.#context.sdk.subscribe<CompanionOpportunity>('bunny.event.companion-opportunity.reachy', message => {this.#opportunity(message);});
+    await this.#context.sdk.subscribe<CompanionOpportunity>('bunny.event.companion-opportunity.reachy', message => this.#opportunity(message));
   }
   async #follow(): Promise<void> {
     if (this.#closed) return;
@@ -146,14 +146,18 @@ class Owner {
   #checkAutomatic(): void {if(!this.#synced||this.#mode()===undefined||this.#mode()==='quiet'){this.#interruptAutomatic();return;}if (this.#active?.work.action.kind === 'gesture' && this.#active.work.action.automatic && !this.#candidateEligible(this.#active.work.action.opportunityId)) this.#interruptAutomatic();}
   readonly #opportunities = new Map<string, {event:CompanionOpportunity;expiresAtMs:number}>();
   #candidateEligible(id?: string): boolean {const event = id === undefined ? undefined : this.#opportunities.get(id); return event !== undefined && this.#context.clock.now() < event.expiresAtMs && this.#eligible(event.event);}
-  #opportunity(message: Message<CompanionOpportunity>): void {
-    if (this.#closed || message.source !== 'bunny/core' || !this.#validator.validate(message).ok || !this.#eligible(message.data) || !this.#state.enabled || this.#state.takeover || !this.#fresh() || this.#state.held !== null) return;
+  async #opportunity(message: Message<CompanionOpportunity>): Promise<void> {
+    if (this.#closed || message.source !== 'bunny/core' || !this.#validator.validate(message).ok) return;
     const id = createHash('sha256').update(message.data.origin.source + ':' + message.data.origin.id).digest('hex');
-    const value = {expiresAtMs:Math.min(this.#context.clock.now()+5000,message.data.validUntilMs), id, value: message.data, parent: message};
+    const expiresAtMs=Math.min(this.#context.clock.now()+5000,message.data.validUntilMs);
+    let first=false;
+    try {await this.#change(()=>{first=this.#store.consume(id);},message);}catch{return;}
+    if(!first||this.#closed||this.#context.clock.now()>=expiresAtMs||!this.#eligible(message.data)||!this.#state.enabled||this.#state.takeover||!this.#fresh()||this.#state.held!==null)return;
+    const value = {expiresAtMs, id, value: message.data, parent: message};
     if (this.#candidate !== undefined && this.#candidate.value.category === 'coding-attention' && message.data.category !== 'coding-attention') return;
     this.#candidate = value; this.#opportunities.set(id, {event:value.value,expiresAtMs:value.expiresAtMs});
     if (this.#opportunities.size > 32) this.#opportunities.delete(this.#opportunities.keys().next().value ?? '');
-    this.#candidateTimer?.(); this.#candidateTimer = this.#context.scheduler.after(5000, () => {if (this.#candidate?.id === id) this.#candidate = undefined;});
+    this.#candidateTimer?.(); this.#candidateTimer = this.#context.scheduler.after(Math.max(0,expiresAtMs-this.#context.clock.now()), () => {if (this.#candidate?.id === id) this.#candidate = undefined;});
     void this.#offer();
   }
   async #offer(): Promise<void> {
@@ -165,9 +169,7 @@ class Owner {
     if (this.#context.clock.now() >= candidate.expiresAtMs || !this.#eligible(candidate.value) || !this.#fresh() || !this.#state.enabled || this.#state.takeover || this.#state.held !== null) return;
     this.#offering=true;
     try {
-    let consumed = false;
-    try {await this.#change(() => {consumed = this.#store.consume(candidate.id);if(consumed)this.#store.automaticAt(this.#context.clock.now());});} catch {return;}
-    if (!consumed) return;
+    try {await this.#change(() => {this.#store.automaticAt(this.#context.clock.now());},candidate.parent);} catch {return;}
     this.#lastAutoAt = this.#context.clock.now();
     const requestId = randomUUID();
     await this.#context.sdk.request('bunny.cmd.reachy-dispatch.reachy', {type: 'org.bunny.reachy.dispatch.requested', subject: 'reachy',
