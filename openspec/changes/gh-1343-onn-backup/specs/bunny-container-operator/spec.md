@@ -14,7 +14,7 @@ Stopped backup SHALL preserve the full original runtime configuration bytes and 
 
 ### Requirement: Versioned maintenance helper attribution
 
-New backups SHALL use manifest version 2, retaining the old runtime source revision separately from the actual maintenance helper's immutable image and revision. Version 1 archives SHALL retain legacy verification semantics. A newer helper for an older stopped instance SHALL require matching successful authentic hosted qualification and actual image/source/platform verification, with the existing exact-target, stopped-writer, lease, private-volume and no-network protections. Raw image values or local receipt assertions SHALL NOT admit a helper.
+New backups SHALL use manifest version 2, retaining the old runtime source revision separately from the actual maintenance helper's immutable image and revision. Version 1 archives SHALL retain legacy verification semantics. A newer helper for an older stopped instance SHALL require matching successful authentic hosted qualification and actual image/source/platform verification, with the existing exact-target, stopped-writer, lease, private-volume and no-network protections. Before artifact download or image load, the trusted host SHALL independently prove the candidate is an ancestor of the exact authenticated pinned main revision, refusing unavailable or contradictory comparisons. Candidate workflow assertions, raw image values or local receipt assertions SHALL NOT admit a helper.
 
 #### Scenario: Qualified helper repairs old-image backup
 - **WHEN** the selected old stopped image lacks the ONN backup repair and a matching qualified newer helper is explicitly selected
@@ -23,6 +23,10 @@ New backups SHALL use manifest version 2, retaining the old runtime source revis
 #### Scenario: Invalid helper or archive version
 - **WHEN** helper qualification or identity is missing or mismatched, or an archive version is unsupported
 - **THEN** the operation refuses before backup/restore completion and preserves current state, while valid legacy version 1 verification remains available
+
+#### Scenario: Successful unmerged candidate cannot approve itself
+- **WHEN** authentic hosted jobs and artifacts report success but the candidate is not an ancestor of authenticated main, or the comparison is unavailable or contradictory
+- **THEN** the host refuses before artifact download, image load or helper admission
 
 ### Requirement: Bounded operational refusal reporting
 

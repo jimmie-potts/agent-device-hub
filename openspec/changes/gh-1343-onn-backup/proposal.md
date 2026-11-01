@@ -6,7 +6,7 @@ The production ONN configuration has three declared external host paths that the
 
 - Classify only ONN's declared ADB socket, executable and key-directory fields as external host dependencies, without inspecting or copying them.
 - Write backup manifest version 2 with explicit dependency descriptors and separate old-runtime/helper identities; retain version 1 verification semantics.
-- Let an already-qualified candidate supply a fixed maintenance helper for the old stopped instance, using its existing state lease and exact mounts.
+- Let an already-qualified candidate supply a fixed maintenance helper for the old stopped instance, using its existing state lease and exact mounts. Independently prove that candidate is an ancestor of authenticated pinned main before any artifact download or image load.
 - Report allowlisted refusal codes and stages without raw errors or private paths.
 
 ## Capabilities

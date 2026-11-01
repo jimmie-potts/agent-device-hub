@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Small, explicit operator surface. No downloads, automatic restart, migration or device handoff.
+// Explicit operator commands. Qualified helper intake is separate; no automatic restart, migration or device handoff.
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {parseArgs} from 'node:util';

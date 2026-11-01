@@ -151,6 +151,9 @@ test('version 1 verification keeps its old credential-reference semantics',linux
   const path=join(f.destination,'manifest.json'),manifest=JSON.parse(await readFile(path,'utf8'));
   manifest.schema='bunny-container-backup/1';delete manifest.helper;delete manifest.externalHostDependencies;await writeFile(path,JSON.stringify(manifest));
   assert.equal((await verify({...f,archive:f.destination})).schema,'bunny-container-backup/1');
+  // Legacy readers ignored unknown manifest keys; new fields cannot grant ONN exemptions to version 1.
+  manifest.helper={unexpected:true};manifest.externalHostDependencies=[{untrusted:true}];await writeFile(path,JSON.stringify(manifest));
+  assert.equal((await verify({...f,archive:f.destination})).schema,'bunny-container-backup/1');
 });
 test('declared dependency tampering or unsupported absolute fields never verify or restore',linux,async t=>{
   const f=await fixture(t);await writeFile(f.config,JSON.stringify({schema:'runtime-config/1.0',modules:{onn:onnSection},edge:{credentials:join(f.secrets,'edge.json')}}));

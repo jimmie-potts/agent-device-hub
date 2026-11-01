@@ -688,7 +688,11 @@ node scripts/bunny.mjs backup UNIQUE_SNAPSHOT --project SELECTED_PROJECT --compo
 
 The request identifies the observed old container/image/revision, candidate,
 qualification run/attempt and focused whole-change assessment. Use a new request
-ID and snapshot name. The operator reads authentic hosted qualification and
+ID and snapshot name. The operator first reads authenticated main once and proves
+the candidate is its ancestor against that exact pinned revision. Unavailable,
+diverged or contradictory comparisons refuse before artifact download or image
+load; the candidate workflow cannot approve its own integration. A later main
+advance preserves a valid pinned comparison. The operator reads authentic hosted qualification and
 artifact evidence, verifies the archive and loaded immutable ARM64 image, then
 admits a process-local helper bound to that exact old target. A raw image value,
 serialized capability or local receipt assertion cannot select it. Recheck the

@@ -348,7 +348,7 @@ test('selected state, config and secrets must be distinct ordinary local volumes
   }
 });
 
-async function qualifiedHelper(requestOverrides={}) {
+async function qualifiedHelper(requestOverrides={},admit=true) {
   const {EXPECTED_JOB_NAMES,qualificationArtifactNames}=await import('../release/qualification.mjs');
   const {attestMaintenanceHelper}=await import('../deployment/maintenance-helper.mjs');
   const candidate='a'.repeat(40),helperImage='sha256:'+'b'.repeat(64),names=qualificationArtifactNames(candidate,10,1);
@@ -357,9 +357,9 @@ async function qualifiedHelper(requestOverrides={}) {
   const receipt={schema:'bunny-release-qualification/1.0',repository:'jimmie-potts/agent-device-hub',candidate,evaluationRevision:candidate,runId:10,runAttempt:1,outcome:'qualified',architecture:'linux/arm64',
     evaluationInputs:Object.fromEntries(['lockfile','workflow','checksWorkflow','workflowWorkflow','dockerfile','verifyDockerfile'].map(key=>[key,'c'.repeat(64)])),
     image:{id:helperImage,revision:candidate,archive:'production-image.tar.gz',archiveSha256:'d'.repeat(64),artifactName:names.image},checks:jobs.map(job=>({id:job.id,name:job.name,result:'success',headSha:candidate})),createdAt:'2026-11-01T12:00:00Z'};
-  const hosted={run:{id:10,run_attempt:1,head_sha:candidate,event:'workflow_dispatch',path:'.github/workflows/release-qualification.yml',status:'completed',conclusion:'success',repository:{full_name:receipt.repository}},jobs,
+  const hosted={main:[{ref:'refs/heads/main',object:{sha:candidate,type:'commit'}}],comparisons:[{base_commit:{sha:candidate},merge_base_commit:{sha:candidate},status:'identical',ahead_by:0,behind_by:0,total_commits:0,commits:[]}],run:{id:10,run_attempt:1,head_sha:candidate,event:'workflow_dispatch',path:'.github/workflows/release-qualification.yml',status:'completed',conclusion:'success',repository:{full_name:receipt.repository}},jobs,
     artifacts:Object.values(names).map((name,index)=>({id:20+index,name,expired:false,workflow_run:{id:10,head_sha:candidate}}))};
-  return {request,receipt,hosted,capability:attestMaintenanceHelper(receipt,hosted,request),candidate,helperImage};
+  return {request,receipt,hosted,capability:admit?attestMaintenanceHelper(receipt,hosted,request):undefined,candidate,helperImage};
 }
 test('qualified maintenance helper runs the fixed image while retaining old source and exact mounts',async()=>{
   const h=await qualifiedHelper(),f=fixture();
@@ -449,4 +449,46 @@ test('native Windows refuses the new helper request before the retained legacy r
     const {maintain}=await import('../bunny.mjs');
     await assert.rejects(maintain({...plan('backup'),qualificationRequest:'/private/request.json'},f.run));assert.equal(f.calls.length,0);
   });
+});
+
+async function hostedAdapterFixture(t,mutate=()=>{},advance=false) {
+  const {mkdtemp,realpath,rm,writeFile}=await import('node:fs/promises'),{join}=await import('node:path'),{tmpdir}=await import('node:os'),{createHash}=await import('node:crypto');
+  const h=await qualifiedHelper({},false),root=await mkdtemp(join(await realpath(tmpdir()),'bunny-hosted-adapter-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const request={schema:'bunny-batch-deployment/1.0',operation:'forward',id:'batch-adapter',owner:'synthetic',compose:join(root,'compose.json'),includedIssues:['https://github.com/jimmie-potts/agent-device-hub/issues/1343'],requiredModules:['core'],client:'trusted-browser',forward:{assessment:'synthetic',evidence:'synthetic'},recovery:{status:'unknown'},backup:{volume:'archives',name:'snapshot'},...h.request};
+  const archive=Buffer.from('synthetic immutable image archive');h.receipt.image.archiveSha256=createHash('sha256').update(archive).digest('hex');
+  const calls={api:[],download:[],docker:[]};mutate(h.hosted);
+  const api=async path=>{
+    calls.api.push(path);
+    if(path.endsWith('/git/ref/heads/main'))return structuredClone(h.hosted.main);
+    if(path.includes('/compare/')){if(h.compareUnavailable)throw Error('synthetic unavailable comparison');return structuredClone(h.hosted.comparisons);}
+    if(advance)h.hosted.main[0].object.sha='f'.repeat(40);
+    if(path.endsWith('/attempts/1'))return [structuredClone(h.hosted.run)];
+    if(path.includes('/jobs?'))return [{jobs:structuredClone(h.hosted.jobs)}];
+    if(path.includes('/artifacts?'))return [{artifacts:structuredClone(h.hosted.artifacts)}];
+    throw Error('unexpected API path');
+  };
+  const download=async ({name,destination})=>{calls.download.push(name);await writeFile(join(destination,name.startsWith('release-evidence-')?'qualification.json':'production-image.tar.gz'),name.startsWith('release-evidence-')?JSON.stringify(h.receipt):archive,{mode:0o600});};
+  const run=async args=>{calls.docker.push(args);return '';};
+  const {hostedArtifact}=await import('../deployment/hosted-artifact.mjs');
+  return {...h,calls,request,failComparison:()=>{h.compareUnavailable=true;},invoke:()=>hostedArtifact(request,root,run,{api,download})};
+}
+test('actual hosted adapter accepts an ancestor of pinned main even when later main advances',async t=>{
+  const main='e'.repeat(40),f=await hostedAdapterFixture(t,h=>{h.main[0].object.sha=main;h.comparisons=[{base_commit:{sha:'a'.repeat(40)},merge_base_commit:{sha:'a'.repeat(40)},status:'ahead',ahead_by:2,behind_by:0,total_commits:2,commits:[{sha:'d'.repeat(40)},{sha:main}]}];},true);
+  const admittedReceipt=await f.invoke();assert.equal(f.calls.download.length,2);assert.deepEqual(f.calls.docker.map(a=>a[0]),['load']);
+  assert.equal(f.calls.api.filter(p=>p.includes('/git/ref/')).length,1);assert.ok(f.calls.api[1].includes('...'+main+'?'));
+  const {maintenanceHelperFor,maintenanceHelperDetails}=await import('../deployment/maintenance-helper.mjs');assert.equal(maintenanceHelperDetails(maintenanceHelperFor(admittedReceipt)).integratedMain,main);
+});
+for(const [name,mutate] of [
+  ['unmerged successful branch',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'diverged',merge_base_commit:{sha:'d'.repeat(40)},ahead_by:1,behind_by:1,total_commits:1,commits:[{sha:'e'.repeat(40)}]});}],
+  ['wrong comparison base',h=>{h.comparisons[0].base_commit.sha='d'.repeat(40);}],
+  ['contradictory identical comparison',h=>{h.comparisons[0].ahead_by=1;}],
+  ['wrong compared head',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'ahead',ahead_by:1,total_commits:1,commits:[{sha:'d'.repeat(40)}]});}],
+  ['incomplete comparison',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'ahead',ahead_by:2,total_commits:2,commits:[{sha:'e'.repeat(40)}]});}],
+  ['unavailable main identity',h=>{h.main=[];}],
+])test(`actual hosted adapter refuses ${name} before download or Docker load`,async t=>{
+  const f=await hostedAdapterFixture(t,mutate),{refusalFields}=await import('../operator-refusal.mjs');await assert.rejects(f.invoke(),error=>{assert.equal(refusalFields(error).stage,'qualification');return true;});assert.equal(f.calls.download.length,0);assert.equal(f.calls.docker.length,0);
+  const {maintenanceHelperFor}=await import('../deployment/maintenance-helper.mjs');assert.equal(maintenanceHelperFor(f.receipt),undefined);
+});
+test('actual hosted adapter refuses unavailable ancestry comparison despite authentic-looking green jobs',async t=>{
+  const f=await hostedAdapterFixture(t);f.failComparison();await assert.rejects(f.invoke());assert.equal(f.calls.download.length,0);assert.equal(f.calls.docker.length,0);
 });

@@ -2238,7 +2238,9 @@ for declared ONN dependencies, secret and descriptor tampering, WAL/keys/assets,
 real lease contention and interruption. Packaged ARM64 qualification runs that
 same worker suite, and a negative control proves helper failure blocks the
 qualification driver. Host tests cover the qualified helper's
-old target and actual image identity, raw/serialized helper refusal, safe stderr
+old target and actual image identity, raw/serialized helper refusal, authenticated
+pinned-main ancestry before download/load (including an authentic-looking green
+unmerged run and unavailable or contradictory comparisons), safe stderr
 and unchanged native Windows default commands.
 
 For the actual old-image/new-helper exercise, select local immutable ARM64

@@ -212,7 +212,6 @@ export async function verify({archive, revision, config = CONFIG, secrets = SECR
   if (!isDeepStrictEqual(inventory.directories, manifest.directories) || !isDeepStrictEqual(inventory.files, manifest.files.map(row => row.path))) fail();
   const legacy=manifest.schema===LEGACY_SCHEMA;
   if(!legacy&&(!manifest.helper||Object.keys(manifest.helper).length!==2||!validRevision(manifest.helper.revision)||!/^sha256:[a-f0-9]{64}$/.test(manifest.helper.image??'')||!Array.isArray(manifest.externalHostDependencies)))fail();
-  if(legacy&&(Object.hasOwn(manifest,'helper')||Object.hasOwn(manifest,'externalHostDependencies')))fail();
   const selected = await configuration(config, secrets, heldOwner,legacy);
   if(!legacy&&!isDeepStrictEqual(selected.externalHostDependencies,manifest.externalHostDependencies))fail('configuration');
   if (hash(await bytes(join(archive, 'runtime.json'))) !== manifest.configSha256 || selected.sha256 !== manifest.configSha256
