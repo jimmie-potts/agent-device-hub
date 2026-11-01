@@ -3,6 +3,20 @@ import React, {useEffect, useState} from 'react';
 import type {FrontendContext, FrontendContribution, FrontendCommand} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
 import type {MicroDuckState} from '../contracts.js';
+function LocalCommands({context,target,kind,children}:{context:FrontendContext;target:string;kind:'controls'|'stop';children:(command:FrontendCommand)=>React.ReactNode}):React.JSX.Element {
+  const [attempts,setAttempts]=useState(()=>[crypto.randomUUID()]);
+  const Command=context.ui.Command;
+  return <>{attempts.map((attempt,index)=><Command key={attempt} context={context} target={target} attemptKey={`module:microduck:${kind}:${target}:${attempt}`}>
+    {command=><>
+      {index===attempts.length-1&&children({...command,run:async action=>{
+        const result=command.run(action);
+        setAttempts(previous=>[...previous.slice(-15),crypto.randomUUID()]);
+        await result;
+      }})}
+      {command.requestId!==undefined&&<p className="microduck-feedback" role="status">{command.text}</p>}
+    </>}
+  </Command>)}</>;
+}
 function Page({context}:{context:FrontendContext}):React.JSX.Element {
   const [view,setView]=useState<{api:FrontendContext['api'];state?:MicroDuckState;live:boolean}>();
   const [recoveryFor,setRecoveryFor]=useState<string>();
@@ -52,15 +66,15 @@ function Page({context}:{context:FrontendContext}):React.JSX.Element {
         <p>Head input may persist. Automatic expression is held.</p>
         <label><input type="checkbox" checked={recovered} onChange={event=>{setRecoveryFor(event.target.checked?recoveryKey:undefined);}}/>I acknowledge this held operation and restored simulator ownership for a new neutral input</label>
       </>}
-      <Command context={context} target={state.id} attemptKey={`module:microduck:controls:${state.id}`}>
+      <p>Each local control click creates a new tracked request. Earlier requests are retained and never replayed.</p>
+      <LocalCommands context={context} target={state.id} kind="controls">
         {command=><div className="microduck-actions">
           <button disabled={!authority||command.locked} onClick={()=>{send(command,'microduck-control',{action:'takeover'});}}>Take over</button>
           <button disabled={!motionReady||command.locked||state.held!==null||state.active!==null} onClick={()=>{send(command,'microduck-control',{action:'enable-auto'});}}>Enable automatic expression</button>
           <button disabled={!motionReady||command.locked||state.held!==null||state.active!==null} onClick={()=>{send(command,'microduck-control',{action:'resume-auto'});}}>Resume automatic expression</button>
           <button disabled={!authority||command.locked} onClick={()=>{send(command,'microduck-control',{action:'disable-auto'});}}>Disable automatic expression</button>
-          <p className="microduck-feedback" role="status">{command.text}</p>
         </div>}
-      </Command>
+      </LocalCommands>
       <Command context={context} target={state.id} attemptKey={`module:microduck:gesture:${state.id}:${state.held?.requestId??state.lastRecovery?.requestId??'initial'}`}>
         {command=><div className="microduck-actions">
           {(['notice','attention','neutral'] as const).map(gesture=><button key={gesture} disabled={!motionReady||!state.takeover||state.pending>0||command.locked||state.held!==null&&(gesture!=='neutral'||!recovered)}
@@ -68,9 +82,9 @@ function Page({context}:{context:FrontendContext}):React.JSX.Element {
           <p className="microduck-feedback" role="status">{command.text}</p>
         </div>}
       </Command>
-      <Command context={context} target={state.id} attemptKey={`module:microduck:stop:${state.id}:${state.held?.requestId??state.lastRecovery?.requestId??'initial'}`}>
-        {command=><div className="microduck-actions"><button disabled={!authority||command.locked} onClick={()=>{send(command,'microduck-stop',{});}}>Stop expression</button><p className="microduck-feedback" role="status">{command.text}</p></div>}
-      </Command>
+      <LocalCommands context={context} target={state.id} kind="stop">
+        {command=><div className="microduck-actions"><button disabled={!authority||command.locked} onClick={()=>{send(command,'microduck-stop',{});}}>Stop expression</button></div>}
+      </LocalCommands>
     </>}
   </section>;
 }

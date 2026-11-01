@@ -19,6 +19,12 @@ is a new guarded command acknowledging the exact hold. It requires two advancing
 post-send zero-input samples within 0.005 rad and 800 ms. Original uncertainty
 remains in history. Resume never replays suppressed work.
 
+Local controls and Stop use a fresh tracked identity for every explicit click.
+Earlier uncertain identities remain in the shell's attempt store; neither a new
+click nor page reload resends them. Gestures retain their ordinary uncertainty
+lock and require the declared held-neutral recovery. Machine credentials and
+saved-command resend cannot actuate the robot through HTTP, MCP or the SDK inbox.
+
 Automatic expression defaults off. It needs exactly one fresh eligible coding
 session, core-owned first-live opportunities, current non-Quiet mode, the witnessed
 vendor pair and fresh sensor evidence. Automatic/manual cue spacing is 30/two
@@ -62,7 +68,10 @@ docker build -f modules/microduck/fixture/Dockerfile.vendor \
 Prepare the exact clean candidate's core and Chromium test image using the
 [finite offline preparation](../../apps/runtime/verify/PORTABLE.md#prepare-the-exact-test-image).
 Then build fixture/Dockerfile.development with TEST_IMAGE and VENDOR_IMAGE set to
-those immutable local image IDs. Keep both images private; no model/policy assets
+unique owned local tags verified against their recorded immutable image IDs.
+Dockerfile FROM does not accept a raw local SHA256 image ID. Verify both tags
+before and after the build and retain the derivative's immutable ID. Never
+replace an installed tag. Keep both images private; no model/policy assets
 are checked into B.U.N.N.Y. or selected for redistribution.
 
 Run the source acceptance driver inside that test-only image, with no host

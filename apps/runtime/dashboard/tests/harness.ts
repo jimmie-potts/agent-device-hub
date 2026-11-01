@@ -10,7 +10,7 @@ import {Gadget, gadgetSchemas, setGadget} from '../../dist/tests/fixtures/gadget
 // every checkout, and a synthetic hook part that publishes lifecycle observations through the SDK edge, as an agent's
 // hook would. Nothing reaches an installed service, a device or personal state. Run `npm run build` first.
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -94,6 +94,8 @@ export type World = {
   reachy:SimulatedReachy;
   reachyLoseReply():void;
   reachyMcp(name:string,args:object):Promise<unknown>;
+  credentialAction(family:string,target:string,data:object):Promise<{status:number;body:unknown}>;
+  credentialInboxResend(id:string,revision:number):Promise<boolean>;
   wemo:SimulatedWemo;
   wemoLoseReply():void;
   onnState(): ReturnType<SimulatedOnn['state']>;
@@ -287,6 +289,17 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   return {
     ...(options.readReceipts === true ? {readProducer} : {}),
     readerToken, codingToken,
+    credentialAction:async(family,target,data)=>{
+      const response=await fetch(`${runtime.url}/api/v2/commands/${family}`,{method:'POST',headers:{authorization:`Bearer ${consumerToken}`,'content-type':'application/json'},body:JSON.stringify({target,data,requestId:randomUUID()})});
+      return {status:response.status,body:await response.json()};
+    },
+    credentialInboxResend:async(id,revision)=>{
+      const client=await connectRemote({url:runtime.url,source:'bunny/parts/nanoleaf',token:consumerToken});
+      try {
+        const result=await client.request(`bunny.cmd.inbox-handle.${id}`,{type:'org.bunny.inbox.handle.requested',subject:id,dataschema:'https://bunny.invalid/events/inbox-handle/2.0',data:{action:'send-again',expectedRevision:revision}},{requestId:randomUUID(),timeoutMs:3000});
+        return 'error'in result&&result.error.error.code==='forbidden';
+      }finally{await client.close();}
+    },
     roborockRefresh:refreshRoborock,
     roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},
     roborockCalls:()=>[...roborock.calls],

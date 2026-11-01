@@ -862,14 +862,12 @@ export class Gateway {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
     if (input.family.startsWith('reachy-')) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
-    if (input.family.startsWith('microduck-')) return errorBody('forbidden', {detail: 'MicroDuck motion requires its explicit dashboard controls'});
     if (input.family.startsWith('bb8-')) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
     if (input.family === 'inbox-handle' && input.data.action === 'send-again') {
       try {
         const copy = await this.#copy('inbox-item', 'bunny/core');
         const item = copy.get({family: 'inbox-item', id: input.target})?.data as {item?: {command?: string}} | undefined;
         if (item?.item?.command?.startsWith('org.bunny.reachy.') === true) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
-        if (item?.item?.command?.startsWith('org.bunny.microduck.') === true) return errorBody('forbidden', {detail: 'MicroDuck motion requires its explicit dashboard controls'});
         if (item?.item?.command?.startsWith('org.bunny.bb8.') === true || item?.item?.command?.startsWith('org.bunny.bb8-') === true) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
       } catch {return errorBody('unavailable', {detail: 'the saved command could not be read'});}
     }
@@ -886,6 +884,7 @@ export class Gateway {
   async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
+    if (family.startsWith('microduck-') && principal.kind !== 'browser') return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;
     if (family === 'inbox-handle') {
