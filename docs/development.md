@@ -14,6 +14,17 @@ The headings below preserve existing links and route component detail to its own
 [Documentation checks](documentation-checks.md) report source-pin drift and validate
 current commands and paths in CI, including Markdown-only changes.
 
+## Reachy simulator checks
+
+Use Node 24. The runtime/browser harness needs Linux because private-file
+verification uses `/proc/self/fd`. Build first, then run `npm run test:reachy:built`,
+`npm run test:reachy:browser`, event/SDK/runtime consumers and the shared
+build/type/lint/workflow checks. The modules and browser CI jobs run those
+checks. Module conformance, transport, storage/restart and policy tests use
+synthetic state and isolated simulated targets. The actual pinned vendor
+MuJoCo exercise and physical/installed acceptance remain separate evidence.
+See [the module guide](../modules/reachy-mini/README.md).
+
 ## Wemo checks
 
 Use Node 24. Run `npm run test:wemo` for configured local SOAP transport and module

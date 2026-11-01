@@ -861,11 +861,13 @@ export class Gateway {
   async #dispatchFor(id: string, input: ActionInput & {family: string}): Promise<ActionAnswer> {
     const credential = this.access.current(id);
     if (credential === undefined) return errorBody('unauthenticated', {detail: 'the credential was revoked'});
+    if (input.family.startsWith('reachy-')) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
     if (input.family.startsWith('bb8-')) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
     if (input.family === 'inbox-handle' && input.data.action === 'send-again') {
       try {
         const copy = await this.#copy('inbox-item', 'bunny/core');
         const item = copy.get({family: 'inbox-item', id: input.target})?.data as {item?: {command?: string}} | undefined;
+        if (item?.item?.command?.startsWith('org.bunny.reachy.') === true) return errorBody('forbidden', {detail: 'Reachy motion requires its explicit dashboard controls'});
         if (item?.item?.command?.startsWith('org.bunny.bb8.') === true || item?.item?.command?.startsWith('org.bunny.bb8-') === true) return errorBody('unsupported-capability', {detail: 'BB-8 commands require the operator dashboard'});
       } catch {return errorBody('unavailable', {detail: 'the saved command could not be read'});}
     }
@@ -933,6 +935,7 @@ export class Gateway {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
     if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
+    if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});

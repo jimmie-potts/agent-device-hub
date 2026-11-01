@@ -1,0 +1,5 @@
+.reachy-panel { display: grid; gap: 1rem; padding: 1.25rem; max-width: 64rem; }
+.reachy-panel h2, .reachy-panel p { margin: 0; }
+.reachy-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .625rem; }
+.reachy-feedback { flex-basis: 100%; }
+.reachy-panel label { display: flex; gap: .625rem; align-items: start; }

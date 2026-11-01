@@ -636,3 +636,11 @@ distinguish started, completed, stopped, failed, not-started and uncertain;
 completion requires a reported start. These observations do not claim that a
 person heard speech and do not replace the existing tracked command outcome.
 Payloads carry no voice inventory, stream capability or raw browser error.
+
+### Reachy simulator dispatch
+
+`reachy-dispatch/2.0` is an internal command from `bunny/modules/reachy-mini`
+to the core. It forwards an eligible finite automatic reaction through tracked
+dispatch, preserving the candidate’s absolute `validUntilMs`. It grants no
+external motion access. Manual controls and module-owned state are described in
+[the Reachy guide](../../modules/reachy-mini/README.md).
