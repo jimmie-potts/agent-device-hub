@@ -397,3 +397,35 @@ The dashboard SHALL render the same Reachy and MicroDuck cards on Home and their
 #### Scenario: Reads have no output effects
 - **WHEN** the user opens either card, browses conversations, changes tabs, reloads or opens separate history
 - **THEN** no text enablement, speech, model call, capture or robot action occurs and empty, emotional, unknown-meaning and unavailable states remain distinct
+
+### Requirement: Mac-local diagnostics viewer link on Connections
+Connections SHALL show a Diagnostics card that links **Open Grafana · Local** only when the runtime's links (`GET /api/v2/links`, from the configuration file's `edge.placeLinks.grafana`) name a loopback `http` URL for it, exactly as a Local place is shown; without one the card SHALL say that no diagnostics viewer is configured, and while the links load it SHALL show no link. The card SHALL say that the viewer is on this computer's loopback only and is not reachable through the private remote entry, and that a missing record there is a gap, never proof that nothing happened. The dashboard SHALL render no log table, trace view or diagnostic query of its own (Hub #812 deferred, #813).
+
+#### Scenario: A runtime that names the viewer
+- **WHEN** a signed-in page opens Connections on a runtime whose links name `grafana` as `http://127.0.0.1:3000/`
+- **THEN** the Diagnostics card links **Open Grafana · Local** to that address in a new tab, beside the Connection, Running build, Operator tools and Observed sources cards, and passes the page's accessibility check
+
+#### Scenario: A run that names none
+- **WHEN** a disposable run's links name no viewer
+- **THEN** the card offers no link and says no diagnostics viewer is configured, so a preview never leads to an installed viewer
+
+### Requirement: Quiet Automation workspace
+Automation SHALL open on Routines and offer accessible Routines, Rules and
+Settings tabs using arrow, Home and End keys. Saved lists SHALL offer explicit
+New/Edit actions, with editors hidden until requested. Switching tabs SHALL
+preserve unsaved drafts without commands. Cancel SHALL reset only that editor
+and return focus to its opener; a confirmed save SHALL close it and return
+focus. Failed or uncertain writes SHALL retain the draft and existing guards.
+Global status and errors SHALL remain outside the tabs. Recent attempts SHALL
+use a disclosure retaining the existing admission, completion and effect evidence.
+All existing routine, rule, interrupt, quiet-hour and budget fields and explicit
+actions SHALL remain available under their existing authority and freshness
+guards; presentation changes SHALL neither run nor replay a command.
+
+#### Scenario: Browse and cancel a draft
+- **WHEN** the operator opens New routine or New rule, changes its draft, switches tabs and returns
+- **THEN** the draft remains intact, no command is sent, and Cancel closes and clears that editor with focus returned to its opener
+
+#### Scenario: Explicit mutation and uncertain reply
+- **WHEN** a routine or rule is saved, or its reply becomes uncertain
+- **THEN** confirmed save closes the editor while uncertainty keeps the draft, global warning and existing write lock; creation remains disabled until explicit enable, and no automatic retry or run occurs

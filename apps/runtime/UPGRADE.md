@@ -30,20 +30,35 @@ opening its database, requiring historical reader certificates, running dormant
 suites or starting its Windows helper. This upgrade does not touch the separately
 owned Windows data or qualify/reactivate either BB-8 component.
 
-## Weekly power schedule state
+## Weekly routine state
 
-Core automation stores weekly power definitions as `rules.kind = routine` with
-`trigger.schema = power-window/1.0`. The trigger contains selected weekday numbers
-and same-day `HH:MM` times; the action contains the configured target and an opaque
-definition identity. A bounded per-rule occurrence guard records the latest claimed
-boundary before dispatch, never a pending command to replay. Definitions and guards
-remain in the private core database under its existing lease.
+Core automation stores weekly routines (#1297) as `rules.kind = routine` with
+`trigger.schema = routine/1.0`. The trigger contains selected weekday numbers
+and one `HH:MM` time; the action contains an opaque definition identity and the
+ordered action list, each entry naming a configured target, a tracked command
+family, that family's payload and, for a content action, the required mode. The
+bounded per-rule occurrence guard records the latest claimed occurrence before
+dispatch, never a pending command to replay. Definitions and guards remain in
+the private core database under its existing lease.
 
-Assess changed schedule readers/stores with focused write/reopen evidence.
+Releases before #1297 stored one on/off power window per row as
+`trigger.schema = power-window/1.0`. The #1297 release migrates every such row
+at its first open: the row keeps its id, definition identity and guard and
+becomes the on routine with a `power-set on` action; a new row with a copy of
+the guard becomes the off routine. The migration reads each replacement back
+through the routine reader before writing and commits all splits in one
+transaction, so a row it cannot read, or a replacement the reader would refuse,
+refuses the open and leaves every row unchanged. The added rows bypass the
+64-rule limit; more than 32 windows leave a store that refuses new rules with
+`capacity` until rows are removed. An older release
+cannot read `routine/1.0` rows, so recovery to it is unknown unless separately
+qualified; prefer fixing forward.
+
+Assess changed routine readers/stores with focused write/reopen evidence.
 Event-only releases reject routine rows and cannot be assumed compatible recovery
-readers once schedules exist. Preserve definitions and occurrence guards. An
+readers once routines exist. Preserve definitions and occurrence guards. An
 unknown older reader does not block a reviewed forward upgrade, and cannot be
-selected for recovery. This delivery activates no installed schedule.
+selected for recovery. This delivery activates no installed routine.
 
 Maximum-on definitions and run evidence add `automation_power_limits` to the core
 store. Preserve each target's owner/configuration binding, enable/duration,

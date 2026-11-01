@@ -6,7 +6,7 @@
  * Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
 export type SourceKind = 'core' | 'module' | 'external';
-/** small takes one grid column, medium two and large the whole row; narrow screens collapse every size to one column. */
+/** Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size. */
 export type WidgetSize = 'small' | 'medium' | 'large';
 export type WidgetDefinition = {
   /** Stable identifier in lowercase letters, digits and hyphens. */

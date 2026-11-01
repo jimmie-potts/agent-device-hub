@@ -508,6 +508,12 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
   assert.deepEqual([withOrigin.status, codeOf(withOrigin)], [403, 'forbidden']);
   await g.runtime.stop();
   assertNoToken(g);
+  // A module read tool's call is one read span, as a content read is (Hub #813), naming the route and the module.
+  const reads = g.spans.map(line => JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string; status: {code: number}; attributes: {key: string; value: {stringValue?: string}}[]}[]}[]}[]})
+    .flatMap(document => document.resourceSpans.flatMap(group => group.scopeSpans.flatMap(scoped => scoped.spans)))
+    .filter(span => span.name === 'bunny.feed.read' && span.attributes.some(item => item.key === 'http.route' && item.value.stringValue === '/mcp'));
+  assert.ok(reads.length >= 1, 'the sign_status call left a read span');
+  assert.ok(reads.every(span => span.attributes.some(item => item.key === 'bunny.module' && item.value.stringValue === 'sign') && span.status.code !== 2), 'the span names the module and was not an error');
 });
 
 it('a module\'s page and content come with the gateway\'s policy, its settings never show a secret, and a contribution that throws fails only its module', async context => {

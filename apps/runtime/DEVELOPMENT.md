@@ -36,21 +36,30 @@ model entry point. None contacts a household device or qualifies iPhone behavior
 Use a private `TMPDIR` outside any checkout when the system temporary directory
 contains a `.git` entry; never remove another task's entry to make tests pass.
 
-Weekly power scheduling uses the existing runtime/core and dashboard test discovery.
-After the root build, run
+Weekly routines (#1297, generalizing the #483 power window) use the existing
+runtime/core and dashboard test discovery. After the root build, run
 `node --test apps/runtime/dist/tests/power-schedules.test.js apps/runtime/dist/tests/automation*.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
-The fake clock covers on/off boundaries, disabled creation, independent targets,
-obsolete callbacks during reads, configuration/owner drift, duplicates, late
-callbacks, restart without catch-up and storage refusal before dispatch. A generic
-synthetic owner exercises actual SDK sync and tracked guarded power commands.
-The upgrade inventory test includes the schedule/store inputs; restart tests
-establish persistence, not compatibility between historical releases.
-The `weekly-power-schedules` catalog scenario exercises authenticated management,
-read-only refusal and future-only restart in memory and disposable runtime runs.
-Run that scenario and `automation-lines-moment` after changes to this shared path.
-The Automation browser journey covers independent devices, invalid drafts, passive
-reconnect, lost mutation replies, read-only controls and axe accessibility.
-These shared-scheduling checks contact no household plug and qualify no installed schedule or maximum-on limit.
+The fake clock covers disabled creation, action order and fresh identities, a
+refused action that does not stop the next, the mode precondition and its
+pass-through, a pending mode change, a Nanoleaf scene in Free, expired actions,
+the `busy` guard and Run now outcomes, independent targets, obsolete callbacks
+during reads, configuration/owner drift, duplicates, late callbacks, restart
+without catch-up, the one forward migration of `power-window/1.0` rows (one
+transaction, names read back as display text) and storage refusal before or
+after dispatch with per-action diagnostics. A generic synthetic
+owner exercises actual SDK sync and tracked guarded commands. The upgrade
+inventory test includes the routine/store inputs; restart tests establish
+persistence, not compatibility between historical releases.
+The `weekly-routines` catalog scenario exercises authenticated management,
+read-only refusal and future-only restart; `routine-actions` runs one routine
+with a Pixoo playlist start and a LIFX color on Run now in Monitor and in
+Media, then once at its minute, in memory and in disposable runtime runs. Run
+both and `automation-lines-moment` after changes to this shared path. The
+in-memory catalog needs Linux or a disposable Linux container (its private-file
+check reads `/proc/self/fd`). The Automation browser journey covers independent
+devices, invalid drafts, Run now, passive reconnect, lost mutation replies,
+read-only controls and axe accessibility.
+These checks contact no household device and qualify no installed routine or maximum-on limit.
 
 Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
 After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
@@ -504,6 +513,33 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Home picker search and visual identifiers (#1316) extend the existing
+`node apps/runtime/dashboard/tests/home-layout.browser.ts` journey, included
+in hosted smoke and the full local browser suite. After the root build it checks
+combined name/category filtering, empty/reset, keyboard focus, neutral inline
+identifiers, draft-only add/show and the existing save, conflict and attention
+guards. It checks light/dark desktop and 320/390px accessibility with normal and
+reduced motion. Use an outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS`
+keeps screenshots private. No installed source or physical device is used.
+
+Automation tabs (#1315) extend the existing
+`node apps/runtime/dashboard/tests/automation.browser.ts` journey, now included
+in hosted smoke as well as the full local browser suite. It checks keyboard tab
+navigation, on-demand editors, cross-tab drafts, Cancel/save focus, guarded
+mutations, global uncertain feedback, recent-attempt evidence and light/dark
+accessibility at 320, 390 and 1440 px. Run it after the root build with an
+outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
+These synthetic checks change no installed routines or devices.
+
+Home row balance (#1311) extends the existing Home editor browser journey,
+already included in hosted smoke and the full browser suite. After the root
+build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
+two, three, five and eight real cards at desktop, tablet and phone widths,
+mixed sizes, hidden cards, independent phone order, editor preview and axe.
+It uses synthetic saved-layout metadata only; no device command or installed
+state is selected. Use an outside-checkout `TMPDIR` and optional private
+`DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
+
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
 root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks
@@ -610,7 +646,7 @@ BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
-node apps/runtime/dashboard/tests/automation.browser.ts # weekly power schedules, event rules, lost replies and accessibility
+node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion

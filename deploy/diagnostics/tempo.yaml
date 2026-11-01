@@ -1,0 +1,46 @@
+# Tempo for one operator's private traces (Hub #813): OTLP/HTTP from the Collector, local blocks, seven-day retention
+# and bounded trace sizes. Metrics generation and the multitenant features stay off.
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: warn
+usage_report:
+  reporting_enabled: false
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+ingester:
+  max_block_duration: 5m
+  max_block_bytes: 104857600
+  complete_block_timeout: 15m
+compactor:
+  compaction:
+    block_retention: 168h
+    compacted_block_retention: 1h
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+    pool:
+      max_workers: 20
+      queue_depth: 2000
+query_frontend:
+  search:
+    duration_slo: 5s
+    max_duration: 168h
+overrides:
+  defaults:
+    ingestion:
+      rate_limit_bytes: 2097152
+      burst_size_bytes: 8388608
+      max_traces_per_user: 20000
+    global:
+      max_bytes_per_trace: 5242880
+    read:
+      max_bytes_per_tag_values_query: 5242880

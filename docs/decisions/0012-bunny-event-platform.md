@@ -1,7 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08 and 2026-10-17 (see
-[Amendments](#amendments)).
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17 and
+2026-10-30 (see [Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -329,6 +329,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
   and fixed text from the code that raised the error. For an error, a log record
   carries only its code, its type and the registered static body. None carries
   an exception's message, stack or cause; the original cause stays in memory.
+  One exception, since the [2026-10-30 amendment](#amendments): a fault record
+  on the private diagnostic path may carry the exception's filtered, bounded
+  message and stack under the diagnostic contract's profile 1.7.
 
 ### Observability
 
@@ -340,7 +343,8 @@ evidence say what may have happened. Every boundary keeps the two apart.
 - **Recorded spans.** Spans with a start, end, status and parent or links are
   recorded through the observability package's host adapter
   (`createHostDiagnostics` from `@jimmie-potts/bunny-observability/host`),
-  with tracing on, no exporter and a bounded local span sink. Today the adapter
+  with tracing on, a bounded local span sink and, since #813, an OTLP export to
+  an owned Collector when the configuration names one. Today the adapter
   records spans only with a collector, so #949 adds that sink to the adapter
   and the diagnostic contract, within the contract's queue bounds. A
   disposable run samples every request, so one request can be followed
@@ -599,7 +603,7 @@ change and its trade-off:
 - **Observability** now separates correlation from recorded spans, records each
   decision once where it is made, and sets levels, repetition and bounds.
   Recorded spans reuse the observability package's host adapter instead of a
-  second implementation, with no exporter until #813.
+  second implementation; #813 added its export to an owned Collector.
   [#949](https://github.com/jimmie-potts/agent-device-hub/issues/949) owns the
   new instrumentation, because #813 excludes it.
 
@@ -660,3 +664,40 @@ record's severity on its own. This amendment changes no message format, error
 code, domain outcome or module API, and needs no module API version bump.
 [#1143](https://github.com/jimmie-potts/agent-device-hub/issues/1143) owns
 moving the existing calls onto the table and the lint that enforces it.
+
+**2026-10-30, private exception context.** The owner accepted private exception
+messages and stack traces in diagnostic records for
+[epic #810](https://github.com/jimmie-potts/agent-device-hub/issues/810), so
+that a failure can be diagnosed from the Mac-local log and trace viewer. "Safe
+errors" keeps its rule for every outward surface: error bodies, health, history,
+proof and span names carry registry codes and fixed text, and a decision or
+refusal record carries an exception's type and code only. The one change is the
+runtime's fault records on the private diagnostic path, which may carry the
+exception's message and stack as the diagnostic contract's
+[profile 1.7](../observability-contract.md#private-exception-context-profile-17)
+bounds and filters them, through one serializer that reads only an `Error`'s own
+message and V8's own stack, replaces registered secrets, credential-like segments
+and payload-like segments, and counts what it replaced
+([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). Request
+bodies, prompts, responses and transcripts stay excluded, including when an
+exception quotes them. Projection to an earlier profile removes the text. The
+trade-off is a private record that may hold a credential in a shape no rule
+knows; detection limits are documented, and publication keeps using synthetic
+fixtures. `no-raw-error-text` still covers every other file.
+
+**2026-10-30, the runtime's diagnostics export.** The owner decided to
+collect the runtime's records and spans continuously on the Mac and read them
+in Grafana with Loki and Tempo
+([#810](https://github.com/jimmie-potts/agent-device-hub/issues/810),
+[#813](https://github.com/jimmie-potts/agent-device-hub/issues/813)). The
+configuration file's `diagnostics.export.collector` names an owned Collector
+origin; the runtime's log writer feeds each record it lets through to the host
+adapter's OTLP log queue after the stderr journal, without attaching it to a
+span, and the same adapter exports the spans it records, so each signal keeps
+one ingestion path and the log floors apply once. The export is never
+acknowledged to the work that wrote the record; its loss is counted, summarized
+in one `telemetry.dropped` record a minute at most, and totaled in
+`runtime.stopped`, the journal's last word. The stack is Mac-local on loopback
+and its data is diagnostic data the owner may lose; the stderr journal stays and
+is not scraped. Trade-off: a second copy of each record leaves the process,
+over the owned Collector origin only.

@@ -165,6 +165,12 @@ and the runtime's tests cover the rest.
     (a name ending in `Error` or `Exception`); or a variable or a simple member
     chain, such as `r.reason`, `event.error` or `this.#failure`, inside an
     `instanceof` test against an error class.
+  - The one sanctioned reader is the SDK's `exceptionFields`
+    (`packages/sdk/src/exception.ts`, Hub #777), which builds the diagnostic
+    contract's profile 1.7 fields for the private diagnostic path. It reads
+    `message` and `stack` through `Object.getOwnPropertyDescriptor`, not as
+    members, so the rule has no finding there and needs no exception block;
+    every other file still goes through it or through `errorType`.
   - A value narrowed by `instanceof Error` counts wherever it came from, so
     `error instanceof Error ? error.message : 'unknown'` fails in a helper or a
     callback too. The cost is that a message check such as

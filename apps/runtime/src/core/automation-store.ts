@@ -99,6 +99,21 @@ export class AutomationStore {
   deleteRule(id: string): boolean {
     return this.transaction(()=>{this.statements.deletePowerGuard.run(id);return Number(this.statements.deleteRule.run(id).changes)===1;});
   }
+  /**
+   * The one forward migration of `power-window/1.0` rows (#1297), in one transaction: each `replacement` takes its row's
+   * place and each `added` row joins beside it with a copy of the row's occurrence guard, outside the rule limit. A failure
+   * on any pair leaves every row as it was.
+   */
+  splitRules(pairs: readonly {replacement: RuleRow; added: RuleRow}[]): void {
+    this.transaction(() => {
+      for (const {replacement, added} of pairs) {
+        if (Number(this.statements.updateRule.run(replacement.name,replacement.enabled ? 1 : 0,replacement.kind,replacement.trigger,replacement.action,replacement.updatedAtMs,replacement.id).changes) !== 1) throw new Error('invalid-state');
+        this.statements.insertRule.run(added.id,added.name,added.enabled ? 1 : 0,added.kind,added.trigger,added.action,added.createdAtMs,added.updatedAtMs);
+        const guard = this.statements.powerGuard.get(replacement.id);
+        if (guard !== undefined) this.statements.claimPower.run(added.id, Number(guard.at_ms));
+      }
+    });
+  }
   powerBoundary(id:string): number|undefined {
     this.check();const row=this.statements.powerGuard.get(id);return row===undefined?undefined:Number(row.at_ms);
   }

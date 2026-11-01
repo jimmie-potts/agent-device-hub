@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
-import type {Browser, Page} from 'playwright';
+import type {Browser, Page, Request} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
+
+function isStopCall(request: Request, kind: 'control' | 'receipt'): boolean {
+  const call = kind === 'control' ? 'request' : 'publish';
+  if (request.method() !== 'POST' || new URL(request.url()).pathname !== `/api/sdk/v1/${call}`) return false;
+  const body: unknown = request.postDataJSON();
+  if (typeof body !== 'object' || body === null) return false;
+  const message = kind === 'control' ? ('command' in body ? body.command : undefined) : ('message' in body ? body.message : undefined);
+  const type = kind === 'control' ? 'org.bunny.companion-speech.endpoint.requested' : 'org.bunny.companion-speech.playback.observed';
+  if (typeof message !== 'object' || message === null || !('type' in message) || message.type !== type || !('data' in message)) return false;
+  const data = message.data;
+  return typeof data === 'object' && data !== null && (kind === 'control' ? 'action' in data && data.action === 'stop' : 'status' in data && data.status === 'stopped');
+}
 
 /** Real runtime and page, with only browser identity and the audio device replaced by explicit synthetic fixtures. */
 export async function speechJourney(browser: Browser): Promise<void> {
@@ -44,9 +56,22 @@ export async function speechJourney(browser: Browser): Promise<void> {
     await controls(page).getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     await controls(page).getByText('Tracked operation: succeeded.', {exact: true}).waitFor();
     await question('speech-stop'); await page.waitForFunction(() => window.speechFixture.calls === 2);
+    let delayedReceipt = false;
+    await page.route('**/api/sdk/v1/publish', async route => {
+      if (!delayedReceipt && isStopCall(route.request(), 'receipt')) {
+        delayedReceipt = true;
+        await new Promise(resolve => {setTimeout(resolve, 2000);});
+      }
+      await route.continue();
+    });
+    const stoppedControl = page.waitForEvent('requestfinished', {predicate: request => isStopCall(request, 'control')});
+    const stoppedReceipt = page.waitForEvent('requestfinished', {predicate: request => isStopCall(request, 'receipt')});
     const stop = controls(page).getByRole('button', {name: 'Stop speaking', exact: true}); await stop.focus(); await stop.press('Enter');
     await controls(page).getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
+    // Local cancellation is immediate; the next scenario needs the completed control and receipt writes.
+    for (const request of await Promise.all([stoppedControl, stoppedReceipt])) assert.equal((await request.response())?.status(), 200);
     await question('speech-mute'); await page.waitForFunction(() => window.speechFixture.calls === 3);
+    await page.unroute('**/api/sdk/v1/publish');
     await controls(page).getByRole('button', {name: 'Mute spoken alerts', exact: true}).click();
     await controls(page).getByText('Spoken alerts are off in this tab.', {exact: true}).waitFor();
     await question('speech-muted'); assert.equal(await count(), 3); assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 2);
@@ -128,4 +153,71 @@ export async function homeSpeechLifetimeJourney(browser: Browser): Promise<void>
     assert.equal(await page.evaluate(() => window.speechFixture.calls), 0);
     assert.equal(await other.evaluate(() => window.speechFixture.calls), 0);
   } finally {await context.close(); await world.close();}
+}
+
+/** Typed requests on the Conversation page are answered aloud through the same endpoint, with Speak, Stop and Quiet behaving as documented (Hub #500). */
+export async function spokenRepliesJourney(browser: Browser): Promise<void> {
+  const world = await startWorld({companions: true, speech: true});
+  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
+  try {
+    await context.addInitScript(installSyntheticSpeech);
+    const page = await context.newPage(), other = await context.newPage(); page.setDefaultTimeout(12_000); other.setDefaultTimeout(12_000);
+    await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
+    const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+    const controls = assistant.getByRole('region', {name: 'Spoken replies', exact: true});
+    const count = () => page.evaluate(() => window.speechFixture.calls);
+    const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true});
+    await enableAssistant.focus(); await enableAssistant.press('Enter');
+    await assistant.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+    await controls.getByText(/This tab becomes the one speaker/).waitFor();
+    const enable = controls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
+    await enable.focus(); await enable.press('Enter');
+    await controls.getByText('Spoken replies enabled in this tab.', {exact: true}).waitFor();
+    // The synthetic provider asks a question first: the question is spoken, then the final result after the answer.
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
+    const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
+    await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    await page.waitForFunction(() => window.speechFixture.calls === 1);
+    await page.evaluate(() => window.speechFixture.finish());
+    await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
+    await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
+    const answer = assistant.getByRole('button', {name: 'Save answer and continue', exact: true}); await answer.focus(); await answer.press('Enter');
+    await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+    await page.waitForFunction(() => window.speechFixture.calls === 2);
+    await page.evaluate(() => window.speechFixture.finish());
+    await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
+    // Speak replays the saved result through the same endpoint and reports its receipt separately from playback.
+    const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
+    const result = messages.getByRole('article', {name: 'assistant message', exact: true}).filter({hasText: 'Synthetic result:'}).last();
+    const speak = result.getByRole('button', {name: /^Speak message /}); await speak.focus(); await speak.press('Enter');
+    // The receipt must leave its idle text; the accepted control is the saved request, the playback report is the speech.
+    await assistant.getByText(/^Speak receipt: (?!No command sent)/).waitFor();
+    await page.waitForFunction(() => window.speechFixture.calls === 3);
+    await page.evaluate(() => window.speechFixture.finish());
+    await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
+    // Stop speaking stops the audio of a question without answering or cancelling the task.
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-SECOND');
+    await send.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    await page.waitForFunction(() => window.speechFixture.calls === 4);
+    const stop = controls.getByRole('button', {name: 'Stop speaking', exact: true}); await stop.focus(); await stop.press('Enter');
+    await controls.getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
+    await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 1);
+    // Quiet keeps the result written only; Work lets the next reply speak again.
+    await other.goto(`${world.url}/#/`); await feed(other, 'connected'); const hub = other.locator('[data-widget="hub-mode"]');
+    await hub.getByRole('button', {name: 'Quiet', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor();
+    await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-QUIET');
+    await answer.click(); await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+    await page.waitForTimeout(300); assert.equal(await count(), 4, 'Quiet mode speaks no reply');
+    await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
+    assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
+    const receipts = process.env.DASHBOARD_RECEIPTS;
+    if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: `${receipts}/spoken-replies-desktop.png`, fullPage: true});}
+    await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).click();
+    await controls.getByText('Spoken replies are off in this tab.', {exact: true}).waitFor();
+    assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no spoken text');
+    assert.deepEqual(errors, []);
+  } finally {await context.close(); await world.close();}
+  process.stdout.write('Spoken replies browser: question, result and Speak replay spoken through the Conversation tab, Stop without cancelling, Quiet silence, mute, keyboard and axe passed with synthetic audio.\n');
 }

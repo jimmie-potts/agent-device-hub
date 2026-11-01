@@ -14,7 +14,7 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
   const harness = t.endpoints?.harness;
   assert.ok(harness !== undefined && harness !== '', 'the existing run owns its harness');
   const run = await connectRun({url: t.url, harness, dataDir: t.dataDir,
-    seed: {modules: ['core', 'companions'], follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation']}]}});
+    seed: {modules: ['core', 'companions'], sections: {companions: {}}, follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation']}]}});
   const errors: string[] = [];
   page.on('pageerror', error => {errors.push(error.name);});
   await context.addInitScript(installSyntheticSpeech);

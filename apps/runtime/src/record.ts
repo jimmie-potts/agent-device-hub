@@ -1,4 +1,4 @@
-// One log record as a diagnostic-contract record (docs/observability-contract.md, profile 1.6), as both threads build
+// One log record as a diagnostic-contract record (docs/observability-contract.md, profile 1.7), as both threads build
 // it: the watchdog's thread loads only this file and the contract's pure entry point, never the SDK.
 import {catalog, createRecord, type DiagnosticRecord} from '@jimmie-potts/bunny-observability';
 
@@ -13,9 +13,10 @@ export const RUNTIME_VERSION = '0.1.0';
 /**
  * The contract profile of the runtime's records and spans: 1.2 registers its service, scopes, events and attributes
  * (Hub #903), 1.3 its decision records, outbox and device records and span names (Hub #949), 1.4 the gateway's route
- * and method on the edge's refusals and the credentials reload (Hub #835), 1.5 the core's costly saves (Hub #976), and 1.6 assistant task execution (Hub #499).
+ * and method on the edge's refusals and the credentials reload (Hub #835), 1.5 the core's costly saves (Hub #976), 1.6 assistant task
+ * execution (Hub #499) and 1.7 the filtered exception fields of a fault record and the telemetry-loss summary (Hub #777).
  */
-export const SCHEMA_VERSION = '1.6';
+export const SCHEMA_VERSION = '1.7';
 /** The scope of the runtime's own records. */
 export const RUNTIME_SCOPE = 'bunny.runtime';
 /** The one scope of every module's records; the `bunny.module` attribute names the module. */

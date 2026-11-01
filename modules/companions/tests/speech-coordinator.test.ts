@@ -128,7 +128,7 @@ void test('only one pending candidate survives, and current coding attention pre
   await w.report({operationId, status: 'stopped', started: true});
   await until(() => w.owner().inspect().playback?.status === 'stopped');
   await w.advance(); await until(() => w.outputs.length === 3);
-  const next = w.outputs[2]?.data; assert.ok(next?.action === 'speak');
+  const next = w.outputs[2]?.data; assert.ok(next?.action === 'speak' && 'card' in next);
   assert.equal(next.card.opportunity.category, 'coding-attention');
   assert.equal(w.owner().inspect().pending, false);
 });
@@ -269,4 +269,58 @@ void test('a failed speech revision records its internal decision once without l
   assert.equal(failure[0]?.trace?.traceparent, db.prepare('SELECT traceparent FROM companion_speech WHERE operation_id=?').get(operationId)?.traceparent);
   assert.equal(JSON.stringify(failure).includes('SYNTHETIC_PRIVATE_REVISION_FAILURE'), false);
   db.exec('DROP TRIGGER fail_revision');
+});
+
+const spoken = (taskId: string, messageId: string, text: string, validUntilMs: number) => ({taskId, messageId, text, validUntilMs});
+
+void test('a saved reply speaks through the reserved endpoint once per key, and a newer pending reply replaces an older one', async t => {
+  const w = await world(t), now = () => w.owner().context.clock.now();
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Silent before enablement.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  await w.advance(); assert.equal(w.outputs.length, 0);
+  await w.control('enable');
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  await w.advance(); await until(() => w.outputs.length === 1);
+  const first = w.outputs[0]?.data; assert.ok(first?.action === 'speak' && 'reply' in first);
+  assert.deepEqual(first.reply, {taskId: 'task-1', messageId: 'task-1-result', text: 'Two coding sessions are active.', validUntilMs: first.reply.validUntilMs});
+  const operationId = first.operationId;
+  await w.report({operationId, status: 'started', started: true});
+  // While the first answer plays, two later answers arrive: only the newest waits, at equal rank, without interrupting.
+  w.owner().offerReply(spoken('task-2', 'task-2-result', 'Stale middle answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-3', 'task-3-result', 'Newest answer.', now() + 60_000), 'task-3-result', parent, w.owner().mark());
+  assert.equal(w.owner().inspect().pending, true); await w.advance(); assert.equal(w.outputs.length, 1);
+  await w.report({operationId, status: 'completed', started: true}); await until(() => w.reports.length === 1);
+  await w.advance(); await until(() => w.outputs.length === 2);
+  const next = w.outputs[1]?.data; assert.ok(next?.action === 'speak' && 'reply' in next); assert.equal(next.reply.text, 'Newest answer.');
+  await w.report({operationId: next.operationId, status: 'started', started: true}); await w.report({operationId: next.operationId, status: 'completed', started: true});
+  await until(() => w.reports.length === 2);
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  await w.advance(); assert.equal(w.outputs.length, 2, 'the same key never speaks twice');
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result:replay-1', parent, w.owner().mark());
+  await w.advance(); await until(() => w.outputs.length === 3);
+  const replay = w.outputs[2]?.data; assert.ok(replay?.action === 'speak' && 'reply' in replay); assert.equal(replay.reply.messageId, 'task-1-result');
+});
+
+void test('a reply preempts a notice after confirmed stop, waits for active coding attention, and is refused when expired or ineligible', async t => {
+  const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
+  const notice = w.card(); notice.opportunity.category = 'coding-notice'; notice.opportunity.cue = 'turn-ended';
+  notice.opportunity.attention = null; notice.opportunity.noticeId = 'notice-reply';
+  w.owner().offer(notice, parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const noticeOperation = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId: noticeOperation, status: 'started', started: true});
+  w.owner().offerReply(spoken('task-1', 'task-1-q1', 'Which session do you mean?', now() + 60_000), 'task-1-q1', parent, w.owner().mark());
+  await until(() => w.outputs.length === 2); assert.equal(w.outputs[1]?.data.action, 'stop');
+  await w.report({operationId: noticeOperation, status: 'stopped', started: true});
+  await until(() => w.owner().inspect().playback?.status === 'stopped'); await w.advance(); await until(() => w.outputs.length === 3);
+  const reply = w.outputs[2]?.data; assert.ok(reply?.action === 'speak' && 'reply' in reply); assert.equal(reply.reply.text, 'Which session do you mean?');
+  await w.report({operationId: reply.operationId, status: 'started', started: true});
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance();
+  assert.equal(w.outputs.length, 3, 'equal-rank coding attention waits for the reply'); assert.equal(w.owner().inspect().pending, true);
+  await w.report({operationId: reply.operationId, status: 'completed', started: true});
+  await until(() => w.owner().inspect().playback?.status === 'completed'); await w.advance(); await until(() => w.outputs.length === 4);
+  const attention = w.outputs[3]?.data; assert.ok(attention?.action === 'speak' && 'card' in attention);
+  await w.report({operationId: attention.operationId, status: 'started', started: true}); await w.report({operationId: attention.operationId, status: 'completed', started: true});
+  await until(() => w.reports.length === 3);
+  w.owner().offerReply(spoken('task-4', 'task-4-result', 'Expired.', now()), 'task-4-result', parent, w.owner().mark()); await w.advance();
+  w.allow(false); w.owner().offerReply(spoken('task-5', 'task-5-result', 'Quiet.', now() + 60_000), 'task-5-result', parent, w.owner().mark()); await w.advance();
+  assert.equal(w.outputs.length, 4);
 });

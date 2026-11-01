@@ -15,7 +15,7 @@ import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
 import {ModuleHost, type ModuleHealth} from './host.js';
-import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogSink, type Redactions} from './log.js';
+import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogRecord, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {openSpanFile} from './span-file.js';
 import {RuntimeError, prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from './state.js';
@@ -135,6 +135,8 @@ const timers: Scheduler = {after: (delayMs, callback) => {
 
 /** How many finished spans the runtime keeps in memory when it has no span sink: the contract's queue bound. */
 export const RECENT_SPANS = 1024;
+/** How often, at most, the runtime summarizes the export's growing loss with one `telemetry.dropped` record (Hub #813). */
+export const EXPORT_SUMMARY_MS = 60_000;
 
 /**
  * The latest `RECENT_SPANS` finished spans, oldest first, and how many older ones the runtime let go to keep that
@@ -222,12 +224,33 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   await admitBoundCoreOwnership(modules, options.stateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
+  // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
+  const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
+  const stateDir = await prepareStateDirectory(options.stateDir);
+  // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
+  // level applies to that module's records only, and may name only a module this runtime hosts.
+  const levels = config?.diagnostics?.modules ?? {};
+  const hostedNames = new Set(modules.map(module => module.manifest.name));
+  for (const name of Object.keys(levels)) {
+    if (!hostedNames.has(name)) throw new RuntimeError('config-invalid', 'the configuration file\'s diagnostics section names a module this runtime does not host');
+  }
+  // Each record goes to the journal first and then, with a configured Collector (Hub #813), to the export's bounded
+  // queue; the export never acknowledges, so a journal that fails still loses only its own write.
+  const journal = options.log ?? stderrSink;
+  const collector = config?.diagnostics?.export?.collector;
+  let exporter: ((record: LogRecord) => void) | undefined;
   const logs = new LogWriter(
-    options.log ?? stderrSink, options.logLevel ?? 'info', clock, runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
+    record => {
+      try {
+        journal(record);
+      } finally {
+        exporter?.(record);
+      }
+    },
+    config?.diagnostics?.level ?? options.logLevel ?? 'info', clock,
+    runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
   );
   const log = logs.logger(RUNTIME_SCOPE);
-  const stateDir = await prepareStateDirectory(options.stateDir);
-  const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
   const edgeConfig = config?.edge;
   if (options.edge !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
@@ -245,9 +268,28 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   const spanFile = options.spans === 'state-file' ? openSpanFile(stateDir) : undefined;
   const sink = spanFile?.sink ?? (typeof options.spans === 'function' ? options.spans : keep);
-  const tracing = await startTracing(logs.resource, sink, log);
-  // Ends the host adapter, which flushes spans to the sink within the contract's bound, and then the file.
+  const tracing = await startTracing(logs.resource, sink, log, undefined, collector);
+  if (tracing !== undefined && collector !== undefined) exporter = record => { tracing.export(record); };
+  // While the export's loss grows, one `telemetry.dropped` summary a minute at most says so in the journal (and, when the
+  // Collector takes records again, in the export); `runtime.stopped` carries the totals after the final flush.
+  let summarized = 0;
+  let cancelSummary: (() => void) | undefined;
+  const summarize = (): void => {
+    if (tracing === undefined) return;
+    const {dropped, failed} = tracing.counts();
+    if (dropped + failed > summarized) {
+      summarized = dropped + failed;
+      recordLog(log, 'telemetry.dropped', {'bunny.telemetry.dropped_count': dropped, 'bunny.telemetry.failure_count': failed});
+    }
+    cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, summarize);
+  };
+  if (exporter !== undefined) cancelSummary = scheduler.after(EXPORT_SUMMARY_MS, summarize);
+  // Ends the host adapter, which flushes spans and exported records to their sinks within the contract's bound, and then
+  // the file.
   const endTracing = async (): Promise<void> => {
+    cancelSummary?.();
+    cancelSummary = undefined;
+    exporter = undefined;
     try {
       await tracing?.shutdown();
     } finally {
@@ -256,6 +298,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   };
   const host = new ModuleHost(modules, {
     clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
+    ...(Object.keys(levels).length === 0 ? {} : {levels}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
   });
   const startedAtMs = clock.now();
@@ -361,9 +404,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       if (serving.state === 'serving') await serving.gateway.close();
       await host.stop();
       await Promise.all([close(server), watchdog?.stop()]);
-      // The modules' work has ended, so its spans have too: flush them within the contract's bound.
+      // The modules' work has ended, so its spans have too: flush them and the exported records within the contract's bound.
       await endTracing();
-      // The records this runtime's writer dropped or its sink lost, and the spans lost, so the journal shows the loss.
+      // The records this runtime's writer dropped or its sink lost, the spans lost and, with a Collector, the records the
+      // export lost, so the journal shows the loss. Written after the flush, so its totals are complete: it is the
+      // journal's last word, and the export ends before it.
       const {dropped, failed} = logs.counts();
       const spans = tracing?.counts() ?? {dropped: 0, failed: 0};
       recordLog(log, 'runtime.stopped', {

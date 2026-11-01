@@ -1010,6 +1010,19 @@ the runtime connects to its log. A `Diagnostic` is a closed record: `event`,
 payload, an error object, an exception's message or a credential. A callback
 that throws loses its record and changes nothing.
 
+A module that records its own failure may add `exceptionFields(error)` to an
+`operation.failed` record (Hub #777): the error's filtered, bounded message and
+stack with `bunny.exception.redacted_count` and `bunny.exception.truncated`, as
+the diagnostic contract's profile 1.7 admits them under `bunny.module`. It reads
+only an `Error`'s own message and V8's own stack, never a getter, a cause or a
+non-Error value, and replaces credential-like and payload-like segments with
+`[redacted]` and `[omitted]`; the runtime's log writer passes the two texts, from
+`exceptionFields` or written by the module itself, through the same filters
+again with each secret its modules have read replaced, and drops a record whose
+attribute still holds one. It returns `{}` for a value with no text of its own.
+These fields belong to the private diagnostic path; an error body's `detail`
+stays fixed text.
+
 A decision that ends with a registry code takes that code's level from one
 table, the same for the bus, its owners, sync and the edge: INFO for
 validation and domain refusals (`invalid-request`, `invalid-message`,

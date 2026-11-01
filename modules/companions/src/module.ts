@@ -1,17 +1,21 @@
 import {readSpeechQualification} from './speech/qualification.js';
 import type {SpeechQualification} from './speech-qualification.js';
-import {speechRefusal} from './presentation-policy.js';
+import {replyRefusal, speechRefusal} from './presentation-policy.js';
 import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
+import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
+import {allowlistable} from './assistant/tools.js';
+import {LIMITS} from './assistant/store.js';
+import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import {createHash} from 'node:crypto';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
+import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type Configured, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
 import {admissionKey, categories, localDay, refusal, selectCard, type Policy} from './rules.js';
@@ -22,11 +26,43 @@ const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type:
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
 export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; pending(): number};
+/** The name under the section's `secrets` of the file holding the hosted provider's API key. */
+export const API_KEY_SECRET = 'anthropic-api-key';
+/**
+ * The companions section of the private runtime configuration (Hub #46): `{assistant?, secrets?}`. `assistant` names the
+ * `bunny` profile's provider, `synthetic` without one, with its model, effort and the allowlisted tool names; a hosted
+ * provider needs its key file under `secrets`. An empty section keeps every default and makes no network call.
+ */
+export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
+  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly tools: readonly string[]}};
+const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
+const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
+export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
+  if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
+  const assistant = section.assistant === undefined ? {} : section.assistant;
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'tools'])) return refuse('assistant has only provider, model, effort and tools');
+  const provider = assistant.provider ?? 'synthetic';
+  if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
+  const tools = assistant.tools ?? [];
+  if (!Array.isArray(tools) || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools lists each permitted tool name once: read_sessions, set_mode');
+  if (provider === 'synthetic') {
+    if (assistant.model !== undefined || assistant.effort !== undefined) return refuse('the synthetic provider takes no model or effort');
+    return {config: {assistant: {provider, tools: [...tools]}}};
+  }
+  const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium';
+  if (typeof model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,127}$/.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
+  if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
+  if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
+  return {config: {assistant: {provider, model, effort: effort as Effort, tools: [...tools]}}};
+}
+/** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
+export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
 
 /** One private companion owner; visual admission and optional browser speech share current policy. */
-export function createCompanionsModule(options: AssistantOptions = {}): CompanionsModule {
+export function createCompanionsModule(options: CompanionsOptions = {}): CompanionsModule {
   const engine = new Companions(options);
-  return {manifest: {name: 'companions', apiVersion: '1.3', pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Synthetic tasks', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
+  return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
     content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), pending: () => engine.pending()};
@@ -57,7 +93,7 @@ class Companions {
   readonly #seen = new Set<string>();
   #work: Promise<void> = Promise.resolve();
   #draining: Promise<void> = Promise.resolve();
-  constructor(readonly options: AssistantOptions) {registerCoreFamilies(this.#validator);}
+  constructor(readonly options: CompanionsOptions) {registerCoreFamilies(this.#validator);}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
   qualifiedSpeech(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
@@ -72,13 +108,17 @@ class Companions {
     const database = context.database();
     this.#store = new CompanionStore(database);
     this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
-    this.speech = new SpeechCoordinator(context, this.#outbox, card => {
-      return speechRefusal(card, this.#policy(card.opportunity)) === undefined;
+    this.speech = new SpeechCoordinator(context, this.#outbox, source => {
+      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined : replyRefusal(this.#replyPolicy()) === undefined;
     }, () => this.#qualification !== undefined);
     await this.speech.start();
-    this.assistant = new AssistantEngine(context, this.#outbox, this.options);
-    await this.assistant.start();
+    // The preference store opens first so the engine can read the owner's active entries at each model call (Hub #507).
     this.preferences = new Preferences(context, this.#outbox);
+    const preferences = this.preferences;
+    // A reply that ends a turn, or one the owner asks to hear again, goes to the same coordinator and endpoint as Reachy's spoken alerts (Hub #500).
+    const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent) => {this.speech?.offerReply(reply, key, parent, this.speech.mark());});
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries, speak});
+    await this.assistant.start();
     await this.preferences.start();
     this.knowledge = new Knowledge(context, this.#outbox, this.assistant, this.preferences.store);
     await this.knowledge.start();
@@ -114,6 +154,30 @@ class Companions {
     await this.knowledge?.stop();
     await this.#copy?.close();
     await Promise.all([this.#work, this.#draining]);
+  }
+  /** The engine's seams from the section: the `bunny` provider, the allowlist, the synced core copy and the dispatch path. */
+  async #assistantOptions(context: ModuleContext): Promise<AssistantOptions> {
+    // The runtime gives `config` only as `configureCompanions` returned it; a harness without a section gives undefined.
+    const {options} = this, assistant = (context.config as CompanionsConfig | undefined)?.assistant;
+    const tools = options.tools ?? assistant?.tools ?? [];
+    let provider = options.provider;
+    if (provider === undefined && assistant?.provider === 'anthropic') {
+      // The key is read once, at start, and lives only in the provider; the runtime redacts it from its own records.
+      const key = await context.secrets.read(API_KEY_SECRET);
+      provider = new AnthropicProvider({key, model: assistant.model, effort: assistant.effort, ...(options.transport === undefined ? {} : {transport: options.transport})});
+    }
+    const core = options.core ?? (() => {
+      const records = this.#copy?.states().map(message => message.data) ?? [];
+      return {sessions: records.filter((record): record is SessionRecord => 'identity' in record), mode: records.find((record): record is ModeState => 'mode' in record), synced: this.#synced};
+    });
+    const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
+      {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.0', data},
+      {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
+    return {...(provider === undefined ? {} : {provider}), tools, core, dispatch, ...(options.available === undefined ? {} : {available: options.available})};
+  }
+  #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {
+    const records = this.#copy?.states().map(message => message.data) ?? [];
+    return {mode: records.find((record): record is ModeState => 'mode' in record)?.mode, synced: this.#synced};
   }
   #policy(event: CompanionOpportunity): Policy {
     const saved = this.#store?.read(), context = this.#context;

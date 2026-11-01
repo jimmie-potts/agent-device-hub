@@ -1562,6 +1562,24 @@
    },
    "expect": "invalid-message",
    "detail": "payload / required lastTransmission"
+  },
+  {
+   "name": "a required mode that is not a native mode name",
+   "base": "media-start",
+   "set": {
+    "/data/requireMode": "Media Mode"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /requireMode pattern"
+  },
+  {
+   "name": "a required mode on a control that is not a native mode name",
+   "base": "media-control",
+   "set": {
+    "/data/requireMode": "Monitor"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /requireMode pattern"
   }
  ]
 }

@@ -520,6 +520,28 @@ issue state. It writes no file. Besides the changed-file lint below, the only
 process it starts is `gh auth token`, and only when neither `GH_TOKEN` nor
 `GITHUB_TOKEN` is set.
 
+Policy freshness first checks that the recorded policy revision is an ancestor
+of the candidate's base. It then reads `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md`
+through GitHub's contents API at those exact commit SHAs and compares each
+file's blob SHA. Unrelated changes do not affect this check, including
+comparisons at or beyond GitHub's 300-file response limit. A changed policy
+file leaves review unresolved. A missing or inaccessible file, or a response
+without the expected file type, path and valid blob SHA, is a read failure.
+Neither outcome can satisfy review. Comparison-limit protections for source
+identity, diff reassessment and CI selection still apply.
+
+GitHub Actions can retain a successful selector in a later workflow attempt
+without copying its annotations. For an annotation-free retained selector, the
+preflight reads all job attempts and can recover an earlier selection notice.
+The run must match the repository, revision, event, branch, workflow and check
+suite. Check/job links, earlier attempt numbers, execution timestamps and
+recorded steps must identify the same execution. Every matching notice must
+agree and cover the groups this change selects. A fresh execution, malformed
+or conflicting evidence stays unresolved; inaccessible evidence is a read
+failure. The report retains the current check ID and records the original
+selection's check ID, workflow run and attempt. Other job-result checks and the
+read-only client remain unchanged.
+
 When using this optional tool, run it from a checkout of the PR head: the changed-file
 lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
 TypeScript files there (#1139). A checkout at another revision, or with local
@@ -536,7 +558,7 @@ prints tokens, local paths or reviewer return text.
 | --- | --- | --- |
 | Changed-file lint | The PR's added, modified and renamed `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.jsx` and `.tsx` files, linted in the local checkout at the live head | Any ESLint error or warning, a checkout not at the head, or local edits to those files is unresolved; not applicable after merge |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
-| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose published `Affected checks` notice is missing, malformed or omits a group this selection needs, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
+| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose `Affected checks` notice remains missing after verified retained-execution lookup, is malformed or omits a required group, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
@@ -620,9 +642,11 @@ configuration-isolation behavior. This temporary bootstrap copy is recorded;
 ## Agent setup
 
 Use the reviewed [agent-skills catalog](https://github.com/jimmie-potts/agent-skills)
-outside this checkout. Available workflow aids include code-review, tdd,
-grill-with-docs, grilling, domain-modeling, writing-for-agents, unslop and the
-OpenSpec propose/explore/apply/update/sync/archive skills.
+outside this checkout. Available workflow aids include code-review,
+grill-with-docs, grilling, domain-modeling, writing-for-agents and the
+OpenSpec propose/explore/apply/update/sync/archive skills. The tdd and unslop
+skills come from the installed [pstack plugin](https://github.com/cursor/plugins/tree/main/pstack),
+which the catalog composes but no longer vendors.
 
 Missing workflow aids do not block delivery; follow the direct review, design,
 regression-test and editorial checks in [docs/sdlc.md](sdlc.md). Missing runtime
@@ -851,11 +875,26 @@ requires `BUNNY_CONTAINER_ACCEPTANCE=1` inside a network-disabled disposable
 Linux container with synthetic private secrets; ordinary source runs skip it.
 It covers configured household modules, preserved non-device modules and honest
 missing-dependency refusals through the production selector and simulated transports.
+Its second exercise prints the per-module qualification record described in
+[the operator guide's source validation](bunny-container.md#source-validation):
+platform and compiled dependencies, private stores, exclusive startup,
+port-conflict refusal, clean stop and reopen.
 Source tests, each architecture's
 container rehearsal, cross-architecture archive transfer and live installation
 are separate evidence.
 
 See [Runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) for the authoritative procedure.
+
+For the Collector export and the Mac-local diagnostics stack (Hub #813), build
+first and run `node --test apps/runtime/dist/tests/export.test.js` with Node 24:
+it drives a loopback fake Collector through accepting, refusing, stalling and
+absent cases and checks the configuration's owned-origin refusals, so it needs
+no Docker. The stack's own files are checked only by a disposable boot on
+alternate ports, as [the operator guide](bunny-container.md#diagnostics-stack)
+describes: `docker compose -p <disposable name> -f deploy/diagnostics/compose.yaml -f <ports override> up -d`,
+post one profile 1.7 record and one span to the Collector, read them back
+through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
+export test with the runtime suites; it does not boot the stack.
 
 ### Runtime test layers
 
@@ -866,6 +905,16 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
+
+The disposable browser world selects an ephemeral loopback port. If the port is
+in its installed-service denylist, the harness stops that candidate before
+trying another, for at most ten allocations. Exhaustion removes the private
+world directory and fails explicitly. Startup or stop errors propagate without
+retrying. The final port refusal, restart port and browser assertions remain.
+After the build, run `node --test apps/runtime/dashboard/tests/world-runtime.test.ts`
+for deterministic disallowed-port, cleanup, exhaustion and error cases. Existing
+dashboard test discovery includes these checks. Run
+`npm run test:runtime-dashboard:smoke` for the affected browser consumers.
 
 Individual Hub-mode overrides (#695) extend the existing event-contract, runtime
 and dashboard suites. After the root build, run
@@ -1916,12 +1965,32 @@ dashboard browser suite. Existing companion/runtime/dashboard test discovery and
 App verification CI cover these paths; no new CI job is required. Use private
 disposable synthetic state, never installed voices, conversations or robot output.
 
+The B.U.N.N.Y. conversation (#46) adds `assistant.test.js`, `anthropic.test.js`
+and `configure.test.js` to the companions suite: the turn loop with approval,
+decline, stale approval, uncertain dispatch, allowlist refusal and provider
+refusal/truncation/fault codes; the Anthropic adapter's request shape,
+tool-use parsing, usage, error mapping and abort against a fake transport; and
+the section with a keyed provider through the harness's secret. After the root
+build run `node --test modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/anthropic.test.js modules/companions/dist/tests/configure.test.js`,
+`node --test apps/runtime/dist/tests/assistant-dispatch.test.js` for the core's
+admission of the module's `assistant-dispatch` command, `node --test packages/event-contracts/tests/assistant.test.mjs`
+for the dispatch family and the state's provider, model and tool fields, the
+`assistant-task` and `assistant-mode-approval` catalog scenarios over both
+transports and in a disposable runtime, and `npm run test:companions:browser`
+for the conversation page's approved and declined proposals across reload,
+clarification with the read tool, cancellation, keyboard, narrow viewport and
+axe. The companions module now takes a section (an empty one keeps the synthetic
+default), so harnesses that start it pass one. Existing core, runtime and App
+verification CI discover these checks; no new job is needed. They use the
+synthetic provider and fake transports only: no live provider, key, installed
+client or device is exercised.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
-Run the `reachy-text`, `assistant-task`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
+Run the `reachy-text`, `assistant-task`, `assistant-mode-approval`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
 runtime, and the companions browser/axe journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 

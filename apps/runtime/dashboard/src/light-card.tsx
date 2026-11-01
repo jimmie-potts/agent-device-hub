@@ -15,7 +15,7 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
   useEffect(() => { if (!dirty.current) setDraft(value ?? min); }, [value, min]);
   const send = (): void => { if (dirty.current && !disabled) { dirty.current = false; commit(draft); } };
   return <label className="light-slider"><span>{label}<output>{dirty.current ? draft : value === undefined ? 'Mixed / unknown' : value}{(dirty.current || value !== undefined) && unit}</output></span>
-    <input type="range" min={min} max={max} step="1" value={draft} disabled={disabled} onChange={event => { dirty.current = true; setDraft(Number(event.target.value)); }}
+    <input aria-label={label} type="range" min={min} max={max} step="1" value={draft} disabled={disabled} onChange={event => { dirty.current = true; setDraft(Number(event.target.value)); }}
       onPointerUp={send} onKeyUp={event => { if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) send(); }}/>
   </label>;
 }

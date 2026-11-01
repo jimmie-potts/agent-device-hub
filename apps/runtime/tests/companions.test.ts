@@ -28,7 +28,7 @@ async function setup(context: Parameters<Parameters<typeof it>[1]>[0], output: '
   }});};
   const watcher = fixture('companions-test');
   const directory = await stateDir(context);
-  const {runtime} = await run(context, {stateDir: directory, modules: [core, module, watcher], clock: {now: clock.now}, scheduler: clock.scheduler});
+  const {runtime} = await run(context, {stateDir: directory, modules: [core, module, watcher], config: {modules: {companions: {}}}, clock: {now: clock.now}, scheduler: clock.scheduler});
   let count = 0;
   const command = (family: string, data: object) => core.actions.dispatch({key: `bunny.cmd.${family}.reachy`, requestedBy: 'bunny/parts/operator',
     requestId: `reachy-request-${++count}`, draft: {type: `org.bunny.${family.slice(0, family.lastIndexOf('-'))}.${family.slice(family.lastIndexOf('-') + 1)}.requested`,
@@ -147,7 +147,7 @@ it('restart preserves a historical card and controls but discards pending social
   assert.equal(w.module.pending(), 1);
   await w.runtime.stop();
   const companion = createCompanionsModule(), core = createCoreModule();
-  await run(context, {stateDir: w.directory, modules: [core, companion], clock: {now: w.clock.now}, scheduler: w.clock.scheduler});
+  await run(context, {stateDir: w.directory, modules: [core, companion], config: {modules: {companions: {}}}, clock: {now: w.clock.now}, scheduler: w.clock.scheduler});
   assert.equal(companion.inspect()?.settings.enabled, true); assert.equal(companion.inspect()?.presentation?.history, true);
   assert.equal(companion.inspect()?.presentation?.presentedAtMs, before.presentedAtMs); assert.equal(companion.pending(), 0);
   for (const mode of ['quiet', 'free'] as const) await core.actions.dispatch({key: 'bunny.cmd.mode-set.hub', requestedBy: 'bunny/parts/operator', requestId: `restart-${mode}`,
@@ -181,7 +181,7 @@ it('actual fixed-clock fixture admission shares its persisted daily budget and l
   assert.equal(w.module.inspect()?.decision, 'social-budget');
   await w.runtime.stop();
   const companion = createCompanionsModule(), core = createCoreModule();
-  await run(context, {stateDir: w.directory, modules: [core, companion], clock: {now: w.clock.now}, scheduler: w.clock.scheduler});
+  await run(context, {stateDir: w.directory, modules: [core, companion], config: {modules: {companions: {}}}, clock: {now: w.clock.now}, scheduler: w.clock.scheduler});
   const attempt = (id: string) => core.actions.dispatch({key: 'bunny.cmd.companion-fixture-run.reachy', requestedBy: 'bunny/parts/operator', requestId: id,
     draft: {type: 'org.bunny.companion-fixture.run.requested', subject: 'reachy', dataschema: 'https://bunny.invalid/events/companion-fixture-run/2.0',
       data: {scenario: 'arrival', busy: false, media: false}}});

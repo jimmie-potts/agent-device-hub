@@ -197,9 +197,21 @@ one-writer cutover in [Hub #568](https://github.com/jimmie-potts/agent-device-hu
 The stopped backup below accepts an absolute path in `runtime.json` only under
 `/run/secrets/bunny`, and it records each such file. Any other absolute path
 makes every later backup refuse until the section is removed. `companions` needs
-no path. `wispr` needs two absolute source-file paths, and this profile mounts
+no path for its synthetic default, and an empty `companions` section keeps that
+default; a hosted model provider needs its API key file as a section secret,
+which only the [production profile](#production-device-profile) admits.
+`wispr` needs two absolute source-file paths, and this profile mounts
 no Wispr source, so it is admitted by the rule but has no qualified source here.
 Do not configure it on this profile until a source mapping is qualified.
+
+The file may also carry the runtime's optional `diagnostics` section (Hub #811),
+`{"level": "info", "modules": {"companions": "debug"}}`, which sets the log's
+floor and one module's own; the profiles admit it unchanged. The runtime refuses
+a level outside `debug`, `info`, `warn` and `error`, or another member, with
+`config-invalid` before any state effect, and a module it does not host, which
+on these profiles is any module without a section of its own, at startup before
+any module starts. Lowering a module's floor affects the records written after
+the restart that reads the file.
 
 Adding a section is the owner's manual private edit; the provisioning helper still
 writes `modules: {}`. Keep the complete new `runtime.json` outside every checkout
@@ -322,6 +334,138 @@ ordinary project bridge before and after start. It stops its selected running
 profile when isolation checks fail. State/config/secrets remain distinct ordinary
 local volumes with their existing read/write directions. Maintenance workers
 still use network none and never activate devices.
+
+### Required network paths
+
+The container reaches the home network through its dedicated bridge and Docker
+Desktop's address translation. Outbound TCP and unicast UDP connections work and
+their replies return to the same connection or socket; only published ports
+accept inbound connections. Broadcast and multicast discovery are unavailable on
+this profile and unneeded for these explicit targets. Each module needs only the
+paths below, to the targets its private section names. Addresses stay private,
+and reaching a physical device remains #568's exact-target check.
+
+| Module | Path |
+| --- | --- |
+| Playback | Outbound HTTP to each configured Sonos control URL and Sony Audio Control endpoint at their configured ports (typically TCP 1400 and TCP 10000), and to the same Sony receiver at TCP 58080 for artwork. Sonos artwork stays on the configured origin. |
+| LIFX | Outbound unicast UDP 56700 to each configured bulb address; replies return to the module's socket. |
+| Tidbyt | Outbound HTTPS to `api.tidbyt.com`. |
+| Pixoo | Outbound HTTP (TCP 80) to the configured device. With the hosted-GIF profile, inbound HTTP from the device to the published private IPv4 at TCP 41240. |
+| Nanoleaf | Outbound HTTP (TCP 16021) to each configured controller address. |
+| ONN | ADB through the configured private server socket, executable and key directory, which reach the television's ADB serial address. The image supplies none of them and the operator mounts no host dependency. A configured section starts `running` and reports every operation `unavailable` until a bounded owning change supplies them; an empty or invalid section refuses with `invalid-request`. Admission and health are not ONN qualification. |
+| Wemo | Outbound HTTP (SOAP) to each configured plug at its configured port, which must be in 49151 to 49159. |
+| Roborock | Outbound TCP 58867 to the selected device address for the local protocol and MQTT over TLS (TCP 8883) to the session's broker. The regional `roborock.com` HTTPS API serves only the interactive session setup tool, not the container. Read-only, with the existing private target and session files. |
+| Companions | Outbound HTTPS to `api.anthropic.com` only when the section selects the Anthropic provider for the B.U.N.N.Y. conversation; the synthetic default makes no outbound connection. |
+| Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |
+
+## Diagnostics stack
+
+The Mac-local log and trace viewer for the personal runtime
+([#813](https://github.com/jimmie-potts/agent-device-hub/issues/813)) is one
+owned Compose project, `bunny-diagnostics`, defined in
+`deploy/diagnostics/compose.yaml`: an OpenTelemetry Collector, Loki, Tempo and
+Grafana, each pinned by its multi-architecture image digest. It is operated by
+hand beside the runtime, with the same accepted downtime: start it after the
+runtime after sign-in, stop it before maintenance. Only two ports exist, on the
+Mac's loopback: Grafana at `http://127.0.0.1:3000/` and the Collector's OTLP/HTTP
+receiver at `127.0.0.1:4318`. Nothing is published on the LAN, and the viewer is
+never reachable through the private remote entry; the dashboard's Connections
+page links it only when the runtime's configuration names it.
+
+The runtime container reaches the Collector through Docker Desktop's
+`host.docker.internal`, the name a container gets for its host's own loopback,
+so the runtime keeps its own `local` network and the operator checks are
+unchanged. Logs and spans travel on one path each (OTLP), from the runtime's
+own log writer and span pipeline; the stderr journal stays as it is and is never
+scraped into the same backend.
+
+Everything the stack stores is diagnostic data the owner has agreed to lose:
+seven-day retention in Loki and Tempo, enforced by their compactors; admission
+limits that bound a week's worst case (Loki 1 MiB/s with a 4 MiB burst and
+16 KB lines, Tempo 2 MiB/s with 5 MiB per trace); a Collector that retries a
+refusing backend for 30 seconds and then drops; a runtime whose bounded queue
+drops what the Collector will not take within a second and counts it
+(`telemetry.dropped`, `runtime.stopped`). Memory limits are 256 MiB for the
+Collector and 768 MiB each for Loki, Tempo and Grafana, about 2.5 GiB at most
+beside the runtime's 4 GiB, within the Linux engine's 8 GiB (Grafana idles near
+400 MiB).
+Nothing here backs up, restores, spools or replays; an outage is a gap in the
+viewer, never a change to an application result, and a missing record is never
+proof that nothing happened. This retention and deletion applies to the three
+`bunny-diagnostics_*` volumes only, never to the runtime's state, configuration
+or archives.
+
+### Set up once
+
+Pull the four pinned images, then create the project without starting it:
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml pull
+docker compose -f deploy/diagnostics/compose.yaml create --pull never
+```
+
+Point the runtime at the Collector and name the viewer for the dashboard by
+adding to the private `runtime.json`, through the one-shot replacement in
+[Admit a module that reaches no device](#admit-a-module-that-reaches-no-device),
+stopped and backed up first:
+
+```json
+{
+  "diagnostics": {"export": {"collector": "http://host.docker.internal:4318"}},
+  "edge": {"placeLinks": {"grafana": "http://127.0.0.1:3000/"}}
+}
+```
+
+(`diagnostics` and `placeLinks` join the existing sections; keep the rest of the
+file as it is.) The runtime accepts only that alias or a numeric loopback origin
+for the Collector and refuses anything else with `config-invalid`. Start the
+runtime again after the edit; the export begins at startup, and the Connections
+page shows **Open Grafana · Local**.
+
+### Start, stop and inspect
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml start
+docker compose -f deploy/diagnostics/compose.yaml ps
+curl -s http://127.0.0.1:3000/api/health
+docker compose -f deploy/diagnostics/compose.yaml stop
+```
+
+`ps` shows the four containers `Up`; Grafana's health answers
+`"database": "ok"`. Read actual storage with
+`docker system df -v`, under the `bunny-diagnostics_loki-data`,
+`bunny-diagnostics_tempo-data` and `bunny-diagnostics_grafana-data` volumes;
+the figures recorded at installation are in #813. Loss shows in three places:
+the Collector's own log (`docker compose -f deploy/diagnostics/compose.yaml
+logs collector`), the runtime's `telemetry.dropped` records, and the
+`runtime.stopped` record's counts.
+
+In Grafana, **Dashboards → B.U.N.N.Y. → B.U.N.N.Y. diagnostics** holds the
+starter queries: records by module, severity, event and outcome, failures and
+warnings, and one trace's records and spans by trace ID. **Explore → Loki**
+takes any query, such as
+`{service_namespace="bunny"} | bunny_module="companions" | severity_text="WARN"`;
+labels are the contract's three (`service_namespace`, `service_name`,
+`deployment_environment_name`), and everything else, `trace_id` and `span_id`
+included, is structured metadata. A record's details offer **Open trace** on
+`trace_id`; a span in **Explore → Tempo** offers **Logs for this span**, which
+runs the Loki query for that trace. Grafana itself is reached without a
+password, as the dashboard's trusted loopback sign-in is, as an anonymous
+Editor: that role keeps Explore (a Viewer has no `datasources:explore` in
+Grafana 12) and may save dashboards, which are diagnostic data too, but cannot
+add a data source, so no program on this Mac can turn Grafana's proxy into a
+relay. Grafana 12 warns that a later release will support only Viewer for
+anonymous access; a future image pin may then need a signed-in Editor. Another
+program trusted on this Mac may open Grafana, so keep the port on loopback.
+
+To discard every diagnostic record and start again, which the owner accepts:
+
+```text
+docker compose -f deploy/diagnostics/compose.yaml down -v
+```
+
+That removes only this project's containers, network and the three
+`bunny-diagnostics_*` volumes.
 
 ## Replace an image
 
@@ -589,6 +733,38 @@ It uses the production selector with the existing simulated factories and fresh
 synthetic state for household modules, companions and remote Desktop. It also
 checks honest missing-dependency refusals. There is no production simulation
 flag. Ordinary source runs report this explicit exercise skipped.
+
+The same file's second exercise, `production modules qualify on this host`,
+records what a Mac release can establish without a device before #568 activates
+a module (#565). It records the image's architecture, kernel, Node and SQLite
+versions, the compiled packages the image carries, and that `sharp`, the compiled
+dependency Pixoo, playback and Tidbyt share, renders. Then, for each
+selected module on fresh synthetic state with simulated transports, it records
+startup, owner-only store and folder modes with the log present, the lease and
+second-start refusals that separate child processes observe while the runtime
+runs, with the competing runtime's per-module states, a port-conflict refusal
+that creates no store, a clean stop that checkpoints every log and leaves the
+lease free for another process, a reopen on the same stores, and the real
+build's honest outcome for an empty section. The in-process stop releases the
+lease because the exercise owns its runtime; the container entrypoint holds its
+ownership until its process exits. It prints one
+`production-module-qualification/1.0` JSON record naming module and platform
+facts only. Compare its `arch` with `docker version --format '{{.Server.Arch}}'`
+to establish native rather than emulated execution. Keep the run's log with the
+release's private evidence. Simulated transports establish no physical result.
+
+Run both exercises against the exact image in a disposable container of it,
+with no network, host mount, published port or credential:
+
+```text
+docker run --rm --pull never --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 --memory 4g -e BUNNY_CONTAINER_ACCEPTANCE=1 --entrypoint node IMAGE_ID --test deploy/container/tests/production-acceptance.test.mjs
+```
+
+The container's own writable layer supplies the fresh `/run/secrets/bunny` and
+temporary directories, and nothing persists after it exits. An image built before
+an exercise existed can still be recorded: create the container stopped, copy the
+exercise file into it with `docker cp`, then start it. Attribute that record to
+both the image revision and the exercise's revision.
 
 Actual
 operator acceptance is separate from those source tests. At code revision

@@ -229,8 +229,9 @@ admits a section whose sources are all remote
 
 Only `client: desktop` identities get evidence. The shared Mac feed's
 `client: local` sessions (#1183) get none: the session and lifecycle contracts
-keep read, archive and title evidence Desktop-only, and #567 records the
-owner decision still pending on that feed.
+keep read, archive and title evidence Desktop-only. The owner accepted that
+on 2026-10-30 (#567), and #1324 looks for a supported way to tell Mac Desktop
+sessions apart.
 
 ## Diagnostics
 

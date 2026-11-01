@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {record} from './sample.mjs';
-import {catalog} from '@jimmie-potts/bunny-observability';
+import {catalog, createRecord} from '@jimmie-potts/bunny-observability';
 import {createHostDiagnostics} from '../runtime/host.mjs';
 import {profileSpanNames, projectSpan} from '../runtime/span-projection.mjs';
 import {ROOT_CONTEXT, trace} from '@opentelemetry/api';
@@ -150,7 +150,7 @@ test('two hosts without a process context keep their own spans and explicit pare
 
 test('a host names the profile of its records and of its spans\' metadata',async()=>{
  await assert.rejects(createHostDiagnostics({enabled:true,resource:runtimeResource,localSink:()=>{}}),/Invalid host resource/,'profile 1.1 has no runtime service');
- await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,schemaVersion:'1.7',localSink:()=>{}}),/Invalid host/);
+ await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,schemaVersion:'1.8',localSink:()=>{}}),/Invalid host/);
  const lines=[];
  const host=await createHostDiagnostics({enabled:true,resource:runtimeResource,schemaVersion:'1.3',tracing:true,samplingRatio:1,globalContext:false,
   localSink:()=>{},localSpanSink:line=>{lines.push(JSON.parse(line).resourceSpans[0].scopeSpans[0]);}});
@@ -171,8 +171,9 @@ test('each profile registers only its own span names, so an earlier host records
  for(const version of ['1.0','1.1','1.2'])assert.deepEqual(profileSpanNames(version).filter(name=>later.includes(name)),[],`profile ${version}`);
  assert.deepEqual(profileSpanNames('1.3'),catalog.span_names.filter(name=>!catalog.additions['1.6'].span_names.includes(name)));
  assert.deepEqual(profileSpanNames('1.6'),catalog.span_names);
+ assert.deepEqual(profileSpanNames('1.7'),catalog.span_names,'profile 1.7 adds no span name');
  for(const version of ['1.0','1.1','1.2','1.3','1.4','1.5']) assert.deepEqual(profileSpanNames(version).filter(name=>catalog.additions['1.6'].span_names.includes(name)),[]);
- assert.deepEqual(profileSpanNames('1.7'),[],'an unknown profile registers none');
+ assert.deepEqual(profileSpanNames('1.8'),[],'an unknown profile registers none');
  // A host's spans carry its records' profile, so a 1.2 or 1.1 host records the names its profile has and drops the rest.
  const recorded=async(schemaVersion,resource,scope)=>{
   const names=[];
@@ -196,4 +197,47 @@ test('each profile registers only its own span names, so an earlier host records
  assert.equal(projectSpan(span,{...record,schema_version:'1.2'},'bunny.device.call'),undefined);
  assert.equal(projectSpan(span,{...record,schema_version:'1.1'},'bunny.outcome.publish'),undefined);
  assert.ok(projectSpan(span,{...record,schema_version:'1.1'},'bunny.helper.run'));
+});
+
+test('a Collector origin is an owned host only: numeric loopback or Docker Desktop\'s host alias, never a name or a LAN address (Hub #813)',async()=>{
+ const {createOwnedOrigins,OWNED_ORIGIN_HOSTS}=await import('../runtime/propagation.mjs');
+ assert.deepEqual(OWNED_ORIGIN_HOSTS,['127.0.0.1','[::1]','host.docker.internal']);
+ for(const origin of ['http://127.0.0.1:4318','http://[::1]:4318','http://host.docker.internal:4318'])assert.equal(createOwnedOrigins([origin]).has(origin),true,origin);
+ for(const origin of ['https://host.docker.internal:4318','http://host.docker.internal:4318/','http://localhost:4318','http://192.168.1.20:4318','http://collector:4318','http://user:pw@host.docker.internal:4318','http://host.docker.internal.example:4318'])
+  assert.throws(()=>createOwnedOrigins([origin]),/owned loopback origin/,origin);
+ // The host adapter takes the alias as it takes a numeric origin, and starts no network work by constructing.
+ const host=await createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://host.docker.internal:4318',localSink:()=>{}});
+ await host.shutdown();
+ await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,collectorOrigin:'http://localhost:4318',localSink:()=>{}}),/owned loopback origin/);
+});
+
+test('a host that exports without association leaves an active span\'s attributes alone and counts no loss for the record',async()=>{
+  const outcomes=[];
+  for(const associateRecords of [true,false]){
+    const spans=[];
+    const host=await createHostDiagnostics({enabled:true,resource:runtimeResource,schemaVersion:'1.7',tracing:true,samplingRatio:1,globalContext:false,
+      localSink:()=>{},localSpanSink:line=>{spans.push(JSON.parse(line).resourceSpans[0].scopeSpans[0].spans[0]);},associateRecords});
+    const span=host.tracerFor({resource:runtimeResource,scope:'bunny.runtime'}).startSpan('bunny.command.request',{attributes:{'bunny.operation':'mode','bunny.provenance':'source'}},ROOT_CONTEXT);
+    const identity=span.spanContext();
+    // A module's record with the span's identity, as a module logs with its command's trace: associated, it is another
+    // scope's record and counts against the span; exported only, it is just a record.
+    const other=createRecord({schema_version:'1.7',timestamp:'2026-10-30T12:00:00.000Z',event_name:'command.completed',severity_text:'INFO',resource:runtimeResource,
+      scope:{name:'bunny.module',version:'1.0.0'},attributes:{'bunny.provenance':'source','bunny.module':'wall','bunny.outcome':'succeeded'},
+      trace_id:identity.traceId,span_id:identity.spanId,trace_flags:'01'});
+    assert.ok(other.ok,'a valid module record');
+    assert.equal(host.emit(other.value),true,'the record is queued either way');
+    span.end();
+    await host.shutdown();
+    const traces=host.counts().traces;
+    // With association on, the other scope's record counts against the span as invalid.
+    outcomes.push({associateRecords,invalid:traces.invalid,registered:traces.registered,span:spans[0]});
+  }
+  const [associated,exported]=outcomes;
+  assert.equal(exported.invalid,0,'nothing counted against the span');
+  assert.equal(exported.registered,1,'the span itself is the only registration');
+  assert.ok(exported.span,'the span reaches the sink');
+  assert.deepEqual(exported.span.attributes.map(item=>item.key).sort(),['bunny.operation','bunny.provenance','bunny.schema.version'],'the span keeps its own attributes and the profile the projection adds');
+  assert.equal(exported.span.attributes.some(item=>item.key==='bunny.module'||item.key==='bunny.outcome'),false,'none of the record\'s attributes');
+  assert.ok(associated.invalid>=1,'with association on, the other scope\'s record counts against the span');
+  await assert.rejects(createHostDiagnostics({enabled:true,resource:record.resource,associateRecords:'no'}),/Invalid host/);
 });

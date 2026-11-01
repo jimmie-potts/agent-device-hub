@@ -41,7 +41,9 @@ A factory whose module takes a configuration also gives a `simulatedSection`:
 `{config, secrets?}`, the module's section for simulated runs without its
 `secrets` member, and the names of the secrets that section needs. A module that
 reads no secret, such as the playback, LIFX, Pixoo and Codex Desktop modules, omits `secrets`; the Tidbyt module
-names `token`, its API key's file, and the Nanoleaf module names `token`. One helper,
+names `token`, its API key's file, and the Nanoleaf module names `token`. The
+companions module's simulated section is empty: it names `anthropic-api-key`
+only when a private section selects the Anthropic provider. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
@@ -405,13 +407,18 @@ require separate per-tab enablement and a qualified local voice. Stop and mute d
 not change coding tasks; lost availability never replays missed alerts.
 Source acceptance and separately selected installation remain distinct.
 
-The same module contributes a default-off **Synthetic tasks** page: private text,
-a saved clarification and explicit continuation through a bounded fake-model
-graph. It reuses the gateway, tracked dispatcher, SDK SQLite owner and outbox.
-Task mechanics are separate from Reachy cards and core session lifecycle.
-See [Synthetic assistant tasks](../../modules/companions/README.md#synthetic-assistant-tasks)
-for restart, cancellation, privacy and limits. React contributions retain their
-last loaded content during reconnect while the host disables commands.
+The same module contributes a default-off **Conversation** page: the B.U.N.N.Y.
+conversation with the provider its private section selects (the labelled
+synthetic script by default, or the Anthropic Messages API with a section
+secret), a read tool over the core's sessions and a proposed `mode-set` that
+waits for the owner's approval before the core's tracked dispatcher sends it
+as one operation the module requested. It reuses the gateway, tracked
+dispatcher, SDK SQLite owner and outbox. Task mechanics are separate from
+Reachy cards and core session lifecycle. See
+[Conversation and assistant tasks](../../modules/companions/README.md#conversation-and-assistant-tasks)
+for the section, tools, approval, restart, cancellation, privacy and limits.
+React contributions retain their last loaded content during reconnect while
+the host disables commands.
 
 The **Preferences** page keeps explicit titled preferences in the same private
 store, independently of both switches. It supports edit/history, Stop using,
@@ -435,22 +442,60 @@ Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `tu
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
 
-The core also owns weekly power schedules for configured devices that declare
-power support. This registry is separate from Nanoleaf/Pixoo mode participation.
-Each schedule selects weekdays and one same-day on/off window on the Hub host's
-local clock. New schedules default to disabled; edits preserve enabled state.
-The core stores definitions and a bounded per-rule occurrence watermark under its
-existing lease, and submits each admitted boundary once through the tracked,
-configuration/generation-guarded `power-set` path. It never calls a transport.
-Unavailable, held or externally controlled devices are refused independently.
+The core also owns weekly routines for configured devices
+([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which
+generalizes the one on/off power window of #483). A routine selects weekdays
+and one time on the Hub host's local clock and holds an ordered list of typed
+actions, each naming a configured target and one of the tracked command
+families its module declares: `power-set`, `brightness-set`,
+`scene-activate`, `media-start`, `media-control`, `device-mode-set`,
+`pixoo-media-show` or `lifx-color-set`, with that family's own payload. A
+content action (`scene-activate`, `media-start`, `media-control`,
+`pixoo-media-show`) always carries `requireMode`, and only its device kind's
+content mode: `media` for a Pixoo, `free` for a Nanoleaf. It takes that mode
+when the field is omitted, and a kind without a content mode cannot hold a
+content action. So no routine action except an explicit `device-mode-set` can
+take a device out of its status presentation. Any other action may name a mode
+to require, or none. New routines default to disabled; edits preserve the
+enabled state. This registry is separate from Nanoleaf/Pixoo mode
+participation.
 
-Restart, reconnect, editing and enabling select future boundaries only. Callbacks
-more than 60 seconds late are discarded, and duplicate intent is never replayed.
-Manual off during an on window causes no automatic re-on. The Hub must remain
-running with a reachable device; this is separate from any device maximum-on
-feature and provides no offline protection. Source checks do not establish
-installed or physical qualification. Saved routine rows need
-actual release verification and focused storage-change assessment under [UPGRADE.md](UPGRADE.md).
+At its minute, or on an explicit Run now, the core runs the actions in order:
+each reads the current device record, checks the same configuration and
+generation after the read, the capability, availability, hold and external
+control, then the mode precondition against the record's desired mode and
+pending mode changes, and submits one tracked, guarded command through the
+dispatcher with fresh request identity; the mode-checked families carry
+`requireMode` so the Pixoo checks it again at admission (#1276). A refused,
+failed, uncertain or skipped action does not stop the next; a skipped content
+action is logged `blocked` with reason `mode`, and a scheduled action whose
+turn comes more than 60 seconds after the minute is logged `blocked` with
+reason `expired`. Nothing waits for an earlier action's outcome: a
+`device-mode-set` followed by a content action usually skips that content
+action, because the mode change is still pending when its turn comes; put the
+content action in a later routine or run it separately. One occurrence per
+routine runs at a time; an overlapping occurrence or Run now is logged
+`blocked` with reason `busy` and dropped. Nothing is retried, rolled back or
+caught up, and the core never calls a transport.
+
+The core stores definitions as `rules.kind = routine` rows with
+`trigger.schema = routine/1.0` and a bounded per-rule occurrence watermark under
+its existing lease. At its first open after the upgrade it migrates each
+retained `power-window/1.0` row once into an on routine (the row's id,
+definition identity and watermark, with a `power-set on` action) and an off
+routine (a new id, the watermark copied, `power-set off`). Every replacement
+row is read back through the routine reader first, and all splits commit in
+one transaction, so a row it cannot read, or a replacement the reader would
+refuse, refuses the open and leaves every row unchanged. The added off rows
+bypass the 64-rule limit; a store holding more than 32 windows then refuses new
+rules and routines with `capacity` until rows are removed. Restart,
+reconnect, editing and enabling select future occurrences only. Callbacks more
+than 60 seconds late are discarded, and duplicate intent is never replayed. The
+Hub must remain running with a reachable device; this is separate from any
+device maximum-on feature and provides no offline protection. Source checks do
+not establish installed or physical qualification. Saved routine rows need
+actual release verification and focused storage-change assessment under
+[UPGRADE.md](UPGRADE.md).
 
 The core separately stores per-target maximum-on definitions and continuous-run
 state in `automation_power_limits`. Its `power-limit/2.0` state family uses the
@@ -468,14 +513,15 @@ upgrade and cannot authorize an older reader.
 The shared dashboard's Automation page manages these fresh rules and settings.
 The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
 (GET/PUT/DELETE), `rules/<id>/enable` and `disable` (POST with `{}`),
-`power-schedules` (GET/POST), `power-schedules/<id>` (GET/PUT/DELETE),
-`power-schedules/<id>/enable` and `disable` (POST with `{}`),
+`routines` (GET/POST), `routines/<id>` (GET/PUT/DELETE),
+`routines/<id>/enable`, `disable` and `run` (POST with `{}`; `run` submits one
+occurrence now, enabled or not, and answers once each action's dispatch has),
 `power-limits` (GET), `power-limits/<target>` (GET/PUT with enabled, durationMs
 and optional expectedSettingsRevision), `interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
 1–500 and `before` sequence). Success responses use schema `automation/2.0`.
 Reads require read scope; all mutations require control and `bunny-request: 1`,
-including client credentials. Rule bodies and interrupt sets are bounded to
-8 KiB, settings to 1 KiB, and enable/disable bodies to 16 bytes. The gateway
+including client credentials. Rule, routine and interrupt-set bodies are bounded to
+8 KiB, settings to 1 KiB, and enable/disable/run bodies to 16 bytes. The gateway
 rechecks the original request's authority immediately before changing state;
 expected refusal codes leave the core running. A lost reply is never retried
 automatically. Inspect the current rules/settings before another edit.
@@ -683,7 +729,7 @@ node apps/runtime/dist/src/main.js --port 0 --state-dir ~/.local/state/agent-dev
 | `--state-dir` | The private state directory. Defaults to `~/.local/state/agent-device-hub/runtime`. |
 | `--config` | The private [configuration file](#configuration), with each module's own section. Without it, a module that takes a configuration is refused. |
 | `--lag-limit-ms` | How long the event loop may stay stuck before the process is killed. Defaults to 10000. |
-| `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. |
+| `--log-level` | `debug`, `info`, `warn` or `error`. Defaults to `info`. The configuration file's `diagnostics.level` takes precedence when present; see [Configuration](#configuration). |
 | `--environment` | `development`, `test` or `production`: every log record's `deployment.environment.name`. Defaults to `development`; disposable verification runs use `test`, and the installed runtime `production`. |
 | `--simulate` | Build every module with its simulated transport, so the runtime reaches no device. Disposable verification runs use it. |
 | `--edge` | Serve the [gateway](#gateway) on the health listener, for the client credentials that the configuration file's `edge` section names. It needs `--config`. |
@@ -1096,9 +1142,45 @@ edge's section (#835):
     "mcp": true,
     "editorLinks": {"sign-1": "http://127.0.0.1:9100/editor"},
     "placeLinks": {"kitchen": "http://127.0.0.1:9200/"}
+  },
+  "diagnostics": {
+    "level": "info",
+    "modules": {"sign": "debug"},
+    "export": {"collector": "http://host.docker.internal:4318"}
   }
 }
 ```
+
+The optional `diagnostics` section (Hub #811) sets the log's floor. `level`,
+one of `debug`, `info`, `warn` or `error`, is the floor of the runtime's own
+records and of every module without an entry of its own; without it the
+process's `--log-level` applies, `info` by default. `modules` gives one module
+its own floor by name, so `"sign": "debug"` writes the sign module's DEBUG
+records and no other module's. The file may name only modules this runtime
+hosts; another name, another member, a level outside those four (`fatal`
+included) or more than 32 entries refuses the file with `config-invalid`: a
+malformed section before any state effect, since the runtime reads the file
+before it prepares its state directory, and an unhosted name at startup, before
+any module starts. On the container profiles a hosted module is the core
+or a module with a section of its own. The floors filter log records only: the
+same floor feeds every log sink the runtime writes to, so the journal and an
+export agree, while spans are recorded whatever the floor, and the runtime's own
+records about a module (`runtime.module.starting` at DEBUG, the bus's
+`runtime.sync.restarted`) follow `level`, not the module's entry. Lowering a
+floor affects the records written after the runtime reads the file; nothing
+recovers a record an earlier floor kept out, and a record below the floor is not
+counted as dropped.
+
+`export.collector` (Hub #813) names the OpenTelemetry Collector the runtime's
+records and spans also go to, beside the stderr journal: an exact owned origin,
+`http://127.0.0.1:<port>`, `http://[::1]:<port>` or
+`http://host.docker.internal:<port>`, the name Docker Desktop gives a container
+for the Mac's own loopback, which is how the container profiles reach the
+[Mac-local diagnostics stack](../../docs/bunny-container.md#diagnostics-stack)
+without joining another network. Any other host, a DNS name, a path, a query,
+user information or a missing port refuses the file with `config-invalid`. Without the member
+nothing leaves the process. See [Logs](#logs) for what the export carries and
+how its loss shows.
 
 The `edge` section names the [credentials file](#credentials) by its absolute
 path and keeps the old Hub's `browserAccess` (only `trusted-loopback`),
@@ -1200,7 +1282,11 @@ does:
 A clean stop checkpoints the log into the file and removes it. After a crash
 the file alone may lack commits that are still in the log, so copy a stopped
 store with its `-wal` file, or use SQLite's backup API; a copy of the file
-alone can lose them. Beside the file, the module's
+alone can lose them. For a copy of the whole installation, use the
+[stopped-instance backup](../../docs/bunny-container.md#back-up-a-stopped-instance)
+in the container operator guide, or on a systemd installation the upgrade
+procedure's [stopped-writer backup](UPGRADE.md#stop-back-up-select-and-verify);
+both include each module's private folder. Beside the file, the module's
 private folder `modules/<name>/` is created with mode 700 when the module first
 calls `files()`; a `modules` directory or folder that is a link, belongs to
 another user or that others can open is refused with
@@ -1527,7 +1613,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.5, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -1540,9 +1626,33 @@ stdout ready line, which keeps its own contract, the process writes a
 `runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
 listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost
-(`bunny.telemetry.failure_count`), with the spans lost.
+(`bunny.telemetry.failure_count`), with the spans lost and, with a Collector,
+the records and spans the export lost.
 
-The runtime's own records have scope `bunny.runtime`. A module's records have
+With the configuration file's `diagnostics.export.collector`
+([Configuration](#configuration), Hub #813), each record the writer lets through
+goes to the journal first and then to the observability host adapter's bounded
+OTLP log queue, the same adapter that records the spans, so each signal has one
+ingestion path and the floors apply once; the journal is never scraped into the
+same backend. The export is never acknowledged to the work that wrote the
+record: a Collector that refuses, stalls or is absent changes no result, reply
+or retry, and the queue drops what the Collector will not take within a second
+and counts it. Once a minute, while that loss grows, the runtime writes one
+`telemetry.dropped` record at WARN with the adapter's totals so far
+(`bunny.telemetry.dropped_count`, `bunny.telemetry.failure_count`), and no more
+than one a minute, so an outage cannot flood the journal; the summary itself
+goes to the export, so while the Collector is down each minute's summary is
+the next minute's growth and the journal keeps one WARN a minute for as long
+as the outage lasts, and stops once the Collector takes records again. The
+exported records are the journal's copy: the adapter attaches none of them to
+a span, so a span keeps the attributes its owner gave it. `runtime.stopped`
+carries the totals, written after the final flush so they are complete: it is
+the journal's last word, and the export ends before it.
+
+The log keeps INFO and above by default. The configuration file's
+[`diagnostics` section](#configuration) moves that floor and gives one module
+its own, so a module's DEBUG records can be read without widening the others
+(Hub #811). The runtime's own records have scope `bunny.runtime`. A module's records have
 the one scope `bunny.module` and the attribute `bunny.module`, which names the
 module and which the module's own fields cannot replace. A module may log only
 the events the catalog registers for modules, with registered attributes: the
@@ -1553,8 +1663,19 @@ that logs either, and a new event goes through a catalog change. A dropped
 record is counted, never truncated.
 
 A failure record names the error's type (`error.type`) and, when it is an
-identifier, its code (`error.code`). As the contract requires, it never holds
-the raw message or stack, which may quote a URL with a token in it. A module's
+identifier, its code (`error.code`). A record of a decision or a refusal carries
+only these. A fault record (`runtime.module.failed`, `runtime.module.refused`
+with an error, `runtime.handler.failed`, `runtime.module.stop-failed`,
+`runtime.module.error-after-stop` and `runtime.failed`) also carries the
+exception's filtered, bounded message and stack as the contract's
+[profile 1.7](../../docs/observability-contract.md#private-exception-context-profile-17)
+admits them (Hub #777): `exception.message`, `exception.stacktrace`,
+`bunny.exception.redacted_count` and `bunny.exception.truncated`. The SDK's
+`exceptionFields` reads only the error's own message and V8's own stack and
+replaces registered module secrets, credential-like segments and payload-like
+segments before the record is built; `faultFields` in `src/log.ts` adds the
+error's type and code. The text stays on the private diagnostic path, the
+journal and the export; an error body, health or history never carries it. A module's
 refusal or failure carries its 2.0 registry code in `bunny.code` and where it
 arose in `bunny.phase`: `manifest`, `start`, `handler`, `timer`, `worker` or
 `async` (its own async flow). A problem in its stop carries `bunny.phase` and no
@@ -1601,16 +1722,19 @@ device that stays offline.
 
 The runtime records spans through the observability package's
 `createHostDiagnostics`, with tracing on, 100% head sampling that honors a
-parent's sampled flag, no exporter and the adapter's bounded local span sink;
-it installs no process context manager. The bus records each command's
+parent's sampled flag, the adapter's bounded local span sink and, only with a
+configured Collector, its OTLP export; it installs no process context manager. The bus records each command's
 `bunny.command.request`, `.queue` and `.execute` spans under `bunny.runtime`, and
 `trace.start` records a module's own spans under `bunny.module` with its name.
 Each finished span goes to `RuntimeOptions.spans` as one projected OTLP JSON
 document; without that option the runtime keeps the latest 1,024 for
 `runtime.spans()`, which returns them oldest first with the count of older
 spans it evicted, so a span missing from memory was evicted only while that
-count is above zero. Nothing exports them yet (#813). `runtime.stopped` counts spans
-lost as invalid, dropped, unfinished at shutdown or failed in the sink, with the
+count is above zero. With the configuration file's
+`diagnostics.export.collector` the same adapter also sends each span to that
+Collector after the local sink, through its bounded queue, beside the records
+([Logs](#logs), Hub #813). `runtime.stopped` counts spans lost as invalid,
+dropped, unfinished at shutdown or failed in the sink or the export, with the
 records. If the adapter cannot start, the runtime runs without recorded spans
 and logs one `runtime.tracing.failed` record at ERROR with `error.type`.
 

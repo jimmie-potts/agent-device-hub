@@ -33,3 +33,18 @@ test('an oversized-line flood obeys the row ceiling',async()=>{
  assert.equal(result.coverage.capped,true);
  assert.equal(result.accepted.length,0);
 });
+test('a profile 1.7 fault record with filtered exception text keeps that text in the private original and out of the finding',async()=>{
+ const fault=createRecord({schema_version:'1.7',timestamp:now,severity_text:'ERROR',event_name:'runtime.module.failed',
+  resource:{'service.namespace':'bunny','service.name':'runtime','service.version':'0.1.0','service.instance.id':'00000000-0000-4000-8000-000000000002','deployment.environment.name':'test'},
+  scope:{name:'bunny.runtime',version:'1.0.0'},attributes:{'bunny.provenance':'source','bunny.module':'lamp','bunny.code':'internal','bunny.phase':'handler','error.type':'TypeError',
+  'exception.message':'private-message: the device at /Users/private-person/lamp refused','exception.stacktrace':'TypeError: private-message\n    at private-frame (/opt/bunny/modules/lamp/dist/src/module.js:1:1)',
+  'bunny.exception.redacted_count':1,'bunny.exception.truncated':false}});
+ assert.equal(fault.ok,true);
+ const unit={_SYSTEMD_USER_UNIT:'bunny-runtime.service',__REALTIME_TIMESTAMP:String(Date.parse(now)*1000),__CURSOR:'private-cursor',MESSAGE:JSON.stringify(fault.value)};
+ const result=await collectJournal(chunks(JSON.stringify(unit)+'\n'),{...options,units:['bunny-runtime.service'],services:['runtime']});
+ assert.equal(result.accepted.length,1,'the private original is retained whole');
+ assert.ok(result.accepted[0].message.includes('private-message'));
+ assert.equal(result.findings.length,1);
+ assert.deepEqual(Object.keys(result.findings[0]).sort(),['count','event','fingerprint','operation','outcome','reason','scope','service']);
+ assert.ok(!JSON.stringify(result.findings).includes('private-'),'the finding carries catalog enums only, never the exception text');
+});

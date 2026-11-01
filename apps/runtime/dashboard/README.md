@@ -39,17 +39,18 @@ analytics event family. Home uses the module's reusable Quiet line card: capture
 words/speaking minutes, seven selectable reporting dates with missing-date gaps,
 compact stale/unavailable evidence and explicit Refresh/Open Wispr. The full
 analytics page remains available; adding the card does not activate collection.
- The Automation page manages event rules and shared weekly power schedules.
-Weekly schedules select a configured power-capable device, weekdays and same-day
-on/off times on the Hub clock. New schedules are disabled; enable/disable is
-separate from editing. Next-switch evidence is labelled as of the last explicit
-refresh, while SDK copies supply current tracked outcomes and timestamped device
-observations. An accepted command never establishes an observed lamp state. A lost mutation
-reply locks further edits until explicit refresh, without retry. The Hub runs the
-schedule with the page closed, skips missed boundaries and never restores an
-on window after an early manual or device-limit off. Schedules require a running
-Hub and reachable target; device maximum-on protection is a separate feature. Device-specific
-feature pages remain their own module stories.
+
+Automation opens on **Routines**, with **Rules** and **Settings** beside it.
+New/Edit opens a form; switching tabs keeps its draft, and Cancel discards it.
+Confirmed saves close the editor. Weekly routines select weekdays, a Hub-clock
+time and ordered device actions. New routines and event rules remain disabled
+until explicitly enabled; **Run now** is a separate action. The Hub runs enabled
+routines while the page is closed and skips missed times. It must be running
+and able to reach the target. **Recent attempts** expands admission, completion
+and effect evidence; accepted commands never establish observed device state.
+Reads and tab changes send no device command. A lost mutation reply keeps the
+draft and locks further changes until explicit refresh, without retry.
+Device maximum-on protection remains a separate feature.
 
 The same dashboard can use the optional [home-Wi-Fi HTTPS entry](../WIFI.md).
 It keeps the existing controls and browser sessions; its HTTPS cookie is Secure.
@@ -105,7 +106,11 @@ without qualified evidence. See the [module guide](../../../modules/companions/R
 
 ### Customizable Home
 
-Choose **Edit Home**, then **Add card** to browse by category. Move cards with the
+Choose **Edit Home**, then **Add card** to search by name or category and combine
+that search with the category buttons. Empty results offer **Reset filters**.
+Neutral icons identify cards without loading private media or mounting control
+adapters in the picker. Unavailable sources keep their reason; Add/Show changes
+only the draft. Closing the picker returns focus to Add card. Move cards with the
 handle or the earlier/later buttons; arrow keys on the handle provide the same
 ordering. Choose a supported Small, Standard or Wide size, Hide or Remove. Hidden
 cards remain in the saved arrangement and can be shown again; removal affects
@@ -113,6 +118,11 @@ only that arrangement. Desktop and Phone have independent orders and sizes.
 Adding a card appends it to the other arrangement if absent. **Cancel** discards
 the draft, **Reset** restores that breakpoint's built-in defaults, and **Done**
 saves both through the core's revision-guarded `home-layout-set` command.
+
+Visible cards wrap in saved order and share each row's remaining width. Small
+keeps a compact preferred width, Standard has more room, and Wide occupies its
+own row. Incomplete rows fill the available space without empty grid slots;
+phone layouts and the Phone editor preview stack cards in one column.
 
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
 sizes and flags only. Reload, another browser and restart read the same state;
@@ -595,6 +605,12 @@ found. No private file or installed-service fallback is used.
 Connections, reached through Settings or its retained bookmark, reads `/api/v2/build`: the serving process's frozen package version,
 source revision, build time and dirty flag, with unavailable identity shown as
 unknown. The build step creates that identity, not a Git command per request.
+Its Diagnostics card (Hub #813) shows **Open Grafana · Local** when the runtime's
+links name `grafana`, as the configuration file's `edge.placeLinks.grafana`
+does for the [Mac-local diagnostics stack](../../../docs/bunny-container.md#diagnostics-stack);
+without that link the card says no viewer is configured. The dashboard builds
+no log table, trace view or query of its own: the link is the whole viewer
+integration, and it is Mac-local, never routed through the remote dashboard.
 
 Use the existing disposable adapter after a build:
 

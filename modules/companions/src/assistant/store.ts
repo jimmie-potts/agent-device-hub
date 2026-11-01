@@ -5,26 +5,36 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
-export const GRAPH_VERSION = 'synthetic-1';
-export const LIMITS = Object.freeze({modelCalls: 4, toolCalls: 2, questions: 2, activeMs: 120_000, modelMs: 30_000,
-  toolMs: 5000, controlMs: 5000, inputBytes: 4096, toolBytes: 8192, stateBytes: 32768, pageBytes: 65536, units: 8192, callUnits: 2048});
-export type Question = {id: string; text: string; answer: string | null};
+import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
+import type {TranscriptItem} from './provider.js';
+
+/** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
+export const GRAPH_VERSION = 'conversation-1';
+import {LIMITS} from './limits.js';
+export {LIMITS} from './limits.js';
+/** A proposed command awaiting the owner's approval: the exact family, target and value, and the synced Hub-mode revision seen when proposed. */
+export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number};
+export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; call: string; proposal: Proposal | null};
 export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null};
+  traceparent: string | null; transcript: TranscriptItem[]};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool';
-  status: 'admitted' | 'succeeded' | 'uncertain'; result: string | null; units: number | null; reservedUnits: number;
+  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
 export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
-export type ConversationMessage = {seq: number; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
+export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
+/** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
+export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
 const parsed = <T>(row: RecordRow | undefined): T | undefined => row === undefined ? undefined : JSON.parse(row.record) as T;
 export const terminal = (status: AssistantStatus): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
+/** Whether a call's fate is unknown: admitted with no answer, or answered after its wait ended. A failed call is settled. */
+export const unresolved = (calls: readonly Call[]): boolean => calls.some(call => call.status === 'admitted' || call.status === 'uncertain');
 
 /** All writes are synchronous and are called inside the owning outbox's transaction when they change task state. */
 export class AssistantStore {
@@ -59,12 +69,17 @@ export class AssistantStore {
     const conversationId = this.conversation(profile) ?? randomUUID();
     this.database.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES (?,?)').run(profile, conversationId);
     return {version: 1, graphVersion: GRAPH_VERSION, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
-      generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null};
+      generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
+      transcript: [{role: 'owner', text: prompt}]};
   }
   message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number): void {
     if (this.messages.removal(id) !== undefined) return;
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
     this.messages.capture(task, id, role, text, atMs);
+  }
+  /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
+  savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
+    return this.database.prepare('SELECT id,role,text FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined;
   }
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
@@ -92,7 +107,7 @@ export class AssistantStore {
     if (id === undefined) return page;
     const task = this.latest().find(task => task.profile === profile);
     if (task !== undefined && after === 0) page.currentTask = {taskId: task.id, question: task.question};
-    const rows = this.database.prepare('SELECT seq,task_id AS taskId,role,text,at_ms AS atMs FROM assistant_messages WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT 17').all(id, after) as ConversationMessage[];
+    const rows = this.database.prepare('SELECT seq,id,task_id AS taskId,role,text,at_ms AS atMs FROM assistant_messages WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT 17').all(id, after) as ConversationMessage[];
     for (const row of rows.slice(0, 16)) {
       const candidate = {...page, messages: [...page.messages, row], next: row.seq};
       if (Buffer.byteLength(JSON.stringify(candidate)) > LIMITS.pageBytes) break;

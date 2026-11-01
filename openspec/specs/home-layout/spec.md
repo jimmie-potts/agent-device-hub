@@ -24,6 +24,10 @@ Home SHALL offer Edit Home, a source-aware card picker, supported sizes, pointer
 - **WHEN** the owner rearranges cards, opens the picker, switches breakpoints and cancels
 - **THEN** the saved arrangements remain unchanged and no command was sent
 
+#### Scenario: Balanced visible rows
+- **WHEN** the number of visible cards, their supported sizes or the available page width changes
+- **THEN** cards wrap in saved order and share each row's available width without empty trailing slots, Small retains a compact width relative to Standard, Wide occupies a full row and phone arrangements and their editor preview use one column
+
 #### Scenario: Alert visibility without a notices section
 - **WHEN** a hidden or removed Inbox or session placement has unresolved items or attention
 - **THEN** its ordinary card stays visible until that evidence clears, with no separate notices section, Your space caption or layout caption
@@ -34,3 +38,23 @@ The picker SHALL include the registered reusable core, device, light, room, musi
 #### Scenario: Source loss and definition retirement
 - **WHEN** a saved card's source becomes unavailable or its definition is removed
 - **THEN** source loss preserves an unavailable card while an unknown definition is omitted with one report, and neither condition sends device commands or silently writes layout metadata
+
+### Requirement: Searchable neutral card picker
+The Add card picker SHALL filter the current catalog locally by card name or
+category, combined with its visually distinguishable selected category. Empty results SHALL offer a
+concise message and a reset of both filters. Opening the picker SHALL focus its
+labelled search field; closing SHALL return focus to Add card. Identifiers SHALL
+use existing public artwork or neutral inline icons without mounting control
+adapters, reading private media or acquiring another connection merely for a
+picker preview. Icons SHALL add no keyboard stop or observed-state claim.
+Existing sizes, availability reasons, added/hidden state, duplicate and capacity
+guards, independent arrangements, attention protection and guarded Done/Cancel
+behavior SHALL remain unchanged. Filtering and Add/Show SHALL send no command.
+
+#### Scenario: Combine search and category
+- **WHEN** the owner searches a card name or category, applies a category and resets an empty result
+- **THEN** only matching current catalog rows appear, reset restores the full catalog and focus returns to search without changing the saved layout or sending a command
+
+#### Scenario: Identify and add a card safely
+- **WHEN** the owner browses identifiers and adds or shows an eligible card
+- **THEN** unavailable rows retain their reasons, already visible cards cannot be duplicated, icons acquire no source or media, and only the draft changes until guarded Done succeeds
