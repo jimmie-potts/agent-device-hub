@@ -45,7 +45,7 @@ export function checkDesktopFeedIdentity(message: Message): ErrorBody | undefine
 
 /** Receipt qualification applies on both loopback and private entries, before publication reaches the bus. */
 export function checkReadReceiptIdentity(message: Message): ErrorBody | undefined {
-  const dedicated = message.source.startsWith('bunny/parts/claude-read-');
+  const dedicated = message.source.startsWith('bunny/parts/claude-read-') || message.source.startsWith('bunny/parts/codex-read-');
   if (message.dataschema !== READ_RECEIPT_SCHEMA) return dedicated
     ? errorBody('forbidden', {detail: 'a read-receipt credential publishes only its qualified receipts'}) : undefined;
   const observation = message.data as Lifecycle21Observation;

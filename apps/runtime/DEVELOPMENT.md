@@ -6,6 +6,19 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+### Codex read-receipt checks
+
+After `npm run build`, run
+`node --test apps/runtime/dist/tests/codex-receipt-*.test.js apps/runtime/dist/tests/codex-read-*.test.js apps/runtime/dist/tests/read-receipts.test.js apps/runtime/dist/tests/read-helper.test.js`.
+The focused suites cover source qualification, native request/response correlation,
+byte forwarding, SDK freshness, target binding and the core transaction. Existing
+`test:runtime:built` and the core CI job discover these tests automatically.
+Use the owning Linux test environment for runtime storage/edge checks, as for the
+existing receipt suites. Run shared build/type/lint, event/SDK, contract and workflow
+checks before publication. Disposable native protocol checks and the actual
+operator-run Desktop check qualify different boundaries; neither alone establishes
+installed B.U.N.N.Y. read acceptance.
+
 Automation device following (#1330) uses the existing runtime CI test discovery.
 After the root build, run `node --test apps/runtime/dist/tests/automation-device-follow.test.js`
 and the automation, power schedule and power limit suites. The disposable runtime
