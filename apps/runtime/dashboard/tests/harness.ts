@@ -20,7 +20,8 @@ import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSch
 import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
-import {observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
+import {IDENTITY, observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
+import {CLAUDE_RECEIPT_FEED, receiptSource} from '../../dist/src/read-receipts/qualification.js';
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, playbackFactory, type PlaybackModuleOptions, type SimulatedSpeakers} from '@jimmie-potts/playback';
@@ -38,6 +39,8 @@ export const TOKEN_MARKER = 'tok_SYNTHETIC835';
 const HOOK_SOURCE = 'bunny/parts/hook';
 
 export type WorldOptions = {
+  /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
+  readReceipts?: boolean;
   /** The real read-only Tidbyt module over its synthetic cloud. */
   tidbyt?: boolean;
   /** Synthetic HTTPS forwarder for the home-Wi-Fi browser journey. */
@@ -77,6 +80,7 @@ export type WorldOptions = {
 };
 
 export type World = {
+  readonly readProducer?: string;
   wemo:SimulatedWemo;
   wemoLoseReply():void;
   onnState(): ReturnType<SimulatedOnn['state']>;
@@ -155,10 +159,13 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const codingToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const receiptToken = randomBytes(32).toString('base64url');
+  const receipt = receiptSource(IDENTITY);
   const credentials = join(configDir, 'edge-credentials.json');
   await writePrivate(credentials, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [{id: 'hook', source: HOOK_SOURCE, digest: tokenDigest(token), scopes: ['ingest']},
     {id: 'nanoleaf', source: 'bunny/parts/nanoleaf', digest: tokenDigest(consumerToken), scopes: ['read', 'control']},
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
+    ...(options.readReceipts === true ? [{id: receipt.slice('bunny/parts/'.length), source: receipt, digest: tokenDigest(receiptToken), scopes: ['read', 'ingest']}] : []),
     ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
   ]}));
   const roborock=new SimulatedRoborock();
@@ -250,9 +257,17 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   }
   const port = Number(new URL(runtime.url).port);
   assert.equal(INSTALLED_PORTS.includes(port), false, 'never an installed service\'s port');
+  const readProducer = join(configDir, 'read-producer.json');
+  if (options.readReceipts === true) {
+    const {provider, client, hostId, sourceId} = IDENTITY;
+    await writePrivate(readProducer, JSON.stringify({enabled: true, qualified: true,
+      endpoint: `${runtime.url}/api/monitor/v1/events`, token: receiptToken,
+      source: {provider, client, hostId, sourceId, feed: CLAUDE_RECEIPT_FEED}}));
+  }
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
+    ...(options.readReceipts === true ? {readProducer} : {}),
     readerToken, codingToken,
     roborockRefresh:refreshRoborock,
     roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},

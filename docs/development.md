@@ -804,9 +804,25 @@ It checks Codex and Claude identity preservation, closed receipt metadata,
 source qualification, generation/turn/notice binding, immutable decisions and
 unchanged default registration. Run `npm run test:sdk:built` after the shared
 build for default-consumer compatibility. The retained lifecycle/controller
-TypeScript, Python and package checks above still apply. No Python 2.1 mirror
-or runtime adoption is introduced. Disposable provider experiments and actual
-client qualification are separate from these source checks.
+TypeScript, Python and package checks above still apply. No Python 2.1 mirror is
+introduced. The runtime adoption in #1354 adds session/2.1 provenance cases to
+this same event suite and `read-receipts.test.ts`, `read-helper.test.ts` and
+`claude-read-plugin.test.ts` to existing runtime CI discovery. After the root
+build, run these focused files, `test:runtime:built`,
+`test:sdk:built`, `test:runtime-dashboard:built` and the affected disposable core
+scenario. The tests cover authenticated source binding, exact owner revision,
+replay, later turns, restart and failed commit. Helper tests run its executable
+against the authenticated gateway and require Linux for private configuration
+checks through `/proc/self/fd`. Use a disposable container on macOS.
+`node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
+real helper's session/2.1 output clears the dashboard's unread row, survives a
+page reload and returns to unread on a new turn without a page command. The
+existing hosted dashboard smoke entry includes this journey. Native
+plugin validation, native offline rendering tests and the real Claude terminal
+exercise remain separate from synthetic runtime acceptance. The
+[operator guide](../apps/runtime/READ-RECEIPTS.md) describes the selected version
+and the installed gate. No actual provider binary or personal profile is used
+by ordinary CI.
 
 The same event test command discovers `speech.test.mjs`. It checks explicit
 endpoint availability, live-card expiry, scenario and history refusal, closed

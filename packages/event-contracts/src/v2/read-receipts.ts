@@ -14,13 +14,14 @@ export type ReadReceiptObservation = {
   observedAtMs: number; ordering: Ordering;
 };
 export type Lifecycle21Observation = LifecycleObservation | ReadReceiptObservation;
+export const SESSION_RECEIPT_SCHEMA = `${SCHEMA_BASE}session/2.1`;
 export const READ_RECEIPT_SCHEMA = `${SCHEMA_BASE}lifecycle/2.1`;
 
 const lifecycleCheck = coreFamilies.find(family => family.dataschema === `${SCHEMA_BASE}lifecycle/2.0`)?.check;
 if (lifecycleCheck === undefined) throw new Error('lifecycle/2.0 semantic check is required');
 const receiptFamily = defineFamily('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', lifecycleCheck, '2.1');
 
-/** Call after registerCoreFamilies. Default SDK/runtime registration deliberately excludes this extension. */
+/** Default core-family/SDK registration excludes this extension; the adopting runtime calls this explicitly afterward. */
 export function registerReadReceiptFamily(validator: MessageValidator): void {
   registerFamilies(validator, [receiptFamily]);
 }

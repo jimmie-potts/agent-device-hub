@@ -1,3 +1,5 @@
+import {READ_RECEIPT_SCHEMA, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 import {SCHEMA_BASE, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {DESKTOP_METADATA_SCHEMA, type DesktopMetadataSnapshot, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {LIFECYCLE_SCHEMA} from '../hook/observation.js';
@@ -20,8 +22,9 @@ export function checkKeyFamily(message: Message, key: string): ErrorBody | undef
 
 /** Additional private-ingress admission; released local producer configuration stays unchanged. */
 export function checkProducerIdentity(message: Message): ErrorBody | undefined {
-  if (message.dataschema !== LIFECYCLE_SCHEMA || !PRODUCER.test(message.source)) return undefined;
+  if ((message.dataschema !== LIFECYCLE_SCHEMA && message.dataschema !== READ_RECEIPT_SCHEMA) || !PRODUCER.test(message.source)) return undefined;
   // The SDK has validated this family and authenticated the envelope's source.
+  if (message.dataschema === READ_RECEIPT_SCHEMA && isReadReceipt(message.data as Lifecycle21Observation)) return checkReadReceiptIdentity(message);
   const {provider, client, hostId, sourceId} = (message.data as LifecycleObservation).identity;
   return message.source === producerSource({provider, client, hostId, sourceId}) ? undefined
     : errorBody('forbidden', {detail: 'the private producer credential does not own this lifecycle identity'});
@@ -38,4 +41,16 @@ export function checkDesktopFeedIdentity(message: Message): ErrorBody | undefine
   const {provider, client, hostId, sourceId} = (message.data as DesktopMetadataSnapshot).feed;
   return PRODUCER.test(message.source) && message.source === producerSource({provider, client, hostId, sourceId, feed: 'desktop-metadata'}) ? undefined
     : errorBody('forbidden', {detail: 'the producer credential does not own this Desktop feed'});
+}
+
+/** Receipt qualification applies on both loopback and private entries, before publication reaches the bus. */
+export function checkReadReceiptIdentity(message: Message): ErrorBody | undefined {
+  const dedicated = message.source.startsWith('bunny/parts/claude-read-');
+  if (message.dataschema !== READ_RECEIPT_SCHEMA) return dedicated
+    ? errorBody('forbidden', {detail: 'a read-receipt credential publishes only its qualified receipts'}) : undefined;
+  const observation = message.data as Lifecycle21Observation;
+  if (!isReadReceipt(observation)) return dedicated
+    ? errorBody('forbidden', {detail: 'a read-receipt credential cannot publish lifecycle activity'}) : undefined;
+  return receiptQualification({...message, data: observation}) === undefined
+    ? errorBody('forbidden', {detail: 'this source is not qualified for the read receipt feed'}) : undefined;
 }

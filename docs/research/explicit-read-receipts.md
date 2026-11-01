@@ -1,9 +1,11 @@
 # Explicit client read receipts
 
-Research date: 2026-10-31. [Hub #1341](https://github.com/jimmie-potts/agent-device-hub/issues/1341)
-owns the contract delivery following [#1324](https://github.com/jimmie-potts/agent-device-hub/issues/1324).
-Those issues own acceptance and remaining work. This note records source and
-experiment findings, not installed qualification.
+Research dates: 2026-10-31 and 2026-11-01. The completed contract delivery in
+[Hub #1341](https://github.com/jimmie-potts/agent-device-hub/issues/1341) follows
+[#1324](https://github.com/jimmie-potts/agent-device-hub/issues/1324).
+[#1354](https://github.com/jimmie-potts/agent-device-hub/issues/1354) owns runtime
+adoption and its remaining acceptance. This note records source and disposable
+experiment findings; installed qualification remains separate.
 
 ## What the contract changes
 
@@ -15,10 +17,11 @@ one owner generation, turn and finished notice. Its pure reference rejects
 missing qualification and obsolete targets. See the
 [contract guide](../../packages/event-contracts/README.md#explicit-client-read-receipts-lifecycle21-opt-in).
 
-Default runtime and SDK validators still refuse this version. Neither the
-retained state owner nor session/2.0 can preserve the new evidence yet. Their
-later adoption must be coordinated with the producer and actual-client
-qualification. No service, hook, provider setting or device changes here.
+Default SDK registration still refuses lifecycle/2.1. The adopting runtime
+explicitly registers it and stores qualified provenance in its core-owned
+record, publishing session/2.1. The retained state owner and session/2.0 remain
+unchanged. The [runtime guide](../../apps/runtime/READ-RECEIPTS.md) describes
+the qualified producer and its enrollment boundaries.
 
 ## Codex protocol experiment
 
@@ -77,12 +80,40 @@ CLI jobs. It establishes rendering, not a person's view action. Its message ID
 is not a transcript message ID. See the
 [Claude hook reference](https://code.claude.com/docs/en/hooks#messagedisplay).
 
-The shared contract and reference accept qualified `claude/code` receipts, so
-Claude can reuse the target and stale-evidence rules. A Claude-specific adapter
-still needs a qualified reader signal. Existing host-session metadata helps
-route a session but does not establish a read. Existing Claude lifecycle,
-title/project and attention behavior is unchanged. An application we own can
-use its own qualified view action for either provider.
+The follow-up T3 inspection at
+[8760d063](https://github.com/pingdotgg/t3code/blob/8760d063e903406c8e8f695b0852c0a15fc1e00f/packages/client-runtime/src/state/threadVisits.ts)
+found the same application-owned visit policy. It does not qualify another
+application's UI. Existing host-session metadata can route a Claude session
+but cannot establish a read.
+
+## Claude terminal qualification
+
+Native Claude Code 2.1.292 supports a terminal plugin that exposes an explicit
+button. Disposable real-UI tests found that its extension `turnId` differs from
+the lifecycle hook's `prompt_id`. The sequence UserPromptSubmit, turn.start,
+Stop and turn.complete supplies the correlation. An older open panel retains
+both its original native turn and lifecycle prompt after another result.
+
+The delivered plugin and helper were then exercised against a disposable Linux
+runtime with existing lifecycle hooks. Completion and panel opening left read
+unknown. A real terminal mouse press produced the matching session/2.1 receipt
+and displayed confirmation. After another completion, a late click on the old
+panel left the newer record unchanged. Reopening selected the newer turn and
+its button produced the matching read. Notice acknowledgments, attention and
+lifecycle timestamps remained unchanged.
+
+The native test caught and corrected two integration defects: a fractional SDK
+deadline in the executable and an incorrectly shaped native redraw call. The
+executable has a gateway regression test; native plugin validation and its
+offline rendering tests also pass. These native and synthetic checks cover
+different boundaries and do not substitute for installed acceptance.
+
+Tests used temporary Claude homes, synthetic prompts, a dummy key and a loopback
+model endpoint. Tools and MCP were disabled, external model traffic was denied,
+and no owner configuration or credentials were used. The test container had no
+installed volumes or device modules. Temporary profiles and the test container
+were removed. Qualification is limited to this Claude terminal version;
+Claude Desktop and Codex Desktop remain unqualified.
 
 ## Collection and evidence boundaries
 

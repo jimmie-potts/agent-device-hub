@@ -1,3 +1,4 @@
+import {registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
 // The runtime (ADR 0012, "Runtime and transport"): one process, one in-process bus and a fixed list of modules, with a
 // loopback health endpoint. It runs with zero modules. With an edge (#920), its gateway (#835) serves the SDK edge, the
 // `/api/v2` routes, MCP, the modules' pages and browser sign-in on the same listener, for the client credentials and
@@ -257,6 +258,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   }
   const credentials: EdgeCredential[] | undefined = options.edge === undefined || edgeConfig === undefined ? undefined : await readEdgeCredentials(edgeConfig.credentials);
   const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
+  if (validator !== undefined) registerReadReceiptFamily(validator);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
   const recent: string[] = [];
   let evicted = 0;
