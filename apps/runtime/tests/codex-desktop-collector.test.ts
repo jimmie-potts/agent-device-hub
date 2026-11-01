@@ -230,8 +230,8 @@ it('records are contract records: one failure per run, its recovery, and read st
 
 it('the entry point publishes snapshots, heartbeats and changes to a real runtime and stops on SIGTERM', async context => {
   if (process.platform !== 'linux') {
-    // The runtime reads its private configuration file only where /proc/self/fd shows which file it opened.
-    context.skip('a runtime with an edge configuration file needs Linux procfs');
+    // This exercise is kept to Linux, where CI runs it; the private-file reader works off Linux too (Hub #1355).
+    context.skip('a runtime with an edge configuration file is exercised on Linux only');
     return;
   }
   const token = randomBytes(32).toString('base64url');

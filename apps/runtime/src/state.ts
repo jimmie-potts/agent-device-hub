@@ -231,14 +231,18 @@ const denied = (error: unknown): boolean => error instanceof Error && 'code' in 
  * along it, outside every Git checkout, and a regular file with one link and no permissions for group or others, owned
  * by the runtime's user, of at most `maxBytes`. It opens the last part without following a link, and then checks that
  * the file it opened is the one at `file`, through `/proc/self/fd`, so a directory along the path swapped for a link
- * after the checks is refused too. Without procfs (macOS, Hub #1355) it instead checks the path again once the file is
- * open: the directory must still be reached without a link and the opened file must be the one the path names, so a
- * swap that lasts is refused, while one made and undone between the open and that check is not seen. It checks the
- * opened file's type, owner, permissions, links and size, so a file swapped in after the checks is checked as well. A file the runtime's user may not read is not private. Throws
- * `PrivateFileError` naming the problem. `beforeOpen` runs between the path's checks and the open, where such a swap
- * would happen; only tests pass it.
+ * after the checks is refused too; on Linux a `/proc/self/fd` that cannot be read refuses the file as before. Off
+ * Linux, where there is no procfs (macOS, Hub #1355), it instead checks the path again once the file is open: the
+ * directory must still be reached without a link and the opened file must be the one the path names, by device and
+ * inode, so a swap that lasts is refused, while one made and undone between the open and that check is not seen. It
+ * checks the opened file's type, owner, permissions, links and size, so a file swapped in after the checks is checked
+ * as well. A file the runtime's user may not read is not private. Throws `PrivateFileError` naming the problem.
+ * Only tests pass the options: `beforeOpen` runs between the path's checks and the open, where such a swap would
+ * happen; `afterOpen` runs between the open and the check of what was opened; `withoutProcfs` takes the no-procfs
+ * check on any host, so Linux tests exercise it.
  */
-export async function readPrivateFile(file: string, maxBytes: number, {beforeOpen}: {beforeOpen?: () => Promise<void>} = {}): Promise<Buffer> {
+export type PrivateFileOptions = {beforeOpen?: () => Promise<void>; afterOpen?: () => Promise<void>; withoutProcfs?: boolean};
+export async function readPrivateFile(file: string, maxBytes: number, {beforeOpen, afterOpen, withoutProcfs = false}: PrivateFileOptions = {}): Promise<Buffer> {
   if (!isAbsolute(file)) throw new PrivateFileError('relative', file);
   const path = resolve(file);
   if (onWindowsMount(path)) throw new PrivateFileError('mount', path);
@@ -271,14 +275,17 @@ export async function readPrivateFile(file: string, maxBytes: number, {beforeOpe
   try {
     // O_NOFOLLOW guards only the last part. A directory along the path swapped for a link after the checks above would
     // lead the open elsewhere, so the file opened must still be the one at `path`. Without procfs it cannot be shown.
-    const opened = await readlink(`/proc/self/fd/${handle.fd}`).catch(() => undefined);
+    await afterOpen?.();
     const info = await handle.stat();
-    if (opened === undefined) {
+    if (process.platform !== 'linux' || withoutProcfs) {
       // No procfs: the directory chain is checked again now that the file is open, and the open file must be the one
       // the path names, by device and inode. A swap that lasts is seen; one undone before this check is not.
       const [again, named] = await Promise.all([realpath(dirname(path)).catch(() => undefined), lstat(path).catch(() => undefined)]);
       if (again !== dirname(path) || named === undefined || named.dev !== info.dev || named.ino !== info.ino) throw new PrivateFileError('link', path);
-    } else if (opened !== path) throw new PrivateFileError('link', path);
+    } else {
+      const opened = await readlink(`/proc/self/fd/${handle.fd}`).catch(() => undefined);
+      if (opened !== path) throw new PrivateFileError('link', path);
+    }
     if (!info.isFile()) throw new PrivateFileError('not-file', path);
     if (info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0) throw new PrivateFileError('not-private', path);
     if (info.size > maxBytes) throw new PrivateFileError('too-large', path);
