@@ -3,7 +3,7 @@
 import {randomBytes} from 'node:crypto';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {once} from 'node:events';
-import {createServer, type Server} from 'node:http';
+import {createServer, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {
   InProcessBus, RemoteEdge, connectRemote, type BusOptions, type Diagnostic, type EdgeOptions, type EdgePermissions, type ErrorScope, type Participant,
@@ -119,12 +119,14 @@ export type EdgeSetup = {
   /** The host's own authentication, in place of the sources' grants. */
   authenticate?: EdgeOptions['authenticate'];
   onEndpointClosed?: EdgeOptions['onEndpointClosed'];
+  /** Gives a test control of the real stream's writable buffering. */
+  onStream?: (response: ServerResponse) => void;
 };
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
   maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
-  heartbeatMs, stallMs, liveness, now, commandMemory, authenticate, onEndpointClosed,
+  heartbeatMs, stallMs, liveness, now, commandMemory, authenticate, onEndpointClosed, onStream,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
   const diagnostics: Diagnostic[] = [];
@@ -147,6 +149,7 @@ export async function startEdge({
   const arrivals = new Map<string, number>();
   const server: Server = createServer((request, response) => {
     const route = (request.url ?? '').split('/').pop() ?? '';
+    if (route === 'stream') onStream?.(response);
     const nth = (arrivals.get(route) ?? 0) + 1;
     arrivals.set(route, nth);
     if (refuse?.(route, nth) === true) {
