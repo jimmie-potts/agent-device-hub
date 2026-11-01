@@ -1,5 +1,5 @@
 import type { RunsPage, VacuumStatus } from '@jimmie-potts/roborock';
-import { act, answers, bodyOf, deviceState, expect, holds, noToken, refusedWith, running, type Harness, type Scenario, } from '../framework.js';
+import { act, answers, bodyOf, deviceState, expect, holds, noToken, POLL_MS, refusedWith, running, StepFailure, type Harness, type Scenario, } from '../framework.js';
 const OWNER = 'bunny/modules/roborock';
 const ROOT = '/modules/roborock/content/';
 const status = (h: Harness): VacuumStatus | undefined => h.reader.states<VacuumStatus>('roborock-vacuum', OWNER)[0]?.data;
@@ -78,7 +78,21 @@ export const scenarios: readonly Scenario[] = [{
             expect('unauthenticated content is refused', answers({ as: 'anonymous', method: 'GET', path: ROOT + 'status' }, answer => refusedWith(answer, 401, 'unauthenticated'))),
             expect('another origin cannot read through a browser session', answers({ as: 'browser', method: 'GET', path: ROOT + 'status', origin: 'other' }, answer => refusedWith(answer, 403, 'forbidden'))),
             expect('reader cannot send device commands', answers({ as: 'reader', method: 'POST', path: '/api/v2/commands/power-set', body: { target: 'vacuum', data: { on: true } } }, answer => refusedWith(answer, 403, 'forbidden'))),
-            act('vendor temporarily becomes unavailable', h => { h.simulate({ device: 'roborock', action: 'offline' }); }),
+            act('vendor temporarily becomes unavailable', async h => {
+                const before = status(h)?.revision;
+                if (before === undefined || !Number.isSafeInteger(before))
+                    throw new StepFailure('the prior Roborock revision is missing');
+                h.simulate({ device: 'roborock', action: 'offline' });
+                // A read already in flight may publish after the action. Give that revision its own finite
+                // preparation phase; a newer revision does not prove an offline read or collector completion.
+                for (let waited = 0; waited <= 10_000; waited += POLL_MS) {
+                    if ((status(h)?.revision ?? before) > before)
+                        return;
+                    if (waited < 10_000)
+                        await h.wait(POLL_MS);
+                }
+                throw new StepFailure('post-action Roborock revision did not arrive');
+            }),
             // A status read has a nine-second transport budget and ten-second collector fence. Wait for that
             // transition separately so a pending read is not reported as erased history by the default three-second check.
             expect('the reader observes the unavailable status', h => status(h)?.availability === 'unavailable'
