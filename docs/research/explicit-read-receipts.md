@@ -62,7 +62,7 @@ receipt class with synthetic dependencies; they were not a live UI test.
 
 T3 Code owns its UI and can record its own view policy. Its
 [thread visit implementation](https://github.com/pingdotgg/t3code/blob/575579d68ac4bae09f8426a345d4a3eac1e90c67/packages/client-runtime/src/state/threadVisits.ts)
-records visits when a thread view mounts and while it remains visible. This
+records visits when a thread view mounts and while the tracker remains mounted. This
 supports the `owned-ui` contract branch. It cannot tell us whether a result in
 a separate provider's application was viewed.
 
