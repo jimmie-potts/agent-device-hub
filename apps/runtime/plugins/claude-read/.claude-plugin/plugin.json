@@ -1,0 +1,6 @@
+{
+  "name": "bunny-read",
+  "version": "0.1.0",
+  "description": "Explicit read receipts for completed Claude Code terminal replies",
+  "author": {"name": "B.U.N.N.Y."}
+}

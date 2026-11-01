@@ -1,3 +1,5 @@
+import {decideReadReceipt, type ReadReceiptObservation, type ReadReceiptQualification} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {viewRevision} from '../read-receipts/qualification.js';
 // The core's store (Hub #831): agent-state's storage adapter, with the core's outbox, history and published records in
 // the same SQLite file, so each change and the messages it publishes commit in one transaction (ADR 0012, "Ownership and
 // publication").
@@ -32,7 +34,7 @@ import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type OperationStep} from './history.js';
 import {
-  REMOVAL_SCHEMA, SESSION_SCHEMA, attentionAdded, changed, entityOf, project, turnsUncertainAt,
+  REMOVAL_SCHEMA, sessionSchema, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
 
 export {takeLock, type Lock} from './lock.js';
@@ -277,6 +279,26 @@ export class CoreStore implements Storage {
     const plan = this.#plan(undefined, atMs);
     if (plan.revision === undefined) return false;
     await this.#commit(plan, atMs, () => {});
+    return true;
+  }
+
+  /** The core calls this on its serialized intake. No await separates target checking from the SQLite commit. */
+  async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
+    const before = this.#records.get(message.subject), observation = message.data, atMs = this.#options.clock.now();
+    if (before === undefined || decideReadReceipt(message, before, qualification).status !== 'eligible' ||
+      observation.event.receipt.kind !== 'owned-ui' || observation.event.receipt.viewRevision !== viewRevision(before) ||
+      observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || before.lastEvidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;
+    const record: SessionRecord = {...before, revision: this.#revision + 1, read: 'read',
+      readReceipt: {noticeId: observation.event.noticeId, observedAtMs: observation.observedAtMs, source: message.source,
+        receipt: structuredClone(observation.event.receipt)}};
+    const plan: Plan = {durable: undefined, revision: record.revision, records: [record], removed: [],
+      restarted: this.#restarted, hostSessions: this.#hostSessions,
+      messages: [{key: sessionKey(record.id), draft: stateDraft(record)}],
+      cause: {message, kind: 'read-receipt-observed', entity: record.id}};
+    await this.#commit(plan, atMs, tx => {
+      if (this.#records.get(record.id)?.revision !== before.revision) throw new Error('read-target-changed');
+      tx.take(message, TAKEN_LIFECYCLE_MS);
+    });
     return true;
   }
 
@@ -651,6 +673,15 @@ export class CoreStore implements Storage {
     for (const id of [...restarted]) if (!after.has(id)) restarted.delete(id);
     for (const id of [...hostSessions.keys()]) if (!after.has(id)) hostSessions.delete(id);
     const projected = project([...after.values()], {restarted, hostSessions}, atMs);
+    for (const [id, record] of projected) {
+      const old = this.#records.get(id), receipt = old?.readReceipt;
+      if (receipt !== undefined && old !== undefined && old.generation === record.generation && sameTurn(old.turn, record.turn) &&
+        record.parent.status !== 'known' && (record.activity === 'idle' || record.activity === 'interrupted') &&
+        record.notices.some(notice => notice.id === receipt.noticeId && sameTurn(notice.turn, record.turn)) &&
+        !(intake?.entity === id && intake.kind === 'read.observed')) {
+        projected.set(id, {...record, read: 'read', readReceipt: receipt});
+      }
+    }
     const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));
     const removed = [...this.#records.keys()].filter(id => !projected.has(id));
     const ended: Draft<object>[] = [];
@@ -755,7 +786,7 @@ function prepare(db: DatabaseSync): Statements {
 const familyOf = (draft: Draft<object>): string => draft.dataschema.slice('https://bunny.invalid/events/'.length).split('/')[0] ?? '';
 
 function stateDraft(record: SessionRecord): Draft<SessionRecord> {
-  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record};
+  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record};
 }
 
 function occurrence<T extends object>(family: string, type: string, data: T & {session: string}): Draft<T> {

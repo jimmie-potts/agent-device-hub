@@ -38,6 +38,14 @@ The sources are the snapshot session record (snapshot 1.0 to 1.3) and the durabl
 2.1 stored session. The 2.0 home is `session/2.0`, published as
 `org.bunny.session.updated`.
 
+The runtime's qualified explicit receipt adds a separate session/2.1 output.
+Its `readReceipt` records the authenticated source, observation time, exact
+finished notice and closed lifecycle/2.1 receipt. It requires `read: read` and
+an eligible finished root turn. This core-owned provenance is not a new field
+in retained 1.x snapshots or durable agent-state exports. Records without it
+continue to use the session/2.0 mapping below. Read evidence changes neither
+notice acknowledgment, attention nor lifecycle freshness.
+
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
 | `identity`, `identity.provider`, `identity.client`, `identity.hostId`, `identity.sourceId`, `identity.sessionId` | `session /identity` | Unchanged. Codex uses `cli` or `desktop`, Claude uses `code` (schema). |

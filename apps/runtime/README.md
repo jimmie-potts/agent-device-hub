@@ -528,6 +528,11 @@ automatically. Inspect the current rules/settings before another edit.
 
 ## Agent hooks
 
+Qualified explicit read actions use the separate
+[read-receipt helper and Claude terminal plugin](READ-RECEIPTS.md). Ordinary
+lifecycle hooks do not infer readership. The core publishes session/2.1 only
+for a committed qualified receipt; other sessions retain session/2.0.
+
 `bin/monitor-hook.mjs` is the 2.0 agent hook (#926): the hook command of Claude
 Code and Codex, `node bin/monitor-hook.mjs <producer.json>`, with the hook's
 JSON on stdin. For each hook it:

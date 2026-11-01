@@ -1,3 +1,4 @@
+import {SESSION_RECEIPT_SCHEMA} from '@jimmie-potts/event-contracts/v2/read-receipts';
 // The core's mapping between profile 2.0 and the agent-state owner (Hub #831), as packages/event-contracts/MAPPING.md
 // sets it out. A 2.0 `lifecycle` observation becomes the lifecycle 1.2 envelope the agent-state reducer admits, and each
 // stored session becomes a `session/2.0` record whose freshness holds at the envelope time it is sent with. The reducer
@@ -9,6 +10,7 @@ import {
 } from '@jimmie-potts/event-contracts/v2/families';
 
 export const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
+export const sessionSchema = (record: SessionRecord): string => record.readReceipt === undefined ? SESSION_SCHEMA : SESSION_RECEIPT_SCHEMA;
 export const REMOVAL_SCHEMA = 'https://bunny.invalid/events/removal/2.0';
 export const LIFECYCLE_TYPE = 'org.bunny.lifecycle.observed';
 

@@ -1,3 +1,5 @@
+import {registerReadReceiptFamily, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 // The agent-session core (Hub #831, ADR 0012): the one owner of agent sessions in the runtime, as the source `bunny/core`.
 // It runs agent-state's owner on the core store, takes hooks' 2.0 `lifecycle` observations into the reducer, publishes
 // each committed change as `session` state, removal and occurrence messages, serves `session` through sync and answers
@@ -11,7 +13,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type LifecycleObservation, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
+  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
@@ -33,7 +35,7 @@ import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
-import {LIFECYCLE_TYPE, SESSION_SCHEMA, reducedKind, toEnvelope} from './mapping.js';
+import {LIFECYCLE_TYPE, sessionSchema, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
 import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
 import {readRoomContent} from './room-models.js';
@@ -343,6 +345,7 @@ class Core {
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
+    registerReadReceiptFamily(this.#validator);
     this.#ready = new Promise<void>((resolve, reject) => {
       this.#opened = resolve;
       this.#failed = reject;
@@ -395,7 +398,7 @@ class Core {
     const families = ['session', ...this.#parts.flatMap(part => part.families ?? [])];
     const registered: Promise<unknown>[] = [
       this.#sdk.serveSync(families, request => this.#serve(request)),
-      this.#sdk.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => this.#observe(message)),
+      this.#sdk.subscribe<Lifecycle21Observation>('bunny.event.lifecycle.*', message => this.#observe(message)),
       this.#sdk.respond<NoticeAcknowledgeRequest>('bunny.cmd.notice-acknowledge.*', command => this.#acknowledge(command)),
       this.#sdk.respond<ApprovalRecoverRequest>('bunny.cmd.approval-recover.*', command => this.#recover(command)),
       this.#sdk.respond<NoticeClearRequest>('bunny.cmd.notice-clear.*', command => this.#clearNotice(command)),
@@ -594,7 +597,7 @@ class Core {
   }
 
   /** Takes one hook observation into the reducer, once by `(source, id)`. */
-  async #observe(message: Message<LifecycleObservation>): Promise<void> {
+  async #observe(message: Message<Lifecycle21Observation>): Promise<void> {
     await this.#ready;
     if (this.#stopped) return;
     await this.#run(async () => {
@@ -625,6 +628,24 @@ class Core {
         return;
       }
       const observation = message.data;
+      if (isReadReceipt(observation)) {
+        const receipt = {...message, data: observation};
+        const qualification = receiptQualification(receipt);
+        if (qualification === undefined) {
+          recordLog(this.#log, 'message.received', {...fields, ...refused('forbidden')}, message);
+          return;
+        }
+        try {
+          const applied = await this.#store.readReceipt(receipt, qualification);
+          recordLog(this.#log, 'message.received', {...fields, 'bunny.outcome': applied ? 'accepted' : 'stale',
+            'bunny.state.revision': this.#store.revision, ...(!applied ? {'bunny.reason': 'stale'} : {})}, message);
+        } catch {
+          this.#degraded(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
+          recordLog(this.#log, 'message.received', {...fields, ...refused('unavailable')}, message);
+        }
+        this.#schedule();
+        return;
+      }
       if (observation.event.kind === 'metadata-observed') {
         if (message.source !== 'bunny/modules/codex-desktop') {
           recordLog(this.#log, 'message.received', {...fields, ...refused('forbidden')}, message);
@@ -882,7 +903,7 @@ class Core {
       this.#schedule();
       const {families} = request.data;
       const states: StateDraft[] = families.includes('session') ? this.#store.records().map(record => ({
-        type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record,
+        type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record,
       })) : [];
       for (const part of this.#parts) {
         if ((part.families ?? []).some(family => families.includes(family))) states.push(...part.states?.(families) ?? []);

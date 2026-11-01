@@ -29,6 +29,38 @@ function example(provider = 'codex', kind = 'provider-client') {
 }
 const ineligible = reason => ({status: 'ineligible', reason});
 
+function readSession() {
+  const {message, session} = example('claude', 'owned-ui');
+  session.read = 'read';
+  session.readReceipt = {noticeId: message.data.event.noticeId, observedAtMs: message.data.observedAtMs,
+    source: message.source, receipt: message.data.event.receipt};
+  return {...structuredClone(fixtures.session), subject: session.id, dataschema: 'https://bunny.invalid/events/session/2.1', data: session};
+}
+
+test('session/2.1 exposes a qualified Claude receipt without weakening session/2.0', () => {
+  const v = validator(false), message = readSession();
+  assert.equal(v.validate(message).ok, true, 'current consumers understand the receipt-bearing output');
+  assert.equal(v.validate({...message, dataschema: 'https://bunny.invalid/events/session/2.0'}).ok, false);
+});
+
+test('session/2.1 refuses positive read without matching, closed root provenance', () => {
+  const v = validator(false);
+  for (const change of [
+    m => {delete m.data.readReceipt;},
+    m => {m.data.readReceipt.noticeId = 'f'.repeat(64);},
+    m => {m.data.readReceipt.source = 'not-authenticated-source';},
+    m => {m.data.readReceipt.receipt.prompt = 'synthetic private content';},
+    m => {m.data.turn = {status: 'unknown'};},
+    m => {m.data.turn.id = 'different-turn';},
+    m => {m.data.activity = 'active';},
+    m => {m.data.read = 'unknown';},
+    m => {m.data.parent = {status: 'known', identity: {...m.data.identity, sessionId: 'parent'}};},
+  ]) {
+    const message = readSession(); change(message);
+    assert.equal(v.validate(message).ok, false, change.toString());
+  }
+});
+
 test('Codex local and Claude code receipts require explicit registration and retain their identity', () => {
   const optedIn = validator(), ordinary = validator(false);
   for (const provider of ['codex', 'claude']) for (const kind of ['provider-client', 'owned-ui']) {

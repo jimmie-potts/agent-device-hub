@@ -14,6 +14,7 @@ export type ReadReceiptObservation = {
   observedAtMs: number; ordering: Ordering;
 };
 export type Lifecycle21Observation = LifecycleObservation | ReadReceiptObservation;
+export const SESSION_RECEIPT_SCHEMA = `${SCHEMA_BASE}session/2.1`;
 export const READ_RECEIPT_SCHEMA = `${SCHEMA_BASE}lifecycle/2.1`;
 
 const lifecycleCheck = coreFamilies.find(family => family.dataschema === `${SCHEMA_BASE}lifecycle/2.0`)?.check;

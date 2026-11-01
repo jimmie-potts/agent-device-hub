@@ -1,3 +1,4 @@
+import type {ReadReceipt} from './read-receipts.js';
 import {assistantFamilies} from './assistant.js';
 import {lightingLayoutFamilies} from './lighting-layout.js';
 import {playbackLayoutFamilies} from './playback-layout.js';
@@ -46,6 +47,7 @@ export type SessionRecord = {
   activity: 'unknown' | 'active' | 'idle' | 'interrupted';
   attention: Attention[];
   notices: {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]}[];
+  readReceipt?: {noticeId: string; observedAtMs: number; source: string; receipt: ReadReceipt};
   read: 'unknown' | 'read' | 'unread'; unavailable: Unavailable[]; ordering: Ordering;
   observedAtMs: number; lastEvidenceAtMs: number; freshness: 'current' | 'uncertain'; restartUncertain: boolean;
   children: {active: number; uncertain: number};
@@ -227,6 +229,10 @@ const checkSession: PayloadCheck = message => {
   const record = message.data as SessionRecord;
   if (record.id !== sessionEntityId(record.identity)) return 'payload /id not the identity key';
   if (record.generation > record.revision) return 'payload /generation after the revision';
+  if (record.readReceipt !== undefined && (record.turn.status !== 'known' || !record.notices.some(notice =>
+    notice.id === record.readReceipt?.noticeId && notice.turn.status === 'known' && record.turn.status === 'known' && notice.turn.id === record.turn.id))) {
+    return 'payload /readReceipt does not name the current finished turn';
+  }
   return entity(message, record.id) ?? parentage(record.identity, record.parent) ?? authority(record.identity, record.ordering) ??
     fresh(message, record) ?? (repeated(record.notices.map(notice => notice.id)) ? 'payload /notices duplicate id' : undefined) ??
     (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined);
@@ -298,6 +304,7 @@ const checkPlaybackArtwork: PayloadCheck = message => {
 /** Every core family, in registration order: the session schema holds definitions the other agent families use. */
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
+  define('session', 'state', 'org.bunny.session.updated', checkSession, '2.1'),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
   define('power-limit', 'state', 'org.bunny.power-limit.updated', message=>{

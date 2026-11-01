@@ -315,9 +315,10 @@ expiry and retirement through MAPPING.md's rules.
 `@jimmie-potts/event-contracts/v2/read-receipts` exports
 `registerReadReceiptFamily`, `ReadReceiptObservation`, `ReadReceiptQualification`
 and `decideReadReceipt`. Call the registration function after
-`registerCoreFamilies`. Default core, SDK and runtime registration excludes this
-version and rejects it with `unsupported-version`. This is an unused contract
-extension, not an installed collector or a runtime state transition.
+`registerCoreFamilies`. Default core-family and SDK registration excludes this
+lifecycle version and rejects it with `unsupported-version`. The runtime
+explicitly registers it for the qualified producer described in its
+[read-receipt guide](../../apps/runtime/READ-RECEIPTS.md).
 
 The version accepts existing lifecycle/2.0 observations with their existing
 rules and adds `read-receipt-observed`. A receipt carries the full native session
@@ -354,12 +355,16 @@ known parents qualify. Lifecycle freshness, attention and other consumers'
 acknowledgments stay independent. The helper can accept an old finished result
 without declaring the agent fresh or connected.
 
-A future owner must recheck eligibility inside its serialized operation and
-handle delivery ordering, replay and any later unread action. This helper does
-not implement those state transitions. Adoption must update the lifecycle
-consumer and versioned session output together; session/2.0 and the retained
-1.x reducer still restrict positive read evidence to Codex Desktop. Schema
-acceptance does not qualify either Codex or Claude's actual client. See the
+The pure helper does not implement state transitions. The runtime core rechecks
+eligibility and the exact owner view revision in its serialized operation and
+commits read evidence, history and outbox together. Its session/2.1 output
+requires `read: read` and closed `readReceipt` provenance: `noticeId`,
+`observedAtMs`, authenticated `source` and the receipt. The notice must belong
+to the known current finished turn, with no known parent. Current core-family
+registration accepts this output version. Records without provenance keep
+session/2.0; that schema and the retained 1.x reducer still restrict positive
+read evidence to Codex Desktop. Schema acceptance alone does not qualify a
+client. See the
 [qualification findings](../../docs/research/explicit-read-receipts.md).
 
 `tests/read-receipts.test.mjs` covers both provider identities, both receipt
