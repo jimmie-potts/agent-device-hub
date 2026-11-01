@@ -93,7 +93,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 });
 
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
-  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'workflow.yml']);
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
@@ -1234,7 +1234,7 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 });
 
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
-  const workflows = ['checks.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
+  const workflows = ['checks.yml', 'release-qualification.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
   assert.equal(dotfile.jobs.length, 8, 'a dot-file is not Markdown, so both workflows apply');
   for (const [pattern, file, expected] of [

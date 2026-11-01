@@ -166,7 +166,8 @@
     "test:reachy:built": "node --test modules/reachy-mini/dist/tests/*.test.js",
     "test:reachy:browser": "node apps/runtime/dashboard/tests/reachy.browser.ts",
     "deploy:batch": "node scripts/bunny-deploy.mjs",
-    "test:deployment": "node --test scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs"
+    "test:deployment": "node --test scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs",
+    "test:runtime:container": "node scripts/runtime-container.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

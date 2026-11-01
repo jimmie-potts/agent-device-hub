@@ -325,13 +325,14 @@ test('local paths include both sides of renames, uncommitted and untracked files
 // A step belongs to the group whose changed paths can break it; `shared` runs only with full coverage.
 const STEP_GROUPS = {
   core: {
+    'node --test scripts/release/tests/*.test.mjs': 'shared',
     'actions/setup-python': 'shared',
     'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt': 'shared',
     'npm run test:maintenance:built': 'maintenance', 'npm run test:maintenance:package:built': 'maintenance',
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
     'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
-    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
+    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
     'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',
@@ -393,7 +394,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);
   assert.deepEqual(select.outputs, Object.fromEntries(['mode', 'groups', ...Object.keys(JOBS)].map(name => [name, `\${{ steps.select.outputs.${name} }}`])));
-  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
+  assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', BUNNY_RELEASE_QUALIFICATION: '${{ inputs.qualification }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
   const gate = checks.jobs.gate;
   assert.equal(gate.name, 'Selected checks gate');
   assert.equal(gate.if, 'always()');

@@ -1,0 +1,90 @@
+name: Release qualification
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full integrated source SHA, also selected as the workflow ref
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+# GitHub retains the newest pending run. New arrivals never cancel the active fixed candidate.
+concurrency:
+  group: bunny-release-qualification
+  cancel-in-progress: false
+jobs:
+  pin:
+    name: Pin candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Require the exact integrated candidate
+        env:
+          CANDIDATE: ${{ inputs.candidate || github.sha }}
+        run: |
+          test "${#CANDIDATE}" = 40
+          test "$CANDIDATE" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$CANDIDATE"
+          git merge-base --is-ancestor "$CANDIDATE" origin/main
+  checks:
+    name: Source coverage
+    needs: pin
+    uses: ./.github/workflows/checks.yml
+    with:
+      qualification: true
+  workflow:
+    name: Workflow coverage
+    needs: pin
+    uses: ./.github/workflows/workflow.yml
+    with:
+      qualification: true
+  image:
+    name: Packaged ARM64 image
+    needs: pin
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Build and exercise the immutable packaged candidate
+        id: build
+        run: node scripts/release/build.mjs "$GITHUB_SHA" "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release/production-image.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+  result:
+    name: Release qualification result
+    needs: [pin, checks, workflow, image]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - name: Retain actual qualification outcome
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_NEEDS: ${{ toJSON(needs) }}
+          RELEASE_IMAGE: ${{ needs.image.outputs.image }}
+        run: node scripts/release/finalize.mjs "$RUNNER_TEMP/qualification.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: release-evidence-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qualification.json
+          if-no-files-found: error
+          retention-days: 14
