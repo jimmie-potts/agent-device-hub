@@ -101,7 +101,18 @@ export const scenarios: readonly Scenario[] = [{
                 await h.wait(10);
                 h.simulate({ device: 'roborock', action: 'online' });
             }),
-            expect('recovered empty summary never deletes retained records', h => status(h)?.availability === 'available' && status(h)?.collection.retainedRuns === 30 || 'recovery erased retained history'),
+            // Recovery uses the same bounded reader as the unavailable transition. A pending read does not
+            // establish history loss; wait for availability before judging the retained archive.
+            expect('the reader observes the recovered status', h => {
+                const value = status(h);
+                return value?.availability === 'available'
+                    || `recovery is ${value?.availability ?? 'missing'} at revision ${value?.revision ?? 'missing'}, retained ${value?.collection.retainedRuns ?? 'missing'}/30 records`;
+            }, 10_000),
+            expect('recovered empty summary never deletes retained records', h => {
+                const value = status(h);
+                return value?.availability === 'available' && value.collection.retainedRuns === 30
+                    || `recovered status is ${value?.availability ?? 'missing'} at revision ${value?.revision ?? 'missing'}, retained ${value?.collection.retainedRuns ?? 'missing'}/30 records`;
+            }),
             act('runtime restarts on its own private database', h => h.restart()),
             expect('restart retains public history and records a collection gap', h => status(h)?.availability === 'available' && status(h)?.collection.retainedRuns === 30
                 && (status(h)?.collection.gaps ?? 0) > 0 || 'restart lost history or gap'),
