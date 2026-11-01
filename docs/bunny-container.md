@@ -12,7 +12,7 @@ distribution without a source checkout and generalized update commands are optio
 future work. Existing alternate-host code and evidence remain retained. The
 [optional maintenance design](runtime-manual-maintenance.md) adds no prerequisite
 to this procedure. Keep existing data and writer protections, and coordinate the
-maintenance window manually; no persistent maintenance gate is promised.
+maintenance window. The qualified batch operator below supplies a private operation lock and unfinished-operation marker for cooperating host commands.
 
 Run the host commands below from the repository root with Node 24, Docker Desktop's
 Linux engine and its Compose plugin available. Use an already built, reviewed
@@ -578,8 +578,15 @@ command can still finish; no maintenance command replays it.
 
 ## Back up a stopped instance
 
-Use the same simple named-volume backup path on Mac and Windows. Choose a new
-archive volume name distinct from both projects' state, config and secrets.
+Use the same simple named-volume backup path on Mac and Windows.
+Native Windows manual `start`, `stop`, and named-volume `backup` and `restore`
+retain the existing Docker operator checks. They use manual writer coordination,
+not the POSIX batch lock on the selected Mac below, and cannot participate in a Mac batch
+operation. This preserves the existing route without adding Windows qualification.
+Native Windows host-directory export remains refused.
+
+Choose a new archive volume name distinct from both projects' state, config and
+secrets.
 First check that it does not already exist; an existing volume must be preserved
 and a different name selected. A connection/permission error is not evidence
 that the name is unused.
@@ -781,3 +788,119 @@ with explicit uncertainty, and clean shutdown. These results do not qualify
 transferring an archive between architectures, a native Windows/macOS core,
 host browser access, real collectors/devices or live deployment. No full
 verification harness is required for this lane.
+
+## Deploy a qualified batch
+
+`npm run deploy:batch -- deploy --request /ABSOLUTE/PRIVATE/request.json` is the
+bounded image replacement route for the established Mac. Run matching reviewed
+operator scripts from the qualified revision, with Node 24, Docker Desktop and
+an authenticated GitHub CLI. It fetches the exact successful release qualification
+and image artifacts from GitHub, verifies their run, revision, job and hash binding,
+loads that image and inspects its Linux ARM64 identity. It does not build, pull,
+choose newest main, change private settings or select a physical test.
+
+Prepare a mode-600 request outside Git in an owner-only directory. Select the
+whole included batch and assess its actual stored-format changes and affected
+installed clients before executing it. Keep the request and operational evidence
+private. This is the public-shape request format; replace every synthetic identity
+with the selected target's observed value:
+
+```json
+{
+  "schema": "bunny-batch-deployment/1.0",
+  "operation": "forward",
+  "id": "batch-example",
+  "owner": "designated-deployment-task",
+  "project": "selected-project",
+  "compose": "/ABSOLUTE/PRIVATE/compose.yaml",
+  "containerId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "previousImage": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "previousRevision": "cccccccccccccccccccccccccccccccccccccccc",
+  "candidate": "dddddddddddddddddddddddddddddddddddddddd",
+  "runId": 123,
+  "runAttempt": 1,
+  "includedIssues": ["https://github.com/jimmie-potts/agent-device-hub/issues/1365"],
+  "requiredModules": ["core"],
+  "client": "trusted-browser",
+  "forward": {
+    "assessment": "Focused assessment of the whole selected change set.",
+    "evidence": "Private reader/write/reopen evidence for actual changed formats."
+  },
+  "recovery": {"status": "unknown"},
+  "backup": {"volume": "selected-private-archive-volume", "name": "unique-snapshot"}
+}
+```
+
+The selected Compose directory must be owner-only, outside every checkout and
+without symlink traversal. Prepare the existing ordinary private archive volume
+using [stopped backup](#back-up-a-stopped-instance). Use a new request ID and
+snapshot name each time. The operator renders that exact Compose selection,
+preserves its environment, private volumes, network and bindings, and writes an
+owner-only replacement Compose JSON beside it with only the qualified image
+changed. It pins its source hash and checks the actual selected container again
+before stopping. No arbitrary command or callback is accepted from the request.
+
+On the selected Mac host, every cooperating write uses one private POSIX directory,
+`~/.local/state/bunny-operations`, outside Git. Each project has one empty SQLite coordination file ending in
+`.operation-owner`, a pending marker and a records directory. Deployment, manual
+maintenance and reconciliation use the runtime core's same lease helper on that
+file. Process death releases the OS lease, while the pending marker remains. Manual `start`, `stop`, `backup` and `restore`
+commands use the same guard; `status` stays read-only. Do not bypass an active
+operation with direct Docker/Compose commands, an old operator revision or another
+host. The lock coordinates these host commands; the runtime still owns its actual
+store/device leases. No lock claims to exclude a different computer.
+
+The operator records intent before stop, backup, removal, creation, start, health
+and client verification. It verifies PID zero before backup/removal, removes only
+the selected stopped container without its volumes and starts only the exact
+replacement after checking its preserved resources. Health must identify every
+`requiredModules` entry as running. The fixed client probe signs into the local
+browser protocol, verifies its session and logs out without device commands.
+That protocol check does not replace any affected real-client/browser journey
+selected by the batch. The coordinating deployment task records those checks in
+the private deployment evidence and public sanitized batch summary.
+
+Success records the exact revision, image, new container, backup identity, checks
+and writer release after actual unlock. Feature issues link that same public batch
+result and reuse its verified release. Keep any unfinished real-client or physical
+obligation open. Operational records contain native identities and private paths;
+publish only sanitized summaries and source/check links.
+
+A failed start or check stops only the owned failed replacement where possible,
+preserves latest data and leaves the last intended phase pending. A stop that
+cannot be verified is uncertain. There is no retry, oscillation or automatic
+rollback. Inspect the record, Docker identity/state and private latest stores
+before explicitly running:
+
+```text
+npm run deploy:batch -- reconcile --request /ABSOLUTE/PRIVATE/request.json
+```
+
+Reconciliation refuses a held lease, records actual target
+identity/process state and releases the hold. It performs no image selection,
+restart, snapshot restoration or automatic continuation. Prepare a new request
+against the observed current identity for a later fix forward. If a process died
+after creation but before its container ID was recorded, reconciliation permits
+only the recorded candidate image and project/service ownership. Preserve the
+latest volumes and all failed-state evidence. If no container remains after an
+interrupted removal, inspect the record's pinned `replacementCompose`, its
+qualified image and preserved volumes before an explicit manual `start` with
+that exact Compose file. This uses the same guard and does not repeat the failed
+deployment or restore a snapshot.
+
+An explicit previous-image return uses `"operation": "return"`, a matching
+qualified release for that previous image and `"recovery":{"status":"qualified"}`.
+Supply `--compatibility /ABSOLUTE/PRIVATE/compatibility.json`. Its mode-600
+`bunny-image-return/1.0` receipt must name `outcome: compatible`, the exact `image`
+and `revision`, `stateSha256`, `configSha256` and a nonempty `evidence`
+reference. Establish that reader/configuration on the latest state using an owned
+copy and the affected readers, then bind the receipt to the stopped backup this
+operation verifies. `stateSha256` is SHA-256 of the JSON object containing the
+manifest's `configSha256`, `references`, `directories` and `files`, in that key
+order. It excludes the snapshot timestamp and revision. First stop and back up to
+a separate preliminary snapshot, qualify the previous reader on its copy and
+prepare this receipt. The operation's new snapshot must have identical contents;
+a changed latest store refuses the stale receipt. Unknown, incompatible or stale evidence refuses return before
+image replacement. It never restores an older snapshot or deletes current data.
+Unknown recovery permits an otherwise qualified forward operation. Snapshot
+restoration retains its separate explicit owner decision and data-gap disclosure.

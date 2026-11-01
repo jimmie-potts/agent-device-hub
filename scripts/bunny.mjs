@@ -34,11 +34,11 @@ export function parse(argv) {
     || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(positionals[1]))) refuse();
   return {command, archiveVolume: values['archive-volume'], project: values.project, compose: resolve(values.compose ?? composeDefault), path: positionals[1]};
 }
-function stopped(info) {
+export function stopped(info) {
   if (!['created', 'exited'].includes(info.State?.Status) || info.State.Running !== false || info.State.Restarting !== false || info.State.Pid !== 0
     || info.HostConfig?.RestartPolicy?.Name !== 'no') refuse();
 }
-function container(info, project) {
+export function container(info, project) {
   if (!/^[0-9a-f]{64}$/.test(info.Id ?? '') || !/^sha256:[0-9a-f]{64}$/.test(info.Image ?? '')
     || info.Config?.Labels?.['com.docker.compose.project'] !== project || info.Config?.Labels?.['com.docker.compose.service'] !== 'core'
     || info.Config?.User !== '1000:1000' || info.HostConfig?.RestartPolicy?.Name !== 'no') refuse();
@@ -61,7 +61,7 @@ function localBinding(ports, pixooBind) {
     && (pixooBind === undefined || (Array.isArray(pixoo) && pixoo.length === 1
       && pixoo[0].HostIp === pixooBind && pixoo[0].HostPort === '41240'));
 }
-async function access(info, project, run) {
+export async function access(info, project, run) {
   const ports = info.HostConfig?.PortBindings ?? {};
   const value = name => {
     const entries = (info.Config?.Env ?? []).filter(entry => entry.startsWith(name + '='));
@@ -113,13 +113,13 @@ async function access(info, project, run) {
     || (networks[name].NetworkID && networks[name].NetworkID !== network.Id)
     || (info.State?.Running && networks[name].NetworkID !== network.Id)) refuse();
 }
-async function ordinaryVolume(name, run) {
+export async function ordinaryVolume(name, run) {
   const volumes = JSON.parse(await run(['volume', 'inspect', name]));
   if (!Array.isArray(volumes) || volumes.length !== 1 || volumes[0].Name !== name
     || volumes[0].Driver !== 'local' || volumes[0].Scope !== 'local'
     || Object.keys(volumes[0].Options ?? {}).length !== 0) refuse();
 }
-async function selected(plan, run) {
+export async function selected(plan, run) {
   const raw = await run(['ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + plan.project,
     '--filter', 'label=com.docker.compose.service=core']);
   if (raw === '') return undefined;
@@ -206,7 +206,16 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   if (result.operation !== plan.command || result.status !== 'complete') refuse();
   return result;
 }
+export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory,root) {
+  if(process.platform==='win32'||plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
+  const {withOperation}=await import('./bunny-operations.mjs');
+  return withOperation({project:plan.project,root},()=>operate(plan,run,checkPrivate));
+}
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {process.stdout.write(JSON.stringify(await operate(parse(process.argv.slice(2)))) + '\n');}
+  try {
+    const plan=parse(process.argv.slice(2));
+    const result=await maintain(plan);
+    process.stdout.write(JSON.stringify(result)+'\n');
+  }
   catch {process.stderr.write('B.U.N.N.Y. operation did not complete. Keep partial output and inspect the selected stopped instance; do not retry a partial restore.\n'); process.exitCode = 1;}
 }

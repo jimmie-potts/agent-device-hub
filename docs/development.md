@@ -2196,3 +2196,31 @@ reader refusals, metadata privacy and restart over both scenario transports.
 private import/export, keyboard and axe checks. Preserve build/type/lint, affected
 event/runtime/SDK consumers and workflow validation. All data is synthetic; these
 checks neither install the feature nor qualify a live model or physical device.
+
+## Qualified Mac batch operator checks
+
+The existing operator suite includes a synthetic native Windows boundary check:
+with `process.platform` set to `win32` and no `getuid`, manual start and stop,
+and named-volume backup and restore, retain their Docker paths without POSIX
+coordination files. A separate Mac boundary check refuses missing UID support
+before Docker work. These are source regressions, not new Windows qualification.
+
+Use Node 24 and `npm ci`, then `npm run build`, `npm run typecheck`,
+`npm run lint:js`, `npm run test:deployment`, `npm run check:workflow` and
+`npm run test:workflow`. The runtime CI group runs the operation/deployment tests
+beside the existing container operator and backup suites. These synthetic tests
+cover qualification and target refusals, stopped backup ordering, preserved latest
+state, failed client/start handling, operation contention, manual maintenance
+exclusion, interruption reconciliation and latest-state/config-bound image return.
+The shared qualification suite owns hosted receipt/job/artifact negative cases.
+
+For the explicit Docker exercise, select two local immutable ARM64 production
+image IDs in `BUNNY_BATCH_TEST_PREVIOUS_IMAGE` and `BUNNY_BATCH_TEST_TARGET_IMAGE`,
+then run `node scripts/tests/bunny-deployment.docker.mjs`. It creates a new random
+project and fresh synthetic volumes, with network `none`, no published port and
+control disabled. It verifies real stopped backup, replacement, core health,
+browser session protocol, release recording and the previous production runtime
+reopening a copy of the candidate's latest core state. It removes only its owned
+test resources and confirms their absence. Its injected qualification is synthetic;
+this is not a hosted release or installed/client/physical acceptance claim.
+The [operator guide](bunny-container.md#deploy-a-qualified-batch) owns real operation.
