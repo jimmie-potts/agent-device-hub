@@ -506,7 +506,7 @@ export class AssistantEngine {
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
       return {text: answer.status === 'accepted' ? accepted : `refused: ${answer.error.error.code}`, units: 0};
     };
-    let result: string;
+    let result: string, delegation: Question | undefined;
     if (proposal.family === 'mode-set') {
       const dispatch = this.options.dispatch;
       if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
@@ -518,20 +518,20 @@ export class AssistantEngine {
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
       // The task waits on the delegation before the hand-off leaves, so a worker's word that comes back faster than this
       // step finds its question. The worker's word answers it as the owner's answer would a question; it counts no question.
-      const delegation: Question = {id: `${state.taskId}-delegation-${String(state.step)}`, text: `Delegated to the coding worker in ${proposal.data.repository}: ${proposal.data.brief}`.slice(0, 1024),
+      const pending: Question = {id: `${state.taskId}-delegation-${String(state.step)}`, text: `Delegated to the coding worker in ${proposal.data.repository}: ${proposal.data.brief}`.slice(0, 1024),
         answer: null, kind: 'delegation', call: question.call, proposal: null};
-      await this.#change(state.taskId, current => {
-        if (current.question?.id === delegation.id) return;
-        current.question = delegation; this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now());
-      }, active.span.context);
+      delegation = pending;
+      await this.#change(state.taskId, current => {if (current.question?.id !== pending.id) current.question = pending;}, active.span.context);
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
         .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)));
     }
     const accepted = result.startsWith('accepted');
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
-      // A hand-off the core refused has no worker's word to wait for; the answered approval stands again.
-      if (proposal.family === 'coding-dispatch' && !accepted && current.question?.kind === 'delegation') current.question = question;
+      if (delegation === undefined) return;
+      // The conversation says "delegated" only once the core accepted the hand-off; a refused one has no worker's word to wait for, so the answered approval stands again.
+      if (accepted) this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now());
+      else if (current.question?.kind === 'delegation') current.question = question;
     });
     return {step: state.step + 1, next: proposal.family === 'coding-dispatch' && accepted ? 'await' : 'turn'};
   }

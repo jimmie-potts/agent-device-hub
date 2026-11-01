@@ -23,6 +23,9 @@ const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const NAME = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
 const SHA = /^[0-9a-f]{40}$/;
 const TOKEN = /^[A-Za-z0-9_-]{20,256}$/;
+/** How long after a refused re-declaration the worker tries again, doubling each time, and how often. */
+export const REDECLARE_MS = 500;
+const REDECLARE_ATTEMPTS = 6;
 /** The tools Claude Code may use without asking in the worker's worktree: files, search, builds and tests; no push, no PR, no arbitrary shell. */
 export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm run *)', 'Bash(npm test*)', 'Bash(npx tsc*)', 'Bash(node --test*)', 'Bash(git status*)', 'Bash(git diff*)', 'Bash(git log*)'];
 /**
@@ -30,7 +33,7 @@ export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', '
  * deny rule wins over any allow, so pushing, remotes, worktrees, GitHub, nested harnesses, network shells, privilege and
  * settings edits are refused by the harness itself, not only by the appended instruction.
  */
-export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
+export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git -C *)', 'Bash(git --git-dir*)', 'Bash(git --work-tree*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
   'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
 /** The JSON Schema the worker asks Claude Code to return as its structured output. */
 export const RESULT_SCHEMA = {type: 'object', additionalProperties: false, required: ['outcome', 'summary', 'checks', 'findings', 'limitations'], properties: {
@@ -145,16 +148,32 @@ export class CodingWorker {
     this.#connect = connect;
   }
   #stopping = false;
+  #redeclaring = false;
   async start(): Promise<void> {
     this.#participant = await this.#connect({url: this.configuration.edge, token: this.token, source: CODING_WORKER_SOURCE,
       onDiagnostic: diagnostic => {
         this.log(`coding-worker ${diagnostic.event}`);
         // A lost stream closed the connection-bound endpoint; the new stream needs a fresh declaration, which the core hears as a new endpoint.
-        if (diagnostic.event === 'remote.reconnected' && !this.#stopping) void this.#declare().catch(() => {this.log('coding-worker could not declare its endpoint again; the core keeps reporting it lost');});
+        if (diagnostic.event === 'remote.reconnected' && !this.#stopping) void this.#redeclare();
       }});
     await this.#declare();
   }
-  /** Opens the one endpoint on the current stream and declares it available; a failure is the caller's to report. */
+  /**
+   * Declares again after a reconnect, with backoff: the core may still name the old endpoint until the gateway has
+   * reported it lost, so a refused declaration is closed and tried again rather than left as an undeclared endpoint.
+   */
+  async #redeclare(): Promise<void> {
+    if (this.#redeclaring) return;
+    this.#redeclaring = true;
+    try {
+      for (let attempt = 0; attempt < REDECLARE_ATTEMPTS && !this.#stopping; attempt += 1) {
+        try {await this.#declare(); return;} catch { /* refused, timed out or lost again: wait and try once more */ }
+        await new Promise<void>(resolvePromise => {setTimeout(resolvePromise, REDECLARE_MS * 2 ** attempt).unref();});
+      }
+      this.log('coding-worker could not declare its endpoint again; the core keeps reporting it lost');
+    } finally {this.#redeclaring = false;}
+  }
+  /** Opens the one endpoint on the current stream and declares it available; a refused declaration closes the endpoint again and throws. */
   async #declare(): Promise<void> {
     const participant = this.#participant;
     if (participant === undefined) throw new Error('coding-worker: not connected');
@@ -166,8 +185,12 @@ export class CodingWorker {
     }});
     this.#endpoint = endpoint;
     const answer = await endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
-      data: {requestId: randomUUID(), action: 'enable'}}, {timeoutMs: 5000});
-    if (answer.status !== 'accepted') throw new Error(`coding-worker-enable-refused: ${answer.status === 'rejected' ? answer.error.error.code : 'uncertain'}`);
+      data: {requestId: randomUUID(), action: 'enable'}}, {timeoutMs: 5000}).catch(() => ({status: 'uncertain' as const}));
+    if (answer.status !== 'accepted') {
+      if (this.#endpoint === endpoint) this.#endpoint = undefined;
+      await endpoint.close().catch(() => {});
+      throw new Error(`coding-worker-enable-refused: ${answer.status === 'rejected' ? answer.error.error.code : 'uncertain'}`);
+    }
     this.log(`coding-worker available as endpoint ${endpoint.id}`);
   }
   async stop(): Promise<void> {

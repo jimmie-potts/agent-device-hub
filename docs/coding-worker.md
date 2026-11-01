@@ -20,13 +20,16 @@ can only lower it), dollar budget and wall clock, and an appended instruction
 never to push, open a PR, change settings or leave the worktree. The brief is
 the harness's standard input, never an argument. Every run also carries a
 fixed deny list the harness enforces over any allow, including the owner's
-own Claude Code settings: `git push`, `git remote`, `git worktree`,
-`git config`, `gh`, a nested `claude`, `curl`, `wget`, `ssh`, `scp`, `sudo`,
+own Claude Code settings: `git push`, `git -C`, `git --git-dir`,
+`git --work-tree`, `git remote`, `git worktree`, `git config`, `gh`, a nested
+`claude`, `curl`, `wget`, `ssh`, `scp`, `sudo`,
 edits under `.claude/` or `~/.claude/`, `WebFetch` and `WebSearch`. Only the
 repository's own settings load (`--setting-sources project`) and no MCP
 server (`--strict-mcp-config`). A refusal the harness makes is not seen by
 the worker; it surfaces only if the model lists it under findings, so the
-deny list is what makes those actions impossible rather than reported. The
+deny list is what makes those actions impossible rather than reported.
+Edits stay in the worktree by the harness's own working-directory rule for
+`acceptEdits`, which the installed check observes with a real run. The
 harness returns a structured result (outcome,
 summary, checks, findings, limitations); the worker adds the base and head
 revisions and changed files it reads from git itself, the harness session
@@ -67,7 +70,8 @@ part of this slice.
    A launchd user agent may run that command after login, with `KeepAlive`
    so a crash or a sign-out restarts it; the worker exits on SIGTERM and
    declares its endpoint off. After a lost stream it reconnects on its own
-   and declares a fresh endpoint, which the core shows as the new worker; the
+   and declares a fresh endpoint, trying again with backoff while the core
+   still names the old one, which the core then shows as the new worker; the
    task that was running is ended uncertain and the task says so, and the
    worker never resends.
 

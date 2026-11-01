@@ -9,6 +9,7 @@ import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import type {Command, Reply} from '@jimmie-potts/sdk';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
 import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parseConfiguration, type Harness} from '../src/worker/coding-worker.js';
 
@@ -34,15 +35,20 @@ async function repository(t: TestContext): Promise<string> {
 }
 function fakeEdge() {
   const requests: {family: string; data: unknown}[] = [], progress: CodingProgress[] = [];
-  let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
+  let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, refuse = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
   const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; return Promise.resolve();},
     publish: (family, draft) => {progress.push(draft.data as CodingProgress); return Promise.resolve({} as never);},
-    request: (family, draft) => {requests.push({family, data: draft.data}); return Promise.resolve({status: 'accepted', requestId: 'r', reply: {} as never});}};
+    request: (family, draft) => {
+      requests.push({family, data: draft.data});
+      if (refuse > 0) {refuse -= 1; return Promise.resolve({status: 'rejected', requestId: 'r', error: errorBody('invalid-state')} as never);}
+      return Promise.resolve({status: 'accepted', requestId: 'r', reply: {} as never});
+    }};
   const participant = {openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => {
     opened += 1; responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; onClosed = options.onClosed; return Promise.resolve({...endpoint, id: `worker-endpoint-${String(opened)}`});
   }, close: () => Promise.resolve()} as unknown as RemoteParticipant;
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
   return {connect: connect as unknown as typeof connectRemote, requests, progress, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened,
+    refuseNextEnable: () => {refuse += 1;},
     // The stream is lost: the SDK closes the connection-bound endpoint, reconnects and reports it.
     lose: () => {onClosed?.(); onDiagnostic?.({event: 'remote.disconnected'}); onDiagnostic?.({event: 'remote.reconnected'});}};
 }
@@ -105,7 +111,10 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
   // A lost stream closes the endpoint; once the SDK reconnects, the worker declares a fresh endpoint and enables it again.
   edge.lose(); await until(() => edge.requests.length === 2);
   assert.equal(edge.opened(), 2); assert.deepEqual(edge.requests.map(request => (request.data as {action: string}).action), ['enable', 'enable']);
-  await worker.stop(); assert.equal(edge.closed(), 1);
+  // A declaration the core refuses (it may still name the old endpoint) is closed and tried again after a short wait, so the worker never sits undeclared.
+  edge.refuseNextEnable(); edge.lose(); await until(() => edge.requests.length === 4);
+  assert.equal(edge.opened(), 4); assert.equal(edge.closed(), 1, 'the refused endpoint was closed');
+  await worker.stop(); assert.equal(edge.closed(), 2);
 });
 
 void test('a cancel stops the running harness and the worker reports cancelled; an exit code reports failed with the facts it has', async t => {
