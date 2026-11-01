@@ -213,7 +213,8 @@ for (const name of ['feature', 'investigation']) {
   });
 }
 
-const allTriggers = {push: {branches: ['main']}, pull_request: {}};
+const reusableTrigger = {inputs: {qualification: {type: 'boolean', default: false}}};
+const allTriggers = {workflow_call: reusableTrigger, push: {branches: ['main']}, pull_request: {}};
 // Hub #862: hosted runners sometimes stall in apt until a job's limit. scripts/apt-retry.sh runs a command that uses apt
 // in up to three attempts, each under the limit its first argument gives, and each step's limit sits above three
 // attempts and their cleanups: 20 minutes for 300 s browser installs, 14 for the hook step's 180 s apt commands.
@@ -225,6 +226,7 @@ const hookAptMinutes = 14;
 // Markdown-only main pushes retain #861's filter; PRs must emit the required core check.
 // Hub #1080: affected selection limits product suites and a manual run selects every group.
 const expectedTriggers = {
+  workflow_call: reusableTrigger,
   push: { branches: ['main'], 'paths-ignore': ['**/*.md'] },
   pull_request: {},
   workflow_dispatch: {},
@@ -246,7 +248,7 @@ test('every PR enters Checks while only Markdown-only main pushes filter it', ()
     }
     assert.deepEqual(workflow.permissions, {contents: 'read'});
     assert.deepEqual(workflow.concurrency, {
-      group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
+      group: (checks ? 'checks' : 'workflow') + '-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
       'cancel-in-progress': true,
     });
   }
@@ -257,7 +259,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'workflow.yml']);
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
@@ -271,7 +273,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   assert.equal(coreJobs + 1, 8, 'normal CI must run exactly eight jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
-    group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
+    group: 'checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
     'cancel-in-progress': true,
   });
   const suites = {
@@ -280,7 +282,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:reachy:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],

@@ -1,13 +1,18 @@
 # Workflow and retained documentation checks run for every change, including Markdown.
 name: Workflow
 on:
+  workflow_call:
+    inputs:
+      qualification:
+        type: boolean
+        default: false
   push:
     branches: [main]
   pull_request: {}
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  group: workflow-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 jobs:
   workflow:
