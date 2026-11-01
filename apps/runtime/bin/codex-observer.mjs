@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Selected only by codex-with-read. It delegates every native command and never writes its own protocol frames.
-import {spawn, spawnSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 
 const native = process.env.BUNNY_CODEX_NATIVE;
 const args = process.argv.slice(2);
@@ -34,14 +34,10 @@ const delegate = () => {
 let proxy;
 let producer;
 try {
-  const {qualifiedCodexVersions, isCodexStdioServer} = await import('../dist/src/read-receipts/qualification.js');
+  const {isCodexStdioServer} = await import('../dist/src/read-receipts/qualification.js');
   if (isCodexStdioServer(args)) {
-    const version = spawnSync(native, ['--version'], {encoding: 'utf8', timeout: 1500, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'ignore']});
-    if (version.status === 0 && qualifiedCodexVersions(process.env.BUNNY_CODEX_DESKTOP_VERSION ?? '',
-      process.env.BUNNY_CODEX_DESKTOP_BUILD ?? '', version.stdout.trim())) {
-      ({runCodexProxy: proxy} = await import('../dist/src/read-receipts/codex-proxy.js'));
-      producer = process.env.BUNNY_CODEX_RECEIPT_PRODUCER;
-    }
+    ({runCodexProxy: proxy} = await import('../dist/src/read-receipts/codex-proxy.js'));
+    producer = process.env.BUNNY_CODEX_RECEIPT_PRODUCER;
   }
 } catch { /* A missing or unsupported collector leaves native startup available. */ }
 if (proxy === undefined) delegate();
