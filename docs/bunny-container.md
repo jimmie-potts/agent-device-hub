@@ -867,6 +867,12 @@ and image artifacts from GitHub, verifies their run, revision, job and hash bind
 loads that image and inspects its Linux ARM64 identity. It does not build, pull,
 choose newest main, change private settings or select a physical test.
 
+Before executing the batch, retain matching built Node 24 host source in the
+selected private release outside development and preview checkouts. Run the batch
+and subsequent maintenance from that stable source. Loading a container image does
+not update the host operator. Retained older operators do not participate in the
+new shared operation lease.
+
 Prepare a mode-600 request outside Git in an owner-only directory. Select the
 whole included batch and assess its actual stored-format changes and affected
 installed clients before executing it. Keep the request and operational evidence
@@ -934,6 +940,15 @@ and writer release after actual unlock. Feature issues link that same public bat
 result and reuse its verified release. Keep any unfinished real-client or physical
 obligation open. Operational records contain native identities and private paths;
 publish only sanitized summaries and source/check links.
+
+The completed private handoff must name the retained host source and operator
+path, exact revision, project, shared operation-root path and the record's actual
+`replacementCompose`, together with the verified checks and writer release.
+Future maintenance uses those references under the same host user and home.
+Retain the source and the directory containing the active Compose file, including
+an older release directory when the replacement file is stored there. Remove a
+task checkout only after reading back the stable-source handoff; otherwise record
+that checkout as an installed dependency and keep it.
 
 A failed start or check stops only the owned failed replacement where possible,
 preserves latest data and leaves the last intended phase pending. A stop that
