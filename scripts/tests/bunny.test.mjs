@@ -347,3 +347,55 @@ test('selected state, config and secrets must be distinct ordinary local volumes
     assert.ok(!f.calls.some(a=>a[0]==='run'));
   }
 });
+
+async function qualifiedHelper(requestOverrides={}) {
+  const {EXPECTED_JOB_NAMES,qualificationArtifactNames}=await import('../release/qualification.mjs');
+  const {attestMaintenanceHelper}=await import('../deployment/maintenance-helper.mjs');
+  const candidate='a'.repeat(40),helperImage='sha256:'+'b'.repeat(64),names=qualificationArtifactNames(candidate,10,1);
+  const request={project:'synthetic',containerId:id,previousImage:image,previousRevision:revision,candidate,runId:10,runAttempt:1,...requestOverrides};
+  const jobs=EXPECTED_JOB_NAMES.map((name,index)=>({id:index+1,name,run_id:10,run_attempt:1,head_sha:candidate,status:'completed',conclusion:'success'}));
+  const receipt={schema:'bunny-release-qualification/1.0',repository:'jimmie-potts/agent-device-hub',candidate,evaluationRevision:candidate,runId:10,runAttempt:1,outcome:'qualified',architecture:'linux/arm64',
+    evaluationInputs:Object.fromEntries(['lockfile','workflow','checksWorkflow','workflowWorkflow','dockerfile','verifyDockerfile'].map(key=>[key,'c'.repeat(64)])),
+    image:{id:helperImage,revision:candidate,archive:'production-image.tar.gz',archiveSha256:'d'.repeat(64),artifactName:names.image},checks:jobs.map(job=>({id:job.id,name:job.name,result:'success',headSha:candidate})),createdAt:'2026-11-01T12:00:00Z'};
+  const hosted={run:{id:10,run_attempt:1,head_sha:candidate,event:'workflow_dispatch',path:'.github/workflows/release-qualification.yml',status:'completed',conclusion:'success',repository:{full_name:receipt.repository}},jobs,
+    artifacts:Object.values(names).map((name,index)=>({id:20+index,name,expired:false,workflow_run:{id:10,head_sha:candidate}}))};
+  return {request,receipt,hosted,capability:attestMaintenanceHelper(receipt,hosted,request),candidate,helperImage};
+}
+test('qualified maintenance helper runs the fixed image while retaining old source and exact mounts',async()=>{
+  const h=await qualifiedHelper(),f=fixture();
+  const run=async args=>{
+    if(args[0]==='image'&&args[2]===h.helperImage){f.calls.push(args);return JSON.stringify([{Id:h.helperImage,Architecture:'arm64',Os:'linux',Config:{Labels:{'org.opencontainers.image.revision':h.candidate}}}]);}
+    if(args[0]==='run'){f.calls.push(args);return JSON.stringify({operation:'backup',status:'complete',files:2,manifestSchema:'bunny-container-backup/2',sourceRevision:revision,helper:{image:h.helperImage,revision:h.candidate}});}
+    return f.run(args);
+  };
+  const result=await operate({...parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']),maintenanceHelper:h.capability},run);
+  assert.equal(result.sourceRevision,revision);const args=f.calls.find(args=>args[0]==='run');
+  assert.ok(args.includes(h.helperImage));assert.ok(args.includes('BUNNY_MAINTENANCE_REVISION='+h.candidate));
+  assert.deepEqual(args.slice(-2),['--revision',revision]);assert.ok(args.includes('--network=none'));
+  assert.ok(args.includes('type=volume,source=config,target=/etc/bunny,readonly'));assert.ok(args.includes('type=volume,source=secrets,target=/run/secrets/bunny,readonly'));
+});
+test('raw helper assertions and wrong old-target bindings refuse before a worker runs',async()=>{
+  const raw=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:{image:'sha256:'+'b'.repeat(64)}},raw.run));assert.equal(raw.calls.length,0);
+  for(const mismatch of [{containerId:'f'.repeat(64)},{previousImage:'sha256:'+'f'.repeat(64)},{previousRevision:'f'.repeat(40)},{project:'other'}]) {
+    const h=await qualifiedHelper(mismatch),f=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:h.capability},f.run));assert.ok(!f.calls.some(args=>args[0]==='run'));
+  }
+});
+test('failed authentic qualification metadata cannot mint a helper and serialized capability cannot survive',async()=>{
+  const h=await qualifiedHelper(),{attestMaintenanceHelper}=await import('../deployment/maintenance-helper.mjs');
+  h.hosted.jobs[0].conclusion='failure';assert.throws(()=>attestMaintenanceHelper(h.receipt,h.hosted,h.request));
+  const f=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:JSON.parse(JSON.stringify(h.capability))},f.run));assert.equal(f.calls.length,0);
+});
+test('operational stderr forwards only a fixed worker refusal and never raw private errors',async()=>{
+  const {operatorRefusal,refusalMessage}=await import('../operator-refusal.mjs');
+  const configuration=refusalMessage(operatorRefusal('configuration'));
+  assert.match(configuration,/code=invalid-request stage=configuration/);
+  assert.equal(refusalMessage({stderr:configuration}),configuration);
+  const raw=refusalMessage({stderr:'SYNTHETIC_SECRET /private/selected/config runtime stack',message:'SYNTHETIC_SECRET'});
+  assert.match(raw,/code=unavailable stage=worker/);assert.doesNotMatch(raw,/SYNTHETIC_SECRET|\/private|stack/);
+  assert.match(refusalMessage({stderr:configuration+'SYNTHETIC_SECRET'}),/code=unavailable stage=worker/);
+});
+test('qualification request is limited to explicit backup and restore operator routes',()=>{
+  assert.equal(parse(['backup','snapshot','--project','synthetic','--archive-volume','archives','--qualification-request','/private/request.json']).qualificationRequest,'/private/request.json');
+  assert.throws(()=>parse(['start','--project','synthetic','--qualification-request','/private/request.json']));
+  assert.throws(()=>parse(['worker-backup','--revision',revision,'--destination','/backup/snapshot','--qualification-request','/private/request.json']));
+});

@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {maintenanceHelperFor,maintenanceHelperDetails} from './maintenance-helper.mjs';
 import {Outcome} from '../../packages/sdk/dist/src/evidence.js';
 import {setTimeout as delay} from 'node:timers/promises';
 import {dirname} from 'node:path';
@@ -122,7 +123,9 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
       if(current?.Id!==before.Id||!isDeepStrictEqual(identity(current,request.project),preserved))refuse();
       await phase('stopping');await operate({...request,command:'stop'},run);
       await phase('backing-up');
-      record.backupResult=await operate({...request,command:'backup',archiveVolume:request.backup.volume,path:request.backup.name},run);
+      const maintenanceHelper=maintenanceHelperFor(target);
+      if(maintenanceHelper!==undefined)record.backupHelper=maintenanceHelperDetails(maintenanceHelper);
+      record.backupResult=await operate({...request,command:'backup',archiveVolume:request.backup.volume,path:request.backup.name,...(maintenanceHelper===undefined?{}:{maintenanceHelper})},run);
       const backup=await backupIdentity(request,before,run);record.backupIdentity=backup;
       validateReturn(request,compatibility,backup,target);
       const stoppedCurrent=await selected(request,run);if(stoppedCurrent?.Id!==before.Id)refuse();stopped(stoppedCurrent);

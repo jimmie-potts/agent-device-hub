@@ -8,6 +8,7 @@ import {join,resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {docker,selected,privateHostDirectory} from './bunny.mjs';
 import {operationRoot,reconcileOperation,privateJson} from './bunny-operations.mjs';
+import {attestMaintenanceHelper} from './deployment/maintenance-helper.mjs';
 import {deployBatch,readRequest} from './deployment/batch.mjs';
 const execute=promisify(execFile);
 export async function hostedArtifact(request,root,run=docker) {
@@ -25,13 +26,14 @@ export async function hostedArtifact(request,root,run=docker) {
   await download(names.evidence);
   const receipt=JSON.parse(await readFile(join(destination,'qualification.json'),'utf8'));
   const expected={repository:REPOSITORY,candidate:request.candidate};
-  validateHostedQualification(receipt,{run:runs[0],jobs:jobPages.flatMap(page=>page.jobs),artifacts:artifactPages.flatMap(page=>page.artifacts)},expected);
+  const hosted={run:runs[0],jobs:jobPages.flatMap(page=>page.jobs),artifacts:artifactPages.flatMap(page=>page.artifacts)};
+  validateHostedQualification(receipt,hosted,expected);
   if(receipt.runId!==request.runId||receipt.runAttempt!==request.runAttempt)throw Error('qualification-refused');
   await download(names.image);
   const archive=join(destination,'production-image.tar.gz');
   const digest=createHash('sha256');for await(const chunk of createReadStream(archive))digest.update(chunk);
   validateQualification(receipt,{...expected,archiveSha256:digest.digest('hex')});
-  await run(['load','--input',archive]);return receipt;
+  await run(['load','--input',archive]);attestMaintenanceHelper(receipt,hosted,request);return receipt;
 }
 export async function main(argv) {
   process.umask(0o077);

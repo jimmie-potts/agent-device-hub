@@ -26,7 +26,7 @@ async function fixture(t) {
   new PrivateRequestDigest(db, () => join(state, 'modules/core')).digest('fixture', 'synthetic', true);
   db.exec('COMMIT'); db.close();
   await writeFile(join(state, 'modules/pixoo/retained-asset'), 'synthetic retained media', {mode:0o600});
-  return {root, state, target, config, secrets, destination: join(output, 'snapshot'), revision};
+  return {root, state, target, config, secrets, destination: join(output, 'snapshot'), revision, helper:{revision:'b'.repeat(40),image:'sha256:'+'c'.repeat(64)}};
 }
 async function roundTrip(f) {
   assert.equal((await backup(f)).status, 'complete');
@@ -126,4 +126,37 @@ test('interrupted restore keeps a durable pending marker and refuses reuse', {..
     assert.equal((await stat(join(f.state, 'modules/pixoo/large-asset'))).size, 128 * 1024 * 1024);
     await verify({...f, archive:f.destination});
   } finally {watcher.close(); child?.kill('SIGKILL');}
+});
+
+const onnSection={id:'onn',configurationRevision:1,adbSocket:'/not-configured/socket',serial:'192.0.2.10:12345',hostExecutable:'/not-configured/adb',hostExecutableSha256:'0'.repeat(64),hostVersion:'37.0.1',hostKeyDirectory:'/not-configured/keys'};
+test('version 2 full ONN backup never accesses declared host dependencies and preserves raw config and old source',linux,async t=>{
+  const f=await fixture(t);
+  const raw='  '+JSON.stringify({schema:'runtime-config/1.0',modules:{onn:onnSection},edge:{credentials:join(f.secrets,'edge.json')}})+'\n';
+  await writeFile(f.config,raw);
+  const fs=(await import('node:fs')).default,fp=(await import('node:fs/promises')).default,{syncBuiltinESMExports}=await import('node:module');
+  const calls=[],restores=[];
+  const external=path=>typeof path==='string'&&Object.values(onnSection).filter(value=>typeof value==='string'&&value.startsWith('/')).some(value=>path===value||path.startsWith(value+'/'));
+  for(const [object,names] of [[fp,['lstat','stat','open','readFile','readdir','realpath']],[fs,['lstatSync','statSync','openSync','readFileSync','readdirSync','realpathSync']]])for(const name of names){const original=object[name];restores.push(()=>{object[name]=original;});object[name]=function(path,...args){if(external(path)){calls.push(name);throw Error('external dependency was accessed');}return original.call(this,path,...args);};}
+  syncBuiltinESMExports();
+  try {
+    await backup(f);const manifest=await verify({...f,archive:f.destination});
+    assert.equal(manifest.schema,'bunny-container-backup/2');assert.equal(manifest.revision,revision);assert.deepEqual(manifest.helper,f.helper);
+    assert.deepEqual(manifest.externalHostDependencies,['adbSocket','hostExecutable','hostKeyDirectory'].map(field=>({field:'modules.onn.'+field,path:onnSection[field]})));
+    assert.equal(await readFile(join(f.destination,'runtime.json'),'utf8'),raw);assert.equal(manifest.references.length,1);
+    await restore({...f,state:f.target,archive:f.destination});assert.deepEqual(calls,[]);
+  }finally{for(const restore of restores)restore();syncBuiltinESMExports();}
+});
+test('version 1 verification keeps its old credential-reference semantics',linux,async t=>{
+  const f=await fixture(t);await backup(f);
+  const path=join(f.destination,'manifest.json'),manifest=JSON.parse(await readFile(path,'utf8'));
+  manifest.schema='bunny-container-backup/1';delete manifest.helper;delete manifest.externalHostDependencies;await writeFile(path,JSON.stringify(manifest));
+  assert.equal((await verify({...f,archive:f.destination})).schema,'bunny-container-backup/1');
+});
+test('declared dependency tampering or unsupported absolute fields never verify or restore',linux,async t=>{
+  const f=await fixture(t);await writeFile(f.config,JSON.stringify({schema:'runtime-config/1.0',modules:{onn:onnSection},edge:{credentials:join(f.secrets,'edge.json')}}));
+  await backup(f);const path=join(f.destination,'manifest.json'),manifest=JSON.parse(await readFile(path,'utf8'));
+  manifest.externalHostDependencies[0].path='/unselected/socket';await writeFile(path,JSON.stringify(manifest));
+  await assert.rejects(restore({...f,state:f.target,archive:f.destination}));assert.deepEqual(await readdir(f.target),[]);
+  await writeFile(f.config,JSON.stringify({schema:'runtime-config/1.0',modules:{other:{adbSocket:'/not-configured/socket'}}}));
+  await assert.rejects(backup({...f,destination:join(f.root,'output','unknown')}));
 });
