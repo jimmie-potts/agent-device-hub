@@ -130,9 +130,9 @@ export function assembleResult(repository: string, base: string | null, head: st
     findings: strings(structured?.findings), limitations, summary, sessionId, usage}, ...(reason === undefined ? {} : {reason})};
 }
 
-async function git(cwd: string, args: string[], timeoutMs = 60_000): Promise<string> {
+async function git(cwd: string, args: string[], {timeoutMs = 60_000, trim = true}: {timeoutMs?: number; trim?: boolean} = {}): Promise<string> {
   const {stdout} = await run('git', ['-C', cwd, ...args], {timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024});
-  return stdout.trim();
+  return trim ? stdout.trim() : stdout;
 }
 
 /** One worker process: connect, declare the endpoint, run at most one task at a time. */
@@ -232,7 +232,7 @@ export class CodingWorker {
     let worktree: string, base: string | null = null;
     try {
       await stat(join(repository.path, '.git'));
-      try {await git(repository.path, ['fetch', '--quiet', 'origin', 'main'], 120_000);} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+      try {await git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
       base = await git(repository.path, ['rev-parse', 'origin/main']);
       if (!SHA.test(base)) base = null;
       const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
@@ -260,8 +260,9 @@ export class CodingWorker {
     let head: string | null = null, changedFiles: string[] = [];
     try {
       head = await git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
-      const status = await git(worktree, ['status', '--porcelain', '--untracked-files=all']);
-      changedFiles = status.split('\n').filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
+      // Porcelain lines are two status letters, a space and the path; the first line's leading space is part of the status, so the output is not trimmed.
+      const status = await git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
+      changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
       if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assembleResult(repository.name, base, head, changedFiles, finished.stdout, 'cancelled').result}); return;}
