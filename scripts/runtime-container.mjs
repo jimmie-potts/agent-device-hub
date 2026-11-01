@@ -83,7 +83,7 @@ async function main() {
     if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
     const imageId = execFileSync('docker', ['image','inspect','--format','{{.Id}}',image], {encoding:'utf8'}).trim();
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
-    const id = execFileSync('docker', ['create','--name',name,'--network','none','--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no','--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite], {encoding:'utf8'}).trim();
+    const id = execFileSync('docker', ['create','--init','--name',name,'--network','none','--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no','--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite], {encoding:'utf8'}).trim();
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
     created = id;
     console.log('Disposable runtime checks: ' + name + ' ' + id);

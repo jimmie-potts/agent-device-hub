@@ -946,7 +946,7 @@ pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=
 `npm run test:runtime:verify:built` inside disposable Linux. A build or suite
 failure exits nonzero. The container has its own copied source, dependencies and
 synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
-no published ports. It never attaches to the installed runtime or its volumes.
+no published ports. Docker's init process reaps exited descendants. It never attaches to the installed runtime or its volumes.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
