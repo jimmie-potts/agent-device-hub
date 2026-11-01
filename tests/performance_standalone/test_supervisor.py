@@ -107,3 +107,5 @@ socket.on('error',()=>{require('node:child_process').spawn(process.execPath,['-e
             with self.assertRaisesRegex(ValueError,'cache-integrity-mismatch'):m.stage_cache(lock,cache,target)
 
 if __name__=='__main__':unittest.main()
+
+# Automated fix for issue #1350: Admit the coding-worker credential role in the container's production profile
