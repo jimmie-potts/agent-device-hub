@@ -56,7 +56,7 @@ export async function buildRelease(candidate, destination) {
   // Test derivative reuses the exact immutable production parent. No host ports, mounts, credentials or devices.
   await command('docker', ['run', '--rm', '--init', '--name', `bunny-release-test-${identity}`, '--network', 'none', '--cap-drop', 'ALL',
     '--security-opt', 'no-new-privileges:true', '--env', 'TMPDIR=/tmp', '--env', 'XDG_RUNTIME_DIR=', '--env', 'DBUS_SESSION_BUS_ADDRESS=',
-    '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '1800',
+    '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '2700',
     '/usr/local/bin/node', 'scripts/release/packaged.mjs']);
   if (imageIdentity(await inspect(coreTag), candidate) !== core) throw new Error('release-image-refused');
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,

@@ -228,6 +228,9 @@ source exporter, then runs every scenario and every packaged verification test f
 exact checkout-only `build.test.js`. The in-image launcher prints its complete
 inventory and exclusion. The full source verification job still runs that file;
 its Git inventory assertion needs the checkout metadata the sealed image excludes.
+The packaged suites have a 45-minute process deadline and a 30-second kill grace.
+The complete image job has a separate 60-minute limit for build, tests and artifact
+transport. A timeout fails qualification. It never admits a partially tested image.
 All packaged browser, accessibility, negative-control, adapter, boundary, drain,
 follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
 Docker's init reaps orphaned test processes. Containers have synthetic state and
