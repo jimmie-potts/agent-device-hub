@@ -110,6 +110,7 @@ allowlisted file sizes and SHA256 digests. Allowed exports are:
 - `capture/after.png`
 - `capture/interaction.webm`
 - `capture/checks.json`
+- `capture/scenario-result.json`
 
 Only after authoritative stopped/PID-zero readback does the host copy and
 validate these individual regular files. A pass needs passed assertions, a PNG,
