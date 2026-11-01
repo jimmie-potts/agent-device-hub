@@ -206,6 +206,58 @@ Record the allowlist/decompression negative control with the candidate's local
 checks; source success does not establish account, installed or firmware
 compatibility. Runtime/page/MCP and live-run acceptance stay with #376.
 
+## Release qualification
+
+The manual [release qualification workflow](../.github/workflows/release-qualification.yml)
+runs the existing full Checks and Workflow coverage for one integrated revision.
+Select a branch or tag currently at the full immutable candidate SHA:
+
+```bash
+gh workflow run release-qualification.yml --repo jimmie-potts/agent-device-hub --ref <branch-or-tag-at-candidate> -f candidate=<full-SHA>
+```
+
+The candidate must already be reachable from main. The run refuses if the selected
+ref moved away from the requested SHA before dispatch. Each accepted run inherits
+that fixed event revision for all checkouts. The active candidate stays fixed;
+GitHub concurrency retains only the newest pending run and never cancels active
+qualification for a newer arrival. Omitted revisions have no qualification result.
+The manual path leaves current PR/main gates in force until their separate activation.
+
+Qualification builds a native Linux ARM64 production image from the closed committed
+source exporter, then runs every scenario and every packaged verification test file except the
+exact checkout-only `build.test.js`. The in-image launcher prints its complete
+inventory and exclusion. The full source verification job still runs that file;
+its Git inventory assertion needs the checkout metadata the sealed image excludes.
+All packaged browser, accessibility, negative-control, adapter, boundary, drain,
+follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
+Docker's init reaps orphaned test processes. Containers have synthetic state and
+no host mounts, ports, network or devices. This qualifies source and packaged bytes, not an installed client.
+
+Each run attempt retains two 14-day Actions artifacts.
+`release-image-<SHA>-<run-ID>-<attempt>` holds `production-image.tar.gz`.
+`release-evidence-<SHA>-<run-ID>-<attempt>` holds `qualification.json`.
+The receipt records Docker's immutable image ID, the archive's
+SHA-256, architecture, source/evaluation revision, evaluation input hashes and
+actual required job results. It distinguishes qualified, failed and incomplete work.
+Unavailable/cancelled work or an expired artifact cannot qualify a newer revision.
+Retries explicitly select the same candidate and keep their own attempt identity.
+The producer checks the actual unique unexpired image artifact before reporting
+qualified. Copied successful jobs without that current-attempt artifact remain
+incomplete; a result-only retry cannot invent its image artifact.
+
+Consumers must verify the authentic repository, workflow, run, attempt, source,
+completed job results and unique unexpired artifacts through GitHub, then verify
+the downloaded archive hash and loaded image identity. A copied JSON file alone
+is insufficient. `scripts/release/qualification.mjs` supplies the closed validator
+and expected job names. No qualification command contacts the installed runtime.
+
+Use Node 24 and `npm ci`, then `npm run build`, `npm run lint:js`,
+`node --test scripts/release/tests/*.test.mjs`, `npm run check:workflow` and
+`npm run test:workflow`. CI's core job includes the focused evidence tests.
+Record hosted elapsed time and summed job-minutes with setup, retries and any
+temporary duplicate broad runs. Identify the comparison revision and runner
+differences; job-minutes do not establish invoice savings.
+
 ## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root. If `node --version` does

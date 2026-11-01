@@ -59,7 +59,7 @@ function describe(selection) {
 
 /** The select job. Returns the selection after writing it to GITHUB_OUTPUT and the job summary. */
 export async function runSelect({ env = process.env, fetch = globalThis.fetch } = {}) {
-  const event = env.GITHUB_EVENT_NAME;
+  const event = env.BUNNY_RELEASE_QUALIFICATION === 'true' ? 'release_qualification' : env.GITHUB_EVENT_NAME;
   let input = { paths: [], complete: true };
   if (event === 'pull_request') {
     const payload = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'));

@@ -9,6 +9,11 @@
 
 name: Checks
 on:
+  workflow_call:
+    inputs:
+      qualification:
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths-ignore: ['**/*.md']
@@ -17,7 +22,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 jobs:
   select:
@@ -40,6 +45,7 @@ jobs:
       - id: select
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          BUNNY_RELEASE_QUALIFICATION: ${{ inputs.qualification }}
         run: node scripts/ci-selection/cli.mjs select
   core:
     name: Build, lint and core tests on ${{ matrix.os }}
@@ -69,6 +75,8 @@ jobs:
         run: python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt
       - run: npm run build
       - run: npm run typecheck
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: node --test scripts/release/tests/*.test.mjs
       - run: npm run lint:js
       - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
         run: npm run test:maintenance:built
