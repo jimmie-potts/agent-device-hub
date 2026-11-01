@@ -2235,7 +2235,9 @@ scripts/tests/bunny-operations.test.mjs`, `npm run check:workflow` and
 The worker suite requires Linux private-file semantics; Mac reports those cases
 skipped. It covers raw configuration, version 1/2 readers, zero filesystem access
 for declared ONN dependencies, secret and descriptor tampering, WAL/keys/assets,
-real lease contention and interruption. Host tests cover the qualified helper's
+real lease contention and interruption. Packaged ARM64 qualification runs that
+same worker suite, and a negative control proves helper failure blocks the
+qualification driver. Host tests cover the qualified helper's
 old target and actual image identity, raw/serialized helper refusal, safe stderr
 and unchanged native Windows default commands.
 
