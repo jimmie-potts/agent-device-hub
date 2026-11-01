@@ -583,6 +583,12 @@ export const sign: BunnyModule<SignConfig> = {
   callback's `{text, locked, requestId, run}`. This reuses the existing command
   attempt retention, tracked results and reload behavior; no command values or
   credentials are stored, and an uncertain command is never resent by recovery.
+
+  `context.ui.Command` accepts an optional `attemptKey` for a separately tracked
+  priority control, such as cancelling a known robot task. It retains that
+  control’s request identity across reload without sharing an ordinary movement
+  lock. `target` still names the actual device and every action uses core tracking.
+  Use a module-qualified key and preserve ordinary shared locks by default.
 - **`start(context)`** subscribes, responds and opens local resources: its
   database, its private folder and its secrets. A throw, a rejection or a start
   that outlasts the runtime's start deadline fails the module.

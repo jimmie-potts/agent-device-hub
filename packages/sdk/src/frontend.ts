@@ -49,7 +49,7 @@ export type FrontendUi = {
   InfoTip: ComponentType<{label: ReactNode; children: ReactNode; warning?: boolean}>;
   Select: ComponentType<{label: string; value: string; onChange: (value: string) => void; options: readonly {value: string; label: string}[]}>;
   /** The existing command attempt UI behavior, including retained identities, outcomes and no resend after reload. */
-  Command: ComponentType<{context: FrontendContext; target: string; children: (command: FrontendCommand) => ReactNode}>;
+  Command: ComponentType<{context: FrontendContext; target: string; attemptKey?: string; children: (command: FrontendCommand) => ReactNode}>;
   /** Optional shell-owned saved Hub-mode selector, using the shell's existing synced mode and command attempt. */
   ModeChoice?: ComponentType<{target: string}>;
 };

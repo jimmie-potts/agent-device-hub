@@ -342,7 +342,7 @@ const STEP_GROUPS = {
     'npm run test:wispr-module:built': 'modules', 'npm run test:companions:built': 'modules', 'npm run test:roborock-transport:built': 'modules',
     // The Roborock consumer tests import the built runtime registry.
     'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
-    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:wemo:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
+    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:wemo:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
     'npm run test:onn:native': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
   },
   'app-verify': {
@@ -351,7 +351,7 @@ const STEP_GROUPS = {
     'npm run test:dashboard:smoke': 'shared',
     // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
     'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/room-models.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/music-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/tv.browser.ts': 'runtime',
-    'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:observability:browser': 'shared',
+    'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:reachy:browser': 'runtime', 'npm run test:observability:browser': 'shared',
   },
 };
 

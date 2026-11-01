@@ -342,6 +342,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),
   define('session-label-set', 'command', 'org.bunny.session-label.set.requested', checkSessionLabel),
   define('playback-control', 'command', 'org.bunny.playback.control.requested', routedSubject('routing')),
+  define('reachy-dispatch', 'command', 'org.bunny.reachy.dispatch.requested', message => message.subject === 'reachy' ? undefined : 'Reachy dispatch subject mismatch'),
   ...companionFamilies,
   ...codingFamilies,
   ...assistantFamilies,

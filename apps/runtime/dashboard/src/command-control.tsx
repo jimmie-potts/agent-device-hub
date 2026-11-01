@@ -52,7 +52,7 @@ function attemptStore(target: string) {
 export function useAttempt(target: string, operations: readonly OperationRecord[], operationsLive: boolean, send: Send = ordinary, attemptKey: string = target): FrontendCommand {
   const store = useMemo(() => attemptStore(attemptKey), [attemptKey]);
   const {attempt, sending} = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const latest = operations.filter(operation => operation.target === target).sort((a, b) => (b.sentAtMs - a.sentAtMs) === 0 ? b.revision - a.revision : b.sentAtMs - a.sentAtMs)[0];
+  const latest = attemptKey !== target ? undefined : operations.filter(operation => operation.target === target).sort((a, b) => (b.sentAtMs - a.sentAtMs) === 0 ? b.revision - a.revision : b.sentAtMs - a.sentAtMs)[0];
   const operation = attempt === undefined ? latest : operations.find(item => item.requestId === attempt.requestId);
   const view = operation === undefined ? attempt : operationView(operation);
   useEffect(() => {
@@ -101,9 +101,9 @@ export function useAttempt(target: string, operations: readonly OperationRecord[
   };
 }
 /** A feature supplies its form; the shell owns request retention and tracked operation status. */
-export function Command({context, target, children}: {
-  context: FrontendContext; target: string; children: (command: FrontendCommand) => React.ReactNode;
+export function Command({context, target, attemptKey, children}: {
+  context: FrontendContext; target: string; attemptKey?: string; children: (command: FrontendCommand) => React.ReactNode;
 }): React.JSX.Element {
-  const command = useAttempt(target, context.operations, context.operationsLive, action => 'upload' in action ? context.api.upload(action) : context.api.command(action));
+  const command = useAttempt(target, context.operations, context.operationsLive, action => 'upload' in action ? context.api.upload(action) : context.api.command(action),attemptKey);
   return <>{children(command)}</>;
 }
