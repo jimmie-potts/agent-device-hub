@@ -24,4 +24,3 @@ Receipt evidence SHALL commit with the session revision, history and outbox. It 
 #### Scenario: Missing qualification
 - **WHEN** an ordinary lifecycle credential, mismatched feed, unsupported client or invalid receipt reaches intake
 - **THEN** the runtime refuses it under the existing shared error and diagnostic conventions without changing session state
-

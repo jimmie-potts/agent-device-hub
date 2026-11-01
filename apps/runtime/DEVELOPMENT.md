@@ -521,6 +521,14 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Qualified read receipts (#1354) use
+`node apps/runtime/dashboard/tests/read-receipts.browser.ts` after the root
+build. The real helper and authenticated owner publish session/2.1 to the
+dashboard; the journey checks unread before a click, read after confirmation,
+read after reload, and unread for a later turn, with no page command. Hosted
+smoke includes this disposable journey. It uses synthetic metadata and no
+installed client or device.
+
 Home picker search and visual identifiers (#1316) extend the existing
 `node apps/runtime/dashboard/tests/home-layout.browser.ts` journey, included
 in hosted smoke and the full local browser suite. After the root build it checks

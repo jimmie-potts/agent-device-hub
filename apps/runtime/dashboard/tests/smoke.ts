@@ -78,3 +78,5 @@ await import('./wispr.browser.ts');
 await import('./card-consistency.browser.ts');
 
 await import('./automation.browser.ts');
+
+await import('./read-receipts.browser.ts');

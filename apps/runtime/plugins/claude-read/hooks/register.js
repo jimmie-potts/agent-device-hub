@@ -40,7 +40,7 @@ export function register(on) {
     latest = null;
     try {
       const sessionId = await $.session.id();
-      if (e.reason === 'answer' && started?.sessionId === sessionId && started.turnId === e.turnId &&
+      if (e.reason === 'answer' && e.isAborted === false && started?.sessionId === sessionId && started.turnId === e.turnId &&
           stopped?.sessionId === sessionId && stopped.promptId === started.promptId) {
         latest = {...started, reply: ++reply};
       }
@@ -72,8 +72,8 @@ export function register(on) {
           }
         }
       }
-      await $.ui.open({id: PANE, title: 'Read receipt', focus: true, closeOnEscape: true});
     } catch { pane.target = null; }
+    try { await $.ui.open({id: PANE, title: 'Read receipt', focus: true, closeOnEscape: true}); } catch {}
     return {};
   }).catch(() => ({}));
   on('ui.render', {component: 'Pane'}, async ($, e, next) => {

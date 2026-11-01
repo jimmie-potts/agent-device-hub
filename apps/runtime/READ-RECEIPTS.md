@@ -10,7 +10,7 @@ not comprehension.
 The extension maps the native `turnId` to the classic hook's `prompt_id`; these
 are different identifiers. A root `UserPromptSubmit`, `turn.start`, `Stop` and
 successful `turn.complete` must agree on their session and prompt. The panel
-freezes that selection. Missing mapping, child turns, failures, session clear,
+freezes that selection. Missing mapping, child turns, aborted turns, failures, session clear,
 another Claude version or another rendering surface cannot produce an action.
 Reopening after a new completion selects the new reply.
 

@@ -7,7 +7,7 @@
 
 - [x] 2.1 Add session/2.1 provenance with meaningful failing contract cases, then pass shared contract and legacy compatibility tests.
 - [x] 2.2 Add dedicated producer admission and serialized core receipt commit; demonstrate matching read, stale/replayed target refusal, new-turn and unread fences, restart and failed-commit behavior.
-- [ ] 2.3 Verify current session consumers accept the versioned record through shared SDK/runtime and dashboard checks.
+- [x] 2.3 Verify current session consumers accept the versioned record through shared SDK/runtime and dashboard checks.
 
 ## 3. Claude producer
 
@@ -17,6 +17,6 @@
 
 ## 4. Delivery evidence
 
-- [ ] 4.1 Update operator/contract documentation and the existing CI-discovered validation guide; verify commands and private configuration examples.
+- [x] 4.1 Update operator/contract documentation and the existing CI-discovered validation guide; verify commands and private configuration examples.
 - [ ] 4.2 Run required local checks and disposable acceptance, obtain independent Standards/Specification plus focused credential/storage review, and resolve blocking findings.
 - [ ] 4.3 Synchronize affected specifications and archive on the delivery branch after successful current lookups and source acceptance; verify the specification inventory.

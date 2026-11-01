@@ -25,4 +25,3 @@ The extension SHALL use a bounded host helper with the selected private producer
 #### Scenario: Private fields
 - **WHEN** native hook inputs contain prompt, response, transcript path, tool content or credentials
 - **THEN** none of those fields enters the helper input, lifecycle message, session provenance or diagnostic output
-

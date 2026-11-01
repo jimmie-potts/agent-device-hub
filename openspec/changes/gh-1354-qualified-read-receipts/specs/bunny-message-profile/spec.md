@@ -47,4 +47,3 @@ Current core-family registration SHALL include session/2.1 for consumers. Lifecy
 #### Scenario: Invalid provenance
 - **WHEN** read provenance has an unknown or mismatched turn or notice, belongs to a child or active session, omits its source, or contains undeclared fields
 - **THEN** validation refuses the record
-

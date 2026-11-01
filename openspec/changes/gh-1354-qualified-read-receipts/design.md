@@ -28,4 +28,3 @@ Preserve exact result targeting and make read evidence durable without widening 
 ## Migration Plan
 
 Deploy the contracts, owner, consumer validation and helper together through a reviewed PR. Current records load without receipt provenance. No retained agent-state format migration or new database table is needed. Keep the new producer disabled until its selected native version and installed path pass acceptance. Disabling the producer stops future observations without deleting evidence. Recovery follows the owning Mac container procedure and its exact release compatibility assessment; do not assume an old binary can consume new session records.
-
