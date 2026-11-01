@@ -530,6 +530,18 @@ without the expected file type, path and valid blob SHA, is a read failure.
 Neither outcome can satisfy review. Comparison-limit protections for source
 identity, diff reassessment and CI selection still apply.
 
+GitHub Actions can retain a successful selector in a later workflow attempt
+without copying its annotations. For an annotation-free retained selector, the
+preflight reads all job attempts and can recover an earlier selection notice.
+The run must match the repository, revision, event, branch, workflow and check
+suite. Check/job links, earlier attempt numbers, execution timestamps and
+recorded steps must identify the same execution. Every matching notice must
+agree and cover the groups this change selects. A fresh execution, malformed
+or conflicting evidence stays unresolved; inaccessible evidence is a read
+failure. The report retains the current check ID and records the original
+selection's check ID, workflow run and attempt. Other job-result checks and the
+read-only client remain unchanged.
+
 When using this optional tool, run it from a checkout of the PR head: the changed-file
 lint gate runs `eslint --max-warnings=0` on the PR's changed JavaScript and
 TypeScript files there (#1139). A checkout at another revision, or with local
@@ -546,7 +558,7 @@ prints tokens, local paths or reviewer return text.
 | --- | --- | --- |
 | Changed-file lint | The PR's added, modified and renamed `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.jsx` and `.tsx` files, linted in the local checkout at the live head | Any ESLint error or warning, a checkout not at the head, or local edits to those files is unresolved; not applicable after merge |
 | Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
-| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose published `Affected checks` notice is missing, malformed or omits a group this selection needs, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
+| CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose `Affected checks` notice remains missing after verified retained-execution lookup, is malformed or omits a required group, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
