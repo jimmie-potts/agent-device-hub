@@ -51,7 +51,7 @@ export async function finalize(destination, env = process.env, fetch = globalThi
   }
   catch { /* An unavailable authoritative read stays incomplete, never successful. */ }
   const checks = EXPECTED_JOB_NAMES.flatMap(name => actualJobs.filter(job => job.name === name).map(job =>
-    ({id: job.id, name, result: job.status === 'completed' ? job.conclusion : 'incomplete', headSha: job.head_sha})));
+    ({id: job.id, name, result: job.status === 'completed' && job.run_id === runId && job.run_attempt === runAttempt ? job.conclusion : 'incomplete', headSha: job.head_sha})));
   let image = null;
   try {image = {...JSON.parse(env.RELEASE_IMAGE), artifactName: names.image};}
   catch { /* A failed image build has no promotable artifact. */ }

@@ -84,7 +84,7 @@ test('copied successful jobs cannot qualify a rerun with no matching current-att
   const at = await mkdtemp(join(tmpdir(), 'release-artifact-'));
   context.after(() => rm(at, {recursive: true, force: true}));
   const runId = 10, runAttempt = 2;
-  const jobs = EXPECTED_JOB_NAMES.map((name, i) => ({id: i + 1, name, status: 'completed', conclusion: 'success', head_sha: sha}));
+  const jobs = EXPECTED_JOB_NAMES.map((name, i) => ({id: i + 1, name, status: 'completed', conclusion: 'success', head_sha: sha, run_id: runId, run_attempt: runAttempt}));
   const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'image'].map(name => [name, {result: 'success'}]));
   const env = {GITHUB_SHA: sha, GITHUB_RUN_ID: String(runId), GITHUB_RUN_ATTEMPT: String(runAttempt), GITHUB_REPOSITORY: REPOSITORY,
     RELEASE_NEEDS: JSON.stringify(needs), RELEASE_IMAGE: JSON.stringify({id: digest, revision: sha, archive: 'production-image.tar.gz', archiveSha256: 'c'.repeat(64)})};
@@ -98,6 +98,9 @@ test('copied successful jobs cannot qualify a rerun with no matching current-att
   const completeFetch = async url => ({ok: true, json: async () => url.includes('/jobs?')
     ? {total_count: jobs.length, jobs} : {total_count: 1, artifacts: [current]}});
   assert.equal((await finalize(join(at, 'complete.json'), env, completeFetch)).outcome, 'qualified');
+  jobs[0].run_attempt = 1;
+  assert.equal((await finalize(join(at, 'stale-job.json'), env, completeFetch)).outcome, 'incomplete');
+  jobs[0].run_attempt = runAttempt;
   for (const artifacts of [[], [old], [current, current], [{...current, expired: true}],
     [{...current, workflow_run: {id: 11, head_sha: sha}}], [{...current, workflow_run: {id: runId, head_sha: '0'.repeat(40)}}]]) {
     assert.equal(imageArtifactPresent(artifacts, {candidate: sha, runId, runAttempt}), false);
