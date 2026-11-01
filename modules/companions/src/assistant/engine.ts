@@ -12,7 +12,7 @@ import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptC
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {SyntheticProvider} from './synthetic.js';
-import {ASK_OWNER, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, SET_MODE, summarizeSessions, type CoreCopy} from './tools.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -31,7 +31,16 @@ export type AssistantOptions = {
   preferences?: () => readonly ActivePreference[];
   /** Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay the owner asked for (Hub #500). */
   speak?: (reply: SpokenReply, key: string, parent: TraceContext) => void;
+  /** Whether a coding worker can take a task now, and the revision a delegation proposal binds to (Hub #502). */
+  coding?: () => {available: boolean; endpointId: string | null; revision: number};
+  /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
+  delegate?: Delegate;
+  /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
+  onCancelled?: (taskId: string) => void;
 };
+/** An approved delegation as the module dispatches it, bound to the coding state revision the proposal saw. */
+export type Delegation = {requestId: string; taskId: string; repository: string; brief: string; expectedRevision: number};
+export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
 class Fault extends Error {constructor(readonly code: ErrorCode) {super(code);}}
 function fail(code: ErrorCode): never {throw new Fault(code);}
 const codeOf = (error: unknown): ErrorCode => error instanceof Fault || error instanceof ProviderFault ? error.code : fullDisk(error) || error instanceof CheckpointCapacityError ? 'capacity' : 'internal';
@@ -44,7 +53,7 @@ export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the ev
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
-type Next = 'ask' | 'tool' | 'approve' | 'end';
+type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
 type Active = {taskId: string; runId: string; generation: number; controller: AbortController; span: Span; accountedAt: number; deadline?: Cancel; work: Promise<void>};
@@ -76,9 +85,14 @@ export class AssistantEngine {
       .addNode('tool', state => this.#tool(state))
       .addNode('approve', state => this.#approve(state))
       .addNode('act', state => this.#act(state))
+      .addNode('await', state => this.#await(state))
+      .addNode('delivered', state => this.#delivered(state))
       .addEdge('__start__', 'turn')
       .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', end: END})
-      .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('tool', 'turn').addEdge('approve', 'act').addEdge('act', 'turn')
+      .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('tool', 'turn').addEdge('approve', 'act')
+      // An approved delegation waits for the worker's word before the next turn; every other act goes straight back to the model.
+      .addConditionalEdges('act', state => state.next === 'await' ? 'await' : 'turn', {await: 'await', turn: 'turn'})
+      .addEdge('await', 'delivered').addEdge('delivered', 'turn')
       .compile({checkpointer: new SqliteCheckpointSaver(context.database())});
   }
   available(): boolean {
@@ -170,7 +184,7 @@ export class AssistantEngine {
     } catch (error) {return errorBody(codeOf(error), {detail: 'The assistant control was not saved.'});}
   }
   #control(command: Command<AssistantControl>): Promise<Reply> {
-    let spoken: {id: string; text: string} | undefined;
+    let spoken: {id: string; text: string} | undefined, delegated = false;
     return this.#admit(command, digest(command.data), () => {
       const data = command.data; this.#revision(data.expectedRevision);
       if (data.action !== 'speak' && data.messageId !== undefined) fail('invalid-request');
@@ -189,6 +203,7 @@ export class AssistantEngine {
       const task = this.#task(data.taskId ?? fail('invalid-request'));
       if (terminal(task.status)) fail('invalid-state');
       if (data.action === 'cancel') {
+        delegated = task.question?.kind === 'delegation' && task.question.answer === null;
         task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task);
         return undefined;
       }
@@ -197,6 +212,7 @@ export class AssistantEngine {
     }).then(reply => {
       const active = this.#active;
       if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined && active.taskId === command.data.taskId) active.controller.abort();
+      if (command.data.action === 'cancel' && !('error' in reply) && delegated && command.data.taskId !== undefined) {try {this.options.onCancelled?.(command.data.taskId);} catch { /* the worker's own report settles it */ }}
       if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
     });
@@ -237,7 +253,8 @@ export class AssistantEngine {
       } else {
         task = this.#task(input.taskId ?? fail('invalid-request'));
         if (!['waiting', 'paused'].includes(task.status) || task.profile !== input.profile || task.question === null || task.question.id !== input.questionId || task.question.answer !== null) fail('invalid-state');
-        // An approval is answered only by the two literal decisions, so free text can neither apply nor dismiss a proposal.
+        // An approval is answered only by the two literal decisions, so free text can neither apply nor dismiss a proposal; a delegation is answered by the worker alone.
+        if (task.question.kind === 'delegation') fail('invalid-state');
         if (task.question.kind === 'approval' && !['approve', 'decline'].includes(input.text)) fail('invalid-request');
         task.question.answer = input.text;
         this.store.message(task, `${task.question.id}-answer`, 'owner', input.text, this.context.clock.now());
@@ -411,6 +428,14 @@ export class AssistantEngine {
       const text = typeof call.input.text === 'string' && call.input.text.trim() !== '' ? call.input.text : 'What should the assistant do next?';
       return {id, text: text.slice(0, 1024), answer: null, kind: 'clarification', call: call.id, proposal: null};
     }
+    if (call.name === DELEGATE_CODING) {
+      const {repository, brief} = call.input;
+      if (typeof repository !== 'string' || !REPOSITORY.test(repository) || repository.length > 64 || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return undefined;
+      const coding = this.options.coding?.();
+      if (coding === undefined || !coding.available || coding.endpointId === null) return undefined;
+      const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
+      return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
+    }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
     const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
@@ -419,6 +444,11 @@ export class AssistantEngine {
   /** Why a command call was refused instead of proposed. */
   #proposalRefusal(call: ToolCall): string {
     const copy = this.#core();
+    if (call.name === DELEGATE_CODING) {
+      const {repository, brief} = call.input;
+      if (typeof repository !== 'string' || !REPOSITORY.test(repository) || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'The repository name or the brief is not usable: name an allowlisted repository and write a brief under 4 KiB; nothing was proposed.';
+      return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
+    }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
     return 'This tool is not permitted.';
@@ -462,28 +492,75 @@ export class AssistantEngine {
   async #act(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
-    const id = `${state.taskId}-step-${String(state.step)}`;
-    if (state.decision !== 'approve') {
-      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: DECLINED, ok: false, effect: `${id}-declined`}, active.span.context,
-        current => {this.store.message(current, `${id}-declined`, 'tool', DECLINED, this.context.clock.now());});
-      return {step: state.step};
-    }
-    const permitted = this.#allowed.includes(SET_MODE), dispatch = this.options.dispatch;
-    if (!permitted || dispatch === undefined) {
-      await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result: 'This tool is not permitted.', ok: false, effect: `${id}-refused`}, active.span.context,
-        current => {this.store.message(current, `${id}-refused`, 'tool', 'This tool is not permitted.', this.context.clock.now());});
-      return {step: state.step};
-    }
-    const result = await this.#call(state.taskId, state.step, 'tool', signal => dispatch({requestId: id, family: proposal.family, target: proposal.target,
-      data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}, active.span.context, signal).then(answer => {
+    const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : DELEGATE_CODING;
+    const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
+      // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
+      await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
+        current => {this.store.message(current, `${id}-${suffix}`, 'tool', text, this.context.clock.now());});
+      return {step: state.step, next: 'turn'};
+    };
+    if (state.decision !== 'approve') return refuse('declined', DECLINED);
+    if (!this.#allowed.includes(name)) return refuse('refused', 'This tool is not permitted.');
+    const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
-      const text = answer.status === 'accepted' ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
-        : `refused: ${answer.error.error.code}`;
-      return {text, units: 0};
-    }));
-    await this.#append(state.taskId, {role: 'tool', call: question.call, name: SET_MODE, result, ok: result.startsWith('accepted'), effect: id}, active.span.context);
-    return {step: state.step + 1};
+      return {text: answer.status === 'accepted' ? accepted : `refused: ${answer.error.error.code}`, units: 0};
+    };
+    let result: string;
+    if (proposal.family === 'mode-set') {
+      const dispatch = this.options.dispatch;
+      if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
+      result = await this.#call(state.taskId, state.step, 'tool', signal => dispatch({requestId: id, family: proposal.family, target: proposal.target,
+        data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}, active.span.context, signal)
+        .then(answer => settle(answer, `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`)));
+    } else {
+      const delegate = this.options.delegate;
+      if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
+      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, repository: proposal.data.repository, brief: proposal.data.brief,
+        expectedRevision: proposal.expectedRevision}, active.span.context, signal)
+        .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)));
+    }
+    const accepted = result.startsWith('accepted');
+    await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
+      if (proposal.family !== 'coding-dispatch' || !accepted) return;
+      // The task now waits for the worker's word, which answers this delegation as the owner's answer would a question; it counts no question.
+      current.question = {id: `${state.taskId}-delegation-${String(state.step)}`, text: `Delegated to the coding worker in ${proposal.data.repository}: ${proposal.data.brief}`.slice(0, 1024),
+        answer: null, kind: 'delegation', call: question.call, proposal: null};
+      this.store.message(current, current.question.id, 'assistant', current.question.text, this.context.clock.now());
+    });
+    const pending = this.#task(state.taskId).question;
+    return {step: state.step + 1, next: pending?.kind === 'delegation' && pending.answer === null ? 'await' : 'turn'};
+  }
+  #await(state: GraphState): Partial<GraphState> {
+    const task = this.#task(state.taskId), question = task.question ?? fail('invalid-state');
+    if (question.kind !== 'delegation') fail('invalid-state');
+    const decision = interrupt<{id: string; text: string}, string>({id: question.id, text: question.text});
+    return {decision};
+  }
+  /** The worker's final word becomes the delegation tool's result, once, so the next turn reports it. */
+  async #delivered(state: GraphState): Promise<Partial<GraphState>> {
+    const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
+    const question = task.question ?? fail('invalid-state');
+    await this.#append(state.taskId, {role: 'tool', call: question.call, name: DELEGATE_CODING, result: state.decision, ok: state.decision.startsWith('completed'), effect: `${question.id}-result`}, active.span.context,
+      current => {this.store.message(current, `${question.id}-result`, 'tool', state.decision, this.context.clock.now());});
+    return {step: state.step, next: 'turn'};
+  }
+  /**
+   * Delivers the worker's final word to the task waiting on its delegation and resumes it. A task the engine cannot run
+   * now keeps the answer and waits for the owner's resume; a task that is not waiting on a delegation ignores it.
+   */
+  async deliver(taskId: string, text: string, parent: TraceContext): Promise<void> {
+    let launch = false;
+    await this.outbox.transaction(add => {
+      const task = this.store.task(taskId);
+      if (task === undefined || terminal(task.status)) return;
+      const question = task.question;
+      if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
+      question.answer = text.slice(0, LIMITS.toolBytes);
+      if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && this.#active === undefined && !this.#closed) {this.#activate(task, parent); launch = true;}
+      this.store.save(task); this.#publish(add, parent);
+    });
+    if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
   }
   async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal) => Promise<{text: string; units: number | null}>): Promise<string> {
     const active = this.#activeFor(taskId);

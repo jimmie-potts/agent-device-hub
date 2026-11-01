@@ -269,7 +269,12 @@ typed requests (Hub #500), offered by the assistant engine after each turn-endin
 message is durable and admitted by the same coordinator under its own Quiet and
 deadline policy; the voice never depends on the model provider. The
 [module guide](../modules/companions/README.md#browser-speech)
-describes final policy checks, cancellation and uncertain receipts. This adds no
+describes final policy checks, cancellation and uncertain receipts. Coding
+delegation (Hub #502) follows the same shape on the host: a worker process on
+the Mac holds a credential whose role grants one endpoint, the core tracks each
+approved hand-off as one operation, the companions module owns the
+responsibility and settles it from the worker's reports, and the task waits for
+the result; see the [worker guide](coding-worker.md). This adds no
 service or transport. The architecture diagram retains its dated physical-device
 view; companion cards and speech use its existing core/bus/module-store/frontend
 boundaries.

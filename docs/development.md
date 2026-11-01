@@ -2013,6 +2013,21 @@ Caddy/phone-width browser journey. It uses synthetic controls and keeps actual
 installed iPhone acceptance separate; the root build, typecheck, JavaScript lint,
 SDK, contracts and workflow checks remain applicable.
 
+Coding delegation (#502) uses the same discovery. After the root build, run
+`node --test modules/companions/dist/tests/coding-coordinator.test.js` for one
+endpoint, one operation, the tracked outcome at start, result delivery, refused
+and missing starts, a lost endpoint, restart without resend and cancel;
+`assistant.test.js` covers the delegation end to end through the module with a
+fake worker on the bus. Runtime's `coding-access.test.js`, `coding-dispatch.test.js`
+and `coding-worker.test.js` check the credential role's endpoint-only grant, the
+core's forwarding of `coding-dispatch`, and the worker over a fake harness and a
+temporary repository; `test:events:built` discovers `coding.test.mjs` for the
+seven families. The companions browser entry calls `coding-delegation.browser.ts`,
+which connects a fake worker through the real gateway with the coding-worker
+credential and drives a proposal, approval, wait and result on the Conversation
+page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
+source evidence establishes no installed run.
+
 ## Runtime upgrade operator checks
 
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,

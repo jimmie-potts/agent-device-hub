@@ -12,9 +12,14 @@ import type {TranscriptItem} from './provider.js';
 export const GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
-/** A proposed command awaiting the owner's approval: the exact family, target and value, and the synced Hub-mode revision seen when proposed. */
-export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number};
-export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval'; call: string; proposal: Proposal | null};
+/**
+ * A proposed command awaiting the owner's approval: the exact family, target and value, and the revision it is bound to:
+ * the synced Hub-mode revision for `mode-set`, the coding worker's state revision for a delegation (Hub #502).
+ */
+export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number}
+  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number};
+/** A clarification the owner answers, an approval the owner decides, or a delegation the worker's result answers. */
+export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; call: string; proposal: Proposal | null};
 export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;

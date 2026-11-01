@@ -8,6 +8,10 @@ export const ASK_OWNER = 'ask_owner';
 export const READ_SESSIONS = 'read_sessions';
 export const SET_MODE = 'set_mode';
 export const READ_FIXTURE = 'read_fixture';
+export const DELEGATE_CODING = 'delegate_coding';
+/** A repository name the worker's private allowlist may carry, and the brief's bound; both are checked again by the contract. */
+export const REPOSITORY = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
+export const BRIEF_BYTES = 4096;
 export const MODES = ['work', 'free', 'quiet'] as const;
 /** The largest read result a tool returns to the model, well under the 8 KiB call result bound. */
 export const READ_BYTES = 4096;
@@ -22,6 +26,9 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {mode: {type: 'string', description: 'The requested Hub mode.', enum: MODES}}, required: ['mode'], additionalProperties: false}},
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
+  {name: DELEGATE_CODING, effect: 'command', description: 'Propose handing one bounded coding task to the coding worker on the owner\'s computer: name an allowlisted repository and write a brief. The owner must approve the proposal; the worker then runs in a fresh worktree and its structured result arrives as this tool\'s result later. Never claim work was done before that result.',
+    input: {type: 'object', properties: {repository: {type: 'string', description: 'The repository name from the worker\'s allowlist, such as agent-device-hub.'},
+      brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
 /** The permitted tool definitions for one turn: the built-in question plus the allowlisted names, in catalog order. */
 export function permittedTools(allowed: readonly string[], synthetic: boolean): ToolDefinition[] {

@@ -2485,7 +2485,184 @@
     "expectedRevision": 1
    },
    "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "coding-endpoint":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-endpoint",
+  "source": "bunny/parts/coding-worker",
+  "type": "org.bunny.coding.endpoint.requested",
+  "subject": "worker-endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-endpoint/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "coding-enable-test",
+   "action": "enable"
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+  "coding-dispatch":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-dispatch",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.coding.dispatch.requested",
+  "subject": "assistant",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-dispatch/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "coding-dispatch-test",
+   "endpointId": "worker-endpoint-1",
+   "taskId": "task-1",
+   "repository": "agent-device-hub",
+   "brief": "Add a unit test for the readout generator.",
+   "bounds": {
+    "wallClockMs": 1200000,
+    "maxTurns": 60,
+    "budgetUsd": 5
+   }
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+  "coding-run":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-run",
+  "source": "bunny/core",
+  "type": "org.bunny.coding.run.requested",
+  "subject": "assistant",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-run/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "coding-dispatch-test",
+   "endpointId": "worker-endpoint-1",
+   "taskId": "task-1",
+   "repository": "agent-device-hub",
+   "brief": "Add a unit test for the readout generator.",
+   "bounds": {
+    "wallClockMs": 1200000,
+    "maxTurns": 60,
+    "budgetUsd": 5
+   }
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+  "coding-work":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-work",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.coding.work.requested",
+  "subject": "worker-endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-work/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "coding-work-test",
+   "operationId": "coding-dispatch-test",
+   "action": "start",
+   "taskId": "task-1",
+   "repository": "agent-device-hub",
+   "brief": "Add a unit test for the readout generator.",
+   "bounds": {
+    "wallClockMs": 1200000,
+    "maxTurns": 60,
+    "budgetUsd": 5
+   }
+  },
+  "expiresat": "2026-10-06T12:00:05.000Z"
+ },
+  "coding-progress":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-progress",
+  "source": "bunny/parts/coding-worker",
+  "type": "org.bunny.coding.progress.observed",
+  "subject": "worker-endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-progress/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "operationId": "coding-dispatch-test",
+   "status": "completed",
+   "result": {
+    "outcome": "tested-candidate",
+    "repository": "agent-device-hub",
+    "base": "5f27715529686602e7fb30949912237cc3ba0eef",
+    "head": "5f27715529686602e7fb30949912237cc3ba0eef",
+    "changedFiles": [
+     "scripts/readout.mjs",
+     "scripts/tests/readout.test.mjs"
+    ],
+    "checks": [
+     {
+      "name": "node --test scripts/tests/readout.test.mjs",
+      "status": "passed"
+     }
+    ],
+    "findings": [],
+    "limitations": [
+     "No browser check applies."
+    ],
+    "summary": "Added the generator and its test; both pass.",
+    "sessionId": "claude-session-1",
+    "usage": {
+     "turns": 12,
+     "costUsd": 0.42,
+     "durationMs": 180000
+    }
+   }
   }
+ },
+  "coding-lost":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-lost",
+  "source": "bunny/runtime/gateway",
+  "type": "org.bunny.coding.endpoint-lost",
+  "subject": "worker-endpoint-1",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-lost/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "worker-endpoint-1"
+  }
+ },
+  "coding-state":  {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "msg-coding-state",
+  "source": "bunny/modules/companions",
+  "type": "org.bunny.coding-state.updated",
+  "subject": "coding",
+  "time": "2026-10-06T12:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/coding-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "coding",
+   "revision": 3,
+   "endpointId": "worker-endpoint-1",
+   "availability": "available",
+   "active": null
+  }
+ }
  },
  "invalid": [
   {

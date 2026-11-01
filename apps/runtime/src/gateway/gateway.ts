@@ -25,6 +25,7 @@ import {diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
+import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
 } from './access.js';
@@ -170,10 +171,13 @@ export class Gateway {
       },
       onEndpointClosed: ({source, id}) => {
         const own = this.#own;
-        if (source !== BROWSER_SOURCE || own === undefined || this.#closed) return;
-        void own.publish(`bunny.event.companion-speech-lost.${id}`, {
-          kind: 'occurrence', type: 'org.bunny.companion-speech.endpoint-lost', subject: id,
-          dataschema: `${SCHEMA_BASE}companion-speech-lost/2.0`, data: {id},
+        if (own === undefined || this.#closed) return;
+        // A lost speech endpoint and a lost coding-worker endpoint each tell their owner on their own family (Hub #1097, #502).
+        const lost = source === BROWSER_SOURCE ? {family: 'companion-speech-lost', type: 'org.bunny.companion-speech.endpoint-lost'}
+          : source === CODING_WORKER_SOURCE ? {family: 'coding-lost', type: 'org.bunny.coding.endpoint-lost'} : undefined;
+        if (lost === undefined) return;
+        void own.publish(`bunny.event.${lost.family}.${id}`, {
+          kind: 'occurrence', type: lost.type, subject: id, dataschema: `${SCHEMA_BASE}${lost.family}/2.0`, data: {id},
         }).catch(() => {
           diagnosticWriter(options.log)({event: 'edge.failed', level: 'error', route: 'close', source, code: 'internal'});
         });
@@ -929,6 +933,7 @@ export class Gateway {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
     if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
+    if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;

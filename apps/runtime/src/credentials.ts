@@ -7,6 +7,7 @@
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import {chmod, link, open, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
+import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {PrivateFileError, RuntimeError, readPrivateFile} from './state.js';
 
 export const CREDENTIALS_SCHEMA = 'edge-credentials/1.0';
@@ -27,8 +28,11 @@ export type EdgeCredential = {
   /** The lowercase hexadecimal SHA-256 of its bearer token. */
   readonly digest: string;
   readonly scopes: readonly Scope[];
-  /** Explicit transport ownership; carries no ordinary scopes and is bound to the Windows helper source. */
-  readonly role?: 'bb8-link';
+  /**
+   * Explicit ownership roles that carry no ordinary scopes: the BB-8 transport bound to the Windows helper source, and
+   * the coding worker bound to its own source, which the edge grants exactly one connection-bound endpoint (Hub #502).
+   */
+  readonly role?: 'bb8-link' | 'coding-worker';
   readonly robotId?: string;
 };
 
@@ -81,11 +85,16 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
     if (typeof digest !== 'string' || !DIGEST.test(digest)) throw invalid(`gives ${id} a digest that is not a lowercase hexadecimal SHA-256`);
     const known = (scope: unknown): scope is Scope => typeof scope === 'string' && (SCOPES as readonly string[]).includes(scope);
     if (!Array.isArray(scopes) || !scopes.every(known) || new Set(scopes).size !== scopes.length) throw invalid(`gives ${id} scopes other than distinct read, control, ingest and admin`);
+    if (entry.role === 'coding-worker') {
+      if (source !== CODING_WORKER_SOURCE || scopes.length !== 0 || entry.robotId !== undefined) throw invalid('has an invalid coding-worker role');
+      return {id, source, digest, scopes: [], role: 'coding-worker'};
+    }
     if (entry.role !== undefined || entry.robotId !== undefined) {
       if (entry.role !== 'bb8-link' || source !== 'bunny/parts/bb8-windows' || scopes.length !== 0 || typeof entry.robotId !== 'string' || entry.robotId.length > 128 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.robotId)) throw invalid('has an invalid BB-8 transport role');
       return {id, source, digest, scopes: [], role: 'bb8-link', robotId: entry.robotId};
     }
     if (source === 'bunny/parts/bb8-windows') throw invalid('requires the BB-8 transport role for its reserved helper source');
+    if (source === CODING_WORKER_SOURCE) throw invalid('requires the coding-worker role for its reserved worker source');
     return {id, source, digest, scopes: [...scopes]};
   });
   if (new Set(credentials.map(credential => credential.id)).size !== credentials.length) throw invalid('gives two credentials one ID');

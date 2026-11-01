@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-run/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "endpointId",
+    "taskId",
+    "repository",
+    "brief",
+    "bounds"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "taskId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-zA-Z0-9-]+$"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:[-._][a-z0-9]+)*$"
+    },
+    "brief": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wallClockMs",
+        "maxTurns",
+        "budgetUsd"
+      ],
+      "properties": {
+        "wallClockMs": {
+          "type": "integer",
+          "minimum": 60000,
+          "maximum": 3600000
+        },
+        "maxTurns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "budgetUsd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 50
+        }
+      }
+    }
+  }
+}
