@@ -939,6 +939,31 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 
 ### Runtime verification runs
 
+On macOS with Docker Desktop, run `npm run test:runtime:container`. It snapshots
+current tracked and nonignored new source, prepares a reusable image using the
+pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=dev`,
+`npm run build`, `npm run test:runtime:scenarios:built` and
+`npm run test:runtime:verify:built` inside disposable Linux. A build or suite
+failure exits nonzero. The container has its own copied source, dependencies and
+synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
+no published ports. It never attaches to the installed runtime or its volumes.
+The temporary Git commit identifies a working-tree snapshot, not a reviewed
+release or independent Acceptance result. Dependency preparation needs network
+access; the checks install from the image's offline npm cache.
+
+Use `-- --suite scenarios` or `-- --suite verify` for a focused suite, and
+`-- --suite browser` for the runtime dashboard browser smoke check. Separate
+invocations may run concurrently, including from independent worktrees. Each
+owns a unique container; cleanup removes only that container. The source copy
+excludes ignored files, private paths and build output and refuses symlinks.
+Keep private work outside tracked/nonignored source. Host interruption may leave
+that invocation's container; inspect and remove only its `bunny-runtime-check-`
+identity. No broad prune or installed-service action is needed.
+
+The wrapper's fixed-suite, source-isolation and failure-propagation checks are
+`node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
+Hosted runtime suites remain unchanged.
+
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
 ## Runtime dashboard checks
