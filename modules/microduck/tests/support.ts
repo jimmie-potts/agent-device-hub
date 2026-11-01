@@ -23,7 +23,7 @@ export async function fixture(t:TestContext,transport:MicroDuckTransport=new Sim
   let host=new ModuleHarness(createMicroDuckModule({transport}),{bus,stateDir:dir,section,...(clock===undefined?{}:{clock})});
   t.after(async()=>{await host.stop();await operator.close();await core.close();await rm(dir,{recursive:true,force:true});});await host.start();
   const state=():MicroDuckState=>{const v=states.at(-1);assert.ok(v);return v;};
-  const command=(family:Family,data:object={},requestId:string=crypto.randomUUID(),timeoutMs=5000)=>operator.request(`bunny.cmd.${family}.${section.id}`,{type:typeOf(family),subject:section.id,dataschema:schemaOf(family),data:family==='microduck-stop'?data:{expectedConfigurationRevision:state().configurationRevision,expectedGeneration:state().generation,...data}},{requestId,timeoutMs});
+  const command=(family:Family,data:object={},requestId:string=crypto.randomUUID(),timeoutMs=5000)=>core.request(`bunny.cmd.${family}.${section.id}`,{type:typeOf(family),subject:section.id,dataschema:schemaOf(family),data:family==='microduck-stop'?data:{expectedConfigurationRevision:state().configurationRevision,expectedGeneration:state().generation,...data}},{requestId,timeoutMs});
   const outcome=(id:string):CompletedOutcome|undefined=>[...states].reverse().find(s=>s.lastOutcome?.requestId===id)?.lastOutcome??undefined;
   const control=async(action:string)=>{const id=crypto.randomUUID();assert.equal((await command('microduck-control',{action},id)).status,'accepted');await until(()=>outcome(id)!==undefined);assert.equal(outcome(id)?.result,'succeeded');};
   await until(()=>state().connection==='available');await pause(30);

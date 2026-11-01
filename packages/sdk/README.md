@@ -898,8 +898,11 @@ returns the same checks as `{name, run}` for another runner, such as Vitest.
 Each check hosts a fresh instance of the module on its own bus and state
 directory, with a stand-in owner serving the families it copies, and the spec's
 `config` as the module's section and `secrets` as its secret files' text. The
-stand-in is `bunny/core`, or `copies.owner` for a module that copies a family
-that several modules serve, such as one device module's `device` records:
+optional `requestSource` sends conformance commands as a selected stand-in owner,
+such as `bunny/core` for a source-restricted responder. It changes only the test
+sender; the module still applies its real admission checks.
+The sync stand-in is `bunny/core`, or `copies.owner` for a module that copies a
+family that several modules serve, such as one device module's `device` records:
 `copies: {families: ['device'], owner: 'bunny/modules/lifx', snapshot}`. The kit
 syncs a module's own families from the module by name, as a consumer of a shared
 family does. Under ADR 0012's failure isolation (policy A), a device's errors

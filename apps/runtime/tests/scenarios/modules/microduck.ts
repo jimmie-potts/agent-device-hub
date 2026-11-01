@@ -4,6 +4,7 @@ import {act,answers,deviceState,expect,holds,recorded,running,publish,type Harne
 const owner='bunny/modules/microduck';
 const status=(h:Harness)=>h.reader.states<MicroDuckState>('microduck-state',owner)[0]?.data;
 const moves=(h:Harness)=>deviceState<{moves:number}>(h,'microduck').moves;
+const beforeRestart=new WeakMap<Harness,string>();
 const command=(h:Harness,family:string,data:object)=>({key:`bunny.cmd.${family}.microduck-sim`,draft:{type:`org.bunny.microduck.${family.slice(10)}.requested`,subject:'microduck-sim',dataschema:`https://bunny.invalid/events/${family}/2.0`,data:{...data,expectedConfigurationRevision:status(h)?.configurationRevision,expectedGeneration:status(h)?.generation}}});
 const dashboard=async(h:Harness,family:string,data:object,requestId:string):Promise<void>=>{
  const draft=command(h,family,data).draft;
@@ -23,8 +24,8 @@ export const scenarios:readonly Scenario[]=[{
   act('owner selects a finite notice',h=>dashboard(h,'microduck-gesture',{gesture:'notice'},'microduck-notice')),
   expect('notice has truthful transport evidence',h=>recorded(h,'microduck-notice','succeeded','transmitted')),
   expect('only catalog and neutral stages are sent',h=>moves(h)===2||'unexpected move count'),
-  act('runtime restarts using latest private state',h=>h.restart()),
-  expect('restarted state remains under takeover',h=>status(h)?.connection==='available'&&status(h)?.takeover===true||'takeover/freshness missing'),
+  act('runtime restarts using latest private state',async h=>{const epoch=status(h)?.generation.epoch;if(epoch===undefined)throw new Error('MicroDuck generation unavailable');beforeRestart.set(h,epoch);await h.restart();}),
+  expect('new module generation remains under takeover',h=>status(h)?.generation.epoch!==beforeRestart.get(h)&&status(h)?.connection==='available'&&status(h)?.takeover===true||'new generation/takeover/freshness missing'),
   holds('restart does not replay a stage',h=>moves(h)===2||'motion replayed',200),
   act('operator explicitly resumes future automatic expression',h=>dashboard(h,'microduck-control',{action:'resume-auto'},'microduck-resume')),
   expect('resume completes locally',h=>recorded(h,'microduck-resume','succeeded','observed')),

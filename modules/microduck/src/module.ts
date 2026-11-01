@@ -202,6 +202,7 @@ class Owner {
   #guard(command:Command<Guards>,action:Action):ErrorCode|undefined {
     const data=command.data,now=this.#context.clock.now();
     if(command.subject!==this.#config.id)return 'not-found';
+    if(command.source!=='bunny/core')return 'forbidden';
     if(this.#closed||this.#storageDown)return 'unavailable';
     if(this.#deadline(command)<=now)return 'expired';
     if(action.kind==='stop')return undefined;
@@ -214,7 +215,6 @@ class Owner {
     if(action.kind==='gesture') {
       if(this.#mode()==='quiet')return 'invalid-state';
       if(action.automatic) {
-        if(command.source!=='bunny/core')return 'forbidden';
         if(typeof data.validUntilMs!=='number'||data.validUntilMs<=now)return 'expired';
         if(!this.#state.enabled||this.#state.takeover||this.#state.latched||!this.#candidateEligible(action.opportunityId))return 'invalid-state';
       }else if(!this.#state.takeover)return 'invalid-state';
