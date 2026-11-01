@@ -233,7 +233,7 @@ network or devices. This qualifies source and packaged bytes, not an installed c
 Each run attempt retains two 14-day Actions artifacts.
 `release-image-<SHA>-<run-ID>-<attempt>` holds `production-image.tar.gz`.
 `release-evidence-<SHA>-<run-ID>-<attempt>` holds `qualification.json`.
-The receipt records Docker's immutable image configuration digest, the archive's
+The receipt records Docker's immutable image ID, the archive's
 SHA-256, architecture, source/evaluation revision, evaluation input hashes and
 actual required job results. It distinguishes qualified, failed and incomplete work.
 Unavailable/cancelled work or an expired artifact cannot qualify a newer revision.
