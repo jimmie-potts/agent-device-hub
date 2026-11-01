@@ -62,6 +62,11 @@ part of this slice.
     "claude": {"executable": "/opt/homebrew/bin/claude", "permissionMode": "acceptEdits"}}
    ```
 
+   The token file follows the runtime's private-file rules (owner-only, one
+   link, no link along its path, outside every checkout); on macOS the check
+   that the opened file is the named one uses the path's directory chain and
+   the file's device and inode, since there is no procfs (Hub #1355).
+
    `claude.allowedTools` defaults to `Read`, `Edit`, `Write`, `Glob`, `Grep`
    and `Bash` limited to `npm run`, `npm test`, `npx tsc`, `node --test`,
    `git status`, `git diff` and `git log`; a list that names push, network or

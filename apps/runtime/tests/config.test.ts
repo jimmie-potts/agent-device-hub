@@ -381,6 +381,34 @@ it('a directory along a private file\'s path swapped for a link after the path\'
     error => error instanceof PrivateFileError && error.problem === 'link' && !error.message.includes('tok_OTHER_FILE'));
 });
 
+it('without procfs a private file is read, a lasting directory swap is refused by the path\'s recheck and a file swapped in after the open by its inode', async context => {
+  // The check a host without procfs makes (Hub #1355), taken on this host too so Linux exercises it.
+  const root = await stateDir(context);
+  await mkdir(join(root, 'dir'), {mode: 0o700});
+  await mkdir(join(root, 'other'), {mode: 0o700});
+  await privateFile(join(root, 'dir', 'token'), SECRET);
+  await privateFile(join(root, 'other', 'token'), 'tok_OTHER_FILE');
+  const path = join(root, 'dir', 'token');
+  assert.equal((await readPrivateFile(path, 1024, {withoutProcfs: true})).toString(), SECRET, 'a plain private file');
+  const isLink = (error: unknown): boolean => error instanceof PrivateFileError && error.problem === 'link' && !error.message.includes('tok_OTHER_FILE');
+  // The directory becomes a link to the other directory between the checks and the open: the recheck of the chain
+  // refuses it, as the device and inode alone would not (the path now names the file that was opened).
+  await assert.rejects(readPrivateFile(path, 1024, {withoutProcfs: true, beforeOpen: async () => {
+    await rename(join(root, 'dir'), join(root, 'dir-moved'));
+    await symlink(join(root, 'other'), join(root, 'dir'));
+  }}), isLink);
+  await rm(join(root, 'dir')); await rename(join(root, 'dir-moved'), join(root, 'dir'));
+  // Another private file is renamed over the path after the open: the file opened is no longer the one the path names.
+  await privateFile(join(root, 'dir', 'replacement'), 'tok_OTHER_FILE');
+  await assert.rejects(readPrivateFile(path, 1024, {withoutProcfs: true, afterOpen: () => rename(join(root, 'dir', 'replacement'), path)}), isLink);
+  // The same swap after the open, on this host's own check.
+  await privateFile(join(root, 'dir', 'replacement'), 'tok_OTHER_FILE');
+  await assert.rejects(readPrivateFile(path, 1024, {afterOpen: () => rename(join(root, 'dir', 'replacement'), path)}), isLink);
+  // A link put at the path after the open names the link's own inode, not the opened file's.
+  await rm(path); await privateFile(path, SECRET);
+  await assert.rejects(readPrivateFile(path, 1024, {withoutProcfs: true, afterOpen: async () => {await rm(path); await symlink(join(root, 'other', 'token'), path);}}), isLink);
+});
+
 it('the log writer drops a record whose attribute holds a read secret as text or as a number\'s digits, and the process\'s record leaves it out', () => {
   const records: LogRecord[] = [];
   const redactions = new Redactions();

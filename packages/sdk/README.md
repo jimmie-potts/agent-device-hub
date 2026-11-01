@@ -689,7 +689,8 @@ another module's section or secret, but nothing stops its own code from opening
 a file directly. The operator chooses where the configuration and secret files
 live; the runtime checks the files and the links along their paths, not the
 modes of their directories, and it confirms the opened file through
-`/proc/self/fd`.
+`/proc/self/fd` on Linux, or off Linux by rechecking the path and the file's
+device and inode after the open (Hub #1355).
 
 ### Worker calls
 

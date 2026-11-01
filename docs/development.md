@@ -812,8 +812,9 @@ build, run these focused files, `test:runtime:built`,
 `test:sdk:built`, `test:runtime-dashboard:built` and the affected disposable core
 scenario. The tests cover authenticated source binding, exact owner revision,
 replay, later turns, restart and failed commit. Helper tests run its executable
-against the authenticated gateway and require Linux for private configuration
-checks through `/proc/self/fd`. Use a disposable container on macOS.
+against the authenticated gateway and are kept to Linux, where CI runs them
+(the private-file reader works off Linux too, Hub #1355). Use a disposable
+container on macOS.
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
 real helper's session/2.1 output clears the dashboard's unread row, survives a
 page reload and returns to unread on a new turn without a page command. The
@@ -1474,8 +1475,8 @@ record checked by the diagnostic contract's `parseRecord` and for private values
 It also runs the real entry point against a real runtime's edge with a synthetic
 Codex home: the edge admits the family, then the first snapshot, a heartbeat, a
 changed marker, contract-only stderr and SIGTERM. That
-integration test needs Linux, because the runtime reads its configuration file
-only where `/proc/self/fd` exists; it skips elsewhere. No test reads a real
+integration test is kept to Linux, where CI runs it with procfs; it skips
+elsewhere, though the private-file reader works off Linux too (Hub #1355). No test reads a real
 Codex home.
 
 Hub #567 adds remote sources: the `sources` section, the `RemoteFeed` transport
@@ -1488,8 +1489,9 @@ credential and another feed, is the last case of
 `apps/runtime/dist/tests/codex-desktop.test.js`; the edge binding itself is in
 `remote-hooks.test.js`. The container profile's admission of a remote-only section
 is in `deploy/container/tests/entrypoint.test.mjs`. Runtime tests that read an
-edge configuration file need Linux (`/proc/self/fd`); run them in the core CI job
-or a disposable Linux container. The disposable run `codex-desktop-remote`
+edge configuration file are kept to Linux (the procfs check, which CI runs; the
+reader's no-procfs check is exercised there too, Hub #1355); run them in the
+core CI job or a disposable Linux container. The disposable run `codex-desktop-remote`
 ([runtime verification runs](#runtime-verification-runs)) hosts the real collector
 for the acceptance exercise.
 

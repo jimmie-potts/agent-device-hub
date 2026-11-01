@@ -1201,8 +1201,13 @@ link and no permissions for group or others, owned and readable by the
 runtime's user, of at most 1 MiB. The runtime opens the file's last part without
 following a link, then refuses it unless the file it opened, as `/proc/self/fd`
 shows, is the one at the path, so a directory swapped for a link after the
-checks is refused too. The operator chooses the paths of this file and the
-secret files; the runtime does not check the modes of their directories. It has only
+checks is refused too; on Linux a `/proc/self/fd` it cannot read refuses the
+file. Off Linux, where there is no procfs (the Mac coding worker, Hub #1355),
+it checks the path again once the file is open, by its directory chain and the
+opened file's device and inode, so a swap that lasts is refused while one made
+and undone between the open and that check is not seen. The operator chooses
+the paths of this file and the secret files; the runtime does not check the
+modes of their directories. It has only
 `schema`, `modules` and `edge`. Otherwise the runtime
 refuses to start, before it serves, with one of these codes in `runtime.failed`:
 `config-relative`, `config-mount`, `config-missing`, `config-link`,

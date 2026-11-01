@@ -63,8 +63,9 @@ read-only refusal and future-only restart; `routine-actions` runs one routine
 with a Pixoo playlist start and a LIFX color on Run now in Monitor and in
 Media, then once at its minute, in memory and in disposable runtime runs. Run
 both and `automation-lines-moment` after changes to this shared path. The
-in-memory catalog needs Linux or a disposable Linux container (its private-file
-check reads `/proc/self/fd`). The Automation browser journey covers independent
+in-memory catalog is run on Linux or in a disposable Linux container (where its
+private-file check reads `/proc/self/fd`; off Linux the reader checks the path
+again after the open, Hub #1355). The Automation browser journey covers independent
 devices, invalid drafts, Run now, passive reconnect, lost mutation replies,
 read-only controls and axe accessibility.
 These checks contact no household device and qualify no installed routine or maximum-on limit.
