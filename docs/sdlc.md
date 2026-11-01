@@ -55,10 +55,13 @@ continue independent authorized work. A read-only assessment makes no changes.
 A small issue needs the requested outcome, acceptance checks and delivery target.
 Add implementation, risks, dependencies and deferrals only when they matter.
 The [Work item template](../.github/ISSUE_TEMPLATE/feature.md) supplies optional
-prompts, not a mandatory dossier. No fixed bullet count, empty headings, model
-recommendation or assessment fingerprint is required for ordinary delivery.
-Preserve existing issue structure where tooling consumes it; do not bulk-reformat
-old issues. Put evidence in CI and a concise PR, linking it from affected issues.
+prompts, not a mandatory dossier. No fixed bullet count or empty heading is
+required. Stories carry no Execution recommendation, host table, pasted prompt
+or fingerprint, whatever their size; one planned-start sentence in prose is
+enough. The three ratings, complexity, uncertainty and impact, are optional
+and fit on one line. Preserve existing issue structure where tooling consumes
+it; do not bulk-reformat old issues. Put evidence in CI and a concise PR,
+linking it from affected issues.
 
 Work that crosses a component boundary, in ordinary work as well as under
 `plan-work` or `deliver-work`, names these in the issue, plan or brief:
