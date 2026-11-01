@@ -31,10 +31,13 @@ const TOOL_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /**
  * The transcript as Messages API turns. An assistant item that kept the provider's blocks replays them unchanged; one
  * without them (the synthetic provider's, or an older record) is rebuilt from its text and call. Tool results follow the
- * assistant turn that asked for them, as one user turn.
+ * assistant turn that asked for them, as one user turn. A call gets one `tool_result`: a later word for a call already
+ * answered, the coding worker's result after the hand-off acceptance (Hub #502, #1360), is a user text block naming the
+ * call, since the API refuses a second result for one `tool_use_id`.
  */
 export function toMessages(transcript: readonly TranscriptItem[]): ApiMessage[] {
   const messages: ApiMessage[] = [];
+  const answered = new Set<string>();
   const push = (role: ApiMessage['role'], block: Block): void => {
     const last = messages.at(-1);
     if (last !== undefined && last.role === role) last.content.push(block); else messages.push({role, content: [block]});
@@ -47,7 +50,8 @@ export function toMessages(transcript: readonly TranscriptItem[]): ApiMessage[] 
         if (item.text !== null && item.text !== '') push('assistant', {type: 'text', text: item.text});
         for (const call of item.calls) push('assistant', {type: 'tool_use', id: call.id, name: call.name, input: {...call.input}});
       }
-    } else push('user', {type: 'tool_result', tool_use_id: item.call, content: item.result, ...(item.ok ? {} : {is_error: true})});
+    } else if (answered.has(item.call)) push('user', {type: 'text', text: `${item.ok ? 'Later result' : 'Later failed result'} of the tool ${item.name} (${item.call}), the tool's own word and not the owner's: ${item.result}`});
+    else {answered.add(item.call); push('user', {type: 'tool_result', tool_use_id: item.call, content: item.result, ...(item.ok ? {} : {is_error: true})});}
   }
   return messages;
 }

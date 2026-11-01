@@ -294,8 +294,10 @@ seconds. The task then waits on a delegation only the worker's word answers;
 the owner's input is refused for it, it counts no owner question, and **Cancel
 task** asks the worker to stop. The worker's completed, failed, cancelled or
 uncertain report settles the responsibility and resumes the task with the
-result as the tool's result, bounded text naming outcome, git facts, checks,
-findings, limitations and usage; nothing is resent, and a restart or a lost
+result as the tool's later word, bounded text naming outcome, git facts, checks,
+findings, limitations and usage (the model sees it as text naming the call,
+since the call's own result was the hand-off acceptance and the Messages API
+takes one result per call, Hub #1360); nothing is resent, and a restart or a lost
 worker leaves the operation uncertain. One task runs at a time; the dispatch
 carries twenty minutes, sixty turns and five dollars as bounds. The page shows
 the worker's availability beside the provider.
