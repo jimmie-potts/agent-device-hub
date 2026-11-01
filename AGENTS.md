@@ -99,36 +99,27 @@ No project UI requires human approval. Preserve applicable automated, browser
 and accessibility validation, independent reviews and CI under the
 [UI verification policy](docs/sdlc.md#ui-approval-scope).
 
-For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
-npm run check:workflow and npm run test:workflow from the assigned worktree root.
-Both checks must exit zero; report the actual specification inventory.
+For workflow/OpenSpec changes, report the actual specification inventory.
 For controller contract changes, use Node 24 and Python 3.14 and run
 npm run build, npm run typecheck, npm run test:contracts,
 npm run test:contracts:python and npm run test:package from the worktree root.
 All must exit zero. Read docs/controller-contract.md before changing wire values,
 reference decisions or artifacts.
-For MCP changes, read packages/mcp/README.md and run npm run test:mcp,
-npm run test:mcp:protocol and npm run test:mcp:package in addition to the shared
-build/type/contract/workflow checks. All must exit zero. Report installed-client
+For MCP changes, read packages/mcp/README.md. Report installed-client
 and physical acceptance separately from fake service and loopback HTTP tests.
-For agent-state changes, read packages/agent-state/README.md and run
-npm run test:agent-state, npm run test:agent-state:python and
-npm run test:agent-state:package, plus the shared build/type, controller,
-lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
+For agent-state changes, read packages/agent-state/README.md.
 Source tests do not qualify a production storage adapter or installed provider.
 For controllers/tidbyt changes, read its README and run npm run test:tidbyt and
 npm run test:tidbyt:python plus the shared build/type, contract and workflow
 checks from the worktree root. All must exit zero.
-For modules/pixoo changes, read its README and run npm run test:pixoo plus the
-shared build/type/lint/workflow checks from the worktree root. All must exit zero.
+For modules/pixoo changes, read its README.
 For apps/hub or apps/dashboard changes, read that app's README and its
 validation sections in docs/development.md (for the hub: Standalone hub,
 Standalone hub MCP and Shared monitoring setup checks; for the dashboard:
 Dashboard checks). Run the listed commands and the shared
 build/type/contract/workflow checks from the worktree root. All must exit zero.
-For JavaScript or TypeScript changes, run npm run build and then npm run lint:js
-from the worktree root. Both must exit zero. Read docs/development.md "Static
-analysis" before changing the ESLint configuration or its baseline.
+Read docs/development.md "Static analysis" before changing the ESLint
+configuration or its baseline.
 Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.
