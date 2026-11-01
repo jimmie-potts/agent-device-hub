@@ -56,10 +56,11 @@ A small issue needs the requested outcome, acceptance checks and delivery target
 Add implementation, risks, dependencies and deferrals only when they matter.
 The [Work item template](../.github/ISSUE_TEMPLATE/feature.md) supplies optional
 prompts, not a mandatory dossier. No fixed bullet count or empty heading is
-required. Stories carry no Execution recommendation, host table, pasted prompt
-or fingerprint, whatever their size; one planned-start sentence in prose is
-enough. The three ratings, complexity, uncertainty and impact, are optional
-and fit on one line. Preserve existing issue structure where tooling consumes
+required. New stories, whatever their size, do not add a model choice,
+Execution recommendation, host table, pasted prompt or fingerprint; one
+planned-start sentence in prose is enough, and the three ratings, complexity,
+uncertainty and impact, are optional on one line. Existing bodies keep the
+sections they have. Preserve existing issue structure where tooling consumes
 it; do not bulk-reformat old issues. Put evidence in CI and a concise PR,
 linking it from affected issues.
 

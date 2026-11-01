@@ -9,10 +9,11 @@ Nanoleaf and Pixoo. Keep work in its owning repository.
 
 Outcome and observable acceptance are required. Add implementation, preservation
 and deferral details when they affect the work. Omit unused sections. Use
-recognized headings for detailed sections that existing tooling consumes. No story
-carries a model choice, Execution recommendation or fingerprint; one planned-start
-sentence in prose is enough. Apply the [scope defaults](sdlc.md#scope-defaults)
-without inventing irrelevant requirements. Hub's [new-story opening](sdlc.md#new-story-opening)
+recognized headings for detailed sections that existing tooling consumes. New
+stories do not add a model choice, Execution recommendation, host table, pasted
+prompt or fingerprint; one planned-start sentence in prose is enough. Apply the
+[scope defaults](sdlc.md#scope-defaults) without inventing irrelevant
+requirements. Hub's [new-story opening](sdlc.md#new-story-opening)
 still applies to new feature, maintenance, investigation and child stories;
 existing bodies are not reformatted at pickup.
 

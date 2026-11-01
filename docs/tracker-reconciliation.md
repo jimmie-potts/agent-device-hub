@@ -50,11 +50,13 @@ update as acceptance evidence.
 
 ## Reassess execution recommendations
 
-Execution recommendations are optional planning advice, not delivery gates.
-When an existing recommendation becomes materially stale, mark its outdated
-assumption and current next step; do not generate a new model assessment or
-fingerprint merely because a PR completed. Dedicated recommendation maintenance
-still uses [the canonical tooling](../apps/maintenance/recommendations/README.md)
+Existing issues may carry Execution recommendations from earlier planning.
+They are optional advice, not delivery gates, and new stories do not add one
+(see the [scope defaults](sdlc.md#scope-defaults)). When an existing
+recommendation becomes materially stale, mark its outdated assumption and
+current next step; do not generate a new model assessment or fingerprint merely
+because a PR completed. Dedicated maintenance of those existing sections still
+uses [the canonical tooling](../apps/maintenance/recommendations/README.md)
 and its parser/dry run. Routine delivery does not require that separate workflow.
 
 ## Write narrowly and recover from uncertainty
