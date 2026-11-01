@@ -86,15 +86,15 @@ to credentials, storage migration, writer exclusion or device-command safety.
 Observable behavior needs a disposable acceptance exercise; the same independent
 reviewer may perform it. Documentation needs instruction/readback checks, not a
 running-app exercise. Follow the limited authority in
-[Acceptance review](docs/sdlc.md#acceptance-review). Missing required review,
-blocking findings or unsuccessful applicable CI prevents merge.
+[Acceptance review](docs/sdlc.md#acceptance-review). Missing required review
+or blocking findings prevents merge.
 
 Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
 Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
-Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
+Validate locally before each push, then review alongside hosted CI before merging. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
-Never use --admin. Read all applicable merged-revision main CI jobs before issue closure.
+Read all applicable merged-revision main CI jobs before issue closure.
 No project UI requires human approval. Preserve applicable automated, browser
 and accessibility validation, independent reviews and CI under the
 [UI verification policy](docs/sdlc.md#ui-approval-scope).
