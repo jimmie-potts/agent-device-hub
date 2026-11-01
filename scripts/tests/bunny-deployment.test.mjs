@@ -91,3 +91,15 @@ test('explicit previous-image return requires exact latest backup and configurat
   for(const changed of [{outcome:'incompatible'},{image:newImage},{stateSha256:'c'.repeat(64)},{configSha256:'d'.repeat(64)}])assert.throws(()=>validateReturn(request,{...receipt,...changed},backup,target));
   assert.throws(()=>validateReturn({...request,recovery:{status:'unknown'}},receipt,backup,target));
 });
+test('duplicate completed ID cannot replace the previous batch Compose or affect the runtime',async t=>{
+  const f=await fixture(t);await f.deploy();
+  const path=f.request.compose+'.'+f.request.id+'.json',before=await readFile(path,'utf8');
+  f.request.containerId=f.info.Id;f.request.previousImage=newImage;f.request.previousRevision=revision;
+  const nextImage='sha256:'+'a'.repeat(64),nextRevision='b'.repeat(40);
+  f.request.candidate=nextRevision;f.target.candidate=nextRevision;f.target.image.id=nextImage;
+  const run=f.run;f.run=async args=>args[0]==='image'&&args[2]===nextImage?JSON.stringify([{Id:nextImage,Architecture:'arm64',Os:'linux',Config:{Labels:{'org.opencontainers.image.revision':nextRevision}}}]):run(args);
+  const count=f.calls.length;await assert.rejects(f.deploy());
+  assert.equal(await readFile(path,'utf8'),before);
+  assert.ok(!f.calls.slice(count).some(a=>['stop','rm','start'].includes(a[0])));
+  assert.equal(await readPending({root:f.root,project:'synthetic'}),undefined);
+});

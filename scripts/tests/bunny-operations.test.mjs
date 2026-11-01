@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,readFile,writeFile,mkdir,rm,realpath} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {withOperation, reconcileOperation, readPending} from '../bunny-operations.mjs';
@@ -26,14 +26,14 @@ test('pending effects survive failure and manual maintenance refuses until expli
   assert.equal((await readPending(p)),undefined);
   assert.equal(await withOperation(p,()=>7),7);
 });
-test('reconciliation refuses a live lock holder and leaves its evidence',async t=>{
-  const p=await fixture(t);await mkdir(join(p.root,'synthetic.lock'),{mode:0o700});
-  const {hostname}=await import('node:os');
-  await writeFile(join(p.root,'synthetic.lock','owner.json'),JSON.stringify({pid:process.pid,host:hostname(),token:'owned'}),{mode:0o600});
-  await assert.rejects(reconcileOperation(p,()=>assert.fail('must not inspect')));
-  assert.equal(JSON.parse(await readFile(join(p.root,'synthetic.lock','owner.json'),'utf8')).pid,process.pid);
+test('reconciliation uses the same exclusion as a live normal operation',async t=>{
+  const p=await fixture(t);
+  await withOperation(p,async lease=>{
+    await lease.record({id:'batch-live',phase:'starting',outcome:'uncertain'});
+    await assert.rejects(reconcileOperation(p,()=>assert.fail('must not inspect a live operation')));
+  });
 });
-test('a killed process leaves its real lock and last durable phase until explicit dead-owner reconciliation',async t=>{
+test('a killed process leaves the last durable phase until explicit unfinished-operation reconciliation',async t=>{
   const p=await fixture(t);const {spawn}=await import('node:child_process');
   const moduleUrl=new URL('../bunny-operations.mjs',import.meta.url).href;
   const program=`import{withOperation}from ${JSON.stringify(moduleUrl)};await withOperation(${JSON.stringify(p)},async lease=>{await lease.record({id:'batch-killed',phase:'creating-replacement',outcome:'uncertain'});process.stdout.write('durable\\n');setInterval(()=>{},1000);await new Promise(()=>{});});`;
@@ -45,4 +45,24 @@ test('a killed process leaves its real lock and last durable phase until explici
   await assert.rejects(withOperation(p,()=>assert.fail('dead owner was not reconciled')));
   const result=await reconcileOperation(p,async()=>({status:'created',pid:0}));
   assert.ok(result.writerReleasedAt);assert.equal(result.observation.status,'created');
+});
+test('malformed persisted operation identity refuses reconciliation without an out-of-records write',async t=>{
+  const p=await fixture(t);
+  await writeFile(join(p.root,'synthetic.pending.json'),JSON.stringify({id:'../escaped',phase:'starting',outcome:'uncertain'}),{mode:0o600});
+  await assert.rejects(reconcileOperation(p,async()=>({status:'exited',pid:0})));
+  await assert.rejects(readFile(join(p.root,'escaped.json')),{code:'ENOENT'});
+});
+test('reconciliation still excludes a new writer if a pending path disappears during its inspection',async t=>{
+  const p=await fixture(t);
+  await assert.rejects(withOperation(p,async lease=>{await lease.record({id:'batch-old',phase:'starting',outcome:'uncertain'});throw Error('stopped');}));
+  const original=await readPending(p);let entered,finish;
+  const started=new Promise(resolve=>{entered=resolve;});
+  const reconciling=reconcileOperation(p,async()=>{entered();await new Promise(resolve=>{finish=resolve;});return {status:'exited',pid:0};});
+  await started;
+  const {unlink}=await import('node:fs/promises');await unlink(join(p.root,'synthetic.pending.json'));
+  await assert.rejects(withOperation(p,async lease=>{await lease.record({id:'batch-new',phase:'starting',outcome:'uncertain'});}));
+  await writeFile(join(p.root,'synthetic.pending.json'),JSON.stringify(original),{mode:0o600});
+  finish();await reconciling;
+  await withOperation(p,async lease=>{await lease.record({id:'batch-new',phase:'starting',outcome:'uncertain'});});
+  assert.equal((await readPending(p)).id,'batch-new');
 });

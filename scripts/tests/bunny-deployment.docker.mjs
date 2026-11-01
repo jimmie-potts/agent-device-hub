@@ -85,7 +85,7 @@ try {
   const returned=await selected({project},docker);assert.equal(returned.Image,previousImage);
   assert.equal(await docker(['exec',returned.Id,'node','-e',"console.log(require('node:fs').readFileSync('/var/lib/bunny/deployment-test.txt','utf8'))"]),'candidate latest data');
   completed=true;process.stdout.write(JSON.stringify({schema:'bunny-batch-disposable/1.0',project,outcome:'passed',previousRevision,candidate,
-    checks:['stopped-backup','exact-image','preserved-volumes','health','trusted-browser-sign-in-check-logout','private-release-record','previous-core-runtime-copy-reopen','failed-client-stops-replacement','latest-data-preserved','real-process-kill-after-create','unfinished-manual-start-refusal','explicit-dead-owner-reconciliation','explicit-compatible-image-return-preserves-latest-data'],
+    checks:['stopped-backup','exact-image','preserved-volumes','health','trusted-browser-sign-in-check-logout','private-release-record','previous-core-runtime-copy-reopen','failed-client-stops-replacement','latest-data-preserved','real-process-kill-after-create','unfinished-manual-start-refusal','explicit-unfinished-operation-reconciliation','explicit-compatible-image-return-preserves-latest-data'],
     recovery:'qualified-disposable-core-only',hostedQualification:'synthetic-injected-only'})+'\n');
 } finally {
   const info=await selected({project},docker);

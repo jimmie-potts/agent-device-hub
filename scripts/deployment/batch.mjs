@@ -5,7 +5,7 @@ import {dirname} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {operate,selected,access,container,stopped,privateHostDirectory,ordinaryVolume} from '../bunny.mjs';
-import {withOperation,privateJson,writePrivateJson} from '../bunny-operations.mjs';
+import {withOperation,privateJson,writeNewPrivateJson} from '../bunny-operations.mjs';
 
 const SHA=/^[a-f0-9]{40}$/,IMAGE=/^sha256:[a-f0-9]{64}$/,ID=/^[a-f0-9]{64}$/;
 const refuse=()=>{throw new Error('deployment-refused');};
@@ -106,14 +106,14 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
     const replacement=replacementCompose(rendered,before,target.image.id,request.project);
     await privateHostDirectory(dirname(request.compose));
     const replacementPath=request.compose+'.'+request.id+'.json';
-    // The selected owner-only Compose directory is checked by the same private input contract as the request.
-    await writePrivateJson(replacementPath,replacement);
+
     let record={schema:'bunny-batch-record/1.0',...request,targetImage:target.image.id,qualification:{runId:target.runId,runAttempt:target.runAttempt},
       replacementCompose:replacementPath,previous:{image:before.Image,revision:request.previousRevision,container:before.Id},preserved,composeSha256:hash(composeBytes),phase:'prepared',outcome:Outcome.uncertain,startedAt:new Date().toISOString()};
     const phase=async name=>{record={...record,phase:name};await lease.record(record);};
-    await phase('prepared');
+    await phase('preparing-compose');
     let replacementId;
     try {
+      await writeNewPrivateJson(replacementPath,replacement);await phase('prepared');
       if(hash(await readFile(request.compose))!==record.composeSha256)refuse();
       const current=await selected(request,run);
       if(current?.Id!==before.Id||!isDeepStrictEqual(identity(current,request.project),preserved))refuse();
@@ -162,4 +162,4 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
     }
   });
 }
-export async function readRequest(path) {const request=await privateJson(path);return validateRequest(request);}
+export async function readRequest(path) {await privateHostDirectory(dirname(path));const request=await privateJson(path);return validateRequest(request);}

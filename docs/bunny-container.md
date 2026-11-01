@@ -834,8 +834,10 @@ changed. It pins its source hash and checks the actual selected container again
 before stopping. No arbitrary command or callback is accepted from the request.
 
 Every cooperating write uses one host-private directory,
-`~/.local/state/bunny-operations`, outside Git. Each project has one lock, pending
-marker and records directory. Manual `start`, `stop`, `backup` and `restore`
+`~/.local/state/bunny-operations`, outside Git. Each project has one empty SQLite coordination file ending in
+`.operation-owner`, a pending marker and a records directory. Deployment, manual
+maintenance and reconciliation use the runtime core's same lease helper on that
+file. Process death releases the OS lease, while the pending marker remains. Manual `start`, `stop`, `backup` and `restore`
 commands use the same guard; `status` stays read-only. Do not bypass an active
 operation with direct Docker/Compose commands, an old operator revision or another
 host. The lock coordinates these host commands; the runtime still owns its actual
@@ -867,7 +869,7 @@ before explicitly running:
 npm run deploy:batch -- reconcile --request /ABSOLUTE/PRIVATE/request.json
 ```
 
-Reconciliation refuses a live or unidentifiable lock owner, records actual target
+Reconciliation refuses a held lease, records actual target
 identity/process state and releases the hold. It performs no image selection,
 restart, snapshot restoration or automatic continuation. Prepare a new request
 against the observed current identity for a later fix forward. If a process died

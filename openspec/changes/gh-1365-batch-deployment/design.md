@@ -8,7 +8,7 @@ Keep one active operation per selected project, preserve the latest state, and m
 
 ## Decisions
 
-Use a host-private per-project lock and durable pending marker shared by deployment and manual start/stop/backup/restore entrypoints. Status remains read-only. A lock records the local PID and host. A stale lock is not automatically released. Explicit reconciliation first proves its recorded process has exited, inspects the exact selected container, and records that observation before releasing anything. A live or unidentifiable process refuses reconciliation.
+Reuse the runtime core's existing SQLite lease helper on one host-private per-project empty coordination file, shared by deployment, reconciliation and manual start/stop/backup/restore entrypoints. Status remains read-only. The same lease excludes another process and another caller in this process. Process death releases the OS lock but leaves the durable pending marker. Explicit reconciliation holds that same lease while it inspects the exact selected container and finalizes pending metadata. A held lease refuses reconciliation. Pending metadata never changes after lease release; only the operation's unique record receives its verified release timestamp afterward.
 
 Use one synchronized private record per deployment with the pinned previous/target image and revision, included issue links, owner, storage assessment, recovery eligibility, backup and phases. Write each phase before its corresponding effect. Failure retains the pending marker and latest state. After a failed start/check, stop only the exact newly created container and verify PID zero where possible. An ambiguous Docker result stays uncertain. No automatic second image replacement is attempted.
 
