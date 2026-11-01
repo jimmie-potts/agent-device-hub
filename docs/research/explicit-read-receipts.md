@@ -62,10 +62,27 @@ successful action without issuing an update itself. Native snapshots, output
 events and absent unread markers do not establish readership. No polling path
 to the Hub is added.
 
-Actual Desktop viewing remains unqualified. The available computer-use tool
-refused access to ChatGPT, and no alternate automation route was used to bypass
-that restriction. The prior installed-code tests exercised the application's
-receipt class with synthetic dependencies; they were not a live UI test.
+The owner completed a manual disposable Desktop check on 2026-11-01 using
+Desktop 26.1027.30824, build 22943, and bundled 0.166.0-alpha.5.1. Opening one
+completed synthetic thread produced its matching native read request and
+successful response. Independent API readback confirmed that thread read and
+an unopened control still unread at its original revision. The owner confirmed
+that no sign-in screen appeared. The temporary application and profile were
+removed; original metadata remains private. This is operator-confirmed UI
+action plus native metadata, not direct computer-use observation or installed
+B.U.N.N.Y. acceptance.
+
+Same-process tests on both native versions found that `thread/resume` subscribes
+a loaded connection, while `thread/read` alone does not. Another connection's
+read update produces the same subscribed notification without reader identity.
+Unsubscribe and reconnect do not replay the missed change. The selected
+collector therefore observes Desktop's own request and successful response,
+with its target frozen before the request reaches the native process.
+
+The available computer-use tool refused access to ChatGPT. The manual route
+respects that restriction; no alternate UI automation was used. The earlier
+installed-code tests exercised the receipt class with synthetic dependencies
+and remain distinct from the operator-run check.
 
 ## T3 Code and Claude
 
@@ -113,7 +130,8 @@ model endpoint. Tools and MCP were disabled, external model traffic was denied,
 and no owner configuration or credentials were used. The test container had no
 installed volumes or device modules. Temporary profiles and the test container
 were removed. Qualification is limited to this Claude terminal version;
-Claude Desktop and Codex Desktop remain unqualified.
+Claude Desktop remains unqualified. Codex's permitted manual action evidence
+and version-bound collector are described above and in the runtime guide.
 
 ## Collection and evidence boundaries
 

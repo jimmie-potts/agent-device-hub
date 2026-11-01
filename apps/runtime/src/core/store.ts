@@ -286,8 +286,16 @@ export class CoreStore implements Storage {
   async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
     const before = this.#records.get(message.subject), observation = message.data, atMs = this.#options.clock.now();
     if (before === undefined || decideReadReceipt(message, before, qualification).status !== 'eligible' ||
-      observation.event.receipt.kind !== 'owned-ui' || observation.event.receipt.viewRevision !== viewRevision(before) ||
       observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || before.lastEvidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;
+    const receipt = observation.event.receipt, previous = before.readReceipt;
+    if (receipt.kind === 'owned-ui') {
+      if (receipt.viewRevision !== viewRevision(before)) return false;
+    } else {
+      if (receipt.seenRevision === receipt.acceptedRevision) return false;
+      if (previous?.source === message.source && previous.noticeId === observation.event.noticeId &&
+        previous.receipt.kind === 'provider-client' && previous.receipt.seenRevision === receipt.seenRevision &&
+        previous.receipt.acceptedRevision === receipt.acceptedRevision) return false;
+    }
     const record: SessionRecord = {...before, revision: this.#revision + 1, read: 'read',
       readReceipt: {noticeId: observation.event.noticeId, observedAtMs: observation.observedAtMs, source: message.source,
         receipt: structuredClone(observation.event.receipt)}};

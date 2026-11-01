@@ -11,6 +11,14 @@ for disposable acceptance and proof. Scenario selection and full-suite triggers
 are in [runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs).
 The headings below preserve existing links and route component detail to its owner.
 
+## Codex explicit read receipts
+
+Use Node 24, build, and run the focused receipt commands in
+[runtime development](../apps/runtime/DEVELOPMENT.md#codex-read-receipt-checks),
+then the shared type/lint, contract, SDK and workflow checks. Existing core CI
+discovers these runtime tests. Native Desktop and installed acceptance remain
+separate from source and disposable protocol checks.
+
 [Documentation checks](documentation-checks.md) report source-pin drift and validate
 current commands and paths in CI, including Markdown-only changes.
 
