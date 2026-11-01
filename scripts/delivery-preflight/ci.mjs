@@ -170,6 +170,8 @@ async function retainedSelection(ctx, gate, { sha, event, checkBranch, workflow,
     if (!original || original.run_attempt >= current.run_attempt || executionSteps(original) !== steps) return refuse('original execution differs');
     const annotations = await ctx.read(gate, () => github.getAll(`/repos/${repo}/check-runs/${check.id}/annotations?per_page=100`));
     if (!annotations.ok) return null;
+    if (annotations.value.some(item => !item || !['notice', 'warning', 'failure'].includes(item.annotation_level)
+      || typeof item.title !== 'string' || typeof item.message !== 'string')) return refuse('original annotations are malformed');
     if (annotations.value.some(item => item.annotation_level === 'failure')) return refuse('original has a failure annotation');
     const notices = annotations.value.filter(item => item.annotation_level === 'notice' && item.title === NOTICE_TITLE);
     if (!notices.length) continue;

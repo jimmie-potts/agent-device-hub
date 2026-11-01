@@ -448,8 +448,10 @@ const retainedSelectionCases = [
   }],
   ['a missing original notice', f => { f.world.annotations[f.original.id] = []; }],
   ['a malformed original notice', f => { f.world.annotations[f.original.id][0].message = '{invalid'; }],
+  ['a malformed original annotation record', f => { f.world.annotations[f.original.id].push(null); }],
+  ['an unclassifiable original annotation record', f => { f.world.annotations[f.original.id].push({}); }],
   ['multiple original selection notices', f => { f.world.annotations[f.original.id].push(f.world.annotations[f.original.id][0]); }],
-  ['an original failure annotation', f => { f.world.annotations[f.original.id].push({ annotation_level: 'failure', title: 'Synthetic failure' }); }],
+  ['an original failure annotation', f => { f.world.annotations[f.original.id].push({ annotation_level: 'failure', title: 'Synthetic failure', message: 'Synthetic failure' }); }],
   ['original selection missing a required group', f => { f.world.annotations[f.original.id][0].message = '{"mode":"selected","groups":[]}'; }],
   ['a malformed current notice', f => { f.world.annotations[f.retained.id] = [{ ...f.world.annotations[f.original.id][0], message: '{invalid' }]; }],
 ];
