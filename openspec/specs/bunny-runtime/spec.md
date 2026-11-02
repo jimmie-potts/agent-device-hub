@@ -1498,7 +1498,7 @@ The configuration file's `diagnostics` section MAY name an export, `"export": {"
 
 ### Requirement: Qualified explicit read receipts commit against the displayed target
 
-The runtime SHALL explicitly adopt lifecycle/2.1 for a qualified authenticated producer. It SHALL require full identity, generation, known lifecycle turn, exact finished notice and eligible root activity to match inside its serialized owner operation. An owned-UI view revision SHALL match the exact session record used to bind the displayed target. Qualified producers SHALL include the observed Claude terminal implementation and the version-qualified Codex Desktop observer for the unchanged `codex/local` identity. Unqualified clients SHALL produce no positive read. A provider-client receipt SHALL carry the observed native revision and the matching accepted revision, with duplicate protection for the same accepted action.
+The runtime SHALL explicitly adopt lifecycle/2.1 for a qualified authenticated producer. It SHALL require full identity, generation, known lifecycle turn, exact finished notice and eligible root activity to match inside its serialized owner operation. An owned-UI view revision SHALL match the exact session record used to bind the displayed target. Qualified producers SHALL include the observed Claude terminal implementation and the protocol-qualified Codex Desktop observer for the unchanged `codex/local` identity. Unqualified clients SHALL produce no positive read. A provider-client receipt SHALL carry the observed native revision and the matching accepted revision, with duplicate protection for the same accepted action.
 
 Receipt evidence SHALL commit with the session revision, history and outbox. It SHALL NOT create a session, acknowledge a consumer, clear attention or refresh lifecycle evidence. Subsequent projection SHALL retain the receipt only for its eligible generation, turn and notice. An admitted native read update SHALL replace the receipt evidence. A removed session SHALL retain no active receipt.
 
@@ -1529,3 +1529,8 @@ Receipt evidence SHALL commit with the session revision, history and outbox. It 
 #### Scenario: Missing qualification
 - **WHEN** an ordinary lifecycle credential, mismatched feed, unsupported client or invalid receipt reaches intake
 - **THEN** the runtime refuses it under the existing shared error and diagnostic conventions without changing session state
+
+#### Scenario: Existing enrollment after a compatible Codex update
+- **WHEN** the enrolled Codex producer observes the same qualified native action after an application update
+- **THEN** the existing credential and full feed identity still qualify the receipt without re-enrollment
+- **AND** all generation, turn, notice, replay and source checks still apply

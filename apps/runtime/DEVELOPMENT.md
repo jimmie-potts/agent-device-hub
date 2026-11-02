@@ -11,7 +11,10 @@ Run commands from the repository root with Node 24 and the dependencies in
 After `npm run build`, run
 `node --test apps/runtime/dist/tests/codex-receipt-*.test.js apps/runtime/dist/tests/codex-read-*.test.js apps/runtime/dist/tests/read-receipts.test.js apps/runtime/dist/tests/read-helper.test.js`.
 The focused suites cover source qualification, native request/response correlation,
-byte forwarding, SDK freshness, target binding and the core transaction. Existing
+compatible version changes, added protocol fields, refusal of incompatible evidence,
+byte forwarding, SDK freshness, target binding and the core transaction. The Mac
+launcher test uses synthetic app bundles and runs only on macOS; run it on the host
+as well as the Linux receipt suites. It launches no installed application. Existing
 `test:runtime:built` and the core CI job discover these tests automatically.
 Use the owning Linux test environment for runtime storage/edge checks, as for the
 existing receipt suites. Run shared build/type/lint, event/SDK, contract and workflow
