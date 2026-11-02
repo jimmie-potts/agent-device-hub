@@ -439,6 +439,17 @@ job judges the fourth layer's capture steps without a user manager.
 `apps/runtime/dist/tests/scenarios/`. To run some scenarios only, name them
 after a build, for example
 `node --test --test-name-pattern=end-to-end apps/runtime/dist/tests/scenarios/*.test.js`.
+
+The end-to-end diagnostic-record check registers one sequential case per
+transport, each using the existing 20-second test bound for startup, scenario,
+record inspection and cleanup together. Their declared test budgets
+therefore total 40 seconds. Contract validation and the three required module
+events stay unchanged; invalid appended records and removal of every matching
+required event must still fail. After a root build, select these checks with
+`node --test --test-name-pattern='every record the end-to-end scenario writes' apps/runtime/dist/tests/scenarios/runner.test.js`.
+A controlled scheduling-delay example demonstrates the old combined-budget
+assumption; it does not identify a historical hosted timeout's cause.
+
 Each catalog scenario runs twice in the runtime's module host, on a manual
 clock: once with its parts on the host's bus, and once through a `RemoteEdge`
 on 127.0.0.1 with run-generated tokens. The harness never listens on an
