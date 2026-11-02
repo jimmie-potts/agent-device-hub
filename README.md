@@ -29,7 +29,7 @@ CI feature checks. See the [hibernation guide](modules/bb8/README.md).
 The current [Tidbyt](modules/tidbyt/README.md), [LIFX](modules/lifx/README.md),
 [Pixoo](modules/pixoo/README.md), [Nanoleaf](modules/nanoleaf/README.md),
 [playback](modules/playback/README.md) and [Codex Desktop](modules/codex-desktop/README.md)
-guides own their module behavior and configuration. Tidbyt uses the official cloud;
+guides own their module behavior and configuration. The [Reachy](modules/reachy-mini/README.md) and [MicroDuck](modules/microduck/README.md) robot modules admit separately qualified simulators only. Tidbyt uses the official cloud;
 LIFX uses configured LAN addresses. The [Wispr module](modules/wispr/README.md)
 retains its selected-file handoff; activation and browser/text exposure have their
 own scope. The runtime guide describes configuration refusals and health.

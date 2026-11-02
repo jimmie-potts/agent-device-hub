@@ -44,6 +44,7 @@ type Fault = {
   deafOutbox?: boolean;
   /** It forgets an outcome on any acknowledgment that names it, whoever sent it: the payload, not the sender. */
   trustsPayload?: boolean;
+  requiredSource?: string;
 };
 type Switch = {power: 'on' | 'off'};
 
@@ -75,6 +76,7 @@ function bulb(fault: Fault = {}): BunnyModule {
       const rows = () => db.prepare('SELECT id, revision, power FROM bulbs ORDER BY id').all() as {id: string; revision: number; power: string}[];
       await sdk.serveSync(['kit-bulb'], () => ({revision: Math.max(0, ...rows().map(row => row.revision)), states: rows().map(state)}));
       await sdk.respond<Switch>('bunny.cmd.kit-bulb.*', async (command: Command<Switch>) => {
+        if (fault.requiredSource !== undefined && command.source !== fault.requiredSource) return errorBody('forbidden');
         const found = rows().find(row => row.id === command.subject);
         if (found === undefined) return errorBody(fault.refuseWith ?? 'not-found', {detail: 'no such bulb'});
         const outcome = {
@@ -129,6 +131,13 @@ it('a conforming module passes every check', async () => {
     CHECKS.manifest, CHECKS.lifecycle, CHECKS.serves, CHECKS.accepts, CHECKS.refuses, CHECKS.outbox, CHECKS.acknowledged,
   ], 'no copies check without copied families');
   assert.deepEqual(await failing(spec()), []);
+});
+
+it('the kit requests as the declared stand-in owner without weakening a source-restricted responder', async () => {
+  const given=spec({requiredSource:'bunny/core'});
+  const accepts=conformanceChecks(given).find(check=>check.name===CHECKS.accepts);assert.ok(accepts);
+  await assert.rejects(accepts.run);
+  assert.deepEqual(await failing({...given,requestSource:'bunny/core'}),[]);
 });
 
 it('the kit catches a module that reports its outcome without the outbox', async () => {

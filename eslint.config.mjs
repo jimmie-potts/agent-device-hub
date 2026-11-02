@@ -27,6 +27,8 @@ export const streamOwners = [
   'apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/src/migrate-pixoo.ts', 'apps/runtime/src/migrate-nanoleaf.ts',
   'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts',
   'modules/roborock/bin/setup.mjs',
+  // The explicit disposable MicroDuck fixture CLI owns its one ready line.
+  'modules/microduck/src/fixture.ts',
 ];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
