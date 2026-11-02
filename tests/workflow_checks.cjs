@@ -282,7 +282,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:reachy:built', 'npm run test:microduck:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
@@ -322,6 +322,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
       { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24', cache: 'npm' } },
     ];
+    if(id==='core')expectedSetup[0].with={ref:"${{ needs.select.outputs.mode == 'standalone' && needs.select.outputs.head || github.sha }}"};
     // One Python version: the installed Nanoleaf runtime's (Hub #861), set up only for the suites that use it.
     if (id === 'core') expectedSetup.push({
       if: "contains(fromJSON(needs.select.outputs.groups), 'shared')",
@@ -349,8 +350,8 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }
     const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
-    assert.deepEqual(installs, ['app-verify', 'runtime-verify'].includes(id) ? [{ name: 'Install Chromium with its system dependencies',
-      'timeout-minutes': browserInstallMinutes, run: playwrightInstall }] : [], 'every browser install retries under a step limit');
+    assert.deepEqual(installs, ['core','app-verify', 'runtime-verify'].includes(id) ? [{ name: 'Install Chromium with its system dependencies',
+      'timeout-minutes': browserInstallMinutes, run: playwrightInstall,...(id==='core'?{if:"contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')"}:{}) }] : [], 'every browser install retries under a step limit');
     if (matrixJobs.includes(id)) {
       assert.equal(job.strategy['fail-fast'], false);
       assert.deepEqual(job.strategy.matrix, { os: ['ubuntu-latest'] });
@@ -375,7 +376,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     // Steps are skipped only by the selection (Hub #1080); none may fail without failing its job.
     assert(originalSteps.every(step => !step['continue-on-error']));
     assert(originalSteps.every(step => step.if === undefined || (['core', 'app-verify'].includes(id)
-      && /^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if))), id);
+      && (/^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if) || (id==='core' && step.if==="contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')")))), id);
   }
   assert.equal(builds, 4);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run

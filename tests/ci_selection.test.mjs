@@ -11,7 +11,7 @@ import YAML from 'yaml';
 
 import { runGate, runSelect } from '../scripts/ci-selection/cli.mjs';
 import { localPaths, selectedCommands } from '../scripts/ci-selection/local.mjs';
-import { GROUPS, JOBS, NOTICE_TITLE, STEP_CONDITION, gateVerdict, jobCondition, noticeMessage, readNotice, selectChecks, stepGroup } from '../scripts/ci-selection/selection.mjs';
+import { GROUPS, JOBS, NOTICE_TITLE, STEP_CONDITION, gateVerdict, jobCondition, noticeMessage, readNotice, selectChecks, stepGroup, stepOwner } from '../scripts/ci-selection/selection.mjs';
 import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -232,7 +232,7 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
   assert.equal(requests[0].url, `https://api.github.com/repos/jimmie-potts/agent-device-hub/compare/${'a'.repeat(40)}...${'b'.repeat(40)}`);
   assert.equal(requests[0].init.method, 'GET');
   assert.equal(requests[0].init.headers.authorization, 'Bearer token-value');
-  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', firmware: 'true', 'app-verify': 'true', 'runtime-verify': 'false' });
+  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', owners:'[]',head:'b'.repeat(40),firmware: 'true', 'app-verify': 'true', 'runtime-verify': 'false' });
   const summary = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
   assert.match(summary, /Selected: maintenance, chompi/);
   assert.match(summary, /Omitted \(no changed path selects them\): runtime, modules, shared/);
@@ -299,6 +299,7 @@ test('local selection lists the same commands CI runs for the selection', () => 
   assert.ok(full.every(job => job.selected));
   const all = full.flatMap(job => job.commands);
   for (const step of Object.values(checks.jobs).flatMap(job => job.steps).filter(step => step.run && !/ci-selection/.test(step.run))) {
+    if(stepOwner(step.if))continue;
     assert.ok(all.includes(step.run), `${step.run} is listed for a full selection`);
   }
 });
@@ -316,7 +317,7 @@ test('local paths include both sides of renames, uncommitted and untracked files
   assert.deepEqual(localPaths({ base: 'origin/main', git }).sort(), [
     'apps/chompi-bridge/src/new.ts', 'apps/maintenance/src/edited.ts', 'apps/maintenance/src/old.ts', 'apps/maintenance/src/staged.ts', 'modules/pixoo/src/untracked.ts',
   ]);
-  assert.ok(calls.every(call => !call.startsWith('diff') || call.includes('--no-renames')), calls.join('\n'));
+  assert.ok(calls.every(call => !call.startsWith('diff') || (call.includes('--no-renames') && call.includes('-z'))), calls.join('\n'));
   assert.ok(calls.some(call => call.startsWith('diff') && call.includes('origin/main...HEAD')), calls.join('\n'));
   assert.ok(calls.every(call => call.includes('-z')), calls.join('\n'));
 });
@@ -382,7 +383,7 @@ const STEP_GROUPS = {
 
 test('every conditional Checks step keeps its pinned group', () => {
   for (const [id, expected] of Object.entries(STEP_GROUPS)) {
-    const actual = Object.fromEntries(checks.jobs[id].steps.filter(step => step.if !== undefined)
+    const actual = Object.fromEntries(checks.jobs[id].steps.filter(step => step.if !== undefined && !stepOwner(step.if))
       .map(step => [step.run ?? step.uses.split('@')[0], stepGroup(step.if)]));
     assert.deepEqual(actual, expected, `${id}: a suite moved group, or a conditional step was added or removed`);
   }
@@ -417,7 +418,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   const select = checks.jobs.select;
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);
-  assert.deepEqual(select.outputs, Object.fromEntries(['mode', 'groups', ...Object.keys(JOBS)].map(name => [name, `\${{ steps.select.outputs.${name} }}`])));
+  assert.deepEqual(select.outputs, Object.fromEntries(['mode', 'groups', 'owners', 'head', ...Object.keys(JOBS)].map(name => [name, `\${{ steps.select.outputs.${name} }}`])));
   assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', BUNNY_RELEASE_QUALIFICATION: '${{ inputs.qualification }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
   const gate = checks.jobs.gate;
   assert.equal(gate.name, 'Selected checks gate');
@@ -448,6 +449,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
     for (const step of job.steps) {
       if (step.if === undefined) continue;
       if (id === 'core' || id === 'app-verify') {
+        if(stepOwner(step.if)){assert.equal(id,'core');assert.equal(stepOwner(step.if),'microduck-browser');continue;}
         assert.match(step.if, STEP_CONDITION, `${id}: ${step.if}`);
         used.add(stepGroup(step.if));
       } else {
@@ -459,7 +461,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   // Every test suite and the Python setup are selected; setup, build, typecheck and lint always run.
   for (const step of checks.jobs.core.steps) {
     const always = step.uses?.startsWith('actions/checkout') || step.uses?.startsWith('actions/setup-node')
-      || ['npm ci', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:workspace-audit'].includes(step.run);
+      || ['npm ci', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:workspace-audit', 'node scripts/ci-selection/run-standalone.mjs'].includes(step.run);
     assert.equal(step.if === undefined, Boolean(always), JSON.stringify(step));
   }
 });

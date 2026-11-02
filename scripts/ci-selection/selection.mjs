@@ -1,3 +1,4 @@
+import {standaloneOwners,OWNERS} from './standalone.mjs';
 // Affected PR checks (Hub #1080). A small explicit mapping from changed paths to broad check groups, including the
 // groups of their known consumers. The Checks workflow's select job, its final gate, the delivery preflight and the
 // local `npm run ci:select` command all use it, so they agree on what a change runs. Anything shared, unknown or
@@ -66,8 +67,9 @@ function checkPath(file) {
 }
 
 const ordered = groups => GROUPS.filter(group => groups.has(group));
+const validOwners=owners=>Array.isArray(owners)&&owners.length>0&&new Set(owners).size===owners.length&&owners.every(id=>Object.hasOwn(OWNERS,id));
 const jobsFor = (groups, mode) => Object.fromEntries(Object.entries(JOBS).map(([id, needs]) => [id,
-  mode === 'focused' && id !== 'firmware' ? false : needs.some(group => groups.has(group)),
+  mode === 'standalone' || mode === 'focused' && id !== 'firmware' ? false : needs.some(group => groups.has(group)),
 ]));
 
 // Only these existing style assets have reviewed presentation-only ownership. New paths and all executable
@@ -117,13 +119,15 @@ function result(mode, groups, reasons, full) {
  * may be missing paths. Only a complete pull-request comparison can narrow the selection.
  * Returns {mode: 'full' | 'selected', groups, omitted, jobs, reasons: [{path, groups, reason}], full: [{path?, reason}]}.
  */
-export function selectChecks({ event, paths, complete, detail } = {}) {
+export function selectChecks({ event, paths, changes, complete, detail } = {}) {
   if (typeof event !== 'string' || !event) throw new Error('selectChecks needs the event name');
   if (!Array.isArray(paths)) throw new Error('selectChecks needs the changed paths');
   paths.forEach(checkPath);
   if (event !== 'pull_request') return result('full', GROUPS, [], [{ reason: `a ${event} event runs every check` }]);
   if (!complete) return result('full', GROUPS, [], [{ reason: `the changed-file list is incomplete${detail ? `: ${detail}` : ''}` }]);
   if (!paths.length) return result('full', GROUPS, [], [{ reason: 'the comparison lists no changed path' }]);
+  const owners=standaloneOwners(paths,changes);
+  if(owners)return {...result('standalone',[],changes.map(file=>({path:file.filename,groups:[],reason:'verified standalone test comparison'})),[]),owners};
   const reasons = [];
   const full = [];
   const groups = new Set();
@@ -147,7 +151,8 @@ export const NOTICE_TITLE = 'Affected checks';
 
 /** The notice message that publishes a selection: compact JSON, so it needs no workflow-command escaping. */
 export const noticeMessage = selection => JSON.stringify({ mode: selection.mode, groups: selection.groups,
-  ...(selection.mode === 'focused' ? { jobs: selection.jobs } : {}) });
+  ...(['focused','standalone'].includes(selection.mode) ? { jobs: selection.jobs } : {}),
+  ...(selection.mode==='standalone'?{owners:selection.owners}:{}) });
 
 /** A published selection read back from its notice message, or null when the message is not one. */
 export function readNotice(message) {
@@ -157,13 +162,14 @@ export function readNotice(message) {
   } catch {
     return null;
   }
-  if (!value || !['full', 'selected', 'focused'].includes(value.mode) || !Array.isArray(value.groups)
+  if (!value || !['full', 'selected', 'focused', 'standalone'].includes(value.mode) || !Array.isArray(value.groups)
     || !value.groups.every(group => GROUPS.includes(group))) return null;
-  if (value.mode === 'focused') {
+  if (['focused','standalone'].includes(value.mode)) {
+    if(value.mode==='standalone'&&(!validOwners(value.owners)||value.groups.length))return null;
     const expected = jobsFor(new Set(value.groups), value.mode);
     if (!value.jobs || Object.keys(value.jobs).length !== Object.keys(JOBS).length
       || Object.entries(expected).some(([id, run]) => value.jobs[id] !== run)) return null;
-    return { mode: value.mode, groups: ordered(new Set(value.groups)), jobs: expected };
+    return { mode: value.mode, groups: ordered(new Set(value.groups)), jobs: expected, ...(value.mode==='standalone'?{owners:value.owners}:{}) };
   }
   return { mode: value.mode, groups: ordered(new Set(value.groups)) };
 }
@@ -182,7 +188,7 @@ export function conditionJob(condition) {
 
 /** The group a step condition names, or null for an unconditional step. Any other condition is an error. */
 export function stepGroup(condition) {
-  if (condition === undefined) return null;
+  if (condition === undefined || stepOwner(condition)) return null;
   const match = typeof condition === 'string' ? condition.match(STEP_CONDITION) : null;
   if (!match || !GROUPS.includes(match[1])) throw new Error(`unsupported step condition: ${JSON.stringify(condition)}`);
   return match[1];
@@ -200,14 +206,16 @@ function readOutputs(outputs) {
   if (!Array.isArray(groups)) return { problem: 'the selection output has no readable groups' };
   const unknown = groups.filter(group => !GROUPS.includes(group));
   if (unknown.length) return { problem: `the selection output names unknown group ${unknown.join(', ')}` };
-  if (!['full', 'selected', 'focused'].includes(outputs.mode)) return { problem: `the selection output has mode ${JSON.stringify(outputs.mode)}` };
+  if (!['full', 'selected', 'focused', 'standalone'].includes(outputs.mode)) return { problem: `the selection output has mode ${JSON.stringify(outputs.mode)}` };
   if (outputs.mode === 'full' && groups.length !== GROUPS.length) return { problem: 'a full selection must select every group' };
+  let owners;
+  if(outputs.mode==='standalone'){try{owners=JSON.parse(outputs.owners);}catch{}if(!validOwners(owners)||groups.length)return {problem:'the standalone owner selection is missing or invalid'};}
   const set = new Set(groups);
   const jobs = jobsFor(set, outputs.mode);
   for (const [id, run] of Object.entries(jobs)) {
     if (outputs[id] !== String(run)) return { problem: `the selection output for ${id} (${JSON.stringify(outputs[id])}) does not match its groups` };
   }
-  return { mode: outputs.mode, groups: ordered(set), jobs };
+  return { mode: outputs.mode, groups: ordered(set), jobs, ...(owners?{owners}:{}) };
 }
 
 /**
@@ -227,6 +235,7 @@ export function gateVerdict(needs) {
   }
   const selection = readOutputs(select.outputs);
   if (selection.problem) return { ok: false, problems: [selection.problem], lines };
+  if(selection.mode==='standalone'&&needs.core?.outputs?.owners!==JSON.stringify(selection.owners))problems.push('core: complete standalone command evidence is missing or differs from the selection');
   lines.push(`selection: ${selection.mode}; groups ${selection.groups.join(', ') || 'none'}`);
   if (!Object.hasOwn(needs, 'core')) problems.push('core: missing from the gate\'s needs');
   for (const id of Object.keys(JOBS)) if (!Object.hasOwn(needs, id)) problems.push(`${id}: missing from the gate's needs`);
@@ -246,3 +255,6 @@ export function gateVerdict(needs) {
   }
   return { ok: problems.length === 0, problems, lines };
 }
+
+/** The only owner-specific setup condition; unknown expressions never select setup. */
+export const stepOwner=condition=>typeof condition==='string'&&condition.match(/^contains\(fromJSON\(needs\.select\.outputs\.owners\), '(wemo|microduck-browser)'\)$/)?.[1]||null;

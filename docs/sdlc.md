@@ -593,6 +593,25 @@ Explicitly allowlisted runtime dashboard and module frontend style assets can us
 admission, omitting the broad App verification and Runtime verification jobs.
 The affected independent disposable acceptance exercise remains required.
 
+Two existing standalone test entries have a narrower owning-command route:
+`modules/wemo/tests/module.test.ts` runs the complete `npm run test:wemo:built`;
+`apps/runtime/dashboard/tests/microduck.browser.ts` runs Chromium setup, dashboard
+smoke and the complete `npm run test:microduck:browser`. Only modifications of
+those regular files, optionally with ordinary Markdown, qualify. Build, typecheck,
+lint, Workflow/docs checks and independent review remain required. Helpers,
+fixtures, product/contract/lock/workflow/gate-policy changes, additions, deletions,
+renames, type changes and incomplete metadata keep conservative selection.
+
+For this route Core checks out the exact PR head. Wemo completion must show a
+nonempty successful full suite and the changed compiled entry, with no failed,
+cancelled, skipped or todo cases. MicroDuck completion follows the entire existing
+browser journey, including keyboard, viewport, reduced-motion and accessibility
+assertions; its dashboard smoke must also pass. Native notices bind the owner,
+fixed complete command, head, run and attempt. The gate requires completion and
+the preflight checks the notice against the actual native Core execution.
+Missing, ambiguous, zero-match or wrong-head evidence refuses admission. A green
+job alone does not establish owning-command completion.
+
 Backend and safety-sensitive paths retain their existing broad selection. Shared
 packages/contracts, toolchain/lockfile, CI/selector/preflight, gate-policy,
 unknown paths and incomplete comparisons select full coverage. Author labels

@@ -438,6 +438,52 @@ have no effect. Affected independent disposable browser/acceptance checks remain
 required for observable changes. Full release qualification runs the omitted
 coverage on the actual integrated image.
 
+### Standalone test admission
+
+Only modifications to `modules/wemo/tests/module.test.ts` and
+`apps/runtime/dashboard/tests/microduck.browser.ts` can select standalone owners.
+Ordinary Markdown may accompany them; policy, contracts and shared support cannot.
+Both existing and candidate files must be regular Git blobs with mode `100644`.
+The selector reads complete file statuses and exact comparison-tree metadata;
+missing metadata preserves conservative selection. The local selector narrows
+only a clean committed comparison. Additions, removals, renames, helpers,
+fixtures, product code and mixed unknown changes retain their existing checks.
+
+Core still runs Node 24 setup, `npm ci`, build, typecheck and lint. Its standalone
+checkout is the exact PR head. Wemo runs the entire `npm run test:wemo:built`
+script, with parallel standard and count-only Node reporters. Completion requires
+a nonempty successful full suite and `modules/wemo/dist/tests/module.test.js`,
+with no failed, cancelled, skipped or todo tests. MicroDuck installs Chromium
+with the existing bounded apt retry, then runs the complete
+`npm run test:runtime-dashboard:smoke` and `npm run test:microduck:browser`.
+Its completion marker occurs after all existing browser and accessibility
+assertions. No file, test-name or journey filtering is applied.
+
+The `Standalone command` native notice records only closed completion metadata:
+fixed owner/command digest, candidate head, run/attempt and count or full-journey
+completion. The final gate requires all selected owners. Delivery preflight
+binds notices to the successful native Actions Core job and its complete-command
+step; missing, malformed, empty, skipped, failed or wrong-revision evidence
+remains unresolved. Workflow and docs checks, review and disposable acceptance
+remain required. Full manual Checks and release qualification retain every group.
+
+For the next eligible candidate, first retain the ready-PR standalone run,
+review, admission and actual merge timestamps. After it merges, keep its branch
+pinned to the reviewed head and dispatch the existing Checks workflow once on
+that **same fixed head** as a conservative control. Waiting until after merge
+avoids same-head check-name collisions delaying PR admission. Verify reviewed-head
+and actual squash-merge tree equality without claiming their SHAs are identical;
+main qualification keeps its own source and run identity. Do not add a trigger or retry a failed run for this comparison. Verify
+actual checkout/head, workflow blobs, commands, run/attempt, event and complete
+native job inventory for both; compare observed elapsed time and all executed
+job minutes, including setup/post steps, failures, retries and overlap. Record
+Workflow/docs once as shared work. Report queue time separately when native
+transitions establish it; unknown waits stay unknown. PR and manual events and
+checkout/workload differences limit the comparison. Replayed selection or a
+missing full control is not measured elapsed time; runner minutes are not an
+invoice or model-cost estimate. Record projected benefits as projections until
+both actual executions exist. This observation does not waive either gate.
+
 A group's unselected steps show as skipped in the job log. Firmware, App
 verification and Runtime verification report `skipped` when their groups are
 unselected. Those three jobs name their runner (`on ubuntu-latest`) instead of using a matrix,

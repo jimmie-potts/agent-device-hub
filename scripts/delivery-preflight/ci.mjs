@@ -1,5 +1,6 @@
 // Exact-revision CI evidence. The only path-specific allowance is the affected-check selection (Hub #1080): a job
 // that selection deliberately leaves out may be skipped, and is reported as not run.
+import {standaloneOwners,withFileModes,OWNER_NOTICE_TITLE,readCommandEvidence} from '../ci-selection/standalone.mjs';
 import { NOTICE_TITLE, readNotice } from '../ci-selection/selection.mjs';
 import { CI_PROVIDERS, short } from './context.mjs';
 import { ReadFailure } from './github.mjs';
@@ -41,7 +42,7 @@ const workflowPath = file => CI_PROVIDERS.some(provider => file.startsWith(`${pr
  * Evaluate one revision's CI. `checkBranch` is the check suite branch that
  * identifies the event: the PR head branch for pull_request, main for push.
  */
-export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, paths, filesComplete, requiredContexts, baseline }) {
+export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, paths, changes, filesComplete, requiredContexts, baseline }) {
   gate.evidence.revision = sha;
   gate.evidence.event = event;
   const read = await readWorkflows(ctx, gate, sha);
@@ -52,7 +53,11 @@ export async function evaluateCi(ctx, gate, { sha, event, branch, checkBranch, p
     return;
   }
   gate.evidence.provider = provider.id;
-  const scope = { event, branch, files: paths, filesComplete };
+  if(event==='pull_request'&&filesComplete&&baseline&&standaloneOwners(paths,changes,{requireModes:false})){
+    const trees=await ctx.read(gate,async()=>Promise.all([baseline,sha].map(ref=>ctx.github.get(`/repos/${ctx.repo}/git/trees/${ref}?recursive=1`))));
+    if(trees.ok)changes=withFileModes(changes,...trees.value);
+  }
+  const scope = { event, branch, files: paths, changes, filesComplete };
   const expected = expectedJobs(workflows, scope, provider);
   for (const reason of expected.uncertain) gate.unresolved(`cannot enumerate expected jobs: ${reason}`);
   for (const reason of expected.notes) gate.note(reason);
@@ -100,9 +105,10 @@ function checkPublishedSelection(gate, name, annotations, selection) {
     return;
   }
   gate.evidence.hostedSelection = hosted;
-  if (hosted.mode === 'focused' && selection.mode !== 'focused') {
-    gate.unresolved(`${name}: focused hosted selection cannot satisfy this change's conservative coverage`);
+  if (['focused','standalone'].includes(hosted.mode) && selection.mode !== hosted.mode) {
+    gate.unresolved(`${name}: ${hosted.mode} hosted selection cannot satisfy this change's conservative coverage`);
   }
+  if(selection.mode==='standalone'&&hosted.mode==='standalone'&&JSON.stringify(hosted.owners)!==JSON.stringify(selection.owners))gate.unresolved(`${name}: hosted standalone owners differ from the comparison`);
   const missing = selection.groups.filter(group => !hosted.groups.includes(group));
   if (missing.length) {
     gate.unresolved(`${name}: the hosted selection (${hosted.groups.join(', ') || 'no group'}) omits ${missing.join(', ')}, which this change selects`);
@@ -189,6 +195,34 @@ async function retainedSelection(ctx, gate, { sha, event, checkBranch, workflow,
     attempt: source.attempt, retainedAttempt: current.run_attempt } };
 }
 
+/** A green job alone cannot prove an owning command ran. Bind each completion to its native execution. */
+async function standaloneCompletion(ctx,gate,{check,annotations,sha,event,checkBranch,selection,checkSuite}){
+ const refuse=reason=>gate.unresolved(`${check.name}: standalone command evidence ${reason}`);
+ const link=actionJob(ctx.repo,check);
+ if(!link||check.app?.id!==15368||checkSuite?.app?.id!==15368||checkSuite.head_sha!==sha)return refuse('has no native Actions identity');
+ const read=await ctx.read(gate,async()=>({run:await ctx.github.get(`/repos/${ctx.repo}/actions/runs/${link.runId}`),
+  jobs:await ctx.github.getAll(`/repos/${ctx.repo}/actions/runs/${link.runId}/jobs?filter=all&per_page=100`,'jobs')}));
+ if(!read.ok)return;
+ const {run,jobs}=read.value;
+ const matching=jobs.filter(job=>job.id===link.jobId);
+ const job=matching.length===1?matching[0]:null;
+ if(run.status!=='completed'||run.conclusion!=='success'||run.id!==link.runId||run.head_sha!==sha||run.head_branch!==checkBranch||run.event!==event||run.repository?.full_name!==ctx.repo
+  ||run.path!=='.github/workflows/checks.yml'||run.check_suite_id!==check.check_suite.id||!Number.isSafeInteger(run.run_attempt)||run.run_attempt<1
+  ||!job||job.run_id!==run.id||job.run_attempt!==run.run_attempt||job.head_sha!==sha||job.name!==check.name
+  ||job.check_run_url!==`https://api.github.com/repos/${ctx.repo}/check-runs/${check.id}`||job.status!=='completed'||job.conclusion!=='success'
+  ||job.started_at!==check.started_at||job.completed_at!==check.completed_at
+  ||job.steps?.filter(step=>step.name==='Run complete standalone owning commands'&&step.status==='completed'&&step.conclusion==='success').length!==1)return refuse('native execution differs or the complete-command step is missing');
+ const notices=annotations.filter(row=>row.annotation_level==='notice'&&row.title===OWNER_NOTICE_TITLE);
+ if(notices.length!==selection.owners.length)return refuse('is missing or ambiguous');
+ const receipts=[];
+ for(const owner of selection.owners){
+  const matches=notices.map(row=>readCommandEvidence(row.message,{owner,head:sha,runId:run.id,attempt:run.run_attempt})).filter(Boolean);
+  if(matches.length!==1)return refuse(`is missing, invalid or wrong-head for ${owner}`);
+  receipts.push(matches[0]);
+ }
+ gate.evidence.standaloneCommands={workflowRunId:run.id,attempt:run.run_attempt,checkRunId:check.id,jobId:job.id,receipts};
+}
+
 async function evaluateChecks(ctx, gate, { sha, event, names, unselected, selectors, selection, checkBranch, provider }) {
   const omitted = selection ? selection.omitted : [];
   const { github, repo } = ctx;
@@ -235,13 +269,15 @@ async function evaluateChecks(ctx, gate, { sha, event, names, unselected, select
     else if (job.superseded.some(item => item.result === 'pending')) gate.unresolved(`${name}: an earlier attempt is still running`);
     const matchingSelectors = selectors.filter(item => item.name === name);
     const selector = matchingSelectors.length > 0 && selection;
-    if (result === 'success' && latest.output && (latest.output.annotations_count > 0 || selector)) {
+    const owning=selection?.mode==='standalone'&&name==='Build, lint and core tests on ubuntu-latest';
+    if (result === 'success' && latest.output && (latest.output.annotations_count > 0 || selector || owning)) {
       const annotations = await ctx.read(gate, () => github.getAll(`/repos/${repo}/check-runs/${latest.id}/annotations?per_page=100`));
       if (annotations.ok) {
         job.annotations = annotations.value.length;
         if (annotations.value.some(item => item.annotation_level === 'failure')) {
           gate.unresolved(`${name}: success with a failure annotation; resolve the contradiction`);
         }
+        if(owning)await standaloneCompletion(ctx,gate,{check:latest,annotations:annotations.value,sha,event,checkBranch,selection,checkSuite:suites.get(latest.check_suite.id)});
         if (selector) {
           let published = annotations.value;
           if (!published.length && latest.output.annotations_count === 0 && provider.id === 'github-actions' && attempts.length > 1) {
@@ -255,7 +291,7 @@ async function evaluateChecks(ctx, gate, { sha, event, names, unselected, select
           checkPublishedSelection(gate, name, published, selection);
         }
       }
-    } else if (result === 'success' && selector) {
+    } else if (result === 'success' && (selector||owning)) {
       gate.unresolved(`${name}: publishes no single readable selection, so the groups its jobs ran are unknown`);
     }
   }
