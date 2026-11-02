@@ -73,6 +73,11 @@ and the runtime scenarios. Tests use loopback SOAP or synthetic plugs. The
 SDK state across restart; browser checks include page-closed enforcement and
 independent plugs, with desktop/phone accessibility.
 
+The owner-admission success case waits for available state and a completed
+outcome under one bus/module test clock. Its request retains a 100 ms lifetime;
+readiness and completion use finite real-time checks. A separate case advances
+the clock before the final writer guard and requires zero sends after expiry.
+
 These source checks do not activate real devices. Installation needs exact
 release/latest-state/recovery admission under the runtime upgrade procedure.
 Physical schedule/maximum-on acceptance needs a separately authorized named-device
