@@ -5,19 +5,44 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {createWemoModule} from '../src/module.js';
-void test('a configured owner admits one power command through its designated writer',async t=>{
-  const dir=await mkdtemp(join(tmpdir(),'wemo-module-')),bus=new InProcessBus(),operator=bus.connect('bunny/parts/operator');let sends=0;
-  const host=new ModuleHarness(createWemoModule({transport:()=>({read:()=>Promise.resolve({power:false,firmware:'synthetic'}),setPower:(_on,_signal,before)=>{assert.equal(before(),undefined);sends++;return Promise.resolve({result:'succeeded',evidence:'transmitted',connection:'available'});}})}),
-    {bus,stateDir:dir,section:{plugs:[{id:'desk-lamp',label:'Desk lamp',address:'192.0.2.60',port:49153,mac:'000000000001',model:'F7C063',firmware:'synthetic',configurationRevision:1}]}});
+void test('a configured owner admits one power command through its designated writer',{timeout:10000},async t=>{
+  const now=Date.now(),clock={now:()=>now};
+  const dir=await mkdtemp(join(tmpdir(),'wemo-module-')),bus=new InProcessBus({now:clock.now}),operator=bus.connect('bunny/parts/operator');let sends=0,latest:DeviceRecord|undefined;
+  const host=new ModuleHarness(createWemoModule({transport:()=>({read:()=>Promise.resolve({power:false,firmware:'synthetic'}),setPower:(on,_signal,before)=>{assert.equal(on,true);assert.equal(before(),undefined);sends++;return Promise.resolve({result:'succeeded',evidence:'transmitted',connection:'available'});}})}),
+    {bus,clock,stateDir:dir,section:{plugs:[{id:'desk-lamp',label:'Desk lamp',address:'192.0.2.60',port:49153,mac:'000000000001',model:'F7C063',firmware:'synthetic',configurationRevision:1}]}});
   t.after(async()=>{await host.stop();await operator.close();await rm(dir,{recursive:true,force:true});});
-  await host.start();await new Promise(r=>setTimeout(r,30));
+  await operator.subscribe<DeviceRecord>('bunny.state.device.desk-lamp',message=>{latest=message.data;});
+  await host.start();await until(()=>latest?.availability==='available');
   const answer=await operator.request('bunny.cmd.power-set.desk-lamp',{type:'org.bunny.power.set.requested',subject:'desk-lamp',dataschema:'https://bunny.invalid/events/power-set/2.0',data:{on:true}},{requestId:'once',timeoutMs:100});
-  assert.equal(answer.status,'accepted');await new Promise(r=>setTimeout(r,30));assert.equal(sends,1);
+  assert.equal(answer.status,'accepted');await until(()=>latest?.lastOutcome.status==='known');assert.equal(sends,1);
+  assert.ok(latest?.lastOutcome.status==='known');assert.equal(latest.lastOutcome.outcome.requestId,'once');
+  assert.equal(latest.lastOutcome.outcome.result,'succeeded');assert.equal(latest.lastOutcome.outcome.evidence,'transmitted');
+  assert.equal(latest.pending,0);assert.deepEqual(host.failures,[]);
 });
 
 const section={plugs:[{id:'desk-lamp',label:'Desk lamp',address:'192.0.2.60',port:49153,mac:'000000000001',model:'F7C063',firmware:'synthetic',configurationRevision:1},{id:'shelf-lamp',label:'Shelf lamp',address:'192.0.2.61',port:49153,mac:'000000000002',model:'F7C063',firmware:'synthetic',configurationRevision:1}]};
 async function until(check:()=>boolean){const deadline=Date.now()+2000;while(!check()&&Date.now()<deadline)await new Promise(r=>setTimeout(r,5));assert.equal(check(),true);}
+void test('an admitted Wemo command expires at the final writer guard without a power send',{timeout:10000},async t=>{
+  let now=Date.now(),sends=0,entered=false;const clock={now:()=>now};let finalGuard:ErrorCode|undefined,latest:DeviceRecord|undefined;
+  const dir=await mkdtemp(join(tmpdir(),'wemo-expired-')),bus=new InProcessBus({now:clock.now}),operator=bus.connect('bunny/parts/operator');
+  const host=new ModuleHarness(createWemoModule({transport:()=>({read:()=>Promise.resolve({power:false,firmware:'synthetic'}),setPower:(_on,_signal,before)=>{
+    entered=true;now+=101;finalGuard=before();
+    if(finalGuard!==undefined)return Promise.resolve({result:'failed',evidence:'none',code:finalGuard,connection:'available'});
+    sends++;return Promise.resolve({result:'succeeded',evidence:'transmitted',connection:'available'});
+  }})}),{bus,clock,stateDir:dir,section:{plugs:[section.plugs[0]]}});
+  t.after(async()=>{await host.stop();await operator.close();await rm(dir,{recursive:true,force:true});});
+  await operator.subscribe<DeviceRecord>('bunny.state.device.desk-lamp',message=>{latest=message.data;});
+  await host.start();await until(()=>latest?.availability==='available');
+  const answer=await operator.request('bunny.cmd.power-set.desk-lamp',{type:'org.bunny.power.set.requested',subject:'desk-lamp',dataschema:'https://bunny.invalid/events/power-set/2.0',data:{on:true}},{requestId:'expires-before-effect',timeoutMs:100});
+  assert.equal(answer.status,'accepted');await until(()=>latest?.lastOutcome.status==='known');
+  assert.equal(entered,true);assert.equal(finalGuard,'expired');assert.equal(sends,0);
+  assert.ok(latest?.lastOutcome.status==='known');assert.equal(latest.lastOutcome.outcome.requestId,'expires-before-effect');
+  assert.equal(latest.lastOutcome.outcome.result,'failed');assert.equal(latest.lastOutcome.outcome.evidence,'none');assert.equal(latest.lastOutcome.outcome.error?.code,'expired');
+  assert.equal(latest.pending,0);assert.deepEqual(host.failures,[]);
+});
 void test('two independent queues, duplicate fences, uncertain hold and explicit read-only release survive restart',async t=>{
   const dir=await mkdtemp(join(tmpdir(),'wemo-queues-')),bus=new InProcessBus(),operator=bus.connect('bunny/parts/operator');let first=true,release:(()=>void)|undefined;
   const sends:string[]=[],records=new Map<string,import('@jimmie-potts/event-contracts/v2/devices').DeviceRecord>();
