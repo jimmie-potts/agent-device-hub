@@ -6,6 +6,7 @@
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+import {standaloneOwners,withFileModes} from './standalone.mjs';
 import { GROUPS, NOTICE_TITLE, gateVerdict, noticeMessage, selectChecks } from './selection.mjs';
 
 // GitHub's comparison lists at most 300 files; a list that long may be truncated.
@@ -37,7 +38,22 @@ async function comparisonPaths(env, payload, fetch) {
   if (body.files.length >= COMPARE_FILE_LIMIT) {
     return { paths, complete: false, detail: `the comparison lists ${body.files.length} files, GitHub's limit of ${COMPARE_FILE_LIMIT}` };
   }
-  return { paths, complete: true };
+  let changes=body.files;
+  if(standaloneOwners(paths,changes,{requireModes:false})){
+    try {
+      const revisions=[body.merge_base_commit?.sha,head];
+      if(revisions.every(sha=>/^[a-f0-9]{40}$/.test(sha??''))){
+        const trees=await Promise.all(revisions.map(async sha=>{
+          const response=await fetch(`${env.GITHUB_API_URL || 'https://api.github.com'}/repos/${env.GITHUB_REPOSITORY}/git/trees/${sha}?recursive=1`,{
+            method:'GET',headers:{accept:'application/vnd.github+json',authorization:`Bearer ${env.GITHUB_TOKEN}`,'x-github-api-version':'2022-11-28'}});
+          if(!response.ok)throw new Error('tree unavailable');
+          return response.json();
+        }));
+        changes=withFileModes(changes,...trees);
+      }
+    }catch{ /* Unverified file types preserve the conservative path selection. */ }
+  }
+  return { paths, changes, head, complete: true };
 }
 
 function summary(env, lines) {
@@ -48,7 +64,7 @@ function describe(selection) {
   const lines = [
     `### Affected checks: ${selection.mode === 'full' ? 'full coverage' : 'selected groups'}`,
     '',
-    `Selected: ${selection.groups.join(', ') || 'none (build, typecheck and lint only)'}`,
+    `Selected: ${selection.owners?.join(', ') || selection.groups.join(', ') || 'none (build, typecheck and lint only)'}`,
     `Omitted (no changed path selects them): ${selection.omitted.join(', ') || 'none'}`,
     '',
   ];
@@ -66,7 +82,7 @@ export async function runSelect({ env = process.env, fetch = globalThis.fetch } 
     input = await comparisonPaths(env, payload, fetch);
   }
   const selection = selectChecks({ event, ...input });
-  const outputs = { mode: selection.mode, groups: JSON.stringify(selection.groups), ...Object.fromEntries(Object.entries(selection.jobs).map(([id, run]) => [id, String(run)])) };
+  const outputs = { mode: selection.mode, groups: JSON.stringify(selection.groups), owners:JSON.stringify(selection.owners??[]), head:input.head??env.GITHUB_SHA??'', ...Object.fromEntries(Object.entries(selection.jobs).map(([id, run]) => [id, String(run)])) };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(''));
   summary(env, describe(selection));
   return selection;

@@ -44,6 +44,17 @@ held-uncertainty assertions. Actual pinned vendor acceptance is separate and mus
 run in a disposable Linux ARM64 container with the runtime and vendor pair in
 the same time namespace. No physical target is selected or contacted.
 
+For a complete diff confined to modifications of
+`apps/runtime/dashboard/tests/microduck.browser.ts` and ordinary Markdown, the
+standalone-test exception runs Node 24 setup, build, typecheck, lint, Chromium
+setup, `npm run test:runtime-dashboard:smoke`, the **entire**
+`npm run test:microduck:browser`, and Workflow/docs checks. Completion follows all
+keyboard, narrow viewport, reduced-motion and axe assertions on the exact head;
+it is not inferred from a Node test count. Independent review and disposable
+acceptance remain required. Product, helper, fixture, contract, policy,
+added/deleted/renamed or uncertain changes retain the broader validation above.
+Vendor and physical acceptance remain separate.
+
 Cached observations identify fake I/O separately from the pinned vendor MuJoCo daemon/API/revision. The emitted observation marks `syntheticJointIndices: [9]`. The protocol's mouth
 slot is padded; it is not a measured actuator. Health refers to the simulated
 vendor policy/bus only. No physical battery, current or temperature is exposed.

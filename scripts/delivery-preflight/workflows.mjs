@@ -135,7 +135,7 @@ function jobNames(workflow, job, provider) {
  * `select` job of a workflow that selects jobs or steps. Uncertain entries mean the expected set may be missing jobs;
  * notes record conservative choices.
  */
-export function expectedJobs(workflows, { event, branch, files, filesComplete }, provider) {
+export function expectedJobs(workflows, { event, branch, files, changes, filesComplete }, provider) {
   if (!provider) throw new Error('expectedJobs needs the CI provider');
   const jobs = [];
   const filtered = [];
@@ -144,7 +144,7 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
   let selection = null;
   let selectionError = null;
   try {
-    selection = selectChecks({ event, paths: files, complete: filesComplete });
+    selection = selectChecks({ event, paths: files, changes, complete: filesComplete });
   } catch (error) {
     selectionError = error.message;
   }
