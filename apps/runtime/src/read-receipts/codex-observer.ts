@@ -55,7 +55,7 @@ export class CodexReadObserver {
         if (!this.#draining[direction] && this.#buffers[direction].length + part.length > MAX_FRAME) {
           this.#pending.clear(); this.#threads.clear();
           this.#draining[direction] = true;
-          if (this.#buffers[other].length) this.#tainted[other] = true;
+          if (this.#buffers[other].length !== 0) this.#tainted[other] = true;
           if (direction === 'client') {
             this.#clientEnvelope = new OversizedClientEnvelope();
             this.#clientEnvelope.feed(this.#buffers.client);

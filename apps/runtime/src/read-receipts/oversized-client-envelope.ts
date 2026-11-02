@@ -34,7 +34,7 @@ export class OversizedClientEnvelope {
   }
 
   finish(): unknown {
-    if (this.#quoted || this.#ends.length) throw new Error('incomplete envelope');
+    if (this.#quoted || this.#ends.length !== 0) throw new Error('incomplete envelope');
     return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(this.#header.subarray(0, this.#length)));
   }
 

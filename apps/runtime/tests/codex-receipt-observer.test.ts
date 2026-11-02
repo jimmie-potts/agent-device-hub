@@ -185,7 +185,7 @@ void test('the exact byte limit preserves pending reads; one extra byte cancels 
     const text = 'x'.repeat(1024 * 1024 - Buffer.byteLength(base) + extra);
     w.send('server', {method: 'unrelated', params: {text}});
     w.accept(id);
-    assert.equal(w.receipts.length, extra ? 0 : 1);
+    assert.equal(w.receipts.length, extra === 0 ? 1 : 0);
   }
 });
 
