@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -136,4 +137,27 @@ for (const [name, mutate] of [
   const f = fixture(), a = await archive(t, f.entries);
   await writeFile(a.path, gzipSync(mutate(tar(f.entries))));
   await assert.rejects(savedImageMetadata(a.path, candidate, f.production), /release-archive-refused/);
+});
+
+for (const failure of ['CRC', 'truncated', 'already-aborted']) test(`archive ${failure} refusal settles within the archive deadline`, async t => {
+  const f = fixture({compressed: true});
+  if (failure === 'CRC') f.entries.at(-1)[1][f.entries.at(-1)[1].length - 8] ^= 1;
+  if (failure === 'truncated') f.entries.at(-1)[1] = f.entries.at(-1)[1].subarray(0, -5);
+  const a = await archive(t, f.entries);
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    import assert from 'node:assert/strict';
+    import {savedImageMetadata} from ${JSON.stringify(new URL('../build.mjs', import.meta.url).href)};
+    const original = AbortSignal.timeout;
+    AbortSignal.timeout = ${failure === 'already-aborted' ? "() => AbortSignal.abort(new Error('synthetic archive cancellation'))" : '() => original(50)'};
+    const keepAlive = setInterval(() => {}, 100);
+    try {
+      await assert.rejects(savedImageMetadata(${JSON.stringify(a.path)}, ${JSON.stringify(candidate)},
+        ${JSON.stringify(f.production)}), /release-archive-refused/);
+      console.log('archive refusal settled');
+    } finally { clearInterval(keepAlive); }
+  `], {encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL'});
+  assert.equal(child.error, undefined, `archive refusal did not settle: ${child.error?.code}`);
+  assert.equal(child.signal, null, child.stderr);
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(child.stdout, /archive refusal settled/);
 });

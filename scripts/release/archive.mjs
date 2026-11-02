@@ -101,7 +101,23 @@ async function readArchive(path, signal) {
       }
       async function body(piece) {
         digest.update(piece); if (keep) pieces.push(piece);
-        if (expand) await new Promise((resolve, reject) => expand.write(piece, error => error ? reject(error) : resolve()));
+        if (expand) await new Promise((resolve, reject) => {
+          let settled = false;
+          const done = error => {
+            if (settled) return;
+            settled = true;
+            expand.removeListener('error', done); expand.removeListener('close', closed);
+            signal.removeEventListener('abort', aborted);
+            if (error) reject(error); else resolve();
+          };
+          const closed = () => done(new Error('release-archive-refused'));
+          const aborted = () => done(signal.reason);
+          expand.once('error', done); expand.once('close', closed);
+          signal.addEventListener('abort', aborted, {once: true});
+          if (signal.aborted) aborted();
+          else if (expand.destroyed) closed();
+          else expand.write(piece, done);
+        });
         else expanded(piece);
       }
       try {
