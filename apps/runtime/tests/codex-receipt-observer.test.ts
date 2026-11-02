@@ -137,7 +137,7 @@ void test('a newer turn, unread action, lost freshness or connection end cancels
   }
 });
 
-void test('ambiguous IDs, malformed or oversized frames disable collection and faults do not escape', () => {
+void test('ambiguous IDs and malformed or incomplete frames cannot produce a receipt', () => {
   for (const damage of [
     (w: ReturnType<typeof setup>) => {w.request('anything', {}, 1);},
     (w: ReturnType<typeof setup>) => {w.observer.observe('client', Buffer.from('{bad}\n'));},
@@ -148,4 +148,85 @@ void test('ambiguous IDs, malformed or oversized frames disable collection and f
   }
   const observer = new CodexReadObserver({bind: () => {throw new Error('synthetic failure');}, accept: () => {throw new Error('synthetic failure');}});
   assert.doesNotThrow(() => observer.observe('client', Buffer.from('{}\n')));
+});
+
+const large = 'x'.repeat(1024 * 1024);
+
+for (const direction of ['server', 'client'] as const) {
+  void test(`fresh evidence after a fragmented oversized ${direction} frame can confirm only the later action`, () => {
+    const w = setup(); w.snapshot(); w.select(); const interrupted = w.read();
+    const frame = Buffer.from(JSON.stringify({params: {padding: large}, method: 'unrelated', id: 'large-request'}));
+    w.observer.observe(direction, frame.subarray(0, 350));
+    w.observer.observe(direction, frame.subarray(350));
+    if (direction === 'client') w.accept(interrupted);
+    else w.read();
+    w.observer.observe(direction, Buffer.from('\n'));
+    w.accept(interrupted);
+    w.accept(w.read());
+    assert.equal(w.receipts.length, 0);
+    w.snapshot(); w.select(); w.accept(w.read());
+    assert.equal(w.receipts.length, 1);
+  });
+}
+
+void test('a request ID in an oversized client frame remains reserved', () => {
+  const w = setup();
+  w.send('client', {params: {padding: large}, id: 70, method: 'unrelated'});
+  w.snapshot(); w.select();
+  w.accept(w.read({}, 70));
+  w.snapshot(); w.select(); w.accept(w.read());
+  assert.equal(w.receipts.length, 0);
+});
+
+void test('the exact byte limit preserves pending reads; one extra byte cancels them', () => {
+  for (const extra of [0, 1]) {
+    const w = setup(); w.snapshot(); w.select(); const id = w.read();
+    const base = JSON.stringify({method: 'unrelated', params: {text: ''}});
+    const text = 'x'.repeat(1024 * 1024 - Buffer.byteLength(base) + extra);
+    w.send('server', {method: 'unrelated', params: {text}});
+    w.accept(id);
+    assert.equal(w.receipts.length, extra ? 0 : 1);
+  }
+});
+
+void test('overlap cannot smuggle a partial request or lose its ID across a server gap', () => {
+  const w = setup();
+  w.observer.observe('client', Buffer.from('{"id":81,"method":"thread/read",'));
+  w.observer.observe('server', Buffer.from('{"data":"' + large));
+  w.observer.observe('server', Buffer.from('"}\n'));
+  w.observer.observe('client', Buffer.from('"params":{"threadId":"thread-a","includeTurns":false}}\n'));
+  w.reply(81, {thread: {id:'thread-a'}, readState: {revision:'revision-a', firstUnread:{type:'threadStart'}}});
+  w.select(); w.accept(w.read());
+  assert.equal(w.receipts.length, 0);
+  w.snapshot(); w.select(); w.accept(w.read({}, 81));
+  assert.equal(w.receipts.length, 0);
+});
+
+void test('independent frame boundaries must both finish before fresh evidence can qualify', () => {
+  const w = setup();
+  w.observer.observe('server', Buffer.from('{"data":"' + large));
+  w.observer.observe('client', Buffer.from('{"params":{"s":"' + large));
+  w.observer.observe('server', Buffer.from('"}\n'));
+  w.observer.observe('client', Buffer.from('"},"id":80,"method":"other"}\n{"method":"notice"}\n'));
+  w.snapshot(); w.select(); w.accept(w.read());
+  assert.equal(w.receipts.length, 1);
+  w.request('other', {}, 80);
+  w.snapshot(); w.select(); w.accept(w.read());
+  assert.equal(w.receipts.length, 1);
+});
+
+void test('opaque client envelopes fail closed and nested strings cannot spoof an outer ID', () => {
+  for (const frame of [
+    {method:'initialize', params: {text:large}, id:80},
+    {method:'unrelated', params: {text:large}, id: 'x'.repeat(4097)},
+    {method:'unrelated', params: {text:large}, id:1},
+  ]) {
+    const w=setup(); w.send('client', frame);
+    w.snapshot(); w.select(); w.accept(w.read());
+    assert.equal(w.receipts.length, 0);
+  }
+  const w = setup();
+  w.send('client', {params: {text: large + '"}], "id":1', nested:[{id:1}]}, method:'unrelated', id:77});
+  w.snapshot(); w.select(); w.accept(w.read());
+  assert.equal(w.receipts.length, 1);
 });
