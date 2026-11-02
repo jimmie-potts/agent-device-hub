@@ -236,27 +236,32 @@ it('a signal while the runtime still loads stops it with exit 0, before it creat
   }
 });
 
-it('a refused state directory names its reason in the runtime.failed record, so the journal says why', async context => {
-  const root = await stateDir(context);
-  const checkout = join(root, 'checkout');
-  await mkdir(join(checkout, '.git'), {recursive: true});
-  await mkdir(join(root, 'real'), {mode: 0o700});
-  await symlink(join(root, 'real'), join(root, 'link'));
-  await symlink(join(root, 'nowhere'), join(root, 'dangling'));
-  await writeFile(join(root, 'file'), '');
-  await mkdir(join(root, 'shared'), {mode: 0o750});
-  // Keep this invalid fixture non-private even when the runner uses umask 077.
-  await chmod(join(root, 'shared'), 0o750);
-  const cases: readonly (readonly [string, string])[] = [
-    ['relative/state', 'state-dir-relative'],
-    [`/mnt/bunny-runtime-test-${process.pid}/state`, 'state-dir-mount'],
-    [join(checkout, 'state'), 'state-dir-checkout'],
-    [join(root, 'link', 'state'), 'state-dir-link'],
-    [join(root, 'dangling'), 'state-dir-link'],
-    [join(root, 'file'), 'state-dir-not-directory'],
-    [join(root, 'shared'), 'state-dir-not-private'],
-  ];
-  for (const [dir, code] of cases) {
+for (const [name, code] of [
+  ['relative', 'state-dir-relative'],
+  ['mount', 'state-dir-mount'],
+  ['checkout', 'state-dir-checkout'],
+  ['link', 'state-dir-link'],
+  ['dangling', 'state-dir-link'],
+  ['file', 'state-dir-not-directory'],
+  ['shared', 'state-dir-not-private'],
+] as const) {
+  it(`a refused state directory (${name}) names its reason in runtime.failed`, async context => {
+    const root = await stateDir(context);
+    const checkout = join(root, 'checkout');
+    await mkdir(join(checkout, '.git'), {recursive: true});
+    await mkdir(join(root, 'real'), {mode: 0o700});
+    await symlink(join(root, 'real'), join(root, 'link'));
+    await symlink(join(root, 'nowhere'), join(root, 'dangling'));
+    await writeFile(join(root, 'file'), '');
+    await mkdir(join(root, 'shared'), {mode: 0o750});
+    // Keep this invalid fixture non-private even when the runner uses umask 077.
+    await chmod(join(root, 'shared'), 0o750);
+    const paths = {
+      relative: 'relative/state', mount: `/mnt/bunny-runtime-test-${process.pid}/state`,
+      checkout: join(checkout, 'state'), link: join(root, 'link', 'state'),
+      dangling: join(root, 'dangling'), file: join(root, 'file'), shared: join(root, 'shared'),
+    };
+    const dir = paths[name];
     const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
     assert.deepEqual(await runtime.exited, {code: 1, signal: null}, dir);
     const fatal = runtime.records().find(record => record.event_name === 'runtime.failed');
@@ -265,8 +270,8 @@ it('a refused state directory names its reason in the runtime.failed record, so 
     assert.ok(typeof message === 'string' && message.startsWith('the state directory'), `${dir}: the refusal's own fixed text`);
     assert.ok(typeof stack === 'string' && stack.startsWith('RuntimeError: '), dir);
     assert.equal(redacted, 0, dir);
-  }
-});
+  });
+}
 
 it('a health port already in use names its reason in the runtime.failed record', async context => {
   const blocker = createServer();
@@ -420,23 +425,29 @@ it('--edge refuses a configuration without its edge section and a credential tha
   }
 });
 
-it('--config reads a private configuration file, and a file the runtime cannot trust names its reason in runtime.failed', async context => {
-  const root = await stateDir(context);
-  const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {}});
-  const write = async (name: string, text: string, mode = 0o600): Promise<string> => {
-    await writeFile(join(root, name), text, {mode});
-    await chmod(join(root, name), mode);
-    return join(root, name);
-  };
-  const good = await write('config.json', valid);
-  const cases: readonly (readonly [string, string])[] = [
-    ['relative/config.json', 'config-relative'],
-    [join(root, 'missing.json'), 'config-missing'],
-    [await write('shared.json', valid, 0o644), 'config-not-private'],
-    [await write('broken.json', '{'), 'config-invalid'],
-  ];
-  await symlink(good, join(root, 'linked.json'));
-  for (const [file, code] of [...cases, [join(root, 'linked.json'), 'config-link'] as const]) {
+for (const [name, code] of [
+  ['relative', 'config-relative'],
+  ['missing', 'config-missing'],
+  ['shared', 'config-not-private'],
+  ['broken', 'config-invalid'],
+  ['linked', 'config-link'],
+] as const) {
+  it(`an untrusted configuration file (${name}) names its reason in runtime.failed`, async context => {
+    const root = await stateDir(context);
+    const valid = JSON.stringify({schema: 'runtime-config/1.0', modules: {}});
+    const write = async (name: string, text: string, mode = 0o600): Promise<string> => {
+      await writeFile(join(root, name), text, {mode});
+      await chmod(join(root, name), mode);
+      return join(root, name);
+    };
+    const good = await write('config.json', valid);
+    const paths = {
+      relative: 'relative/config.json', missing: join(root, 'missing.json'),
+      shared: await write('shared.json', valid, 0o644), broken: await write('broken.json', '{'),
+      linked: join(root, 'linked.json'),
+    };
+    await symlink(good, paths.linked);
+    const file = paths[name];
     const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', file]);
     assert.deepEqual(await runtime.exited, {code: 1, signal: null}, file);
     const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} =
@@ -444,7 +455,14 @@ it('--config reads a private configuration file, and a file the runtime cannot t
     assert.deepEqual(decision, {'error.type': 'RuntimeError', 'error.code': code, 'bunny.provenance': 'source', 'bunny.exception.truncated': false}, file);
     assert.ok(typeof message === 'string' && message.startsWith('the configuration file') && typeof stack === 'string' && redacted === 0, `${file}: the refusal's own fixed text`);
     assert.equal(runtime.stdout(), '', `${file}: no ready line`);
-  }
+  });
+}
+
+it('--config reads a private configuration file, serves health and stops cleanly', async context => {
+  const root = await stateDir(context);
+  const good = join(root, 'config.json');
+  await writeFile(good, JSON.stringify({schema: 'runtime-config/1.0', modules: {}}), {mode: 0o600});
+  await chmod(good, 0o600);
   const runtime = await launch(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--config', good]);
   // The file names no module, so the core and optional text companion run; configured device modules are refused for want of their sections.
   assert.deepEqual((await health(runtime.url)).body.modules.slice(1), UNCONFIGURED);
