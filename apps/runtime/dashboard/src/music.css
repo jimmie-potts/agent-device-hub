@@ -1,6 +1,11 @@
 /* Shared glass presentation; colors and surfaces follow the installed skin. */
 .music-workspace{margin-block:var(--space-l)}
-.music-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:var(--space-l);align-items:start}
+.music-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill,minmax(min(100%,300px),1fr));
+  gap: var(--space-l);
+  align-items: start
+}
 .music-card{width:100%;max-width:430px;min-width:0;padding:var(--space-l);border:1px solid var(--light-edge);border-radius:var(--light-radius);background:var(--light-surface);box-shadow:var(--light-shadow);backdrop-filter:blur(20px)}
 .music-heading{display:flex;justify-content:space-between;gap:var(--space-s);align-items:center;font-size:var(--type-small);color:var(--muted-dense);margin-bottom:var(--space-l)}
 .music-heading>span:first-child{display:inline-flex;align-items:center;gap:var(--space-s)}
