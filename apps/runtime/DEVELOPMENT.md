@@ -418,6 +418,17 @@ selected disposable verification. Use an outside-checkout private `TMPDIR`.
 Actual installation still requires UPGRADE.md's release/latest-state/recovery
 admission; none of these checks contact a household device.
 
+### CLI refusal checks
+
+After the root build, run `node --test apps/runtime/dist/tests/process.test.js`
+on Linux for state-directory and configuration admission, service startup and
+shutdown, and process diagnostics. Each independent refusal registers its own
+test through the existing helper, retaining its 20-second deadline and child
+cleanup. Valid private configuration startup has its own test. Adding another
+input must not consume an earlier input's deadline. Diagnostic codes, fixed
+messages, stacks, redaction and health assertions remain unchanged. Existing
+runtime unit CI discovers these cases; no product or global timeout changes.
+
 ### Runtime test layers
 
 Every runtime story is tested at four layers
