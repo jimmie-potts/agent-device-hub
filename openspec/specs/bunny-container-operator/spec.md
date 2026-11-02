@@ -144,3 +144,79 @@ The repository SHALL define one owned Compose project, `bunny-diagnostics` (`dep
 #### Scenario: The operating procedure
 - **WHEN** the operator follows the container guide's "Diagnostics stack" section
 - **THEN** the pinned images are pulled once, the project is created, started, inspected and stopped with the documented commands, actual volume usage is read with Docker's accounting, and loss is read from the Collector's log and the runtime's `telemetry.dropped` and `runtime.stopped` records
+
+### Requirement: Qualified bounded batch deployment
+
+The selected Mac host operator SHALL consume only matching successful hosted qualification for an exact committed revision and immutable Linux ARM64 production image. It SHALL bind the selected project, previous and target identities, included issues, designated owner, focused storage assessment, required client checks and recovery decision to one private deployment record. It SHALL serialize deployment and manual maintenance, verify stopped writer exit, take and verify a consistent backup, preserve private volumes/configuration/network, select the image once and verify exact running identity, health and the selected read-only client path before success. The verified writer release SHALL be reusable without another conversational acknowledgment.
+
+#### Scenario: Verified batch
+- **WHEN** a matching qualified artifact is selected for the established owned target and its bounded checks pass
+- **THEN** the private record identifies the installed revision/image, backup, checks and actual writer release without claiming physical acceptance
+
+#### Scenario: Ineligible artifact or overlapping operation
+- **WHEN** qualification is absent, failed, incomplete, wrong-revision or wrong-image, or another operation holds the selected project
+- **THEN** promotion refuses before stopping or changing the selected runtime and preserves existing evidence
+
+#### Scenario: Retained native Windows manual operation
+- **WHEN** an operator invokes existing native Windows manual start, stop, named-volume backup or restore
+- **THEN** the existing Docker operator checks remain available without POSIX host coordination or a new qualified-batch claim
+
+### Requirement: Inspectable failed and interrupted deployment
+
+Each deployment SHALL durably record its intended phase before effects. Interruption, failed start or failed client verification SHALL preserve latest state and unfinished evidence, stop only the owned failed replacement where possible and report failed or uncertain outcomes honestly. New maintenance SHALL refuse unfinished deployment until an explicit reconciliation verifies actual state and records the result. Reconciliation SHALL NOT automatically resume replacement, clear a live owner's lock, retry, restore a snapshot or select an image.
+
+#### Scenario: Interrupted or failed replacement
+- **WHEN** replacement is interrupted or a selected check fails
+- **THEN** the last intended phase remains inspectable, latest data is preserved, another operation refuses, and explicit reconciliation records actual identity and process state before releasing the hold
+
+### Requirement: Explicit latest-state compatible image return
+
+Returning to a previous image SHALL require explicit reader/configuration compatibility evidence bound to the latest stopped state and the exact previous image. Unknown, incompatible or stale evidence SHALL refuse return without deleting current data or restoring an older snapshot. Unknown recovery SHALL NOT by itself prevent an otherwise eligible forward deployment.
+
+#### Scenario: Qualified previous reader
+- **WHEN** the previous image has reopened the candidate's newly written disposable state and compatibility matches the latest stopped backup and configuration
+- **THEN** explicit image return preserves that latest state and follows the same exclusion, identity, health and client checks
+
+#### Scenario: Incompatible or unknown reader
+- **WHEN** previous-reader compatibility is unknown, incompatible or does not match latest state
+- **THEN** return refuses before image replacement while a separately eligible forward operation remains possible
+
+### Requirement: Declared external ONN dependencies in complete backups
+
+Stopped backup SHALL preserve the full original runtime configuration bytes and hash. It SHALL classify only the declared `modules.onn.adbSocket`, `hostExecutable` and `hostKeyDirectory` fields of an accepted ONN section as external host dependencies, recording their exact locations and values without inspecting, opening, hashing, copying or activating those dependencies. Other unsupported absolute paths SHALL refuse. Secret references SHALL retain their existing explicit path, byte, hash, ownership and lease-alias verification.
+
+#### Scenario: Complete ONN configuration with unavailable host dependencies
+- **WHEN** a stopped synthetic instance has an accepted ONN section whose declared host dependencies do not exist in the worker
+- **THEN** backup and verification preserve the exact full configuration and retained ONN state, list those external dependencies and perform no dependency or device access
+
+#### Scenario: Changed or unsupported reference
+- **WHEN** configuration bytes, a secret reference, a declared dependency descriptor or an unsupported absolute path differs
+- **THEN** verification or backup refuses without claiming completeness or writing a restore target
+
+#### Scenario: Dependency overlaps a secret reference
+- **WHEN** a declared host dependency lexically equals, contains or falls beneath an explicit secret reference
+- **THEN** the worker refuses before reference I/O, without resolving or inspecting the dependency
+
+### Requirement: Versioned maintenance helper attribution
+
+New backups SHALL use manifest version 2, retaining the old runtime source revision separately from the actual maintenance helper's immutable image and revision. Version 1 archives SHALL retain legacy verification semantics. A newer helper for an older stopped instance SHALL require matching successful authentic hosted qualification and actual image/source/platform verification, with the existing exact-target, stopped-writer, lease, private-volume and no-network protections. Before artifact download or image load, the trusted host SHALL independently prove the candidate is an ancestor of the exact authenticated pinned main revision, refusing unavailable or contradictory comparisons. Candidate workflow assertions, raw image values or local receipt assertions SHALL NOT admit a helper.
+
+#### Scenario: Qualified helper repairs old-image backup
+- **WHEN** the selected old stopped image lacks the ONN backup repair and a matching qualified newer helper is explicitly selected
+- **THEN** the fixed worker backs up the old full configuration and state with old-source and separate helper attribution, without changing or starting the old instance
+
+#### Scenario: Invalid helper or archive version
+- **WHEN** helper qualification or identity is missing or mismatched, or an archive version is unsupported
+- **THEN** the operation refuses before backup/restore completion and preserves current state, while valid legacy version 1 verification remains available
+
+#### Scenario: Successful unmerged candidate cannot approve itself
+- **WHEN** authentic hosted jobs and artifacts report success but the candidate is not an ancestor of authenticated main, or the comparison is unavailable or contradictory
+- **THEN** the host refuses before artifact download, image load or helper admission
+
+### Requirement: Bounded operational refusal reporting
+
+Backup and restore refusals SHALL report the shared canonical error body on stderr, with an allowlisted existing error code, its registry retryability and a fixed bounded detail identifying the operational stage. The host SHALL accept only exact known canonical worker bodies. Success stdout SHALL retain its machine-readable role. Unknown worker/subprocess failures SHALL use a fixed fallback, without exposing exception messages, configured values, private paths, credentials or raw subprocess output.
+
+#### Scenario: Configuration and worker failures remain distinguishable
+- **WHEN** configuration-reference validation refuses or a worker fails unexpectedly
+- **THEN** the host reports the corresponding fixed code/stage or bounded fallback, preserves partial evidence and does not automatically retry or print private error content

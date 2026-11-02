@@ -168,7 +168,9 @@
     "test:runtime:container": "node scripts/runtime-container.mjs",
     "test:microduck": "npm run build && npm run test:microduck:built",
     "test:microduck:built": "node --test modules/microduck/dist/tests/*.test.js",
-    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts"
+    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts",
+    "deploy:batch": "node scripts/bunny-deploy.mjs",
+    "test:deployment": "node --test scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

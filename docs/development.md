@@ -236,6 +236,9 @@ source exporter, then runs every scenario and every packaged verification test f
 exact checkout-only `build.test.js`. The in-image launcher prints its complete
 inventory and exclusion. The full source verification job still runs that file;
 its Git inventory assertion needs the checkout metadata the sealed image excludes.
+The packaged suites have a 45-minute process deadline and a 30-second kill grace.
+The complete image job has a separate 60-minute limit for build, tests and artifact
+transport. A timeout fails qualification. It never admits a partially tested image.
 All packaged browser, accessibility, negative-control, adapter, boundary, drain,
 follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
 Docker's init reaps orphaned test processes. Containers have synthetic state and
@@ -2218,6 +2221,66 @@ reader refusals, metadata privacy and restart over both scenario transports.
 private import/export, keyboard and axe checks. Preserve build/type/lint, affected
 event/runtime/SDK consumers and workflow validation. All data is synthetic; these
 checks neither install the feature nor qualify a live model or physical device.
+
+## Qualified Mac batch operator checks
+
+The existing operator suite includes a synthetic native Windows boundary check:
+with `process.platform` set to `win32` and no `getuid`, manual start and stop,
+and named-volume backup and restore, retain their Docker paths without POSIX
+coordination files. A separate Mac boundary check refuses missing UID support
+before Docker work. These are source regressions, not new Windows qualification.
+
+Use Node 24 and `npm ci`, then `npm run build`, `npm run typecheck`,
+`npm run lint:js`, `npm run test:deployment`, `npm run check:workflow` and
+`npm run test:workflow`. The runtime CI group runs the operation/deployment tests
+beside the existing container operator and backup suites. These synthetic tests
+cover qualification and target refusals, stopped backup ordering, preserved latest
+state, failed client/start handling, operation contention, manual maintenance
+exclusion, interruption reconciliation and latest-state/config-bound image return.
+The shared qualification suite owns hosted receipt/job/artifact negative cases.
+
+For the explicit Docker exercise, select two local immutable ARM64 production
+image IDs in `BUNNY_BATCH_TEST_PREVIOUS_IMAGE` and `BUNNY_BATCH_TEST_TARGET_IMAGE`,
+then run `node scripts/tests/bunny-deployment.docker.mjs`. It creates a new random
+project and fresh synthetic volumes, with network `none`, no published port and
+control disabled. It verifies real stopped backup, replacement, core health,
+browser session protocol, release recording and the previous production runtime
+reopening a copy of the candidate's latest core state. It removes only its owned
+test resources and confirms their absence. Its injected qualification is synthetic;
+this is not a hosted release or installed/client/physical acceptance claim.
+The [operator guide](bunny-container.md#deploy-a-qualified-batch) owns real operation.
+
+## ONN backup and qualified maintenance helper checks
+
+Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
+`npm run lint:js`, `node --test scripts/tests/bunny.test.mjs
+scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-deployment.test.mjs
+scripts/tests/bunny-operations.test.mjs`, `npm run check:workflow` and
+`npm run test:workflow`. Existing runtime CI test discovery includes these files.
+The worker suite requires Linux private-file semantics; Mac reports those cases
+skipped. It covers raw configuration, version 1/2 readers, zero filesystem access
+for declared ONN dependencies, refusal of dependency/secret-reference overlap
+before reference I/O, secret and descriptor tampering, WAL/keys/assets,
+real lease contention and interruption. Packaged ARM64 qualification runs that
+same worker suite, and a negative control proves helper failure blocks the
+qualification driver. Host tests cover the qualified helper's
+old target and actual image identity, raw/serialized helper refusal, authenticated
+pinned-main ancestry before download/load (including an authentic-looking green
+unmerged run and unavailable or contradictory comparisons), safe stderr
+and unchanged native Windows default commands.
+
+For the actual old-image/new-helper exercise, select local immutable ARM64
+production IDs in `BUNNY_BACKUP_TEST_OLD_IMAGE` and
+`BUNNY_BACKUP_TEST_HELPER_IMAGE`, then run
+`node scripts/tests/bunny-maintenance.docker.mjs`. It creates fresh synthetic
+projects/volumes with network `none`, no published port, disabled control and
+nonexistent synthetic host dependencies. It proves the old refusal, byte-exact
+full configuration, helper/source attribution, real lease refusal, wrong helper
+refusal, changed-secret refusal before target writes and a separate empty-target
+round-trip retaining inactive synthetic ONN state. It verifies exact owned-resource
+cleanup. Its qualification metadata is an explicitly controlled test fixture;
+only the actual hosted intake qualifies a real helper. No installed system,
+personal client, host dependency, ADB server or physical device is accessed.
 
 ## MicroDuck simulator checks
 

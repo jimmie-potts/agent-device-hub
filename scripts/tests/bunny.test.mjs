@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {operate, parse, privateHostDirectory} from '../bunny.mjs';
+import {operate, maintain, parse, privateHostDirectory} from '../bunny.mjs';
 
 const id='1'.repeat(64), image='sha256:'+'2'.repeat(64), revision='3'.repeat(40);
 function fixture() {
@@ -346,4 +346,155 @@ test('selected state, config and secrets must be distinct ordinary local volumes
     await assert.rejects(operate(selected,run));
     assert.ok(!f.calls.some(a=>a[0]==='run'));
   }
+});
+
+async function qualifiedHelper(requestOverrides={},admit=true) {
+  const {EXPECTED_JOB_NAMES,qualificationArtifactNames}=await import('../release/qualification.mjs');
+  const {attestMaintenanceHelper}=await import('../deployment/maintenance-helper.mjs');
+  const candidate='a'.repeat(40),helperImage='sha256:'+'b'.repeat(64),names=qualificationArtifactNames(candidate,10,1);
+  const request={project:'synthetic',containerId:id,previousImage:image,previousRevision:revision,candidate,runId:10,runAttempt:1,...requestOverrides};
+  const jobs=EXPECTED_JOB_NAMES.map((name,index)=>({id:index+1,name,run_id:10,run_attempt:1,head_sha:candidate,status:'completed',conclusion:'success'}));
+  const receipt={schema:'bunny-release-qualification/1.0',repository:'jimmie-potts/agent-device-hub',candidate,evaluationRevision:candidate,runId:10,runAttempt:1,outcome:'qualified',architecture:'linux/arm64',
+    evaluationInputs:Object.fromEntries(['lockfile','workflow','checksWorkflow','workflowWorkflow','dockerfile','verifyDockerfile'].map(key=>[key,'c'.repeat(64)])),
+    image:{id:helperImage,revision:candidate,archive:'production-image.tar.gz',archiveSha256:'d'.repeat(64),artifactName:names.image},checks:jobs.map(job=>({id:job.id,name:job.name,result:'success',headSha:candidate})),createdAt:'2026-11-01T12:00:00Z'};
+  const hosted={main:[{ref:'refs/heads/main',object:{sha:candidate,type:'commit'}}],comparisons:[{base_commit:{sha:candidate},merge_base_commit:{sha:candidate},status:'identical',ahead_by:0,behind_by:0,total_commits:0,commits:[]}],run:{id:10,run_attempt:1,head_sha:candidate,event:'workflow_dispatch',path:'.github/workflows/release-qualification.yml',status:'completed',conclusion:'success',repository:{full_name:receipt.repository}},jobs,
+    artifacts:Object.values(names).map((name,index)=>({id:20+index,name,expired:false,workflow_run:{id:10,head_sha:candidate}}))};
+  return {request,receipt,hosted,capability:admit?attestMaintenanceHelper(receipt,hosted,request):undefined,candidate,helperImage};
+}
+test('qualified maintenance helper runs the fixed image while retaining old source and exact mounts',async()=>{
+  const h=await qualifiedHelper(),f=fixture();
+  const run=async args=>{
+    if(args[0]==='image'&&args[2]===h.helperImage){f.calls.push(args);return JSON.stringify([{Id:h.helperImage,Architecture:'arm64',Os:'linux',Config:{Labels:{'org.opencontainers.image.revision':h.candidate}}}]);}
+    if(args[0]==='run'){f.calls.push(args);return JSON.stringify({operation:'backup',status:'complete',files:2,manifestSchema:'bunny-container-backup/2',sourceRevision:revision,helper:{image:h.helperImage,revision:h.candidate}});}
+    return f.run(args);
+  };
+  const result=await operate({...parse(['backup','snapshot','--archive-volume','archives','--project','synthetic']),maintenanceHelper:h.capability},run);
+  assert.equal(result.sourceRevision,revision);const args=f.calls.find(args=>args[0]==='run');
+  assert.ok(args.includes(h.helperImage));assert.ok(args.includes('BUNNY_MAINTENANCE_REVISION='+h.candidate));
+  assert.deepEqual(args.slice(-2),['--revision',revision]);assert.ok(args.includes('--network=none'));
+  assert.ok(args.includes('type=volume,source=config,target=/etc/bunny,readonly'));assert.ok(args.includes('type=volume,source=secrets,target=/run/secrets/bunny,readonly'));
+});
+test('raw helper assertions and wrong old-target bindings refuse before a worker runs',async()=>{
+  const raw=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:{image:'sha256:'+'b'.repeat(64)}},raw.run));assert.equal(raw.calls.length,0);
+  for(const mismatch of [{containerId:'f'.repeat(64)},{previousImage:'sha256:'+'f'.repeat(64)},{previousRevision:'f'.repeat(40)},{project:'other'}]) {
+    const h=await qualifiedHelper(mismatch),f=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:h.capability},f.run));assert.ok(!f.calls.some(args=>args[0]==='run'));
+  }
+});
+test('failed authentic qualification metadata cannot mint a helper and serialized capability cannot survive',async()=>{
+  const h=await qualifiedHelper(),{attestMaintenanceHelper}=await import('../deployment/maintenance-helper.mjs');
+  h.hosted.jobs[0].conclusion='failure';assert.throws(()=>attestMaintenanceHelper(h.receipt,h.hosted,h.request));
+  const f=fixture();await assert.rejects(operate({...plan('backup'),maintenanceHelper:JSON.parse(JSON.stringify(h.capability))},f.run));assert.equal(f.calls.length,0);
+});
+test('operational stderr forwards only a fixed worker refusal and never raw private errors',async()=>{
+  const {operatorRefusal,refusalMessage}=await import('../operator-refusal.mjs');
+  const configuration=refusalMessage(operatorRefusal('configuration'));
+  assert.deepEqual(JSON.parse(configuration),{error:{code:'invalid-request',retryable:false,detail:'Maintenance stage configuration refused. Preserve partial output and inspect the selected instance.'}});
+  assert.equal(refusalMessage({stderr:configuration}),configuration);
+  const raw=refusalMessage({stderr:'SYNTHETIC_SECRET /private/selected/config runtime stack',message:'SYNTHETIC_SECRET'});
+  assert.deepEqual(JSON.parse(raw),{error:{code:'unavailable',retryable:true,detail:'Maintenance stage worker refused. Preserve partial output and inspect the selected instance.'}});assert.doesNotMatch(raw,/SYNTHETIC_SECRET|\/private|stack/);
+  assert.equal(refusalMessage({stderr:configuration+'SYNTHETIC_SECRET'}),raw);
+  const forged=JSON.parse(configuration);forged.error.retryable=true;
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
+  forged.error.retryable=false;forged.error.detail+=' SYNTHETIC_SECRET';
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
+  forged.error.detail=JSON.parse(configuration).error.detail;forged.error.path='/private/selected';
+  assert.equal(refusalMessage({stderr:JSON.stringify(forged)+'\n'}),raw);
+});
+test('qualification request is limited to explicit backup and restore operator routes',()=>{
+  assert.equal(parse(['backup','snapshot','--project','synthetic','--archive-volume','archives','--qualification-request','/private/request.json']).qualificationRequest,'/private/request.json');
+  assert.throws(()=>parse(['start','--project','synthetic','--qualification-request','/private/request.json']));
+  assert.throws(()=>parse(['worker-backup','--revision',revision,'--destination','/backup/snapshot','--qualification-request','/private/request.json']));
+});
+
+async function withoutUidOn(platform, work) {
+  const platformDescriptor=Object.getOwnPropertyDescriptor(process,'platform');
+  const uidDescriptor=Object.getOwnPropertyDescriptor(process,'getuid');
+  Object.defineProperty(process,'platform',{...platformDescriptor,value:platform});
+  Object.defineProperty(process,'getuid',{configurable:true,writable:true,value:undefined});
+  try{return await work();}
+  finally {
+    Object.defineProperty(process,'platform',platformDescriptor);
+    if(uidDescriptor)Object.defineProperty(process,'getuid',uidDescriptor);else delete process.getuid;
+  }
+}
+
+test('native Windows manual commands preserve existing Docker paths without POSIX coordination',async t=>{
+  const {mkdtemp,realpath,rm,lstat}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os'),{join}=await import('node:path');
+  const directory=await mkdtemp(join(await realpath(tmpdir()),'bunny-windows-manual-'));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const coordination=join(directory,'must-stay-absent');
+  await withoutUidOn('win32',async()=>{
+    for(const command of ['start','stop','backup','restore']) {
+      const f=fixture();
+      if(command==='stop')Object.assign(f.info.State,{Status:'running',Running:true,Pid:101});
+      const selected=parse([command,...(['backup','restore'].includes(command)?['snapshot-1','--archive-volume','archives']:[]),'--project','synthetic']);
+      const result=await maintain(selected,f.run,async()=>assert.fail('native Windows host-directory export is unqualified'),coordination);
+      assert.equal(result.status,command==='start'?'running':command==='stop'?'stopped':'complete');
+      assert.ok(f.calls.some(args=>args[0]===({start:'start',stop:'stop',backup:'run',restore:'run'})[command]));
+      assert.ok(!f.calls.some(args=>args.some(value=>value.includes('type=bind'))));
+    }
+  });
+  await assert.rejects(lstat(coordination),{code:'ENOENT'});
+});
+
+test('missing POSIX UID support never bypasses Mac operation exclusion',async t=>{
+  const {mkdtemp,realpath,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os'),{join}=await import('node:path');
+  const root=await mkdtemp(join(await realpath(tmpdir()),'bunny-posix-guard-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const f=fixture();
+  await withoutUidOn('darwin',async()=>{
+    await assert.rejects(maintain(plan('start'),f.run,undefined,root),/operator-refused/);
+    assert.equal(f.calls.length,0);
+  });
+});
+
+test('native Windows refuses the new helper request before the retained legacy route',async()=>{
+  const f=fixture();await withoutUidOn('win32',async()=>{
+    const {maintain}=await import('../bunny.mjs');
+    await assert.rejects(maintain({...plan('backup'),qualificationRequest:'/private/request.json'},f.run));assert.equal(f.calls.length,0);
+  });
+});
+
+async function hostedAdapterFixture(t,mutate=()=>{},advance=false) {
+  const {mkdtemp,realpath,rm,writeFile}=await import('node:fs/promises'),{join}=await import('node:path'),{tmpdir}=await import('node:os'),{createHash}=await import('node:crypto');
+  const h=await qualifiedHelper({},false),root=await mkdtemp(join(await realpath(tmpdir()),'bunny-hosted-adapter-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const request={schema:'bunny-batch-deployment/1.0',operation:'forward',id:'batch-adapter',owner:'synthetic',compose:join(root,'compose.json'),includedIssues:['https://github.com/jimmie-potts/agent-device-hub/issues/1343'],requiredModules:['core'],client:'trusted-browser',forward:{assessment:'synthetic',evidence:'synthetic'},recovery:{status:'unknown'},backup:{volume:'archives',name:'snapshot'},...h.request};
+  const archive=Buffer.from('synthetic immutable image archive');h.receipt.image.archiveSha256=createHash('sha256').update(archive).digest('hex');
+  const calls={api:[],download:[],docker:[]};mutate(h.hosted);
+  const api=async path=>{
+    calls.api.push(path);
+    if(path.endsWith('/git/ref/heads/main'))return structuredClone(h.hosted.main);
+    if(path.includes('/compare/')){if(h.compareUnavailable)throw Error('synthetic unavailable comparison');return structuredClone(h.hosted.comparisons);}
+    if(advance)h.hosted.main[0].object.sha='f'.repeat(40);
+    if(path.endsWith('/attempts/1'))return [structuredClone(h.hosted.run)];
+    if(path.includes('/jobs?'))return [{jobs:structuredClone(h.hosted.jobs)}];
+    if(path.includes('/artifacts?'))return [{artifacts:structuredClone(h.hosted.artifacts)}];
+    throw Error('unexpected API path');
+  };
+  const download=async ({name,destination})=>{calls.download.push(name);await writeFile(join(destination,name.startsWith('release-evidence-')?'qualification.json':'production-image.tar.gz'),name.startsWith('release-evidence-')?JSON.stringify(h.receipt):archive,{mode:0o600});};
+  const run=async args=>{calls.docker.push(args);return '';};
+  const {hostedArtifact}=await import('../deployment/hosted-artifact.mjs');
+  return {...h,calls,request,failComparison:()=>{h.compareUnavailable=true;},invoke:()=>hostedArtifact(request,root,run,{api,download})};
+}
+test('actual hosted adapter accepts an ancestor of pinned main even when later main advances',async t=>{
+  const main='e'.repeat(40),f=await hostedAdapterFixture(t,h=>{h.main[0].object.sha=main;h.comparisons=[{base_commit:{sha:'a'.repeat(40)},merge_base_commit:{sha:'a'.repeat(40)},status:'ahead',ahead_by:2,behind_by:0,total_commits:2,commits:[{sha:'d'.repeat(40)},{sha:main}]}];},true);
+  const admittedReceipt=await f.invoke();assert.equal(f.calls.download.length,2);assert.deepEqual(f.calls.docker.map(a=>a[0]),['load']);
+  assert.equal(f.calls.api.filter(p=>p.includes('/git/ref/')).length,1);assert.ok(f.calls.api[1].includes('...'+main+'?'));
+  const {maintenanceHelperFor,maintenanceHelperDetails}=await import('../deployment/maintenance-helper.mjs');assert.equal(maintenanceHelperDetails(maintenanceHelperFor(admittedReceipt)).integratedMain,main);
+});
+for(const [name,mutate] of [
+  ['unmerged successful branch',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'diverged',merge_base_commit:{sha:'d'.repeat(40)},ahead_by:1,behind_by:1,total_commits:1,commits:[{sha:'e'.repeat(40)}]});}],
+  ['wrong comparison base',h=>{h.comparisons[0].base_commit.sha='d'.repeat(40);}],
+  ['contradictory identical comparison',h=>{h.comparisons[0].ahead_by=1;}],
+  ['wrong compared head',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'ahead',ahead_by:1,total_commits:1,commits:[{sha:'d'.repeat(40)}]});}],
+  ['incomplete comparison',h=>{h.main[0].object.sha='e'.repeat(40);Object.assign(h.comparisons[0],{status:'ahead',ahead_by:2,total_commits:2,commits:[{sha:'e'.repeat(40)}]});}],
+  ['unavailable main identity',h=>{h.main=[];}],
+])test(`actual hosted adapter refuses ${name} before download or Docker load`,async t=>{
+  const f=await hostedAdapterFixture(t,mutate),{refusalFields}=await import('../operator-refusal.mjs');await assert.rejects(f.invoke(),error=>{assert.equal(refusalFields(error).stage,'qualification');return true;});assert.equal(f.calls.download.length,0);assert.equal(f.calls.docker.length,0);
+  const {maintenanceHelperFor}=await import('../deployment/maintenance-helper.mjs');assert.equal(maintenanceHelperFor(f.receipt),undefined);
+});
+test('actual hosted adapter refuses unavailable ancestry comparison despite authentic-looking green jobs',async t=>{
+  const f=await hostedAdapterFixture(t);f.failComparison();await assert.rejects(f.invoke());assert.equal(f.calls.download.length,0);assert.equal(f.calls.docker.length,0);
 });

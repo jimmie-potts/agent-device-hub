@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Small, explicit operator surface. No downloads, automatic restart, migration or device handoff.
+// Explicit operator commands. Qualified helper intake is separate; no automatic restart, migration or device handoff.
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {parseArgs} from 'node:util';
@@ -7,21 +7,23 @@ import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve, isAbsolute} from 'node:path';
 import {lstat, realpath} from 'node:fs/promises';
 import {containerOptions} from '../deploy/container/entrypoint.mjs';
+import {operatorRefusal,refusalMessage} from './operator-refusal.mjs';
+import {maintenanceHelperDetails} from './deployment/maintenance-helper.mjs';
 
 const execute = promisify(execFile);
 const composeDefault = fileURLToPath(new URL('../deploy/container/compose.yaml', import.meta.url));
-const refuse = () => {throw new Error('operator-refused');};
-export const usage = 'node scripts/bunny.mjs <start|stop|status|backup DESTINATION|restore ARCHIVE> --project NAME [--compose FILE] [--archive-volume NAME]';
+const refuse = (stage='selection') => {throw operatorRefusal(stage);};
+export const usage = 'node scripts/bunny.mjs <start|stop|status|backup DESTINATION|restore ARCHIVE> --project NAME [--compose FILE] [--archive-volume NAME] [--qualification-request FILE]';
 export async function docker(args) {
   const result = await execute('docker', args, {encoding: 'utf8', maxBuffer: 1024 * 1024});
   return result.stdout.trim();
 }
 export function parse(argv) {
   const {values, positionals} = parseArgs({args: argv, strict: true, allowPositionals: true,
-    options: {project: {type: 'string'}, compose: {type: 'string'}, revision: {type: 'string'}, destination: {type: 'string'}, archive: {type: 'string'}, 'archive-volume': {type: 'string'}}});
+    options: {project: {type: 'string'}, compose: {type: 'string'}, revision: {type: 'string'}, destination: {type: 'string'}, archive: {type: 'string'}, 'archive-volume': {type: 'string'},'qualification-request':{type:'string'}}});
   const command = positionals[0];
   if (['worker-backup', 'worker-restore'].includes(command)) {
-    if (positionals.length !== 1 || values['archive-volume'] !== undefined || values.project !== undefined || values.compose !== undefined
+    if (positionals.length !== 1 || values['qualification-request']!==undefined || values['archive-volume'] !== undefined || values.project !== undefined || values.compose !== undefined
       || !/^[0-9a-f]{40}$/.test(values.revision ?? '')
       || (command === 'worker-backup' ? values.destination === undefined || values.archive !== undefined : values.archive === undefined || values.destination !== undefined)) refuse();
     return {command, ...values};
@@ -29,16 +31,17 @@ export function parse(argv) {
   if (!['start', 'stop', 'status', 'backup', 'restore'].includes(command) || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(values.project ?? '')
     || values.revision !== undefined || values.destination !== undefined || values.archive !== undefined
     || positionals.length !== (['backup', 'restore'].includes(command) ? 2 : 1)) refuse();
+  if(values['qualification-request']!==undefined&&!['backup','restore'].includes(command))refuse('arguments');
   if (values['archive-volume'] !== undefined && (!['backup', 'restore'].includes(command)
     || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/.test(values['archive-volume'])
     || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(positionals[1]))) refuse();
-  return {command, archiveVolume: values['archive-volume'], project: values.project, compose: resolve(values.compose ?? composeDefault), path: positionals[1]};
+  return {command,qualificationRequest:values['qualification-request'], archiveVolume: values['archive-volume'], project: values.project, compose: resolve(values.compose ?? composeDefault), path: positionals[1]};
 }
-function stopped(info) {
+export function stopped(info) {
   if (!['created', 'exited'].includes(info.State?.Status) || info.State.Running !== false || info.State.Restarting !== false || info.State.Pid !== 0
     || info.HostConfig?.RestartPolicy?.Name !== 'no') refuse();
 }
-function container(info, project) {
+export function container(info, project) {
   if (!/^[0-9a-f]{64}$/.test(info.Id ?? '') || !/^sha256:[0-9a-f]{64}$/.test(info.Image ?? '')
     || info.Config?.Labels?.['com.docker.compose.project'] !== project || info.Config?.Labels?.['com.docker.compose.service'] !== 'core'
     || info.Config?.User !== '1000:1000' || info.HostConfig?.RestartPolicy?.Name !== 'no') refuse();
@@ -61,7 +64,7 @@ function localBinding(ports, pixooBind) {
     && (pixooBind === undefined || (Array.isArray(pixoo) && pixoo.length === 1
       && pixoo[0].HostIp === pixooBind && pixoo[0].HostPort === '41240'));
 }
-async function access(info, project, run) {
+export async function access(info, project, run) {
   const ports = info.HostConfig?.PortBindings ?? {};
   const value = name => {
     const entries = (info.Config?.Env ?? []).filter(entry => entry.startsWith(name + '='));
@@ -113,13 +116,13 @@ async function access(info, project, run) {
     || (networks[name].NetworkID && networks[name].NetworkID !== network.Id)
     || (info.State?.Running && networks[name].NetworkID !== network.Id)) refuse();
 }
-async function ordinaryVolume(name, run) {
+export async function ordinaryVolume(name, run) {
   const volumes = JSON.parse(await run(['volume', 'inspect', name]));
   if (!Array.isArray(volumes) || volumes.length !== 1 || volumes[0].Name !== name
     || volumes[0].Driver !== 'local' || volumes[0].Scope !== 'local'
     || Object.keys(volumes[0].Options ?? {}).length !== 0) refuse();
 }
-async function selected(plan, run) {
+export async function selected(plan, run) {
   const raw = await run(['ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + plan.project,
     '--filter', 'label=com.docker.compose.service=core']);
   if (raw === '') return undefined;
@@ -143,8 +146,10 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   if (plan.command.startsWith('worker-')) {
     if (process.platform !== 'linux') refuse();
     const {backup, restore} = await import('./bunny-backup.mjs');
-    return plan.command === 'worker-backup' ? backup(plan) : restore(plan);
+    return plan.command === 'worker-backup' ? backup({...plan,helper:{revision:process.env.BUNNY_MAINTENANCE_REVISION,image:process.env.BUNNY_MAINTENANCE_IMAGE}}) : restore(plan);
   }
+  if(plan.maintenanceHelper!==undefined&&(process.platform==='win32'||process.getuid===undefined))refuse('qualification');
+  const helper=plan.maintenanceHelper===undefined?undefined:maintenanceHelperDetails(plan.maintenanceHelper);
   let info = await selected(plan, run);
   if (plan.command === 'status') return {operation: 'status', status: info?.State?.Status ?? 'not-created', health: 'not-checked'};
   if (plan.command === 'start') {
@@ -180,6 +185,14 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   const images = JSON.parse(await run(['image', 'inspect', info.Image]));
   const revision = images[0]?.Config?.Labels?.['org.opencontainers.image.revision'];
   if (images.length !== 1 || !/^[0-9a-f]{40}$/.test(revision ?? '')) refuse();
+  let workerImage=info.Image,workerRevision=revision;
+  if(helper!==undefined) {
+    if(helper.baseline.project!==plan.project||helper.baseline.container!==info.Id||helper.baseline.image!==info.Image||helper.baseline.revision!==revision)refuse('qualification');
+    const rows=JSON.parse(await run(['image','inspect',helper.image]));
+    if(rows.length!==1||rows[0].Id!==helper.image||rows[0].Os!=='linux'||rows[0].Architecture!=='arm64'
+      ||rows[0].Config?.Labels?.['org.opencontainers.image.revision']!==helper.revision)refuse('qualification');
+    workerImage=helper.image;workerRevision=helper.revision;
+  }
   let archiveMount, target;
   if (plan.archiveVolume !== undefined) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,127}$/.test(plan.archiveVolume)
@@ -200,13 +213,33 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   const workerArgs = ['run', '--rm', '--pull', 'never', '--network=none', '--read-only', '--user', '1000:1000',
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--tmpfs', '/tmp:rw,nosuid,nodev,mode=700,uid=1000,gid=1000',
     ...mountArgs, '--mount', `${archiveMount}${plan.command === 'restore' ? ',readonly' : ''}`,
-    '--entrypoint', 'node', info.Image, '/opt/bunny/scripts/bunny.mjs', 'worker-' + plan.command,
+    '--env','BUNNY_MAINTENANCE_IMAGE='+workerImage,'--env','BUNNY_MAINTENANCE_REVISION='+workerRevision,
+    '--entrypoint', 'node', workerImage, '/opt/bunny/scripts/bunny.mjs', 'worker-' + plan.command,
     plan.command === 'backup' ? '--destination' : '--archive', target, '--revision', revision];
   const result = JSON.parse(await run(workerArgs));
-  if (result.operation !== plan.command || result.status !== 'complete') refuse();
+  if (result.operation !== plan.command || result.status !== 'complete') refuse('worker');
+  if(plan.command==='backup'&&(helper!==undefined||result.manifestSchema==='bunny-container-backup/2')&&(result.manifestSchema!=='bunny-container-backup/2'||result.sourceRevision!==revision||result.helper?.image!==workerImage||result.helper?.revision!==workerRevision))refuse('worker');
   return result;
 }
+export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory,root) {
+  if(plan.qualificationRequest!==undefined&&(process.platform==='win32'||process.getuid===undefined))refuse('qualification');
+  if(process.platform==='win32'||plan.command==='status'||plan.command.startsWith('worker-'))return operate(plan,run,checkPrivate);
+  const {withOperation,operationRoot}=await import('./bunny-operations.mjs');
+  return withOperation({project:plan.project,root},async()=>{
+    if(plan.qualificationRequest===undefined)return operate(plan,run,checkPrivate);
+    const {readRequest}=await import('./deployment/batch.mjs'),{hostedArtifact}=await import('./bunny-deploy.mjs');
+    const {maintenanceHelperFor}=await import('./deployment/maintenance-helper.mjs');
+    const request=await readRequest(resolve(plan.qualificationRequest));
+    if(request.project!==plan.project)refuse('qualification');
+    let receipt;try{receipt=await hostedArtifact(request,root??operationRoot(),run);}catch{throw operatorRefusal('qualification','unavailable');}
+    return operate({...plan,maintenanceHelper:maintenanceHelperFor(receipt)},run,checkPrivate);
+  });
+}
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {process.stdout.write(JSON.stringify(await operate(parse(process.argv.slice(2)))) + '\n');}
-  catch {process.stderr.write('B.U.N.N.Y. operation did not complete. Keep partial output and inspect the selected stopped instance; do not retry a partial restore.\n'); process.exitCode = 1;}
+  try {
+    const plan=parse(process.argv.slice(2));
+    const result=await maintain(plan);
+    process.stdout.write(JSON.stringify(result)+'\n');
+  }
+  catch(error) {process.stderr.write(refusalMessage(error)); process.exitCode = 1;}
 }
