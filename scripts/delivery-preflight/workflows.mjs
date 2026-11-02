@@ -151,6 +151,13 @@ export function expectedJobs(workflows, { event, branch, files, filesComplete },
   for (const workflow of workflows) {
     const trigger = workflow.triggers[event];
     if (!trigger) continue;
+    // Release qualification protects installation of a pinned batch, independently of source closeout.
+    // Its reusable jobs are evaluated by the closed release receipt validator, never inferred from a source PR.
+    if (workflow.file === 'release-qualification.yml' && event === 'push'
+      && workflow.name === 'Release qualification' && workflow.jobs.some(job => job.uses)) {
+      filtered.push({ workflow: workflow.file, reason: 'separate pinned release qualification; source integration is not release eligibility' });
+      continue;
+    }
     const decision = triggerApplies(trigger, { branch, files, filesComplete });
     notes.push(...(decision.notes || []).map(reason => `${workflow.file}: ${reason}`));
     if (!decision.applies) {

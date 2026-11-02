@@ -317,9 +317,10 @@ caches, browser binaries and all runtime state outside source.
 GitHub Actions runs the active workflows under `.github/workflows/` on
 GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 [#870](https://github.com/jimmie-potts/agent-device-hub/issues/870). They run on
-pull requests and pushes to main, and report each job as a GitHub check named
-after the job. Superseded PR revisions are cancelled per workflow and PR; main
-revisions keep independent runs. Each job has a ten-minute timeout, except the
+ready pull requests and report each job as a named GitHub check. Main runs
+cheap integration checks and queues pinned release qualification. Superseded PR
+revisions are cancelled per workflow and PR; an active qualification finishes
+while new arrivals replace the pending candidate. Each job has a ten-minute timeout, except the
 select and gate jobs' five, the Workflow job's fifteen, the retained documentation
 job's twenty-five, Runtime verification's thirty-five, and Core and App verification's
 forty. Branch pushes do not duplicate PR checks.
@@ -343,20 +344,21 @@ attempts in all. The step limits (20 minutes for the browser installs, 14 for th
 hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
 unless `GITHUB_ACTIONS` is `true`.
-Active workflow files are `checks.yml` and `workflow.yml`. The Work Guide
+Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml` and
+`release-qualification.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
-Checks admits every pull request so the required core build check exists.
-Markdown-only PRs select no product suites but retain selection, core
-build/type/lint, the final gate and both Workflow jobs under the
-[Markdown-only rule](sdlc.md#markdown-only-ci-routing). Only main pushes retain
-the `**/*.md` workflow filter. Other pull requests run the
-[affected Checks work](#affected-pr-checks). Inspect the
-complete changed-file list and hosted event/check records; missing runs alone
-never establish filtering.
-Tag pushes are outside the main-only push trigger. Static tests verify workflow
-configuration; only hosted event evidence verifies actual scheduling.
+Checks admits ready pull requests. Ordinary Markdown selects no product suite;
+delivery/validation policy retains the full gate. Draft updates skip expensive
+admission jobs. Keep checkpoint work in draft, then mark a stable candidate ready
+for review. Branch backup pushes without a ready PR do not start release
+qualification. Ready/fix rounds run the [affected gate](#affected-pr-checks).
+Main has no redundant direct broad Checks/Workflow run. Its integration result
+and separate release qualification retain their own exact-revision evidence.
+Inspect complete changed paths and hosted event/check records; missing results
+alone never establish filtering. Tag pushes trigger no main integration.
+Static tests check configuration; hosted readback verifies actual scheduling.
 
 Product CI jobs run `npm run build` once, then use the `:built` variants of the
 TypeScript and package test commands. These variants require output freshly
@@ -373,7 +375,9 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Normal CI has eight GitHub-hosted Linux jobs, and each suite runs in exactly one of them. On a pull request, the jobs and steps outside the selected groups are skipped:
+Admission has eight GitHub-hosted Linux jobs with selected steps/jobs skipped.
+Full release source coverage reuses those same jobs, then adds its pinned ARM64
+artifact checks. Its evidence remains separate from the cheap Integration job:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -395,10 +399,10 @@ changes must add their own issue-appropriate checks.
 
 ### Affected PR checks
 
-On a pull request, Checks runs only the work its change can affect
-([#1080](https://github.com/jimmie-potts/agent-device-hub/issues/1080)). Pushes
-to main and manual runs still run every check, and the Workflow workflow runs
-in full for every change. The `Select affected checks` job reads the PR's exact
+Ready pull requests run deterministic admission checks. Draft checkpoints skip
+expensive jobs. Main pushes run the cheap Integration workflow and independently
+enqueue full pinned release qualification. Manual Checks dispatch still runs
+every check. The `Select affected checks` job reads the PR's exact
 comparison (`compare/<base>...<head>` from the event, with both paths of a
 rename) and maps it to check groups with the small explicit table in
 `scripts/ci-selection/selection.mjs`:
@@ -411,14 +415,27 @@ rename) and maps it to check groups with the small explicit table in
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Build, typecheck and lint always run. Markdown, `openspec/**` and the
-documentation tooling under `docs/**` select no group. Every other path selects
+Build, typecheck and lint always run for ready candidates. Ordinary Markdown,
+`openspec/**` and documentation tooling select no product group. Delivery and
+validation policy paths, `AGENTS.md`, `docs/sdlc.md`, `docs/development.md` and
+the admission capability spec, retain full coverage. Every other path selects
 full coverage: shared packages and contracts, root manifests, the lockfile and
 toolchain files, `.github/**`, `scripts/**` (including the selector and the
 delivery preflight), other root `tests/**`, the old system, `docs/skins/**` and
 any path the table does not name. An incomplete or unreadable comparison (an
 API error, a missing revision or GitHub's 300-file limit) also runs everything.
 The mapping accepts extra work to stay simple; it is not a dependency graph.
+
+The selector explicitly lists existing dashboard and module frontend CSS assets.
+Only comparisons confined to those style paths and documentation use focused mode. They retain the affected
+core suites while omitting broad App verification and Runtime verification.
+All executable frontend code, including sign-in, connections, durable attempt
+fences and device controls, retains conservative coverage. New or renamed style
+paths also retain that coverage until their ownership is reviewed in the table. Backend, shared and unknown work cannot opt into
+focused mode. The selector's explicit table is authoritative; author labels
+have no effect. Affected independent disposable browser/acceptance checks remain
+required for observable changes. Full release qualification runs the omitted
+coverage on the actual integrated image.
 
 A group's unselected steps show as skipped in the job log. Firmware, App
 verification and Runtime verification report `skipped` when their groups are
@@ -444,7 +461,55 @@ selected group needs, and add it to the pinned step groups in
 checks that representative narrow changes run their suites, and checks that
 selector, workflow and preflight paths select full coverage. The select job runs
 the candidate's own selector, so that test, which the Workflow job runs for
-every change, is what guards an edit to the selector.
+ready candidate and in the Integration workflow, guards edits to the selector.
+Admission-policy changes retain full coverage before their new rules activate.
+
+### Disposable task environments
+
+Use one worktree per task. Own its build outputs, container identity, writable
+state, ports, synthetic credentials, browser context and client configuration.
+Research may read shared source and caches. Runtime/test/browser runs must use
+their own mutable resources. Independent work needs no installation handoff and
+has no default concurrency cap. Stop only exact owned runs. Managed verification
+retains its two-hour lease; finite container checks retain their declared deadline
+and interruption/cleanup limits. See [runtime verification](#runtime-verification-runs)
+and [portable acceptance](../apps/runtime/verify/PORTABLE.md).
+
+On a Mac, use `npm run test:runtime:container -- --suite scenarios` and
+`-- --suite browser` from each task worktree. The runner copies source and uses
+its own synthetic state with no installed volumes, mounts or ports. For a
+reviewable runtime capture, use the exact committed candidate and the existing
+portable acceptance route. Keep synthetic credentials scoped to that runtime's
+declared feed identities. Never substitute an installed endpoint or personal
+profile when a disposable setup fails.
+
+Real clients keep their existing permissions. Check the installed client's help
+before an experiment, record its version and use synthetic input. Codex CLI
+supports a separate state/config root and `--no-daemon`; a profile alone still
+layers on the base configuration and does not isolate the shared daemon. Use a
+task-owned client root in an isolated environment, file-based authentication only
+if separately authorized, and an explicit disposable runtime endpoint/feed.
+These controls follow the official [environment reference](https://learn.chatgpt.com/docs/config-file/environment-variables)
+and [CLI reference](https://learn.chatgpt.com/docs/cli/reference). Do not copy a
+personal authentication store or change its configuration.
+
+For Claude Code, `--setting-sources` selects configuration sources and
+`--settings` supplies the task-owned settings file. Combine an explicitly empty
+source list with a synthetic settings file, `--strict-mcp-config` and an explicit
+empty MCP config before enabling only the disposable feed. `--no-session-persistence`
+with print mode avoids persisted experiment sessions. The existing
+[coding worker](coding-worker.md) uses the narrower project-settings route for
+its established purpose; that is not blanket personal-profile isolation.
+Help/readback confirms available controls, not live provider qualification.
+No Desktop profile-isolation route is qualified here. An unsupported client
+experiment remains unqualified and grants no personal settings/session access.
+
+Feature tasks report integrated source and link the chosen deployment batch for
+remaining installed/client acceptance. Only the designated deployment task owns
+the selected live operation. Its verified private record supplies completion and
+writer release; feature tasks reuse the public sanitized result without asking
+for another acknowledgment. Device permission and each issue's own acceptance
+remain separate.
 
 ### Old system checks
 
@@ -1038,9 +1103,11 @@ Use `-- --suite scenarios` or `-- --suite verify` for a focused suite, and
 invocations may run concurrently, including from independent worktrees. Each
 owns a unique container; cleanup removes only that container. The source copy
 excludes ignored files, private paths and build output and refuses symlinks.
-Keep private work outside tracked/nonignored source. Host interruption may leave
-that invocation's container; inspect and remove only its `bunny-runtime-check-`
-identity. No broad prune or installed-service action is needed.
+Keep private work outside tracked/nonignored source. The in-container two-hour
+deadline bounds the checks independently of the host caller. Host interruption
+may leave that invocation's container until its deadline;
+inspect and remove only its `bunny-runtime-check-` identity. This finite test
+container is separate from a managed preview lease. No broad prune or installed-service action is needed.
 
 The wrapper's fixed-suite, source-isolation and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
@@ -2314,3 +2381,14 @@ separate in an isolated Linux ARM64 fixture. No installed or hardware evidence
 is inferred. Test Stop independently of pending replies, both process-loss
 directions, lossless sensor freshness, missed return windows, exact held-neutral
 recovery, durable suppression, restart/outbox and status-only MCP.
+
+MicroDuck and Reachy control journeys allocate a private per-invocation proof
+directory under `DASHBOARD_RECEIPTS`, or the system temporary directory when no
+parent is selected, and print the screenshot path. Their world cleanup retains
+that proof. Other dashboard journeys keep their existing `DASHBOARD_RECEIPTS`
+or explicit output-directory arguments. Select a unique private directory per task.
+Run
+`node --test apps/runtime/dashboard/tests/browser-artifacts.test.ts` for output
+isolation, retained bytes, private permissions and refusal of an unusable parent.
+The existing dashboard unit discovery includes these checks. The vendor-only
+MicroDuck `/proof` paths remain inside that exercise's separately owned container.

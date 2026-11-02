@@ -310,8 +310,10 @@ checkout and runtime ownership; do not revive the old claim as a delivery gate.
    and test in their own disposable clone and clean it up; they do not build in
    the coordinator's worktree.
 4. Resolve published blocking feedback and require every applicable CI job on the
-   exact head to pass under [CI evidence](#ci-evidence). Keep existing CI coverage;
-   this policy does not remove tests or weaken branch protection. No extra report
+   exact head to pass under [CI evidence](#ci-evidence). Focused admission and
+   release qualification preserve coverage at their separate boundaries. Do not
+   rebase solely to obtain an up-to-date build; refresh the current comparison,
+   resolve conflicts and renew evidence invalidated by integration. No extra report
    format or duplicated receipt dossier is required; a PR review summary with
    comparison, verdicts and links to existing evidence is sufficient.
 5. Recheck scope, base and head, then squash the reviewed head with
@@ -337,14 +339,12 @@ that changes no user-facing or device-facing output.
 
 Verification has three tiers.
 
-1. **Automatic.** Once an application has a shared scenario catalog, every PR
-   whose [affected checks](#affected-pr-checks) select that application runs it
-   in CI through the in-memory end-to-end harness, and so does every main push
-   that runs the Checks workflow. Markdown-only PRs select no product suites;
-   Markdown-only main pushes filter the Checks workflow.
-   [Hub #846](https://github.com/jimmie-potts/agent-device-hub/issues/846)
-   adds both for the new runtime that
-   [ADR 0012](decisions/0012-bunny-event-platform.md) describes.
+1. **Automatic.** Ready PRs run the [admission selection](#affected-pr-checks).
+   Core scenario checks remain selected for affected runtime changes. Broad
+   browser/catalog coverage runs for conservative PR selections and every pinned
+   release qualification. Main pushes run cheap integration checks and enqueue
+   qualification independently of later feature work. Draft updates do not run
+   expensive admission or release checks.
 2. **Acceptance exercise.** A PR with observable behavior needs the affected
    user journey exercised against the reviewed head in a disposable run. The
    independent code reviewer may do this; a separate third reviewer is optional.
@@ -500,7 +500,8 @@ A pull request's CI runs only its [affected checks](#affected-pr-checks). A job
 that selection deliberately leaves out reports `skipped`; it counts as not run,
 never as passed, and it is acceptable only when the selection recomputed from
 the PR's changed files omits it and the `Selected checks gate` job succeeded.
-Merged-main revisions run every applicable job.
+Merged-main source revisions run applicable integration jobs. Full release
+qualification has its separate immutable candidate and applicable job set.
 
 Inspect relevant job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
@@ -537,52 +538,61 @@ these procedural gates.
 
 ### Markdown-only CI routing
 
-Every pull request enters the Checks workflow so its required build check can
-exist. A Markdown-only PR selects no product-test groups, but still runs Select
-affected checks, Build, lint and core tests, and Selected checks gate, plus
-Workflow checks and Retained documentation checks. The core job retains its
-build, typecheck and lint; firmware, App verification and Runtime verification are deliberately
-unselected. Those selected jobs must succeed, and the delivery preflight derives
-that expected set from the workflows and selector. A manual workflow dispatch
-does not replace the required PR-event check.
-
-The main-push trigger still ignores `**/*.md`, so a Markdown-only main revision
-runs only Workflow checks and Retained documentation checks. The Workflow job
-still runs OpenSpec validation, the issue-template and fixture tests and the
-delivery preflight fixtures. Markdown-only edits to this policy, `AGENTS.md` or
-`CLAUDE.md` take these routes too, because no product test depends on their
-content. Reviews, guarded merge and merged-main CI apply as usual.
-
-Package scripts copy some Markdown files into published archives, such as
-contract documents and package READMEs. Text edits to those files stay
-Markdown-only. The Workflow job fails if any of them is missing, so delete or
-rename one only together with its package script. That change runs every job.
-That guard checks only that the files exist. Package scripts may copy the
-guarded files, but no Checks test may depend on Markdown content. A test that
-does must run in the Workflow job, which still runs for Markdown-only changes.
-
-If a change's file list or filter behavior is uncertain, keep the full gate.
+Ready Markdown-only PRs run build/type/lint, workflow and retained documentation
+checks, with product suites unselected. Changes to `AGENTS.md`, `docs/sdlc.md`
+and `docs/development.md` change delivery/validation policy and retain the full
+PR gate. Drafts skip expensive checks. Package-copy checks still require their
+referenced Markdown files to exist; deleting one requires its packaging change.
+No product test may depend on Markdown content; instruction fixtures belong in
+Workflow. Main integration and qualification use the same scheduling policy for
+Markdown and other changes.
 
 ### Affected PR checks
 
-A pull request that runs the Checks workflow runs only the check groups its
-changed paths can affect, including their known consumers
-([#1080](https://github.com/jimmie-potts/agent-device-hub/issues/1080)). The
-mapping, its groups and its full-coverage fallbacks are in
-[Affected PR checks](development.md#affected-pr-checks). Shared packages and
-contracts, root toolchain and lockfile files, CI configuration, scripts
-(including the selector and this preflight), unknown paths and any incomplete
-or unreadable comparison run every check. Pushes to main admitted by the
-Markdown filter run every applicable check, as do manual runs of the Checks
-workflow, the full-run escape hatch.
+The selector in `scripts/ci-selection/selection.mjs` owns the explicit admission
+mapping and the preflight recomputes it. Every ready candidate runs build,
+typecheck, lint, workflow checks and the affected core unit/consumer suites.
+Explicitly allowlisted runtime dashboard and module frontend style assets can use focused
+admission, omitting the broad App verification and Runtime verification jobs.
+The affected independent disposable acceptance exercise remains required.
 
-A selected check must succeed on the exact head. An unselected job must report
-`skipped` (or `success` when it ran anyway) and the `Selected checks gate` job
-must succeed; a failure, cancellation, missing result, failed selection or
-skipped selected job blocks merge. The delivery preflight recomputes the
-selection from the PR's changed files with the same mapping, requires the
-select job's published selection to cover it and lists omitted jobs as not
-run. Reviews, guarded merge and merged-main CI apply as usual.
+Backend and safety-sensitive paths retain their existing broad selection. Shared
+packages/contracts, toolchain/lockfile, CI/selector/preflight, gate-policy,
+unknown paths and incomplete comparisons select full coverage. Author labels
+cannot waive checks. Manual Checks dispatch and release qualification force full
+selection. Keep substantive credential, storage-migration, writer-exclusion and
+device-command safety review and checks.
+
+Selected jobs must succeed on the exact candidate. An unselected job must report
+`skipped` or `success` if it ran; a skip means not run. The Selected checks gate
+must succeed. Missing results, failed selection, unexpected skips, cancellation
+or wrong revisions block admission. Hosted focused notices bind both core groups
+and omitted jobs. The preflight checks that published coverage covers its own.
+Policy changes pass the conservative gate and independent review before they
+activate; a candidate cannot waive its own missing evidence.
+
+### Integration, qualification and deployment
+
+Main records integrated source. Its Integration workflow runs cheap workflow and
+admission-regression checks on the exact merged revision. The separate Release
+qualification workflow runs all applicable existing source, browser/accessibility
+and packaged ARM64 coverage on a pinned integrated snapshot. One active run
+finishes while new arrivals replace the pending candidate. Omitted intermediate
+revisions are not qualified. A feature PR need not wait for qualification or a
+merge/deployment batch; it must satisfy its own admission and acceptance gates.
+
+A qualified release binds the exact source/evaluation revision, applicable job
+results and immutable production image. Failed, incomplete or mismatched evidence
+refuses deployment. A source preflight reports integration evidence separately
+from qualification and installed acceptance. The release producer and consumer
+are described in [development](development.md#release-qualification).
+
+Feature tasks own source and disposable evidence. A designated deployment task
+selects one compatible batch and owns only its installation operation. Feature
+issues link that batch for remaining installed/client checks and retain any
+unfinished acceptance. Reuse its verified deployment result and recorded writer
+release directly; no second acknowledgment or per-feature installation handoff
+is required. Project fields remain projections of native issue state.
 
 ## Installation and evidence
 
@@ -608,8 +618,9 @@ That installer targets `apps/hub`, not `bunny-runtime.service`. The accepted
 stopped and disabled the old writers while preserving their manual return path;
 retirement remains separately authorized work.
 
-Authorized delivery finishes merged, installed on its established target and
-verified. The owner’s standing installation authority covers that routine upgrade
+Overall installed delivery finishes with verified installation of its selected
+qualified batch. Feature tasks can finish integrated source while their issues
+retain pending installed acceptance through the designated deployment issue. The owner’s standing installation authority covers that routine upgrade
 and its documented recovery; do not ask for installation approval again. Review
 the exact plan and complete included change bundle against that authority before
 execution, retaining ownership, compatibility, digest, health and receipt checks.

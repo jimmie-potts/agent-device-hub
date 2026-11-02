@@ -11,16 +11,20 @@ import YAML from 'yaml';
 import { JOBS, conditionJob, selectChecks, stepGroup } from './selection.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const lines = text => text.split('\n').map(line => line.trim()).filter(Boolean);
+const nulRecords = text => {
+  if (text === '') return [];
+  if (!text.endsWith('\0')) throw new Error('Git returned an incomplete NUL-delimited path list');
+  return text.slice(0, -1).split('\0');
+};
 const runGit = args => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
 /** Every path the local change touches; --no-renames lists a rename as its deletion and its addition. */
 export function localPaths({ base = 'origin/main', git = runGit } = {}) {
   return [...new Set([
-    ...lines(git(['diff', '--name-only', '--no-renames', `${base}...HEAD`])),
-    ...lines(git(['diff', '--name-only', '--no-renames', 'HEAD'])),
-    ...lines(git(['diff', '--name-only', '--no-renames', '--cached'])),
-    ...lines(git(['ls-files', '--others', '--exclude-standard'])),
+    ...nulRecords(git(['diff', '--name-only', '--no-renames', '-z', `${base}...HEAD`])),
+    ...nulRecords(git(['diff', '--name-only', '--no-renames', '-z', 'HEAD'])),
+    ...nulRecords(git(['diff', '--name-only', '--no-renames', '-z', '--cached'])),
+    ...nulRecords(git(['ls-files', '--others', '--exclude-standard', '-z'])),
   ])];
 }
 

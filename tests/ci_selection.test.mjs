@@ -51,9 +51,10 @@ test('a narrow module change selects its suites and known consumers, and omits u
 });
 
 test('a runtime dashboard change selects the runtime and its maintenance consumer only', () => {
-  const result = pr(['apps/runtime/dashboard/src/main.tsx', 'apps/runtime/dashboard/tests/smoke.ts']);
+  const result = pr(['apps/runtime/dashboard/src/music.css', 'apps/runtime/dashboard/src/card-chrome.css']);
   assert.deepEqual(result.groups, ['runtime', 'maintenance']);
-  assert.deepEqual(result.jobs, { firmware: false, 'app-verify': true, 'runtime-verify': true });
+  assert.equal(result.mode, 'focused');
+  assert.deepEqual(result.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false });
   // The old dashboard is shared with the old Hub and the runtime's dashboard copy, so it keeps the full gate.
   assert.equal(pr(['apps/dashboard/src/main.tsx']).mode, 'full');
 });
@@ -221,7 +222,7 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
     requests.push({ url, init });
     return { ok: true, status: 200, json: async () => ({ files: [
       { filename: 'apps/chompi-bridge/src/new.ts', previous_filename: 'apps/maintenance/src/old.ts', status: 'renamed' },
-      { filename: 'docs/sdlc.md', status: 'modified' },
+      { filename: 'docs/example.md', status: 'modified' },
       { filename: 'apps/maintenance/src/removed.ts', status: 'removed' },
     ] }) };
   };
@@ -306,10 +307,10 @@ test('local paths include both sides of renames, uncommitted and untracked files
   const calls = [];
   const git = args => {
     calls.push(args.join(' '));
-    if (args[0] === 'diff' && args.includes('--cached')) return 'apps/maintenance/src/staged.ts\n';
-    if (args[0] === 'diff' && args.includes('HEAD')) return 'apps/maintenance/src/edited.ts\n';
-    if (args[0] === 'diff') return 'apps/maintenance/src/old.ts\napps/chompi-bridge/src/new.ts\n';
-    if (args[0] === 'ls-files') return 'modules/pixoo/src/untracked.ts\n';
+    if (args[0] === 'diff' && args.includes('--cached')) return 'apps/maintenance/src/staged.ts\0';
+    if (args[0] === 'diff' && args.includes('HEAD')) return 'apps/maintenance/src/edited.ts\0';
+    if (args[0] === 'diff') return 'apps/maintenance/src/old.ts\0apps/chompi-bridge/src/new.ts\0';
+    if (args[0] === 'ls-files') return 'modules/pixoo/src/untracked.ts\0';
     return '';
   };
   assert.deepEqual(localPaths({ base: 'origin/main', git }).sort(), [
@@ -317,6 +318,29 @@ test('local paths include both sides of renames, uncommitted and untracked files
   ]);
   assert.ok(calls.every(call => !call.startsWith('diff') || call.includes('--no-renames')), calls.join('\n'));
   assert.ok(calls.some(call => call.startsWith('diff') && call.includes('origin/main...HEAD')), calls.join('\n'));
+  assert.ok(calls.every(call => call.includes('-z')), calls.join('\n'));
+});
+
+test('local Git paths preserve whitespace identities before choosing focused commands', () => {
+  for (const unknown of [
+    'apps/runtime/dashboard/src/music.css ',
+    '\tapps/runtime/dashboard/src/music.css',
+    'apps/runtime/dashboard/src/music.css\nnotes.css',
+  ]) {
+    const git = args => args[0] === 'diff' && args.includes('base...HEAD')
+      ? unknown + (args.includes('-z') ? '\0' : '\n') : '';
+    const paths = localPaths({ base: 'base', git });
+    assert.deepEqual(paths, [unknown], 'Git filenames must retain their exact identity');
+    const selection = pr(paths);
+    assert.notEqual(selection.mode, 'focused', unknown);
+    assert.equal(selection.jobs['app-verify'], true, unknown);
+    assert.equal(selection.jobs['runtime-verify'], true, unknown);
+  }
+  assert.equal(pr(['apps/runtime/dashboard/src/music.css']).mode, 'focused');
+});
+
+test('local Git paths reject incomplete NUL-delimited output', () => {
+  assert.throws(() => localPaths({ git: () => 'apps/runtime/dashboard/src/music.css' }), /incomplete NUL-delimited/);
 });
 
 // ---- The workflow uses the mapping consistently ----
@@ -397,7 +421,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   assert.deepEqual(select.steps.at(-1), { id: 'select', env: { GITHUB_TOKEN: '${{ github.token }}', BUNNY_RELEASE_QUALIFICATION: '${{ inputs.qualification }}' }, run: 'node scripts/ci-selection/cli.mjs select' });
   const gate = checks.jobs.gate;
   assert.equal(gate.name, 'Selected checks gate');
-  assert.equal(gate.if, 'always()');
+  assert.equal(gate.if, "always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)");
   assert.deepEqual(gate.needs, Object.keys(checks.jobs).filter(id => id !== 'gate'));
   assert.deepEqual(gate.steps.at(-1), { env: { NEEDS: '${{ toJSON(needs) }}' }, run: 'node scripts/ci-selection/cli.mjs gate' });
   for (const id of ['select', 'gate']) {

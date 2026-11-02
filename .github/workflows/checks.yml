@@ -1,11 +1,6 @@
-# Markdown-only main pushes skip this workflow (#861); every PR must emit the required core check.
-# The selector leaves product suites unselected for Markdown-only PRs; Workflow documentation checks still run.
-# GitHub-hosted runners replaced Depot CI in #870.
-# The old system's checks (the old Hub, its controllers and services, and the 1.x contracts) run locally until #839 deletes them (#827).
-# Pull requests run affected checks (#1080): the select job maps the PR's changed paths to check groups with
-# scripts/ci-selection/selection.mjs, steps and jobs outside those groups are skipped, and the gate job fails unless
-# every selected job succeeded. Pushes to main and manual runs (workflow_dispatch, the full-run escape hatch) run
-# every check; so does any shared, unknown or unreadable change.
+# Ready PRs use focused or conservative admission; drafts skip expensive jobs.
+# Main integration and pinned full release qualification have separate workflows (#1364).
+# The expanding qualification input always forces full coverage.
 
 name: Checks
 on:
@@ -14,10 +9,8 @@ on:
       qualification:
         type: boolean
         default: false
-  push:
-    branches: [main]
-    paths-ignore: ['**/*.md']
-  pull_request: {}
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -27,6 +20,7 @@ concurrency:
 jobs:
   select:
     name: Select affected checks
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -297,7 +291,7 @@ jobs:
     name: Selected checks gate
     needs: [select, core, firmware, app-verify, runtime-verify]
     # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
-    if: always()
+    if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
