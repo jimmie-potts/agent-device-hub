@@ -11,7 +11,10 @@ Run commands from the repository root with Node 24 and the dependencies in
 After `npm run build`, run
 `node --test apps/runtime/dist/tests/codex-receipt-*.test.js apps/runtime/dist/tests/codex-read-*.test.js apps/runtime/dist/tests/read-receipts.test.js apps/runtime/dist/tests/read-helper.test.js`.
 The focused suites cover source qualification, native request/response correlation,
-byte forwarding, SDK freshness, target binding and the core transaction. Existing
+compatible version changes, added protocol fields, refusal of incompatible evidence,
+byte forwarding, SDK freshness, target binding and the core transaction. The Mac
+launcher test uses synthetic app bundles and runs only on macOS; run it on the host
+as well as the Linux receipt suites. It launches no installed application. Existing
 `test:runtime:built` and the core CI job discover these tests automatically.
 Use the owning Linux test environment for runtime storage/edge checks, as for the
 existing receipt suites. Run shared build/type/lint, event/SDK, contract and workflow
@@ -418,6 +421,17 @@ selected disposable verification. Use an outside-checkout private `TMPDIR`.
 Actual installation still requires UPGRADE.md's release/latest-state/recovery
 admission; none of these checks contact a household device.
 
+### CLI refusal checks
+
+After the root build, run `node --test apps/runtime/dist/tests/process.test.js`
+on Linux for state-directory and configuration admission, service startup and
+shutdown, and process diagnostics. Each independent refusal registers its own
+test through the existing helper, retaining its 20-second deadline and child
+cleanup. Valid private configuration startup has its own test. Adding another
+input must not consume an earlier input's deadline. Diagnostic codes, fixed
+messages, stacks, redaction and health assertions remain unchanged. Existing
+runtime unit CI discovers these cases; no product or global timeout changes.
+
 ### Runtime test layers
 
 Every runtime story is tested at four layers
@@ -439,6 +453,17 @@ job judges the fourth layer's capture steps without a user manager.
 `apps/runtime/dist/tests/scenarios/`. To run some scenarios only, name them
 after a build, for example
 `node --test --test-name-pattern=end-to-end apps/runtime/dist/tests/scenarios/*.test.js`.
+
+The end-to-end diagnostic-record check registers one sequential case per
+transport, each using the existing 20-second test bound for startup, scenario,
+record inspection and cleanup together. Their declared test budgets
+therefore total 40 seconds. Contract validation and the three required module
+events stay unchanged; invalid appended records and removal of every matching
+required event must still fail. After a root build, select these checks with
+`node --test --test-name-pattern='every record the end-to-end scenario writes' apps/runtime/dist/tests/scenarios/runner.test.js`.
+A controlled scheduling-delay example demonstrates the old combined-budget
+assumption; it does not identify a historical hosted timeout's cause.
+
 Each catalog scenario runs twice in the runtime's module host, on a manual
 clock: once with its parts on the host's bus, and once through a `RemoteEdge`
 on 127.0.0.1 with run-generated tokens. The harness never listens on an

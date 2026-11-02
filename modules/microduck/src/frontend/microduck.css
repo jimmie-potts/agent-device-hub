@@ -1,0 +1,6 @@
+.microduck-panel { max-width: 52rem; padding: 1rem; color: var(--text-primary); }
+.microduck-panel p { overflow-wrap: anywhere; }
+.microduck-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
+.microduck-actions button { padding: .6rem .8rem; border-radius: .5rem; }
+.microduck-feedback { flex-basis: 100%; }
+.microduck-panel label { display: flex; align-items: start; gap: .5rem; }

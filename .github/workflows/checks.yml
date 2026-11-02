@@ -162,6 +162,9 @@ jobs:
       - name: Reachy simulator module
         if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:reachy:built
+      - name: MicroDuck simulator module
+        if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:microduck:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -261,6 +264,9 @@ jobs:
       - name: Reachy controls browser
         if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:reachy:browser
+      - name: MicroDuck controls browser
+        if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:microduck:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   runtime-verify:

@@ -54,6 +54,8 @@ export type ConformanceSpec = {
   copies?: {families: readonly string[]; snapshot: Snapshot; owner?: string};
   /** A command the module accepts, if it answers any. It must report the command's outcome through its outbox. */
   accepted?: {key: string; draft: CommandDraft<object>};
+  /** The stand-in command owner for source-restricted responders. Defaults to the kit's probe. Grants no product authority. */
+  requestSource?: string;
   /** A command the module refuses, and the registry code it refuses it with, if it answers any. */
   refused?: {key: string; draft: CommandDraft<object>; code: ErrorCode};
   /**
@@ -152,6 +154,7 @@ class World {
   readonly timeoutMs: number;
   /** The kit's own participant, which sends requests and syncs. */
   readonly probe: Participant;
+  readonly #requester: Participant;
   harness: ModuleHarness;
 
   private constructor(spec: ConformanceSpec, dir: string) {
@@ -165,6 +168,7 @@ class World {
       onDiagnostic: diagnostic => { this.diagnostics.push(diagnostic); }, spans: this.spans,
     });
     this.probe = this.#connect('bunny/kit');
+    this.#requester = spec.requestSource === undefined ? this.probe : this.#connect(spec.requestSource);
     this.harness = this.fresh();
   }
 
@@ -207,7 +211,7 @@ class World {
   }
 
   async request(command: {key: string; draft: CommandDraft<object>}): Promise<RequestResult> {
-    const result = await this.probe.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
+    const result = await this.#requester.request(command.key, command.draft, {timeoutMs: this.timeoutMs});
     if (result.status !== 'uncertain' && result.reply !== undefined) this.#replies.push({traceparent: result.reply.traceparent});
     this.answers.push(result);
     return result;

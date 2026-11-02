@@ -114,21 +114,35 @@ path is described below; it does not change this Claude plugin or its checks.
 
 ## Codex Desktop
 
-The selected version is Desktop **26.1027.30824**, build **22943**, with bundled
-`codex-cli 0.166.0-alpha.5.1` on macOS. An operator-run disposable test established
-that opening a completed thread caused Desktop's own successful read request,
-while an unopened control remained unread. It did not establish comprehension.
-Installed acceptance must still verify the selected runtime and launcher.
+The macOS producer admits compatible Codex updates through the native protocol
+checks below. A changed Desktop version, build or native executable version
+does not by itself disable collection. The launcher selects the
+`com.openai.codex` bundle and its expected executables. Version strings are
+inspection metadata, not a compatibility guarantee.
+
+The initial operator-run disposable test used Desktop **26.1027.30824**, build
+**22943**, with `codex-cli 0.166.0-alpha.5.1`. Opening a completed thread caused
+Desktop's own successful read request while an unopened control remained
+unread. That evidence applies to the tested UI. A future UI can change when it
+sends the same protocol request, so retain dated operator checks after behavior
+changes. A receipt records Desktop marking the exact reply read. It does not
+establish comprehension. Installed acceptance must verify the selected runtime
+and launcher.
 
 `bin/codex-with-read.mjs` starts that application with a passive stdio observer
 for its bundled app-server. The observer forwards native bytes unchanged,
-including stderr, and injects no requests. It recognizes the qualified Desktop
-initialization and its native request sequence. It requires an unread snapshot,
+including stderr, and injects no requests. It recognizes a successful
+`Codex Desktop` initialization and its native request sequence. It requires an unread snapshot,
 a subsequent latest completed-turn selection and a read request with the same
 revision. Before forwarding the request, it freezes the already-synchronized
 B.U.N.N.Y. identity, turn, generation and finished notice. Only the matching
 successful response with cleared unread state and a changed native revision
 can produce a `provider-client` receipt.
+
+Additional protocol fields do not affect these checks. Missing, malformed or
+incompatible required evidence produces no receipt. Native requests and replies
+continue unchanged even when collection is unavailable. No synthetic read
+request probes compatibility on the user's behalf.
 
 The producer follows the core through SDK sync and the live stream. It never
 polls the Hub. A gap, newer turn, explicit unread, stale revision, failed request
@@ -155,6 +169,12 @@ with a new token. The ordinary hooks and Claude credential cannot publish its
 receipts. Keep the file private and verify both credential scopes under the
 owning installation procedure before selecting the launcher.
 
+The feed string is the existing enrollment ID. Its historical version text does
+not assert the current app version. Keep it and the existing credential across
+compatible updates; changing the string creates a different source and the core
+will refuse it. This host-side compatibility change needs no wire, storage or
+credential migration and does not change Claude's qualification.
+
 Use Node 24 and the built reviewed host release:
 
 ```sh
@@ -162,20 +182,33 @@ node /reviewed/release/apps/runtime/bin/codex-with-read.mjs --check /Application
 node /reviewed/release/apps/runtime/bin/codex-with-read.mjs /Applications/ChatGPT.app /private/codex-read/producer.json
 ```
 
-Replace the release and producer paths. `--check` inspects versions only; it
-does not open the UI, enroll credentials or prove installed acceptance. The
+Replace the release and producer paths. `--check` reports the observed versions,
+bundle identity and whether the observer executables are available. An
+`observer-ready` result means the launcher can select observation; each action
+still has to satisfy the protocol and current-target checks. It does not read
+the producer file, contact the runtime, open the UI, enroll credentials or prove
+installed acceptance. The
 normal command is an explicit operator launch. Quit the existing application
 through its normal UI first, preserving ongoing work. An existing singleton
 instance can keep its original connection, so launching another process alone
 does not establish enrollment. No personal settings, lifecycle hooks or app
-files are edited. An unsupported version starts normally without this
-collection selection. The observer reads its producer file once at startup.
+files are edited. An unrecognized bundle or unavailable observer starts normally
+without adding this collection selection. This command does not configure normal
+Dock or Finder launches. The observer reads its producer file once at startup.
 Editing or disabling that file does not stop an existing observer. To stop
 collection, save ongoing work, quit the selected Desktop normally and verify
 that its observer and native app-server have ended. Start Desktop through its
 normal launcher. Set `enabled: false` in the private producer before using the
 receipt launcher again to leave future connections disabled. Retain the release
 while any observer uses it.
+
+For an existing enrollment, a host-only upgrade can replace the launcher and
+built host release while retaining the private producer, credential and runtime.
+First verify the new helper against the installed core's receipt contract in a
+disposable runtime. Coordinate the host artifact writer, preserve the previous
+release for running observers, inspect `--check`, then repeat the operator check
+below. Do not restart the shared core solely to replace these host files. Other
+runtime changes still follow the owning installation procedure.
 
 Correlation expires after 30 seconds. Per connection, collection stops on an
 invalid frame, reused request ID, a frame above 1 MiB, more than 128 pending

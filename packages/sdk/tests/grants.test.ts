@@ -2,7 +2,8 @@
 // calls and routing-key patterns, the source a part declares, the commands it has sent until their expiry, and the
 // heartbeat and stall limit of each stream. The remote transport's other behavior is in remote.test.ts.
 import assert from 'node:assert/strict';
-import {request as httpRequest, type IncomingMessage} from 'node:http';
+import {once} from 'node:events';
+import {request as httpRequest, type IncomingMessage, type ServerResponse} from 'node:http';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {buildMessage} from '../src/envelope.js';
 import {
@@ -362,12 +363,15 @@ it('an open stream gets a heartbeat when nothing else flows', async () => {
 
 it('a stream whose reader stopped is ended at the stall limit, which frees its queued messages', async () => {
   const clock = manualClock();
-  await withEdge({liveness: clock.scheduler, stallMs: 5000, heartbeatMs: 3_600_000, maxQueued: 8}, async edge => {
+  let writable: ServerResponse | undefined;
+  await withEdge({onStream: stream => {writable = stream;}, liveness: clock.scheduler, stallMs: 5000, heartbeatMs: 3_600_000, maxQueued: 8}, async edge => {
     const token = tokenOf(edge, 'bunny/wall');
     const {connection, response} = await rawStream(edge, token);
     const subscribed = await call(edge, 'subscribe', {schema: REMOTE_SCHEMA, connection, id: 'slow', pattern: 'bunny.state.test-blob.*'}, token);
     assert.equal(subscribed.status, 200);
-    // The reader never reads again. The publisher fills the socket, then the subscription's queue.
+    // Cork the real writer so kernel buffer sizes and incidental drains cannot end the stall.
+    assert.ok(writable);
+    writable.cork();
     const sender = checked(edge.bus.connect('bunny/core'));
     for (let revision = 1; revision <= 60; revision += 1) {
       await sender.publish('bunny.state.test-blob.b1', blob('b1', revision, 100_000));
@@ -375,7 +379,10 @@ it('a stream whose reader stopped is ended at the stall limit, which frees its q
     }
     await until(() => edge.errors.some(({scope}) => scope.source === 'bunny/wall'), 'the full queue');
     assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'a full socket alone ends nothing');
-    clock.advance(5000);
+    assert.equal(writable.writableNeedDrain, true, 'the real HTTP writer remains backpressured');
+    clock.advance(4999);
+    assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'the stall limit has not elapsed');
+    clock.advance(1);
     await until(() => edge.diagnostics.some(record => record.event === 'edge.disconnected'), 'the stalled stream ended');
     assert.deepEqual(edge.diagnostics.find(record => record.event === 'edge.disconnected'),
       {event: 'edge.disconnected', level: 'warn', route: 'stream', source: 'bunny/wall', code: 'capacity'});
@@ -384,6 +391,38 @@ it('a stream whose reader stopped is ended at the stall limit, which frees its q
     await sender.publish('bunny.state.test-blob.b1', blob('b1', 61, 100_000));
     await flush();
     assert.equal(edge.errors.length, dropsBefore, 'no queue holds messages for the reader any more');
+    response.destroy();
+  });
+});
+
+it('a stream that drains before its stall limit stays open and a later stall gets its full deadline', async () => {
+  const clock = manualClock();
+  let writable: ServerResponse | undefined;
+  await withEdge({onStream: stream => {writable = stream;}, liveness: clock.scheduler, stallMs: 5000, heartbeatMs: 3_600_000}, async edge => {
+    const token = tokenOf(edge, 'bunny/wall');
+    const {connection, response} = await rawStream(edge, token);
+    const subscribed = await call(edge, 'subscribe', {schema: REMOTE_SCHEMA, connection, id: 'slow', pattern: 'bunny.state.test-blob.*'}, token);
+    assert.equal(subscribed.status, 200);
+    assert.ok(writable);
+    const sender = checked(edge.bus.connect('bunny/core'));
+    writable.cork();
+    await sender.publish('bunny.state.test-blob.b1', blob('b1', 1, 100_000));
+    await until(() => writable?.writableNeedDrain === true, 'the first backpressured write');
+    clock.advance(4999);
+    const drained = once(writable, 'drain');
+    writable.uncork();
+    await drained;
+    assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'a completed drain cancels its old stall deadline');
+    writable.cork();
+    await sender.publish('bunny.state.test-blob.b1', blob('b1', 2, 100_000));
+    await until(() => writable?.writableNeedDrain === true, 'the next backpressured write');
+    clock.advance(1);
+    assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'the cancelled first deadline cannot end the later stall');
+    clock.advance(4998);
+    assert.equal(edge.diagnostics.some(record => record.event === 'edge.disconnected'), false, 'the later stall gets its own deadline');
+    clock.advance(1);
+    await until(() => edge.diagnostics.some(record => record.event === 'edge.disconnected'), 'the later stalled stream ended');
+    assert.equal(edge.diagnostics.find(record => record.event === 'edge.disconnected')?.code, 'capacity');
     response.destroy();
   });
 });

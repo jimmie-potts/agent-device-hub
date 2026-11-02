@@ -1,0 +1,16 @@
+# Private local vendor preparation. Supply the three named local build contexts from the pinned upstream sources.
+FROM rust@sha256:55912ad77b52c411af5ecb4cf8901199b3688dbc96bf979570bbd8834dac69aa
+COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_CACHE_DIR=/tmp/uv-cache UV_NO_PROGRESS=1
+RUN uv python install 3.12.13 && uv venv --python 3.12.13 /opt/venv \
+    && uv pip install --python /opt/venv/bin/python mujoco==3.10.0 numpy==2.4.1 onnxruntime==1.24.4
+WORKDIR /work/microduck
+COPY --from=microduck-source / /work/microduck/
+ENV DUCK_REVISION=b2b0d213a402caeac492dd662ea891faa17f67c0
+RUN cargo build --locked --release -p robotd
+COPY --from=rl-source /src/ /work/microduck_rl/src/
+COPY --from=policy-source / /work/policies/
+ENV PYTHONPATH=/work/microduck_rl/src PYTHONNOUSERSITE=1 MICRODUCK_TELEMETRY=0 DO_NOT_TRACK=1
+USER 1000:1000
+ENTRYPOINT ["/usr/bin/timeout"]
+CMD ["--help"]

@@ -1,0 +1,17 @@
+# Test-only derivative of the exact candidate's core/Chromium test image. Never use an installed image tag.
+ARG VENDOR_IMAGE
+ARG TEST_IMAGE
+FROM ${VENDOR_IMAGE} AS vendor
+FROM ${TEST_IMAGE}
+USER root
+COPY --from=vendor /opt/python/ /opt/python/
+COPY --from=vendor /opt/venv/ /opt/venv/
+COPY --from=vendor /work/microduck/target/release/robotd /work/microduck/target/release/robotd
+COPY --from=vendor /work/microduck_rl/src/ /work/microduck_rl/src/
+COPY --from=vendor /work/policies/ /work/policies/
+ENV PYTHONPATH=/work/microduck_rl/src PYTHONNOUSERSITE=1 MICRODUCK_TELEMETRY=0 DO_NOT_TRACK=1 TMPDIR=/tmp
+RUN install -d -m 0700 -o 1000 -g 1000 /proof
+USER 1000:1000
+HEALTHCHECK NONE
+ENTRYPOINT ["/usr/bin/timeout"]
+CMD ["--help"]

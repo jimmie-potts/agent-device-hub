@@ -1,0 +1,627 @@
+[
+  {
+    "path": "mjlab_microduck/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  {
+    "path": "mjlab_microduck/actuator/__init__.py",
+    "sha256": "181bfbec32115818720695915322f6e2c860fe87767570662a029f8e2d01f12d",
+    "bytes": 328
+  },
+  {
+    "path": "mjlab_microduck/actuator/friction_dr_bam.py",
+    "sha256": "20d25ce2fd06a94bc4fd5356a657710a0959a352bad3dfcc670122f0f0bcd4d4",
+    "bytes": 5060
+  },
+  {
+    "path": "mjlab_microduck/checkpoints.py",
+    "sha256": "e66ce30e25ad457fbc9478c9d747f62ca5d49c67c637b9d7976d13588788e1e9",
+    "bytes": 4818
+  },
+  {
+    "path": "mjlab_microduck/export.py",
+    "sha256": "9fca49ee3dad50353598090431dac8137d1e4e359ac3c9c0c709d6b47548a7bc",
+    "bytes": 13366
+  },
+  {
+    "path": "mjlab_microduck/hf_jobs.py",
+    "sha256": "d447a20e1feed595ef29a1a19e6a51630327341eb270f0acf4fcb314f69fd285",
+    "bytes": 20516
+  },
+  {
+    "path": "mjlab_microduck/pickup/__init__.py",
+    "sha256": "7f9ef6fbcbd8b157b71f978092f41cdf8505992a6ecd91b59fc2b0fdef8cad2f",
+    "bytes": 453
+  },
+  {
+    "path": "mjlab_microduck/pickup/features.py",
+    "sha256": "e1f49f64ce597215bca8d2734476fe5aa615a46a6bb6387c57fdd9a4b35f5015",
+    "bytes": 4030
+  },
+  {
+    "path": "mjlab_microduck/pickup/hand.py",
+    "sha256": "6b3229a8784e685b2837d44aa11d2c5cdb46e8337de62db8591572ba17537c3a",
+    "bytes": 16876
+  },
+  {
+    "path": "mjlab_microduck/pickup/model.py",
+    "sha256": "d738f60870bfa44be8d14afca4ec05d2c1920968202419bd814949b25d94813e",
+    "bytes": 4909
+  },
+  {
+    "path": "mjlab_microduck/publish/__init__.py",
+    "sha256": "7768b41714b565cc97b5553a170b5d95cf17abafe6baa0f9a4be0b7e8cfec7bf",
+    "bytes": 329
+  },
+  {
+    "path": "mjlab_microduck/publish/cli.py",
+    "sha256": "4818c9cbde4b97aa3bc773ba1b2e59d1057955fac72b70032622f42b447b4483",
+    "bytes": 11952
+  },
+  {
+    "path": "mjlab_microduck/publish/manifest.py",
+    "sha256": "3510ede0cbbc6f59a836ecdd44c6f4cb8277701d301f3c749fba9cf5b6b57ce6",
+    "bytes": 17628
+  },
+  {
+    "path": "mjlab_microduck/publish/training.py",
+    "sha256": "54fab47dec301229f486630fa2a330176558f373b4d28ec481c2f7d2013471af",
+    "bytes": 23938
+  },
+  {
+    "path": "mjlab_microduck/robot/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/add_backlash.py",
+    "sha256": "805a17ba4ad60f7a2ba20ff90879ad93a6db66013150c5ad9be3d31bc7b4252c",
+    "bytes": 5867
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/additional.xml",
+    "sha256": "958010af8e09a2ac7a79797d1aead327435e5201b3c4df0f2f7220f3c2c42941",
+    "bytes": 611
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/allcollisions_contacts.xml",
+    "sha256": "8a5bd59e09c6469fa99036bb6cfa6e31972c363bb4ed065bec22f0eb465d6f16",
+    "bytes": 576
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/apartment.xml",
+    "sha256": "4e6a6f5baf07ab842d9860a2e5baa72f516b864213cecb8184123d17ab23d7de",
+    "bytes": 26086
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/ankle_l_v1.stl",
+    "sha256": "cf4407956caf05b2e9bb2c75764fa365d217f44efb5d365ed18ccfa62db3436f",
+    "bytes": 235984
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/ankle_left.stl",
+    "sha256": "2ec1bd89205b407efebaa9a8898ad9fea741389d87b80ecc5c96b21d1668119e",
+    "bytes": 248984
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/ankle_r_v1.stl",
+    "sha256": "0ddd5d3135cde74bddbfbaf6469f50ac02ba44681b796853a052bf0d23751d1d",
+    "bytes": 235784
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/ankle_right.stl",
+    "sha256": "f83f388ae00787415e76b8ecaab769f08f25b8c4e90c1937ff0fc4d68d81722e",
+    "bytes": 248884
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/banana_pcb_locker.stl",
+    "sha256": "42ddde9d01bf5d91f88b99847017f14d97d2537ee27383c6d41dd8bf30a51134",
+    "bytes": 69484
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/bearing_roll.stl",
+    "sha256": "b5603a64b2d965ad75ea847767b5798130852e12a658fde7b5068fc457e2adcc",
+    "bytes": 121084
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/bottom_head_shell.stl",
+    "sha256": "1820f7cf96646b0fc0c431f07da87b91b13111bfa9857ab1bf2b1fc3388f8da2",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/elec_rpi_robot_hat_pcb.stl",
+    "sha256": "1a61582759d82b5b4df9b7d11099bf1bb3944fc77e6b74d3237adf24dd5d03d7",
+    "bytes": 942884
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/face_part.stl",
+    "sha256": "d0e89a173e7bdc8038c4d413f458140d8f42f1a2f098f67a887c2388eff31718",
+    "bytes": 570684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/foot_left.stl",
+    "sha256": "a1f5d43456d0f522bd60870153795f1e8112c1adf9b8b4373b59608d9545c044",
+    "bytes": 996184
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/foot_right.stl",
+    "sha256": "54f97fa1f0e0e611d31329df9f3c3b17ffcca2d695c579d1d32cbe99e8a6c7ef",
+    "bytes": 997684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/hip_l.stl",
+    "sha256": "e175896932d76dc7648cf939aa39cb7b1d188b783d91745adb9a4cec65e9052c",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/jaw.stl",
+    "sha256": "45cdbd319a4583095d8daa0db07dee726522a743d59acb82d27d82ded500a1cf",
+    "bytes": 495984
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/jaw_soft.stl",
+    "sha256": "2d2ade4e86df4b37ce313bb9b96023109dd04bab39dba08b154e76d332fbce2e",
+    "bytes": 336384
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/left_shell.stl",
+    "sha256": "2abde8e2b79c9b011cdb11957c67ab4287b45d7301affd4235ab81141118e331",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/leg.stl",
+    "sha256": "9a91cc1ae31ecd9e0c1ba93f3bb2ad8a12e29bff24ec27d1ac66c0c3037d9fcf",
+    "bytes": 738884
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/lens.stl",
+    "sha256": "b1c717432ff7666398de58adec6a1b7e03a7e45aa155dbfe27a6152ef19663e5",
+    "bytes": 93684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/m12_lens_holder.stl",
+    "sha256": "031d5ffaf6247328cf6d020f6b6695ffb3f8d3f22cf923b85811351d89ecfd7c",
+    "bytes": 549684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/motor_support.stl",
+    "sha256": "ce0aa5bef82c7474512d302568c341b9769b3005e0bdb91a19c2eaaba6dad480",
+    "bytes": 180884
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/neck.stl",
+    "sha256": "b6e86b886153be8a8a776c1cb219c074ee9e89c8bd431117662a2d9e504d7cb5",
+    "bytes": 73484
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/neck_pitch.stl",
+    "sha256": "a685ce65348ae4d0d49417c69a7a8871f8bbd54a6e3419362be9c334abd5d2ae",
+    "bytes": 356084
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/noenoeil.stl",
+    "sha256": "e1167b3d5ad7fbbe6e63296bcd0c6b61556611e6bc1367b15ecfd27e3abb72f5",
+    "bytes": 49284
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/np_f970.stl",
+    "sha256": "0e55a48281331b3b7b1a363d2e93b6012f37c52045b6dc922a149ca7c1b38388",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/pcb__raspberry_pi_zero_2_w.stl",
+    "sha256": "802cc66fc5447c67fc642d1339e55160df10f2ad04a65efd130e35fb7b2d3c90",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/power_support.stl",
+    "sha256": "ee45e397d3f3422f34940a4b61156c3c11c7e8c2b240451ce5f9ddd1622a130e",
+    "bytes": 641684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/right_shell.stl",
+    "sha256": "3efba3e193cc6aa49d49a9c92cdded0504917397c9e2c5b8fe002a958e2f2d2b",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/rim.stl",
+    "sha256": "b3c9cc8ea50a1406d289060dc007894e009471f15b59baf443a5545bfc242c6f",
+    "bytes": 115284
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/roller_blade.stl",
+    "sha256": "cbdc755394d5046640db6045dd241921654ec17a313db9de8e851c14b918472f",
+    "bytes": 1048484
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/seeed_bearing__configuration__22x16x4.stl",
+    "sha256": "295ee68ed9766c91fe06d3a2a49d39f7c2f56cc943395d293afdeb013123435e",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/seeed_bearing__configuration_default.stl",
+    "sha256": "e815f3483a2e7b80844f3c0938a47e53db38b12faed9b2d364414c19e4322da4",
+    "bytes": 1048584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/soft_mouth_top.stl",
+    "sha256": "3c2b52b0b6e2ce944a1e1b5a0838e1216be1ad3a34c8cdf91be186e634aec57b",
+    "bytes": 393584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/sole_left.stl",
+    "sha256": "e028c8b09fecd4cb354d042bf7fd95a1a1bc2d524d760d62137fa8d74093fc23",
+    "bytes": 789484
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/sole_right.stl",
+    "sha256": "3f5068872f3add10eb967327651445bdfca635f5a8a01befa0ef05e462b72b4c",
+    "bytes": 795184
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/speaker.stl",
+    "sha256": "75a35f9bcf94cd8e52f99b3fd6ae667b48f52503f9075ee2f699eebe8e7b3ddf",
+    "bytes": 684
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/tire.stl",
+    "sha256": "8aa460566e99afcccccd5c0507c883d3f6d1901e28ddd492cf0c7edc41067b54",
+    "bytes": 352884
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/top_head_shell.stl",
+    "sha256": "6d01f396f514c9d2185cf6b8250b1d8382ac3fa0702eb525bcb284f706196291",
+    "bytes": 806084
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/trunk_base.stl",
+    "sha256": "aa4f853ae555a8b765e585ce4519c0bbff325ce298ec15a1437792c52a0beac1",
+    "bytes": 184984
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/upper_leg_left.stl",
+    "sha256": "8cb1c12dfa6d366a318bb1ec16f585427b9a185afeb7738d0a6f41f5db46a07d",
+    "bytes": 612584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/upper_leg_right.stl",
+    "sha256": "5caf996cc3e151b01f393cdc6a6a6a940c1d86179d8b7c7f5f85cf1f1ac2fb63",
+    "bytes": 612584
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/upper_leg_rigidity_plate.stl",
+    "sha256": "231b3e5f1e24d146d735dc158cbcfec0c95a0d0ca8c500f61f04d15d0b665652",
+    "bytes": 180084
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/xl330.stl",
+    "sha256": "96238ed0d020ce0009cf1a5aa4b6926176c800840318ee65e4375be2298d2744",
+    "bytes": 206384
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/yaw2roll.stl",
+    "sha256": "6c8f193ec7cb40be0f48eeb5fba81bce2c87f12e1aab3f77f1bc4981386e1495",
+    "bytes": 620284
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/assets/yaw_roll_motion.stl",
+    "sha256": "b0c9902dee19f06cdb7fa930292e0e1c91e2dc59baa971211495b58ff76c3c60",
+    "bytes": 290784
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/ball.xml",
+    "sha256": "54a455bf454a9b6167655381df91593bbca86695d8d71e29fb6af69454c7c865",
+    "bytes": 706
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/joints_properties.xml",
+    "sha256": "6a4481a9279ffd92139479e67515df7b3510799ceb648c18fde0d58c300eae86",
+    "bytes": 1780
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_allcollisions.xml",
+    "sha256": "ec9d2f731596cfc847a7fc3898ef8b5e67a548928abc23216537f1da8af2729c",
+    "bytes": 43020
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_allcollisions_backlash.xml",
+    "sha256": "ccee92e435e39eefc64ee99745823751492ae7f948d835c89701710717e71de8",
+    "bytes": 45107
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_groundcontact.xml",
+    "sha256": "99d23867e46e9d4748ff1398016b850f09fb6cf02a558c0272743b39ce3acf15",
+    "bytes": 32904
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_groundcontact_backlash.xml",
+    "sha256": "8ddae05f00d321945220c632cca13445287c94fdbc1654573142347a5ac87d59",
+    "bytes": 34991
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_groundcontact_rollers.xml",
+    "sha256": "e410e74978511fa2efdc9dcbe1488964c0c149ecca568a59dc73ef7f8844bf8b",
+    "bytes": 35693
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_groundcontact_rollers_backlash.xml",
+    "sha256": "400fe547140354899774f72634a66fc446a96ab317e894c2a6fac5aa706a9967",
+    "bytes": 37780
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_walk.xml",
+    "sha256": "80fc4424ed71e430ec4919110dfdb5c714dc1c4e1138e1832a16865cf31eb8c8",
+    "bytes": 32023
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/robot_walk_backlash.xml",
+    "sha256": "8c2f271948cf06a3c5720c48abaac35b909c53fcfc6f5c3d2cef15f732da74e9",
+    "bytes": 34110
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene.xml",
+    "sha256": "9a85461121ba8273083c482c166f27e143ca386993b3ec8f8d97eb09aa257d31",
+    "bytes": 2350
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_allcollisions.xml",
+    "sha256": "0d2f58227a3e1c4caae4e847a368ae83516d0f398f428c4e96737b67dd894ef1",
+    "bytes": 2350
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_apartment.xml",
+    "sha256": "f89da842d8972db257cb9a1a7c1804e21e1d0c01cc3388d6de6ac6fa1060f6e2",
+    "bytes": 2457
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_backlash.xml",
+    "sha256": "2e8abed8258c0299859ca5403e44013da241f494065ed5bf184302923bd03c7d",
+    "bytes": 2570
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_ball.xml",
+    "sha256": "3a6e69457fe68af692823c46da9e081021e3bf4be6c5381018446762acd20265",
+    "bytes": 1238
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_rollers.xml",
+    "sha256": "9029044d5b605882c7f10b52b9bf90c9d5572fb25d79033d0d04026a269375ac",
+    "bytes": 2439
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_vslam.xml",
+    "sha256": "61135069f454d36bf10761a5cb864904c8ad88c68a16965da70d362716aefa93",
+    "bytes": 2458
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_walk.xml",
+    "sha256": "6e23146c1a5025473b55ec94cbe37b08104ca388b7eb005ea277f8230736c8be",
+    "bytes": 2341
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/scene_walk_backlash.xml",
+    "sha256": "bf71c93e90f5a70890f6f76f79f8ba25191cf7ef0a8de47b1dd24f629449150b",
+    "bytes": 2562
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/sensors.xml",
+    "sha256": "47854a0ab18261f069553e1572e0c329c4f39e4557dbdada71e0dc62af14ee20",
+    "bytes": 357
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck/vslam_room.xml",
+    "sha256": "f0956410dbfc4d966688c663bf60758a61c1af179f5421886ebf88e0ac30658a",
+    "bytes": 4181
+  },
+  {
+    "path": "mjlab_microduck/robot/microduck_constants.py",
+    "sha256": "0e7097afe833ac1259b197f9854d01c1666be03ac0c9b090233b4fbc7619eb94",
+    "bytes": 13451
+  },
+  {
+    "path": "mjlab_microduck/robot/testbench_constants.py",
+    "sha256": "bf5e95376131471443e1daddf5abb0bc6326bc6b5c49bfb352774bcc6b011b9f",
+    "bytes": 1777
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/arm.stl",
+    "sha256": "2b5adeff9acddca7ca3f14ca502687bdccb0d5718ca5eee5ea8e0b7b92fe460e",
+    "bytes": 151284
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/axis.stl",
+    "sha256": "435cdf37cd5cfd9cc7ce1202fcf075aebabffbf6cf1249a8e8d3a93d6350b244",
+    "bytes": 14484
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/bench_holder.stl",
+    "sha256": "3a46df8b07b5b7eda4a0f68642cc90e4a557cb3f8678e49a2508b9225a26cba1",
+    "bytes": 60284
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/part_1.stl",
+    "sha256": "2b5adeff9acddca7ca3f14ca502687bdccb0d5718ca5eee5ea8e0b7b92fe460e",
+    "bytes": 151284
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/part_2.stl",
+    "sha256": "6f57229eb624849885294536527402ebd6a2e4933e086ad80eda1604d3fbec0c",
+    "bytes": 28884
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/part_3.stl",
+    "sha256": "3a46df8b07b5b7eda4a0f68642cc90e4a557cb3f8678e49a2508b9225a26cba1",
+    "bytes": 60284
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/part_4.stl",
+    "sha256": "4e5b08e92d99bb9fa2d0f4b00f9c1f25b98092f1594e9735c38caef76a4475a7",
+    "bytes": 28884
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/part_5.stl",
+    "sha256": "435cdf37cd5cfd9cc7ce1202fcf075aebabffbf6cf1249a8e8d3a93d6350b244",
+    "bytes": 14484
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/spacer.stl",
+    "sha256": "6f57229eb624849885294536527402ebd6a2e4933e086ad80eda1604d3fbec0c",
+    "bytes": 28884
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/weight.stl",
+    "sha256": "4e5b08e92d99bb9fa2d0f4b00f9c1f25b98092f1594e9735c38caef76a4475a7",
+    "bytes": 28884
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/assets/xl330.stl",
+    "sha256": "c9f6bf7dd9d8b307a4174b40ff12517b3ea470e5535319a5b7dcce4ba52cdfe1",
+    "bytes": 206384
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/joints_properties.xml",
+    "sha256": "5204d854ca41a08b752be733acc7abe238c279f6525cbf2c532792446b187458",
+    "bytes": 909
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/scene.xml",
+    "sha256": "711f1503b4cee29270f206bd538de38fbd9df18cb2c12ff6a012061fadce247c",
+    "bytes": 932
+  },
+  {
+    "path": "mjlab_microduck/robot/xl330_test_bench/xl330_test_bench.xml",
+    "sha256": "b189f8c9d97b1e8fd11a67e8270f379042f863bca24d3af03970194c5e3451f2",
+    "bytes": 4598
+  },
+  {
+    "path": "mjlab_microduck/sim/__init__.py",
+    "sha256": "f13d4940266b9579529074bc60426353ed8fc6f49bf8f480691d30e8e4276e22",
+    "bytes": 336
+  },
+  {
+    "path": "mjlab_microduck/sim/body_server.py",
+    "sha256": "2040c827628c33fee998944bce1fcd456c4b993802bb473f016681688bff7b08",
+    "bytes": 27370
+  },
+  {
+    "path": "mjlab_microduck/sim/camera.py",
+    "sha256": "5f2e6c83b33e594583cbd5f3e003c3b8bb77f7a0e7b734d86ba0b2c821eaed71",
+    "bytes": 7045
+  },
+  {
+    "path": "mjlab_microduck/sim/tof.py",
+    "sha256": "256c06bac5ac64a02f3e065785bd70314b616c58da3cb94f93484c9e00d42663",
+    "bytes": 4530
+  },
+  {
+    "path": "mjlab_microduck/tasks/__init__.py",
+    "sha256": "5fe09909d4a1502b70d3fa25052b6c420cf4f0c992bddd534cd718540d6ca90c",
+    "bytes": 12107
+  },
+  {
+    "path": "mjlab_microduck/tasks/backlash.py",
+    "sha256": "35598c2a3db496527fb8835269b4e0ac0eddcc86e683a7af447933c7281d0e22",
+    "bytes": 4344
+  },
+  {
+    "path": "mjlab_microduck/tasks/distill.py",
+    "sha256": "26c1ea56a937bb1b6004f8c48301fd4ef27445d8052c3fa0a1be72faaeeb58a2",
+    "bytes": 19437
+  },
+  {
+    "path": "mjlab_microduck/tasks/mdp.py",
+    "sha256": "5bdfb05b511e0b8a4fcc0c91ad7ee2d256cf9d6dbd9966516fa056787be146c7",
+    "bytes": 329208
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_ball_kick_env_cfg.py",
+    "sha256": "313180628c0d0364ea6d0f1843e7e3e10b76585491b90b0c1f0e301d9e5fd30c",
+    "bytes": 29653
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_ground_pick_env_cfg.py",
+    "sha256": "9b68951e2c84fdccb5894701efa97e060438eb56c956a34c65e844ba3fa6185e",
+    "bytes": 32917
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_roller_crouch_env_cfg.py",
+    "sha256": "745142fab9ffc4c43a6b7d367d6be37f5675f5fbf255ac4341a9e2a21a4062ee",
+    "bytes": 19507
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_roller_slope_env_cfg.py",
+    "sha256": "92738df650e3527c8cbe194169f60fb2a232933b1eabbbaf7d4b7d2aa67e2b42",
+    "bytes": 12134
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_roller_standup_env_cfg.py",
+    "sha256": "146e417c082823039b87d2ff350e96e84007df80c268d53984d7c160f25cdeee",
+    "bytes": 27733
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_roulade_env_cfg.py",
+    "sha256": "5e923d9ba69946228062c72102fe2b97bce02b9fd6f52c2418a42bbd4f919b42",
+    "bytes": 35052
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_sitstand_env_cfg.py",
+    "sha256": "65b1961566b0772852ba36af8e92c02a13a53de9b9a98f91e2dce1f4d8d627b1",
+    "bytes": 48180
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_spin_env_cfg.py",
+    "sha256": "ba85e26407a29a208f871aa229bb2c7971eca6087f0740e7de6f898adbc5b395",
+    "bytes": 19856
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_standup_env_cfg.py",
+    "sha256": "b20b8f3fac5a374dd602f371f0b500955b4dbcb4d3f7330bddfa15b327826873",
+    "bytes": 58592
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_velocity_env_cfg.py",
+    "sha256": "75a0430b814ac7495eb237ab806fbd4dd10309b9fd3027ac3eee3c2e3c5a944a",
+    "bytes": 44971
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_velocity_rollers_env_cfg.py",
+    "sha256": "53567a5ed91b4c70166b57c79fc31917fdcf41287128aff12d3b9ff678f4c38c",
+    "bytes": 30194
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_velocity_swizzle_env_cfg.py",
+    "sha256": "75197c956afd77586f60e4b773033ace15e088179bb5912a88328862b0a10f49",
+    "bytes": 9544
+  },
+  {
+    "path": "mjlab_microduck/tasks/microduck_velstand_env_cfg.py",
+    "sha256": "4b0aebefcc33ad43c2741bf09d8516be82c3ec859bcac54d4ef6531c2759898d",
+    "bytes": 55851
+  },
+  {
+    "path": "mjlab_microduck/tasks/slope_terrain.py",
+    "sha256": "1ce48eef8b4bd82cde94d7c9f50f19d2992f4dc8d3b5b5d314b7381bc572b8a0",
+    "bytes": 5004
+  },
+  {
+    "path": "mjlab_microduck/tasks/symmetry.py",
+    "sha256": "e37980389773f2f87b8f376df449af4d70e0c983744459f9a35a3ee7b686186b",
+    "bytes": 7348
+  },
+  {
+    "path": "mjlab_microduck/tasks/testbench_env_cfg.py",
+    "sha256": "d254218ca3f491e52d471ad033ebd1cb39a339f1f21394ea55e2bec4f3dc2776",
+    "bytes": 9481
+  },
+  {
+    "path": "mjlab_microduck/train_cli.py",
+    "sha256": "6c1e118d2bf65f86f6b932dd41b4ddff2a20a0633194a03072f700c7bfa8e372",
+    "bytes": 1456
+  },
+  {
+    "path": "mjlab_microduck/train_hook.py",
+    "sha256": "d40642a6cdc9b0bd11bda98c5c1023bbc6dabcf9a63ad1314965c020ef2bbabd",
+    "bytes": 3146
+  }
+]

@@ -37,6 +37,16 @@ export class CompanionPart implements CorePart {
         draft: {type: 'org.bunny.reachy.auto.requested', subject: target, dataschema: 'https://bunny.invalid/events/reachy-auto/2.0', data}});
       return 'error' in answer ? answer : {status:'accepted'};
     });
+    await core.sdk.respond<{requestId:string;target:string;gesture:'notice'|'attention';opportunityId:string;validUntilMs:number;expectedConfigurationRevision:number;expectedGeneration:{epoch:string;sequence:number}}>('bunny.cmd.microduck-dispatch.microduck', async command => {
+      if (this.#closed) return errorBody('unavailable');
+      if (command.source !== 'bunny/modules/microduck') return errorBody('forbidden');
+      const checked = validator.validate(command, {nowMs: core.clock.now()});
+      if (!checked.ok) return {error: checked.error};
+      const {target, ...data} = command.data;
+      const answer = await core.dispatch({key: 'bunny.cmd.microduck-auto.' + target, requestedBy: command.source, requestId: command.data.requestId, parent: command,
+        draft: {type: 'org.bunny.microduck.auto.requested', subject: target, dataschema: 'https://bunny.invalid/events/microduck-auto/2.0', data}});
+      return 'error' in answer ? answer : {status:'accepted'};
+    });
     await core.sdk.respond<SpeechDispatch>('bunny.cmd.companion-speech-dispatch.reachy', async command => {
       if (this.#closed) return errorBody('unavailable');
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');

@@ -1,5 +1,4 @@
 import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
-import {CODEX_DESKTOP_VERSION} from './qualification.js';
 
 export type CodexReadTarget = {identity: Identity; turnId: string; generation: number; noticeId: string};
 export type AcceptedCodexRead = {target: CodexReadTarget; seenRevision: string; acceptedRevision: string; observedAtMs: number};
@@ -105,8 +104,7 @@ export class CodexReadObserver {
 
   #request(key: string, method: string, params: Record<string, unknown>, now: number): void {
     if (method === 'initialize') {
-      if (this.#initialized || !fields(params.clientInfo) || params.clientInfo.name !== 'Codex Desktop' ||
-        params.clientInfo.version !== CODEX_DESKTOP_VERSION) {this.close(); return;}
+      if (this.#initialized || !fields(params.clientInfo) || params.clientInfo.name !== 'Codex Desktop') {this.close(); return;}
       this.#track(key, {kind: 'initialize', at: now}); return;
     }
     if (!this.#initialized || !token(params.threadId)) return;

@@ -69,12 +69,12 @@ it('the synced Codex publisher binds exact existing targets and commits through 
   assert.equal((await world.records())[0]?.read, 'unknown');
 });
 
-it('missing read scope, unsafe configuration and a different version cannot enable a Codex publisher', async context => {
+it('missing read scope, unsafe configuration and a different enrollment cannot enable a Codex publisher', async context => {
   const world = await setup(context);
   await chmod(world.path, 0o644);
   assert.equal(await openCodexReadPublisher(world.path, () => {}), undefined);
   await chmod(world.path, 0o600);
-  await writeFile(world.path, JSON.stringify({...world.config, source: {...world.config.source, feed: 'unqualified-version'}}));
+  await writeFile(world.path, JSON.stringify({...world.config, source: {...world.config.source, feed: 'unqualified-enrollment'}}));
   assert.equal(await openCodexReadPublisher(world.path, () => {}), undefined);
   const denied = await setup(context, ['ingest']);
   assert.equal(await openCodexReadPublisher(denied.path, () => {}, 500), undefined);
