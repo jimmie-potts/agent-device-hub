@@ -195,6 +195,12 @@ The observer SHALL NOT issue native read updates, infer a read from shared notif
 - **THEN** only A's frozen completed owner target receives a receipt
 - **AND** B's read state remains unchanged
 
+#### Scenario: Oversized native traffic interrupts read observation
+
+- **WHEN** an oversized frame interrupts a candidate read
+- **THEN** the observer discards affected evidence, forwards native bytes unchanged and bounds memory while draining the frame
+- **AND** only a fresh qualified sequence after a trustworthy boundary can produce a receipt, with client request IDs still checked for ambiguity
+
 #### Scenario: Native action is not established
 - **WHEN** a snapshot or notification arrives without the matching Desktop request, the request fails, the latest completed turn is unknown, or an explicit unread action occurs
 - **THEN** no positive receipt is produced from that evidence

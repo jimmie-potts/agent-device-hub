@@ -1,3 +1,4 @@
+import {OversizedClientEnvelope} from './oversized-client-envelope.js';
 import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 
 export type CodexReadTarget = {identity: Identity; turnId: string; generation: number; noticeId: string};
@@ -32,6 +33,9 @@ export class CodexReadObserver {
   readonly #ids = new Set<string>();
   readonly #threads = new Map<string, Selection>();
   readonly #buffers = {client: Buffer.alloc(0), server: Buffer.alloc(0)};
+  readonly #draining = {client: false, server: false};
+  readonly #tainted = {client: false, server: false};
+  #clientEnvelope: OversizedClientEnvelope | undefined;
   #closed = false;
   #initialized = false;
 
@@ -45,11 +49,36 @@ export class CodexReadObserver {
       let offset = 0, frames = 0;
       while (offset < bytes.length && !this.#closed) {
         const end = bytes.indexOf(10, offset), part = bytes.subarray(offset, end < 0 ? bytes.length : end);
-        if (this.#buffers[direction].length + part.length > MAX_FRAME || ++frames > 256) {this.close(); return;}
-        const line = Buffer.concat([this.#buffers[direction], part]);
-        this.#buffers[direction] = end < 0 ? line : Buffer.alloc(0);
-        if (end < 0) return;
-        this.#message(direction, JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(line)) as unknown);
+        const other = direction === 'client' ? 'server' : 'client';
+        if (++frames > 256) {this.close(); return;}
+        if (this.#draining[other]) this.#tainted[direction] = true;
+        if (!this.#draining[direction] && this.#buffers[direction].length + part.length > MAX_FRAME) {
+          this.#pending.clear(); this.#threads.clear();
+          this.#draining[direction] = true;
+          if (this.#buffers[other].length !== 0) this.#tainted[other] = true;
+          if (direction === 'client') {
+            this.#clientEnvelope = new OversizedClientEnvelope();
+            this.#clientEnvelope.feed(this.#buffers.client);
+          }
+          this.#buffers[direction] = Buffer.alloc(0);
+        }
+        if (this.#draining[direction]) {
+          if (direction === 'client') this.#clientEnvelope?.feed(part);
+          if (end < 0) return;
+          if (direction === 'client') {
+            this.#accountIgnored(this.#clientEnvelope?.finish());
+            this.#clientEnvelope = undefined;
+          }
+          this.#draining[direction] = false;
+        } else {
+          const line = Buffer.concat([this.#buffers[direction], part]);
+          this.#buffers[direction] = end < 0 ? line : Buffer.alloc(0);
+          if (end < 0) return;
+          const raw: unknown = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(line));
+          if (!this.#tainted[direction]) this.#message(direction, raw);
+          else if (direction === 'client') this.#accountIgnored(raw);
+        }
+        this.#tainted[direction] = false;
         offset = end + 1;
       }
     } catch {this.close();}
@@ -62,7 +91,7 @@ export class CodexReadObserver {
   }
 
   close(): void {
-    this.#closed = true; this.#pending.clear(); this.#threads.clear(); this.#ids.clear();
+    this.#closed = true; this.#clientEnvelope = undefined; this.#pending.clear(); this.#threads.clear(); this.#ids.clear();
     this.#buffers.client = Buffer.alloc(0); this.#buffers.server = Buffer.alloc(0);
   }
 
@@ -76,6 +105,18 @@ export class CodexReadObserver {
     else this.#pending.set(key, pending);
   }
 
+  #reserve(id: unknown): string | undefined {
+    const key = requestKey(id);
+    if (key === undefined || this.#ids.has(key) || this.#ids.size >= MAX_IDS) {this.close(); return undefined;}
+    this.#ids.add(key);
+    return key;
+  }
+
+  #accountIgnored(raw: unknown): void {
+    if (!fields(raw) || raw.method === 'initialize') {this.close(); return;}
+    if (typeof raw.method === 'string' && 'id' in raw) this.#reserve(raw.id);
+  }
+
   #message(direction: 'client' | 'server', raw: unknown): void {
     if (!fields(raw)) {this.close(); return;}
     const now = this.#now();
@@ -84,9 +125,8 @@ export class CodexReadObserver {
     if (typeof raw.method === 'string') {
       const params = fields(raw.params) ? raw.params : {};
       if (direction === 'client' && 'id' in raw) {
-        const key = requestKey(raw.id);
-        if (key === undefined || this.#ids.has(key) || this.#ids.size >= MAX_IDS) {this.close(); return;}
-        this.#ids.add(key);
+        const key = this.#reserve(raw.id);
+        if (key === undefined) return;
         this.#request(key, raw.method, params, now);
       } else if (direction === 'server' && token(params.threadId)) {
         if (['turn/started', 'turn/completed', 'thread/closed', 'thread/archived'].includes(raw.method) ||
