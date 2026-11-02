@@ -104,10 +104,12 @@ export function referencedBy(containers) {
   for (const container of containers) {
     const pinned = /@sha256:[0-9a-f]+$/.test(container.Image);
     const reference = container.Image.replace(/^sha256:/, '').replace(/@sha256:[0-9a-f]+$/, '');
+    const tagged = reference.lastIndexOf(':') > reference.lastIndexOf('/');
     if (/^[0-9a-f]{12,64}$/.test(reference)) ids.add(reference);
-    else if (reference.lastIndexOf(':') > reference.lastIndexOf('/')) tags.add(reference);
-    else if (pinned) repositories.add(reference);
-    else tags.add(`${reference}:latest`);
+    else if (tagged) tags.add(reference);
+    else if (!pinned) tags.add(`${reference}:latest`);
+    // A digest-pulled image's local row carries Tag `<none>`, so a pin protects its whole repository.
+    if (pinned && !/^[0-9a-f]{12,64}$/.test(reference)) repositories.add(tagged ? reference.slice(0, reference.lastIndexOf(':')) : reference);
   }
   return image => {
     const id = image.ID.replace(/^sha256:/, '');

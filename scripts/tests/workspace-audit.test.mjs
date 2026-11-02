@@ -100,6 +100,7 @@ test('every container image reference form protects its image', () => {
     {ID: coreId, Repository: 'bunny-gh1354-codex', Tag: '00fa1c7b'},
     {ID: 'aaaa666666666666', Repository: 'bunny-review', Tag: 'latest'},
     {ID: 'aaaa777777777777', Repository: 'grafana/loki', Tag: '3.7.9'},
+    {ID: 'bbbb777777777777', Repository: 'grafana/loki', Tag: '<none>'},
     {ID: 'aaaa888888888888', Repository: 'bunny-pinned', Tag: 'anything'},
     {ID: 'aaaa999999999999', Repository: 'registry.local:5000/bunny-remote', Tag: 'v1'},
   ]) assert.equal(referenced(image), true, `${image.Repository}:${image.Tag}`);

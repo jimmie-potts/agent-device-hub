@@ -1056,7 +1056,7 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 `npm run audit:workspace` prints the read-only report that
 [Workspace audit](sdlc.md#workspace-audit) acts on: a verdict per registered
-worktree from `git worktree list`, lock-free `git status` and `gh pr list`,
+worktree from `git worktree list`, `git status` without optional locks and `gh pr list`,
 stopped task containers and unreferenced task images older than the window,
 container-less task-named volumes, and the shared launcher caches and untagged
 images listed for the owner. Pass `-- --hours <n>` to change the 48-hour window
