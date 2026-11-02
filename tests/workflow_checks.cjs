@@ -336,13 +336,14 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     builds += instances(job) * job.steps.filter(step => step.run === 'npm run build').length;
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], matrixJobs.includes(id) ? '${{ matrix.os }}' : 'ubuntu-latest');
-    // The core job runs every kept Node and Python suite once. The same source passed in 10m30s on PR #1078 but
-    // hit 15 minutes twice on main; its 30 leave finite headroom for slower hosted runs (#1037).
+    // Core keeps a finite 40-minute aggregate budget after full runs exhausted 30 minutes (#1388).
     // Preserve App verification's 40-minute budget from #366 for browser journeys and setup/retry headroom.
     // The unchanged serial runtime catalog has its own required 30-minute job (#1183).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
     // The select and gate jobs read one comparison or the needs context and take seconds.
-    assert.equal(job['timeout-minutes'], id === 'app-verify' ? 40 : ['core', 'runtime-verify'].includes(id) ? 30 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
+    if (id === 'core') assert.equal(job['timeout-minutes'], 40, 'Core retains a finite 40-minute aggregate budget');
+    else if (id === 'runtime-verify') assert.equal(job['timeout-minutes'], 30, 'Runtime verification retains its 30-minute budget');
+    else assert.equal(job['timeout-minutes'], id === 'app-verify' ? 40 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }

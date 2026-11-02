@@ -464,6 +464,17 @@ required event must still fail. After a root build, select these checks with
 A controlled scheduling-delay example demonstrates the old combined-budget
 assumption; it does not identify a historical hosted timeout's cause.
 
+The end-to-end spans check also registers one sequential case per transport,
+each under the existing 20-second bound for startup, journey, span collection,
+assertions and owned cleanup. Their declared budgets total 40 seconds. Both
+cases retain duration, parentage, publication-count, restart-link and ordering
+assertions. Copies with a bad duration, an orphan parent or a wrong replay link
+must fail the same assertion helper without running another journey. After the
+root build, select them with
+`node --test --test-name-pattern='spans have durations' apps/runtime/dist/tests/scenarios/runner.test.js`.
+A finite scheduling-delay control demonstrates the old shared-budget failure;
+the historical hosted transport, phase and cause remain unknown.
+
 Each catalog scenario runs twice in the runtime's module host, on a manual
 clock: once with its parts on the host's bus, and once through a `RemoteEdge`
 on 127.0.0.1 with run-generated tokens. The harness never listens on an

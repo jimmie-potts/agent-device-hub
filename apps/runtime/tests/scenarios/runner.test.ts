@@ -244,39 +244,60 @@ function spanOf(line: string): Span {
 }
 const requestOf = (span: Span): string | undefined => span.attributes.find(item => item.key === 'bunny.request.id')?.value.stringValue;
 
-it('the end-to-end path\'s spans have durations and no lost parent, and work published after a restart links to its stored context, on both transports', async () => {
-  for (const transport of ['in-process', 'remote'] as const) {
+function assertEndToEndSpans(spans: readonly Span[], publishedSpanIds: readonly string[], transport: TransportName): void {
+  assert.ok(spans.length > 20, `${transport}: the bus and the modules recorded spans`);
+  for (const span of spans) assert.ok(BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano), `${transport}: ${span.name} has a duration`);
+  // A parent is a recorded span, a published message's own span, or, for a remote command, the remote caller's
+  // context, which the edge authenticated and validated and the server request span continues.
+  const known = new Set([
+    ...spans.map(span => span.spanId),
+    ...publishedSpanIds,
+    ...spans.filter(span => span.name === 'bunny.command.request' && span.kind === 2).flatMap(span => span.parentSpanId ?? []),
+  ]);
+  assert.deepEqual(spans.filter(span => span.parentSpanId !== undefined && !known.has(span.parentSpanId)).map(span => span.name), [],
+    `${transport}: no span lost its parent`);
+  const publishes = (requestId: string): Span[] => spans.filter(span => span.name === 'bunny.outcome.publish' && requestOf(span) === requestId);
+  // req-crash's outcome first went out after the crash, and req-lost's again after the restart that its lost
+  // acknowledgment forced: each of those is a new root linked to the stored context, never its child.
+  const crashed = publishes('req-crash');
+  assert.ok(crashed.length > 0 && crashed.every(span => span.parentSpanId === undefined && span.links?.length === 1), `${transport}: req-crash is linked`);
+  const [first, replay, ...more] = publishes('req-lost');
+  assert.ok(first && replay && more.length === 0, `${transport}: req-lost went out twice`);
+  assert.ok(first.parentSpanId !== undefined, `${transport}: its first publication continues the stored context`);
+  assert.equal(replay.parentSpanId, undefined, `${transport}: the replay is never reparented`);
+  assert.deepEqual(replay.links?.map(link => link.spanId), [first.parentSpanId], `${transport}: the replay links to the stored context`);
+  assert.ok(BigInt(replay.startTimeUnixNano) >= BigInt(first.endTimeUnixNano), `${transport}: later, after the restart`);
+}
+
+for (const transport of TRANSPORTS) {
+  it(`the end-to-end path's spans have durations and no lost parent, and work published after a restart links to its stored context, over ${transport}`, async () => {
     const h = await startMemoryHarness(named('end-to-end').seed, transport);
     try {
       assert.equal((await runScenario(named('end-to-end'), h)).outcome, 'passed', transport);
       const spans = (await h.spans()).map(spanOf);
-      assert.ok(spans.length > 20, `${transport}: the bus and the modules recorded spans`);
-      for (const span of spans) assert.ok(BigInt(span.endTimeUnixNano) >= BigInt(span.startTimeUnixNano), `${transport}: ${span.name} has a duration`);
-      // A parent is a recorded span, a published message's own span, or, for a remote command, the remote caller's
-      // context, which the edge authenticated and validated and the server request span continues.
-      const known = new Set([
-        ...spans.map(span => span.spanId),
-        ...h.published().flatMap(({message}) => traceFields(message)?.spanId ?? []),
-        ...spans.filter(span => span.name === 'bunny.command.request' && span.kind === 2).flatMap(span => span.parentSpanId ?? []),
-      ]);
-      assert.deepEqual(spans.filter(span => span.parentSpanId !== undefined && !known.has(span.parentSpanId)).map(span => span.name), [],
-        `${transport}: no span lost its parent`);
-      const publishes = (requestId: string): Span[] => spans.filter(span => span.name === 'bunny.outcome.publish' && requestOf(span) === requestId);
-      // req-crash's outcome first went out after the crash, and req-lost's again after the restart that its lost
-      // acknowledgment forced: each of those is a new root linked to the stored context, never its child.
-      const crashed = publishes('req-crash');
-      assert.ok(crashed.length > 0 && crashed.every(span => span.parentSpanId === undefined && span.links?.length === 1), `${transport}: req-crash is linked`);
-      const [first, replay, ...more] = publishes('req-lost');
-      assert.ok(first && replay && more.length === 0, `${transport}: req-lost went out twice`);
-      assert.ok(first.parentSpanId !== undefined, `${transport}: its first publication continues the stored context`);
-      assert.equal(replay.parentSpanId, undefined, `${transport}: the replay is never reparented`);
-      assert.deepEqual(replay.links?.map(link => link.spanId), [first.parentSpanId], `${transport}: the replay links to the stored context`);
-      assert.ok(BigInt(replay.startTimeUnixNano) >= BigInt(first.endTimeUnixNano), `${transport}: later, after the restart`);
+      const publishedSpanIds = h.published().flatMap(({message}) => traceFields(message)?.spanId ?? []);
+      const check = (values: readonly Span[]): void => { assertEndToEndSpans(values, publishedSpanIds, transport); };
+      check(spans);
+      const firstSpan = spans[0];
+      assert.ok(firstSpan, 'the scenario recorded spans');
+      assert.throws(() => check([{...firstSpan, endTimeUnixNano: (BigInt(firstSpan.startTimeUnixNano) - 1n).toString()}, ...spans.slice(1)]),
+        /has a duration/);
+      const ordinary = spans.find(span => !(span.name === 'bunny.command.request' && span.kind === 2));
+      assert.ok(ordinary, 'the scenario recorded an ordinary span');
+      const missingParent = 'ffffffffffffffff';
+      assert.ok(!publishedSpanIds.includes(missingParent) && spans.every(span => span.spanId !== missingParent && span.parentSpanId !== missingParent),
+        'the synthetic orphan parent is not an existing context');
+      assert.throws(() => check(spans.map(span => span === ordinary ? {...span, parentSpanId: missingParent} : span)), /no span lost its parent/);
+      const replay = spans.filter(span => span.name === 'bunny.outcome.publish' && requestOf(span) === 'req-lost')[1];
+      assert.ok(replay, 'the scenario recorded the replay');
+      assert.throws(() => check(spans.map(span => span === replay ? {...span, links: [{traceId: replay.traceId, spanId: replay.spanId}]} : span)),
+        /the replay links to the stored context/);
     } finally {
       await h.close();
+      await assert.rejects(stat(h.stateDir), {code: 'ENOENT'}, 'close removed the owned private state directory');
     }
-  }
-});
+  });
+}
 
 it('a harness starts only when every module is healthy, except one the seed expects the runtime to refuse', async () => {
   const misconfigured = named('misconfigured-module').seed;
