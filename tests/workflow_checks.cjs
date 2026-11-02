@@ -214,7 +214,8 @@ for (const name of ['feature', 'investigation']) {
 }
 
 const reusableTrigger = {inputs: {qualification: {type: 'boolean', default: false}}};
-const allTriggers = {workflow_call: reusableTrigger, push: {branches: ['main']}, pull_request: {}};
+const readyTrigger = {types: ['opened', 'synchronize', 'reopened', 'ready_for_review']};
+const allTriggers = {workflow_call: reusableTrigger, pull_request: readyTrigger};
 // Hub #862: hosted runners sometimes stall in apt until a job's limit. scripts/apt-retry.sh runs a command that uses apt
 // in up to three attempts, each under the limit its first argument gives, and each step's limit sits above three
 // attempts and their cleanups: 20 minutes for 300 s browser installs, 14 for the hook step's 180 s apt commands.
@@ -227,16 +228,15 @@ const hookAptMinutes = 14;
 // Hub #1080: affected selection limits product suites and a manual run selects every group.
 const expectedTriggers = {
   workflow_call: reusableTrigger,
-  push: { branches: ['main'], 'paths-ignore': ['**/*.md'] },
-  pull_request: {},
+  pull_request: readyTrigger,
   workflow_dispatch: {},
 };
 
-test('every PR enters Checks while only Markdown-only main pushes filter it', () => {
+test('ready PRs run admission while main uses separate integration and qualification', () => {
   for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', allTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
     assert.deepEqual(workflow.on, triggers);
-    for (const event of ['push', 'pull_request']) {
+    for (const event of ['pull_request']) {
       const patterns = workflow.on[event]['paths-ignore'] ?? [];
       for (const [files, skipped] of [
         [['README.md', 'docs/development.md'], checks && event === 'push'],
@@ -259,7 +259,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
@@ -303,7 +303,8 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     'runtime-verify': 'Runtime verification on ubuntu-latest',
   };
   const matrixJobs = ['workflow', 'core'];
-  const conditions = { firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always()' };
+  const ready = "github.event_name != 'pull_request' || !github.event.pull_request.draft";
+  const conditions = {select: ready, workflow: ready, firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always() && ('+ready+')' };
   assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   // Each suite runs in exactly one job.

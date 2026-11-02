@@ -3,6 +3,8 @@ import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
 import {setTimeout as pause} from 'node:timers/promises';
+import {join} from 'node:path';
+import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed,startWorld} from './harness.ts';
 function heldItem(value:unknown):{id:string;revision:number}|undefined {
   if(Array.isArray(value)){for(const x of value){const found=heldItem(x);if(found!==undefined)return found;}return undefined;}
@@ -10,6 +12,7 @@ function heldItem(value:unknown):{id:string;revision:number}|undefined {
   if('id'in value&&typeof value.id==='string'&&'revision'in value&&typeof value.revision==='number'&&'item'in value&&typeof value.item==='object'&&value.item!==null&&'command'in value.item&&typeof value.item.command==='string'&&value.item.command.startsWith('org.bunny.microduck.'))return {id:value.id,revision:value.revision};
   for(const child of Object.values(value)){const found=heldItem(child);if(found!==undefined)return found;}return undefined;
 }
+const screenshot = join(await browserArtifactDirectory(), 'microduck-browser.png');
 const world=await startWorld({microduck:true,companions:true}),browser=await chromium.launch({headless:true});
 async function lostLocalRequests():Promise<void> {
   const own=await startWorld({microduck:true}),context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(15000);
@@ -75,7 +78,8 @@ try {
   const before=world.microduck.effects.length;await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.microduck.effects.length,before);
   for(const width of [320,390,1440]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations,[]);assert.deepEqual(errors,[]);
-  await panel.screenshot({path:'/tmp/microduck-browser.png'});
+  await panel.screenshot({path:screenshot});
+  console.log('MicroDuck browser artifacts: '+screenshot);
   world.microduck.act('offline');await panel.getByRole('status').filter({hasText:/Simulator (unavailable|stale)/}).waitFor();assert.equal(await stop.isEnabled(),true);assert.equal((await world.assistantRead()).status,200);
   console.log('MicroDuck browser passed: finite gestures, local Stop, exact held recovery, status-only MCP, passive reload, keyboard/narrow/reduced-motion and axe.');
 }finally{await browser.close();await world.close();}

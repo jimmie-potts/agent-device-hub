@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
+import {join} from 'node:path';
+import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed,startWorld} from './harness.ts';
 function reachyItem(value:unknown):{id:string;revision:number}|undefined {
  if(Array.isArray(value)){for(const item of value){const found=reachyItem(item);if(found!==undefined)return found;}return undefined;}
@@ -9,6 +11,7 @@ function reachyItem(value:unknown):{id:string;revision:number}|undefined {
  if('id'in value&&typeof value.id==='string'&&'revision'in value&&typeof value.revision==='number'&&'item'in value&&typeof value.item==='object'&&value.item!==null&&'command'in value.item&&typeof value.item.command==='string'&&value.item.command.startsWith('org.bunny.reachy.'))return {id:value.id,revision:value.revision};
  for(const child of Object.values(value)){const found=reachyItem(child);if(found!==undefined)return found;}return undefined;
 }
+const screenshot = join(await browserArtifactDirectory(), 'reachy-browser.png');
 const world=await startWorld({reachy:true,companions:true}),browser=await chromium.launch({headless:true});
 try{
  const context=await browser.newContext({viewport:{width:390,height:1000},reducedMotion:'reduce'}),page=await context.newPage();
@@ -23,7 +26,8 @@ try{
  assert.equal(await panel.getByRole('button',{name:'Stop task',exact:true}).isEnabled(),true);await panel.getByRole('button',{name:'Stop task',exact:true}).click();await panel.getByText('No active task',{exact:true}).waitFor();assert.equal(world.reachy.effects.filter(x=>x.kind==='cancel').length,1);
  const saved=reachyItem(await world.reachyMcp('core_inbox',{}));assert.ok(saved,'cancelled gesture has a tracked inbox item');const beforeResend=world.reachy.effects.length;const replay=await world.reachyMcp('core_handle_inbox',{id:saved.id,expectedRevision:saved.revision,action:'send-again'});assert.match(JSON.stringify(replay),/forbidden/);assert.equal(world.reachy.effects.length,beforeResend,'MCP cannot move through saved-command resend');
  for(const width of [320,390,1440]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
- await panel.screenshot({path:'/tmp/reachy-browser.png'});
+ await panel.screenshot({path:screenshot});
+  console.log('Reachy browser artifacts: '+screenshot);
  const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations,[]);assert.deepEqual(errors,[]);
  await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.reachy.state().moves,3,'reload is passive');
  world.reachy.autoComplete=true;world.reachyLoseReply();await panel.getByRole('button',{name:'Neutral pose',exact:true}).click();const recovery=panel.getByRole('checkbox',{name:/I restored vendor/});await recovery.waitFor();assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isDisabled(),true);await recovery.check();assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isEnabled(),true,'explicit recovery must escape the original uncertain attempt lock');

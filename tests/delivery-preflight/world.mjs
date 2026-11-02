@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 
 import { GROUPS, NOTICE_TITLE, noticeMessage } from '../../scripts/ci-selection/selection.mjs';
 import { CI_PROVIDERS } from '../../scripts/delivery-preflight/context.mjs';
@@ -245,9 +246,26 @@ export function mergeWorld(world) {
   Object.assign(world.pr, { state: 'closed', merged: true, merge_commit_sha: MERGE, merged_at: '2026-09-27T07:30:00Z', mergeable_state: 'unknown' });
   world.refs.main = MERGE;
   world.commits[MERGE] = { sha: MERGE, parents: [{ sha: BASE }], files: world.files };
-  world.checkRuns[MERGE] = EXPECTED_JOBS.map(name => checkRun(name, MERGE, mainSuite));
+  const mainJobs = expectedJobs(Object.entries(world.workflows[MERGE][ACTIONS.directory])
+    .map(([file, text]) => parseWorkflow(file, text)), {
+      event: 'push', branch: 'main', files: world.files.map(file => file.filename), filesComplete: true,
+    }, ACTIONS).jobs;
+  world.checkRuns[MERGE] = mainJobs.map(job => checkRun(job.name, MERGE, mainSuite));
   world.checkSuites[MERGE] = [suite(mainSuite, MERGE, 'main')];
   return publishSelection(world, MERGE);
+}
+
+/** Retained full-main evidence remains readable after admission moves qualification to its own workflow. */
+export function legacyMainWorld() {
+  const world = cleanWorld();
+  const files = {};
+  for (const name of ['checks.yml', 'workflow.yml']) {
+    const workflow = YAML.parse(WORKFLOW_FILES[name]);
+    workflow.on.push = { branches: ['main'] };
+    files[name] = YAML.stringify(workflow);
+  }
+  world.workflows[MERGE][ACTIONS.directory] = files;
+  return mergeWorld(world);
 }
 
 /** GitHub retains a successful selector's execution in a later workflow attempt, without its annotations. */

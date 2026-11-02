@@ -1,5 +1,7 @@
 name: Release qualification
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       candidate:

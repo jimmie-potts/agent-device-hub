@@ -18,6 +18,10 @@ const FULL = null;
 // First match wins. `prefix/**` matches everything below prefix, `**/*.ext` every path with that extension, and any
 // other pattern one exact path. Everything unmatched selects every group.
 const RULES = Object.freeze([
+  ['AGENTS.md', FULL, 'delivery gate policy'],
+  ['docs/sdlc.md', FULL, 'delivery gate policy'],
+  ['docs/development.md', FULL, 'validation gate policy'],
+  ['openspec/specs/focused-source-admission/**', FULL, 'source admission contract'],
   ['**/*.md', [], 'Markdown: no Checks test may depend on its content (docs/sdlc.md, Markdown-only CI routing)'],
   // Dormant source selects no product checks; root build/type/lint still protect active composition.
   ['modules/bb8/**', [], 'hibernated BB-8 source'],
@@ -62,7 +66,38 @@ function checkPath(file) {
 }
 
 const ordered = groups => GROUPS.filter(group => groups.has(group));
-const jobsFor = groups => Object.fromEntries(Object.entries(JOBS).map(([id, needs]) => [id, needs.some(group => groups.has(group))]));
+const jobsFor = (groups, mode) => Object.fromEntries(Object.entries(JOBS).map(([id, needs]) => [id,
+  mode === 'focused' && id !== 'firmware' ? false : needs.some(group => groups.has(group)),
+]));
+
+// Only these existing style assets have reviewed presentation-only ownership. New paths and all executable
+// frontend code retain conservative coverage, including renamed/new credential, durable-state and command owners.
+const PRESENTATION_PATHS = new Set([
+  'apps/runtime/dashboard/src/agent-status.css',
+  'apps/runtime/dashboard/src/card-chrome.css',
+  'apps/runtime/dashboard/src/habitat.css',
+  'apps/runtime/dashboard/src/home-layout.css',
+  'apps/runtime/dashboard/src/hub-control-cards.css',
+  'apps/runtime/dashboard/src/lighting.css',
+  'apps/runtime/dashboard/src/music.css',
+  'apps/runtime/dashboard/src/room-models.css',
+  'apps/runtime/dashboard/src/shell.css',
+  'apps/runtime/dashboard/src/style.css',
+  'apps/runtime/dashboard/src/timeline-card.css',
+  'apps/runtime/dashboard/src/wemo.css',
+  'apps/runtime/dashboard/src/skins/habitat.css',
+  'apps/runtime/dashboard/src/skins/quiet-glass.css',
+  'apps/runtime/dashboard/src/skins/neon-geometry-wars.css',
+  'modules/companions/src/frontend/card.css',
+  'modules/reachy-mini/src/frontend/reachy.css',
+  'modules/onn/src/frontend/history.css',
+  'modules/onn/src/frontend/onn-card.css',
+  'modules/nanoleaf/src/frontend/wall.css',
+  'modules/wispr/src/frontend/wispr.css',
+  'modules/wispr/src/frontend/wispr-card.css',
+  'modules/roborock/src/frontend/roborock-card.css',
+]);
+const presentationPath = file => PRESENTATION_PATHS.has(file);
 
 function result(mode, groups, reasons, full) {
   const set = new Set(groups);
@@ -70,7 +105,7 @@ function result(mode, groups, reasons, full) {
     mode,
     groups: ordered(set),
     omitted: GROUPS.filter(group => !set.has(group)),
-    jobs: jobsFor(set),
+    jobs: jobsFor(set, mode),
     reasons,
     full,
   };
@@ -101,14 +136,18 @@ export function selectChecks({ event, paths, complete, detail } = {}) {
     rule.groups.forEach(group => groups.add(group));
     reasons.push({ path: file, groups: [...rule.groups], reason: rule.reason });
   }
-  return full.length ? result('full', GROUPS, reasons, full) : result('selected', groups, reasons, []);
+  if (full.length) return result('full', GROUPS, reasons, full);
+  const productPaths = reasons.filter(item => item.groups.length).map(item => item.path);
+  const mode = productPaths.length && productPaths.every(presentationPath) ? 'focused' : 'selected';
+  return result(mode, groups, reasons, []);
 }
 
 /** The title of the notice annotation in which the select job publishes its selection for the delivery preflight. */
 export const NOTICE_TITLE = 'Affected checks';
 
 /** The notice message that publishes a selection: compact JSON, so it needs no workflow-command escaping. */
-export const noticeMessage = selection => JSON.stringify({ mode: selection.mode, groups: selection.groups });
+export const noticeMessage = selection => JSON.stringify({ mode: selection.mode, groups: selection.groups,
+  ...(selection.mode === 'focused' ? { jobs: selection.jobs } : {}) });
 
 /** A published selection read back from its notice message, or null when the message is not one. */
 export function readNotice(message) {
@@ -118,8 +157,14 @@ export function readNotice(message) {
   } catch {
     return null;
   }
-  if (!value || !['full', 'selected'].includes(value.mode) || !Array.isArray(value.groups)
+  if (!value || !['full', 'selected', 'focused'].includes(value.mode) || !Array.isArray(value.groups)
     || !value.groups.every(group => GROUPS.includes(group))) return null;
+  if (value.mode === 'focused') {
+    const expected = jobsFor(new Set(value.groups), value.mode);
+    if (!value.jobs || Object.keys(value.jobs).length !== Object.keys(JOBS).length
+      || Object.entries(expected).some(([id, run]) => value.jobs[id] !== run)) return null;
+    return { mode: value.mode, groups: ordered(new Set(value.groups)), jobs: expected };
+  }
   return { mode: value.mode, groups: ordered(new Set(value.groups)) };
 }
 
@@ -155,10 +200,10 @@ function readOutputs(outputs) {
   if (!Array.isArray(groups)) return { problem: 'the selection output has no readable groups' };
   const unknown = groups.filter(group => !GROUPS.includes(group));
   if (unknown.length) return { problem: `the selection output names unknown group ${unknown.join(', ')}` };
-  if (!['full', 'selected'].includes(outputs.mode)) return { problem: `the selection output has mode ${JSON.stringify(outputs.mode)}` };
+  if (!['full', 'selected', 'focused'].includes(outputs.mode)) return { problem: `the selection output has mode ${JSON.stringify(outputs.mode)}` };
   if (outputs.mode === 'full' && groups.length !== GROUPS.length) return { problem: 'a full selection must select every group' };
   const set = new Set(groups);
-  const jobs = jobsFor(set);
+  const jobs = jobsFor(set, outputs.mode);
   for (const [id, run] of Object.entries(jobs)) {
     if (outputs[id] !== String(run)) return { problem: `the selection output for ${id} (${JSON.stringify(outputs[id])}) does not match its groups` };
   }
@@ -183,6 +228,7 @@ export function gateVerdict(needs) {
   const selection = readOutputs(select.outputs);
   if (selection.problem) return { ok: false, problems: [selection.problem], lines };
   lines.push(`selection: ${selection.mode}; groups ${selection.groups.join(', ') || 'none'}`);
+  if (!Object.hasOwn(needs, 'core')) problems.push('core: missing from the gate\'s needs');
   for (const id of Object.keys(JOBS)) if (!Object.hasOwn(needs, id)) problems.push(`${id}: missing from the gate's needs`);
   for (const [id, job] of Object.entries(needs)) {
     if (id === 'select') continue;
