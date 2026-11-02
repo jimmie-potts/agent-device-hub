@@ -89,9 +89,21 @@ running-app exercise. Follow the limited authority in
 [Acceptance review](docs/sdlc.md#acceptance-review). Missing required review,
 blocking findings or unsuccessful applicable CI prevents merge.
 
+Separate integrated source, qualified release and verified installation under
+[the delivery policy](docs/sdlc.md#integration-qualification-and-deployment).
+Feature tasks own reviewed source and disposable evidence, then link the selected
+deployment batch for remaining installed acceptance. One deployment task owns the
+live operation; consume its verified record and writer release directly. Ready
+PRs use the selector's focused or conservative gate. Draft checkpoints skip
+expensive checks, and broad qualification runs on pinned integrated snapshots.
+Do not rebase solely for an up-to-date build; recheck the actual comparison and
+renew evidence invalidated by integration. Gate-policy changes retain full checks
+and independent review before activation.
+
 Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
-Markdown-only changes run reduced CI under docs/sdlc.md "Markdown-only CI routing".
+Markdown-only changes follow docs/sdlc.md "Markdown-only CI routing", including
+the conservative gate for delivery/validation policy changes.
 Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure.

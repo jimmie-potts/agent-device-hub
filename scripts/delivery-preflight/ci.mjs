@@ -100,6 +100,9 @@ function checkPublishedSelection(gate, name, annotations, selection) {
     return;
   }
   gate.evidence.hostedSelection = hosted;
+  if (hosted.mode === 'focused' && selection.mode !== 'focused') {
+    gate.unresolved(`${name}: focused hosted selection cannot satisfy this change's conservative coverage`);
+  }
   const missing = selection.groups.filter(group => !hosted.groups.includes(group));
   if (missing.length) {
     gate.unresolved(`${name}: the hosted selection (${hosted.groups.join(', ') || 'no group'}) omits ${missing.join(', ')}, which this change selects`);

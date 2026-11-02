@@ -436,10 +436,11 @@ runtime unit CI discovers these cases; no product or global timeout changes.
 
 Every runtime story is tested at four layers
 ([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
-The core CI job runs the first three after its fresh build, on every main push
-and every PR whose [affected checks](../../docs/development.md#affected-pr-checks)
-select the runtime; Markdown-only changes skip them. The App verification
-job judges the fourth layer's capture steps without a user manager.
+The core admission job runs the first three after its fresh build for ready PRs
+whose [affected checks](../../docs/development.md#affected-pr-checks) select the
+runtime. Broad release qualification runs all four on pinned integrated source.
+The App verification job judges the fourth layer's capture steps without a user
+manager; focused presentation admission retains affected disposable acceptance.
 
 | Layer | Command | What it runs |
 | --- | --- | --- |
@@ -541,12 +542,11 @@ All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
 
-The required Runtime verification CI job runs the full `test:runtime:verify:built`
-suite on every main push and every PR whose
-[affected checks](../../docs/development.md#affected-pr-checks) select the
-runtime, which any runtime, module, shared or unknown change does. Focused local verification
-does not waive an applicable failed or missing CI job, contract check, browser
-or accessibility check, or independent review.
+The Runtime verification CI job runs the full `test:runtime:verify:built` suite
+on each pinned release qualification and conservative PR selection. Focused
+presentation admission can omit the broad job while retaining affected disposable
+acceptance. Focused local verification does not waive an applicable failed or
+missing CI job, contract check, browser/accessibility check or independent review.
 
 `test:runtime:verify:built` starts runs without a user manager and judges every
 capture step through `runCaptureStep`: one per catalog scenario, so the same

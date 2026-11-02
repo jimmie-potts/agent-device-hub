@@ -41,7 +41,7 @@ test('job readback fully paginates the exact attempt and refuses a truncated rea
 test('qualification reuses all current coverage and native concurrency without weakening normal gates', async () => {
   const read = async name => YAML.parse(await readFile(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8'));
   const release = await read('release-qualification.yml'), checks = await read('checks.yml'), workflow = await read('workflow.yml');
-  assert.deepEqual(Object.keys(release.on), ['workflow_dispatch']);
+  assert.deepEqual(Object.keys(release.on), ['push', 'workflow_dispatch']);
   assert.equal(release.concurrency['cancel-in-progress'], false);
   assert.equal(release.concurrency.group, 'bunny-release-qualification');
   for (const [key, child] of [['checks', checks], ['workflow', workflow]]) {
@@ -49,7 +49,7 @@ test('qualification reuses all current coverage and native concurrency without w
     assert.equal(release.jobs[key].with.qualification, true);
     assert.equal(child.on.workflow_call.inputs.qualification.default, false);
     assert.ok(child.on.pull_request);
-    assert.ok(child.on.push);
+    assert.equal(child.on.push, undefined, 'broad direct main checks are replaced by pinned qualification');
   }
   assert.notEqual(checks.concurrency.group, workflow.concurrency.group, 'called workflows cannot cancel each other');
   assert.equal(checks.jobs.select.steps.at(-1).env.BUNNY_RELEASE_QUALIFICATION, '${{ inputs.qualification }}');

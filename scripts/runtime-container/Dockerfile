@@ -4,6 +4,6 @@ WORKDIR /opt/dependencies
 COPY . .
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN npm ci --include=dev --no-audit --no-fund && npx --no-install playwright install --with-deps chromium
-RUN mkdir -p /work/source
+RUN test -x /usr/bin/timeout && mkdir -p /work/source
 WORKDIR /work/source
-ENTRYPOINT ["node", "scripts/runtime-container/inside.mjs"]
+ENTRYPOINT ["/usr/bin/timeout", "--signal=TERM", "--kill-after=30", "7200", "node", "scripts/runtime-container/inside.mjs"]

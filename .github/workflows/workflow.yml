@@ -1,4 +1,4 @@
-# Workflow and retained documentation checks run for every change, including Markdown.
+# Ready PR admission and reusable full release coverage, including Markdown.
 name: Workflow
 on:
   workflow_call:
@@ -6,9 +6,8 @@ on:
       qualification:
         type: boolean
         default: false
-  push:
-    branches: [main]
-  pull_request: {}
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
 concurrency:
@@ -17,6 +16,7 @@ concurrency:
 jobs:
   workflow:
     name: Workflow checks on ${{ matrix.os }}
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +51,7 @@ jobs:
           npm run test:performance:standalone
   documents:
     name: Retained documentation checks
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     # The job takes 3 to 9 minutes; the limit leaves room for two stalled browser-install attempts and their cleanups (#862).
     timeout-minutes: 25

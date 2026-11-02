@@ -19,7 +19,7 @@ import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-
 import { selectChecks } from '../scripts/ci-selection/selection.mjs';
 import {
   ACTIONS, BASE, DEPOT, EXPECTED_JOBS, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO, WORKFLOW_FILES,
-  checkRun, cleanWorld, comment, copiedSelection, declaration, fakeTransport, job, mergeWorld, publishSelection, reviewReport, suite,
+  checkRun, cleanWorld, comment, copiedSelection, declaration, fakeTransport, job, legacyMainWorld, mergeWorld, publishSelection, reviewReport, suite,
   writeProof,
 } from './delivery-preflight/world.mjs';
 
@@ -93,7 +93,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 });
 
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
-  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
@@ -124,7 +124,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
   // Hub #861's main-push filter remains; a PR must still emit its required core check.
-  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Retained documentation checks', 'Workflow checks on ubuntu-latest']);
+  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Integrated source checks']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
   assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
@@ -319,7 +319,7 @@ test('CI: filters that skip every job leave the candidate unresolved', async () 
 });
 
 test('CI: a Markdown-only PR requires the core and gate while product jobs remain unselected', async () => {
-  const files = ['docs/development.md', 'README.md'];
+  const files = ['docs/example.md', 'README.md'];
   const world = narrowWorld(files);
   const ci = gate(await preflight(world), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
@@ -355,7 +355,7 @@ const runNamed = (world, pattern) => world.checkRuns[HEAD].find(run => pattern.t
 
 for (const [stage, worldFor, sha, gateId] of [
   ['narrowed PR', () => narrowWorld(), HEAD, 'ci-pr'],
-  ['full main', () => mergeWorld(cleanWorld()), MERGE, 'ci-main'],
+  ['retained full main', () => legacyMainWorld(), MERGE, 'ci-main'],
 ]) {
   test(`CI: retained selector recovers the original selection for ${stage}`, async () => {
     const { world, original, retained, run } = copiedSelection(worldFor(), sha);
@@ -1234,7 +1234,7 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 });
 
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
-  const workflows = ['checks.yml', 'release-qualification.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
+  const workflows = ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
   assert.equal(dotfile.jobs.length, 8, 'a dot-file is not Markdown, so both workflows apply');
   for (const [pattern, file, expected] of [
@@ -1616,4 +1616,27 @@ test('changed-file lint passes a clean head and does not run against another rev
 
   const edited = await preflight(cleanWorld(), {}, ({ head, paths }) => localLint({ head, paths, cwd: '/checkout', spawn: fakeSpawn({ head, dirty: ' M scripts/delivery-preflight.mjs\n', eslint: [], status: 0 }).spawn }));
   assertUnresolved(edited, 'lint', /local modifications/);
+});
+
+test('CI: focused admission accepts presentation checks and rejects a concealed catalog omission', async () => {
+  const paths = ['apps/runtime/dashboard/src/music.css'];
+  const focused = narrowWorld(paths);
+  const ci = gate(await preflight(focused), 'ci-pr');
+  assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
+  assert.equal(ci.evidence.selection.mode, 'focused');
+  assert.deepEqual(ci.evidence.hostedSelection.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false });
+  const unsafe = cleanWorld();
+  publishSelection(unsafe, HEAD, selectChecks({ event: 'pull_request', paths, complete: true }));
+  assertUnresolved(await preflight(unsafe), 'ci-pr', /focused hosted selection cannot satisfy/);
+});
+
+test('main source evidence distinguishes independent release qualification from integration checks', () => {
+  const release = parseWorkflow('release-qualification.yml', 'name: Release qualification\non:\n  push:\n    branches: [main]\njobs:\n  checks:\n    uses: ./.github/workflows/checks.yml\n');
+  const integration = parseWorkflow('integration.yml', 'name: Integration\non:\n  push:\n    branches: [main]\njobs:\n  integration:\n    name: Integrated source checks\n    runs-on: ubuntu-latest\n    steps: [{run: "true"}]\n');
+  const result = expectedJobs([release, integration], { event: 'push', branch: 'main', files: ['apps/runtime/dashboard/src/Card.tsx'], filesComplete: true }, ACTIONS);
+  assert.deepEqual(result.jobs.map(job => job.name), ['Integrated source checks']);
+  assert.deepEqual(result.uncertain, []);
+  assert.match(result.filtered[0].reason, /source integration is not release eligibility/);
+  const unknown = { ...release, file: 'unknown.yml' };
+  assert.match(expectedJobs([unknown], { event: 'push', branch: 'main', files: [], filesComplete: true }, ACTIONS).uncertain.join(), /reusable workflow jobs are not enumerated/);
 });

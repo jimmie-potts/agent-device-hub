@@ -9,7 +9,7 @@
   "scripts": {
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
-    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs tests/scratch_root.test.mjs tests/ci_selection.test.mjs",
+    "test:workflow": "node --test tests/workflow_checks.cjs tests/strict_profile.test.mjs tests/scratch_root.test.mjs tests/ci_selection.test.mjs tests/fast_admission.test.mjs",
     "ci:select": "node scripts/ci-selection/local.mjs",
     "preflight": "tsc -p packages/app-verify/tsconfig.json && node scripts/delivery-preflight.mjs",
     "test:preflight": "tsc -p packages/app-verify/tsconfig.json && node --test tests/delivery_preflight.test.mjs",
@@ -165,12 +165,12 @@
     "test:reachy": "npm run build && npm run test:reachy:built",
     "test:reachy:built": "node --test modules/reachy-mini/dist/tests/*.test.js",
     "test:reachy:browser": "node apps/runtime/dashboard/tests/reachy.browser.ts",
+    "deploy:batch": "node scripts/bunny-deploy.mjs",
+    "test:deployment": "node --test scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs",
     "test:runtime:container": "node scripts/runtime-container.mjs",
     "test:microduck": "npm run build && npm run test:microduck:built",
     "test:microduck:built": "node --test modules/microduck/dist/tests/*.test.js",
-    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts",
-    "deploy:batch": "node scripts/bunny-deploy.mjs",
-    "test:deployment": "node --test scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs"
+    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
