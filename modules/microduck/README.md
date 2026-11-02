@@ -37,7 +37,10 @@ Use Node 24 and npm ci from the worktree root. Run build before
 `npm run test:microduck:built`, `npm run test:microduck:browser`, typecheck, lint:js,
 event/SDK/runtime and workflow checks. CI discovers module tests under the modules
 group and browser checks under runtime. Tests use deterministic transports and
-synthetic private state. Actual pinned vendor acceptance is separate and must
+synthetic private state. Automatic-policy verification delays the test caller past
+the finite pulse. It records the first matching transmitted fake input and
+applies Quiet from that state delivery, preserving the one-write and
+held-uncertainty assertions. Actual pinned vendor acceptance is separate and must
 run in a disposable Linux ARM64 container with the runtime and vendor pair in
 the same time namespace. No physical target is selected or contacted.
 
