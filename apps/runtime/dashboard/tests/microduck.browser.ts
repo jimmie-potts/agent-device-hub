@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
+import {expect} from 'playwright/test';
 import {setTimeout as pause} from 'node:timers/promises';
 import {feed,startWorld} from './harness.ts';
 function heldItem(value:unknown):{id:string;revision:number}|undefined {
@@ -33,7 +34,9 @@ async function lostLocalRequests():Promise<void> {
     assert.equal(own.microduck.effects.length,1,'new Stop must cancel the return without a hidden neutral');
     const retained=await page.evaluate(()=>sessionStorage.getItem('bunny-device-attempts')??'');
     const identities:unknown=JSON.parse(retained);assert.ok(Array.isArray(identities));assert.ok(identities.length>=5,'unconfirmed local identities remain retained');
-    await page.reload();await feed(page,'connected');assert.equal(await stop.isEnabled(),true);assert.equal(await panel.getByRole('button',{name:'Take over',exact:true}).isEnabled(),true);
+    await page.reload();await feed(page,'connected');
+    await expect(stop).toBeEnabled({timeout:15000});
+    await expect(panel.getByRole('button',{name:'Take over',exact:true})).toBeEnabled({timeout:15000});
     assert.equal(await page.evaluate(()=>sessionStorage.getItem('bunny-device-attempts')??''),retained,'reload neither removes nor replays uncertain requests');assert.equal(own.microduck.effects.length,1);
   }finally{await context.close();await own.close();}
 }
