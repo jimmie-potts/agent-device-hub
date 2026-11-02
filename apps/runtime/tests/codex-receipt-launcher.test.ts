@@ -3,31 +3,25 @@ import {execFileSync, spawn} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {CODEX_APP_SERVER_VERSION, CODEX_DESKTOP_BUILD, CODEX_DESKTOP_VERSION, isCodexStdioServer, qualifiedCodexVersions} from '../src/read-receipts/qualification.js';
+import {isCodexStdioServer} from '../src/read-receipts/qualification.js';
 import {it, stateDir} from './support.js';
 
 const SCRIPT = fileURLToPath(new URL('../../bin/codex-observer.mjs', import.meta.url));
 
-it('only the selected version tuple and native stdio launch pattern enable observation', () => {
-  assert.ok(qualifiedCodexVersions(CODEX_DESKTOP_VERSION, CODEX_DESKTOP_BUILD, `codex-cli ${CODEX_APP_SERVER_VERSION}`));
-  for (const values of [['other', CODEX_DESKTOP_BUILD, `codex-cli ${CODEX_APP_SERVER_VERSION}`],
-    [CODEX_DESKTOP_VERSION, 'other', `codex-cli ${CODEX_APP_SERVER_VERSION}`], [CODEX_DESKTOP_VERSION, CODEX_DESKTOP_BUILD, 'codex-cli other']]) {
-    assert.equal(qualifiedCodexVersions(values[0] ?? '', values[1] ?? '', values[2] ?? ''), false);
-  }
+it('only the native stdio launch pattern enables observation', () => {
   for (const args of [['app-server'], ['-c', 'features.code_mode_host=true', 'app-server', '--analytics-default-enabled'],
     ['app-server', '-c', 'features.code_mode_host=true']]) assert.equal(isCodexStdioServer(args), true);
   for (const args of [['--version'], ['exec', 'app-server'], ['-c', 'app-server'], ['app-server', 'daemon', 'version'],
     ['app-server', '--listen', 'ws://127.0.0.1:0'], ['app-server', '--listen=ws://127.0.0.1:0']]) assert.equal(isCodexStdioServer(args), false);
 });
 
-it('the delivered observer executable preserves supported, unsupported and unrelated native invocations with no producer', async context => {
+it('the delivered observer executable preserves native invocations across versions with no producer', async context => {
   const dir = await stateDir(context), native = join(dir, 'native-fixture');
-  for (const supported of [true, false]) {
-    await writeFile(native, `#!${process.execPath}\nif (process.argv[2] === '--version') process.stdout.write(${JSON.stringify(`codex-cli ${supported ? CODEX_APP_SERVER_VERSION : 'unqualified'}\n`)});\nelse {process.stdin.pipe(process.stdout); process.stdin.on('end', () => {process.stderr.write('native stderr\\n'); process.exitCode = 19;});}\n`, {mode: 0o700});
-    for (const args of [['-c', 'features.code_mode_host=true', 'app-server', '--analytics-default-enabled'], ['unrelated-command']]) {
+  for (const version of ['0.166.0-alpha.5.1', '1.0.0', 'future-native']) {
+    await writeFile(native, `#!${process.execPath}\nif (process.argv[2] === '--version') process.stdout.write(${JSON.stringify(`codex-cli ${version}\n`)});\nelse {process.stdin.pipe(process.stdout); process.stdin.on('end', () => {process.stderr.write('native stderr\\n'); process.exitCode = 19;});}\n`, {mode: 0o700});
+    for (const args of [['-c', 'features.code_mode_host=true', 'app-server', '--analytics-default-enabled'], ['unrelated-command'], ['--version']]) {
       const child = spawn(process.execPath, [SCRIPT, ...args], {env: {...process.env, BUNNY_CODEX_NATIVE: native,
-        BUNNY_CODEX_RECEIPT_PRODUCER: join(dir, 'absent.json'), BUNNY_CODEX_DESKTOP_VERSION: CODEX_DESKTOP_VERSION,
-        BUNNY_CODEX_DESKTOP_BUILD: CODEX_DESKTOP_BUILD}, stdio: ['pipe', 'pipe', 'pipe']});
+        BUNNY_CODEX_RECEIPT_PRODUCER: join(dir, 'absent.json')}, stdio: ['pipe', 'pipe', 'pipe']});
       const stdout: Buffer[] = [], stderr: Buffer[] = [];
       child.stdout.on('data', (chunk: Buffer) => {stdout.push(chunk);}); child.stderr.on('data', (chunk: Buffer) => {stderr.push(chunk);});
       child.stdin.on('error', () => {});
@@ -37,8 +31,10 @@ it('the delivered observer executable preserves supported, unsupported and unrel
         child.once('close', (code, signal) => {resolve({code, signal});});
       });
       clearTimeout(deadline);
-      assert.equal(code, 19); assert.equal(signal, null);
-      assert.deepEqual(Buffer.concat(stdout), bytes); assert.equal(Buffer.concat(stderr).toString(), 'native stderr\n');
+      const versionOnly = args[0] === '--version';
+      assert.equal(code, versionOnly ? 0 : 19); assert.equal(signal, null);
+      assert.deepEqual(Buffer.concat(stdout), versionOnly ? Buffer.from(`codex-cli ${version}\n`) : bytes);
+      assert.equal(Buffer.concat(stderr).toString(), versionOnly ? '' : 'native stderr\n');
     }
   }
 });
@@ -60,7 +56,7 @@ syncBuiltinESMExports();
 `);
   await writeFile(native, `#!${process.execPath}
 import {existsSync} from 'node:fs';
-if (process.argv[2] === '--version') process.stdout.write('codex-cli ${CODEX_APP_SERVER_VERSION}\\n');
+if (process.argv[2] === '--version') process.stdout.write('codex-cli future-native\\n');
 else {
   const finish = () => {
     if (!existsSync(process.env.BUNNY_TEST_READ_MARKER)) return setTimeout(finish, 10);
@@ -70,7 +66,7 @@ else {
 }
 `, {mode: 0o700});
   const child = spawn(process.execPath, ['--import', preload, SCRIPT, 'app-server'], {env: {...process.env,
-    BUNNY_CODEX_NATIVE: native, BUNNY_CODEX_DESKTOP_VERSION: CODEX_DESKTOP_VERSION, BUNNY_CODEX_DESKTOP_BUILD: CODEX_DESKTOP_BUILD,
+    BUNNY_CODEX_NATIVE: native,
     BUNNY_CODEX_RECEIPT_PRODUCER: join(dir, 'producer.json'), BUNNY_TEST_READ_MARKER: marker, BUNNY_TEST_READ_FIFO: fifo},
   stdio: ['ignore', 'pipe', 'pipe']});
   context.after(() => {if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');});

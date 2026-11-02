@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {CodexReadObserver, type AcceptedCodexRead, type CodexReadTarget} from '../src/read-receipts/codex-observer.js';
-import {CODEX_DESKTOP_VERSION} from '../src/read-receipts/qualification.js';
+
+const BASELINE_VERSION = '26.1027.30824';
 
 const TARGET: CodexReadTarget = {identity: {provider: 'codex', client: 'local', hostId: 'test-host', sourceId: 'test-hooks', sessionId: 'thread-a'},
   turnId: 'turn-a', generation: 3, noticeId: 'a'.repeat(64)};
 
-function setup(name = 'Codex Desktop') {
+function setup(name = 'Codex Desktop', version = BASELINE_VERSION) {
   const receipts: AcceptedCodexRead[] = [], bindings: string[][] = [];
   let now = 1000, target: CodexReadTarget | undefined = structuredClone(TARGET), next = 1;
   const observer = new CodexReadObserver({now: () => now,
@@ -20,7 +21,7 @@ function setup(name = 'Codex Desktop') {
   };
   const request = (method: string, params: object, id: string | number = next++) => {send('client', {id, method, params}); return id;};
   const reply = (id: string | number, result: object) => {send('server', {id, result}, true);};
-  const initialized = request('initialize', {clientInfo: {name, version: CODEX_DESKTOP_VERSION}});
+  const initialized = request('initialize', {clientInfo: {name, version}});
   reply(initialized, {userAgent: 'synthetic'});
   const snapshot = (threadId = 'thread-a', revision = 'revision-a') => {
     const id = request('thread/read', {threadId, includeTurns: false});
@@ -37,6 +38,38 @@ function setup(name = 'Codex Desktop') {
   return {observer, receipts, bindings, send, request, reply, snapshot, select, read, accept,
     setTarget: (value: CodexReadTarget | undefined) => {target = value;}, advance: () => {now += 30_001;}};
 }
+
+void test('compatible Desktop updates retain receipts without changing the native protocol', () => {
+  for (const version of [BASELINE_VERSION, '26.1027.51404', '26.1101.12345', '27.1.0']) {
+    const world = setup('Codex Desktop', version);
+    world.snapshot(); world.select(); world.accept(world.read());
+    assert.deepEqual(world.receipts, [{target: TARGET, seenRevision: 'revision-a', acceptedRevision: 'revision-b', observedAtMs: 1000}], version);
+  }
+});
+
+void test('compatible extra fields preserve the receipt while essential protocol changes do not', () => {
+  const world = setup('Codex Desktop', '27.1.0');
+  const snapshot = world.request('thread/read', {threadId: 'thread-a', includeTurns: false, futureHint: true});
+  world.reply(snapshot, {thread: {id: 'thread-a'}, readState: {revision: 'revision-a', firstUnread: {type: 'turn', turnId: 'turn-a'}, futureHint: true}});
+  world.select({futureHint: true});
+  const id = world.read({operation: {type: 'read', futureHint: true}});
+  world.reply(id, {readState: {revision: 'revision-b', firstUnread: null}, futureHint: true});
+  assert.equal(world.receipts.length, 1);
+  assert.ok(!JSON.stringify(world.receipts).includes('futureHint'));
+
+  for (const result of [{}, {readState: {firstUnread: null}}, {readState: {revision: 'revision-b'}},
+    {readState: {revision: 5, firstUnread: null}}, {readState: {revision: 'revision-b', firstUnread: false}}]) {
+    const changed = setup('Codex Desktop', '27.1.0'); changed.snapshot(); changed.select();
+    changed.reply(changed.read(), result);
+    assert.deepEqual(changed.receipts, []);
+  }
+  for (const params of [{expectedRevision: null}, {expectedRevision: 5}, {threadId: 'another-thread'},
+    {operation: {type: 'viewed'}}, {operation: {type: 'read', expectedRevision: 'revision-a'}, expectedRevision: undefined}]) {
+    const changed = setup('Codex Desktop', '27.1.0'); changed.snapshot(); changed.select();
+    changed.accept(changed.read(params));
+    assert.deepEqual(changed.receipts, []);
+  }
+});
 
 void test('Desktop read acceptance freezes the target at its request and retains only allowlisted metadata', () => {
   const world = setup(); world.snapshot(); world.select();

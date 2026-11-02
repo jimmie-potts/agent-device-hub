@@ -5,12 +5,8 @@ import {producerSource} from '../hook/producer.js';
 
 export const CLAUDE_TERMINAL_VERSION = '2.1.292';
 export const CLAUDE_RECEIPT_FEED = `claude-terminal-read-${CLAUDE_TERMINAL_VERSION}`;
-export const CODEX_DESKTOP_VERSION = '26.1027.30824';
-export const CODEX_DESKTOP_BUILD = '22943';
-export const CODEX_APP_SERVER_VERSION = '0.166.0-alpha.5.1';
-export const CODEX_RECEIPT_FEED = `codex-desktop-read-${CODEX_DESKTOP_VERSION}-${CODEX_DESKTOP_BUILD}-${CODEX_APP_SERVER_VERSION}`;
-export const qualifiedCodexVersions = (desktop: string, build: string, native: string): boolean =>
-  desktop === CODEX_DESKTOP_VERSION && build === CODEX_DESKTOP_BUILD && native === `codex-cli ${CODEX_APP_SERVER_VERSION}`;
+/** Persisted enrollment identity from the first qualified protocol; its historical versions are not admission rules. */
+export const CODEX_RECEIPT_FEED = 'codex-desktop-read-26.1027.30824-22943-0.166.0-alpha.5.1';
 /** Desktop puts global configuration flags before the stdio subcommand. Other transports remain unobserved. */
 export function isCodexStdioServer(args: readonly string[]): boolean {
   let index = 0;
