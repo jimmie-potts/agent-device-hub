@@ -124,49 +124,93 @@ for (const transport of TRANSPORTS) {
     } finally {await h.close();}
   });
 
-  it(`Roborock scenario preserves a successful read already in flight over ${transport}`, async () => {
-    const simulation = registration.simulation;
-    assert.ok(simulation);
-    let sampledAt = 0, beforeAt = 0;
-    const delayed = {...registration, simulation: {...simulation, memory: {...simulation.memory, create(options: SimulationOptions) {
-      const device = new SimulatedRoborock(options.now);
-      const action = device.action.bind(device), read = device.readStatus.bind(device);
-      let holdNext = false, latestAt = 0, started: (() => void) | undefined;
-      device.readStatus = async readOptions => {
-        const held = holdNext;
-        holdNext = false;
-        const answer = await read(readOptions);
-        if (answer.ok) latestAt = Date.parse(answer.observedAt);
-        if (held) {
-          sampledAt = latestAt;
-          started?.();
-          await new Promise<void>(resolve => {
-            const finish = (): void => {cancel(); readOptions?.signal?.removeEventListener('abort', finish); resolve();};
-            const cancel = options.scheduler.after(100, finish);
-            readOptions?.signal?.addEventListener('abort', finish, {once: true});
-            if (readOptions?.signal?.aborted === true) finish();
-          });
-        }
-        return readOptions?.signal?.aborted === true ? read(readOptions) : answer;
-      };
-      device.action = async value => {
-        if (value !== 'offline') return action(value);
-        beforeAt = latestAt;
-        const begun = new Promise<void>(resolve => {started = resolve;});
-        // Give the later sample a distinct time, independent of how I/O and microtasks interleave.
-        options.scheduler.after(1, () => {holdNext = true; void action('online');});
-        await begun;
-        return action('offline');
-      };
-      return device;
-    }}}};
-    const h = await startMemoryHarness(selected.seed, transport, {
-      registrations: registrations.map(value => value.name === registration.name ? delayed : value),
+  for (const {inflightMs, offlineMs} of [{inflightMs: 100, offlineMs: 0}, {inflightMs: 8000, offlineMs: 4000}]) {
+    it(`Roborock scenario preserves an in-flight ${inflightMs}ms read before a ${offlineMs}ms offline read over ${transport}`, async () => {
+      const simulation = registration.simulation;
+      assert.ok(simulation);
+      let sampledAt = 0, beforeAt = 0;
+      const delayed = {...registration, simulation: {...simulation, memory: {...simulation.memory, create(options: SimulationOptions) {
+        const device = new SimulatedRoborock(options.now);
+        const action = device.action.bind(device), read = device.readStatus.bind(device);
+        let holdNext = false, delayOffline = false, latestAt = 0, started: (() => void) | undefined;
+        device.readStatus = async readOptions => {
+          const held = holdNext;
+          holdNext = false;
+          const answer = await read(readOptions);
+          if (answer.ok) latestAt = Date.parse(answer.observedAt);
+          if (held) {
+            sampledAt = latestAt;
+            started?.();
+          }
+          const delayMs = held ? inflightMs : delayOffline ? offlineMs : 0;
+          if (!held) delayOffline = false;
+          if (delayMs > 0) {
+            await new Promise<void>(resolve => {
+              const finish = (): void => {cancel(); readOptions?.signal?.removeEventListener('abort', finish); resolve();};
+              const cancel = options.scheduler.after(delayMs, finish);
+              readOptions?.signal?.addEventListener('abort', finish, {once: true});
+              if (readOptions?.signal?.aborted === true) finish();
+            });
+          }
+          return readOptions?.signal?.aborted === true ? read(readOptions) : answer;
+        };
+        device.action = async value => {
+          if (value !== 'offline') return action(value);
+          beforeAt = latestAt;
+          const begun = new Promise<void>(resolve => {started = resolve;});
+          // Give the later sample a distinct time, independent of how I/O and microtasks interleave.
+          options.scheduler.after(1, () => {holdNext = true; void action('online');});
+          await begun;
+          delayOffline = true;
+          return action('offline');
+        };
+        return device;
+      }}}};
+      const h = await startMemoryHarness(selected.seed, transport, {
+        registrations: registrations.map(value => value.name === registration.name ? delayed : value),
+      });
+      try {
+        const result = await runScenario(selected, h);
+        assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+        assert.ok(sampledAt > beforeAt, 'a later successful observation completes while the offline transition is pending');
+        assert.deepEqual(h.problems(), []);
+      } finally {await h.close();}
     });
+  }
+
+  it(`Roborock scenario rejects a frozen post-action reader revision over ${transport}`, async () => {
+    const h = await startMemoryHarness(selected.seed, transport);
+    const states = h.reader.states.bind(h.reader), simulate = h.simulate.bind(h);
+    let baseline: number | undefined, offlineAt: number | undefined, offlineActions = 0, recovered = false;
+    h.simulate = value => {
+      if (value.device === 'roborock' && value.action === 'offline') {
+        baseline = states<VacuumStatus>('roborock-vacuum')[0]?.data.revision;
+        assert.ok(baseline !== undefined);
+        offlineAt = h.now();
+        offlineActions += 1;
+      }
+      if (value.device === 'roborock' && value.action === 'empty-history') recovered = true;
+      simulate(value);
+    };
+    h.reader.states = <T>(family: string, owner?: string): Message<T>[] => {
+      const records = states<T>(family, owner);
+      if (family !== 'roborock-vacuum' || baseline === undefined) return records;
+      return records.map(record => ({...record, data: {...record.data, revision: baseline}}));
+    };
     try {
       const result = await runScenario(selected, h);
-      assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
-      assert.ok(sampledAt > beforeAt, 'a later successful observation completes while the offline transition is pending');
+      assert.equal(result.outcome, 'failed');
+      assert.equal(result.steps.at(-1)?.name, 'vendor temporarily becomes unavailable');
+      assert.equal(result.steps.at(-1)?.detail, 'post-action Roborock revision did not arrive');
+      assert.ok(offlineAt !== undefined);
+      assert.equal(h.now() - offlineAt, 10_000, 'the preparation phase ends at its fixed logical budget');
+      assert.equal(offlineActions, 1, 'the phase never reissues the action');
+      assert.equal(recovered, false, 'later recovery cannot hide a stuck reader');
+      const latest = h.published().filter(({message}) => message.type === 'org.bunny.roborock-vacuum.updated').at(-1)?.message.data as VacuumStatus;
+      assert.equal(latest.availability, 'unavailable', 'actual publication changed despite the frozen reader revision');
+      assert.equal(latest.collection.retainedRuns, 30);
+      assert.ok(latest.revision > (baseline ?? 0));
+      assert.equal(states<VacuumStatus>('roborock-vacuum')[0]?.data.availability, 'unavailable');
       assert.deepEqual(h.problems(), []);
     } finally {await h.close();}
   });

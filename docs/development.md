@@ -1997,6 +1997,20 @@ These checks do not establish installed or physical behavior.
 
 ## Roborock module checks
 
+After the root build, run
+`node --test apps/runtime/dist/tests/scenarios/roborock.test.js` and
+`node --test apps/runtime/dist/verify/tests/roborock.test.js` for the offline and
+recovery catalog checks. Offline preparation captures a revision for that action
+and waits at most 10 seconds of requested harness waits for a newer reader
+revision, then keeps the separate 10-second unavailable check. The preparation
+revision can come from an earlier read or maintenance; it does not establish
+collector completion or an offline observation. The controls cover an 8-second
+successful read already in flight followed by a 4-second offline read, a frozen
+reader revision, a missing transition and actual history/time faults. Each read
+retains its existing nine-second transport and ten-second collector bounds.
+The deterministic scheduling example proves a verification timing assumption;
+it does not identify the cause of a historical hosted failure.
+
 The reusable card (#390) extends `test:roborock:browser`, already selected by
 App verification, and the module/dashboard unit suites. After the root build,
 run `npm run test:roborock:built`, `npm run test:roborock:consumer:built`,

@@ -8,9 +8,9 @@ import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, traceFields} from '@jimmie-potts/sdk';
-import {RuntimeError} from '../../src/index.js';
+import {RuntimeError, type LogRecord} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
-import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, type Harness, type Scenario} from './catalog.js';
+import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, TRANSPORTS, type Harness, type Scenario, type TransportName} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
 
 const EMPTY = {modules: [], follows: []} as const;
@@ -196,22 +196,39 @@ it('each harness generates its own tokens, and none appears in a log record, an 
   }
 });
 
-it('every record the end-to-end scenario writes is a diagnostic-contract record, and the modules\' records are written, on both transports', async () => {
-  for (const transport of ['in-process', 'remote'] as const) {
+const EXPECTED_MODULE_RECORDS = [
+  'lamp bunny.module command.completed',
+  'lamp bunny.module outbox.republished',
+  'core bunny.module message.received',
+];
+const moduleRecordKey = (record: LogRecord): string => `${String(record.attributes['bunny.module'])} ${record.scope.name} ${record.event_name}`;
+function assertDiagnosticScenarioRecords(records: readonly LogRecord[], transport: TransportName): void {
+  assertContractRecords(records);
+  const written = new Set(records.map(moduleRecordKey));
+  for (const expected of EXPECTED_MODULE_RECORDS) assert.ok(written.has(expected), `${transport}: ${expected}`);
+}
+
+for (const transport of TRANSPORTS) {
+  it(`every record the end-to-end scenario writes is a diagnostic-contract record, and the modules' records are written, over ${transport}`, async () => {
     const h = await startMemoryHarness(named('end-to-end').seed, transport);
     try {
       assert.equal((await runScenario(named('end-to-end'), h)).outcome, 'passed', transport);
       const records = h.logs().map(({record}) => record);
-      assertContractRecords(records);
-      const written = new Set(records.map(record => `${String(record.attributes['bunny.module'])} ${record.scope.name} ${record.event_name}`));
-      for (const expected of ['lamp bunny.module command.completed', 'lamp bunny.module outbox.republished', 'core bunny.module message.received']) {
-        assert.ok(written.has(expected), `${transport}: ${expected}`);
+      assertDiagnosticScenarioRecords(records, transport);
+      const first = records[0];
+      assert.ok(first, 'the scenario wrote records');
+      assert.throws(() => assertDiagnosticScenarioRecords([...records, {...first, event_name: 'invalid-synthetic-event'}], transport),
+        /invalid-synthetic-event is a contract record/);
+      for (const missing of EXPECTED_MODULE_RECORDS) {
+        assert.throws(() => assertDiagnosticScenarioRecords(records.filter(record => moduleRecordKey(record) !== missing), transport),
+          {code: 'ERR_ASSERTION', message: `${transport}: ${missing}`});
       }
     } finally {
       await h.close();
+      await assert.rejects(stat(h.stateDir), {code: 'ENOENT'}, 'close removed the owned private state directory');
     }
-  }
-});
+  });
+}
 
 type Attribute = {key: string; value: {stringValue?: string}};
 type Span = {
