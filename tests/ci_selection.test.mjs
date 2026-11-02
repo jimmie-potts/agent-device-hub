@@ -21,7 +21,7 @@ const pr = paths => selectChecks({ event: 'pull_request', paths, complete: true 
 test('full runtime verification is independently required without dropping App checks', () => {
   const runtime = checks.jobs['runtime-verify'];
   assert.ok(runtime, 'the full serial runtime suite needs its own finite job budget');
-  assert.equal(runtime['timeout-minutes'], 30);
+  assert.equal(runtime['timeout-minutes'], 35);
   assert.deepEqual(runtime.env, checks.jobs['app-verify'].env);
   assert.ok(runtime.steps.some(step => step.run === 'npm run test:runtime:verify:built'));
   assert.equal(checks.jobs['app-verify'].steps.some(step => step.run === 'npm run test:runtime:verify:built'), false);
