@@ -92,6 +92,9 @@ export class InboxRecords {
         if (row === undefined) return errorBody('not-found', {detail: 'no such inbox item'});
         const record = JSON.parse(row.record) as InboxItem, operation = core.operation(record.item.requestId);
         if (operation === undefined) return errorBody('not-found', {detail: 'the inbox operation is unavailable'});
+        if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
+          detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
+        });
         if (operation.payload?.status === 'omitted') return errorBody('unsupported-capability', {
           detail: 'this input was not retained; enter fresh text as a new request',
         });

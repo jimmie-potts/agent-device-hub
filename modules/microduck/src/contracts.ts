@@ -1,0 +1,31 @@
+import type {CommandGuards, CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {Ticket} from '@jimmie-potts/event-contracts/v2';
+export const gestures = ['notice', 'attention', 'neutral'] as const;
+export type Gesture = typeof gestures[number];
+export const controls = ['enable-auto', 'disable-auto', 'takeover', 'resume-auto'] as const;
+export type Control = typeof controls[number];
+export const families = ['microduck-gesture', 'microduck-stop', 'microduck-control', 'microduck-auto'] as const;
+export type Family = typeof families[number];
+export const schemaOf = (family: string): string => `https://bunny.invalid/events/${family}/2.0`;
+export const typeOf = (family: string): string => `org.bunny.microduck.${family.slice(10)}.requested`;
+export type Guards = CommandGuards & {heldRequestId?: string; recovered?: true; validUntilMs?: number};
+export type Head = [number, number, number, number];
+export const VENDOR_IDENTITY={kind:'vendor-mujoco',apiVersion:47,daemonVersion:'0.18.3',revision:'b2b0d213a402caeac492dd662ea891faa17f67c0'} as const;
+export type Observation = {
+  backend:typeof VENDOR_IDENTITY|{kind:'fake-io'};
+  session: string; sensorNs: string; head: Head; targets: number[]; joints: number[]; syntheticJointIndices:[9];
+  daemonUptimeSeconds: number; loopHz: number; policy: string; healthy: boolean; zeroVelocity: boolean;
+};
+export type Active = {requestId: string; gesture: Gesture; phase: 'outbound' | 'return' | 'neutral'; automatic: boolean};
+export type Hold = {requestId: string; heldAtMs: number};
+export type MicroDuckState = {
+  id: string; revision: number; configurationRevision: number; generation: Ticket;
+  simulated: true; fixtureSession: string | null; ownership: 'unknown' | 'fixture-exclusive';
+  connection: 'unknown' | 'available' | 'unavailable' | 'stale' | 'mismatch';
+  enabled: boolean; takeover: boolean; latched: boolean;
+  observation: null | (Observation & {observedAtMs: number}); active: Active | null;
+  lastRecovery: {requestId: string; heldRequestId: string} | null;
+  pending: number; held: Hold | null; lastOutcome: CompletedOutcome | null;
+  lastTransmission: DeviceRecord['lastTransmission'];
+};
+export const stages = (gesture: Gesture): readonly number[] => gesture === 'neutral' ? [0] : [gesture === 'notice' ? .1 : -.1, 0];

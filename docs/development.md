@@ -2218,3 +2218,17 @@ reader refusals, metadata privacy and restart over both scenario transports.
 private import/export, keyboard and axe checks. Preserve build/type/lint, affected
 event/runtime/SDK consumers and workflow validation. All data is synthetic; these
 checks neither install the feature nor qualify a live model or physical device.
+
+## MicroDuck simulator checks
+
+Before product implementation, #623 adds `test:microduck:built` for module tests
+and `test:microduck:browser` for tracked dashboard controls. Use Node 24, npm ci,
+build, typecheck and lint:js, plus test:events:built, test:sdk:built,
+test:runtime:built, test:runtime:scenarios:built, test:runtime-dashboard:built,
+check:workflow and test:workflow. CI runs module tests for modules changes and
+browser checks for runtime changes. The module guide owns the private fixture
+setup and vendor pins. Ordinary CI uses fakes; real robotd/MuJoCo acceptance is
+separate in an isolated Linux ARM64 fixture. No installed or hardware evidence
+is inferred. Test Stop independently of pending replies, both process-loss
+directions, lossless sensor freshness, missed return windows, exact held-neutral
+recovery, durable suppression, restart/outbox and status-only MCP.

@@ -884,6 +884,7 @@ export class Gateway {
   async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
+    if (family.startsWith('microduck-') && principal.kind !== 'browser') return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;
     if (family === 'inbox-handle') {
@@ -936,6 +937,7 @@ export class Gateway {
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
     if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
     if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
+    if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
