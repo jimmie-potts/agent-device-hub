@@ -274,7 +274,7 @@ jobs:
     needs: select
     if: needs.select.outputs.runtime-verify == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     # The unchanged serial catalog takes 16-18 minutes. Its own finite job budget keeps
     # apt retries and the remaining App browser checks from exhausting one shared limit (#1183).
     env:

@@ -309,12 +309,13 @@ pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
 select and gate jobs' five, the Workflow job's fifteen, the retained documentation
-job's twenty-five, Runtime verification's thirty, and Core and App verification's
+job's twenty-five, Runtime verification's thirty-five, and Core and App verification's
 forty. Branch pushes do not duplicate PR checks.
 Core's finite 40-minute aggregate limit leaves headroom after full selections
 exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
 All suites and per-test deadlines stay in force. Runtime verification keeps its
-separate 30-minute limit.
+separate 35-minute limit. Its verification step passed as the qualification job
+exhausted the former 30-minute aggregate cap ([#1391](https://github.com/jimmie-potts/agent-device-hub/issues/1391)).
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
@@ -469,7 +470,7 @@ Existing provider qualification records and device ownership are unchanged.
 
 ### CI cost and suite timings
 
-Runtime catalog verification now runs unchanged in its own required 30-minute
+Runtime catalog verification now runs unchanged in its own required 35-minute
 job. Two #1183 App attempts exhausted their combined job limit after the full
 serial runtime suite passed in 16m03s and 17m36s; Chromium setup took over five
 minutes. The App job retains every other check, and the selected-check gate
