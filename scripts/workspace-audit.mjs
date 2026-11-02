@@ -3,9 +3,18 @@
 // docs/sdlc.md "Cleanup after delivery" and "Workspace audit".
 import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 /** Installed stacks on this Mac. Their containers, volumes and networks are never task artifacts. */
 export const installedPrefixes = Object.freeze(['bunny-mac-personal', 'bunny-tronbyt', 'bunny-diagnostics']);
+/** The launcher's shared tool-image cache, keyed by manifest hash, not by task (scripts/runtime-container.mjs). */
+export const launcherCacheRepository = 'bunny-runtime-check-tools';
+/** Volume names task runs create: an issue number, the launcher's identity or an acceptance exercise. */
+const taskVolume = /^(?:bunny-gh\d+|bunny-\d+|bunny-runtime-check|acceptance)-/;
+/** Data volumes, whatever created them. docs/bunny-container.md: never remove a data volume. */
+const dataVolume = /archives|_state$|_config$|_secrets$/;
+const stoppedStates = new Set(['exited', 'dead', 'created']);
+const prLimit = 300;
 const hour = 3_600_000;
 
 export function parseArguments(args) {
@@ -65,6 +74,7 @@ export function classifyWorktrees(worktrees, prs, dirty, root) {
     const pr = worktree.branch === null ? undefined : prs.get(worktree.branch);
     let verdict;
     if (worktree.path.startsWith(`${root}/.claude/worktrees/`) || worktree.path.includes('/.codex/worktrees/')) verdict = 'tool-managed: leave it to that tool';
+    else if (worktree.prunable) verdict = 'prunable, directory missing: git worktree prune after the owner confirms';
     else if (worktree.locked) verdict = 'locked: keep';
     else if (changes === undefined) verdict = 'state unknown: inspect';
     else if (changes > 0) verdict = 'dirty: keep';
@@ -78,35 +88,76 @@ export function classifyWorktrees(worktrees, prs, dirty, root) {
 
 /** Stopped containers older than the window that no installed stack owns. */
 export function staleContainers(containers, now, hours) {
-  return containers.filter(container => container.State !== 'running' && !installed(container.Names) && olderThan(container.CreatedAt, now, hours))
+  return containers.filter(container => stoppedStates.has(container.State) && !installed(container.Names) && olderThan(container.CreatedAt, now, hours))
     .map(container => ({id: container.ID, name: container.Names, image: container.Image, status: container.Status}));
 }
 
-/** Images older than the window that no container uses and that no rule protects. */
-export function staleImages(images, containers, now, hours) {
-  const references = new Set(containers.map(container => container.Image));
-  const referenced = image => references.has(image.ID) || references.has(`${image.Repository}:${image.Tag}`) || (image.Tag === 'latest' && references.has(image.Repository)) || [...references].some(reference => /^[0-9a-f]{12,}$/.test(reference) && (reference.startsWith(image.ID) || image.ID.startsWith(reference)));
-  return images.filter(image => image.Repository.startsWith('bunny') && !(image.Repository === 'bunny-core' && image.Tag.startsWith('release-')) && !referenced(image) && olderThan(image.CreatedAt, now, hours))
-    .map(image => ({id: image.ID, reference: `${image.Repository}:${image.Tag}`, size: image.Size, created: image.CreatedAt}));
+/**
+ * Whether any container references the image. A container's `Image` is an ID (full or 12-hex prefix,
+ * with or without `sha256:`), `repository:tag`, `repository` (tag latest), or either form pinned with
+ * `@sha256:<digest>`. A digest pin without a tag names the repository, so every tag of it stays.
+ */
+export function referencedBy(containers) {
+  const ids = new Set();
+  const tags = new Set();
+  const repositories = new Set();
+  for (const container of containers) {
+    const pinned = /@sha256:[0-9a-f]+$/.test(container.Image);
+    const reference = container.Image.replace(/^sha256:/, '').replace(/@sha256:[0-9a-f]+$/, '');
+    if (/^[0-9a-f]{12,64}$/.test(reference)) ids.add(reference);
+    else if (reference.lastIndexOf(':') > reference.lastIndexOf('/')) tags.add(reference);
+    else if (pinned) repositories.add(reference);
+    else tags.add(`${reference}:latest`);
+  }
+  return image => {
+    const id = image.ID.replace(/^sha256:/, '');
+    return [...ids].some(reference => id.startsWith(reference) || reference.startsWith(id))
+      || tags.has(`${image.Repository}:${image.Tag}`) || repositories.has(image.Repository);
+  };
 }
 
-/** Volumes with no container that no installed stack owns. Compose volumes use `<project>_<name>`. */
-export function staleVolumes(danglingVolumes) {
-  return danglingVolumes.filter(volume => !installed(volume.Name)).map(volume => volume.Name);
+const protectedImage = image => !image.Repository.startsWith('bunny') || image.Repository === launcherCacheRepository || (image.Repository === 'bunny-core' && image.Tag.startsWith('release-'));
+
+/** Task images older than the window that no container uses and that no rule protects. */
+export function staleImages(images, containers, now, hours) {
+  const referenced = referencedBy(containers);
+  return images.filter(image => !protectedImage(image) && image.Repository !== '<none>' && !referenced(image) && olderThan(image.CreatedAt, now, hours))
+    .map(image => ({id: image.ID.replace(/^sha256:/, ''), reference: `${image.Repository}:${image.Tag}`, size: image.Size, created: image.CreatedAt}));
 }
+
+/** The launcher's shared tool-image caches and untagged leftovers, listed for the owner, never as task artifacts. */
+export function sharedImages(images, containers) {
+  const referenced = referencedBy(containers);
+  const entry = image => ({id: image.ID.replace(/^sha256:/, ''), reference: `${image.Repository}:${image.Tag}`, size: image.Size, created: image.CreatedAt});
+  return {
+    launcherCaches: images.filter(image => image.Repository === launcherCacheRepository).map(entry),
+    untagged: images.filter(image => image.Repository === '<none>' && !referenced(image)).map(entry),
+  };
+}
+
+/** Container-less volumes that a task run created. Installed-stack and data volumes never appear. */
+export function staleVolumes(danglingVolumes) {
+  return danglingVolumes.filter(volume => taskVolume.test(volume.Name) && !installed(volume.Name) && !dataVolume.test(volume.Name)).map(volume => volume.Name);
+}
+
+const imageLine = image => `  ${image.id.slice(0, 12)}  ${image.reference}  ${image.size}`;
 
 export function render(report) {
   const lines = [`Workspace audit (${report.hours} h window, ${report.now})`, ''];
-  lines.push(`Worktrees: ${report.worktrees.length}`);
+  lines.push(`Worktrees other than the main checkout: ${report.worktrees.length}`);
   for (const worktree of report.worktrees) lines.push(`  ${worktree.verdict}  ${worktree.path} [${worktree.branch ?? 'detached'} ${worktree.head}]`);
   if (report.docker === null) lines.push('', 'Docker: unavailable');
   else {
     lines.push('', `Stopped task containers older than ${report.hours} h: ${report.docker.containers.length}`);
-    for (const container of report.docker.containers) lines.push(`  ${container.id}  ${container.name}  ${container.status}`);
+    for (const container of report.docker.containers) lines.push(`  ${container.id.slice(0, 12)}  ${container.name}  ${container.status}`);
     lines.push('', `Unreferenced task images older than ${report.hours} h: ${report.docker.images.length}`);
-    for (const image of report.docker.images) lines.push(`  ${image.id}  ${image.reference}  ${image.size}`);
-    lines.push('', `Volumes with no container outside the installed stacks: ${report.docker.volumes.length}`);
+    for (const image of report.docker.images) lines.push(imageLine(image));
+    lines.push('', `Container-less task volumes: ${report.docker.volumes.length}`);
     for (const volume of report.docker.volumes) lines.push(`  ${volume}`);
+    lines.push('', `Shared launcher caches (${launcherCacheRepository}, owner decision, not task artifacts): ${report.docker.shared.launcherCaches.length}`);
+    for (const image of report.docker.shared.launcherCaches) lines.push(imageLine(image));
+    lines.push('', `Untagged images no container uses (left by rebuilt tags, owner decision): ${report.docker.shared.untagged.length}`);
+    for (const image of report.docker.shared.untagged) lines.push(imageLine(image));
     lines.push('', 'Docker usage:', ...report.docker.usage.split('\n').map(line => `  ${line}`));
   }
   if (report.notes.length) lines.push('', ...report.notes.map(note => `Note: ${note}`));
@@ -114,33 +165,37 @@ export function render(report) {
   return lines.join('\n');
 }
 
-const run = (program, args) => execFileSync(program, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024});
+const defaultRun = (program, args) => execFileSync(program, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024});
 const jsonLines = text => text.split('\n').filter(Boolean).map(line => JSON.parse(line));
 
-export function collect(root, options, now = new Date()) {
+/** The report. `run(program, args)` returns a command's stdout or throws; tests inject it. */
+export function collect(root, options, now = new Date(), run = defaultRun) {
   const notes = [];
   const worktrees = parseWorktrees(run('git', ['-C', root, 'worktree', 'list', '--porcelain']));
   const dirty = new Map();
   for (const worktree of worktrees) {
-    try {dirty.set(worktree.path, run('git', ['-C', worktree.path, 'status', '--porcelain']).split('\n').filter(Boolean).length);} catch {/* unreadable: reported as unknown */}
+    if (worktree.prunable) continue;
+    try {dirty.set(worktree.path, run('git', ['--no-optional-locks', '-C', worktree.path, 'status', '--porcelain']).split('\n').filter(Boolean).length);} catch {/* unreadable: reported as unknown */}
   }
   const prs = new Map();
   try {
-    for (const pr of JSON.parse(run('gh', ['pr', 'list', '--state', 'all', '--limit', '300', '--json', 'number,state,headRefName,headRefOid'])).reverse()) prs.set(pr.headRefName, pr);
+    const rows = JSON.parse(run('gh', ['pr', 'list', '--state', 'all', '--limit', String(prLimit), '--json', 'number,state,headRefName,headRefOid']));
+    for (const pr of rows.reverse()) prs.set(pr.headRefName, pr);
+    if (rows.length >= prLimit) notes.push(`gh pr list returned the newest ${prLimit} PRs only: a worktree whose PR is older is reported as "no PR"`);
   } catch {notes.push('gh pr list failed: PR states are unknown, so no worktree is reported removable');}
   let docker = null;
   try {
     const containers = jsonLines(run('docker', ['container', 'ls', '--all', '--no-trunc', '--format', '{{json .}}']));
-    const images = jsonLines(run('docker', ['image', 'ls', '--no-trunc', '--format', '{{json .}}'])).map(image => ({...image, ID: image.ID.replace(/^sha256:/, '')}));
+    const images = jsonLines(run('docker', ['image', 'ls', '--no-trunc', '--format', '{{json .}}']));
     const volumes = jsonLines(run('docker', ['volume', 'ls', '--filter', 'dangling=true', '--format', '{{json .}}']));
-    docker = {containers: staleContainers(containers, now, options.hours), images: staleImages(images, containers.map(container => ({...container, Image: container.Image.replace(/^sha256:/, '')})), now, options.hours), volumes: staleVolumes(volumes), usage: run('docker', ['system', 'df']).trim()};
+    docker = {containers: staleContainers(containers, now, options.hours), images: staleImages(images, containers, now, options.hours), volumes: staleVolumes(volumes), shared: sharedImages(images, containers), usage: run('docker', ['system', 'df']).trim()};
   } catch {notes.push('docker is unavailable');}
   return {now: now.toISOString(), hours: options.hours, worktrees: classifyWorktrees(worktrees, prs, dirty, root), docker, notes};
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const options = parseArguments(process.argv.slice(2));
-  const root = run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim().replace(/\/\.git$/, '');
+  const root = defaultRun('git', ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim().replace(/\/\.git$/, '');
   const report = collect(root, options);
   process.stdout.write(`${options.json ? JSON.stringify(report, null, 2) : render(report)}\n`);
 }

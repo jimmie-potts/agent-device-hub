@@ -411,7 +411,7 @@ rename) and maps it to check groups with the small explicit table in
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Build, typecheck and lint always run. Markdown, `openspec/**` and the
+Build, typecheck, lint and the workspace-audit tests always run. Markdown, `openspec/**` and the
 documentation tooling under `docs/**` select no group. Every other path selects
 full coverage: shared packages and contracts, root manifests, the lockfile and
 toolchain files, `.github/**`, `scripts/**` (including the selector and the
@@ -1040,9 +1040,11 @@ owns a unique container; cleanup removes only that container. The source copy
 excludes ignored files, private paths and build output and refuses symlinks.
 Keep private work outside tracked/nonignored source. Host interruption may leave
 that invocation's container; inspect and remove only its `bunny-runtime-check-`
-identity. No broad prune or installed-service action is needed; the prepared
-`bunny-runtime-check-tools` images stay until
-[Cleanup after delivery](sdlc.md#cleanup-after-delivery) removes the task's own.
+identity. No broad prune or installed-service action is needed. The prepared
+`bunny-runtime-check-tools:<hash>` images are caches keyed by the manifests and
+recipe, shared by every run of the same lockfile across tasks and sessions;
+[Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them, and only
+the owner removes a cache no live lockfile produces.
 
 The wrapper's fixed-suite, source-isolation and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
@@ -1054,12 +1056,14 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 `npm run audit:workspace` prints the read-only report that
 [Workspace audit](sdlc.md#workspace-audit) acts on: a verdict per registered
-worktree from `git worktree list`, `git status` and `gh pr list`, and the stale
-Docker task containers, images and container-less volumes outside the installed
-stacks. Pass `-- --hours <n>` to change the 48-hour window and `-- --json` for
-the raw report. It needs `gh` for PR states and Docker Desktop for the Docker
-sections; a missing tool is reported as a note, not a failure. Its
-classification tests are `npm run test:workspace-audit`, run in core CI.
+worktree from `git worktree list`, lock-free `git status` and `gh pr list`,
+stopped task containers and unreferenced task images older than the window,
+container-less task-named volumes, and the shared launcher caches and untagged
+images listed for the owner. Pass `-- --hours <n>` to change the 48-hour window
+and `-- --json` for the raw report. It needs `gh` for PR states and Docker
+Desktop for the Docker sections; a missing tool, or a PR older than the newest
+300, is reported as a note, not a failure. Its classification and collection
+tests are `npm run test:workspace-audit`, run in core CI.
 
 ## Runtime dashboard checks
 
