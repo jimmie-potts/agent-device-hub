@@ -239,7 +239,7 @@ async function evaluateCiGates(ctx) {
   if (ctx.filesRead && rules.ok) {
     await evaluateCi(ctx, gates.ciPr, {
       sha: ctx.head, event: 'pull_request', branch: ctx.baseRef, checkBranch: pr.head.ref,
-      paths: ctx.paths, filesComplete: ctx.filesComplete, requiredContexts, baseline: ctx.mergeBase,
+      paths: ctx.paths, changes:ctx.files, filesComplete: ctx.filesComplete, requiredContexts, baseline: ctx.mergeBase,
     });
   }
 

@@ -73,6 +73,15 @@ and the runtime scenarios. Tests use loopback SOAP or synthetic plugs. The
 SDK state across restart; browser checks include page-closed enforcement and
 independent plugs, with desktop/phone accessibility.
 
+For a complete diff confined to modifications of
+`modules/wemo/tests/module.test.ts` and ordinary Markdown, the standalone-test
+exception runs Node 24 setup, build, typecheck, lint, Workflow/docs checks and the
+**entire** `npm run test:wemo:built` suite. Its exact-head execution must include
+the changed compiled test with nonzero successful tests and no skips. Independent
+review and disposable acceptance remain required. Any product, helper, fixture,
+contract, policy, added/deleted/renamed or uncertain path retains the broader
+validation above; this exception selects no physical device.
+
 The owner-admission success case waits for available state and a completed
 outcome under one bus/module test clock. Its request retains a 100 ms lifetime;
 readiness and completion use finite real-time checks. A separate case advances

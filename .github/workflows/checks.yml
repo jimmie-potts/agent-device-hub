@@ -26,6 +26,8 @@ jobs:
     outputs:
       mode: ${{ steps.select.outputs.mode }}
       groups: ${{ steps.select.outputs.groups }}
+      owners: ${{ steps.select.outputs.owners }}
+      head: ${{ steps.select.outputs.head }}
       firmware: ${{ steps.select.outputs.firmware }}
       app-verify: ${{ steps.select.outputs.app-verify }}
       runtime-verify: ${{ steps.select.outputs.runtime-verify }}
@@ -42,6 +44,8 @@ jobs:
           BUNNY_RELEASE_QUALIFICATION: ${{ inputs.qualification }}
         run: node scripts/ci-selection/cli.mjs select
   core:
+    outputs:
+      owners: ${{ steps.standalone.outputs.owners }}
     name: Build, lint and core tests on ${{ matrix.os }}
     needs: select
     strategy:
@@ -54,6 +58,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.select.outputs.mode == 'standalone' && needs.select.outputs.head || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
@@ -72,6 +78,16 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: node --test scripts/release/tests/*.test.mjs
       - run: npm run lint:js
+      - name: Install Chromium with its system dependencies
+        if: contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')
+        timeout-minutes: 20
+        run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
+      - name: Run complete standalone owning commands
+        id: standalone
+        env:
+          STANDALONE_OWNERS: ${{ needs.select.outputs.owners }}
+          STANDALONE_HEAD: ${{ needs.select.outputs.head }}
+        run: node scripts/ci-selection/run-standalone.mjs
       - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
         run: npm run test:maintenance:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
