@@ -247,9 +247,21 @@ no host mounts, ports, network or devices. This qualifies source and packaged by
 Each run attempt retains two 14-day Actions artifacts.
 `release-image-<SHA>-<run-ID>-<attempt>` holds `production-image.tar.gz`.
 `release-evidence-<SHA>-<run-ID>-<attempt>` holds `qualification.json`.
-The receipt records Docker's immutable image ID, the archive's
-SHA-256, architecture, source/evaluation revision, evaluation input hashes and
-actual required job results. It distinguishes qualified, failed and incomplete work.
+New receipts for the selected Mac/containerd lane record the saved single OCI
+manifest's digest as the immutable image ID. The producer verifies the raw
+manifest/configuration hashes and sizes, tested production config, ordered
+DiffIDs, source, Linux ARM64 platform and user `1000:1000` before emitting metadata.
+It keeps its local Docker ID only for building, testing and saving. Gzip layer
+content digests and uncompressed DiffIDs are checked separately. The release
+archive reader streams USTAR entries without extraction, with a 120-second limit,
+8 GiB limits for compressed, decoded and expanded bytes, at most 512 entries,
+1 MiB per retained JSON candidate and 8 MiB total retained metadata. Unsupported,
+ambiguous, corrupt or mismatched archives refuse. Existing receipts are never
+rewritten, and strict consumer/helper/container ID comparisons remain unchanged.
+This qualifies the selected Mac lane, not identical Docker IDs across all stores.
+The receipt also records the archive's SHA-256, architecture, source/evaluation
+revision, evaluation input hashes and actual required job results. It distinguishes
+qualified, failed and incomplete work.
 Unavailable/cancelled work or an expired artifact cannot qualify a newer revision.
 Retries explicitly select the same candidate and keep their own attempt identity.
 The producer checks the actual unique unexpired image artifact before reporting
