@@ -308,7 +308,13 @@ GitHub-hosted Ubuntu runners. Depot CI ran them under `.depot/workflows/` until
 pull requests and pushes to main, and report each job as a GitHub check named
 after the job. Superseded PR revisions are cancelled per workflow and PR; main
 revisions keep independent runs. Each job has a ten-minute timeout, except the
-select and gate jobs' five, the Workflow job's fifteen, the retained documentation job's twenty-five, the core and Runtime verification jobs' thirty and App verification's forty. Branch pushes do not duplicate PR checks.
+select and gate jobs' five, the Workflow job's fifteen, the retained documentation
+job's twenty-five, Runtime verification's thirty, and Core and App verification's
+forty. Branch pushes do not duplicate PR checks.
+Core's finite 40-minute aggregate limit leaves headroom after full selections
+exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
+All suites and per-test deadlines stay in force. Runtime verification keeps its
+separate 30-minute limit.
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
