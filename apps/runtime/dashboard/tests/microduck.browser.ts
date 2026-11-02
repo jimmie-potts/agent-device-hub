@@ -77,7 +77,7 @@ try {
   assert.equal(await neutral.isDisabled(),true);world.microduck.loseReply=false;await acknowledgment.check();await neutral.click();await acknowledgment.waitFor({state:'hidden'});
   const before=world.microduck.effects.length;await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.microduck.effects.length,before);
   for(const width of [320,390,1440]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
-  const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations,[]);assert.deepEqual(errors,[]);
+  const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations,[],'MicroDuck controls page must have no axe accessibility violations');assert.deepEqual(errors,[],'MicroDuck controls page must have no uncaught page errors');
   await panel.screenshot({path:screenshot});
   console.log('MicroDuck browser artifacts: '+screenshot);
   world.microduck.act('offline');await panel.getByRole('status').filter({hasText:/Simulator (unavailable|stale)/}).waitFor();assert.equal(await stop.isEnabled(),true);assert.equal((await world.assistantRead()).status,200);
