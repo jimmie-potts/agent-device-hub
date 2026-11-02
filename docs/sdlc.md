@@ -459,6 +459,18 @@ still uses the worktree. Clean up only what this delivery created:
    2 pass on a clean worktree, accepting the tool's option to discard the
    squash-merged commits is allowed. If this session cannot run that flow, keep
    the worktree and report it as ready to remove.
+6. Remove the Docker artifacts this task created: its stopped containers, the
+   images it built and tagged, and its synthetic volumes and networks. Give
+   them names that carry the issue number or the launcher's own
+   `bunny-runtime-check-` identity, and start disposable runs with `--rm`, so
+   this step is `docker rm`, `docker rmi` and `docker volume rm` of named
+   artifacts, never a prune. Keep the installed stacks (`bunny-mac-personal*`,
+   `bunny-tronbyt*` and `bunny-diagnostics*` containers, volumes and networks),
+   every image a container still uses, qualified `bunny-core:release-*` images,
+   third-party images and the retained release directories under
+   `~/.local/share/bunny/releases/`, which the installed hooks and the running
+   core reference. Confirm with `docker ps -a`, `docker images` and
+   `docker volume ls` filtered by the task's name that nothing remains.
 
 Keep the worktree and scratch, and report the path and reason, when a worktree
 is dirty or locked, another process or session uses it, the delivery worktree's
@@ -468,6 +480,23 @@ user's explicit approval, never force removal or reset, clean or discard files
 to make a worktree removable. If main CI fails, or the work failed or was
 abandoned, ask the user whether to keep or remove it and keep it until they
 decide. Leave other sessions' worktrees, branches and scratch alone.
+
+### Workspace audit
+
+Run `npm run audit:workspace` from any checkout about weekly and before any
+disk-space complaint. It is read-only. It lists every registered worktree with
+the verdict the steps above give it: removable when its PR is merged at the
+worktree's exact head and the tree is clean, and otherwise tool-managed, dirty,
+locked, open, closed or detached, each named for the decision it needs. It also
+lists stopped task containers and unreferenced task images older than the
+window (48 hours by default, `-- --hours <n>`), volumes with no container
+outside the installed stacks and `docker system df`. Act on it under the steps
+above: remove only what the report marks removable or what this task created,
+ask the owner about closed-PR and detached worktrees, and leave tool-managed
+worktrees to their tools. The build cache holds no data, so
+`docker builder prune -af` is allowed whenever no build is running. Never prune
+images, containers or volumes wholesale: the installed stacks and the qualified
+release images share that daemon.
 
 <a id="depot-ci-evidence"></a>
 

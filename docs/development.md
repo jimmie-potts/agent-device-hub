@@ -1040,13 +1040,26 @@ owns a unique container; cleanup removes only that container. The source copy
 excludes ignored files, private paths and build output and refuses symlinks.
 Keep private work outside tracked/nonignored source. Host interruption may leave
 that invocation's container; inspect and remove only its `bunny-runtime-check-`
-identity. No broad prune or installed-service action is needed.
+identity. No broad prune or installed-service action is needed; the prepared
+`bunny-runtime-check-tools` images stay until
+[Cleanup after delivery](sdlc.md#cleanup-after-delivery) removes the task's own.
 
 The wrapper's fixed-suite, source-isolation and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
 Hosted runtime suites remain unchanged.
 
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
+
+### Workspace audit
+
+`npm run audit:workspace` prints the read-only report that
+[Workspace audit](sdlc.md#workspace-audit) acts on: a verdict per registered
+worktree from `git worktree list`, `git status` and `gh pr list`, and the stale
+Docker task containers, images and container-less volumes outside the installed
+stacks. Pass `-- --hours <n>` to change the 48-hour window and `-- --json` for
+the raw report. It needs `gh` for PR states and Docker Desktop for the Docker
+sections; a missing tool is reported as a note, not a failure. Its
+classification tests are `npm run test:workspace-audit`, run in core CI.
 
 ## Runtime dashboard checks
 

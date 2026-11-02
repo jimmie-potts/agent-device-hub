@@ -78,6 +78,7 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: node --test scripts/release/tests/*.test.mjs
       - run: npm run lint:js
+      - run: npm run test:workspace-audit
       - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
         run: npm run test:maintenance:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')

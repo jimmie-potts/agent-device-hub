@@ -81,6 +81,8 @@
     "test:hub:verify:built": "node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs",
     "verify:host": "node scripts/verify-host.mjs",
     "test:verify-host": "node --test scripts/tests/verify-host.test.mjs",
+    "audit:workspace": "node scripts/workspace-audit.mjs",
+    "test:workspace-audit": "node --test scripts/tests/workspace-audit.test.mjs",
     "test:observability": "npm run build && npm run test:observability:built",
     "test:observability:built": "node --test packages/observability/tests/*.test.mjs",
     "test:observability:python": "python3 -m unittest discover -s packages/observability/tests -p \"test_*.py\"",
