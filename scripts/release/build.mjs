@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import {spawn} from 'node:child_process';
-import {createHash, randomUUID} from 'node:crypto';
-import {createReadStream, createWriteStream} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+import {createWriteStream} from 'node:fs';
 import {appendFile, mkdir, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {pipeline} from 'node:stream/promises';
 import {createGzip} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {createContext} from '../../deploy/container/context.mjs';
+import {archiveIdentity} from './archive.mjs';
 
 async function command(program, args, {capture = false} = {}) {
   const child = spawn(program, args, {stdio: ['ignore', capture ? 'pipe' : 'inherit', 'inherit']});
@@ -17,16 +18,16 @@ async function command(program, args, {capture = false} = {}) {
   if (code !== 0) throw new Error('release-build-failed');
   return output.trim();
 }
-async function hashFile(path) {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest('hex');
-}
 export function imageIdentity(info, candidate, {derivative = false} = {}) {
   if (!info || !/^sha256:[a-f0-9]{64}$/.test(info.Id ?? '') || info.Os !== 'linux' || info.Architecture !== 'arm64'
     || info.Config?.Labels?.['org.opencontainers.image.revision'] !== candidate || info.Config?.User !== '1000:1000'
     || derivative && info.Config?.Labels?.['org.bunny.verify.portable'] !== '1') throw new Error('release-image-refused');
   return info.Id;
+}
+export async function savedImageMetadata(archive, candidate, production) {
+  imageIdentity(production, candidate);
+  const identity = await archiveIdentity(archive, production, candidate);
+  return {id: identity.id, revision: candidate, archive: 'production-image.tar.gz', archiveSha256: identity.archiveSha256};
 }
 export async function buildRelease(candidate, destination) {
   if (!/^[a-f0-9]{40}$/.test(candidate) || !destination || resolve(destination) !== destination) throw new Error('release-build-refused');
@@ -59,13 +60,13 @@ export async function buildRelease(candidate, destination) {
     '--entrypoint', '/usr/bin/timeout', derivative, '--signal=TERM', '--kill-after=30', '2700',
     '/usr/local/bin/node', 'scripts/release/packaged.mjs']);
   if (imageIdentity(await inspect(coreTag), candidate) !== core) throw new Error('release-image-refused');
-  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
-    `### Packaged candidate passed\n\nProduction image: \`${core}\`\n\nTest derivative: \`${derivative}\`. Its immutable production layers match. No application rebuild runs in the derivative.\n`);
   const archive = join(destination, 'production-image.tar.gz');
   const save = spawn('docker', ['image', 'save', core], {stdio: ['ignore', 'pipe', 'inherit']});
   const saved = new Promise((resolve, reject) => {save.once('error', reject); save.once('exit', code => code === 0 ? resolve() : reject(new Error('release-archive-failed')));});
   await Promise.all([pipeline(save.stdout, createGzip({level: 1}), createWriteStream(archive, {flags: 'wx', mode: 0o600})), saved]);
-  const image = {id: core, revision: candidate, archive: 'production-image.tar.gz', archiveSha256: await hashFile(archive)};
+  const image = await savedImageMetadata(archive, candidate, coreInfo);
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
+    `### Packaged candidate passed\n\nQualified production manifest: \`${image.id}\`\n\nProducer-local image: \`${core}\`. Test derivative: \`${derivative}\`. Its immutable production layers match. No application rebuild runs in the derivative.\n`);
   await writeFile(join(destination, 'image.json'), JSON.stringify(image) + '\n', {flag: 'wx', mode: 0o600});
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `image=${JSON.stringify(image)}\n`);
   return image;
