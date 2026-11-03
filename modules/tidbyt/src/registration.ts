@@ -6,7 +6,7 @@ import {createTidbytModule, tidbytFactory} from './module.js';
 import {SimulatedCloud} from './simulated.js';
 
 /** One request to the cloud as it crosses the link: its method, URL, bearer header with the synthetic token, and JSON body. */
-type CloudCall = {method: 'GET' | 'POST' | 'DELETE'; url: string; authorization: string; body?: string};
+type CloudCall = {method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; authorization: string; body?: string};
 /** The cloud's answer, or how it failed: a refused connection, before anything was sent, or no answer. */
 type CloudAnswer = {status: number; headers: Record<string, string>; body: string} | {failed: 'refused' | 'lost'};
 

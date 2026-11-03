@@ -82,3 +82,14 @@ void test('the read-only card distinguishes unknown transmission, cloud acceptan
   assert.match(show(record(), true, false), /Saved cloud evidence · stale/);
   assert.doesNotMatch(accepted, /type="range"|Screen on|Play playlist/);
 });
+
+void test('a selected Tronbyt server\'s record names the server, and the card stays read-only with the panel unobserved', () => {
+  const server: DeviceRecord = {...record(), capabilities: {...record().capabilities, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['rotation']}},
+    lastTransmission: {status: 'known', transmittedAtMs: Date.parse('2026-11-03T12:00:00Z'), operationIds: ['push']}};
+  const show = (live: boolean, connected: boolean): string => renderToStaticMarkup(React.createElement(TidbytCard, {view: {device: server, live, pending: false, error: undefined}, connected, retry: () => {}}));
+  const current = show(true, true);
+  for (const label of [/Current server evidence/, /Server availability/, /Latest server acceptance/, /Rotation is managed on the Tronbyt server/, /Physical display unobserved/, /Read only/]) assert.match(current, label);
+  assert.doesNotMatch(current, /[Cc]loud|Tidbyt app/);
+  assert.match(show(true, false), /Saved server evidence · stale/);
+  assert.doesNotMatch(current, /type="range"|Screen on|Play playlist/);
+});

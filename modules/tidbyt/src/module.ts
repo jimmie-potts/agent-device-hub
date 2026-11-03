@@ -1,30 +1,35 @@
 // The Tidbyt module (Hub #930, ADR 0012). It replaces the Tidbyt runner inside the old local controller host at the
 // cutover (#840): it shows automatic agent status, from its synced copy of the core's sessions, and what plays, from its
 // synced copy of the playback module's `playback` record, as two background installations in the Tidbyt's rotation.
-// It is the one writer for the cloud device, behind its lease and its queue. Each tile pushes only when what it shows
+// It is the one writer for the device, behind its lease and its queue, through the one backend its section selects: the
+// official cloud or a Tronbyt server (Hub #23), never both and with no failover. Each tile pushes only when what it shows
 // changes, at most once every 15 seconds, and pushes an unchanged frame again after 10 minutes. Frames render in a worker
-// thread. The module publishes the Tidbyt's `device/2.0` record, with every control unsupported, and refuses every
-// general command with `unsupported-capability`, as the old controller did.
+// thread. The module publishes the Tidbyt's `device/2.0` record. On the cloud every control is unsupported and every
+// general command is refused with `unsupported-capability`, as the old controller did; a Tronbyt server takes brightness
+// and the display's mode (see `control.ts`).
 //
 // Under policy A (ADR 0012, "Failure isolation"), start opens only local resources: the database, the private folder
 // with the lease, the API key's secret file and the bus. The module reaches the cloud afterwards, and the cloud's
-// errors and timeouts become device state and records, never a module failure. Nothing it sends is a command, so it
+// errors and timeouts become device state and records, never a module failure. A tile's write is not a command, so it
 // has no outcome to report: a write that failed is not sent again, and a later write is a fresh one for the current
-// state.
+// state. A server's commands report theirs in `control.ts`.
 import {join} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
-import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {DatabaseSync} from 'node:sqlite';
+import {SCHEMA_BASE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type BunnyModule, type Cancel, type LogFields, type ModuleContext, type StateDraft, type SyncChange,
-  type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
-import {TidbytCloudConnection, type CloudFetch, type ListResult, type WriteResult} from './cloud.js';
+import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type AddMessage, type BunnyModule, type Cancel, type LogFields, type ModuleContext,
+  type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
+import {TidbytCloudConnection, type CloudFetch, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
+import {ControlStore, DEFAULT_MODE, DisplayControl, isControlFamily, settleRequests, type TileName} from './control.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
 import {PLAYBACK_LOST_MS, nowPlayingView} from './nowplaying.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from './simulated.js';
 import {statusView} from './status.js';
 import type {TileRequest, TileReply} from './tiles.js';
+import {TronbytConnection} from './tronbyt.js';
 import {CloudQueue, TileWriter, type NotSent, type TileCall, type TileMemory, type TileTarget} from './writer.js';
 
 export const TIDBYT_MODULE = 'tidbyt';
@@ -49,7 +54,7 @@ export const START_WINDOW_MS = PLAYBACK_LOST_MS;
 export const SYNC_TIMEOUT_MS = 5000;
 export const RESYNC_FIRST_MS = 1000;
 export const RESYNC_MAX_MS = 60_000;
-/** The general device commands (#918), each refused: the Tidbyt offers none of them. */
+/** The general device commands (#918). The cloud backend refuses each; a Tronbyt server takes `brightness-set` and `device-mode-set`. */
 export const COMMAND_FAMILIES = [
   'power-set', 'brightness-set', 'scene-activate', 'zone-power-set', 'media-start', 'media-control', 'device-mode-set', 'moment-play',
 ] as const;
@@ -77,7 +82,7 @@ function storageCode(error: unknown): ErrorCode {
 
 export type TidbytTiming = {minIntervalMs: number; refreshMs: number; statusPollMs: number; nowPlayingPollMs: number};
 export type TidbytModuleOptions = {
-  /** How the module reaches the cloud: `fetch` for the real one, a `SimulatedCloud`'s in tests and disposable runs. */
+  /** How the module reaches its backend: `fetch` for a real one, a `SimulatedCloud`'s or `SimulatedTronbyt`'s in tests and disposable runs. */
   transport: CloudFetch;
   /** How long one cloud call may take. Defaults to `CALL_TIMEOUT_MS`. */
   callTimeoutMs?: number;
@@ -126,7 +131,6 @@ type Copy = {
   resyncDelayMs: number;
 };
 
-type TileName = 'status' | 'now-playing';
 /** One tile: its writer, its evaluation loop and what it last decided to show. */
 type Tile = {
   readonly name: TileName;
@@ -161,7 +165,7 @@ class TidbytRun {
   readonly #tiles: Tile[] = [];
   readonly #sessions: Copy;
   readonly #playback: Copy;
-  /** The device's generation epoch for this start. The Tidbyt answers no command, so its generation never moves. */
+  /** The device's generation epoch for this start. No command replaces the writer, so its generation never moves. */
   readonly #epoch = randomUUID();
   #queue: CloudQueue | undefined;
   #lease: Lease | undefined;
@@ -172,7 +176,7 @@ class TidbytRun {
   /** The revision the next commit takes: one above the last committed, kept when a commit fails. */
   #nextRevision = 1;
   /** Commits run one after another, so revisions rise. */
-  #committing: Promise<void> = Promise.resolve();
+  #committing: Promise<unknown> = Promise.resolve();
   /** Whether the last commit of the device record failed, so the next evaluation publishes it. */
   #dirty = false;
   /** When this start began, on the runtime's clock: the start of each tile's start window. */
@@ -182,13 +186,16 @@ class TidbytRun {
   #closing = false;
   #storageDown: ErrorCode | undefined;
   #saveTile: ((installation: string, memory: TileMemory) => void) | undefined;
+  /** The Tronbyt display's controls; undefined on the cloud backend. */
+  #control: DisplayControl | undefined;
 
   constructor(context: ModuleContext<TidbytConfig>, config: TidbytConfig, options: TidbytModuleOptions) {
     this.#context = context;
     this.#config = config;
     this.#options = options;
     this.#timing = {
-      minIntervalMs: MIN_INTERVAL_MS, refreshMs: REFRESH_MS, statusPollMs: STATUS_POLL_MS, nowPlayingPollMs: NOW_PLAYING_POLL_MS, ...options.timing,
+      minIntervalMs: config.tronbyt?.minIntervalMs ?? MIN_INTERVAL_MS, refreshMs: config.tronbyt?.refreshMs ?? REFRESH_MS, statusPollMs: STATUS_POLL_MS,
+      nowPlayingPollMs: NOW_PLAYING_POLL_MS, ...options.timing,
     };
     this.#availability = new DeviceAvailability({log: context.log, clock: context.clock});
     const now = context.clock.now();
@@ -209,9 +216,10 @@ class TidbytRun {
         installation TEXT PRIMARY KEY, frame_key TEXT, sent_at_ms INTEGER, last_write_at_ms INTEGER, presence TEXT NOT NULL) STRICT`);
     const outbox = new Outbox({sdk, database: db, clock, log, trace});
     const saveRevision = db.prepare('INSERT INTO tidbyt_records (id, revision) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET revision = excluded.revision');
-    this.#publishRecord = (record, parent): Promise<boolean> => outbox.transaction(add => {
+    this.#publishRecord = (record, parent, extra): Promise<boolean> => outbox.transaction(add => {
       saveRevision.run(id, record.revision);
       add(deviceKey(id), {kind: 'state', ...deviceState(record)}, parent === undefined ? undefined : {parent});
+      extra?.(add);
     }).then(() => true);
     const saveTile = db.prepare(`INSERT INTO tidbyt_tiles (installation, frame_key, sent_at_ms, last_write_at_ms, presence) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (installation) DO UPDATE SET frame_key = excluded.frame_key, sent_at_ms = excluded.sent_at_ms,
@@ -224,9 +232,27 @@ class TidbytRun {
     recordLog(log, 'outbox.republished', {'bunny.outbox.republished_count': await outbox.republish()});
     // The record as last committed. Each start publishes a new revision: unknown until the cloud answers.
     const stored = db.prepare('SELECT revision FROM tidbyt_records WHERE id = ?').get(id) as {revision: number} | undefined;
-    const taken = acquireLease(join(files(), 'leases'), this.#config.cloudDeviceId);
+    const {tronbyt} = this.#config;
+    // Each backend's device has its own lease, and a handoff happens only under the new one, with the old writer stopped:
+    // a runtime stops this module, ending any call in flight, before it starts it with another section.
+    const taken = acquireLease(join(files(), 'leases'), tronbyt === undefined ? this.#config.cloudDeviceId : `tronbyt/${tronbyt.deviceId}`);
     if (taken.status === 'held') this.#lease = taken.lease;
     else recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.reason': LEASE_REASONS[taken.reason]});
+    const store = new ControlStore(db);
+    if (this.#lease !== undefined) await this.#selectConnection(db, store, outbox);
+    if (tronbyt !== undefined) {
+      this.#control = new DisplayControl({
+        context: this.#context, device: id, store, nowPlaying: this.#config.nowPlaying !== undefined,
+        installationOf: tile => tile === 'status' ? undefined : this.#config.nowPlaying?.installation,
+        presence: tile => this.#tiles.find(entry => entry.name === tile)?.writer.presence ?? 'absent',
+        commit: (parent, extra) => this.#commitWanted(parent, extra),
+        reached: (result, operationId, parent, requestId) => { this.#reached(result, operationId, parent, requestId); },
+        changed: parent => { for (const tile of this.#tiles) this.#update(tile, parent); },
+        stopping: () => this.#closing || signal.aborted,
+        track: work => { this.#track(work); },
+        storageFailed: error => { this.#storageFailed(storageCode(error)); },
+      });
+    }
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
     const key = await secrets.read(API_KEY_SECRET);
     this.#nextRevision = (stored?.revision ?? 0) + 1;
@@ -240,19 +266,24 @@ class TidbytRun {
       return {revision: committed.revision, states: [deviceState(committed)]};
     });
     for (const family of COMMAND_FAMILIES) {
-      await sdk.respond(`bunny.cmd.${family}.${id}`, (command): ErrorBody => command.subject === id ?
-        errorBody('unsupported-capability', {detail: 'the Tidbyt offers no controls: it shows agent status and what plays'}) :
-        errorBody('invalid-request', {detail: 'the command\'s subject is not the Tidbyt its key names'}));
+      await sdk.respond(`bunny.cmd.${family}.${id}`, command => {
+        if (command.subject !== id) return errorBody('invalid-request', {detail: 'the command\'s subject is not the Tidbyt its key names'});
+        if (this.#control !== undefined && isControlFamily(family)) return this.#control.handle(family, command, this.#epoch);
+        return errorBody('unsupported-capability', {detail: this.#control === undefined ? 'the Tidbyt offers no controls: it shows agent status and what plays' : 'the Tidbyt does not offer this operation'});
+      });
     }
     // Without the lease another writer may hold the cloud device, so the module writes nothing (one writer per device).
     if (this.#lease === undefined) return;
 
     const {cloudDeviceId, statusInstallation, nowPlaying} = this.#config;
-    const connection = new TidbytCloudConnection({
-      deviceId: cloudDeviceId, apiKey: key, installationId: statusInstallation,
-      additionalInstallationIds: nowPlaying === undefined ? [] : [nowPlaying.installation], fetch: this.#options.transport,
-    });
+    const installations = {
+      apiKey: key, installationId: statusInstallation, additionalInstallationIds: nowPlaying === undefined ? [] : [nowPlaying.installation], fetch: this.#options.transport,
+    };
+    const server = tronbyt === undefined ? undefined : new TronbytConnection({url: tronbyt.url, deviceId: tronbyt.deviceId, ...installations, now: () => clock.now()});
+    // Exactly one connection exists in a run. Nothing here can reach the other backend.
+    const connection: TidbytConnection = server ?? new TidbytCloudConnection({deviceId: cloudDeviceId ?? '', ...installations});
     this.#queue = new CloudQueue({connection, scheduler: this.#context.scheduler, now: () => clock.now(), timeoutMs: this.#options.callTimeoutMs ?? CALL_TIMEOUT_MS});
+    if (server !== undefined) this.#control?.attach(server, this.#queue);
     const remembered = new Map((db.prepare('SELECT installation, frame_key, sent_at_ms, last_write_at_ms, presence FROM tidbyt_tiles').all() as {
       installation: string; frame_key: string | null; sent_at_ms: number | null; last_write_at_ms: number | null; presence: string;
     }[]).map(row => [row.installation, {
@@ -293,6 +324,46 @@ class TidbytRun {
     }
   }
 
+  /**
+   * Records which backend the stored tiles belong to, and hands off when the section selected another (Hub #23). What a
+   * tile sent says nothing about the new backend, so its memory is dropped and every tile starts from `unknown`, which
+   * reads the installation before trusting it. No frame is stored, so none can be replayed; a write the old writer left
+   * uncertain is reported once and never sent again. Commands left without an outcome are settled first, on the backend
+   * they went to. A database from before this record held only the cloud's tiles.
+   */
+  async #selectConnection(db: DatabaseSync, store: ControlStore, outbox: Outbox): Promise<void> {
+    const {id, tronbyt, cloudDeviceId} = this.#config;
+    const {log} = this.#context;
+    db.exec('CREATE TABLE IF NOT EXISTS tidbyt_connection (id TEXT PRIMARY KEY, identity TEXT NOT NULL) STRICT');
+    const identity = createHash('sha256').update(JSON.stringify(tronbyt === undefined ? ['cloud', cloudDeviceId] : ['tronbyt', tronbyt.url, tronbyt.deviceId])).digest('hex');
+    // One row, whatever the device's routing ID: renaming the device changes no backend.
+    const stored = db.prepare('SELECT identity FROM tidbyt_connection WHERE id = \'selected\'').get() as {identity: string} | undefined;
+    const changing = stored === undefined ? tronbyt !== undefined : stored.identity !== identity;
+    try {
+      if (store.unfinished().length > 0) await outbox.transaction(add => { settleRequests(store, id, add); });
+      if (stored?.identity === identity) return;
+      if (changing) {
+        const uncertain = db.prepare('SELECT COUNT(*) AS count FROM tidbyt_tiles WHERE presence = \'unknown\' AND last_write_at_ms IS NOT NULL').get() as {count: number};
+        if (uncertain.count > 0) recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.code': 'uncertain-result'});
+        db.exec('DELETE FROM tidbyt_tiles');
+        store.clearDisplay();
+        // The module owns the pin, and the server may already hold one: the same server under a new address, or one left
+        // from an earlier run on it. The next evaluation writes the pin for the default mode.
+        if (tronbyt !== undefined) store.setDisplay({mode: DEFAULT_MODE, brightness: undefined, pin: 'dirty', configurationRevision: 0});
+        recordLog(log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.outcome': Outcome.succeeded});
+      }
+      db.prepare('INSERT INTO tidbyt_connection (id, identity) VALUES (\'selected\', ?) ON CONFLICT (id) DO UPDATE SET identity = excluded.identity').run(identity);
+    } catch (error) {
+      const code = storageCode(error);
+      this.#storageFailed(code);
+      if (!changing) return;
+      // The tiles' memory may still be the old backend's, so this run writes nothing: a later start hands off again.
+      recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.code': code});
+      this.#lease?.release();
+      this.#lease = undefined;
+    }
+  }
+
   // The device record
 
   #deviceField(): LogFields {
@@ -303,11 +374,11 @@ class TidbytRun {
     return {
       id: this.#config.id, revision, kind: 'tidbyt', availability, configurationRevision: 0, generation: {epoch: this.#epoch, sequence: 0},
       capabilities: NO_CONTROLS, desired: {power: UNKNOWN, brightness: UNKNOWN, mode: UNKNOWN}, observed: UNKNOWN, pending: 0, pendingKinds: [],
-      lastOutcome: UNKNOWN, lastTransmission, externalControl: UNKNOWN,
+      lastOutcome: UNKNOWN, lastTransmission, externalControl: UNKNOWN, ...this.#control?.snapshot(),
     };
   }
 
-  #publishRecord: (record: DeviceRecord, parent: TraceContext | undefined) => Promise<boolean> = () => Promise.resolve(false);
+  #publishRecord: (record: DeviceRecord, parent: TraceContext | undefined, extra?: (add: AddMessage) => void) => Promise<boolean> = () => Promise.resolve(false);
 
   /**
    * Sets what the record should say, and commits and publishes a new revision when that differs from the record last
@@ -315,33 +386,35 @@ class TidbytRun {
    */
   #change(availability: DeviceRecord['availability'], lastTransmission: DeviceRecord['lastTransmission'], parent: TraceContext | undefined): Promise<void> {
     this.#wanted = {availability, lastTransmission};
-    return this.#commitWanted(parent);
+    return this.#commitWanted(parent).then(() => undefined);
   }
 
-  #commitWanted(parent: TraceContext | undefined): Promise<void> {
+  /** Commits the wanted record when it changed, or always with `extra`, which runs in the same transaction. Answers whether it stored. */
+  #commitWanted(parent: TraceContext | undefined, extra?: (add: AddMessage) => void): Promise<boolean> {
     const next = this.#committing.then(async () => {
-      if (this.#context.signal.aborted) return;
+      if (this.#context.signal.aborted) return false;
       const {availability, lastTransmission} = this.#wanted;
       const committed = this.#committed;
-      if (committed !== undefined && availability === committed.availability && JSON.stringify(lastTransmission) === JSON.stringify(committed.lastTransmission)) {
-        this.#dirty = false;
-        return;
-      }
       const record = this.#deviceRecord(this.#nextRevision, availability, lastTransmission);
+      if (extra === undefined && committed !== undefined && JSON.stringify({...record, revision: 0}) === JSON.stringify({...committed, revision: 0})) {
+        this.#dirty = false;
+        return true;
+      }
       try {
-        await this.#publishRecord(record, parent);
+        await this.#publishRecord(record, parent, extra);
       } catch (error) {
-        if (this.#context.signal.aborted) return;
+        if (this.#context.signal.aborted) return false;
         this.#dirty = true;
         this.#storageFailed(storageCode(error));
-        return;
+        return false;
       }
       this.#committed = record;
       this.#nextRevision = record.revision + 1;
       this.#dirty = false;
       this.#storageWorked();
+      return true;
     });
-    this.#committing = next.catch(() => undefined);
+    this.#committing = next.catch(() => false);
     return next;
   }
 
@@ -455,6 +528,7 @@ class TidbytRun {
       writer: new TileWriter({
         queue, installation: target, minIntervalMs: this.#timing.minIntervalMs, refreshMs: this.#timing.refreshMs, pollMs: poll, now: () => clock.now(),
         stopped: () => this.#closing || signal.aborted, current: target => !this.#closing && !signal.aborted && target.association === tile.association && target.association === this.#captureTarget(tile).association,
+        immediate: () => this.#control?.immediate() ?? false,
         render: request => this.#render(request, tile), report: call => { this.#report(tile, call); },
         begin: call => this.#begin(tile, call),
         remember: memory => { this.#remember(installation, memory); }, ...(restored === undefined ? {} : {restored}),
@@ -465,6 +539,7 @@ class TidbytRun {
 
   /** What the tile should show now, from its copy. */
   #target(tile: Tile): TileTarget {
+    if (this.#control?.hides(tile.name) === true) return {kind: 'remove'};
     const now = this.#context.clock.now();
     // Times in the future, after the wall clock was set back, count as now.
     if (this.#startedAtMs > now) this.#startedAtMs = now;
@@ -528,6 +603,7 @@ class TidbytRun {
       try {
         if (this.#dirty) await this.#commitWanted(undefined);
         wakeMs = await tile.writer.write(this.#captureTarget(tile));
+        await this.#control?.reconcile();
         this.#healthy(tile);
       } catch (error) {
         // A fault of the module's own, never the cloud's: logged once per run, by type, and the tile tries again at its
@@ -612,6 +688,18 @@ class TidbytRun {
     } else if (answered && !('ok' in result && result.ok)) {
       this.#failed(tile, fields, codeOfResult(result), parent);
     }
+    this.#track(this.#change(availabilityAfter(result, answered), lastTransmission, parent));
+  }
+
+  /** One write of the display's controls: the device's availability and last transmission, as for a tile's call. */
+  #reached(result: WriteResult | NotSent, operationId: string, parent: TraceContext | undefined, requestId?: string): void {
+    if (this.#context.signal.aborted || isNotSent(result)) return;
+    const answered = answeredOf(result);
+    const device = this.#config.id;
+    if (answered) this.#availability.reached(device, parent);
+    else this.#availability.unreachable(device, result.outcome === Outcome.uncertain ? 'uncertain-result' : 'unavailable', parent);
+    const lastTransmission: DeviceRecord['lastTransmission'] = result.outcome === 'sent' ?
+      {status: 'known', ...(requestId === undefined ? {} : {requestId}), transmittedAtMs: this.#context.clock.now(), operationIds: [operationId]} : this.#wanted.lastTransmission;
     this.#track(this.#change(availabilityAfter(result, answered), lastTransmission, parent));
   }
 

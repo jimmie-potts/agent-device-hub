@@ -12,6 +12,9 @@ export function TidbytCard({view, connected, retry}: TidbytCardProps): React.JSX
   const transmission = view.device?.lastTransmission;
   const date = transmission?.status === 'known' ? new Date(transmission.transmittedAtMs) : undefined;
   const timestamp = date === undefined || Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  // A selected Tronbyt server declares controls the cloud never offers, so the record names the backend without a new field.
+  const server = view.device?.capabilities.brightness.supported === true;
+  const backend = server ? 'server' : 'cloud';
   return <article className="light-card tidbyt-card" aria-label="Tidbyt display">
     <header className="light-card-heading"><div><h3>{view.device?.label ?? 'Tidbyt'}</h3><p>Read only</p></div></header>
     <figure className="tidbyt-artwork" data-tidbyt-artwork="true"><div className="tidbyt-device">
@@ -31,19 +34,19 @@ export function TidbytCard({view, connected, retry}: TidbytCardProps): React.JSX
       }}>{name}</button>)}</div>
     <div className="tidbyt-face-space">
       <div className="light-face" hidden={tab !== 'Status'} id={`${id}-Status-face`} role="tabpanel" aria-labelledby={`${id}-Status`} tabIndex={0}>
-        <p className="light-note" role="status">{current ? 'Current cloud evidence' : view.device === undefined ? view.pending ? 'Loading cloud evidence…' : 'Cloud evidence unavailable' : 'Saved cloud evidence · stale'}</p>
-        <dl className="tidbyt-facts"><dt>Cloud availability</dt><dd>{view.device?.availability ?? 'unknown'}</dd>
-          <dt>Latest cloud acceptance</dt><dd>{transmission?.status === 'known' ? <>
+        <p className="light-note" role="status">{current ? `Current ${backend} evidence` : view.device === undefined ? view.pending ? 'Loading cloud evidence…' : 'Cloud evidence unavailable' : `Saved ${backend} evidence · stale`}</p>
+        <dl className="tidbyt-facts"><dt>{server ? 'Server' : 'Cloud'} availability</dt><dd>{view.device?.availability ?? 'unknown'}</dd>
+          <dt>Latest {backend} acceptance</dt><dd>{transmission?.status === 'known' ? <>
             {transmission.operationIds.includes('push') ? 'Push accepted' : transmission.operationIds.includes('remove') ? 'Removal accepted' : 'Update accepted'}
             {timestamp === undefined ? ' · time unknown' : <time dateTime={timestamp}>{date?.toLocaleString()}</time>}
           </> : 'No transmission recorded'}</dd></dl>
         <p className="light-note">Physical display unobserved.</p>
         {view.device === undefined && current && <p className="light-note">No Tidbyt device record.</p>}
-        {view.error !== undefined && <p role="alert" className="light-note">Cloud records unavailable ({view.error}). <button type="button" className="secondary" disabled={!connected || view.pending} onClick={retry}>Retry records</button></p>}
+        {view.error !== undefined && <p role="alert" className="light-note">{server ? 'Server' : 'Cloud'} records unavailable ({view.error}). <button type="button" className="secondary" disabled={!connected || view.pending} onClick={retry}>Retry records</button></p>}
       </div>
       <div className="light-face" hidden={tab !== 'Content'} id={`${id}-Content-face`} role="tabpanel" aria-labelledby={`${id}-Content`} tabIndex={0}>
         <h4>Automatic tiles</h4><ul className="tidbyt-tiles"><li>Agent status</li><li>Now playing · optional</li></ul>
-        <p className="light-note">Rotation is managed in the Tidbyt app.</p>
+        <p className="light-note">{server ? 'Rotation is managed on the Tronbyt server.' : 'Rotation is managed in the Tidbyt app.'}</p>
       </div>
     </div>
     <nav className="tidbyt-links" aria-label="Tidbyt pages">{view.device !== undefined && <a href={`#/component/${encodeURIComponent(view.device.id)}`}>Device details</a>}<a href="#/module/tidbyt/display">Tidbyt page</a></nav>

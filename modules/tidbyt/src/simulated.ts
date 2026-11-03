@@ -19,7 +19,7 @@ export const SIMULATED_DEVICE = 'simulated-tidbyt';
 /** What one installation shows: the frame it was last sent, as text rows, and every push it accepted. */
 export type ShownInstallation = {picture: string[]; pushes: number; pushedAtMs: number[]};
 /** One call the cloud heard: what it was, for which installation, and how it answered. */
-export type CloudCall = {method: 'GET' | 'POST' | 'DELETE'; installation?: string; atMs: number; answer: number | 'none' | 'refused-connection'};
+export type CloudCall = {method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; installation?: string; atMs: number; answer: number | 'none' | 'refused-connection'};
 /** What the simulated cloud shows, as plain data. */
 export type CloudState = {
   online: boolean;

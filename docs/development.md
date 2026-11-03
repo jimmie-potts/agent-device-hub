@@ -1668,6 +1668,12 @@ in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical
 check belong to the cutover (#840).
 
+Hub #23 adds the Tronbyt backend beside the cloud, covered by
+`modules/tidbyt/tests/tronbyt.test.ts` on `SimulatedTronbyt` in the same suite. The optional
+`tronbyt-server.test.ts` runs the same calls against a real, disposable server when its
+[environment variables](../modules/tidbyt/README.md#compatibility-record) name one, and skips
+otherwise, so hosted CI reaches no server. Recheck it when the pinned server moves.
+
 For artwork, after the root build, focus the real-worker and diagnostic checks
 with `node --test modules/tidbyt/dist/tests/artwork-render.test.js` and
 `node --test --test-name-pattern='artwork|playback/2.1' modules/tidbyt/dist/tests/module.test.js`.

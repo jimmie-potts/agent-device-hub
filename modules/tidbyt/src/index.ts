@@ -7,13 +7,16 @@ export {
   tidbytFactory, type TidbytModuleOptions, type TidbytTiming,
 } from './module.js';
 export {registration, tidbytSimulation} from './registration.js';
+export {CONTROL_FAMILIES, DEFAULT_MODE, MAX_PENDING, displayCapabilities, displayModes} from './control.js';
+export {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl, type TronbytConfig} from './tronbyt.js';
+export {SimulatedTronbyt, TRONBYT_ORIGIN, type SimulatedTronbytOptions, type TronbytState} from './simulated-tronbyt.js';
 export {
   API_KEY_SECRET, DEFAULT_DEVICE_ID, DEFAULT_NOW_PLAYING_INSTALLATION, DEFAULT_STATUS_INSTALLATION, configureTidbyt, convertTidbytRunner,
-  parseRunnerCredentials, playbackIdOf, type ConvertedTidbyt, type RunnerCredentials, type TidbytConfig, type TidbytSection,
+  parseRunnerCredentials, playbackIdOf, type ConvertedTidbyt, type RunnerCredentials, type TidbytConfig, type TidbytSection, type TronbytSelection,
 } from './configuration.js';
 export {
   API, CLOUD_DEVICE_ID, CloudConfigurationError, INSTALLATION_ID, MAX_ADDITIONAL_INSTALLATIONS, TidbytCloudConnection, type CloudConfig, type CloudFailure,
-  type CloudFetch, type ListResult, type WriteResult,
+  type CloudFetch, type ListResult, type TidbytConnection, type WriteResult,
 } from './cloud.js';
 export {CloudQueue, TileWriter, type CallKind, type NotSent, type TileCall, type TileMemory, type TileTarget, type TileWriterOptions} from './writer.js';
 export {FRAME_BYTES, FRAME_HEIGHT, FRAME_WIDTH, renderFrame, type Frame, type FrameFailure} from './render.js';

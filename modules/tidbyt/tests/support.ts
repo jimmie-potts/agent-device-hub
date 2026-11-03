@@ -208,13 +208,15 @@ export type HostOptions = {
   playback?: PlaybackState | 'absent';
   /** The module's section. Defaults to the simulated section with the API key's file. */
   section?: unknown;
+  /** What the API key's file holds. Defaults to the synthetic token. */
+  secret?: string;
   cloud?: SimulatedCloudOptions;
   /**
    * How long each push takes to reach the cloud on the manual clock, the first push first, as on a slow network; pushes
    * past the list reach it at once.
    */
   pushTransitMs?: readonly number[];
-  module?: Omit<TidbytModuleOptions, 'transport'>;
+  module?: Partial<TidbytModuleOptions>;
   /** How many messages one subscription queue holds, so a test can overflow a copy. */
   maxQueued?: number;
   /** Runs before the module starts, such as to queue the cloud's answers or take its lease in its state directory. */
@@ -320,7 +322,7 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
       stop: () => inner.stop(),
     };
     return new ModuleHarness(module, {
-      bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: SIMULATED_API_KEY},
+      bus, stateDir, clock: {now: wall}, scheduler: clock.scheduler, spans, section: options.section ?? SECTION, secrets: {token: options.secret ?? SIMULATED_API_KEY},
     });
   };
   const instances: ModuleHarness[] = [];

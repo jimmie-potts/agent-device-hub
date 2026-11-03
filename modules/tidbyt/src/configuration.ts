@@ -5,6 +5,7 @@
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Configured} from '@jimmie-potts/sdk';
 import {CLOUD_DEVICE_ID, INSTALLATION_ID} from './cloud.js';
+import {privateServerUrl} from './tronbyt.js';
 
 /** The secret the section names for the cloud's API key, as `secrets.token`, like every module token (#919). */
 export const API_KEY_SECRET = 'token';
@@ -21,10 +22,14 @@ export const DEFAULT_DEVICE_ID = 'tidbyt';
  */
 export type TidbytConfig = {
   readonly id: string;
-  readonly cloudDeviceId: string;
   readonly statusInstallation: string;
   readonly nowPlaying?: {readonly playback: string; readonly installation: string};
-};
+} & (
+  | {readonly cloudDeviceId: string; readonly tronbyt?: undefined}
+  | {readonly tronbyt: TronbytSelection; readonly cloudDeviceId?: undefined}
+);
+/** The selected Tronbyt server (Hub #23): its origin, the server's device ID and, when given, this backend's write timing. */
+export type TronbytSelection = {readonly url: string; readonly deviceId: string; readonly minIntervalMs?: number; readonly refreshMs?: number};
 /** The section as the installer writes it, without the `secrets` member that names the API key's file. */
 export type TidbytSection = {
   id: string; cloudDeviceId: string; statusInstallation: string; nowPlaying?: {playback: string; installation: string};
@@ -32,29 +37,64 @@ export type TidbytSection = {
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_ROUTING_ID = 128;
-const SECTION_KEYS: readonly string[] = ['id', 'cloudDeviceId', 'statusInstallation', 'nowPlaying', 'secrets'];
+const SECTION_KEYS: readonly string[] = ['id', 'backend', 'cloudDeviceId', 'tronbyt', 'statusInstallation', 'nowPlaying', 'secrets'];
+/** The bounds of a Tronbyt server's write timing. Only the shortest gate here is qualified by an exercise, never assumed. */
+export const MIN_TRONBYT_INTERVAL_MS = 1000;
+export const MAX_TRONBYT_TIMING_MS = 86_400_000;
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const routingId = (value: unknown): value is string => typeof value === 'string' && value.length <= MAX_ROUTING_ID && ROUTING_ID.test(value);
 const installationId = (value: unknown): value is string => typeof value === 'string' && INSTALLATION_ID.test(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
+const timing = (value: unknown, minimum: number): value is number => typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= MAX_TRONBYT_TIMING_MS;
+
+/** The section's `tronbyt` block, or undefined when it is refused. A refused one's value is never repeated. */
+function tronbytSelection(block: unknown): TronbytSelection | undefined {
+  if (!isObject(block) || !only(block, ['url', 'deviceId', 'minIntervalMs', 'refreshMs'])) return undefined;
+  const url = privateServerUrl(block.url);
+  const {deviceId, minIntervalMs, refreshMs} = block;
+  if (url === undefined || typeof deviceId !== 'string' || !CLOUD_DEVICE_ID.test(deviceId)) return undefined;
+  if (minIntervalMs !== undefined && !timing(minIntervalMs, MIN_TRONBYT_INTERVAL_MS)) return undefined;
+  if (refreshMs !== undefined && !timing(refreshMs, MIN_TRONBYT_INTERVAL_MS)) return undefined;
+  return {url, deviceId, ...(minIntervalMs === undefined ? {} : {minIntervalMs}), ...(refreshMs === undefined ? {} : {refreshMs})};
+}
 
 /**
- * The module's `configure`: `{id, cloudDeviceId, statusInstallation?, nowPlaying?, secrets}`.
+ * The module's `configure`: `{id, backend?, cloudDeviceId | tronbyt, statusInstallation?, nowPlaying?, secrets}`.
+ * - `backend` selects the one connection, `cloud` by default or `tronbyt`. The section names only the selected backend's
+ *   settings, so nothing can fall back to the other (Hub #23).
  * - `id` is the device record's routing ID, which the module names as its one device, so the runtime refuses another
  *   module that names it.
  * - `cloudDeviceId` is the device ID from the Tidbyt app: 1 to 128 letters, digits, underscores or hyphens.
+ * - `tronbyt` is `{url, deviceId, minIntervalMs?, refreshMs?}`: the server's origin, its device ID, and this backend's gate
+ *   and refresh, at least 1 s and at most a day.
  * - `statusInstallation` is the status tile's installation, letters and digits only, `agentdevicehub` by default.
  * - `nowPlaying`, when present, is `{playback, installation?}`: the routing ID of the `playback` record to show, and the
  *   tile's own installation, `nowplaying` by default, which must differ from the status tile's.
- * - `secrets.token` names the API key's file. `configure` sees only its name and path, never the key.
+ * - `secrets.token` names the selected backend's API key's file. `configure` sees only its name and path, never the key.
  */
 export function configureTidbyt(section: unknown): Configured<TidbytConfig> | ErrorBody {
-  if (!isObject(section) || !only(section, SECTION_KEYS)) return refuse('the tidbyt section has only id, cloudDeviceId, statusInstallation, nowPlaying and secrets');
-  const {id, cloudDeviceId, secrets} = section;
+  if (!isObject(section) || !only(section, SECTION_KEYS)) return refuse('the tidbyt section has only id, backend, cloudDeviceId, tronbyt, statusInstallation, nowPlaying and secrets');
+  const {id, backend = 'cloud', cloudDeviceId, secrets} = section;
   if (!routingId(id)) return refuse('id must be lowercase letters and digits with single hyphens, at most 128 characters');
-  if (typeof cloudDeviceId !== 'string' || !CLOUD_DEVICE_ID.test(cloudDeviceId)) {
-    return refuse('cloudDeviceId must be 1 to 128 letters, digits, underscores or hyphens');
+  if (backend !== 'cloud' && backend !== 'tronbyt') return refuse('backend must be cloud or tronbyt');
+  let selected: {cloudDeviceId: string} | {tronbyt: TronbytSelection};
+  if (backend === 'cloud') {
+    if (section.tronbyt !== undefined) return refuse('the cloud backend takes no tronbyt block');
+    if (typeof cloudDeviceId !== 'string' || !CLOUD_DEVICE_ID.test(cloudDeviceId)) {
+      return refuse('cloudDeviceId must be 1 to 128 letters, digits, underscores or hyphens');
+    }
+    selected = {cloudDeviceId};
+  } else {
+    if (cloudDeviceId !== undefined) return refuse('the tronbyt backend takes no cloudDeviceId');
+    const tronbyt = tronbytSelection(section.tronbyt);
+    if (tronbyt === undefined) {
+      return refuse('tronbyt must be {url, deviceId, minIntervalMs?, refreshMs?}: an origin, http only on a private host, a device ID, and times from 1 s to a day');
+    }
+    // The server looks an installation up by its own numeric ID first, so an all-digit name could reach an unrelated app.
+    const named = [section.statusInstallation, isObject(section.nowPlaying) ? section.nowPlaying.installation : undefined];
+    if (named.some(name => typeof name === 'string' && /^\d+$/.test(name))) return refuse('an installation on the tronbyt backend must not be all digits');
+    selected = {tronbyt};
   }
   const statusInstallation = section.statusInstallation ?? DEFAULT_STATUS_INSTALLATION;
   if (!installationId(statusInstallation)) return refuse('statusInstallation must be 1 to 64 letters and digits');
@@ -71,7 +111,7 @@ export function configureTidbyt(section: unknown): Configured<TidbytConfig> | Er
     nowPlaying = {playback: block.playback, installation};
   }
   if (!isObject(secrets) || !Object.hasOwn(secrets, API_KEY_SECRET)) return refuse('the section must name the API key\'s file as secrets.token');
-  return {config: {id, cloudDeviceId, statusInstallation, ...(nowPlaying === undefined ? {} : {nowPlaying})}, devices: [id]};
+  return {config: {id, ...selected, statusInstallation, ...(nowPlaying === undefined ? {} : {nowPlaying})}, devices: [id]};
 }
 
 /** The runner's credentials file: `TIDBYT_DEVICE_ID`, `TIDBYT_API_KEY` and an optional `TIDBYT_INSTALLATION_ID`. */

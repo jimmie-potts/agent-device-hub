@@ -17,7 +17,7 @@
 //   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Cancel, type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
-import type {ListResult, TidbytCloudConnection, WriteResult} from './cloud.js';
+import type {ListResult, TidbytConnection, WriteResult} from './cloud.js';
 import type {TileRequest} from './tiles.js';
 
 export type CurrentTarget = () => boolean;
@@ -25,7 +25,7 @@ export type CallKind = 'push' | 'remove' | 'list';
 /** A call that never went out: a hold refused it, or the module stopped first. */
 export type NotSent = {outcome: 'held'; failure: 'unauthenticated' | 'forbidden'} | {outcome: 'cancelled'};
 export type QueueOptions = {
-  connection: TidbytCloudConnection;
+  connection: TidbytConnection;
   scheduler: ModuleScheduler;
   now: () => number;
   /** How long one call may take. */
@@ -39,7 +39,7 @@ export type QueueOptions = {
  * every waiting one.
  */
 export class CloudQueue {
-  readonly #connection: TidbytCloudConnection;
+  readonly #connection: TidbytConnection;
   readonly #scheduler: ModuleScheduler;
   readonly #now: () => number;
   readonly #timeoutMs: number;
@@ -65,12 +65,17 @@ export class CloudQueue {
   }
 
   /** Pushes a frame. `sending` hears the moment the request goes out, after any wait in the queue. */
-  push(webp: Uint8Array, installation: string | undefined, sending?: () => void, current?: CurrentTarget): Promise<WriteResult | NotSent> {
-    return this.#enqueue(signal => this.#connection.push(webp, signal, installation), result => { this.#holdAfter(result); }, sending, current);
+  push(webp: Uint8Array, installation: string | undefined, sending?: () => void, current?: CurrentTarget, immediate = false): Promise<WriteResult | NotSent> {
+    return this.#enqueue(signal => this.#connection.push(webp, signal, installation, immediate), result => { this.#holdAfter(result); }, sending, current);
   }
 
   remove(installation: string | undefined, sending?: () => void, current?: CurrentTarget): Promise<WriteResult | NotSent> {
     return this.#enqueue(signal => this.#connection.remove(signal, installation), result => { this.#holdAfter(result); }, sending, current);
+  }
+
+  /** One write of a command or of the display's pin, in its turn behind the same holds as the tiles' writes (Hub #23). */
+  control(send: (signal: AbortSignal) => Promise<WriteResult>, sending?: () => void, current?: CurrentTarget): Promise<WriteResult | NotSent> {
+    return this.#enqueue(send, result => { this.#holdAfter(result); }, sending, current);
   }
 
   /** Reads the installation list. It never resubmits a write. */
@@ -180,6 +185,8 @@ export type TileWriterOptions = {
   restored?: TileMemory;
   /** Pure synchronous check of the captured target's association and eligibility; omission preserves old callers. */
   current?: (target: TileTarget) => boolean;
+  /** Whether this tile's pushes interrupt the display, which only a Tronbyt server offers. Omitted: they never do. */
+  immediate?: () => boolean;
 };
 
 /**
@@ -299,7 +306,7 @@ export class TileWriter {
       // The render was a wait: nothing goes out once the module stops.
       if (stopped()) return pollMs;
       if (!current()) return discard();
-      result = await queue.push(webp, installation, sending('push'), current);
+      result = await queue.push(webp, installation, sending('push'), current, this.#options.immediate?.() ?? false);
       if (result.outcome === 'cancelled' && superseded) return discard();
       end(result.outcome === 'sent');
       this.#options.report({call: 'push', result});
