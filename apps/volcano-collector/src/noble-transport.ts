@@ -16,6 +16,7 @@ export type NobleCharacteristic = {
 export type NoblePeripheral = {
   readonly advertisement: {readonly localName?: string};
   once(event: 'disconnect', listener: () => void): unknown;
+  removeListener(event: 'disconnect', listener: () => void): unknown;
   connectAsync(): Promise<void>;
   disconnectAsync(): Promise<void>;
   discoverSomeServicesAndCharacteristicsAsync(services: readonly string[], characteristics: readonly string[]): Promise<{characteristics: readonly NobleCharacteristic[]}>;
@@ -72,10 +73,17 @@ export function nobleTransport(noble: Noble): VolcanoTransport {
     async connect(lost) {
       if (peripheral === undefined) throw new Error('volcano-collector: nothing was found to connect to');
       characteristics = new Map();
-      peripheral.once('disconnect', lost);
-      await peripheral.connectAsync();
-      const discovered = await peripheral.discoverSomeServicesAndCharacteristicsAsync(VOLCANO_SERVICES.map(nobleUuid), READABLE.map(nobleUuid));
-      characteristics = new Map(discovered.characteristics.map(found => [found.uuid, found]));
+      const target = peripheral;
+      target.once('disconnect', lost);
+      try {
+        await target.connectAsync();
+        const discovered = await target.discoverSomeServicesAndCharacteristicsAsync(VOLCANO_SERVICES.map(nobleUuid), READABLE.map(nobleUuid));
+        characteristics = new Map(discovered.characteristics.map(found => [found.uuid, found]));
+      } catch (error) {
+        // Noble keeps one peripheral across connections, so a listener left here would tell a later connection of this failure.
+        target.removeListener('disconnect', lost);
+        throw error;
+      }
     },
     async read(uuid: ReadUuid) {
       if (!READABLE.includes(uuid)) throw refused();

@@ -22,8 +22,9 @@ function spied<T extends object>(target: T, calls: string[], name: string): T {
   }});
 }
 
-function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H']) {
+function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H'], connectFails = false) {
   const calls: string[] = [];
+  const disconnectListeners = new Set<() => void>();
   const data = new Map<string, (bytes: Uint8Array) => void>();
   let lost: (() => void) | undefined;
   const discovery: {services?: readonly string[]; characteristics?: readonly string[]} = {};
@@ -31,7 +32,8 @@ function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H']) {
     uuid, readAsync: () => Promise.resolve(Uint8Array.of(1, 2)), subscribeAsync: () => Promise.resolve(), on: (_event, listener) => { data.set(uuid, listener); return undefined; },
   }, calls, `characteristic(${uuid.slice(0, 8)})`);
   const peripheralOf = (localName: string): NoblePeripheral => spied<NoblePeripheral>({
-    advertisement: {localName}, once: (_event, listener) => { lost = listener; return undefined; }, connectAsync: () => Promise.resolve(), disconnectAsync: () => Promise.resolve(),
+    advertisement: {localName}, once: (_event, listener) => { lost = listener; disconnectListeners.add(listener); return undefined; }, removeListener: (_event, listener) => { disconnectListeners.delete(listener); return undefined; },
+    connectAsync: () => (connectFails ? Promise.reject(new Error('synthetic')) : Promise.resolve()), disconnectAsync: () => Promise.resolve(),
     discoverSomeServicesAndCharacteristicsAsync: (services, characteristics) => {
       discovery.services = services;
       discovery.characteristics = characteristics;
@@ -49,7 +51,7 @@ function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H']) {
     on: (_event, given) => { listener = given; return undefined; },
     removeListener: () => { listener = undefined; return undefined; },
   }, calls, 'noble');
-  return {noble, calls, data, discovery, lost: () => lost?.()};
+  return {noble, calls, data, discovery, disconnectListeners, lost: () => lost?.()};
 }
 
 void test('it connects to the exact advertised name and asks only for the allowlist', async () => {
@@ -103,6 +105,14 @@ void test('a lost link tells the collector, and disconnect forgets the device', 
   assert.ok(calls.includes('peripheral.disconnectAsync'));
   await assert.rejects(transport.read(VOLCANO_REGISTERS.status1, never));
   await transport.disconnect();
+});
+
+void test('a failed connect leaves no disconnect listener behind', async () => {
+  const {noble, disconnectListeners} = world(['S&B VOLCANO H'], true);
+  const transport = nobleTransport(noble);
+  await transport.scan('S&B VOLCANO H', never);
+  await assert.rejects(transport.connect(() => {}, never));
+  assert.equal(disconnectListeners.size, 0);
 });
 
 void test('no call the adapter made through a whole session is write-shaped', async () => {
