@@ -57,7 +57,7 @@ export class CloudQueue {
 
   /** Whether a hold keeps calls from going out now. */
   held(): boolean {
-    return this.#authentication !== undefined || (this.#rateLimitedUntilMs !== undefined && this.#rateLimitedUntilMs > this.#now());
+    return this.#authentication !== undefined || this.#rateLimitWaitMs() > 0;
   }
 
   get closed(): boolean {
@@ -106,9 +106,7 @@ export class CloudQueue {
     for (;;) {
       if (this.closed || current?.() === false) return {outcome: 'cancelled'};
       if (this.#authentication !== undefined) return {outcome: 'held', failure: this.#authentication};
-      // A wall clock set back cannot stretch a hold past the longest one the queue takes.
-      if (this.#rateLimitedUntilMs !== undefined) this.#rateLimitedUntilMs = Math.min(this.#rateLimitedUntilMs, this.#now() + MAX_RETRY_MS);
-      const wait = (this.#rateLimitedUntilMs ?? 0) - this.#now();
+      const wait = this.#rateLimitWaitMs();
       if (wait <= 0) break;
       await this.#sleep(wait);
     }
@@ -125,6 +123,13 @@ export class CloudQueue {
     } finally {
       cancel();
     }
+  }
+
+  /** What remains of a rate limit. A wall clock set back cannot stretch one past the longest hold the queue takes. */
+  #rateLimitWaitMs(): number {
+    if (this.#rateLimitedUntilMs === undefined) return 0;
+    this.#rateLimitedUntilMs = Math.min(this.#rateLimitedUntilMs, this.#now() + MAX_RETRY_MS);
+    return this.#rateLimitedUntilMs - this.#now();
   }
 
   /** Waits `ms` on the runtime's scheduler, or until the queue closes. */

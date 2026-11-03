@@ -273,7 +273,8 @@ logs `operation.failed` with `bunny.operation` `moment`, and the release that wo
 
 A release waits behind the queue's holds like any write, so **the frame can outlast its time**:
 
-- A rate limit holds the release for its `Retry-After`, at most 15 minutes, even after attention.
+- A rate limit holds the release for its `Retry-After`, at most 15 minutes, even after attention. A
+  wall clock set back during that wait can add up to as much again.
 - A refused key holds it until the next start reads the key anew.
 - A stop or a crash cannot reach the server, so the frame stays pinned until the next start on this
   backend, whose first evaluation releases it. That start reports the moment `uncertain`, and its

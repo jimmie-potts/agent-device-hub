@@ -50,6 +50,23 @@ void test('a wall clock set back cannot hold the queue past the longest rate lim
   await next;
 });
 
+void test('held stops reporting a rate limit past the longest hold, with nothing queued, after a wall clock set back', async () => {
+  const cloud = heldCloud();
+  const clock = manualClock();
+  let setBack = 0;
+  const connection = new TidbytCloudConnection({deviceId: 'device', apiKey: 'key', installationId: 'status', fetch: cloud.fetch});
+  const queue = new CloudQueue({connection, scheduler: clock.scheduler, now: () => clock.now() - setBack, timeoutMs: 10_000});
+  const limited = queue.push(WEBP, undefined);
+  await flush();
+  cloud.answer(429, {}, {'retry-after': '60'});
+  await limited;
+  assert.equal(queue.held(), true);
+  setBack = 86_400_000;
+  assert.equal(queue.held(), true, 'the hold stands');
+  clock.advance(MAX_RETRY_MS + 1);
+  assert.equal(queue.held(), false, 'it ends within the longest hold, not a day later');
+});
+
 void test('calls go out one at a time, in the order they were made', async () => {
   const cloud = heldCloud();
   const {queue} = queueOn(cloud.fetch);
