@@ -1,8 +1,12 @@
 # ADR 0013: Pixoo moments as interludes
 
-Status: Accepted by the owner, 2026-11-03, for
+Status: Accepted for
 [Hub #1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) under
-[epic #677](https://github.com/jimmie-potts/agent-device-hub/issues/677).
+[epic #677](https://github.com/jimmie-potts/agent-device-hub/issues/677). The
+owner's decision of 2026-11-03 is recorded in that epic: art shows over Media and
+resumes in place, shows over Monitor briefly only when nothing needs attention,
+with a setting to turn that off, and attention ends it at once with no replay. The
+other rules below follow from it, from ADR 0006 and from the issue's discussion.
 Physical acceptance belongs to
 [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
 
@@ -40,14 +44,22 @@ A moment is a different thing, and may cover the current base for a short time.
   evidence does not stop a moment, because Media does not present status.
 - **Now Playing** keeps the display: a moment is refused while a takeover holds
   it. A song that wants the whole display during a moment takes over when the
-  moment ends, without the playlist flashing in between.
+  moment ends, without the playlist flashing in between. A track that starts
+  during a moment over Media gets no pop-up afterwards.
 - **Any explicit command** that changes what plays ends a moment. A pause, stop or
-  new start owns what comes next and is never resumed over. A Monitor view change
-  in Media leaves playback alone, so the moment ends and the playlist resumes.
+  new start owns what comes next and is never resumed over, and neither is a start
+  still capturing its selection. A next or previous keeps the playlist playing,
+  since the moment paused it, not the owner. A Monitor view change in Media leaves
+  playback alone, so the moment ends and the playlist resumes.
+- **Time box.** A moment's picture does not outlast it. When nothing follows it,
+  such as after a manual pause, stop or change to Media, one blank frame replaces
+  it. There is no call that repaints a paused item. An uncertain write is the
+  exception: as in ADR 0018, unknown artwork is not rolled back.
 - **Mode.** A moment never changes the device mode.
 - **Restart.** A moment is never replayed. Its command reports `uncertain` at the
   next start, and its ID stays refused for 24 hours. The player's own rule still
-  applies after a restart: playback stays paused until someone resumes it.
+  applies after a restart: playback stays paused until someone resumes it, so a
+  restart during a moment over Media leaves its picture on until then.
 
 Return uses the existing path. Over Media, the moment holds the player through the
 Now Playing takeover and resumes only if the generation its own pause produced,

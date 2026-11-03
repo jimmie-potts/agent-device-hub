@@ -1,5 +1,5 @@
 // What a Pixoo moment shows (Hub #1287). The presentation plays frames and never asks where they came from: `momentContent`
-// is the one place that chooses them from a request, and `renderMomentContent` the one place that draws the choice.
+// chooses them from a request, and `renderMomentContent` draws the choice in the render worker.
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 
 export const MOMENT_MOODS: readonly string[] = ['celebrate', 'setback', 'reminder'];
@@ -25,7 +25,7 @@ const PALETTES: Readonly<Record<string, readonly Rgb[]>> = {
 const parse = (hex: string): Rgb => [Number.parseInt(hex.slice(1, 3), 16), Number.parseInt(hex.slice(3, 5), 16), Number.parseInt(hex.slice(5, 7), 16)];
 
 /** Two complete frames that alternate, drawn from the mood's own shapes and the palette or its preset colors. */
-export function renderMoment(content: Extract<MomentContent, {kind: 'mood'}>): Uint8Array[] {
+export function renderMomentContent(content: MomentContent): Uint8Array[] {
   const colors = content.palette?.map(parse) ?? PALETTES[content.mood] ?? PALETTES.reminder ?? [];
   const at = (index: number): Rgb => colors[index % colors.length] ?? [255, 255, 255];
   const frame = (paint: (x: number, y: number) => Rgb | null): Uint8Array => {
@@ -52,9 +52,4 @@ export function renderMoment(content: Extract<MomentContent, {kind: 'mood'}>): U
       return ring < 2 ? at(0) : distance(x, y) < 6 ? at(1) : null;
     }));
   }
-}
-
-/** Draws what `momentContent` chose. */
-export function renderMomentContent(content: MomentContent): Uint8Array[] {
-  return renderMoment(content);
 }

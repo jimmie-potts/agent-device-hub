@@ -285,9 +285,12 @@ meant to appear over Monitor must be an `event`.
 
 Attention ends a moment at once, with the ending `preempted` and no replay. An
 explicit command that changes what plays ends it as `interrupted`. A manual pause,
-stop or start is never resumed over. A moment that never reached the device has no
+stop or start is never resumed over, and a next or previous keeps playing. When
+nothing follows a moment that showed, one blank frame replaces its picture; an
+uncertain write is not rolled back. A moment that never reached the device has no
 `moment-ended`; its outcome says why. After a restart its command reports
-`uncertain`, it does not play, and its ID stays refused for 24 hours.
+`uncertain`, it does not play, and its ID stays refused for 24 hours. A restart
+during a moment over Media leaves its picture on until someone resumes.
 
 `momentContent` in `src/presentation/moment-content.ts` chooses what a moment shows,
 and `renderMomentContent` draws that choice in the render worker. Everything shown
@@ -307,7 +310,7 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | `pixoo-monitor-set` | Monitor's filter and cadence | `observed` |
 | `pixoo-now-playing-set` | Now Playing in Media: `off`, `popup` or `whole` | `observed` |
 | `pixoo-moments-set` | Whether a moment may cover Monitor: `overMonitor` | `observed` |
-| `moment-play` | One time-boxed moment over the current base (see [Moments](#moments)) | Its write's, once it ended and its base came back; `moment-ended` follows in the same transaction |
+| `moment-play` | One time-boxed moment over the current base (see [Moments](#moments)) | Its write's, once it ended and its base was given back; `moment-ended` commits with it |
 | `pixoo-playlist-change` | Creates, renames, sets options, items or order, duplicates or deletes a playlist | `observed` |
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |

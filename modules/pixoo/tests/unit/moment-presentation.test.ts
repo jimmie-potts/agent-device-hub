@@ -4,7 +4,7 @@ import {present} from '../helpers/present.js';
 import {Player} from '../../src/playback/index.js';
 import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {MonitorPresentation,type MomentPlay,type MomentResult} from '../../src/presentation/monitor-presentation.js';
-import {MOMENT_MOODS,momentContent,renderMoment,renderMomentContent} from '../../src/presentation/moment-content.js';
+import {MOMENT_MOODS,momentContent,renderMomentContent} from '../../src/presentation/moment-content.js';
 import {renderNowPlaying} from '../../src/presentation/now-playing.js';
 import type {PlaybackSourceStatus} from '../../src/presentation/sources.js';
 import {ManualClock} from '../helpers/manual-clock.js';
@@ -36,7 +36,7 @@ async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;
  return {clock,store,device,player,monitor,saved,frames,dashboard,run,settle,play,close};
 }
 type Setup=Awaited<ReturnType<typeof setup>>;
-const art=Array.from(RGB(7));
+const art=Array.from(RGB(7)),blank=Array.from(RGB(0));
 async function monitorMode(s:Setup,view=quietView){
  s.monitor.submit(view);await flush(s.clock);await s.monitor.configure({operation:'mode',mode:'monitor'});await s.run(1100);
  expect(s.frames().at(-1)).toEqual(s.dashboard());
@@ -194,10 +194,15 @@ for(const [name,act] of [['pause',(s:Setup)=>{s.monitor.interrupt();return s.pla
   const s=await setup();
   try{
    await mediaPlaying(s);
+   const blanks=()=>s.frames().filter(frame=>frame.every(value=>value===0)).length;
    const results=s.play();await s.run(1300);
+   const before=blanks();
    await s.settle(act(s));await s.run(4000);
    ended(results,'interrupted');
    expect(s.player.getState().intent).toBe(name==='pause'?'paused':'stopped');
+   // The art does not stay on as if it were the owner's choice: one blank write replaces it.
+   expect(s.frames().at(-1)).toEqual(blank);
+   expect(blanks()).toBe(before+1);
   }finally{await s.close();}
  });
 }
@@ -208,9 +213,11 @@ it('a new start during a moment over Media takes the display and nothing resumes
   const results=s.play();await s.run(1300);
   await s.settle(s.monitor.media(()=>s.player.start(s.store.playlist.id),true));await s.run(200);
   ended(results,'interrupted');
-  const generation=s.player.getState().generation;
+  const generation=s.player.getState().generation,session=s.player.getState().sessionId;
   await s.run(4000);
-  expect(s.player.getState().intent).toBe('active');expect(s.player.getState().generation).toBeGreaterThanOrEqual(generation);
+  // Nothing retires the new start: the moment's end owes the player no resume, so only its own traversal may move it on.
+  expect(s.player.getState()).toMatchObject({intent:'active',sessionId:session});
+  expect(s.player.getState().generation-generation).toBeLessThanOrEqual(s.device.operations.filter(op=>op.kind==='uploadAnimation').length);
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
@@ -275,11 +282,131 @@ it('waits for its start, and a start window it misses ends it with no write and 
   expect(s.frames().length).toBe(count);
  }finally{await s.close();}
 });
-it('holds one moment at a time, from the moment it is handed over',async()=>{
+/** Holds the next capture until `release`, as a busy library does. */
+function slowCapture(s:Setup){
+ const capture=s.store.capture.bind(s.store);let release=()=>{};
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ s.store.capture=(async(...args:Parameters<typeof capture>)=>{await gate;return capture(...args);}) as typeof s.store.capture;
+ return ()=>{s.store.capture=capture;release();};
+}
+it('a moment that ends while a manual start captures never cancels the start by resuming',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play();await s.run(1300);
+  const release=slowCapture(s),before=s.player.getState().sessionId;
+  let failure:unknown;
+  const start=s.player.start(s.store.playlist.id).catch((error:unknown)=>{failure=error;});
+  await s.run(3200);
+  ended(results,'completed');
+  expect(s.player.getState().intent).toBe('paused');
+  release();await s.settle(start);await s.run(200);
+  expect(failure).toBeUndefined();
+  expect(s.player.getState().intent).toBe('active');expect(s.player.getState().sessionId).not.toBe(before);
+ }finally{await s.close();}
+});
+it('a moment does not pause over a manual start that is still capturing, so it cannot cancel it',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const release=slowCapture(s),before=s.player.getState().sessionId;
+  let failure:unknown;
+  const start=s.player.start(s.store.playlist.id).catch((error:unknown)=>{failure=error;});
+  await flush(s.clock);
+  expect(s.monitor.momentBlock(false)).toBe('a start is pending');
+  const results=s.play();await s.run(300);
+  expect(results).toEqual([{ending:null,refused:'blocked'}]);
+  release();await s.settle(start);await s.run(200);
+  expect(failure).toBeUndefined();
+  expect(s.player.getState().sessionId).not.toBe(before);
+ }finally{await s.close();}
+});
+it('a mode change queued ahead of the moment\'s hold keeps Monitor on the display',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);s.monitor.submit(quietView);await flush(s.clock);
+  const results=s.play();await flush(s.clock);
+  // The change is queued but has not begun, so the tick still sees Media and queues its hold behind it.
+  const mode=s.monitor.configure({operation:'mode',mode:'monitor'});
+  s.clock.advance(100);s.monitor.tick();
+  await s.settle(mode);await s.run(1200);
+  expect(results).toEqual([{ending:null,refused:'blocked'}]);
+  expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
+ }finally{await s.close();}
+});
+it('a view change right after the moment\'s pause ends it and gives the playlist back',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play();await flush(s.clock);
+  s.clock.advance(100);s.monitor.tick();
+  const view=s.monitor.configure({operation:'view',filter:{},cadenceMs:2000});
+  await s.settle(view);await s.run(300);
+  expect(results).toHaveLength(1);
+  expect(s.monitor.momentBusy()).toBe(false);
+  expect(s.player.getState().intent).toBe('active');
+ }finally{await s.close();}
+});
+it('a moment that misses its window behind another write gives the playlist back with no art',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({toleranceMs:100});await flush(s.clock);
+  s.clock.advance(50);s.monitor.tick();await flush(s.clock);
+  expect(s.player.getState().intent).toBe('paused');
+  s.clock.advance(5000);s.monitor.tick();await flush(s.clock);await s.run(200);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'expired'})]);
+  expect(s.player.getState().intent).toBe('active');expect(s.frames()).not.toContainEqual(art);
+ }finally{await s.close();}
+});
+it('attention during the moment\'s hold never shows it and gives the playlist back',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play();await flush(s.clock);
+  s.clock.advance(100);s.monitor.tick();await flush(s.clock);
+  s.monitor.submit(attentionView);await s.run(1500);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'cancelled'})]);
+  expect(s.player.getState().intent).toBe('active');expect(s.frames()).not.toContainEqual(art);
+ }finally{await s.close();}
+});
+it('a rejected write is unknown, never reported as unsent',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
-  s.play();expect(s.monitor.momentBusy()).toBe(true);
+  s.player.uploadDashboard=()=>Promise.reject(new Error('store failed'));
+  const results=s.play();await s.run(1300);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'unknown'})]);
+ }finally{await s.close();}
+});
+it('a manual pause over Monitor during a moment clears the art, and choosing Monitor again paints the dashboard',async()=>{
+ const s=await setup();
+ try{
+  await monitorMode(s);
+  const results=s.play();await s.run(1300);
+  s.monitor.interrupt();await s.settle(s.player.pause());await s.run(1200);
+  ended(results,'interrupted');
+  expect(s.frames().at(-1)).toEqual(blank);
+  await s.monitor.configure({operation:'mode',mode:'monitor'});await s.run(1200);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
+ }finally{await s.close();}
+});
+it('an uncertain write is not rolled back: no blank follows it',async()=>{
+ const s=await setup({pauseOnUncertain:true});
+ try{
+  await monitorMode(s);
+  s.play({frames:()=>Promise.resolve([RGB(7),RGB(8)])});
+  s.device.failNextUpload(1);await s.run(1300);await s.run(2000);
+  expect(s.frames()).not.toContainEqual(blank);
+ }finally{await s.close();}
+});
+it('a Now Playing pop-up still lasts its full ten seconds from its pause',async()=>{
+ const s=await setup({media:'popup'});
+ try{
+  await mediaPlaying(s);
+  s.monitor.submitPlayback(song);await s.run(9500);
+  expect(s.monitor.nowPlayingSummary().takeover).toBe('popup');
+  await s.run(800);expect(s.monitor.nowPlayingSummary().takeover).toBeNull();
  }finally{await s.close();}
 });
 it('a failed render touches neither the player nor the device',async()=>{
@@ -344,6 +471,6 @@ it('chooses mood content through one seam and draws two complete, distinct frame
   expect(first?.length).toBe(12288);expect(second?.length).toBe(12288);
   expect(first?.some(value=>value!==0)).toBe(true);expect(Array.from(first??[])).not.toEqual(Array.from(second??[]));
  }
- const tinted=renderMoment({kind:'mood',mood:'reminder',palette:['#102030']})[0];
+ const tinted=renderMomentContent({kind:'mood',mood:'reminder',palette:['#102030']})[0];
  expect(Array.from(tinted??[]).filter(value=>![0,0x10,0x20,0x30].includes(value))).toEqual([]);
 });

@@ -511,11 +511,9 @@ void describe('moments', () => {
       assert.equal(outcome.data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'preempted');
       await waitFor(() => world.device.state().shown !== null && world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the dashboard back on the device');
-      const uploads = world.device.state().uploads;
       await world.publishSession({attention: []});
       await sleep(1200);
       assert.notEqual(world.device.state().shown?.digests[0], momentFrame());
-      assert.ok(world.device.state().uploads >= uploads);
     });
   });
 
@@ -539,6 +537,33 @@ void describe('moments', () => {
       const back = await waitFor(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back');
       assert.equal(back.player.itemId, playing.player.itemId);
       assert.equal(back.mode, 'media');
+    });
+  });
+
+  void it('keeps playing when next is pressed during a moment over Media, and blanks the art when pause is', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list} = await readyPlaylist(world);
+      await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist');
+      const flourish = {priorityClass: 'flourish', coversStatus: false, durationMs: 10_000};
+      const first = await accepted(world.request('moment-play', MOMENT, moment('m-next', flourish)));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      const next = await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'next'}));
+      assert.equal((await world.outcome(next)).data.result, 'succeeded');
+      assert.equal((await world.outcome(first)).data.result, 'succeeded');
+      assert.equal(ended(world, first)?.ending, 'interrupted');
+      await waitFor(() => world.display()?.player.intent === 'active' ? true : undefined, 'the playlist still playing');
+      await waitFor(() => world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the art replaced');
+      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playlist playing again');
+      const second = await accepted(world.request('moment-play', MOMENT, moment('m-pause', flourish)));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the second moment on the device');
+      const paused = await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'}));
+      await world.outcome(paused);
+      assert.equal(ended(world, second)?.ending ?? (await world.outcome(second), ended(world, second)?.ending), 'interrupted');
+      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame');
+      assert.equal(world.display()?.player.intent, 'paused');
     });
   });
 

@@ -466,8 +466,9 @@ class PixooRuntime {
   // Rendering
 
   /**
-   * Draws a dashboard or a card in a worker thread. A failed render is no evidence about the device: the presentation
-   * keeps its last picture and tries again. One record reports a run of failures, and one its end.
+   * Draws a dashboard, a card or a moment in a worker thread. A failed render is no evidence about the device: the
+   * presentation keeps its last picture and tries again, and one record reports a run of failures, and one its end. A
+   * moment is drawn once, and its own outcome reports a failure.
    */
   async #render(request: RenderRequest, cardInputKey?: string): Promise<Uint8Array[]> {
     const {workers, signal, log} = this.#context;
@@ -487,13 +488,13 @@ class PixooRuntime {
           this.#artworkFailing = undefined; recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
         }
       }
-      if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
+      if (this.#renderFailing && request.kind !== 'moment' && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
         recordLog(log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': Outcome.succeeded}, parent);
       }
       return frames;
     } catch (error) {
-      if (!this.#renderFailing && !signal.aborted && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
+      if (!this.#renderFailing && !signal.aborted && request.kind !== 'moment' && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = true;
         recordLog(log, 'operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'}, parent);
       }

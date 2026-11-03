@@ -117,7 +117,7 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
 
 /** The general device families (#918) the module uses, by `dataschema`, so the SDK edge and the kit can check them. */
 export const deviceSchemas: Readonly<Record<string, object>> = Object.fromEntries(
-  deviceFamilies.filter(family => ['device', 'power-set', 'brightness-set', 'media-start', 'media-control', 'device-mode-set', 'moment-play'].includes(family.family))
+  deviceFamilies.filter(family => ['device', 'power-set', 'brightness-set', 'media-start', 'media-control', 'device-mode-set'].includes(family.family))
     .map(family => [family.dataschema, family.schema]),
 );
 /** Every payload schema the module's messages use: the general device families and its own. */

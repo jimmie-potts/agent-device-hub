@@ -156,13 +156,15 @@ export class PixooControl {
    * ControlService, resume and restart-with-changes take the display back from Monitor, and the others interrupt it.
    */
   control(action: MediaAction): Promise<Completion> {
+    // A moment paused this playlist, not the owner, so a next or previous during it keeps playing.
+    const held = this.#monitor.momentHoldsMedia();
     const run = (): Promise<void> => {
       switch (action) {
         case 'pause': return this.#player.pause();
         case 'resume': return this.#player.resume();
         case 'stop': return this.#player.stop();
-        case 'next': return this.#player.next();
-        case 'previous': return this.#player.previous();
+        case 'next': return held ? this.#player.next().then(() => this.#player.resume()) : this.#player.next();
+        case 'previous': return held ? this.#player.previous().then(() => this.#player.resume()) : this.#player.previous();
         case 'restart-with-changes': return this.#player.restartWithChanges();
         case 'clear': return this.#player.clear();
       }
@@ -235,6 +237,7 @@ export class PixooControl {
       case 'expired': return failed('expired', 'the moment missed its start window');
       case 'blocked': return failed('invalid-state', 'the current presentation no longer admits the moment');
       case 'cancelled': return failed('cancelled', 'a newer request or attention ended the moment before it was sent');
+      case 'unknown': return uncertain('the moment\'s write failed after it began');
       case 'content': return failed('internal', 'the moment could not be drawn');
       case 'upload': return deviceCompletion(result.upload, 'moment');
     }
