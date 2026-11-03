@@ -55,12 +55,15 @@ export type Continuity = {
   /** The last connected snapshot with a reading, and whether the link broke since. */
   lastReadingAtMs: number | null; broken: boolean;
   heater: boolean | null; pump: boolean | null; status1: number | null; currentDeciC: number | null; targetDeciC: number | null;
-  counter: number | null; counterAtMs: number | null; lastSampleAtMs: number | null; displayFahrenheit: boolean | null;
+  counter: number | null; counterAtMs: number | null;
+  /** A reading since `counter` had no counter, so the gain from `counter` may belong to time before any later gap. */
+  counterBroken: boolean;
+  lastSampleAtMs: number | null; displayFahrenheit: boolean | null;
 };
 
 export const emptyContinuity = (): Continuity => ({
   epoch: null, sequence: 0, takenAtMs: null, baselineMs: null, latestMs: null, link: null, lastReadingAtMs: null, broken: false,
-  heater: null, pump: null, status1: null, currentDeciC: null, targetDeciC: null, counter: null, counterAtMs: null, lastSampleAtMs: null, displayFahrenheit: null,
+  heater: null, pump: null, status1: null, currentDeciC: null, targetDeciC: null, counter: null, counterAtMs: null, counterBroken: false, lastSampleAtMs: null, displayFahrenheit: null,
 });
 
 export const counterOf = (reading: VolcanoReading): number | null =>
@@ -93,7 +96,7 @@ export function reduce(state: Continuity, snapshot: VolcanoObservation, received
   const next: Continuity = {...state, epoch: collectorEpoch, sequence, takenAtMs: receivedAtMs, baselineMs: observedAtMs, latestMs: observedAtMs, link};
   const forget = (): void => {
     next.lastReadingAtMs = null; next.broken = false; next.heater = null; next.pump = null; next.status1 = null; next.currentDeciC = null;
-    next.counter = null; next.counterAtMs = null; next.lastSampleAtMs = null;
+    next.counter = null; next.counterAtMs = null; next.counterBroken = false; next.lastSampleAtMs = null;
   };
   // A clock that stepped back orders nothing across it: whatever was open ends unknown, and no counter gain crosses it.
   if (state.latestMs !== null && observedAtMs < state.latestMs) {
@@ -132,7 +135,7 @@ function applyReading(next: Continuity, reading: VolcanoReading, at: number, add
     if (value < previous) reason = 'counter-decrease';
     // The counter counts whole minutes of real time, so a larger gain is not usage: it is a reset or another counter.
     else if (value - previous > Math.ceil(elapsed / 60_000) + 1) reason = 'counter-jump';
-    else if (unobserved) credited = value - previous;
+    else if (unobserved && !next.counterBroken) credited = value - previous;
   }
   if (unobserved) {
     add({kind: 'gap', fromMs: next.lastReadingAtMs ?? at, toMs: at, heaterBefore: known(next.heater), heaterAfter: known(heater), creditedMinutes: credited});
@@ -142,6 +145,9 @@ function applyReading(next: Continuity, reading: VolcanoReading, at: number, add
     if (value !== previous) add({kind: 'counter', hours: reading.heatingHours ?? 0, minutes: reading.heatingMinutes ?? 0, totalMinutes: value});
     next.counter = value;
     next.counterAtMs = at;
+    next.counterBroken = false;
+  } else if (previous !== null) {
+    next.counterBroken = true;
   }
   const edge: Edge = first || next.heater === null ? 'first-observation' : unobserved ? 'after-gap' : 'observed';
   let transition = false;

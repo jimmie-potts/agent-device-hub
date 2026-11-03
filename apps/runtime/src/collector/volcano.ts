@@ -170,8 +170,9 @@ type Pair = {hours: number | null; minutes: number | null};
 /**
  * Keeps a torn counter out of what is published. The device notifies hours and minutes separately, so at an hour boundary
  * the registers can read 12:59, 13:59, 13:00 or 12:59, 12:00, 13:00. A pair is taken when it moves forward by no more than the
- * time allows. Any other pair is held back, with the last good pair published in its place, until a later read at least
- * `confirmMs` on still says the same: then it is a real reset, for the module to record as a discontinuity.
+ * time allows. Any other pair is held back, published as unread, until a later read at least `confirmMs` on still says the
+ * same: then it is a real reset, for the module to record as a discontinuity. Publishing the last good pair instead would
+ * tell the module the counter had not moved, and it would store that as a gain of zero across any gap that had just ended.
  */
 export class CounterGate {
   readonly #confirmMs: number;
@@ -197,7 +198,7 @@ export class CounterGate {
     } else {
       this.#suspect = {hours, minutes, atMs};
     }
-    return {hours: this.#taken.hours, minutes: this.#taken.minutes};
+    return {hours: null, minutes: null};
   }
 }
 

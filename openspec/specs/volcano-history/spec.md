@@ -19,7 +19,7 @@ The runtime SHALL ship one `modules/volcano` module for one configured feed, who
 
 ### Requirement: No fabricated continuity
 
-A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` is not newer than the ordering baseline, SHALL add no fact and renew no freshness, and once the feed has been stale for 15 s such a snapshot SHALL move the baseline to its own stamp without giving evidence. A missing observation SHALL stay unknown: a disconnect or a stale feed SHALL never record off. When observation resumes after a broken link, more than 15 s of silence, a skipped `sequence` within an epoch or a new collector epoch, the module SHALL record one gap with the heater on each side. Its credit SHALL be the counter's gain in whole minutes only when a baseline spans it with no discontinuity. A counter decrease, a gain larger than the elapsed minutes plus one, a changed identity or a stepped clock SHALL record a discontinuity that no delta crosses.
+A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` is not newer than the ordering baseline, SHALL add no fact and renew no freshness, and once the feed has been stale for 15 s such a snapshot SHALL move the baseline to its own stamp without giving evidence. A missing observation SHALL stay unknown: a disconnect or a stale feed SHALL never record off. When observation resumes after a broken link, more than 15 s of silence, a skipped `sequence` within an epoch or a new collector epoch, the module SHALL record one gap with the heater on each side. Its credit SHALL be the counter's gain in whole minutes only when a counter was read on each side, with no discontinuity and no reading without a counter since the first of them; otherwise it SHALL be null, never zero. A counter decrease, a gain larger than the elapsed minutes plus one, a changed identity or a stepped clock SHALL record a discontinuity that no delta crosses.
 
 #### Scenario: Duplicates and delayed snapshots
 - **WHEN** heartbeats repeat, the same sequence arrives again, an older stamp arrives late and `status2` bit 13 flips
@@ -32,6 +32,10 @@ A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` i
 #### Scenario: Counter decrease and jump
 - **WHEN** the counter reads 120 h 05 min and then 3 h 00 min, or gains more minutes than have passed
 - **THEN** a discontinuity is recorded and the gap holds no credit
+
+#### Scenario: A counter unknown on reconnecting
+- **WHEN** the link breaks and the first reading after it has a counter that is reset, or larger than the time allows
+- **THEN** the gap's credit is null, not zero, and the confirmed counter records one discontinuity
 
 #### Scenario: A stepped clock
 - **WHEN** a snapshot's stamp is not newer and the feed has gone stale, and the next snapshot is newer than that stamp but older than the last one taken
@@ -99,7 +103,7 @@ Facts and threshold SHALL survive an ordinary restart, and there SHALL be no del
 
 ### Requirement: Read-only collector
 
-The runtime SHALL ship a host-local collector whose transport has only scan, connect, read, subscribe and disconnect, limited to the fixed allowlist of status, temperature and counter characteristics, plus the serial for reading only, and SHALL have no write path. The serial SHALL be compared with a private SHA-256 and SHALL never be published, logged or kept; a mismatch SHALL publish `identity-mismatch` and disconnect. It SHALL stay connected on notifications plus a 5 s poll, publish with `publishOnce` on change at most once a second and at a 5 s heartbeat when it has newer evidence, stamp a reading with the time of its evidence and never of its sending, never retry a publication and reconnect with bounded backoff from 2 s to 60 s. Temperatures SHALL be published in degrees Celsius times ten. A publication SHALL never carry an hours and minutes pair torn across an hour boundary: a pair not moving forward by what the time allows SHALL be held back until a later read at least 4 s on confirms it. The real binding SHALL live in a non-workspace package pinning `@stoprocent/noble` 2.8.0, so the root lockfile and container image gain no native dependency.
+The runtime SHALL ship a host-local collector whose transport has only scan, connect, read, subscribe and disconnect, limited to the fixed allowlist of status, temperature and counter characteristics, plus the serial for reading only, and SHALL have no write path. The serial SHALL be compared with a private SHA-256 and SHALL never be published, logged or kept; a mismatch SHALL publish `identity-mismatch` and disconnect. It SHALL stay connected on notifications plus a 5 s poll, publish with `publishOnce` on change at most once a second and at a 5 s heartbeat when it has newer evidence, stamp a reading with the time of its evidence and never of its sending, never retry a publication and reconnect with bounded backoff from 2 s to 60 s. Temperatures SHALL be published in degrees Celsius times ten. A publication SHALL never carry an hours and minutes pair torn across an hour boundary: a pair not moving forward by what the time allows SHALL be published as unread until a later read at least 4 s on confirms it. The real binding SHALL live in a non-workspace package pinning `@stoprocent/noble` 2.8.0, so the root lockfile and container image gain no native dependency.
 
 #### Scenario: No write can be expressed
 - **WHEN** a whole session runs against a fake noble and a fake transport that fail on any write-shaped call or other characteristic

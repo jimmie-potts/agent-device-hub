@@ -167,6 +167,44 @@ void test('a counter gain larger than the time that passed is a discontinuity, n
   assert.deepEqual(only(facts, 'gap').map(fact => fact.creditedMinutes), [null]);
 });
 
+const hidden = {heatingHours: null, heatingMinutes: null};
+
+void test('a gap that ends with no counter has no credit, and the counter neither moves nor loses its baseline', () => {
+  const {facts, state} = play([{at: 0, reading: {heatingMinutes: 5}}, {at: 60_000, reading: hidden}]);
+  assert.deepEqual(only(facts, 'gap').map(fact => fact.creditedMinutes), [null]);
+  assert.equal(state.counter, 725);
+  assert.equal(only(facts, 'counter').length, 1);
+});
+
+void test('a counter held back across an ordinary rollover records no discontinuity and no credit', () => {
+  const {facts} = play([
+    {at: 0, reading: {heatingHours: 12, heatingMinutes: 59}}, {at: 1000, reading: hidden}, {at: 2000, reading: {heatingHours: 13, heatingMinutes: 0}},
+    {at: 62_000, reading: {heatingHours: 13, heatingMinutes: 1}},
+  ]);
+  assert.deepEqual(only(facts, 'discontinuity'), []);
+  assert.deepEqual(only(facts, 'counter').map(fact => fact.totalMinutes), [779, 780, 781]);
+  assert.deepEqual(only(facts, 'gap').length, 1, 'a minute of silence is still a gap');
+  assert.deepEqual(only(facts, 'gap').map(fact => fact.creditedMinutes), [1], 'and the baseline is good again by then');
+});
+
+void test('a gain from before a hidden counter is never credited to a later gap', () => {
+  const {facts} = play([
+    {at: 0, reading: {heatingMinutes: 5}}, {at: 1000, reading: hidden},
+    {at: 120_000, reading: {heatingMinutes: 7}},
+  ]);
+  assert.deepEqual(only(facts, 'gap').map(fact => fact.creditedMinutes), [null], 'two minutes gained, some perhaps before the gap began');
+  assert.deepEqual(only(facts, 'counter').map(fact => fact.totalMinutes), [725, 727]);
+});
+
+void test('a reset confirmed after being hidden is one discontinuity, with its gap uncredited', () => {
+  const {facts} = play([
+    {at: 0, reading: {heatingHours: 120, heatingMinutes: 5}}, {at: 5000, link: 'disconnected'}, {at: 60_000, reading: hidden},
+    {at: 65_000, reading: {heatingHours: 3, heatingMinutes: 0}},
+  ]);
+  assert.deepEqual(only(facts, 'gap').map(fact => fact.creditedMinutes), [null]);
+  assert.deepEqual(only(facts, 'discontinuity').map(fact => fact.reason), ['counter-decrease']);
+});
+
 void test('a changed identity starts a discontinuity, and what follows starts over with no credit', () => {
   const {facts, state} = play([
     {at: 0, reading: {status1: HEATING, heatingMinutes: 5}}, {at: 5000, link: 'identity-mismatch'}, {at: 10_000, link: 'identity-mismatch'},

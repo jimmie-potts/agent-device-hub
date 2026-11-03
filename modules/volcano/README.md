@@ -47,8 +47,9 @@ Decoding follows the live trial on [#614](https://github.com/jimmie-potts/agent-
 `displayFahrenheit` for the card; temperatures are always stored as degrees Celsius
 times ten. `status2` bit 13 flips by itself and is never a change. Counter persistence
 across power-off is not verified, so any decrease is a discontinuity. The hour rollover
-is not verified either: the collector holds back a pair torn across it, so one
-reaching this module is a real change.
+is not verified either: the collector publishes a pair torn across it as unread, so
+one reaching this module is a real change. A gap that ends with no counter has no
+credit, and neither does the next one if no counter has been read between them.
 
 A snapshot repeating its epoch and sequence is dropped, and so is one whose
 `observedAtMs` is not newer than the last. Once the feed has been stale for 15 s, such

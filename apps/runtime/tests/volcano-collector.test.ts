@@ -14,7 +14,7 @@ import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import type {Logger, PublishOnceResult} from '@jimmie-potts/sdk';
-import {admit, emptyContinuity, reduce} from '@jimmie-potts/volcano';
+import {admit, emptyContinuity, reduce, type Fact} from '@jimmie-potts/volcano';
 import {
   BACKOFF_FIRST_MS, BACKOFF_MAX_MS, CounterGate, READABLE, SUBSCRIBABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, loadCollector, readCollectorConfig, runCollector, serialDigest, volcanoFeedOf,
   type Collector, type ReadUuid, type SubscribeUuid, type VolcanoTransport,
@@ -84,7 +84,7 @@ const logs: {level: string; event: string; fields: unknown}[] = [];
 const log: Logger = Object.fromEntries((['debug', 'info', 'warn', 'error'] as const).map(level => [level, (event: string, fields: unknown) => { logs.push({level, event, fields}); }])) as unknown as Logger;
 const sleepFor = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
-type Run = {published: {key: string; message: Message<VolcanoObservation>}[]; stop: () => Promise<void>; waits: number[]};
+type Run = {published: {key: string; message: Message<VolcanoObservation>; receivedAtMs: number}[]; stop: () => Promise<void>; waits: number[]};
 const deferred = (): {promise: Promise<void>; resolve: () => void} => {
   let resolve: () => void = () => {};
   const promise = new Promise<void>(given => { resolve = given; });
@@ -98,7 +98,8 @@ function start(context: TestContext, device: VolcanoTransport, options: {timing?
     log, signal: controller.signal, transport: device, ...(options.now === undefined ? {} : {now: options.now}),
     timing: {pollMs: 40, heartbeatMs: 60, minPublishMs: 15, scanMs: 200, connectMs: 200, readMs: 200, ...options.timing},
     publish: (_options, key, message) => {
-      published.push({key, message: message as Message<VolcanoObservation>});
+      // The module runs on this host's clock, so it receives each snapshot by the same clock the collector reads.
+      published.push({key, message: message as Message<VolcanoObservation>, receivedAtMs: options.now?.() ?? Date.now()});
       return Promise.resolve(options.result?.() ?? {status: 'published'});
     },
     sleep: async (ms, signal) => { waits.push(ms); if (!signal.aborted) await sleepFor(25); },
@@ -285,20 +286,25 @@ void test('a read that fails ends the connection, and a stop ends the loop promp
   assert.ok(performance.now() - started < 500);
 });
 
-/** Every discontinuity the module would record from what was published. */
-function discontinuities(run: Run): string[] {
+/** Every fact the module would store from what was published, in order. */
+function factsOf(run: Run): Fact[] {
   let state = emptyContinuity();
-  const reasons: string[] = [];
-  for (const snapshot of snapshots(run)) {
-    const received = snapshot.observedAtMs;
-    if (!admit(state, snapshot, received).take) continue;
-    const result = reduce(state, snapshot, received);
+  const facts: Fact[] = [];
+  for (const {message, receivedAtMs} of run.published) {
+    const admission = admit(state, message.data, receivedAtMs);
+    if (!admission.take) {
+      state = {...state, baselineMs: admission.baselineMs};
+      continue;
+    }
+    const result = reduce(state, message.data, receivedAtMs);
     state = result.state;
-    for (const fact of result.facts) if (fact.kind === 'discontinuity') reasons.push(fact.reason);
+    facts.push(...result.facts);
   }
-  return reasons;
+  return facts;
 }
-const totals = (run: Run): number[] => connected(run).map(({reading}) => (reading?.heatingHours ?? 0) * 60 + (reading?.heatingMinutes ?? 0));
+const discontinuities = (run: Run): string[] => factsOf(run).flatMap(fact => (fact.kind === 'discontinuity' ? [fact.reason] : []));
+/** The counter each connected snapshot published, or null while one was held back. */
+const totals = (run: Run): (number | null)[] => connected(run).map(({reading}) => (reading?.heatingHours === null || reading?.heatingMinutes === null || reading === null ? null : reading.heatingHours * 60 + reading.heatingMinutes));
 
 for (const [name, first, second] of [['hours then minutes', ['hours', 13], ['minutes', 0]], ['minutes then hours', ['minutes', 0], ['hours', 13]]] as const) {
   void test(`a rollover notified ${name} never publishes a torn counter or a discontinuity`, async t => {
@@ -309,10 +315,10 @@ for (const [name, first, second] of [['hours then minutes', ['hours', 13], ['min
     await until(() => connected(run).length > 0, 'the first snapshot');
     device.notify(first[0], first[1]);
     await sleepFor(30);
-    assert.ok(totals(run).every(total => total === 779), `the first half publishes the last good pair: ${String(totals(run))}`);
+    assert.ok(totals(run).every(total => total === 779 || total === null), `the first half publishes no pair: ${String(totals(run))}`);
     device.notify(second[0], second[1]);
     await until(() => totals(run).at(-1) === 780, 'the second half');
-    assert.deepEqual([...new Set(totals(run))], [779, 780]);
+    assert.deepEqual([...new Set(totals(run))].filter(total => total !== null), [779, 780]);
     assert.deepEqual(discontinuities(run), []);
   });
 }
@@ -326,7 +332,7 @@ void test('a rollover whose second notification never comes is settled by the po
   device.registers.minutes = 0;
   device.notify('hours', 13);
   await until(() => totals(run).at(-1) === 780, 'the poll');
-  assert.deepEqual([...new Set(totals(run))], [779, 780]);
+  assert.deepEqual([...new Set(totals(run))].filter(total => total !== null), [779, 780]);
   assert.deepEqual(discontinuities(run), []);
 });
 
@@ -339,17 +345,40 @@ void test('a real counter reset is believed once a later read still says so, and
   device.registers.hours = 3;
   device.registers.minutes = 0;
   await until(() => totals(run).at(-1) === 180, 'the reset');
-  assert.deepEqual([...new Set(totals(run))], [7205, 180]);
+  assert.deepEqual([...new Set(totals(run))].filter(total => total !== null), [7205, 180]);
   assert.deepEqual(discontinuities(run), ['counter-decrease']);
 });
+
+for (const [name, hours, minutes, reason] of [['reset', 3, 0, 'counter-decrease'], ['jump', 200, 0, 'counter-jump']] as const) {
+  void test(`a counter ${name} found on reconnecting gets no credit and one discontinuity`, async t => {
+    const device = new FakeDevice();
+    device.registers.status1 = 0x0623;
+    device.registers.hours = 120;
+    device.registers.minutes = 5;
+    const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 25, counterConfirmMs: 20}});
+    await until(() => connected(run).length > 2, 'the counter running');
+    const first = device.lost;
+    device.registers.hours = hours;
+    device.registers.minutes = minutes;
+    first?.();
+    await until(() => totals(run).at(-1) === hours * 60 + minutes, 'the confirmed pair');
+    await run.stop();
+    const facts = factsOf(run);
+    const gaps = facts.filter(fact => fact.kind === 'gap');
+    assert.equal(gaps.length, 1);
+    assert.deepEqual(gaps.map(fact => fact.creditedMinutes), [null], 'the counter across the gap is unknown, not zero');
+    assert.deepEqual(discontinuities(run), [reason]);
+    assert.equal(facts.filter(fact => fact.kind === 'heater').length, 1, 'the heater was on at both edges');
+  });
+}
 
 void test('the gate takes a normal tick and passes unread registers through', () => {
   const gate = new CounterGate(1000);
   assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5});
   assert.deepEqual(gate.take({hours: 1, minutes: 6}, 60_000), {hours: 1, minutes: 6});
   assert.deepEqual(gate.take({hours: null, minutes: 6}, 60_001), {hours: null, minutes: 6});
-  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_002), {hours: 1, minutes: 6}, 'held');
-  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_500), {hours: 1, minutes: 6}, 'not yet confirmed');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_002), {hours: null, minutes: null}, 'held');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_500), {hours: null, minutes: null}, 'not yet confirmed');
   assert.deepEqual(gate.take({hours: 5, minutes: 0}, 61_002), {hours: 5, minutes: 0}, 'confirmed');
   assert.deepEqual(gate.take({hours: 6, minutes: 0}, 8 * 60 * 60_000), {hours: 6, minutes: 0}, 'time allows it after a long gap');
 });
