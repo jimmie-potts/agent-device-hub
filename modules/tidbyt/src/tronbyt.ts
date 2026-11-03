@@ -8,6 +8,8 @@
 //   installation by name.
 // - Removing an installation that is gone answers 404 "App not found", where a missing device answers "Device not found".
 // - Brightness is stored as sent, unchecked, so the module scales its percent itself. See `BRIGHTNESS_CEILING`.
+// - A moment's takeover is one installation of the module's own, pinned while it holds. `pinned: false` on an installation
+//   clears the pin only if that installation holds it, so a release can never clear a pin someone else set.
 // Observation stays a transmission: the server knows what it served, never what the panel shows.
 import {Outcome} from '@jimmie-potts/sdk';
 import {
@@ -21,9 +23,12 @@ import {
  * included, and hand it to the firmware.
  */
 export const BRIGHTNESS_CEILING = 50;
+/** The installation a moment's takeover pushes and pins, which no tile may take. */
+export const MOMENT_INSTALLATION = 'bunnymoment';
 const API_KEY = /^[\x21-\x7e]{1,4096}$/;
 /** The server's fixed answer for an installation it does not have. */
 const NO_INSTALLATION = /^App not found\s*$/;
+const MAX_DEVICE_BODY = 256 * 1024;
 const REFUSED: WriteResult = Object.freeze({outcome: Outcome.failed, failure: 'invalid-request'});
 const PRIVATE_NAME = /^(?:[a-z0-9-]+|.+\.(?:local|internal|lan|home\.arpa))$/;
 
@@ -100,7 +105,7 @@ export class TronbytConnection implements TidbytConnection {
       typeof config.deviceId !== 'string' || !CLOUD_DEVICE_ID.test(config.deviceId) ||
       typeof config.apiKey !== 'string' || !API_KEY.test(config.apiKey) ||
       typeof config.installationId !== 'string' || !INSTALLATION_ID.test(config.installationId) ||
-      [config.installationId, ...additional as string[]].some(id => /^\d+$/.test(id))) {
+      [config.installationId, ...additional as string[]].some(id => /^\d+$/.test(id) || id === MOMENT_INSTALLATION)) {
       throw new CloudConfigurationError();
     }
     this.#origin = origin;
@@ -175,6 +180,46 @@ export class TronbytConnection implements TidbytConnection {
     return await this.#write(() => this.#request('', signal, 'PATCH', {pinnedApp: ''}));
   }
 
+  /** Whether the server holds a pin now, whoever set it, or why that could not be read. It changes nothing. */
+  async serverPin(signal: AbortSignal): Promise<{pinned: boolean} | WriteResult> {
+    let response: Response;
+    try {
+      response = await this.#request('', signal, 'GET');
+    } catch {
+      return {outcome: Outcome.failed, failure: 'transport-failure'};
+    }
+    if (!response.ok) {
+      const refused = await this.#refusal(response);
+      return refused.outcome === Outcome.uncertain ? {outcome: Outcome.failed, failure: 'transport-failure'} : refused;
+    }
+    let pinned: unknown;
+    try {
+      pinned = (JSON.parse(await boundedText(response, MAX_DEVICE_BODY) ?? '') as {pinnedApp?: unknown}).pinnedApp;
+    } catch {
+      return REFUSED;
+    }
+    if (pinned === null || pinned === '') return {pinned: false};
+    return typeof pinned === 'string' ? {pinned: true} : REFUSED;
+  }
+
+  /** Pushes a moment's frame to interrupt the display at once. */
+  async pushMoment(webp: Uint8Array, signal: AbortSignal): Promise<WriteResult> {
+    return await this.#write(() => this.#request('/push', signal, 'POST', {image: Buffer.from(webp).toString('base64'), installationID: MOMENT_INSTALLATION, background: false}));
+  }
+
+  /** Pins a moment's installation, so the display stays on it until the release. */
+  async pinMoment(signal: AbortSignal): Promise<WriteResult> {
+    return await this.#write(() => this.#request(`/installations/${MOMENT_INSTALLATION}`, signal, 'PATCH', {pinned: true}));
+  }
+
+  /** Ends a takeover: clears the pin only if the moment holds it, then deletes the installation. Both are safe to repeat. */
+  async releaseMoment(signal: AbortSignal): Promise<WriteResult> {
+    const path = `/installations/${MOMENT_INSTALLATION}`;
+    const unpinned = await this.#write(() => this.#request(path, signal, 'PATCH', {pinned: false}), {outcome: 'sent'});
+    if (unpinned.outcome !== 'sent') return unpinned;
+    return await this.#write(() => this.#request(path, signal, 'DELETE'), {outcome: 'sent'});
+  }
+
   /** Sends one write and classifies it once. `gone` is the result when the server has no such installation. */
   async #write(send: () => Promise<Response>, gone: WriteResult = REFUSED): Promise<WriteResult> {
     let response: Response;
@@ -187,6 +232,10 @@ export class TronbytConnection implements TidbytConnection {
       await response.body?.cancel().catch(() => undefined);
       return {outcome: 'sent'};
     }
+    return await this.#refusal(response, gone);
+  }
+
+  async #refusal(response: Response, gone: WriteResult = REFUSED): Promise<WriteResult> {
     const failure = await classify(response);
     await response.body?.cancel().catch(() => undefined);
     if (failure === 'no-installation') return gone;

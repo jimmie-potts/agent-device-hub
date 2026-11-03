@@ -2,7 +2,8 @@
 // answered them on a disposable run: a push names its installation or joins an anonymous queue, `background` defaults to
 // false, the list carries the server's own numeric IDs, asking for or deleting an installation by the name a push chose
 // works, a missing one answers 404 "App not found" and a missing device "Device not found", both as plain text,
-// brightness is stored unchecked, and deleting a pinned installation leaves the pin. Like the simulated cloud, it can stop
+// brightness is stored unchecked, deleting a pinned installation leaves the pin, and unpinning an installation clears only its
+// own pin, as server v2.5.2's source reads. Like the simulated cloud, it can stop
 // answering, refuse connections, answer the next call with a status of its choice, or lose the next answer.
 import type {CloudFetch} from './cloud.js';
 import {decodeLossless, picture} from './picture.js';
@@ -93,6 +94,8 @@ export class SimulatedTronbyt {
   /** The next PATCH is answered with this status, whatever calls come before it. */
   answerNextPatch(status: number): void { this.#patchAnswers.push(status); }
   loseNextAnswer(): void { this.#loseAnswers += 1; }
+  /** Pins an installation as a person does on the server's own page. */
+  pinByHand(name: string): void { this.#pinned = this.#installations.get(name)?.serverId ?? null; }
 
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
@@ -119,6 +122,7 @@ export class SimulatedTronbyt {
     const [, device = '', section, name] = match;
     if (decodeURIComponent(device) !== this.#device) return text(404, 'Device not found');
     if (section === undefined && init.method === 'PATCH') return this.#patchDevice(init.body);
+    if (section === undefined && init.method === 'GET') return json({id: this.#device, brightness: this.#brightness, pinnedApp: this.#pinned});
     if (section === 'push' && init.method === 'POST') return this.#push(init.body);
     if (section === 'installations' && name === undefined && init.method === 'GET') return json({installations: [...this.#installations.values()].map(entry => this.#payload(entry))});
     if (section === 'installations' && name !== undefined) {
@@ -130,7 +134,9 @@ export class SimulatedTronbyt {
         return text(200, 'App deleted.');
       }
       if (init.method === 'PATCH') {
-        if ((JSON.parse(init.body ?? '{}') as {pinned?: boolean}).pinned === true) this.#pinned = entry.serverId;
+        const {pinned} = JSON.parse(init.body ?? '{}') as {pinned?: boolean};
+        if (pinned === true) this.#pinned = entry.serverId;
+        else if (pinned === false && this.#pinned === entry.serverId) this.#pinned = null;
         return json(this.#payload(entry));
       }
     }

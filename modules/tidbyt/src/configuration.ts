@@ -5,7 +5,7 @@
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Configured} from '@jimmie-potts/sdk';
 import {CLOUD_DEVICE_ID, INSTALLATION_ID} from './cloud.js';
-import {privateServerUrl} from './tronbyt.js';
+import {MOMENT_INSTALLATION, privateServerUrl} from './tronbyt.js';
 
 /** The secret the section names for the cloud's API key, as `secrets.token`, like every module token (#919). */
 export const API_KEY_SECRET = 'token';
@@ -94,6 +94,7 @@ export function configureTidbyt(section: unknown): Configured<TidbytConfig> | Er
     // The server looks an installation up by its own numeric ID first, so an all-digit name could reach an unrelated app.
     const named = [section.statusInstallation, isObject(section.nowPlaying) ? section.nowPlaying.installation : undefined];
     if (named.some(name => typeof name === 'string' && /^\d+$/.test(name))) return refuse('an installation on the tronbyt backend must not be all digits');
+    if (named.includes(MOMENT_INSTALLATION)) return refuse('an installation on the tronbyt backend must not take the name its moments use');
     selected = {tronbyt};
   }
   const statusInstallation = section.statusInstallation ?? DEFAULT_STATUS_INSTALLATION;

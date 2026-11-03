@@ -179,7 +179,8 @@ Checked 2026-11-03. Neither project had released since the pins below.
 What differs from the cloud, each exercised on the v2.5.1 server. The disposable v2.5.2 run
 asserts only part of this: a named push replacing its own installation, server IDs that differ from
 the chosen name, presence found by name, the two 404s as outcomes, a pin outliving its
-installation, brightness at the ceiling and a 200 with no device connected. The rest of the
+installation, brightness at the ceiling, a 200 with no device connected and a moment's takeover
+and release. The rest of the
 table, including the rate row, rests on the v2.5.1 run and the unchanged API source:
 
 | Server behavior | What the module does |
@@ -191,6 +192,7 @@ table, including the rate row, rests on the v2.5.1 run and the unchanged API sou
 | Brightness is stored unchecked: 101 and -1 were accepted and served | Scales 0 to 100 percent to `BRIGHTNESS_CEILING`, 50, the top of the server's own Gen 1 scale |
 | Deleting a pinned installation leaves `pinnedApp` set until `/next` next runs, and a re-pushed one gets a new ID | Clears the pin with the tile and sets it again on return |
 | A push returns 200 with no device connected, and without checking the image | A 200 is a transmission, never evidence of the panel |
+| `pinned: false` on an installation clears the pin only if that installation holds it, and the device's record names `pinnedApp` | A moment reads the pin first and releases with that write, so it never clears another pin. Read at v2.5.2 and asserted on a disposable v2.5.2 server (Hub #337) |
 | No rate limit; writes 1 s apart were all answered | Takes a gate down to 1 s. This qualifies the server, not what the device renders; #24 selects the value |
 
 Run the optional check against a disposable server after a build: its device's
@@ -225,6 +227,48 @@ and never runs again. A pin write that failed or went unanswered is a fresh writ
 current mode at the tile's next evaluation at least 60 s later, or at the next start's first
 evaluation. `transmitted` covers the
 mode's one write: a `hide-<tile>` tile's removal follows at its gate and can fail on its own.
+
+### Moments
+
+The server's record also declares `moments`: the moods `celebrate`, `setback` and `reminder`,
+at most 60 s, able to cover status. The cloud refuses `moment-play` and declares none. A moment
+is a bounded takeover. It changes no mode and no configuration revision:
+
+1. It is refused with nothing stored or sent when its mood or duration is not declared
+   (`unsupported-capability`), its start window has passed (`expired`), a command or another
+   moment is in hand (`capacity`), the last moment has not been released (`unavailable`), its
+   moment ID was accepted before, or it is blocked (`invalid-state`).
+2. Its frame is made once. A failure ends it `failed` with nothing sent.
+3. At its start, one queue turn reads the server's pin, pushes the frame in the foreground to
+   the installation `bunnymoment`, which no tile may take, and pins it. If a pin stands,
+   nothing is written and it ends `failed` with `invalid-state`.
+4. It holds for its duration. A request under 30 s holds for 30 s, because the firmware shows a
+   frame for its own dwell. Tiles keep writing in the background, and none interrupts.
+5. A later turn unpins it and deletes the installation, and the display returns to whatever the
+   rotation is then.
+
+| What happens | Effect |
+| --- | --- |
+| A session has attention, or the sessions' copy does not follow the core | Blocks a moment, and ends one at once |
+| A status tile stands and the moment may not cover status | Blocks it, and ends it. A `hide-status` tile does not count |
+| The mode pins a tile | Refuses it. Attention and pins outrank moments |
+| A pin set on the server's own page | The takeover yields with nothing written. One set during the hold survives the release, because the server applies the unpin only if the moment holds the pin |
+| Any other accepted command | Ends it |
+
+The outcome follows the release. `succeeded` and `transmitted` mean the server took the frame
+and the pin and answered the release; a moment that ended early is `failed` with `cancelled`,
+`transmitted` if its frame went out. A push or pin with no definite answer, or a release that
+did not succeed, is `uncertain`. No write goes out twice, and nothing says what the panel showed.
+
+No frame is stored and nothing replays. A stored mark covers a takeover from before its first
+request until a release is answered. While it stands, new moments are refused and a fresh
+release goes out at a tile's next evaluation, at least 60 s after a failed one. A stop or a
+crash cannot reach the server, so **the frame stays pinned until the next start**, whose first
+evaluation releases it. That start reports the moment `uncertain`, and its ID stays spent.
+
+What a moment shows comes from `TidbytModuleOptions.momentPicture`
+(`(moment: MomentPlayRequest) => Promise<Uint8Array>`, an encoded WebP), a mood card from
+`moment-card.ts` by default. Exact art replaces that function and nothing else.
 
 ### Changing backend
 
@@ -496,6 +540,8 @@ do not establish visible-device acceptance.
 - `tronbyt.test.ts`: the server's wire form and classification, the section, identical frames
   through both backends, the gate, commands, modes, the pin, a restart, the handoff in both
   directions, and secrecy, on `SimulatedTronbyt`.
+- `moments.test.ts`: the takeover, its bounds, what it yields to, a restart, failed writes and the
+  picture seam, on `SimulatedTronbyt`.
 - `tronbyt-server.test.ts`: the optional check against a real server. It skips unless one is
   named.
 - `module.test.ts`: both tiles from synced records, the gate under bursts and

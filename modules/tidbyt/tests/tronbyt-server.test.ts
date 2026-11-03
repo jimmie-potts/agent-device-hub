@@ -3,7 +3,7 @@
 // installations and pin it changes. See "Compatibility record" in the module's README. Hosted CI runs it as skipped.
 import assert from 'node:assert/strict';
 import nodeTest from 'node:test';
-import {BRIGHTNESS_CEILING, TronbytConnection} from '../src/tronbyt.js';
+import {BRIGHTNESS_CEILING, MOMENT_INSTALLATION, TronbytConnection} from '../src/tronbyt.js';
 import type {CloudFetch} from '../src/cloud.js';
 import {SECOND, finished, host, notice, until} from './support.js';
 
@@ -65,6 +65,32 @@ void nodeTest('the connection\'s every call against a real server, with what the
   const refusal = {outcome: 'failed', failure: deviceKey ? 'forbidden' : 'unknown-device'};
   assert.deepEqual(await wrongDevice.push(FRAME, signal()), refusal);
   assert.deepEqual(await wrongDevice.remove(signal()), refusal, deviceKey ? 'a device key reaches only its device' : 'a missing device is not a missing installation');
+});
+
+void nodeTest('a moment\'s takeover against a real server: the read of the pin, the pin, and a release that clears only its own', {skip, timeout: 60_000}, async () => {
+  const connection = new TronbytConnection({url: url ?? '', deviceId: device ?? '', apiKey: key ?? '', installationId: STATUS, additionalInstallationIds: [CARD], fetch: realFetch});
+  await connection.unpin(signal());
+  assert.deepEqual(await connection.releaseMoment(signal()), {outcome: 'sent'}, 'a release with nothing to release');
+  assert.deepEqual(await connection.serverPin(signal()), {pinned: false});
+  assert.deepEqual(await connection.pushMoment(FRAME, signal()), {outcome: 'sent'});
+  assert.deepEqual(await connection.pinMoment(signal()), {outcome: 'sent'});
+  const moment = await server<Installation>(`/installations/${MOMENT_INSTALLATION}`);
+  assert.ok(moment.pinned);
+  assert.equal((await server<Device>()).pinnedApp, moment.id);
+  assert.deepEqual(await connection.serverPin(signal()), {pinned: true});
+  assert.deepEqual(await connection.releaseMoment(signal()), {outcome: 'sent'});
+  assert.equal((await server<Device>()).pinnedApp, null, 'its own pin goes with it');
+  assert.ok((await installations()).every(entry => entry.id !== moment.id), 'and so does the installation');
+
+  // A pin someone else holds stays through a release.
+  assert.deepEqual(await connection.push(FRAME, signal()), {outcome: 'sent'});
+  assert.deepEqual(await connection.pin(signal()), {outcome: 'sent'});
+  const other = (await server<Device>()).pinnedApp;
+  assert.deepEqual(await connection.pushMoment(FRAME, signal()), {outcome: 'sent'});
+  assert.deepEqual(await connection.releaseMoment(signal()), {outcome: 'sent'});
+  assert.equal((await server<Device>()).pinnedApp, other, 'a release never clears another installation\'s pin');
+  await connection.unpin(signal());
+  await connection.remove(signal());
 });
 
 void nodeTest('the module draws its status tile on a real server at a shorter gate, and its pin follows the tile', {skip, timeout: 60_000}, async context => {
