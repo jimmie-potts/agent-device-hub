@@ -194,7 +194,7 @@ test('collection normalizes docker output, skips prunable and unreadable worktre
   const failing = collect('/repo', {hours: 48, json: false}, now, (program, args) => {
     if (program === 'git' && args.includes('list')) return porcelain.split('\n\n')[0];
     throw new Error('missing tool');
-  });
+  }, new Set());
   assert.equal(failing.docker, null);
   assert.deepEqual(failing.notes, ['gh pr list failed: PR states are unknown, so no worktree is reported removable', 'docker is unavailable']);
 });
