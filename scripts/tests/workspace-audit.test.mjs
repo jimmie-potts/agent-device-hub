@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {classifyWorktrees, collect, dockerDate, parseArguments, parseWorktrees, referencedBy, render, sharedImages, staleContainers, staleImages, staleVolumes} from '../workspace-audit.mjs';
+import {classifyWorktrees, collect, dockerDate, installedImageIds, parseArguments, parseWorktrees, referencedBy, render, sharedImages, staleContainers, staleImages, staleVolumes} from '../workspace-audit.mjs';
 
 const now = new Date('2026-11-02T18:00:00Z');
 const at = hoursAgo => {
@@ -131,6 +131,30 @@ test('images stay when referenced, qualified, third-party, shared, untagged or r
   assert.deepEqual(shared.untagged.map(image => image.id), ['aaaa999999999999']);
 });
 
+test('images named by deployment records and installed Compose files are read as IDs only and protect their rows', () => {
+  const previous = '85c303e8df7ed6f43a11379c37cd4092d8c2276d06cd496d0c8f5ce70186358a';
+  const target = 'f6af3565cb9ff7e0413f9618a52399fa9850ef2791b159ce489c898a49680e01';
+  const files = new Map([
+    ['/ops/bunny-mac-personal.records/batch-1.json', JSON.stringify({schema: 'bunny-batch-record/1.0', previousImage: `sha256:${previous}`, targetImage: `sha256:${target}`, observation: {image: `sha256:${target}`}, token: 'never-read'})],
+    ['/ops/bunny-mac-personal.records/notes.txt', 'not json'],
+    ['/ops/bunny-mac-personal.records/broken.json', '{'],
+    ['/releases/aaaa/compose.production.yaml', 'services:\n  core:\n    image: sha256:' + 'c'.repeat(64) + '\n    restart: "no"\n'],
+    ['/releases/aaaa/compose.production.yaml.batch-1.json', JSON.stringify({services: {core: {image: `sha256:${target}`}}, volumes: {secrets: {name: 'x'}}})],
+    ['/releases/bbbb/compose.yaml', 'services:\n  core:\n    image: bunny-core:local\n'],
+  ]);
+  const directories = new Map([['/ops', ['bunny-mac-personal.records', 'bunny-mac-personal.operation', 'bunny-mac-personal.pending.json']], ['/ops/bunny-mac-personal.records', ['batch-1.json', 'notes.txt', 'broken.json']], ['/releases', ['aaaa', 'bbbb']], ['/releases/aaaa', ['compose.production.yaml', 'compose.production.yaml.batch-1.json', 'source']], ['/releases/bbbb', ['compose.yaml']]]);
+  const read = {readdir: path => {if (!directories.has(path)) throw new Error('ENOENT'); return directories.get(path);}, readFile: path => {if (!files.has(path)) throw new Error('ENOENT'); return files.get(path);}};
+  const ids = installedImageIds({operations: '/ops', releases: '/releases'}, read);
+  assert.deepEqual([...ids].sort(), [previous, 'c'.repeat(64), target].sort(), 'tagged references and non-IDs are not collected');
+  assert.deepEqual([...installedImageIds({operations: '/missing', releases: '/missing'}, read)], []);
+  const images = [
+    {ID: `sha256:${previous}`, Repository: 'bunny-gh1354-codex', Tag: '00fa1c7b', Size: '2GB', CreatedAt: at(72)},
+    {ID: 'aaaa222222222222', Repository: 'bunny-gh1354-codex', Tag: 'scratch', Size: '2GB', CreatedAt: at(72)},
+  ];
+  assert.deepEqual(staleImages(images, [], now, 48).map(image => image.reference), ['bunny-gh1354-codex:00fa1c7b', 'bunny-gh1354-codex:scratch'], 'without records the previous image looks stale');
+  assert.deepEqual(staleImages(images, [], now, 48, ids).map(image => image.reference), ['bunny-gh1354-codex:scratch'], 'the recorded previous image is kept');
+});
+
 test('only container-less task-named volumes are reported, never installed or data volumes', () => {
   const volumes = ['acceptance-b7-archives', 'acceptance-b7-restore_state', 'acceptance-b7-scratch', 'bunny-mac-personal_state', 'bunny-mac-personal-archives', 'bunny-diagnostics_loki-data', 'bunny-gh1112-npm-cache', 'bunny-archives', 'bunny_state', 'bunny-runtime-check-abc', 'bunny-1330-fixture', 'unrelated'].map(Name => ({Name}));
   assert.deepEqual(staleVolumes(volumes), ['acceptance-b7-scratch', 'bunny-gh1112-npm-cache', 'bunny-runtime-check-abc', 'bunny-1330-fixture']);
@@ -175,7 +199,7 @@ test('collection normalizes docker output, skips prunable and unreadable worktre
 test('the report names counts, verdicts and that nothing was removed', () => {
   const text = render({now: now.toISOString(), hours: 48, worktrees: [{path: '/repo/.local/worktrees/done', branch: 'gh-1-done', head: 'aaaaaaaa', verdict: 'removable: PR #10 merged at this head'}],
     docker: {containers: [{id: 'c1', name: 'bunny-gh9-browser', image: 'bunny-gh9:test', status: 'Exited (0) 3 days ago'}], images: [], volumes: ['acceptance-b7-scratch'],
-      shared: {launcherCaches: [{id: 'aaaa888888888888', reference: 'bunny-runtime-check-tools:65b6', size: '3.6GB'}], untagged: []}, usage: 'TYPE SIZE'}, notes: ['gh pr list failed']});
-  for (const expected of ['Worktrees other than the main checkout: 1', 'removable: PR #10', 'containers older than 48 h: 1', 'bunny-gh9-browser', 'images older than 48 h: 0', 'Container-less task volumes: 1', 'acceptance-b7-scratch', 'Shared launcher caches', 'bunny-runtime-check-tools:65b6', 'Untagged images no container uses', 'Note: gh pr list failed', 'Nothing was removed']) assert.match(text, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      shared: {launcherCaches: [{id: 'aaaa888888888888', reference: 'bunny-runtime-check-tools:65b6', size: '3.6GB'}], untagged: []}, installed: ['85c303e8df7ed6f43a11379c37cd4092d8c2276d06cd496d0c8f5ce70186358a'], usage: 'TYPE SIZE'}, notes: ['gh pr list failed']});
+  for (const expected of ['Worktrees other than the main checkout: 1', 'removable: PR #10', 'containers older than 48 h: 1', 'bunny-gh9-browser', 'images older than 48 h: 0', 'Images the installation names', '85c303e8df7e', 'Container-less task volumes: 1', 'acceptance-b7-scratch', 'Shared launcher caches', 'bunny-runtime-check-tools:65b6', 'Untagged images no container uses', 'Note: gh pr list failed', 'Nothing was removed']) assert.match(text, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(render({now: now.toISOString(), hours: 48, worktrees: [], docker: null, notes: []}), /Docker: unavailable/);
 });

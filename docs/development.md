@@ -1173,11 +1173,16 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 worktree from `git worktree list`, `git status` without optional locks and `gh pr list`,
 stopped task containers and unreferenced task images older than the window,
 container-less task-named volumes, and the shared launcher caches and untagged
-images listed for the owner. Pass `-- --hours <n>` to change the 48-hour window
-and `-- --json` for the raw report. It needs `gh` for PR states and Docker
-Desktop for the Docker sections; a missing tool, or a PR older than the newest
-300, is reported as a note, not a failure. Its classification and collection
-tests are `npm run test:workspace-audit`, run in core CI.
+images listed for the owner. Images that the private batch records under
+`~/.local/state/bunny-operations/` or the installed Compose files under
+`~/.local/share/bunny/releases/` name, including the previous installed image
+kept for return, are never reported as stale; the audit reads only image IDs
+from those files and prints nothing else from them. Pass `-- --hours <n>` to
+change the 48-hour window and `-- --json` for the raw report. It needs `gh` for
+PR states and Docker Desktop for the Docker sections; a missing tool, a PR older
+than the newest 300, or no record naming an image is reported as a note, not a
+failure. Its classification and collection tests are
+`npm run test:workspace-audit`, run in core CI.
 
 ## Runtime dashboard checks
 

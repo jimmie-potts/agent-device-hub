@@ -2,7 +2,9 @@
 // containers, images and volumes that task runs left behind. It removes nothing; cleanup follows
 // docs/sdlc.md "Cleanup after delivery" and "Workspace audit".
 import {execFileSync} from 'node:child_process';
-import {resolve} from 'node:path';
+import {readdirSync, readFileSync} from 'node:fs';
+import {homedir} from 'node:os';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 /** Installed stacks on this Mac. Their containers, volumes and networks are never task artifacts. */
@@ -14,6 +16,9 @@ const taskVolume = /^(?:bunny-gh\d+|bunny-\d+|bunny-runtime-check|acceptance)-/;
 /** Data volumes, whatever created them. docs/bunny-container.md: never remove a data volume. */
 const dataVolume = /archives|_state$|_config$|_secrets$/;
 const stoppedStates = new Set(['exited', 'dead', 'created']);
+/** Where the batch operator keeps its private records (scripts/bunny-operations.mjs) and the installed Compose files. */
+export const installedRoots = Object.freeze({operations: join(homedir(), '.local', 'state', 'bunny-operations'), releases: join(homedir(), '.local', 'share', 'bunny', 'releases')});
+const imageId = /^(?:sha256:)?[0-9a-f]{64}$/;
 const prLimit = 300;
 const hour = 3_600_000;
 
@@ -120,10 +125,41 @@ export function referencedBy(containers) {
 
 const protectedImage = image => !image.Repository.startsWith('bunny') || image.Repository === launcherCacheRepository || (image.Repository === 'bunny-core' && image.Tag.startsWith('release-'));
 
-/** Task images older than the window that no container uses and that no rule protects. */
-export function staleImages(images, containers, now, hours) {
+/**
+ * Image IDs the installation names: `previousImage`, `targetImage` and the observed image of every batch
+ * record under the operation root, and the `image` of every installed Compose file or batch replacement
+ * under the releases root. The previous image is the return target docs/bunny-container.md says to keep.
+ * Only IDs are read; nothing else in those private files is retained. Unreadable roots yield no IDs.
+ */
+export function installedImageIds(roots = installedRoots, read = {readdir: readdirSync, readFile: path => readFileSync(path, 'utf8')}) {
+  const ids = new Set();
+  const add = value => {if (typeof value === 'string' && imageId.test(value)) ids.add(value.replace(/^sha256:/, ''));};
+  const list = directory => {try {return read.readdir(directory);} catch {return [];}};
+  for (const entry of list(roots.operations).filter(name => name.endsWith('.records'))) {
+    for (const file of list(join(roots.operations, entry)).filter(name => name.endsWith('.json'))) {
+      try {
+        const record = JSON.parse(read.readFile(join(roots.operations, entry, file)));
+        add(record.previousImage); add(record.targetImage); add(record.observation?.image);
+      } catch {/* not a record */}
+    }
+  }
+  for (const release of list(roots.releases)) {
+    for (const file of list(join(roots.releases, release)).filter(name => name.startsWith('compose'))) {
+      try {
+        const text = read.readFile(join(roots.releases, release, file));
+        if (file.endsWith('.json')) for (const service of Object.values(JSON.parse(text).services ?? {})) add(service?.image);
+        else for (const match of text.matchAll(/^\s*image:\s*["']?(\S+?)["']?\s*$/gm)) add(match[1]);
+      } catch {/* not a Compose file */}
+    }
+  }
+  return ids;
+}
+
+/** Task images older than the window that no container uses, that the installation does not name and that no rule protects. */
+export function staleImages(images, containers, now, hours, installed = new Set()) {
   const referenced = referencedBy(containers);
-  return images.filter(image => !protectedImage(image) && image.Repository !== '<none>' && !referenced(image) && olderThan(image.CreatedAt, now, hours))
+  const named = image => installed.has(image.ID.replace(/^sha256:/, ''));
+  return images.filter(image => !protectedImage(image) && image.Repository !== '<none>' && !referenced(image) && !named(image) && olderThan(image.CreatedAt, now, hours))
     .map(image => ({id: image.ID.replace(/^sha256:/, ''), reference: `${image.Repository}:${image.Tag}`, size: image.Size, created: image.CreatedAt}));
 }
 
@@ -154,6 +190,8 @@ export function render(report) {
     for (const container of report.docker.containers) lines.push(`  ${container.id.slice(0, 12)}  ${container.name}  ${container.status}`);
     lines.push('', `Unreferenced task images older than ${report.hours} h: ${report.docker.images.length}`);
     for (const image of report.docker.images) lines.push(imageLine(image));
+    lines.push('', `Images the installation names (deployment records and installed Compose files, kept): ${report.docker.installed.length}`);
+    for (const id of report.docker.installed) lines.push(`  ${id.slice(0, 12)}`);
     lines.push('', `Container-less task volumes: ${report.docker.volumes.length}`);
     for (const volume of report.docker.volumes) lines.push(`  ${volume}`);
     lines.push('', `Shared launcher caches (${launcherCacheRepository}, owner decision, not task artifacts): ${report.docker.shared.launcherCaches.length}`);
@@ -190,7 +228,9 @@ export function collect(root, options, now = new Date(), run = defaultRun) {
     const containers = jsonLines(run('docker', ['container', 'ls', '--all', '--no-trunc', '--format', '{{json .}}']));
     const images = jsonLines(run('docker', ['image', 'ls', '--no-trunc', '--format', '{{json .}}']));
     const volumes = jsonLines(run('docker', ['volume', 'ls', '--filter', 'dangling=true', '--format', '{{json .}}']));
-    docker = {containers: staleContainers(containers, now, options.hours), images: staleImages(images, containers, now, options.hours), volumes: staleVolumes(volumes), shared: sharedImages(images, containers), usage: run('docker', ['system', 'df']).trim()};
+    const installed = installedImageIds();
+    if (installed.size === 0) notes.push('no deployment record or installed Compose file named an image: the previous installed image, if any, is not protected by name');
+    docker = {containers: staleContainers(containers, now, options.hours), images: staleImages(images, containers, now, options.hours, installed), volumes: staleVolumes(volumes), shared: sharedImages(images, containers), installed: [...installed].sort(), usage: run('docker', ['system', 'df']).trim()};
   } catch {notes.push('docker is unavailable');}
   return {now: now.toISOString(), hours: options.hours, worktrees: classifyWorktrees(worktrees, prs, dirty, root), docker, notes};
 }

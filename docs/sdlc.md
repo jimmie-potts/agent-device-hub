@@ -468,8 +468,12 @@ still uses the worktree. Clean up only what this delivery created:
    `docker volume rm` and `docker network rm` of named artifacts, never a
    prune. Keep the installed stacks (`bunny-mac-personal*`, `bunny-tronbyt*`
    and `bunny-diagnostics*` containers, volumes and networks), every image a
-   container still uses, qualified `bunny-core:release-*` images, third-party
-   images, the shared `bunny-runtime-check-tools` caches, which every
+   container still uses, the current and previous installed images that the
+   private batch records under `~/.local/state/bunny-operations/` and the
+   installed Compose files name (the previous image is the return target the
+   [container guide](bunny-container.md#replace-an-image) keeps), qualified
+   `bunny-core:release-*` images, third-party images, the shared
+   `bunny-runtime-check-tools` caches, which every
    `npm run test:runtime:container` run of the same manifests reuses, and the
    retained release directories under `~/.local/share/bunny/releases/`, which
    the installed hooks and the running core reference. Confirm with
