@@ -27,6 +27,11 @@ node apps/runtime/bin/volcano-collector.mjs <collector.json>
 
 Without the binding installed, the entry point exits with 2 and says so.
 
+`npm ci` here runs four native install scripts: `@stoprocent/noble`,
+`@stoprocent/bluetooth-hci-socket`, `@serialport/bindings-cpp` and `usb`. The #617
+installer needs to allow for them, which `--ignore-scripts` would not. A binding that
+is present but does not load ends the collector with 1, not 2.
+
 ## Private files
 
 Both are read once at start, and must be owner-only regular files with one link.
